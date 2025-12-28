@@ -54,8 +54,6 @@ module top (
     
     // Branch/Jump logic
     logic        take_branch;
-    logic [31:0] branch_target;
-    logic [31:0] jump_target;
     
     // Program Counter
     assign imem_addr = pc;
@@ -93,12 +91,12 @@ module top (
         take_branch = 1'b0;
         if (branch) begin
             case (funct3)
-                3'b000: take_branch = alu_zero;          // BEQ
-                3'b001: take_branch = !alu_zero;         // BNE
-                3'b100: take_branch = alu_result[0];     // BLT (signed)
-                3'b101: take_branch = !alu_result[0];    // BGE (signed)
-                3'b110: take_branch = alu_result[0];     // BLTU (unsigned)
-                3'b111: take_branch = !alu_result[0];    // BGEU (unsigned)
+                3'b000: take_branch = alu_zero;                              // BEQ
+                3'b001: take_branch = !alu_zero;                             // BNE
+                3'b100: take_branch = ($signed(rs1_data) <  $signed(rs2_data));  // BLT (signed)
+                3'b101: take_branch = ($signed(rs1_data) >= $signed(rs2_data));  // BGE (signed)
+                3'b110: take_branch = (rs1_data <  rs2_data);                // BLTU (unsigned)
+                3'b111: take_branch = (rs1_data >= rs2_data);                // BGEU (unsigned)
                 default: take_branch = 1'b0;
             endcase
         end
@@ -141,7 +139,9 @@ module top (
     
     // ALU source selection
     assign alu_a = rs1_data;
-    assign alu_b = alu_src ? imm_i : rs2_data;
+    assign alu_b = alu_src
+                    ? ((opcode == 7'b0100011) ? imm_s : imm_i)
+                    : rs2_data;
     
     // Special handling for LUI
     logic [31:0] lui_result;
@@ -166,6 +166,9 @@ module top (
         if (opcode == 7'b0110111) begin
             // LUI - Load Upper Immediate
             rd_data = lui_result;
+        end else if (opcode == 7'b0010111) begin
+            // AUIPC - Add Upper Immediate to PC
+            rd_data = pc + imm_u;
         end else if (jump) begin
             // JAL/JALR - Store return address (PC + 4)
             rd_data = pc + 32'd4;

@@ -9,4 +9,3 @@ edition = "2021"
 [dev-dependencies]
 marlin = { version = "0.10", features = ["verilog"] }
 rand = "0.8"
-bitflags = "2.4"

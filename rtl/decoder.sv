@@ -145,6 +145,13 @@ module decoder (
                 reg_write = 1'b1;
             end
 
+            OP_AUIPC: begin
+                // AUIPC - Add Upper Immediate to PC
+                alu_op = ALU_ADD;
+                alu_src = 1'b1;
+                reg_write = 1'b1;
+            end
+
             OP_JAL: begin
                 // JAL - Jump and Link
                 jump = 1'b1;
