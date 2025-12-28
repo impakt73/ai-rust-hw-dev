@@ -1,5 +1,5 @@
-use marlin::verilog::prelude::*;
 use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
+use marlin::verilog::prelude::*;
 use rand::Rng;
 
 #[verilog(src = "../rtl/regfile.sv", name = "regfile")]

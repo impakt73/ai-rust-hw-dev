@@ -1,5 +1,5 @@
-use marlin::verilog::prelude::*;
 use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
+use marlin::verilog::prelude::*;
 use rand::Rng;
 
 // ALU Operation Encodings (must match the RTL)
@@ -70,13 +70,9 @@ fn test_alu_add() {
         dut.eval();
 
         assert_eq!(
-            dut.result,
-            expected,
+            dut.result, expected,
             "ADD failed: {} + {} = {} (expected {})",
-            a,
-            b,
-            dut.result,
-            expected
+            a, b, dut.result, expected
         );
 
         let expected_zero = if expected == 0 { 1 } else { 0 };
@@ -109,13 +105,9 @@ fn test_alu_sub() {
         dut.eval();
 
         assert_eq!(
-            dut.result,
-            expected,
+            dut.result, expected,
             "SUB failed: {} - {} = {} (expected {})",
-            a,
-            b,
-            dut.result,
-            expected
+            a, b, dut.result, expected
         );
     }
 }
@@ -223,12 +215,9 @@ fn test_alu_compare_ops() {
         dut.alu_op = ALU_SLT as u8;
         dut.eval();
         assert_eq!(
-            dut.result,
-            expected,
+            dut.result, expected,
             "SLT failed: {} < {} should be {}",
-            a,
-            b,
-            expected
+            a, b, expected
         );
     }
 
@@ -246,12 +235,9 @@ fn test_alu_compare_ops() {
         dut.alu_op = ALU_SLTU as u8;
         dut.eval();
         assert_eq!(
-            dut.result,
-            expected,
+            dut.result, expected,
             "SLTU failed: {} < {} should be {}",
-            a,
-            b,
-            expected
+            a, b, expected
         );
     }
 }
@@ -321,14 +307,9 @@ fn test_alu_all_operations() {
         dut.eval();
 
         assert_eq!(
-            dut.result,
-            expected,
+            dut.result, expected,
             "Operation {} failed: a={}, b={}, result={}, expected={}",
-            alu_op,
-            a,
-            b,
-            dut.result,
-            expected
+            alu_op, a, b, dut.result, expected
         );
     }
 }

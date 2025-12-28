@@ -1,5 +1,5 @@
-use marlin::verilog::prelude::*;
 use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
+use marlin::verilog::prelude::*;
 use std::collections::HashMap;
 
 #[verilog(src = "../rtl/top.sv", name = "top")]
@@ -52,7 +52,14 @@ fn encode_b_type(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: i32) -> u32 
     let imm_10_5 = (imm_u >> 5) & 0x3F;
     let imm_4_1 = (imm_u >> 1) & 0xF;
     let imm_11 = (imm_u >> 11) & 0x1;
-    (imm_12 << 31) | (imm_10_5 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (imm_4_1 << 8) | (imm_11 << 7) | opcode
+    (imm_12 << 31)
+        | (imm_10_5 << 25)
+        | (rs2 << 20)
+        | (rs1 << 15)
+        | (funct3 << 12)
+        | (imm_4_1 << 8)
+        | (imm_11 << 7)
+        | opcode
 }
 
 fn encode_s_type(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: i32) -> u32 {
@@ -136,7 +143,7 @@ fn test_cpu_basic_execution() {
 
     // Create instruction memory (HashMap)
     let mut imem = HashMap::new();
-    
+
     // Program: Simple arithmetic operations
     // 0x00: ADDI x1, x0, 5    ; x1 = 5
     // 0x04: ADDI x2, x0, 3    ; x2 = 3
@@ -144,7 +151,7 @@ fn test_cpu_basic_execution() {
     imem.insert(0x00, addi(1, 0, 5));
     imem.insert(0x04, addi(2, 0, 3));
     imem.insert(0x08, add(3, 1, 2));
-    imem.insert(0x0C, addi(0, 0, 0));  // NOP to end
+    imem.insert(0x0C, addi(0, 0, 0)); // NOP to end
 
     // Data memory (not used in this test)
     let dmem: HashMap<u32, u32> = HashMap::new();
@@ -163,13 +170,13 @@ fn test_cpu_basic_execution() {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         // Handle data memory (reads)
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
+
         // Clock cycle
         clock_cycle!(dut);
     }
@@ -187,7 +194,7 @@ fn test_cpu_three_instructions() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Execute exactly 3 instructions as required
     // 0x00: ADDI x1, x0, 10   ; x1 = 10
     // 0x04: ADD  x2, x1, x1   ; x2 = x1 + x1 = 20
@@ -195,7 +202,7 @@ fn test_cpu_three_instructions() {
     imem.insert(0x00, addi(1, 0, 10));
     imem.insert(0x04, add(2, 1, 1));
     imem.insert(0x08, sub(3, 2, 1));
-    imem.insert(0x0C, addi(0, 0, 0));  // NOP
+    imem.insert(0x0C, addi(0, 0, 0)); // NOP
 
     // Data memory
     let dmem: HashMap<u32, u32> = HashMap::new();
@@ -214,18 +221,20 @@ fn test_cpu_three_instructions() {
     for cycle in 0..5 {
         let pc = dut.imem_addr;
         pc_history.push(pc);
-        
+
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
@@ -233,7 +242,7 @@ fn test_cpu_three_instructions() {
     assert_eq!(pc_history[0], 0x00, "First instruction at PC=0x00");
     assert_eq!(pc_history[1], 0x04, "Second instruction at PC=0x04");
     assert_eq!(pc_history[2], 0x08, "Third instruction at PC=0x08");
-    
+
     println!("Successfully executed 3 instructions: ADDI, ADD, SUB");
 }
 
@@ -244,13 +253,13 @@ fn test_cpu_lui_instruction() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test LUI instruction
     // 0x00: LUI x1, 0x12345   ; x1 = 0x12345000
     // 0x04: ADDI x2, x1, 0x678 ; x2 = x1 + 0x678
     imem.insert(0x00, lui(1, 0x12345000));
     imem.insert(0x04, addi(2, 1, 0x678));
-    imem.insert(0x08, addi(0, 0, 0));  // NOP
+    imem.insert(0x08, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -267,15 +276,17 @@ fn test_cpu_lui_instruction() {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
@@ -289,7 +300,7 @@ fn test_cpu_logic_operations() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test logic operations
     // 0x00: ADDI x1, x0, 0xFF  ; x1 = 0xFF
     // 0x04: ADDI x2, x0, 0x0F  ; x2 = 0x0F
@@ -301,7 +312,7 @@ fn test_cpu_logic_operations() {
     imem.insert(0x08, and_inst(3, 1, 2));
     imem.insert(0x0C, or_inst(4, 1, 2));
     imem.insert(0x10, xor_inst(5, 1, 2));
-    imem.insert(0x14, addi(0, 0, 0));  // NOP
+    imem.insert(0x14, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -318,15 +329,17 @@ fn test_cpu_logic_operations() {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
@@ -340,7 +353,7 @@ fn test_cpu_branch_beq_bne() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test BEQ and BNE instructions
     // 0x00: ADDI x1, x0, 10   ; x1 = 10
     // 0x04: ADDI x2, x0, 10   ; x2 = 10
@@ -358,7 +371,7 @@ fn test_cpu_branch_beq_bne() {
     imem.insert(0x14, bne(1, 4, 8));
     imem.insert(0x18, addi(5, 0, 99));
     imem.insert(0x1C, addi(6, 0, 1));
-    imem.insert(0x20, addi(0, 0, 0));  // NOP
+    imem.insert(0x20, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -376,18 +389,20 @@ fn test_cpu_branch_beq_bne() {
     for cycle in 0..10 {
         let pc = dut.imem_addr;
         pc_history.push(pc);
-        
+
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
@@ -400,7 +415,7 @@ fn test_cpu_branch_beq_bne() {
     assert!(pc_history.contains(&0x14), "Should execute at 0x14 (BNE)");
     assert!(!pc_history.contains(&0x18), "Should skip 0x18 due to BNE");
     assert!(pc_history.contains(&0x1C), "Should execute at 0x1C");
-    
+
     println!("Successfully executed BEQ and BNE branches");
 }
 
@@ -411,7 +426,7 @@ fn test_cpu_branch_blt_bge() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test BLT and BGE instructions
     // 0x00: ADDI x1, x0, 5     ; x1 = 5
     // 0x04: ADDI x2, x0, 10    ; x2 = 10
@@ -427,7 +442,7 @@ fn test_cpu_branch_blt_bge() {
     imem.insert(0x10, bge(2, 1, 8));
     imem.insert(0x14, addi(4, 0, 99));
     imem.insert(0x18, addi(5, 0, 1));
-    imem.insert(0x1C, addi(0, 0, 0));  // NOP
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -445,25 +460,27 @@ fn test_cpu_branch_blt_bge() {
     for cycle in 0..10 {
         let pc = dut.imem_addr;
         pc_history.push(pc);
-        
+
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
     // Verify branch behavior
     assert!(!pc_history.contains(&0x0C), "Should skip 0x0C due to BLT");
     assert!(!pc_history.contains(&0x14), "Should skip 0x14 due to BGE");
-    
+
     println!("Successfully executed BLT and BGE branches");
 }
 
@@ -474,7 +491,7 @@ fn test_cpu_branch_bltu_bgeu() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test BLTU and BGEU instructions (unsigned comparison)
     // 0x00: ADDI x1, x0, -1    ; x1 = 0xFFFFFFFF (unsigned max)
     // 0x04: ADDI x2, x0, 5     ; x2 = 5
@@ -490,7 +507,7 @@ fn test_cpu_branch_bltu_bgeu() {
     imem.insert(0x10, bgeu(1, 2, 8));
     imem.insert(0x14, addi(4, 0, 99));
     imem.insert(0x18, addi(5, 0, 1));
-    imem.insert(0x1C, addi(0, 0, 0));  // NOP
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -508,25 +525,27 @@ fn test_cpu_branch_bltu_bgeu() {
     for cycle in 0..10 {
         let pc = dut.imem_addr;
         pc_history.push(pc);
-        
+
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
     // Verify branch behavior
     assert!(!pc_history.contains(&0x0C), "Should skip 0x0C due to BLTU");
     assert!(!pc_history.contains(&0x14), "Should skip 0x14 due to BGEU");
-    
+
     println!("Successfully executed BLTU and BGEU branches");
 }
 
@@ -537,7 +556,7 @@ fn test_cpu_load_store() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test load and store instructions
     // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
     // 0x04: ADDI x2, x0, 42    ; x2 = 42 (value to store)
@@ -553,7 +572,7 @@ fn test_cpu_load_store() {
     imem.insert(0x10, addi(4, 0, 8));
     imem.insert(0x14, sw(1, 2, 8));
     imem.insert(0x18, lw(5, 1, 8));
-    imem.insert(0x1C, addi(0, 0, 0));  // NOP
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
 
     let mut dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -570,30 +589,35 @@ fn test_cpu_load_store() {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         // Handle data memory reads (before eval, use old address)
         let dmem_addr_pre = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
+
         // Handle data memory writes (after eval, use new address)
         let dmem_addr = dut.dmem_addr;
         if dut.dmem_we != 0 {
             dmem.insert(dmem_addr, dut.dmem_wdata);
-            println!("Cycle {}: WRITE mem[{}] = {}", cycle, dmem_addr, dut.dmem_wdata);
+            println!(
+                "Cycle {}: WRITE mem[{}] = {}",
+                cycle, dmem_addr, dut.dmem_wdata
+            );
         }
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
     // Verify memory operations
     assert_eq!(dmem.get(&100), Some(&42), "Memory[100] should contain 42");
     assert_eq!(dmem.get(&108), Some(&42), "Memory[108] should contain 42");
-    
+
     println!("Successfully executed load and store instructions");
 }
 
@@ -604,13 +628,13 @@ fn test_cpu_auipc() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Program: Test AUIPC instruction
     // 0x00: AUIPC x1, 0x12345  ; x1 = PC + 0x12345000 = 0x12345000
     // 0x04: AUIPC x2, 0x00001  ; x2 = PC + 0x00001000 = 0x00001004
     imem.insert(0x00, auipc(1, 0x12345000));
     imem.insert(0x04, auipc(2, 0x00001000));
-    imem.insert(0x08, addi(0, 0, 0));  // NOP
+    imem.insert(0x08, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -627,15 +651,17 @@ fn test_cpu_auipc() {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
-        
+
         let dmem_addr = dut.dmem_addr;
         dut.dmem_rdata = dmem.get(&dmem_addr).copied().unwrap_or(0);
-        
+
         dut.eval();
-        
-        println!("Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}", 
-                 cycle, pc, instruction);
-        
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
         clock_cycle!(dut);
     }
 
