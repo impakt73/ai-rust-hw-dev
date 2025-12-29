@@ -175,6 +175,7 @@ module top (
     
     // Memory-mapped I/O region for FIFO (0xF0000000 - 0xF000000F)
     localparam MMIO_BASE = 32'hF0000000;
+    localparam MMIO_SIZE = 32'h10;
     localparam MMIO_DATA_OFFSET = 32'h0;
     localparam MMIO_STATUS_OFFSET = 32'h4;
     
@@ -184,7 +185,7 @@ module top (
     logic fifo_wr_en;
     logic [31:0] mmio_rdata;
     
-    assign is_mmio_access = (alu_result >= MMIO_BASE) && (alu_result < (MMIO_BASE + 32'h10));
+    assign is_mmio_access = (alu_result >= MMIO_BASE) && (alu_result < (MMIO_BASE + MMIO_SIZE));
     assign is_mmio_data_reg = is_mmio_access && ((alu_result - MMIO_BASE) == MMIO_DATA_OFFSET);
     assign is_mmio_status_reg = is_mmio_access && ((alu_result - MMIO_BASE) == MMIO_STATUS_OFFSET);
     

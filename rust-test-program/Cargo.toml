@@ -3,8 +3,8 @@ name = "rust-test-program"
 version = "0.1.0"
 edition = "2021"
 
+# This package has its own workspace to avoid conflicts with the main workspace
 [workspace]
-# This package is excluded from the main workspace
 
 [[bin]]
 name = "rust_test"

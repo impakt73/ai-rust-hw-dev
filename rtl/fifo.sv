@@ -59,7 +59,7 @@ module fifo #(
         end
     end
     
-    // Output data
-    assign rd_data = mem[rd_ptr[$clog2(DEPTH)-1:0]];
+    // Output data (zero when empty to avoid undefined behavior)
+    assign rd_data = empty ? '0 : mem[rd_ptr[$clog2(DEPTH)-1:0]];
 
 endmodule
