@@ -47,26 +47,6 @@ steps:
       - rustup target list --installed | grep riscv32i-unknown-none-elf
       - riscv64-unknown-elf-gcc --version
 
-  - name: Build Project
-    description: Build the project to ensure everything is set up correctly
-    commands:
-      - cargo build --verbose
-    verification:
-      - test -d target
-
-  - name: Run Tests
-    description: Run the test suite to verify the setup (22 tests should pass)
-    commands:
-      - cargo test --verbose
-    verification:
-      - cargo test --verbose
-
-  - name: Setup Code Quality Tools
-    description: Verify code formatting and linting tools are available
-    commands:
-      - cargo fmt -- --check
-      - cargo clippy -- -D warnings
-
 notes: |
   For detailed information about this project, refer to:
   - AGENTS.md: Comprehensive guide for AI coding agents
