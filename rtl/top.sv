@@ -16,6 +16,12 @@ module top (
     input  logic [31:0] dmem_rdata,
     output logic        dmem_we,
     
+    // FIFO interface (for memory-mapped I/O communication)
+    input  logic        fifo_rd_en,
+    output logic [7:0]  fifo_rd_data,
+    output logic        fifo_empty,
+    output logic        fifo_full,
+    
     // Debug outputs (for tracing register values)
     output logic [31:0] debug_rs1_data,
     output logic [31:0] debug_rs2_data,
@@ -167,6 +173,52 @@ module top (
     assign dmem_wdata = rs2_data;
     assign dmem_we = mem_write;
     
+    // Memory-mapped I/O region for FIFO (0xF0000000 - 0xF000000F)
+    localparam MMIO_BASE = 32'hF0000000;
+    localparam MMIO_DATA_OFFSET = 32'h0;
+    localparam MMIO_STATUS_OFFSET = 32'h4;
+    
+    logic is_mmio_access;
+    logic is_mmio_data_reg;
+    logic is_mmio_status_reg;
+    logic fifo_wr_en;
+    logic [31:0] mmio_rdata;
+    
+    assign is_mmio_access = (alu_result >= MMIO_BASE) && (alu_result < (MMIO_BASE + 32'h10));
+    assign is_mmio_data_reg = is_mmio_access && ((alu_result - MMIO_BASE) == MMIO_DATA_OFFSET);
+    assign is_mmio_status_reg = is_mmio_access && ((alu_result - MMIO_BASE) == MMIO_STATUS_OFFSET);
+    
+    // FIFO write enable: write to MMIO data register
+    assign fifo_wr_en = mem_write && is_mmio_data_reg;
+    
+    // FIFO instantiation
+    fifo #(
+        .DEPTH(16),
+        .WIDTH(8)
+    ) u_fifo (
+        .clk(clk),
+        .rst_n(rst_n),
+        .wr_en(fifo_wr_en),
+        .wr_data(rs2_data[7:0]),
+        .rd_en(fifo_rd_en),
+        .rd_data(fifo_rd_data),
+        .empty(fifo_empty),
+        .full(fifo_full)
+    );
+    
+    // MMIO read data
+    always_comb begin
+        if (is_mmio_status_reg) begin
+            // STATUS register: bit 0 = empty, bit 1 = full
+            mmio_rdata = {30'b0, fifo_full, fifo_empty};
+        end else if (is_mmio_data_reg) begin
+            // DATA register: zero-extended FIFO read data
+            mmio_rdata = {24'b0, fifo_rd_data};
+        end else begin
+            mmio_rdata = 32'b0;
+        end
+    end
+    
     // Write-back data selection
     always_comb begin
         if (opcode == 7'b0110111) begin
@@ -179,8 +231,12 @@ module top (
             // JAL/JALR - Store return address (PC + 4)
             rd_data = pc + 32'd4;
         end else if (mem_to_reg) begin
-            // Load instruction - Use memory data
-            rd_data = dmem_rdata;
+            // Load instruction - check if MMIO or regular memory
+            if (is_mmio_access) begin
+                rd_data = mmio_rdata;
+            end else begin
+                rd_data = dmem_rdata;
+            end
         end else begin
             // ALU result
             rd_data = alu_result;
