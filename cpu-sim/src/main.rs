@@ -1,9 +1,4 @@
-mod memory;
-mod sim;
-
 use clap::Parser;
-use memory::Memory;
-use sim::Simulator;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -35,38 +30,8 @@ fn main() {
     log::info!("RISC-V CPU Simulator");
     log::info!("Loading ELF: {}", args.elf.display());
 
-    // Initialize Memory and load ELF
-    let mut mem = Memory::new();
-    let entry_point = match mem.load_elf(&args.elf) {
-        Ok(entry_point) => {
-            log::info!("ELF loaded successfully");
-            log::info!("Entry point: 0x{:08x}", entry_point);
-            entry_point
-        }
-        Err(e) => {
-            eprintln!("Error loading ELF: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Initialize CPU Simulator
-    let runtime = match riscv_core::create_cpu_runtime() {
-        Ok(rt) => rt,
-        Err(e) => {
-            eprintln!("Error creating CPU runtime: {}", e);
-            std::process::exit(1);
-        }
-    };
-    let mut sim = match Simulator::new(&runtime, mem, entry_point, args.print_inst_trace) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error creating simulator: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Run simulation
-    match sim.run(args.max_cycles) {
+    // Run simulation using the library
+    match cpu_sim::run_elf(&args.elf, args.max_cycles, args.print_inst_trace) {
         Ok(result) => {
             if let Some(tohost_value) = result.tohost_value {
                 println!(
