@@ -14,22 +14,22 @@ A command-line RISC-V RV32I CPU simulator that runs ELF executables on the Veril
 
 ```bash
 # Basic usage
-cargo run --package cpu-sim -- --elf <path-to-elf-file>
+cargo run --package cpu-sim -- <path-to-elf-file>
 
 # With verbose logging
-cargo run --package cpu-sim -- --elf <path-to-elf-file> --verbose
+cargo run --package cpu-sim -- <path-to-elf-file> --verbose
 
 # Custom cycle limit
-cargo run --package cpu-sim -- --elf <path-to-elf-file> --max-cycles 50000
+cargo run --package cpu-sim -- <path-to-elf-file> --max-cycles 50000
 
 # Or build and run directly
 cargo build --package cpu-sim
-./target/debug/cpu-sim --elf program.elf
+./target/debug/cpu-sim program.elf
 ```
 
 ## Options
 
-- `--elf <PATH>`: Path to the RISC-V ELF executable (required)
+- `<ELF>`: Path to the RISC-V ELF executable (required, positional)
 - `--max-cycles <N>`: Maximum number of cycles to simulate (default: 10000)
 - `--verbose`: Enable verbose debug logging
 - `--help`: Display help information
@@ -66,7 +66,7 @@ The simulator uses the `env_logger` crate. Log levels:
 
 Set the `RUST_LOG` environment variable for fine-grained control:
 ```bash
-RUST_LOG=debug ./target/debug/cpu-sim --elf program.elf
+RUST_LOG=debug ./target/debug/cpu-sim program.elf
 ```
 
 ## Limitations

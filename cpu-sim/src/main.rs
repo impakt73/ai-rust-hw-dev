@@ -10,7 +10,6 @@ use std::path::PathBuf;
 #[command(author, version, about = "RISC-V CPU Simulator")]
 struct Args {
     /// Path to the RISC-V ELF executable
-    #[arg(short, long)]
     elf: PathBuf,
 
     /// Maximum cycles to run (default: 10000)
