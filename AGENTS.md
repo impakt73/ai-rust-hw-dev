@@ -95,6 +95,8 @@ verilator --lint-only rtl/*.sv
 
 All code should pass these checks before committing.
 
+**⚠️ BEFORE PR REVIEW:** Verify all CI checks pass. See [PR Readiness and CI Verification](#pr-readiness-and-ci-verification) for complete requirements.
+
 ## Project Structure
 
 ```
@@ -192,6 +194,100 @@ cargo clippy --fix  # Auto-fix when possible
 - Use descriptive names: `test_cpu_branch_beq_bne`, `test_alu_shift_ops`
 - Group related tests logically
 
+## PR Readiness and CI Verification
+
+### Before Marking a PR Ready for Review
+
+**⚠️ CRITICAL:** A pull request should ONLY be marked as ready for review after verifying that all CI checks pass successfully.
+
+#### Required Pre-Review Checklist
+
+1. **Run all tests locally:**
+   ```bash
+   cargo test --verbose
+   ```
+   All 22 tests must pass.
+
+2. **Verify code formatting:**
+   ```bash
+   cargo fmt -- --check
+   ```
+   No formatting issues should be reported.
+
+3. **Check for clippy warnings:**
+   ```bash
+   cargo clippy -- -D warnings
+   ```
+   No warnings or errors should appear.
+
+4. **Lint SystemVerilog files (if RTL was modified):**
+   ```bash
+   verilator --lint-only rtl/*.sv
+   ```
+   No lint errors should be reported.
+
+5. **Verify CI pipeline status:**
+   - Push your changes to the branch
+   - Wait for GitHub Actions CI workflow to complete
+   - Check that all CI jobs pass successfully (green checkmark)
+   - If any CI check fails, investigate and fix before requesting review
+
+#### How to Check CI Status
+
+Using GitHub CLI:
+```bash
+# Check status of latest workflow run for your branch
+gh run list --branch your-branch-name --limit 1
+
+# View details of a specific run
+gh run view <run-id>
+
+# View logs if there are failures
+gh run view <run-id> --log-failed
+```
+
+Using GitHub Web Interface:
+- Navigate to the "Actions" tab in the repository
+- Find the workflow run for your latest commit
+- Verify all jobs show a green checkmark (✓)
+- Click on any failed jobs to view logs and diagnose issues
+
+#### Common CI Failure Scenarios
+
+**Build failures:**
+- Check that all Rust code compiles without errors
+- Verify SystemVerilog files are syntactically correct
+- Run `cargo build --verbose` locally to reproduce
+
+**Test failures:**
+- Run `cargo test --verbose` locally to identify failing tests
+- Review test output and fix the underlying issues
+- Ensure RTL changes haven't broken existing functionality
+
+**Formatting check failures:**
+- Run `cargo fmt` to auto-format code
+- Commit the formatting changes
+- Push and wait for CI to re-run
+
+**Clippy warnings:**
+- Run `cargo clippy --fix` to auto-fix when possible
+- Manually address remaining warnings
+- Commit fixes and verify CI passes
+
+### CI Pipeline Details
+
+The CI workflow runs automatically on:
+- Every push to branches matching `copilot/**` pattern
+- Every pull request targeting `main` branch
+
+The workflow executes the following checks:
+1. ✅ **Build:** `cargo build --verbose`
+2. ✅ **Tests:** `cargo test --verbose` (all 22 tests must pass)
+3. ⚠️ **Formatting:** `cargo fmt -- --check` (non-blocking but should pass)
+4. ⚠️ **Clippy:** `cargo clippy -- -D warnings` (non-blocking but should pass)
+
+**Note:** While formatting and clippy checks are marked as non-blocking in CI, you should still ensure they pass before requesting review for code quality.
+
 ## Modifying RTL
 
 ### After Changing SystemVerilog Files
@@ -218,6 +314,8 @@ GitHub Actions automatically:
 6. Runs `cargo clippy` (non-blocking)
 
 **Note:** CI runs on every push to `copilot/**` branches and PRs to `main`.
+
+**⚠️ IMPORTANT:** Before marking a PR as ready for review, verify that all CI checks pass. See the [PR Readiness and CI Verification](#pr-readiness-and-ci-verification) section for detailed requirements.
 
 ## Dependencies
 
