@@ -10,10 +10,7 @@ pub struct Simulator<'a> {
 
 impl<'a> Simulator<'a> {
     /// Create a new simulator with the given memory and runtime
-    pub fn new(
-        runtime: &'a riscv_core::VerilatorRuntime,
-        memory: Memory,
-    ) -> Result<Self, String> {
+    pub fn new(runtime: &'a riscv_core::VerilatorRuntime, memory: Memory) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
             .create_model_simple::<Top>()
@@ -62,7 +59,7 @@ impl<'a> Simulator<'a> {
             self.cpu.imem_data = instruction;
 
             // Log execution
-            if self.cycle_count % 1000 == 0 || log::log_enabled!(log::Level::Debug) {
+            if self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug) {
                 log::debug!(
                     "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
                     self.cycle_count,
@@ -110,10 +107,5 @@ impl<'a> Simulator<'a> {
 
         log::warn!("Simulation reached max cycles ({})", max_cycles);
         Ok(self.cycle_count)
-    }
-
-    /// Get the current cycle count
-    pub fn get_cycle_count(&self) -> u64 {
-        self.cycle_count
     }
 }

@@ -30,10 +30,10 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
         .iter()
         .map(|file| format!("{}/{}", rtl_path, file))
         .collect();
-    
+
     // Convert to references that can be passed to VerilatorRuntime::new
     let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-    
+
     VerilatorRuntime::new(
         "target/verilator".into(),
         &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
