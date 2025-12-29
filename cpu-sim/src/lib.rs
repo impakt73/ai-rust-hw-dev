@@ -121,7 +121,8 @@ mod tests {
         let elf_path = workspace_root.join("target/riscv32i-unknown-none-elf/release/rust_test");
 
         // Run the simulation
-        let result = run_elf(&elf_path, 500, false).expect("Rust bare metal simulation should succeed");
+        let result =
+            run_elf(&elf_path, 500, false).expect("Rust bare metal simulation should succeed");
 
         // Verify the program halted with the correct exit code (42 = 0x2a)
         assert_eq!(
