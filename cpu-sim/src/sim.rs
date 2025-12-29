@@ -7,6 +7,7 @@ pub struct Simulator<'a> {
     memory: Memory,
     cycle_count: u64,
     entry_point: u32,
+    print_inst_trace: bool,
 }
 
 impl<'a> Simulator<'a> {
@@ -15,6 +16,7 @@ impl<'a> Simulator<'a> {
         runtime: &'a riscv_core::VerilatorRuntime,
         memory: Memory,
         entry_point: u32,
+        print_inst_trace: bool,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
@@ -26,6 +28,7 @@ impl<'a> Simulator<'a> {
             memory,
             cycle_count: 0,
             entry_point,
+            print_inst_trace,
         })
     }
 
@@ -74,16 +77,6 @@ impl<'a> Simulator<'a> {
             let instruction = self.memory.read_word(pc);
             self.cpu.imem_data = instruction;
 
-            // Log execution
-            if self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug) {
-                log::debug!(
-                    "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
-                    self.cycle_count,
-                    pc,
-                    instruction
-                );
-            }
-
             // Data Memory Access
             let dmem_addr = self.cpu.dmem_addr;
 
@@ -117,6 +110,35 @@ impl<'a> Simulator<'a> {
             self.cpu.eval();
             self.cpu.clk = 1;
             self.cpu.eval();
+
+            // Debug logging: print after evaluation to capture rd_data
+            if self.print_inst_trace {
+                let rs1_value = self.cpu.debug_rs1_data;
+                let rs2_value = self.cpu.debug_rs2_data;
+                let rd_value = self.cpu.debug_rd_data;
+                let disassembled = riscv_core::disasm::disassemble_with_all_values(
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
+                );
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                    self.cycle_count, pc, pc, instruction, disassembled
+                );
+            }
+
+            // Log execution (original verbose logging)
+            if !self.print_inst_trace
+                && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
+            {
+                log::debug!(
+                    "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
+                    self.cycle_count,
+                    pc,
+                    instruction
+                );
+            }
 
             self.cycle_count += 1;
         }

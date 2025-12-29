@@ -2,6 +2,9 @@
 pub use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
 pub use marlin::verilog::prelude::*;
 
+// Disassembler module
+pub mod disasm;
+
 // Define the Top module that can be shared across the workspace
 #[verilog(src = "../rtl/top.sv", name = "top")]
 pub struct Top;
