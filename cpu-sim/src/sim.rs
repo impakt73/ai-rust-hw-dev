@@ -36,8 +36,6 @@ impl<'a> Simulator<'a> {
         self.cpu.rst_n = 1;
         self.cpu.clk = 0;
         self.cpu.eval();
-        self.cpu.clk = 1;
-        self.cpu.eval();
 
         log::info!("CPU reset complete");
     }
