@@ -79,7 +79,10 @@ impl<'a> Simulator<'a> {
 
             // Debug logging: print every cycle
             if self.debug {
-                let disassembled = riscv_core::disasm::disassemble(instruction);
+                let rs1_value = self.cpu.debug_rs1_data;
+                let rs2_value = self.cpu.debug_rs2_data;
+                let disassembled =
+                    riscv_core::disasm::disassemble_with_values(instruction, rs1_value, rs2_value);
                 println!(
                     "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
                     self.cycle_count, pc, pc, instruction, disassembled

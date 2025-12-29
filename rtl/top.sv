@@ -14,7 +14,11 @@ module top (
     output logic [31:0] dmem_addr,
     output logic [31:0] dmem_wdata,
     input  logic [31:0] dmem_rdata,
-    output logic        dmem_we
+    output logic        dmem_we,
+    
+    // Debug outputs (for tracing register values)
+    output logic [31:0] debug_rs1_data,
+    output logic [31:0] debug_rs2_data
 );
 
     // Internal signals
@@ -181,5 +185,9 @@ module top (
             rd_data = alu_result;
         end
     end
+    
+    // Debug outputs
+    assign debug_rs1_data = rs1_data;
+    assign debug_rs2_data = rs2_data;
 
 endmodule
