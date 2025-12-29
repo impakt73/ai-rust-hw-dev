@@ -79,11 +79,13 @@ impl<'a> Simulator<'a> {
 
             // First evaluation: Decode instruction and compute addresses
             // This eval() propagates the new instruction through the combinational
-            // logic, computing outputs like dmem_addr, dmem_we, etc.
+            // logic, computing outputs like dmem_addr (for load/store operations),
+            // dmem_we, dmem_wdata, etc.
             self.cpu.eval();
 
             // Data Memory Read (use address from THIS cycle's computation)
-            // After the first eval, dmem_addr reflects the current instruction's address
+            // After the first eval, dmem_addr contains the data memory address
+            // computed by the current instruction (for load/store operations)
             let dmem_addr = self.cpu.dmem_addr;
             let rdata = self.memory.read_word(dmem_addr);
             self.cpu.dmem_rdata = rdata;

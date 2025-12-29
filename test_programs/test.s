@@ -125,6 +125,8 @@ var_loop:
     auipc x22, 0         # x22 = PC + 0
     
     # ====== All Tests Passed - Store success to tohost ======
+    # Note: tohost address calculation is intentionally duplicated in both
+    # success and failure paths to keep each path self-contained
     lui x31, 0x0         # Load upper immediate (0)
     addi x31, x31, -16   # x31 = 0xFFFFFFF0 (tohost address)
     addi x30, x0, 42     # x30 = 42 (success code)
