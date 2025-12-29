@@ -651,3 +651,99 @@ fn test_cpu_auipc() {
 
     println!("Successfully executed AUIPC instruction");
 }
+
+#[test]
+fn test_cpu_tohost_halt() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // TOHOST address for halt signal
+    const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+
+    // Program: Execute a few instructions, then write to tohost to signal halt
+    // 0x00: ADDI x1, x0, 10    ; x1 = 10
+    // 0x04: ADDI x2, x1, 5     ; x2 = x1 + 5 = 15
+    // 0x08: ADD  x3, x1, x2    ; x3 = x1 + x2 = 25
+    // 0x0C: ADDI x4, x0, -16   ; x4 = -16 = 0xFFFFFFF0 (tohost address, since -16 sign extends)
+    // 0x10: ADDI x5, x0, 1     ; x5 = 1 (exit code)
+    // 0x14: SW   x5, 0(x4)     ; Store x5 to tohost address (triggers halt)
+    imem.insert(0x00, addi(1, 0, 10));
+    imem.insert(0x04, addi(2, 1, 5));
+    imem.insert(0x08, add(3, 1, 2));
+    imem.insert(0x0C, addi(4, 0, -16));
+    imem.insert(0x10, addi(5, 0, 1));
+    imem.insert(0x14, sw(4, 5, 0));
+    imem.insert(0x18, addi(0, 0, 0)); // NOP (should not be reached)
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    let mut tohost_write_detected = false;
+    let mut tohost_value = 0;
+
+    // Execute and watch for tohost write
+    for cycle in 0..20 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads (before eval)
+        let dmem_addr_pre = dut.dmem_addr;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes (after eval)
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            dmem.insert(dmem_addr, dut.dmem_wdata);
+            println!(
+                "Cycle {}: WRITE mem[0x{:08X}] = 0x{:08X}",
+                cycle, dmem_addr, dut.dmem_wdata
+            );
+
+            // Check for tohost write
+            if dmem_addr == TOHOST_ADDR {
+                tohost_write_detected = true;
+                tohost_value = dut.dmem_wdata;
+                println!(
+                    "Cycle {}: TOHOST WRITE DETECTED at 0x{:08X}, value = 0x{:08X}",
+                    cycle, TOHOST_ADDR, tohost_value
+                );
+                break; // Simulate halt behavior
+            }
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, Instruction = 0x{:08X}",
+            cycle, pc, instruction
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify that tohost write was detected
+    assert!(
+        tohost_write_detected,
+        "Expected write to tohost address (0x{:08X}) to be detected",
+        TOHOST_ADDR
+    );
+    assert_eq!(tohost_value, 1, "Expected tohost value to be 1 (exit code)");
+    assert_eq!(
+        dmem.get(&TOHOST_ADDR),
+        Some(&1),
+        "Memory at tohost address should contain the written value"
+    );
+
+    println!("Successfully tested tohost halt mechanism");
+}
