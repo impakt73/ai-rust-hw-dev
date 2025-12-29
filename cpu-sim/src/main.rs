@@ -53,7 +53,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let mut sim = match Simulator::new(&runtime, mem) {
+    let mut sim = match Simulator::new(&runtime, mem, entry_point) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error creating simulator: {}", e);
@@ -62,7 +62,7 @@ fn main() {
     };
 
     // Run simulation
-    match sim.run(args.max_cycles, entry_point) {
+    match sim.run(args.max_cycles) {
         Ok(cycles) => {
             println!("✓ Simulation completed in {} cycles", cycles);
             log::info!("Program finished successfully");

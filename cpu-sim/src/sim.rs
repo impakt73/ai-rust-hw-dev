@@ -6,11 +6,16 @@ pub struct Simulator<'a> {
     cpu: Top<'a>,
     memory: Memory,
     cycle_count: u64,
+    entry_point: u32,
 }
 
 impl<'a> Simulator<'a> {
-    /// Create a new simulator with the given memory and runtime
-    pub fn new(runtime: &'a riscv_core::VerilatorRuntime, memory: Memory) -> Result<Self, String> {
+    /// Create a new simulator with the given memory, runtime, and entry point
+    pub fn new(
+        runtime: &'a riscv_core::VerilatorRuntime,
+        memory: Memory,
+        entry_point: u32,
+    ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
             .create_model_simple::<Top>()
@@ -20,13 +25,18 @@ impl<'a> Simulator<'a> {
             cpu,
             memory,
             cycle_count: 0,
+            entry_point,
         })
     }
 
-    /// Reset the CPU with the specified entry point
-    pub fn reset(&mut self, entry_point: u32) {
+    /// Reset the CPU
+    /// The boot address is set to the entry point before the reset is released,
+    /// ensuring the PC is initialized correctly when the CPU exits reset state.
+    pub fn reset(&mut self) {
         // Set the boot address BEFORE releasing reset
-        self.cpu.boot_addr = entry_point;
+        // This is critical because the PC register samples boot_addr on the rising
+        // edge of the clock while reset is deasserted
+        self.cpu.boot_addr = self.entry_point;
 
         // Drive reset low
         self.cpu.rst_n = 0;
@@ -42,13 +52,16 @@ impl<'a> Simulator<'a> {
         self.cpu.clk = 1;
         self.cpu.eval();
 
-        log::info!("CPU reset complete with entry point: 0x{:08x}", entry_point);
+        log::info!(
+            "CPU reset complete with entry point: 0x{:08x}",
+            self.entry_point
+        );
     }
 
     /// Run the simulation for up to max_cycles
     /// Returns Ok(cycles) on normal completion or Err on error
-    pub fn run(&mut self, max_cycles: u64, entry_point: u32) -> Result<u64, String> {
-        self.reset(entry_point);
+    pub fn run(&mut self, max_cycles: u64) -> Result<u64, String> {
+        self.reset();
 
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
