@@ -30,12 +30,14 @@ impl<'a> Simulator<'a> {
     }
 
     /// Reset the CPU
-    /// The boot address is set to the entry point before the reset is released,
-    /// ensuring the PC is initialized correctly when the CPU exits reset state.
+    /// The boot address is set to the entry point while reset is asserted so that
+    /// the PC samples this value through the asynchronous reset and then holds it
+    /// when reset is released.
     pub fn reset(&mut self) {
-        // Set the boot address BEFORE releasing reset
-        // This is critical because the PC register samples boot_addr on the rising
-        // edge of the clock while reset is deasserted
+        // Set the boot address BEFORE asserting and during reset
+        // This is critical because the PC register uses an asynchronous reset that
+        // loads boot_addr whenever rst_n is low; boot_addr must be stable while
+        // reset is asserted so the PC will hold this value after reset is released.
         self.cpu.boot_addr = self.entry_point;
 
         // Drive reset low
