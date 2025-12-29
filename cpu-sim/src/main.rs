@@ -33,16 +33,17 @@ fn main() {
 
     // Initialize Memory and load ELF
     let mut mem = Memory::new();
-    match mem.load_elf(&args.elf) {
-        Ok(_entry_point) => {
+    let entry_point = match mem.load_elf(&args.elf) {
+        Ok(entry_point) => {
             log::info!("ELF loaded successfully");
-            log::debug!("Note: CPU starts at 0x00000000, ELF entry point is ignored");
+            log::info!("Entry point: 0x{:08x}", entry_point);
+            entry_point
         }
         Err(e) => {
             eprintln!("Error loading ELF: {}", e);
             std::process::exit(1);
         }
-    }
+    };
 
     // Initialize CPU Simulator
     let runtime = match riscv_core::create_cpu_runtime() {
@@ -52,7 +53,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let mut sim = match Simulator::new(&runtime, mem) {
+    let mut sim = match Simulator::new(&runtime, mem, entry_point) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error creating simulator: {}", e);

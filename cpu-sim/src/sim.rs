@@ -6,11 +6,16 @@ pub struct Simulator<'a> {
     cpu: Top<'a>,
     memory: Memory,
     cycle_count: u64,
+    entry_point: u32,
 }
 
 impl<'a> Simulator<'a> {
-    /// Create a new simulator with the given memory and runtime
-    pub fn new(runtime: &'a riscv_core::VerilatorRuntime, memory: Memory) -> Result<Self, String> {
+    /// Create a new simulator with the given memory, runtime, and entry point
+    pub fn new(
+        runtime: &'a riscv_core::VerilatorRuntime,
+        memory: Memory,
+        entry_point: u32,
+    ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
             .create_model_simple::<Top>()
@@ -20,11 +25,21 @@ impl<'a> Simulator<'a> {
             cpu,
             memory,
             cycle_count: 0,
+            entry_point,
         })
     }
 
     /// Reset the CPU
+    /// The boot address is set to the entry point while reset is asserted so that
+    /// the PC samples this value through the asynchronous reset and then holds it
+    /// when reset is released.
     pub fn reset(&mut self) {
+        // Set the boot address BEFORE asserting and during reset
+        // This is critical because the PC register uses an asynchronous reset that
+        // loads boot_addr whenever rst_n is low; boot_addr must be stable while
+        // reset is asserted so the PC will hold this value after reset is released.
+        self.cpu.boot_addr = self.entry_point;
+
         // Drive reset low
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
@@ -39,7 +54,10 @@ impl<'a> Simulator<'a> {
         self.cpu.clk = 1;
         self.cpu.eval();
 
-        log::info!("CPU reset complete");
+        log::info!(
+            "CPU reset complete with entry point: 0x{:08x}",
+            self.entry_point
+        );
     }
 
     /// Run the simulation for up to max_cycles
