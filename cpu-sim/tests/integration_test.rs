@@ -1,14 +1,17 @@
-/// Integration tests for the CPU simulator
+use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
 fn test_run_comprehensive_elf() {
     // Run the CPU simulator with the comprehensive test ELF file
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent().unwrap();
+    
     let output = Command::new(env!("CARGO_BIN_EXE_cpu-sim"))
         .arg("test_programs/test.elf")
         .arg("--max-cycles")
         .arg("500")
-        .current_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/..")
+        .current_dir(workspace_root)
         .output()
         .expect("Failed to execute cpu-sim");
 
@@ -44,12 +47,15 @@ fn test_run_comprehensive_elf() {
 #[test]
 fn test_run_with_instruction_trace() {
     // Run the CPU simulator with instruction trace enabled
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent().unwrap();
+    
     let output = Command::new(env!("CARGO_BIN_EXE_cpu-sim"))
         .arg("test_programs/test.elf")
         .arg("--print-inst-trace")
         .arg("--max-cycles")
         .arg("500")
-        .current_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/..")
+        .current_dir(workspace_root)
         .output()
         .expect("Failed to execute cpu-sim");
 

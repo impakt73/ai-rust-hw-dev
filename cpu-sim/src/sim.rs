@@ -78,15 +78,21 @@ impl<'a> Simulator<'a> {
             self.cpu.imem_data = instruction;
 
             // First evaluation: Decode instruction and compute addresses
+            // This eval() propagates the new instruction through the combinational
+            // logic, computing outputs like dmem_addr, dmem_we, etc.
             self.cpu.eval();
 
             // Data Memory Read (use address from THIS cycle's computation)
-            // After eval, dmem_addr reflects the current instruction's address
+            // After the first eval, dmem_addr reflects the current instruction's address
             let dmem_addr = self.cpu.dmem_addr;
             let rdata = self.memory.read_word(dmem_addr);
             self.cpu.dmem_rdata = rdata;
 
             // Second evaluation: Propagate loaded data to rd_data
+            // For load instructions, this eval() propagates dmem_rdata through the
+            // combinational path to rd_data so it can be written to the register file
+            // on the next clock edge. This is necessary because Verilator requires
+            // explicit eval() calls to propagate combinational logic changes.
             self.cpu.eval();
 
             // Data Memory Write
