@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 marlin = { version = "0.10", features = ["verilog"] }
-bitflags = "2.4"
 
 [build-dependencies]
 marlin = { version = "0.10", features = ["verilog"] }

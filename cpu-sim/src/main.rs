@@ -35,11 +35,9 @@ fn main() {
     // Initialize Memory and load ELF
     let mut mem = Memory::new();
     match mem.load_elf(&args.elf) {
-        Ok(entry_point) => {
-            log::info!(
-                "ELF loaded successfully, entry point: 0x{:08x}",
-                entry_point
-            );
+        Ok(_entry_point) => {
+            log::info!("ELF loaded successfully");
+            log::debug!("Note: CPU starts at 0x00000000, ELF entry point is ignored");
         }
         Err(e) => {
             eprintln!("Error loading ELF: {}", e);

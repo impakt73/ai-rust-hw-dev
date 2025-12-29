@@ -57,7 +57,7 @@ impl<'a> Simulator<'a> {
             self.cpu.imem_data = instruction;
 
             // Log execution
-            if self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug) {
+            if self.cycle_count % 1000 == 0 || log::log_enabled!(log::Level::Debug) {
                 log::debug!(
                     "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
                     self.cycle_count,

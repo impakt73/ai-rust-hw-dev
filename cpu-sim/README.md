@@ -47,7 +47,9 @@ sw x2, 0(x1)        # Write x2 to tohost (triggers halt)
 
 ## Memory Model
 
-The simulator uses a sparse byte-addressable memory model (HashMap-based). The CPU's PC resets to address `0x00000000`, so ELF programs should be linked to start at address 0 or include appropriate startup code.
+The simulator uses a sparse byte-addressable memory model (HashMap-based). 
+
+**Important:** The CPU's PC resets to address `0x00000000`. The ELF entry point is currently **ignored** - execution always starts at address 0. Programs should be linked to start at address 0, or include a trampoline at address 0 that jumps to the actual entry point.
 
 ## Architecture
 
