@@ -1,8 +1,10 @@
 pub mod memory;
 pub mod sim;
 
+pub use sim::SimulationResult;
+
 use memory::Memory;
-use sim::{SimulationResult, Simulator};
+use sim::Simulator;
 use std::path::Path;
 
 /// Run an ELF file on the simulated CPU
@@ -15,6 +17,16 @@ use std::path::Path;
 /// # Returns
 /// * `Ok(SimulationResult)` on success
 /// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::run_elf;
+/// use std::path::Path;
+///
+/// let result = run_elf(Path::new("test.elf"), 1000, false)?;
+/// assert_eq!(result.tohost_value, Some(0x2a));
+/// # Ok::<(), String>(())
+/// ```
 pub fn run_elf(
     elf_path: &Path,
     max_cycles: u64,
@@ -80,7 +92,7 @@ mod tests {
         let elf_path = workspace_root.join("test_programs/test.elf");
 
         // Run the simulation with instruction trace enabled
-        // Note: We can't easily verify the trace output in a unit test,
+        // Note: We can't easily capture and verify the trace output programmatically,
         // but we can verify that the simulation still completes successfully
         let result = run_elf(&elf_path, 500, true).expect("Simulation with trace should succeed");
 
