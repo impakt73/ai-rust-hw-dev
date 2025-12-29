@@ -114,11 +114,10 @@ mod tests {
         // Initialize logger for tests (ignore if already initialized)
         let _ = env_logger::builder().is_test(true).try_init();
 
-        // Find the rust test program ELF
-        // The rust-test-program is a dev-dependency that builds a binary
+        // Load the Rust test program ELF from test_programs directory
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let workspace_root = manifest_dir.parent().unwrap();
-        let elf_path = workspace_root.join("target/riscv32i-unknown-none-elf/release/rust_test");
+        let elf_path = workspace_root.join("test_programs/rust_test.elf");
 
         // Run the simulation
         let result =
