@@ -23,12 +23,29 @@ steps:
       - rustc --version
       - cargo --version
 
+  - name: Install RISC-V Rust Target
+    description: Install the RISC-V bare-metal Rust target for cross-compilation
+    commands:
+      - rustup target add riscv32i-unknown-none-elf
+    verification:
+      - rustup target list --installed | grep riscv32i-unknown-none-elf
+
+  - name: Install RISC-V C/C++ Toolchain
+    description: Install the RISC-V GCC cross-compilation toolchain for building C/C++ programs
+    commands:
+      - sudo apt-get update
+      - sudo apt-get install -y gcc-riscv64-unknown-elf
+    verification:
+      - riscv64-unknown-elf-gcc --version
+
   - name: Verify Dependencies
     description: Verify that all required dependencies are installed correctly
     commands:
       - verilator --version
       - rustc --version
       - cargo --version
+      - rustup target list --installed | grep riscv32i-unknown-none-elf
+      - riscv64-unknown-elf-gcc --version
 
   - name: Build Project
     description: Build the project to ensure everything is set up correctly
