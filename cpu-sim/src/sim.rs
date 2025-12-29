@@ -77,10 +77,20 @@ impl<'a> Simulator<'a> {
             let instruction = self.memory.read_word(pc);
             self.cpu.imem_data = instruction;
 
-            // Data Memory Access
-            let dmem_addr = self.cpu.dmem_addr;
+            // First evaluation: Decode instruction and compute addresses
+            self.cpu.eval();
 
-            // Handle write
+            // Data Memory Read (use address from THIS cycle's computation)
+            // After eval, dmem_addr reflects the current instruction's address
+            let dmem_addr = self.cpu.dmem_addr;
+            let rdata = self.memory.read_word(dmem_addr);
+            self.cpu.dmem_rdata = rdata;
+
+            // Second evaluation: Propagate loaded data to rd_data
+            self.cpu.eval();
+
+            // Data Memory Write
+            // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
                 self.memory.write_word(dmem_addr, wdata);
@@ -100,10 +110,6 @@ impl<'a> Simulator<'a> {
                     return Ok(self.cycle_count);
                 }
             }
-
-            // Always read from memory (for loads)
-            let rdata = self.memory.read_word(dmem_addr);
-            self.cpu.dmem_rdata = rdata;
 
             // Clock tick
             self.cpu.clk = 0;
