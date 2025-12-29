@@ -3,11 +3,21 @@
 /// Decodes 32-bit RISC-V instructions into human-readable assembly format
 /// Disassemble a 32-bit RISC-V instruction into a human-readable string
 pub fn disassemble(instruction: u32) -> String {
-    disassemble_with_values(instruction, 0, 0)
+    disassemble_with_all_values(instruction, 0, 0, 0)
 }
 
-/// Disassemble a 32-bit RISC-V instruction with register values
+/// Disassemble a 32-bit RISC-V instruction with register values (legacy, without rd_value)
 pub fn disassemble_with_values(instruction: u32, rs1_value: u32, rs2_value: u32) -> String {
+    disassemble_with_all_values(instruction, rs1_value, rs2_value, 0)
+}
+
+/// Disassemble a 32-bit RISC-V instruction with all register values including destination
+pub fn disassemble_with_all_values(
+    instruction: u32,
+    rs1_value: u32,
+    rs2_value: u32,
+    rd_value: u32,
+) -> String {
     let opcode = instruction & 0x7F;
     let rd = ((instruction >> 7) & 0x1F) as u8;
     let funct3 = ((instruction >> 12) & 0x7) as u8;
@@ -25,9 +35,10 @@ pub fn disassemble_with_values(instruction: u32, rs1_value: u32, rs2_value: u32)
             funct7,
             rs1_value,
             rs2_value,
+            rd_value,
         ),
-        0b0010011 => disassemble_i_type_alu(instruction, rd, funct3, rs1, rs1_value),
-        0b0000011 => disassemble_load(rd, funct3, rs1, get_imm_i(instruction), rs1_value),
+        0b0010011 => disassemble_i_type_alu(instruction, rd, funct3, rs1, rs1_value, rd_value),
+        0b0000011 => disassemble_load(rd, funct3, rs1, get_imm_i(instruction), rs1_value, rd_value),
         0b0100011 => disassemble_store(
             funct3,
             rs1,
@@ -44,12 +55,30 @@ pub fn disassemble_with_values(instruction: u32, rs1_value: u32, rs2_value: u32)
             rs1_value,
             rs2_value,
         ),
-        0b0110111 => format!("lui x{}, 0x{:x}", rd, get_imm_u(instruction) >> 12),
-        0b0010111 => format!("auipc x{}, 0x{:x}", rd, get_imm_u(instruction) >> 12),
-        0b1101111 => format!("jal x{}, {}", rd, get_imm_j(instruction) as i32),
+        0b0110111 => format!(
+            "lui x{}=0x{:x}, 0x{:x}",
+            rd,
+            rd_value,
+            get_imm_u(instruction) >> 12
+        ),
+        0b0010111 => format!(
+            "auipc x{}=0x{:x}, 0x{:x}",
+            rd,
+            rd_value,
+            get_imm_u(instruction) >> 12
+        ),
+        0b1101111 => format!(
+            "jal x{}=0x{:x}, {}",
+            rd,
+            rd_value,
+            get_imm_j(instruction) as i32
+        ),
         0b1100111 => {
             let imm = get_imm_i(instruction) as i32;
-            format!("jalr x{}, {}(x{}=0x{:x})", rd, imm, rs1, rs1_value)
+            format!(
+                "jalr x{}=0x{:x}, {}(x{}=0x{:x})",
+                rd, rd_value, imm, rs1, rs1_value
+            )
         }
         _ => format!("unknown opcode 0x{:02x}", opcode),
     }
@@ -66,6 +95,7 @@ fn disassemble_r_type(
     funct7: u8,
     rs1_value: u32,
     rs2_value: u32,
+    rd_value: u32,
 ) -> String {
     let mnemonic = match (funct3, funct7) {
         (0b000, 0b0000000) => "add",
@@ -81,13 +111,20 @@ fn disassemble_r_type(
         _ => return format!("unknown R-type f3={} f7={}", funct3, funct7),
     };
     format!(
-        "{} x{}, x{}=0x{:x}, x{}=0x{:x}",
-        mnemonic, rd, rs1, rs1_value, rs2, rs2_value
+        "{} x{}=0x{:x}, x{}=0x{:x}, x{}=0x{:x}",
+        mnemonic, rd, rd_value, rs1, rs1_value, rs2, rs2_value
     )
 }
 
 /// Disassemble I-type ALU instructions (immediate operations)
-fn disassemble_i_type_alu(instruction: u32, rd: u8, funct3: u8, rs1: u8, rs1_value: u32) -> String {
+fn disassemble_i_type_alu(
+    instruction: u32,
+    rd: u8,
+    funct3: u8,
+    rs1: u8,
+    rs1_value: u32,
+    rd_value: u32,
+) -> String {
     let imm = get_imm_i(instruction) as i32;
     let shamt = (instruction >> 20) & 0x1F;
     let funct7 = (instruction >> 25) & 0x7F;
@@ -113,16 +150,26 @@ fn disassemble_i_type_alu(instruction: u32, rd: u8, funct3: u8, rs1: u8, rs1_val
     // Shift instructions use shamt instead of full immediate
     if matches!(funct3, 0b001 | 0b101) {
         format!(
-            "{} x{}, x{}=0x{:x}, {}",
-            mnemonic, rd, rs1, rs1_value, shamt
+            "{} x{}=0x{:x}, x{}=0x{:x}, {}",
+            mnemonic, rd, rd_value, rs1, rs1_value, shamt
         )
     } else {
-        format!("{} x{}, x{}=0x{:x}, {}", mnemonic, rd, rs1, rs1_value, imm)
+        format!(
+            "{} x{}=0x{:x}, x{}=0x{:x}, {}",
+            mnemonic, rd, rd_value, rs1, rs1_value, imm
+        )
     }
 }
 
 /// Disassemble load instructions
-fn disassemble_load(rd: u8, funct3: u8, rs1: u8, imm: u32, rs1_value: u32) -> String {
+fn disassemble_load(
+    rd: u8,
+    funct3: u8,
+    rs1: u8,
+    imm: u32,
+    rs1_value: u32,
+    rd_value: u32,
+) -> String {
     let imm_signed = imm as i32;
     let mnemonic = match funct3 {
         0b010 => "lw",
@@ -133,8 +180,8 @@ fn disassemble_load(rd: u8, funct3: u8, rs1: u8, imm: u32, rs1_value: u32) -> St
         _ => return format!("unknown load f3={}", funct3),
     };
     format!(
-        "{} x{}, {}(x{}=0x{:x})",
-        mnemonic, rd, imm_signed, rs1, rs1_value
+        "{} x{}=0x{:x}, {}(x{}=0x{:x})",
+        mnemonic, rd, rd_value, imm_signed, rs1, rs1_value
     )
 }
 
@@ -252,21 +299,21 @@ mod tests {
     fn test_disassemble_add() {
         // add x1, x2, x3
         let instruction = 0x003100B3;
-        assert_eq!(disassemble(instruction), "add x1, x2=0x0, x3=0x0");
+        assert_eq!(disassemble(instruction), "add x1=0x0, x2=0x0, x3=0x0");
     }
 
     #[test]
     fn test_disassemble_addi() {
         // addi x1, x2, 42
         let instruction = 0x02A10093;
-        assert_eq!(disassemble(instruction), "addi x1, x2=0x0, 42");
+        assert_eq!(disassemble(instruction), "addi x1=0x0, x2=0x0, 42");
     }
 
     #[test]
     fn test_disassemble_lw() {
         // lw x1, 4(x2)
         let instruction = 0x00412083;
-        assert_eq!(disassemble(instruction), "lw x1, 4(x2=0x0)");
+        assert_eq!(disassemble(instruction), "lw x1=0x0, 4(x2=0x0)");
     }
 
     #[test]
@@ -287,6 +334,6 @@ mod tests {
     fn test_disassemble_jal() {
         // jal x1, 0x100
         let instruction = 0x100000EF;
-        assert_eq!(disassemble(instruction), "jal x1, 256");
+        assert_eq!(disassemble(instruction), "jal x1=0x0, 256");
     }
 }

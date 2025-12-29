@@ -20,9 +20,9 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Enable debug logging (prints every instruction executed)
-    #[arg(short, long)]
-    debug: bool,
+    /// Print instruction trace (prints every instruction executed)
+    #[arg(long)]
+    print_inst_trace: bool,
 }
 
 fn main() {
@@ -57,7 +57,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let mut sim = match Simulator::new(&runtime, mem, entry_point, args.debug) {
+    let mut sim = match Simulator::new(&runtime, mem, entry_point, args.print_inst_trace) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error creating simulator: {}", e);

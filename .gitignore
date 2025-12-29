@@ -28,3 +28,6 @@ obj_dir/
 # Test programs and scripts
 test_program.elf
 create_test_elf.py
+
+# Intermediate build files
+*.o

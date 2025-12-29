@@ -18,7 +18,8 @@ module top (
     
     // Debug outputs (for tracing register values)
     output logic [31:0] debug_rs1_data,
-    output logic [31:0] debug_rs2_data
+    output logic [31:0] debug_rs2_data,
+    output logic [31:0] debug_rd_data
 );
 
     // Internal signals
@@ -189,5 +190,6 @@ module top (
     // Debug outputs
     assign debug_rs1_data = rs1_data;
     assign debug_rs2_data = rs2_data;
+    assign debug_rd_data = rd_data;
 
 endmodule
