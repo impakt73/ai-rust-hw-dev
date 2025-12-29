@@ -52,6 +52,14 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     
+    - name: Build CPU simulator
+      run: cargo build --package cpu-sim --verbose
+    
+    - name: Run CPU simulator with test ELF
+      run: |
+        ./target/debug/cpu-sim test_programs/test.elf --max-cycles 500
+        echo "✓ CPU simulator test ELF execution completed successfully"
+    
     - name: Check formatting
       run: cargo fmt -- --check
       continue-on-error: true
