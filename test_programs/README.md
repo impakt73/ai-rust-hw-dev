@@ -30,3 +30,13 @@ cargo run --bin cpu-sim -- test_programs/test.elf --debug
 ```
 
 The `--debug` flag will show cycle-by-cycle execution with disassembled instructions and register values.
+
+## Rust Bare Metal Test Program
+
+The repository also includes a bare metal Rust test program in the `rust-test-program` directory. This program implements similar test logic to test.s but is written in Rust using inline assembly. See `rust-test-program/README.md` for more details.
+
+The Rust test program is automatically tested by the cpu-sim test suite:
+
+```bash
+cargo test --package cpu-sim test_rust_bare_metal_elf
+```
