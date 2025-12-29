@@ -27,7 +27,7 @@ impl<'a> Simulator<'a> {
     pub fn reset(&mut self, entry_point: u32) {
         // Set the boot address BEFORE releasing reset
         self.cpu.boot_addr = entry_point;
-        
+
         // Drive reset low
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
