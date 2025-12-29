@@ -196,18 +196,15 @@ mod tests {
 
         // Verify the FIFO data
         let received_data = fifo_data.lock().unwrap();
-        let received_string = String::from_utf8(received_data.clone())
-            .expect("FIFO data should be valid UTF-8");
-        
+        let received_string =
+            String::from_utf8(received_data.clone()).expect("FIFO data should be valid UTF-8");
+
         assert_eq!(
             received_string, "Hello World!",
             "Expected to receive 'Hello World!' via FIFO"
         );
 
-        println!(
-            "✓ FIFO hello world test passed in {} cycles",
-            result.cycles
-        );
+        println!("✓ FIFO hello world test passed in {} cycles", result.cycles);
         println!("✓ Received via FIFO: '{}'", received_string);
     }
 }

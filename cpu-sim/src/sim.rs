@@ -89,19 +89,19 @@ where
         while self.cpu.fifo_empty == 0 {
             let data = self.cpu.fifo_rd_data;
             log::debug!("FIFO drain: 0x{:02x} ('{}')", data, data as char);
-            
+
             // Invoke callback if set
             if let Some(ref mut callback) = self.fifo_callback {
                 callback(data);
             }
-            
+
             // Assert rd_en and clock to pop the FIFO
             self.cpu.fifo_rd_en = 1;
             self.cpu.clk = 0;
             self.cpu.eval();
             self.cpu.clk = 1;
             self.cpu.eval();
-            
+
             // Deassert rd_en
             self.cpu.fifo_rd_en = 0;
             self.cpu.eval();
@@ -148,12 +148,12 @@ where
             // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
-                
+
                 // MMIO region check (0xF0000000 - 0xF000000F)
                 const MMIO_BASE: u32 = 0xF0000000;
                 const MMIO_SIZE: u32 = 0x10;
-                let is_mmio = dmem_addr >= MMIO_BASE && dmem_addr < (MMIO_BASE + MMIO_SIZE);
-                
+                let is_mmio = (MMIO_BASE..(MMIO_BASE + MMIO_SIZE)).contains(&dmem_addr);
+
                 // Only write to memory if not MMIO
                 if !is_mmio {
                     self.memory.write_word(dmem_addr, wdata);
@@ -163,11 +163,7 @@ where
                         wdata
                     );
                 } else {
-                    log::debug!(
-                        "MMIO Write: addr=0x{:08x}, data=0x{:08x}",
-                        dmem_addr,
-                        wdata
-                    );
+                    log::debug!("MMIO Write: addr=0x{:08x}, data=0x{:08x}", dmem_addr, wdata);
                 }
 
                 // Check for halt signal
