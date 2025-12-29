@@ -23,8 +23,11 @@ impl<'a> Simulator<'a> {
         })
     }
 
-    /// Reset the CPU
-    pub fn reset(&mut self) {
+    /// Reset the CPU with the specified entry point
+    pub fn reset(&mut self, entry_point: u32) {
+        // Set the boot address BEFORE releasing reset
+        self.cpu.boot_addr = entry_point;
+        
         // Drive reset low
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
@@ -39,13 +42,13 @@ impl<'a> Simulator<'a> {
         self.cpu.clk = 1;
         self.cpu.eval();
 
-        log::info!("CPU reset complete");
+        log::info!("CPU reset complete with entry point: 0x{:08x}", entry_point);
     }
 
     /// Run the simulation for up to max_cycles
     /// Returns Ok(cycles) on normal completion or Err on error
-    pub fn run(&mut self, max_cycles: u64) -> Result<u64, String> {
-        self.reset();
+    pub fn run(&mut self, max_cycles: u64, entry_point: u32) -> Result<u64, String> {
+        self.reset(entry_point);
 
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
