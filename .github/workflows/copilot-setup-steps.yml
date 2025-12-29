@@ -24,10 +24,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Install Verilator
+      - name: Install Verilator and RISC-V GCC
         run: |
           sudo apt-get update
-          sudo apt-get install -y verilator
+          sudo apt-get install -y verilator gcc-riscv64-unknown-elf
       
       - name: Verify Verilator installation
         run: verilator --version
@@ -48,16 +48,11 @@ jobs:
       - name: Verify RISC-V Rust target
         run: rustup target list --installed | grep riscv32i-unknown-none-elf
       
-      - name: Install RISC-V C/C++ Toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-riscv64-unknown-elf
-      
       - name: Verify RISC-V GCC installation
         run: riscv64-unknown-elf-gcc --version
       
       - name: Cache Cargo dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
