@@ -19,6 +19,10 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Enable debug logging (prints every instruction executed)
+    #[arg(short, long)]
+    debug: bool,
 }
 
 fn main() {
@@ -53,7 +57,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let mut sim = match Simulator::new(&runtime, mem, entry_point) {
+    let mut sim = match Simulator::new(&runtime, mem, entry_point, args.debug) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error creating simulator: {}", e);

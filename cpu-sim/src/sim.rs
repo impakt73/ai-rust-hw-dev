@@ -7,6 +7,7 @@ pub struct Simulator<'a> {
     memory: Memory,
     cycle_count: u64,
     entry_point: u32,
+    debug: bool,
 }
 
 impl<'a> Simulator<'a> {
@@ -15,6 +16,7 @@ impl<'a> Simulator<'a> {
         runtime: &'a riscv_core::VerilatorRuntime,
         memory: Memory,
         entry_point: u32,
+        debug: bool,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
@@ -26,6 +28,7 @@ impl<'a> Simulator<'a> {
             memory,
             cycle_count: 0,
             entry_point,
+            debug,
         })
     }
 
@@ -74,8 +77,19 @@ impl<'a> Simulator<'a> {
             let instruction = self.memory.read_word(pc);
             self.cpu.imem_data = instruction;
 
-            // Log execution
-            if self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug) {
+            // Debug logging: print every cycle
+            if self.debug {
+                let disassembled = riscv_core::disasm::disassemble(instruction);
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                    self.cycle_count, pc, pc, instruction, disassembled
+                );
+            }
+
+            // Log execution (original verbose logging)
+            if !self.debug
+                && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
+            {
                 log::debug!(
                     "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
                     self.cycle_count,
