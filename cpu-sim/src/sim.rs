@@ -1,6 +1,13 @@
 use crate::memory::Memory;
 use riscv_core::Top;
 
+/// Result of a simulation run
+#[derive(Debug)]
+pub struct SimulationResult {
+    pub cycles: u64,
+    pub tohost_value: Option<u32>,
+}
+
 /// RISC-V CPU Simulator
 pub struct Simulator<'a> {
     cpu: Top<'a>,
@@ -62,8 +69,8 @@ impl<'a> Simulator<'a> {
     }
 
     /// Run the simulation for up to max_cycles
-    /// Returns Ok(cycles) on normal completion or Err on error
-    pub fn run(&mut self, max_cycles: u64) -> Result<u64, String> {
+    /// Returns Ok(SimulationResult) on normal completion or Err on error
+    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
         self.reset();
 
         // Magic address for halt signal (tohost mechanism)
@@ -77,10 +84,28 @@ impl<'a> Simulator<'a> {
             let instruction = self.memory.read_word(pc);
             self.cpu.imem_data = instruction;
 
-            // Data Memory Access
-            let dmem_addr = self.cpu.dmem_addr;
+            // First evaluation: Decode instruction and compute addresses
+            // This eval() propagates the new instruction through the combinational
+            // logic, computing outputs like dmem_addr (for load/store operations),
+            // dmem_we, dmem_wdata, etc.
+            self.cpu.eval();
 
-            // Handle write
+            // Data Memory Read (use address from THIS cycle's computation)
+            // After the first eval, dmem_addr contains the data memory address
+            // computed by the current instruction (for load/store operations)
+            let dmem_addr = self.cpu.dmem_addr;
+            let rdata = self.memory.read_word(dmem_addr);
+            self.cpu.dmem_rdata = rdata;
+
+            // Second evaluation: Propagate loaded data to rd_data
+            // For load instructions, this eval() propagates dmem_rdata through the
+            // combinational path to rd_data so it can be written to the register file
+            // on the next clock edge. This is necessary because Verilator requires
+            // explicit eval() calls to propagate combinational logic changes.
+            self.cpu.eval();
+
+            // Data Memory Write
+            // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
                 self.memory.write_word(dmem_addr, wdata);
@@ -97,13 +122,12 @@ impl<'a> Simulator<'a> {
                         TOHOST_ADDR,
                         wdata
                     );
-                    return Ok(self.cycle_count);
+                    return Ok(SimulationResult {
+                        cycles: self.cycle_count,
+                        tohost_value: Some(wdata),
+                    });
                 }
             }
-
-            // Always read from memory (for loads)
-            let rdata = self.memory.read_word(dmem_addr);
-            self.cpu.dmem_rdata = rdata;
 
             // Clock tick
             self.cpu.clk = 0;
@@ -144,6 +168,9 @@ impl<'a> Simulator<'a> {
         }
 
         log::warn!("Simulation reached max cycles ({})", max_cycles);
-        Ok(self.cycle_count)
+        Ok(SimulationResult {
+            cycles: self.cycle_count,
+            tohost_value: None,
+        })
     }
 }
