@@ -58,7 +58,7 @@ The prebuilt ELF is included in this directory. To rebuild from source:
 ```bash
 cd rust-test-program
 cargo build --release --target riscv32i-unknown-none-elf --bin rust_test
-cp ../target/riscv32i-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
+cp target/riscv32i-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
 ```
 
 See `rust-test-program/README.md` for more details.

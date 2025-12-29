@@ -24,12 +24,12 @@ cargo build --release --target riscv32i-unknown-none-elf --bin rust_test
 
 The resulting ELF file will be at:
 ```
-../target/riscv32i-unknown-none-elf/release/rust_test
+target/riscv32i-unknown-none-elf/release/rust_test
 ```
 
 After building, copy it to the test_programs directory:
 ```bash
-cp ../target/riscv32i-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
+cp target/riscv32i-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
 ```
 
 ## Testing
