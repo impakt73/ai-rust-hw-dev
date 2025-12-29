@@ -67,8 +67,15 @@ fn main() {
 
     // Run simulation
     match sim.run(args.max_cycles) {
-        Ok(cycles) => {
-            println!("✓ Simulation completed in {} cycles", cycles);
+        Ok(result) => {
+            if let Some(tohost_value) = result.tohost_value {
+                println!(
+                    "✓ Simulation completed in {} cycles (tohost value: 0x{:08x})",
+                    result.cycles, tohost_value
+                );
+            } else {
+                println!("✓ Simulation completed in {} cycles", result.cycles);
+            }
             log::info!("Program finished successfully");
         }
         Err(e) => {

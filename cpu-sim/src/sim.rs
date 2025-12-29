@@ -1,6 +1,13 @@
 use crate::memory::Memory;
 use riscv_core::Top;
 
+/// Result of a simulation run
+#[derive(Debug)]
+pub struct SimulationResult {
+    pub cycles: u64,
+    pub tohost_value: Option<u32>,
+}
+
 /// RISC-V CPU Simulator
 pub struct Simulator<'a> {
     cpu: Top<'a>,
@@ -62,8 +69,8 @@ impl<'a> Simulator<'a> {
     }
 
     /// Run the simulation for up to max_cycles
-    /// Returns Ok(cycles) on normal completion or Err on error
-    pub fn run(&mut self, max_cycles: u64) -> Result<u64, String> {
+    /// Returns Ok(SimulationResult) on normal completion or Err on error
+    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
         self.reset();
 
         // Magic address for halt signal (tohost mechanism)
@@ -115,7 +122,10 @@ impl<'a> Simulator<'a> {
                         TOHOST_ADDR,
                         wdata
                     );
-                    return Ok(self.cycle_count);
+                    return Ok(SimulationResult {
+                        cycles: self.cycle_count,
+                        tohost_value: Some(wdata),
+                    });
                 }
             }
 
@@ -158,6 +168,9 @@ impl<'a> Simulator<'a> {
         }
 
         log::warn!("Simulation reached max cycles ({})", max_cycles);
-        Ok(self.cycle_count)
+        Ok(SimulationResult {
+            cycles: self.cycle_count,
+            tohost_value: None,
+        })
     }
 }

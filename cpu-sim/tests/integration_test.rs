@@ -6,7 +6,7 @@ fn test_run_comprehensive_elf() {
     // Run the CPU simulator with the comprehensive test ELF file
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent().unwrap();
-    
+
     let output = Command::new(env!("CARGO_BIN_EXE_cpu-sim"))
         .arg("test_programs/test.elf")
         .arg("--max-cycles")
@@ -33,12 +33,11 @@ fn test_run_comprehensive_elf() {
     );
 
     // Verify the program halted with the correct exit code (42 = 0x2a)
-    // The log output goes to stderr
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The tohost value is now printed to stdout
     assert!(
-        stderr.contains("value=0x0000002a"),
-        "Expected halt value 0x2a (42) not found in stderr:\n{}",
-        stderr
+        stdout.contains("tohost value: 0x0000002a"),
+        "Expected tohost value 0x2a (42) not found in stdout:\n{}",
+        stdout
     );
 
     println!("✓ Comprehensive test ELF executed successfully");
@@ -49,7 +48,7 @@ fn test_run_with_instruction_trace() {
     // Run the CPU simulator with instruction trace enabled
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent().unwrap();
-    
+
     let output = Command::new(env!("CARGO_BIN_EXE_cpu-sim"))
         .arg("test_programs/test.elf")
         .arg("--print-inst-trace")
