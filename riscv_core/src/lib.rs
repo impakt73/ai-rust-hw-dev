@@ -1,0 +1,60 @@
+// Re-export marlin for convenience
+pub use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
+pub use marlin::verilog::prelude::*;
+
+// Define the Top module that can be shared across the workspace
+#[verilog(src = "../rtl/top.sv", name = "top")]
+pub struct Top;
+
+// Define ALU module
+#[verilog(src = "../rtl/alu.sv", name = "alu")]
+pub struct Alu;
+
+// Define RegFile module
+#[verilog(src = "../rtl/regfile.sv", name = "regfile")]
+pub struct RegFile;
+
+// Helper function to determine RTL path
+fn get_rtl_path() -> &'static str {
+    if std::path::Path::new("rtl").exists() {
+        "rtl"
+    } else {
+        "../rtl"
+    }
+}
+
+// Generic helper to create a Verilator runtime with specified files
+fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    let rtl_path = get_rtl_path();
+    let file_paths: Vec<String> = files
+        .iter()
+        .map(|file| format!("{}/{}", rtl_path, file))
+        .collect();
+
+    // Convert to references that can be passed to VerilatorRuntime::new
+    let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+
+    VerilatorRuntime::new(
+        "target/verilator".into(),
+        &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
+        &[],
+        [],
+        VerilatorRuntimeOptions::default(),
+    )
+    .map_err(|e| e.into())
+}
+
+// Helper function to create a runtime for the full CPU
+pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["top.sv", "alu.sv", "regfile.sv", "decoder.sv"])
+}
+
+// Helper function to create a runtime for the ALU
+pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["alu.sv"])
+}
+
+// Helper function to create a runtime for the RegFile
+pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["regfile.sv"])
+}

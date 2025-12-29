@@ -1,0 +1,10 @@
+[package]
+name = "riscv_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marlin = { version = "0.10", features = ["verilog"] }
+
+[build-dependencies]
+marlin = { version = "0.10", features = ["verilog"] }

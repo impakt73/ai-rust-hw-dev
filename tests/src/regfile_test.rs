@@ -1,19 +1,8 @@
-use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
-use marlin::verilog::prelude::*;
 use rand::Rng;
+use riscv_core::{create_regfile_runtime, RegFile};
 
-#[verilog(src = "../rtl/regfile.sv", name = "regfile")]
-pub struct RegFile;
-
-fn create_runtime() -> VerilatorRuntime {
-    VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/regfile.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap()
+fn create_runtime() -> riscv_core::VerilatorRuntime {
+    create_regfile_runtime().expect("Failed to create RegFile runtime")
 }
 
 macro_rules! clock_cycle {
