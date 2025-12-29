@@ -43,7 +43,7 @@ fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
 
 #[test]
 fn test_alu_add() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -71,7 +71,7 @@ fn test_alu_add() {
 
 #[test]
 fn test_alu_sub() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -96,7 +96,7 @@ fn test_alu_sub() {
 
 #[test]
 fn test_alu_logic_ops() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -126,7 +126,7 @@ fn test_alu_logic_ops() {
 
 #[test]
 fn test_alu_shift_ops() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -157,7 +157,7 @@ fn test_alu_shift_ops() {
 
 #[test]
 fn test_alu_compare_ops() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -205,7 +205,7 @@ fn test_alu_compare_ops() {
 
 #[test]
 fn test_alu_zero_flag() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -236,7 +236,7 @@ fn test_alu_zero_flag() {
 
 #[test]
 fn test_alu_all_operations() {
-    let runtime = create_alu_runtime();
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();

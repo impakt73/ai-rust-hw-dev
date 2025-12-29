@@ -14,63 +14,47 @@ pub struct Alu;
 #[verilog(src = "../rtl/regfile.sv", name = "regfile")]
 pub struct RegFile;
 
-// Helper function to create a runtime for the full CPU
-pub fn create_cpu_runtime() -> VerilatorRuntime {
-    // Get the path to the RTL directory
-    // When compiled, this will be relative to the workspace root
-    let rtl_path = if std::path::Path::new("rtl").exists() {
+// Helper function to determine RTL path
+fn get_rtl_path() -> &'static str {
+    if std::path::Path::new("rtl").exists() {
         "rtl"
     } else {
         "../rtl"
-    };
+    }
+}
 
+// Generic helper to create a Verilator runtime with specified files
+fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    let rtl_path = get_rtl_path();
+    let file_paths: Vec<String> = files
+        .iter()
+        .map(|file| format!("{}/{}", rtl_path, file))
+        .collect();
+    
+    // Convert to references that can be passed to VerilatorRuntime::new
+    let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+    
     VerilatorRuntime::new(
         "target/verilator".into(),
-        &[
-            format!("{}/top.sv", rtl_path).as_ref(),
-            format!("{}/alu.sv", rtl_path).as_ref(),
-            format!("{}/regfile.sv", rtl_path).as_ref(),
-            format!("{}/decoder.sv", rtl_path).as_ref(),
-        ],
+        &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
         &[],
         [],
         VerilatorRuntimeOptions::default(),
     )
-    .unwrap()
+    .map_err(|e| e.into())
+}
+
+// Helper function to create a runtime for the full CPU
+pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["top.sv", "alu.sv", "regfile.sv", "decoder.sv"])
 }
 
 // Helper function to create a runtime for the ALU
-pub fn create_alu_runtime() -> VerilatorRuntime {
-    let rtl_path = if std::path::Path::new("rtl").exists() {
-        "rtl"
-    } else {
-        "../rtl"
-    };
-
-    VerilatorRuntime::new(
-        "target/verilator".into(),
-        &[format!("{}/alu.sv", rtl_path).as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap()
+pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["alu.sv"])
 }
 
 // Helper function to create a runtime for the RegFile
-pub fn create_regfile_runtime() -> VerilatorRuntime {
-    let rtl_path = if std::path::Path::new("rtl").exists() {
-        "rtl"
-    } else {
-        "../rtl"
-    };
-
-    VerilatorRuntime::new(
-        "target/verilator".into(),
-        &[format!("{}/regfile.sv", rtl_path).as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap()
+pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["regfile.sv"])
 }

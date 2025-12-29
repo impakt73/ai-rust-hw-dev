@@ -45,8 +45,20 @@ fn main() {
     }
 
     // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime();
-    let mut sim = Simulator::new(&runtime, mem);
+    let runtime = match riscv_core::create_cpu_runtime() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("Error creating CPU runtime: {}", e);
+            std::process::exit(1);
+        }
+    };
+    let mut sim = match Simulator::new(&runtime, mem) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error creating simulator: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Run simulation
     match sim.run(args.max_cycles) {

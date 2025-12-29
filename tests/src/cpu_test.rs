@@ -2,7 +2,7 @@ use riscv_core::{create_cpu_runtime, Top};
 use std::collections::HashMap;
 
 fn create_runtime() -> riscv_core::VerilatorRuntime {
-    create_cpu_runtime()
+    create_cpu_runtime().expect("Failed to create CPU runtime")
 }
 
 macro_rules! clock_cycle {

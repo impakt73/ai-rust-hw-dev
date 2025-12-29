@@ -10,15 +10,20 @@ pub struct Simulator<'a> {
 
 impl<'a> Simulator<'a> {
     /// Create a new simulator with the given memory and runtime
-    pub fn new(runtime: &'a riscv_core::VerilatorRuntime, memory: Memory) -> Self {
+    pub fn new(
+        runtime: &'a riscv_core::VerilatorRuntime,
+        memory: Memory,
+    ) -> Result<Self, String> {
         // Create CPU model from the runtime
-        let cpu = runtime.create_model_simple::<Top>().unwrap();
+        let cpu = runtime
+            .create_model_simple::<Top>()
+            .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
-        Simulator {
+        Ok(Simulator {
             cpu,
             memory,
             cycle_count: 0,
-        }
+        })
     }
 
     /// Reset the CPU

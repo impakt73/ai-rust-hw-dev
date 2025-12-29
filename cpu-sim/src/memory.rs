@@ -37,9 +37,25 @@ impl Memory {
                     let offset = phdr.p_offset as usize;
 
                     if file_size > 0 {
-                        let segment_data = &file_data[offset..offset + file_size];
+                        // Validate that the segment lies within the file data to avoid panics
+                        let end = match offset.checked_add(file_size) {
+                            Some(end) if end <= file_data.len() => end,
+                            _ => {
+                                return Err(Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!(
+                                        "ELF segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
+                                        offset,
+                                        file_size,
+                                        file_data.len()
+                                    ),
+                                )));
+                            }
+                        };
+
+                        let segment_data = &file_data[offset..end];
                         for (i, &byte) in segment_data.iter().enumerate() {
-                            self.data.insert(vaddr + i as u32, byte);
+                            self.data.insert(vaddr.wrapping_add(i as u32), byte);
                         }
                         log::info!(
                             "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
