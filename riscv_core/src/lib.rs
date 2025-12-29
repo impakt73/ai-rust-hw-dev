@@ -16,13 +16,21 @@ pub struct RegFile;
 
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> VerilatorRuntime {
+    // Get the path to the RTL directory
+    // When compiled, this will be relative to the workspace root
+    let rtl_path = if std::path::Path::new("rtl").exists() {
+        "rtl"
+    } else {
+        "../rtl"
+    };
+
     VerilatorRuntime::new(
         "target/verilator".into(),
         &[
-            "../rtl/top.sv".as_ref(),
-            "../rtl/alu.sv".as_ref(),
-            "../rtl/regfile.sv".as_ref(),
-            "../rtl/decoder.sv".as_ref(),
+            format!("{}/top.sv", rtl_path).as_ref(),
+            format!("{}/alu.sv", rtl_path).as_ref(),
+            format!("{}/regfile.sv", rtl_path).as_ref(),
+            format!("{}/decoder.sv", rtl_path).as_ref(),
         ],
         &[],
         [],
@@ -33,9 +41,15 @@ pub fn create_cpu_runtime() -> VerilatorRuntime {
 
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> VerilatorRuntime {
+    let rtl_path = if std::path::Path::new("rtl").exists() {
+        "rtl"
+    } else {
+        "../rtl"
+    };
+
     VerilatorRuntime::new(
         "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
+        &[format!("{}/alu.sv", rtl_path).as_ref()],
         &[],
         [],
         VerilatorRuntimeOptions::default(),
@@ -45,9 +59,15 @@ pub fn create_alu_runtime() -> VerilatorRuntime {
 
 // Helper function to create a runtime for the RegFile
 pub fn create_regfile_runtime() -> VerilatorRuntime {
+    let rtl_path = if std::path::Path::new("rtl").exists() {
+        "rtl"
+    } else {
+        "../rtl"
+    };
+
     VerilatorRuntime::new(
         "target/verilator".into(),
-        &["../rtl/regfile.sv".as_ref()],
+        &[format!("{}/regfile.sv", rtl_path).as_ref()],
         &[],
         [],
         VerilatorRuntimeOptions::default(),

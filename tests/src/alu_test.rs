@@ -1,5 +1,5 @@
-use riscv_core::{create_alu_runtime, Alu};
 use rand::Rng;
+use riscv_core::{create_alu_runtime, Alu};
 
 // ALU Operation Encodings (must match the RTL)
 const ALU_ADD: u32 = 0b0000;

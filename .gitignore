@@ -24,3 +24,7 @@ target
 obj_dir/
 *.vcd
 *.fst
+
+# Test programs and scripts
+test_program.elf
+create_test_elf.py

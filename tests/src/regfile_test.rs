@@ -1,5 +1,5 @@
-use riscv_core::{create_regfile_runtime, RegFile};
 use rand::Rng;
+use riscv_core::{create_regfile_runtime, RegFile};
 
 fn create_runtime() -> riscv_core::VerilatorRuntime {
     create_regfile_runtime()
