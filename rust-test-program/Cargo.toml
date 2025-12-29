@@ -1,0 +1,11 @@
+[package]
+name = "rust-test-program"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rust_test"
+path = "src/main.rs"
+test = false
+
+[dependencies]
