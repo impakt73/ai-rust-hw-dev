@@ -108,4 +108,31 @@ mod tests {
             result.cycles
         );
     }
+
+    #[test]
+    fn test_rust_bare_metal_elf() {
+        // Initialize logger for tests (ignore if already initialized)
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        // Load the Rust test program ELF from test_programs directory
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().unwrap();
+        let elf_path = workspace_root.join("test_programs/rust_test.elf");
+
+        // Run the simulation
+        let result =
+            run_elf(&elf_path, 500, false).expect("Rust bare metal simulation should succeed");
+
+        // Verify the program halted with the correct exit code (42 = 0x2a)
+        assert_eq!(
+            result.tohost_value,
+            Some(0x2a),
+            "Expected tohost value 0x2a (42) from Rust bare metal program"
+        );
+
+        println!(
+            "✓ Rust bare metal test ELF executed successfully in {} cycles",
+            result.cycles
+        );
+    }
 }
