@@ -1,0 +1,92 @@
+name: "Copilot Setup Steps"
+
+# This workflow defines the setup steps required for GitHub Copilot coding agent
+# to work on this RISC-V hardware verification project.
+# 
+# CRITICAL: The job name MUST be 'copilot-setup-steps' for Copilot to use it.
+
+on:
+  workflow_dispatch:  # Allow manual testing
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:   # REQUIRED job name - do not change!
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Verilator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator
+      
+      - name: Verify Verilator installation
+        run: verilator --version
+      
+      - name: Install Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Verify Rust installation
+        run: |
+          rustc --version
+          cargo --version
+      
+      - name: Install RISC-V Rust Target
+        run: rustup target add riscv32i-unknown-none-elf
+      
+      - name: Verify RISC-V Rust target
+        run: rustup target list --installed | grep riscv32i-unknown-none-elf
+      
+      - name: Install RISC-V C/C++ Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-unknown-elf
+      
+      - name: Verify RISC-V GCC installation
+        run: riscv64-unknown-elf-gcc --version
+      
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Summary of installed tools
+        run: |
+          echo "=== Development Environment Setup Complete ==="
+          echo "Verilator: $(verilator --version | head -1)"
+          echo "Rust: $(rustc --version)"
+          echo "Cargo: $(cargo --version)"
+          echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32i-unknown-none-elf)"
+          echo "RISC-V GCC: $(riscv64-unknown-elf-gcc --version | head -1)"
+          echo ""
+          echo "Common commands:"
+          echo "  cargo test                                   - Run all tests"
+          echo "  cargo test --package cpu_verifier -- alu_test     - Run ALU tests"
+          echo "  cargo test --package cpu_verifier -- regfile_test - Run register file tests"
+          echo "  cargo test --package cpu_verifier -- cpu_test     - Run CPU integration tests"
+          echo "  cargo fmt                                    - Format Rust code"
+          echo "  cargo clippy                                 - Run linter"
+          echo "  verilator --lint-only rtl/*.sv               - Lint SystemVerilog files"
+          echo "  cargo clean                                  - Clean build artifacts (after RTL changes)"
+          echo ""
+          echo "Note: First test run is slow (~15-30s) due to Verilator compilation."
+          echo "      Subsequent runs are fast (~1-2s) due to caching."
