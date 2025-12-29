@@ -4,6 +4,7 @@
 module top (
     input  logic        clk,
     input  logic        rst_n,
+    input  logic [31:0] boot_addr,
     
     // Instruction memory interface (exposed to testbench)
     output logic [31:0] imem_addr,
@@ -62,7 +63,7 @@ module top (
     // PC update logic
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            pc <= 32'h00000000;
+            pc <= boot_addr;
         end else begin
             pc <= next_pc;
         end
