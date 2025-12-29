@@ -86,7 +86,7 @@ fn disassemble_i_type_alu(instruction: u32, rd: u8, funct3: u8, rs1: u8) -> Stri
 
 /// Disassemble load instructions
 fn disassemble_load(rd: u8, funct3: u8, rs1: u8, imm: u32) -> String {
-    let imm = imm as i32;
+    let imm_signed = imm as i32;
     let mnemonic = match funct3 {
         0b010 => "lw",
         0b000 => "lb",
@@ -95,24 +95,24 @@ fn disassemble_load(rd: u8, funct3: u8, rs1: u8, imm: u32) -> String {
         0b101 => "lhu",
         _ => return format!("unknown load f3={}", funct3),
     };
-    format!("{} x{}, {}(x{})", mnemonic, rd, imm, rs1)
+    format!("{} x{}, {}(x{})", mnemonic, rd, imm_signed, rs1)
 }
 
 /// Disassemble store instructions
 fn disassemble_store(funct3: u8, rs1: u8, rs2: u8, imm: u32) -> String {
-    let imm = imm as i32;
+    let imm_signed = imm as i32;
     let mnemonic = match funct3 {
         0b010 => "sw",
         0b000 => "sb",
         0b001 => "sh",
         _ => return format!("unknown store f3={}", funct3),
     };
-    format!("{} x{}, {}(x{})", mnemonic, rs2, imm, rs1)
+    format!("{} x{}, {}(x{})", mnemonic, rs2, imm_signed, rs1)
 }
 
 /// Disassemble branch instructions
 fn disassemble_branch(funct3: u8, rs1: u8, rs2: u8, imm: u32) -> String {
-    let imm = imm as i32;
+    let imm_signed = imm as i32;
     let mnemonic = match funct3 {
         0b000 => "beq",
         0b001 => "bne",
@@ -122,7 +122,7 @@ fn disassemble_branch(funct3: u8, rs1: u8, rs2: u8, imm: u32) -> String {
         0b111 => "bgeu",
         _ => return format!("unknown branch f3={}", funct3),
     };
-    format!("{} x{}, x{}, {}", mnemonic, rs1, rs2, imm)
+    format!("{} x{}, x{}, {}", mnemonic, rs1, rs2, imm_signed)
 }
 
 /// Extract I-type immediate (sign-extended)
