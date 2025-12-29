@@ -4,8 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# No production dependencies needed for the tests library itself
-
-[dev-dependencies]
-marlin = { version = "0.10", features = ["verilog"] }
+riscv_core = { path = "../riscv_core" }
 rand = "0.8"

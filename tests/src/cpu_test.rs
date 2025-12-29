@@ -1,24 +1,8 @@
-use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
-use marlin::verilog::prelude::*;
+use riscv_core::{create_cpu_runtime, Top};
 use std::collections::HashMap;
 
-#[verilog(src = "../rtl/top.sv", name = "top")]
-pub struct Top;
-
-fn create_runtime() -> VerilatorRuntime {
-    VerilatorRuntime::new(
-        "target/verilator".into(),
-        &[
-            "../rtl/top.sv".as_ref(),
-            "../rtl/alu.sv".as_ref(),
-            "../rtl/regfile.sv".as_ref(),
-            "../rtl/decoder.sv".as_ref(),
-        ],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap()
+fn create_runtime() -> riscv_core::VerilatorRuntime {
+    create_cpu_runtime()
 }
 
 macro_rules! clock_cycle {

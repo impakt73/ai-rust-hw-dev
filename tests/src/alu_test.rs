@@ -1,5 +1,4 @@
-use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
-use marlin::verilog::prelude::*;
+use riscv_core::{create_alu_runtime, Alu};
 use rand::Rng;
 
 // ALU Operation Encodings (must match the RTL)
@@ -13,9 +12,6 @@ const ALU_SRL: u32 = 0b0110;
 const ALU_SRA: u32 = 0b0111;
 const ALU_SLT: u32 = 0b1000;
 const ALU_SLTU: u32 = 0b1001;
-
-#[verilog(src = "../rtl/alu.sv", name = "alu")]
-pub struct Alu;
 
 fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
     match alu_op {
@@ -47,14 +43,7 @@ fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
 
 #[test]
 fn test_alu_add() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -82,14 +71,7 @@ fn test_alu_add() {
 
 #[test]
 fn test_alu_sub() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -114,14 +96,7 @@ fn test_alu_sub() {
 
 #[test]
 fn test_alu_logic_ops() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -151,14 +126,7 @@ fn test_alu_logic_ops() {
 
 #[test]
 fn test_alu_shift_ops() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -189,14 +157,7 @@ fn test_alu_shift_ops() {
 
 #[test]
 fn test_alu_compare_ops() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -244,14 +205,7 @@ fn test_alu_compare_ops() {
 
 #[test]
 fn test_alu_zero_flag() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -282,14 +236,7 @@ fn test_alu_zero_flag() {
 
 #[test]
 fn test_alu_all_operations() {
-    let runtime = VerilatorRuntime::new(
-        "target/verilator".into(),
-        &["../rtl/alu.sv".as_ref()],
-        &[],
-        [],
-        VerilatorRuntimeOptions::default(),
-    )
-    .unwrap();
+    let runtime = create_alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
