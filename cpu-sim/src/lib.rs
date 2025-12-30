@@ -594,10 +594,7 @@ mod tests {
         assert!(found_sw, "Should find SW instruction");
         assert!(found_lw, "Should find LW instruction");
 
-        println!(
-            "✓ Trace callback test passed in {} cycles",
-            result.cycles
-        );
+        println!("✓ Trace callback test passed in {} cycles", result.cycles);
         println!("✓ All expected instructions found and validated");
         println!("========================================\n");
     }

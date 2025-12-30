@@ -193,13 +193,8 @@ where
             let rd_value = self.cpu.debug_rd_data;
 
             // Create instruction trace structure
-            let trace = InstructionTrace::from_instruction(
-                pc,
-                instruction,
-                rs1_value,
-                rs2_value,
-                rd_value,
-            );
+            let trace =
+                InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
 
             // Clock tick
             self.cpu.clk = 0;

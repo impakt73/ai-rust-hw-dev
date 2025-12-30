@@ -1,7 +1,6 @@
 /// RISC-V Instruction Trace Structures
 ///
 /// Provides structured representation of executed instructions for debugging and analysis
-
 use std::fmt;
 
 /// Type of RISC-V instruction
@@ -434,9 +433,18 @@ mod tests {
         let trace = InstructionTrace::from_instruction(0x1000, instruction, 10, 5, 15);
         assert_eq!(trace.inst_type, InstructionType::Add);
         assert_eq!(trace.pc, 0x1000);
-        assert!(matches!(trace.rd, Some(Operand::Register { reg: 1, value: 15 })));
-        assert!(matches!(trace.rs1, Some(Operand::Register { reg: 2, value: 10 })));
-        assert!(matches!(trace.rs2, Some(Operand::Register { reg: 3, value: 5 })));
+        assert!(matches!(
+            trace.rd,
+            Some(Operand::Register { reg: 1, value: 15 })
+        ));
+        assert!(matches!(
+            trace.rs1,
+            Some(Operand::Register { reg: 2, value: 10 })
+        ));
+        assert!(matches!(
+            trace.rs2,
+            Some(Operand::Register { reg: 3, value: 5 })
+        ));
     }
 
     #[test]
@@ -446,8 +454,14 @@ mod tests {
         let trace = InstructionTrace::from_instruction(0x1000, instruction, 10, 0, 52);
         assert_eq!(trace.inst_type, InstructionType::Addi);
         assert_eq!(trace.immediate, Some(42));
-        assert!(matches!(trace.rd, Some(Operand::Register { reg: 1, value: 52 })));
-        assert!(matches!(trace.rs1, Some(Operand::Register { reg: 2, value: 10 })));
+        assert!(matches!(
+            trace.rd,
+            Some(Operand::Register { reg: 1, value: 52 })
+        ));
+        assert!(matches!(
+            trace.rs1,
+            Some(Operand::Register { reg: 2, value: 10 })
+        ));
         assert!(trace.rs2.is_none());
     }
 
@@ -458,8 +472,20 @@ mod tests {
         let trace = InstructionTrace::from_instruction(0x1000, instruction, 0x1000, 0, 0xdeadbeef);
         assert_eq!(trace.inst_type, InstructionType::Lw);
         assert_eq!(trace.immediate, Some(4));
-        assert!(matches!(trace.rd, Some(Operand::Register { reg: 1, value: 0xdeadbeef })));
-        assert!(matches!(trace.rs1, Some(Operand::Register { reg: 2, value: 0x1000 })));
+        assert!(matches!(
+            trace.rd,
+            Some(Operand::Register {
+                reg: 1,
+                value: 0xdeadbeef
+            })
+        ));
+        assert!(matches!(
+            trace.rs1,
+            Some(Operand::Register {
+                reg: 2,
+                value: 0x1000
+            })
+        ));
     }
 
     #[test]
@@ -470,8 +496,20 @@ mod tests {
         assert_eq!(trace.inst_type, InstructionType::Sw);
         assert_eq!(trace.immediate, Some(8));
         assert!(trace.rd.is_none());
-        assert!(matches!(trace.rs1, Some(Operand::Register { reg: 2, value: 0x2000 })));
-        assert!(matches!(trace.rs2, Some(Operand::Register { reg: 3, value: 0xcafebabe })));
+        assert!(matches!(
+            trace.rs1,
+            Some(Operand::Register {
+                reg: 2,
+                value: 0x2000
+            })
+        ));
+        assert!(matches!(
+            trace.rs2,
+            Some(Operand::Register {
+                reg: 3,
+                value: 0xcafebabe
+            })
+        ));
     }
 
     #[test]
