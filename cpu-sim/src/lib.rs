@@ -200,8 +200,8 @@ mod tests {
         println!("========================================\n");
 
         // Run the simulation with instruction trace enabled
-        let result = run_elf(&elf_path, 500, true)
-            .expect("Register trace audit simulation should succeed");
+        let result =
+            run_elf(&elf_path, 500, true).expect("Register trace audit simulation should succeed");
 
         // Verify the program halted with the correct exit code (42 = 0x2a)
         assert_eq!(
