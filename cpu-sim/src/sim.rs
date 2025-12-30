@@ -179,6 +179,13 @@ where
                 }
             }
 
+            // Sample debug signals BEFORE clock tick to capture the values that were
+            // actually used during instruction execution, not the values after the write.
+            // This is critical for correctness when rd == rs1 or rd == rs2.
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+
             // Clock tick
             self.cpu.clk = 0;
             self.cpu.eval();
@@ -193,11 +200,8 @@ where
                 // If no callback, just clear the buffer (don't print)
             }
 
-            // Debug logging: print after evaluation to capture rd_data
+            // Debug logging: print using the values captured before clock tick
             if self.print_inst_trace {
-                let rs1_value = self.cpu.debug_rs1_data;
-                let rs2_value = self.cpu.debug_rs2_data;
-                let rd_value = self.cpu.debug_rd_data;
                 let disassembled = riscv_core::disasm::disassemble_with_all_values(
                     instruction,
                     rs1_value,
