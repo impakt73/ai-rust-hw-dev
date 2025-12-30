@@ -7,6 +7,7 @@ A command-line RISC-V RV32I CPU simulator that runs ELF executables on the Veril
 - Loads RISC-V ELF executables
 - Simulates the single-cycle RV32I CPU with external memory
 - Supports the "tohost" mechanism for program termination (write to 0xFFFFFFF0)
+- **Instruction trace callback** for programmatic access to executed instructions
 - Configurable maximum cycle limit
 - Verbose logging for debugging
 
@@ -32,7 +33,72 @@ cargo build --package cpu-sim
 - `<ELF>`: Path to the RISC-V ELF executable (required, positional)
 - `--max-cycles <N>`: Maximum number of cycles to simulate (default: 10000)
 - `--verbose`: Enable verbose debug logging
+- `--print-inst-trace`: Print each instruction as it executes (cycle-by-cycle trace)
 - `--help`: Display help information
+
+## Instruction Trace Callback
+
+The simulator provides a programmatic interface for receiving instruction trace information via a callback. This is useful for automated testing, analysis, and debugging tools.
+
+### Using the Trace Callback
+
+```rust
+use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
+use riscv_core::trace::InstructionType;
+use std::{cell::Cell, path::Path};
+
+// Define a callback to process each instruction
+let instruction_count = Cell::new(0);
+let trace_callback = |trace: &InstructionTrace| {
+    instruction_count.set(instruction_count.get() + 1);
+    
+    // Access structured trace information
+    match trace.inst_type {
+        InstructionType::Add => {
+            println!("Found ADD instruction at PC: 0x{:08x}", trace.pc);
+            if let Some(rd) = trace.rd {
+                println!("  Result: {:?}", rd);
+            }
+        },
+        InstructionType::Addi => {
+            println!("Found ADDI instruction at PC: 0x{:08x}", trace.pc);
+            if let Some(imm) = trace.immediate {
+                println!("  Immediate value: {}", imm);
+            }
+        },
+        _ => {}
+    }
+};
+
+// Run simulation with trace callback
+let result = run_elf_with_trace_callback(
+    Path::new("program.elf"),
+    10000,
+    false,  // print_inst_trace (false to use only callback)
+    Some(trace_callback)
+)?;
+
+println!("Executed {} instructions", instruction_count.get());
+```
+
+### InstructionTrace Structure
+
+The `InstructionTrace` struct provides detailed information about each executed instruction:
+
+- `pc`: Program counter (address of the instruction)
+- `instruction`: Raw 32-bit instruction word
+- `inst_type`: Parsed instruction type (enum: `Add`, `Addi`, `Lw`, `Sw`, etc.)
+- `rd`: Destination register and its value (if applicable)
+- `rs1`: Source register 1 and its value (if applicable)
+- `rs2`: Source register 2 and its value (if applicable)
+- `immediate`: Immediate value (if applicable)
+
+### Available API Functions
+
+- `run_elf(path, max_cycles, print_trace)` - Basic simulation (backward compatible)
+- `run_elf_with_trace_callback(path, max_cycles, print_trace, trace_callback)` - With instruction trace callback
+- `run_elf_with_callback(path, max_cycles, print_trace, fifo_callback)` - With FIFO callback
+- `run_elf_with_all_callbacks(...)` - With both FIFO and trace callbacks
 
 ## Program Termination
 

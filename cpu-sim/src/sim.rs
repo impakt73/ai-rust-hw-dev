@@ -1,4 +1,5 @@
 use crate::bus::SystemBus;
+use riscv_core::trace::InstructionTrace;
 use riscv_core::Top;
 
 /// Result of a simulation run
@@ -9,9 +10,10 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a, F>
+pub struct Simulator<'a, F, T>
 where
     F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
 {
     cpu: Top<'a>,
     pub bus: SystemBus,
@@ -19,19 +21,22 @@ where
     entry_point: u32,
     print_inst_trace: bool,
     fifo_callback: Option<F>,
+    trace_callback: Option<T>,
 }
 
-impl<'a, F> Simulator<'a, F>
+impl<'a, F, T> Simulator<'a, F, T>
 where
     F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
 {
-    /// Create a new simulator with the given bus, runtime, entry point, and optional FIFO callback
+    /// Create a new simulator with the given bus, runtime, entry point, and optional callbacks
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         entry_point: u32,
         print_inst_trace: bool,
         fifo_callback: Option<F>,
+        trace_callback: Option<T>,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
@@ -45,6 +50,7 @@ where
             entry_point,
             print_inst_trace,
             fifo_callback,
+            trace_callback,
         })
     }
 
@@ -182,9 +188,21 @@ where
             // Sample debug signals BEFORE clock tick to capture the values that were
             // actually used during instruction execution, not the values after the write.
             // This is critical for correctness when rd == rs1 or rd == rs2.
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
+            // Only sample if trace is needed (either for printing or callback)
+            let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+                let rs1_value = self.cpu.debug_rs1_data;
+                let rs2_value = self.cpu.debug_rs2_data;
+                let rd_value = self.cpu.debug_rd_data;
+                Some(InstructionTrace::from_instruction(
+                    pc,
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
+                ))
+            } else {
+                None
+            };
 
             // Clock tick
             self.cpu.clk = 0;
@@ -200,18 +218,21 @@ where
                 // If no callback, just clear the buffer (don't print)
             }
 
-            // Debug logging: print using the values captured before clock tick
+            // Call trace callback if provided
+            if let Some(ref mut callback) = self.trace_callback {
+                if let Some(ref trace_data) = trace {
+                    callback(trace_data);
+                }
+            }
+
+            // Debug logging: print using the trace structure for backward compatibility
             if self.print_inst_trace {
-                let disassembled = riscv_core::disasm::disassemble_with_all_values(
-                    instruction,
-                    rs1_value,
-                    rs2_value,
-                    rd_value,
-                );
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, disassembled
-                );
+                if let Some(ref trace_data) = trace {
+                    println!(
+                        "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                        self.cycle_count, pc, pc, instruction, trace_data
+                    );
+                }
             }
 
             // Log execution (original verbose logging)
