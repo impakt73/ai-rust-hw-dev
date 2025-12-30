@@ -3,6 +3,7 @@
 
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
+use riscv_rt::entry;
 
 /// Panic handler for bare metal - infinite loop on panic
 #[panic_handler]
@@ -22,9 +23,9 @@ fn write_tohost(value: u32) -> ! {
 
 /// Entry point for the bare metal Rust program
 /// This function implements test logic using regular Rust code
-#[no_mangle]
-#[link_section = ".text"]
-pub extern "C" fn _start() -> ! {
+/// Uses riscv_rt which properly initializes stack pointer
+#[entry]
+fn main() -> ! {
     const SUCCESS_CODE: u32 = 42;
     const FAILURE_CODE: u32 = 1;
 
