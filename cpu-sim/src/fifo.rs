@@ -31,7 +31,16 @@ impl Fifo {
     /// Pops a u32 word from the RX queue
     /// Returns 0 if RX is empty
     pub fn read_data(&mut self) -> u32 {
-        self.rx.pop_front().unwrap_or(0)
+        match self.rx.pop_front() {
+            Some(val) => val,
+            None => {
+                log::warn!(
+                    "FIFO RX queue read while empty. \
+                     This may indicate the status register was not checked before reading."
+                );
+                0
+            }
+        }
     }
 
     /// Write to the DATA register

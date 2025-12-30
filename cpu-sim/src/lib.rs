@@ -77,7 +77,7 @@ pub fn run_elf(
     max_cycles: u64,
     print_inst_trace: bool,
 ) -> Result<SimulationResult, String> {
-    run_elf_with_callback::<fn(u32)>(elf_path, max_cycles, print_inst_trace, None)
+    run_elf_with_callback(elf_path, max_cycles, print_inst_trace, None::<fn(u32)>)
 }
 
 #[cfg(test)]
@@ -183,19 +183,14 @@ mod tests {
 
         let callback = move |word: u32| {
             // Convert u32 word to bytes (little-endian)
-            fifo_data_clone.lock().unwrap().push((word & 0xFF) as u8);
-            fifo_data_clone
-                .lock()
-                .unwrap()
-                .push(((word >> 8) & 0xFF) as u8);
-            fifo_data_clone
-                .lock()
-                .unwrap()
-                .push(((word >> 16) & 0xFF) as u8);
-            fifo_data_clone
-                .lock()
-                .unwrap()
-                .push(((word >> 24) & 0xFF) as u8);
+            let bytes = [
+                (word & 0xFF) as u8,
+                ((word >> 8) & 0xFF) as u8,
+                ((word >> 16) & 0xFF) as u8,
+                ((word >> 24) & 0xFF) as u8,
+            ];
+            let mut fifo = fifo_data_clone.lock().unwrap();
+            fifo.extend_from_slice(&bytes);
         };
 
         // Run the simulation with FIFO callback
@@ -211,12 +206,12 @@ mod tests {
 
         // Verify the FIFO data
         let received_data = fifo_data.lock().unwrap();
-        // Remove trailing null bytes
-        let trimmed_data: Vec<u8> = received_data
-            .iter()
-            .copied()
-            .take_while(|&b| b != 0)
-            .collect();
+        // Remove trailing null bytes while preserving any embedded nulls
+        let end_index = received_data.iter().rposition(|&b| b != 0);
+        let trimmed_data: Vec<u8> = match end_index {
+            Some(idx) => received_data[..=idx].to_vec(),
+            None => Vec::new(),
+        };
         let received_string =
             String::from_utf8(trimmed_data).expect("FIFO data should be valid UTF-8");
 

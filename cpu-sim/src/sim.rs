@@ -9,7 +9,7 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a, F = fn(u32)>
+pub struct Simulator<'a, F>
 where
     F: FnMut(u32),
 {
