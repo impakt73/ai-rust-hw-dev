@@ -563,6 +563,8 @@ pub struct ErrorPacket {
     pub error_code: ErrorCode,
     pub reserved: [u8; 3],
     pub details: String,      // Human-readable error description
+                              // Note: requires 'alloc' feature in no_std
+                              // For no_std without alloc, define a variant with &'static str
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -874,21 +876,26 @@ use rkyv::{to_bytes, rancor::Error};
 /// 
 /// # Safety
 /// Uses unsafe FIFO operations for memory-mapped I/O
+/// 
+/// # Note
+/// This example requires the `alloc` feature for `String` in no_std environments.
+/// For minimal bare-metal without allocator, use fixed-size byte arrays instead.
 pub fn send_debug_message(level: DebugLevel, message: &str) {
     // Create debug packet using shared packet definitions
     let packet = DebugPacket {
         header: PacketHeader {
             magic: 0x52565043,
-            length: 0,  // Will be set by rkyv
+            length: 0,  // Placeholder; actual length encoded by rkyv serialization
             packet_type: PacketType::Debug,
             reserved: 0,
         },
         level,
         reserved: [0; 3],
-        message: message.to_string(),
+        message: message.to_string(),  // Requires 'alloc' feature in no_std
     };
     
     // Serialize with rkyv (same as host side!)
+    // The serialized bytes will contain the actual packet length
     let bytes = to_bytes::<Error>(&packet).expect("Serialization failed");
     
     // Send via FIFO
@@ -963,7 +970,7 @@ fn read_cpu_registers(simulator: &mut Simulator, registers: &[u8]) -> Vec<u32> {
     let request = RegisterReadPacket {
         header: PacketHeader {
             magic: 0x52565043,
-            length: 0,  // Will be set by rkyv
+            length: 0,  // Placeholder; actual length encoded by rkyv serialization
             packet_type: PacketType::RegisterRead,
             reserved: 0,
         },
@@ -971,6 +978,7 @@ fn read_cpu_registers(simulator: &mut Simulator, registers: &[u8]) -> Vec<u32> {
     };
     
     // Serialize and send
+    // The serialized bytes will contain the actual packet length
     let bytes = to_bytes::<Error>(&request).unwrap();
     for chunk in bytes.chunks(4) {
         let mut word: u32 = 0;
@@ -1009,6 +1017,10 @@ use rkyv::{to_bytes, check_archived_root, Deserialize, rancor::Error};
 /// 
 /// # Safety
 /// Accesses CPU registers and FIFO hardware
+/// 
+/// # Note
+/// This example requires the `alloc` feature for `Vec` in no_std environments.
+/// For minimal bare-metal without allocator, use fixed-size arrays instead.
 pub unsafe fn handle_register_read_request(packet_bytes: &[u8]) {
     // Deserialize request using shared packet definitions
     let archived = check_archived_root::<RegisterReadPacket>(packet_bytes)
@@ -1017,6 +1029,7 @@ pub unsafe fn handle_register_read_request(packet_bytes: &[u8]) {
         .expect("Deserialization failed");
     
     // Read CPU registers (implementation specific)
+    // Note: requires 'alloc' feature in no_std
     let mut values = vec![];
     for &reg_idx in &request.register_indices {
         let value = read_cpu_register(reg_idx);
@@ -1027,7 +1040,7 @@ pub unsafe fn handle_register_read_request(packet_bytes: &[u8]) {
     let response = RegisterReadResponsePacket {
         header: PacketHeader {
             magic: 0x52565043,
-            length: 0,  // Will be set by rkyv
+            length: 0,  // Placeholder; actual length encoded by rkyv serialization
             packet_type: PacketType::RegisterRead,
             reserved: 0,
         },
@@ -1042,21 +1055,20 @@ pub unsafe fn handle_register_read_request(packet_bytes: &[u8]) {
 /// Read a CPU register value (bare-metal implementation)
 /// This would use inline assembly or intrinsics
 unsafe fn read_cpu_register(index: u8) -> u32 {
-    // Example: reading from register file
-    // In real implementation, might use inline asm or global register array
+    // In a real bare-metal implementation, reading arbitrary registers requires
+    // either a lookup table approach or a match with one asm! block per register.
+    // Rust's inline asm does *not* support dynamic register selection like "x{index}".
     match index {
         0 => 0,  // x0 is always zero
-        1..=31 => {
-            // Read from actual register file
-            // This is implementation-specific
-            core::arch::asm!(
-                "mv {0}, x{1}",
-                out(reg) _,
-                const index,
-            );
-            0  // Placeholder
+        1 => { let val: u32; core::arch::asm!("mv {}, x1", out(reg) val); val }
+        2 => { let val: u32; core::arch::asm!("mv {}, x2", out(reg) val); val }
+        // ... repeat for x3 through x31 ...
+        // For documentation purposes, showing placeholder implementation:
+        _ => {
+            // Placeholder - replace with actual per-register asm blocks
+            // or hardware-specific register file interface
+            0
         }
-        _ => 0,
     }
 }
 ```
@@ -1071,6 +1083,10 @@ unsafe fn read_cpu_register(index: u8) -> u32 {
 use rkyv::{to_bytes, rancor::Error};
 
 /// Run a self-test and report results to host
+/// 
+/// # Note
+/// This example requires the `alloc` feature for `String` in no_std environments.
+/// For minimal bare-metal without allocator, use fixed-size byte arrays instead.
 pub fn run_self_test() {
     let test_value = compute_something();
     let expected = 0x1234;
@@ -1079,7 +1095,7 @@ pub fn run_self_test() {
     let packet = AssertPacket {
         header: PacketHeader {
             magic: 0x52565043,
-            length: 0,  // Will be set by rkyv
+            length: 0,  // Placeholder; actual length encoded by rkyv serialization
             packet_type: PacketType::Assert,
             reserved: 0,
         },
@@ -1089,13 +1105,14 @@ pub fn run_self_test() {
         expected,
         actual: test_value,
         message: if test_value == expected {
-            "Test passed".to_string()
+            "Test passed".to_string()  // Requires 'alloc' feature in no_std
         } else {
-            "Test failed".to_string()
+            "Test failed".to_string()  // Requires 'alloc' feature in no_std
         },
     };
     
     // Serialize with rkyv (same as host!)
+    // The serialized bytes will contain the actual packet length
     let bytes = to_bytes::<Error>(&packet).expect("Serialization failed");
     
     // Send to host
@@ -1227,6 +1244,11 @@ pub unsafe fn receive_packet_safe(out_buffer: &mut [u8]) -> usize {
 }
 
 /// Send an error response to the host
+/// 
+/// # Note
+/// For bare-metal no_std environments without an allocator, you would define
+/// a variant of ErrorPacket with &'static str instead of String, or use .into()
+/// to convert the static string to a String when alloc is available.
 unsafe fn send_error_response(error_code: ErrorCode) {
     let packet = ErrorPacket {
         header: PacketHeader {
@@ -1237,7 +1259,7 @@ unsafe fn send_error_response(error_code: ErrorCode) {
         },
         error_code,
         reserved: [0; 3],
-        details: "Buffer overflow".to_string(),
+        details: "Buffer overflow".into(),  // .into() works with both String and &str depending on context
     };
     
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&packet)
