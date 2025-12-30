@@ -119,6 +119,95 @@ where
         );
     }
 
+    /// Execute a single simulation step (one cycle)
+    /// Returns Some(tohost_value) if halt detected, None otherwise
+    pub fn step(&mut self) -> Option<u32> {
+        // Magic address for halt signal (tohost mechanism)
+        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+
+        // Instruction Fetch
+        let pc = self.cpu.imem_addr;
+        let instruction = self.bus.read_word(pc);
+        self.cpu.imem_data = instruction;
+
+        // First evaluation: Decode instruction and compute addresses
+        self.cpu.eval();
+
+        // Data Memory Read
+        let dmem_addr = self.cpu.dmem_addr;
+        let rdata = if self.cpu.dmem_we == 0 {
+            self.bus.read_word(dmem_addr)
+        } else {
+            0
+        };
+        self.cpu.dmem_rdata = rdata;
+
+        // Second evaluation: Propagate loaded data
+        self.cpu.eval();
+
+        // Data Memory Write
+        let mut halt_value = None;
+        if self.cpu.dmem_we != 0 {
+            let wdata = self.cpu.dmem_wdata;
+            self.bus.write_word(dmem_addr, wdata);
+
+            // Check for halt signal
+            if dmem_addr == TOHOST_ADDR {
+                halt_value = Some(wdata);
+            }
+        }
+
+        // Sample debug signals BEFORE clock tick
+        let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+            Some(InstructionTrace::from_instruction(
+                pc,
+                instruction,
+                rs1_value,
+                rs2_value,
+                rd_value,
+            ))
+        } else {
+            None
+        };
+
+        // Clock tick
+        self.cpu.clk = 0;
+        self.cpu.eval();
+        self.cpu.clk = 1;
+        self.cpu.eval();
+
+        // Process FIFO TX data
+        while let Some(word) = self.bus.fifo.tx.pop_front() {
+            if let Some(ref mut callback) = self.fifo_callback {
+                callback(word);
+            }
+        }
+
+        // Call trace callback if provided
+        if let Some(ref mut callback) = self.trace_callback {
+            if let Some(ref trace_data) = trace {
+                callback(trace_data);
+            }
+        }
+
+        // Debug logging
+        if self.print_inst_trace {
+            if let Some(ref trace_data) = trace {
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                    self.cycle_count, pc, pc, instruction, trace_data
+                );
+            }
+        }
+
+        self.cycle_count += 1;
+
+        halt_value
+    }
+
     /// Run the simulation for up to max_cycles
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {

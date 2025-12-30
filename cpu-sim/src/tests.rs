@@ -431,3 +431,167 @@ fn test_packet_protocol_infrastructure() {
     println!("✓ Transport layer working as expected");
     println!("========================================\n");
 }
+
+#[test]
+fn test_packet_protocol_end_to_end() {
+    use riscv_protocol::*;
+    
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("PACKET PROTOCOL END-TO-END TEST");
+    println!("========================================");
+    println!("Testing bidirectional packet communication with CPU...\n");
+
+    let elf_path = test_program_path("packet_test.elf");
+    
+    // Initialize DRAM and load ELF
+    let mut dram = crate::dram::Dram::new();
+    let entry_point = dram
+        .load_elf(&elf_path)
+        .expect("Failed to load packet_test.elf");
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = crate::bus::SystemBus::new(dram);
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .expect("Failed to create CPU runtime");
+    let mut sim = crate::sim::Simulator::new(
+        &runtime,
+        bus,
+        entry_point,
+        false, // Disable instruction trace
+        None::<fn(u32)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+    )
+    .expect("Failed to create simulator");
+
+    // Reset the CPU before starting
+    sim.reset();
+
+    // Test 1: Send Echo packet to CPU
+    println!("Test 1: Sending Echo packet to CPU...");
+    let echo_request = EchoPacket {
+        header: PacketHeader::new(PacketType::Echo, 0),  // Length not used
+        sequence: 100,
+        timestamp: 999999,
+    };
+    sim.send_echo_packet(&echo_request).unwrap();
+    
+    // Run simulation for a bit to let CPU process the packet
+    let mut echo_received = false;
+    for _ in 0..20000 {
+        if let Some(_tohost) = sim.step() {
+            // CPU halted - continue for a few more cycles to get remaining packets
+        }
+        
+        // Check if we got a response
+        if !echo_received {
+            if let Some(echo_response) = sim.try_receive_echo_packet().unwrap() {
+                println!("✓ Received Echo response:");
+                println!("  Original sequence: {}, Response sequence: {}", 
+                         echo_request.sequence, echo_response.sequence);
+                println!("  Original timestamp: {}, Response timestamp: {}", 
+                         echo_request.timestamp, echo_response.timestamp);
+                assert_eq!(echo_response.sequence, echo_request.sequence + 1);
+                assert_eq!(echo_response.timestamp, echo_request.timestamp + 100);
+                echo_received = true;
+            }
+        }
+    }
+    assert!(echo_received, "Should have received Echo response");
+    
+    // Test 2: Receive Debug packet from CPU
+    println!("\nTest 2: Receiving Debug packet from CPU...");
+    let mut debug_received = false;
+    for _ in 0..20000 {
+        if let Some(_tohost) = sim.step() {
+            break;
+        }
+        
+        if !debug_received {
+            if let Some(debug_msg) = sim.try_receive_debug_packet().unwrap() {
+                println!("✓ Received Debug packet from CPU:");
+                println!("  Level: {:?}", debug_msg.level);
+                println!("  Message: \"{}\"", debug_msg.message);
+                assert_eq!(debug_msg.level, DebugLevel::Info);
+                assert_eq!(debug_msg.message, "Hello from CPU!");
+                debug_received = true;
+            }
+        }
+    }
+    assert!(debug_received, "Should have received Debug packet");
+    
+    // Test 3: Send DataU32 packet and receive doubled value
+    println!("\nTest 3: Sending DataU32 packet to CPU...");
+    let data_request = DataU32Packet {
+        header: PacketHeader::new(PacketType::DataU32, 0),  // Length not used
+        value: 21,
+        tag: 42,
+    };
+    sim.send_data_u32_packet(&data_request).unwrap();
+    
+    let mut data_received = false;
+    for _ in 0..20000 {
+        if let Some(_tohost) = sim.step() {
+            break;
+        }
+        
+        if !data_received {
+            if let Some(data_response) = sim.try_receive_data_u32_packet().unwrap() {
+                println!("✓ Received DataU32 response:");
+                println!("  Sent value: {}, Received value: {}", 
+                         data_request.value, data_response.value);
+                println!("  Tag: {}", data_response.tag);
+                assert_eq!(data_response.value, data_request.value * 2);
+                assert_eq!(data_response.tag, data_request.tag);
+                data_received = true;
+            }
+        }
+    }
+    assert!(data_received, "Should have received DataU32 response");
+    
+    // Test 4: Receive Assert packet from CPU
+    println!("\nTest 4: Receiving Assert packet from CPU...");
+    let mut assert_received = false;
+    let mut final_tohost = None;
+    for _ in 0..20000 {
+        if let Some(tohost) = sim.step() {
+            final_tohost = Some(tohost);
+            // Continue for a few more cycles to ensure we get the assert packet
+        }
+        
+        if !assert_received {
+            if let Some(assert_pkt) = sim.try_receive_assert_packet().unwrap() {
+                println!("✓ Received Assert packet from CPU:");
+                println!("  Test ID: {}", assert_pkt.test_id);
+                println!("  Passed: {}", assert_pkt.passed);
+                println!("  Expected: {}, Actual: {}", assert_pkt.expected, assert_pkt.actual);
+                println!("  Message: \"{}\"", assert_pkt.message);
+                assert!(assert_pkt.passed, "CPU test should pass");
+                assert_eq!(assert_pkt.test_id, 1);
+                assert_received = true;
+            }
+        }
+        
+        if assert_received && final_tohost.is_some() {
+            break;
+        }
+    }
+    assert!(assert_received, "Should have received Assert packet");
+    assert_eq!(final_tohost, Some(42), "Program should complete with success code");
+    
+    println!("\n========================================");
+    println!("END-TO-END TEST COMPLETE");
+    println!("========================================");
+    println!("✓ Echo packet: Request/response verified");
+    println!("✓ Debug packet: Message from CPU received");
+    println!("✓ DataU32 packet: Computation verified (doubled)");
+    println!("✓ Assert packet: CPU test passed");
+    println!("✓ Program completed with success code 42");
+    println!("========================================\n");
+}
