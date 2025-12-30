@@ -1027,14 +1027,14 @@ fn test_cpu_store_halfword() {
 
     // Program: Test SH (store halfword)
     // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
-    // 0x04: ADDI x2, x0, 0x1234 ; x2 = 0x1234 (actually sign-extends but lower 16 bits are 0x1234)
-    // 0x08: ADDI x3, x0, 0x5678 ; x3 = 0x5678
-    // 0x0C: SH   x2, 0(x1)     ; Store 0x1234 to halfword 0 of mem[100]
-    // 0x10: SH   x3, 2(x1)     ; Store 0x5678 to halfword 1 of mem[100]
-    // 0x14: LW   x4, 0(x1)     ; Load full word, should be 0x56781234
+    // 0x04: ADDI x2, x0, 0x234 ; x2 = 0x234 (ADDI only supports 12-bit immediates)
+    // 0x08: ADDI x3, x0, 0x678 ; x3 = 0x678
+    // 0x0C: SH   x2, 0(x1)     ; Store 0x0234 to halfword 0 of mem[100]
+    // 0x10: SH   x3, 2(x1)     ; Store 0x0678 to halfword 1 of mem[100]
+    // 0x14: LW   x4, 0(x1)     ; Load full word, should be 0x06780234
     imem.insert(0x00, addi(1, 0, 100));
-    imem.insert(0x04, addi(2, 0, 0x1234));
-    imem.insert(0x08, addi(3, 0, 0x5678));
+    imem.insert(0x04, addi(2, 0, 0x234));
+    imem.insert(0x08, addi(3, 0, 0x678));
     imem.insert(0x0C, sh(1, 2, 0));
     imem.insert(0x10, sh(1, 3, 2));
     imem.insert(0x14, lw(4, 1, 0));
@@ -1097,8 +1097,8 @@ fn test_cpu_store_halfword() {
     // Verify memory operations - halfwords stored in little-endian order
     assert_eq!(
         dmem.get(&100),
-        Some(&0x56781234),
-        "Memory[100] should contain 0x56781234 after halfword stores"
+        Some(&0x06780234),
+        "Memory[100] should contain 0x06780234 after halfword stores"
     );
 
     println!("Successfully executed SH instruction");
