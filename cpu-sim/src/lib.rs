@@ -483,12 +483,12 @@ mod tests {
                 InstructionType::Addi => {
                     if let super::InstructionTrace {
                         rd:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rd_reg,
                                 value: rd_val,
                             }),
                         rs1:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rs1_reg,
                                 value: _,
                             }),
@@ -513,17 +513,17 @@ mod tests {
                 InstructionType::Add => {
                     if let super::InstructionTrace {
                         rd:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rd_reg,
                                 value: rd_val,
                             }),
                         rs1:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rs1_reg,
                                 value: rs1_val,
                             }),
                         rs2:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rs2_reg,
                                 value: rs2_val,
                             }),
@@ -542,17 +542,17 @@ mod tests {
                 InstructionType::Sub => {
                     if let super::InstructionTrace {
                         rd:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rd_reg,
                                 value: rd_val,
                             }),
                         rs1:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rs1_reg,
                                 value: rs1_val,
                             }),
                         rs2:
-                            Some(riscv_core::trace::Operand::Register {
+                            Some(riscv_core::trace::RegisterOperand {
                                 reg: rs2_reg,
                                 value: rs2_val,
                             }),

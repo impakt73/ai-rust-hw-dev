@@ -61,24 +61,13 @@ pub enum InstructionType {
     Unknown,
 }
 
-/// Operand for an instruction.
-///
-/// Currently, all decoded operands are modeled as [`Operand::Register`] and any
-/// immediate associated with the instruction is stored separately in
-/// [`InstructionTrace::immediate`]. The [`Operand::Immediate`] variant is kept
-/// for potential future use (e.g. representing all operands uniformly in one
-/// place) but is not used by the tracing logic at this time.
+/// Register operand for an instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operand {
-    /// Register operand with register number and value
-    Register { reg: u8, value: u32 },
-    /// Immediate value (signed).
-    ///
-    /// Note: The trace format currently uses [`InstructionTrace::immediate`]
-    /// to carry immediate values instead of this variant. This variant is
-    /// reserved for potential future extensions and may not be constructed
-    /// by the existing code.
-    Immediate(i32),
+pub struct RegisterOperand {
+    /// Register number (0-31)
+    pub reg: u8,
+    /// Register value at time of execution
+    pub value: u32,
 }
 
 /// Complete trace information for a single instruction
@@ -91,11 +80,11 @@ pub struct InstructionTrace {
     /// Type of instruction
     pub inst_type: InstructionType,
     /// Destination register (if applicable)
-    pub rd: Option<Operand>,
+    pub rd: Option<RegisterOperand>,
     /// Source register 1 (if applicable)
-    pub rs1: Option<Operand>,
+    pub rs1: Option<RegisterOperand>,
     /// Source register 2 (if applicable)
-    pub rs2: Option<Operand>,
+    pub rs2: Option<RegisterOperand>,
     /// Immediate value (if applicable)
     pub immediate: Option<i32>,
 }
@@ -136,15 +125,15 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
-                    rs2: Some(Operand::Register {
+                    rs2: Some(RegisterOperand {
                         reg: rs2_num,
                         value: rs2_value,
                     }),
@@ -179,11 +168,11 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
@@ -206,11 +195,11 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
@@ -232,11 +221,11 @@ impl InstructionTrace {
                     instruction,
                     inst_type,
                     rd: None,
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
-                    rs2: Some(Operand::Register {
+                    rs2: Some(RegisterOperand {
                         reg: rs2_num,
                         value: rs2_value,
                     }),
@@ -260,11 +249,11 @@ impl InstructionTrace {
                     instruction,
                     inst_type,
                     rd: None,
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
-                    rs2: Some(Operand::Register {
+                    rs2: Some(RegisterOperand {
                         reg: rs2_num,
                         value: rs2_value,
                     }),
@@ -278,7 +267,7 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type: InstructionType::Lui,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
@@ -294,7 +283,7 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type: InstructionType::Auipc,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
@@ -310,7 +299,7 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type: InstructionType::Jal,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
@@ -326,11 +315,11 @@ impl InstructionTrace {
                     pc,
                     instruction,
                     inst_type: InstructionType::Jalr,
-                    rd: Some(Operand::Register {
+                    rd: Some(RegisterOperand {
                         reg: rd_num,
                         value: rd_value,
                     }),
-                    rs1: Some(Operand::Register {
+                    rs1: Some(RegisterOperand {
                         reg: rs1_num,
                         value: rs1_value,
                     }),
@@ -357,18 +346,9 @@ impl fmt::Display for InstructionTrace {
         // Use the existing disasm module for consistent formatting
         let disassembled = crate::disasm::disassemble_with_all_values(
             self.instruction,
-            self.rs1.map_or(0, |op| match op {
-                Operand::Register { value, .. } => value,
-                _ => 0,
-            }),
-            self.rs2.map_or(0, |op| match op {
-                Operand::Register { value, .. } => value,
-                _ => 0,
-            }),
-            self.rd.map_or(0, |op| match op {
-                Operand::Register { value, .. } => value,
-                _ => 0,
-            }),
+            self.rs1.map_or(0, |op| op.value),
+            self.rs2.map_or(0, |op| op.value),
+            self.rd.map_or(0, |op| op.value),
         );
         write!(f, "{}", disassembled)
     }
@@ -446,15 +426,15 @@ mod tests {
         assert_eq!(trace.pc, 0x1000);
         assert!(matches!(
             trace.rd,
-            Some(Operand::Register { reg: 1, value: 15 })
+            Some(RegisterOperand { reg: 1, value: 15 })
         ));
         assert!(matches!(
             trace.rs1,
-            Some(Operand::Register { reg: 2, value: 10 })
+            Some(RegisterOperand { reg: 2, value: 10 })
         ));
         assert!(matches!(
             trace.rs2,
-            Some(Operand::Register { reg: 3, value: 5 })
+            Some(RegisterOperand { reg: 3, value: 5 })
         ));
     }
 
@@ -467,11 +447,11 @@ mod tests {
         assert_eq!(trace.immediate, Some(42));
         assert!(matches!(
             trace.rd,
-            Some(Operand::Register { reg: 1, value: 52 })
+            Some(RegisterOperand { reg: 1, value: 52 })
         ));
         assert!(matches!(
             trace.rs1,
-            Some(Operand::Register { reg: 2, value: 10 })
+            Some(RegisterOperand { reg: 2, value: 10 })
         ));
         assert!(trace.rs2.is_none());
     }
@@ -485,14 +465,14 @@ mod tests {
         assert_eq!(trace.immediate, Some(4));
         assert!(matches!(
             trace.rd,
-            Some(Operand::Register {
+            Some(RegisterOperand {
                 reg: 1,
                 value: 0xdeadbeef
             })
         ));
         assert!(matches!(
             trace.rs1,
-            Some(Operand::Register {
+            Some(RegisterOperand {
                 reg: 2,
                 value: 0x1000
             })
@@ -509,14 +489,14 @@ mod tests {
         assert!(trace.rd.is_none());
         assert!(matches!(
             trace.rs1,
-            Some(Operand::Register {
+            Some(RegisterOperand {
                 reg: 2,
                 value: 0x2000
             })
         ));
         assert!(matches!(
             trace.rs2,
-            Some(Operand::Register {
+            Some(RegisterOperand {
                 reg: 3,
                 value: 0xcafebabe
             })
