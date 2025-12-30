@@ -2,6 +2,20 @@
 
 This directory contains simple RISC-V test programs for the CPU simulator.
 
+## hello_world.elf
+
+A bare metal Rust program that demonstrates FIFO (First-In-First-Out) operations and writes "Hello World" to a simulated I/O device.
+
+The Rust source code is in the `rust-test-program/src/hello_world.rs` directory.
+
+### Running
+
+```bash
+cargo test --package cpu-sim test_fifo_hello_world
+```
+
+This test verifies that the CPU can execute complex Rust code including loops, function calls, and I/O operations.
+
 ## test.elf
 
 A simple assembly test program that demonstrates basic RISC-V instructions:

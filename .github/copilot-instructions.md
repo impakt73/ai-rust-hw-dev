@@ -50,7 +50,7 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 
 ## Testing Requirements
 
-- All 22 tests must pass before marking PR ready for review
+- All 28 tests must pass before marking PR ready for review
 - Run `cargo test --verbose` to verify
 - After RTL changes, run `cargo clean` to clear Verilator cache
 - Use `cargo test -- --nocapture` to see test output during debugging
