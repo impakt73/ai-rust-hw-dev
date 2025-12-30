@@ -45,12 +45,12 @@ The simulator provides a programmatic interface for receiving instruction trace 
 ```rust
 use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
 use riscv_core::trace::InstructionType;
-use std::path::Path;
+use std::{cell::Cell, path::Path};
 
 // Define a callback to process each instruction
-let mut instruction_count = 0;
+let instruction_count = Cell::new(0);
 let trace_callback = |trace: &InstructionTrace| {
-    instruction_count += 1;
+    instruction_count.set(instruction_count.get() + 1);
     
     // Access structured trace information
     match trace.inst_type {
@@ -78,7 +78,7 @@ let result = run_elf_with_trace_callback(
     Some(trace_callback)
 )?;
 
-println!("Executed {} instructions", instruction_count);
+println!("Executed {} instructions", instruction_count.get());
 ```
 
 ### InstructionTrace Structure

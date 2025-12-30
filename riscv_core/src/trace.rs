@@ -61,12 +61,23 @@ pub enum InstructionType {
     Unknown,
 }
 
-/// Operand for an instruction
+/// Operand for an instruction.
+///
+/// Currently, all decoded operands are modeled as [`Operand::Register`] and any
+/// immediate associated with the instruction is stored separately in
+/// [`InstructionTrace::immediate`]. The [`Operand::Immediate`] variant is kept
+/// for potential future use (e.g. representing all operands uniformly in one
+/// place) but is not used by the tracing logic at this time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operand {
     /// Register operand with register number and value
     Register { reg: u8, value: u32 },
-    /// Immediate value (signed)
+    /// Immediate value (signed).
+    ///
+    /// Note: The trace format currently uses [`InstructionTrace::immediate`]
+    /// to carry immediate values instead of this variant. This variant is
+    /// reserved for potential future extensions and may not be constructed
+    /// by the existing code.
     Immediate(i32),
 }
 

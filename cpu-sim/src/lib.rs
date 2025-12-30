@@ -117,12 +117,14 @@ where
 /// # Examples
 /// ```no_run
 /// use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
-/// use std::path::Path;
+/// use std::{path::Path, sync::{Arc, Mutex}};
 ///
-/// let mut trace_count = 0;
-/// let trace_callback = |trace: &InstructionTrace| {
-///     trace_count += 1;
-///     println!("Instruction {}: {:?}", trace_count, trace.inst_type);
+/// let trace_count = Arc::new(Mutex::new(0usize));
+/// let trace_count_cloned = Arc::clone(&trace_count);
+/// let trace_callback = move |trace: &InstructionTrace| {
+///     let mut count = trace_count_cloned.lock().unwrap();
+///     *count += 1;
+///     println!("Instruction {}: {:?}", *count, trace.inst_type);
 /// };
 ///
 /// let result = run_elf_with_trace_callback(
