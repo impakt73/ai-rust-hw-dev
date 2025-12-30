@@ -9,7 +9,7 @@ This program tests the CPU simulator with normally compiled Rust code (not inlin
 ## Features
 
 - **No Standard Library**: Uses `#![no_std]` for bare metal execution
-- **Custom Entry Point**: Defines `_start()` as the entry point
+- **riscv_rt Runtime**: Uses the `riscv_rt` crate for proper runtime initialization with the `#[entry]` macro
 - **Regular Rust Code**: Uses standard Rust operators and control flow
 - **Comprehensive Tests**: Tests arithmetic, logical, shift, comparison, memory operations, loops, arrays, and function calls
 
@@ -44,15 +44,17 @@ cargo test --package cpu-sim test_rust_bare_metal_elf
 ## Implementation Details
 
 - **Target**: `riscv32i-unknown-none-elf` (32-bit RISC-V with integer instructions only)
-- **Linker Script**: `linker.ld` - Places code at 0x80000000
+- **Runtime**: Uses `riscv_rt` crate which provides proper stack pointer initialization and startup code
+- **Linker Scripts**: Uses `memory.x` (memory layout) and `link.x` (from riscv_rt) for linking
 - **Exit Mechanism**: Writes to tohost address (0xFFFFFFF0) with value 42 on success
 - **Test Coverage**: Arithmetic, logical, shifts, comparisons, memory I/O, loops, arrays, and function calls
 
 ## Configuration
 
-- `.cargo/config.toml`: Specifies the target and linker script
-- `linker.ld`: Memory layout matching the assembly test program
-- `Cargo.toml`: Configures the binary with `test = false` to prevent standard library test compilation
+- `.cargo/config.toml`: Specifies the target (`riscv32i-unknown-none-elf`)
+- `memory.x`: Memory layout defining RAM location and regions for riscv_rt
+- `build.rs`: Configures linker to use both `memory.x` and `link.x` (from riscv_rt)
+- `Cargo.toml`: Configures the binaries with `test = false` and includes `riscv-rt = "0.17.0"` dependency
 
 ## Note
 
