@@ -1,4 +1,4 @@
-use crate::memory::Memory;
+use crate::bus::SystemBus;
 use riscv_core::Top;
 
 /// Result of a simulation run
@@ -9,21 +9,29 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a> {
+pub struct Simulator<'a, F>
+where
+    F: FnMut(u32),
+{
     cpu: Top<'a>,
-    memory: Memory,
+    pub bus: SystemBus,
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
+    fifo_callback: Option<F>,
 }
 
-impl<'a> Simulator<'a> {
-    /// Create a new simulator with the given memory, runtime, and entry point
+impl<'a, F> Simulator<'a, F>
+where
+    F: FnMut(u32),
+{
+    /// Create a new simulator with the given bus, runtime, entry point, and optional FIFO callback
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
-        memory: Memory,
+        bus: SystemBus,
         entry_point: u32,
         print_inst_trace: bool,
+        fifo_callback: Option<F>,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
@@ -32,11 +40,47 @@ impl<'a> Simulator<'a> {
 
         Ok(Simulator {
             cpu,
-            memory,
+            bus,
             cycle_count: 0,
             entry_point,
             print_inst_trace,
+            fifo_callback,
         })
+    }
+
+    /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
+    /// This allows the host to send data to the simulated program
+    pub fn fifo_write_rx(&mut self, word: u32) {
+        self.bus.fifo.rx.push_back(word);
+    }
+
+    /// Write a string to the FIFO RX queue
+    /// Chunks the string into u32 words with zero-padding and adds a null terminator
+    pub fn fifo_write_rx_string(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        let mut i = 0;
+
+        // Write all complete words
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+
+            // Pack up to 4 bytes into a u32 word (little-endian)
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+                // Remaining bytes are implicitly 0 (zero-padding)
+            }
+
+            self.fifo_write_rx(word);
+            i += 4;
+        }
+
+        // Add a null terminator word if the string ends on a word boundary
+        // This ensures the reading side can detect the end of the string
+        if bytes.len().is_multiple_of(4) {
+            self.fifo_write_rx(0);
+        }
     }
 
     /// Reset the CPU
@@ -81,7 +125,7 @@ impl<'a> Simulator<'a> {
         while self.cycle_count < max_cycles {
             // Instruction Fetch
             let pc = self.cpu.imem_addr;
-            let instruction = self.memory.read_word(pc);
+            let instruction = self.bus.read_word(pc);
             self.cpu.imem_data = instruction;
 
             // First evaluation: Decode instruction and compute addresses
@@ -94,7 +138,7 @@ impl<'a> Simulator<'a> {
             // After the first eval, dmem_addr contains the data memory address
             // computed by the current instruction (for load/store operations)
             let dmem_addr = self.cpu.dmem_addr;
-            let rdata = self.memory.read_word(dmem_addr);
+            let rdata = self.bus.read_word(dmem_addr);
             self.cpu.dmem_rdata = rdata;
 
             // Second evaluation: Propagate loaded data to rd_data
@@ -108,7 +152,7 @@ impl<'a> Simulator<'a> {
             // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
-                self.memory.write_word(dmem_addr, wdata);
+                self.bus.write_word(dmem_addr, wdata);
                 log::debug!(
                     "Memory Write: addr=0x{:08x}, data=0x{:08x}",
                     dmem_addr,
@@ -134,6 +178,14 @@ impl<'a> Simulator<'a> {
             self.cpu.eval();
             self.cpu.clk = 1;
             self.cpu.eval();
+
+            // Process FIFO TX data
+            while let Some(word) = self.bus.fifo.tx.pop_front() {
+                if let Some(ref mut callback) = self.fifo_callback {
+                    callback(word);
+                }
+                // If no callback, just clear the buffer (don't print)
+            }
 
             // Debug logging: print after evaluation to capture rd_data
             if self.print_inst_trace {
