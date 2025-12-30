@@ -224,8 +224,10 @@ mod tests {
         };
 
         // Run the simulation with FIFO callback and RX data
-        // The program should echo "Echo Test!" from RX to TX
-        let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some("Echo Test!"))
+        // The program should echo a longer random pattern from RX to TX
+        // This tests multiple read/write loop iterations with varied character patterns
+        let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
+        let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some(test_string))
             .expect("FIFO hello world simulation should succeed");
 
         // Verify the program halted with the correct exit code (42 = 0x2a)
@@ -247,8 +249,8 @@ mod tests {
             String::from_utf8(trimmed_data).expect("FIFO data should be valid UTF-8");
 
         assert_eq!(
-            received_string, "Echo Test!",
-            "Expected to receive echoed 'Echo Test!' via FIFO"
+            received_string, test_string,
+            "Expected to receive echoed test string via FIFO"
         );
 
         println!("✓ FIFO echo test passed in {} cycles", result.cycles);
