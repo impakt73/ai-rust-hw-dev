@@ -24,11 +24,6 @@ fn write_tohost(value: u32) -> ! {
 /// FIFO memory-mapped I/O addresses
 const FIFO_BASE: u32 = 0x4000_0000;
 const FIFO_DATA: u32 = FIFO_BASE + 0x0;
-const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
-
-/// FIFO status bits
-const FIFO_RX_VALID: u32 = 0x1;
-const FIFO_TX_READY: u32 = 0x2;
 
 /// Read a word from the FIFO (without status check - just read and return)
 #[inline(never)]
