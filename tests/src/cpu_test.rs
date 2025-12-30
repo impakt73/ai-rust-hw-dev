@@ -809,13 +809,19 @@ fn test_cpu_load_byte() {
     dut.eval();
 
     // Execute and handle memory operations
+    let mut lb_x3 = 0u32;
+    let mut lb_x4 = 0u32;
+    let mut lbu_x5 = 0u32;
+    let mut lbu_x6 = 0u32;
+
     for cycle in 0..12 {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
 
         // Handle data memory reads (before eval)
-        let dmem_addr_pre = dut.dmem_addr;
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
         dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
         dut.eval();
@@ -828,6 +834,18 @@ fn test_cpu_load_byte() {
                 "Cycle {}: WRITE mem[{}] = 0x{:08X}",
                 cycle, dmem_addr, dut.dmem_wdata
             );
+        }
+
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lb_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lb_x4 = dut.debug_rd_data;
+        } else if pc == 0x14 {
+            lbu_x5 = dut.debug_rd_data;
+        } else if pc == 0x18 {
+            lbu_x6 = dut.debug_rd_data;
         }
 
         println!(
@@ -843,6 +861,24 @@ fn test_cpu_load_byte() {
         dmem.get(&100),
         Some(&0xFFFFFFFF),
         "Memory[100] should contain 0xFFFFFFFF"
+    );
+
+    // Verify load operations
+    assert_eq!(
+        lb_x3, 0xFFFFFFFF,
+        "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lb_x4, 0xFFFFFFFF,
+        "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lbu_x5, 0x000000FF,
+        "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
+    );
+    assert_eq!(
+        lbu_x6, 0x000000FF,
+        "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
     );
 
     println!("Successfully executed LB and LBU instructions");
@@ -884,13 +920,19 @@ fn test_cpu_load_halfword() {
     dut.eval();
 
     // Execute and handle memory operations
+    let mut lh_x3 = 0u32;
+    let mut lh_x4 = 0u32;
+    let mut lhu_x5 = 0u32;
+    let mut lhu_x6 = 0u32;
+
     for cycle in 0..12 {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
 
         // Handle data memory reads
-        let dmem_addr_pre = dut.dmem_addr;
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
         dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
         dut.eval();
@@ -903,6 +945,18 @@ fn test_cpu_load_halfword() {
                 "Cycle {}: WRITE mem[{}] = 0x{:08X}",
                 cycle, dmem_addr, dut.dmem_wdata
             );
+        }
+
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lh_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lh_x4 = dut.debug_rd_data;
+        } else if pc == 0x14 {
+            lhu_x5 = dut.debug_rd_data;
+        } else if pc == 0x18 {
+            lhu_x6 = dut.debug_rd_data;
         }
 
         println!(
@@ -918,6 +972,24 @@ fn test_cpu_load_halfword() {
         dmem.get(&100),
         Some(&0xFFFFFFFF),
         "Memory[100] should contain 0xFFFFFFFF"
+    );
+
+    // Verify load operations
+    assert_eq!(
+        lh_x3, 0xFFFFFFFF,
+        "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lh_x4, 0xFFFFFFFF,
+        "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lhu_x5, 0x0000FFFF,
+        "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+    );
+    assert_eq!(
+        lhu_x6, 0x0000FFFF,
+        "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
     );
 
     println!("Successfully executed LH and LHU instructions");
@@ -1144,18 +1216,24 @@ fn test_cpu_byte_halfword_mixed() {
     dut.eval();
 
     // Execute and handle memory operations
+    let mut lb_x3 = 0u32;
+    let mut lbu_x4 = 0u32;
+    let mut lh_x6 = 0u32;
+    let mut lhu_x7 = 0u32;
+
     for cycle in 0..15 {
         let pc = dut.imem_addr;
         let instruction = imem.get(&pc).copied().unwrap_or(0);
         dut.imem_data = instruction;
 
         // Handle data memory reads
-        let dmem_addr_pre = dut.dmem_addr;
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
         dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
         dut.eval();
 
-        // Handle data memory writes - use same logic as other tests
+        // Handle data memory writes - generic approach based on write data format
         let dmem_addr = dut.dmem_addr;
         if dut.dmem_we != 0 {
             let word_addr = dmem_addr & !0x3;
@@ -1164,17 +1242,31 @@ fn test_cpu_byte_halfword_mixed() {
             let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
             let mut word_bytes = current_word.to_le_bytes();
 
-            // Handle byte store (extract byte from appropriate position)
-            if pc == 0x08 {
-                // This is the SB instruction
+            // Determine store type by examining write data pattern
+            // Byte store: data positioned at specific byte location
+            // Halfword store: data positioned at specific halfword location
+            let non_zero_bytes = [
+                (dut.dmem_wdata & 0x000000FF) != 0,
+                (dut.dmem_wdata & 0x0000FF00) != 0,
+                (dut.dmem_wdata & 0x00FF0000) != 0,
+                (dut.dmem_wdata & 0xFF000000) != 0,
+            ];
+
+            let non_zero_count = non_zero_bytes.iter().filter(|&&b| b).count();
+
+            if non_zero_count <= 1 {
+                // Byte store - single byte is non-zero
                 let byte_val = ((dut.dmem_wdata >> (byte_offset * 8)) & 0xFF) as u8;
                 word_bytes[byte_offset] = byte_val;
-            } else if pc == 0x18 {
-                // This is the SH instruction
+            } else if non_zero_count == 2 {
+                // Halfword store - two consecutive bytes are non-zero
                 let halfword_val = ((dut.dmem_wdata >> (halfword_offset * 16)) & 0xFFFF) as u16;
                 let hw_bytes = halfword_val.to_le_bytes();
                 word_bytes[halfword_offset * 2] = hw_bytes[0];
                 word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
+            } else {
+                // Word store
+                word_bytes = dut.dmem_wdata.to_le_bytes();
             }
 
             let new_word = u32::from_le_bytes(word_bytes);
@@ -1185,6 +1277,18 @@ fn test_cpu_byte_halfword_mixed() {
             );
         }
 
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lb_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lbu_x4 = dut.debug_rd_data;
+        } else if pc == 0x1C {
+            lh_x6 = dut.debug_rd_data;
+        } else if pc == 0x20 {
+            lhu_x7 = dut.debug_rd_data;
+        }
+
         println!(
             "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
             cycle, pc, dut.debug_rd_data
@@ -1192,6 +1296,24 @@ fn test_cpu_byte_halfword_mixed() {
 
         clock_cycle!(dut);
     }
+
+    // Verify load operations
+    assert_eq!(
+        lb_x3, 0xFFFFFF80,
+        "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
+    );
+    assert_eq!(
+        lbu_x4, 0x00000080,
+        "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
+    );
+    assert_eq!(
+        lh_x6, 0xFFFFFFFF,
+        "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lhu_x7, 0x0000FFFF,
+        "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+    );
 
     println!("Successfully executed mixed byte/halfword operations");
 }

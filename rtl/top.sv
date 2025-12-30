@@ -171,7 +171,7 @@ module top (
     always_comb begin
         case (funct3)
             3'b000: begin // SB - Store Byte
-                // Replicate byte to all positions based on address alignment
+                // Position byte at correct location based on address alignment
                 case (alu_result[1:0])
                     2'b00: formatted_store_data = {24'b0, rs2_data[7:0]};
                     2'b01: formatted_store_data = {16'b0, rs2_data[7:0], 8'b0};
@@ -180,7 +180,7 @@ module top (
                 endcase
             end
             3'b001: begin // SH - Store Halfword
-                // Replicate halfword based on address alignment
+                // Position halfword based on address alignment
                 case (alu_result[1])
                     1'b0: formatted_store_data = {16'b0, rs2_data[15:0]};
                     1'b1: formatted_store_data = {rs2_data[15:0], 16'b0};
