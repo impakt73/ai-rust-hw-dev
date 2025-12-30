@@ -55,11 +55,12 @@ where
     }
 
     /// Write a string to the FIFO RX queue
-    /// Chunks the string into u32 words with zero-padding
+    /// Chunks the string into u32 words with zero-padding and adds a null terminator
     pub fn fifo_write_rx_string(&mut self, s: &str) {
         let bytes = s.as_bytes();
         let mut i = 0;
 
+        // Write all complete words
         while i < bytes.len() {
             let mut word: u32 = 0;
 
@@ -73,6 +74,12 @@ where
 
             self.fifo_write_rx(word);
             i += 4;
+        }
+
+        // Add a null terminator word if the string ends on a word boundary
+        // This ensures the reading side can detect the end of the string
+        if bytes.len().is_multiple_of(4) {
+            self.fifo_write_rx(0);
         }
     }
 
