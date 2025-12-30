@@ -116,8 +116,32 @@ fn lw(rd: u32, rs1: u32, imm: i32) -> u32 {
     encode_i_type(0b0000011, rd, 0b010, rs1, imm)
 }
 
+fn lh(rd: u32, rs1: u32, imm: i32) -> u32 {
+    encode_i_type(0b0000011, rd, 0b001, rs1, imm)
+}
+
+fn lb(rd: u32, rs1: u32, imm: i32) -> u32 {
+    encode_i_type(0b0000011, rd, 0b000, rs1, imm)
+}
+
+fn lhu(rd: u32, rs1: u32, imm: i32) -> u32 {
+    encode_i_type(0b0000011, rd, 0b101, rs1, imm)
+}
+
+fn lbu(rd: u32, rs1: u32, imm: i32) -> u32 {
+    encode_i_type(0b0000011, rd, 0b100, rs1, imm)
+}
+
 fn sw(rs1: u32, rs2: u32, imm: i32) -> u32 {
     encode_s_type(0b0100011, 0b010, rs1, rs2, imm)
+}
+
+fn sh(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    encode_s_type(0b0100011, 0b001, rs1, rs2, imm)
+}
+
+fn sb(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    encode_s_type(0b0100011, 0b000, rs1, rs2, imm)
 }
 
 #[test]
@@ -746,4 +770,550 @@ fn test_cpu_tohost_halt() {
     );
 
     println!("Successfully tested tohost halt mechanism");
+}
+
+#[test]
+fn test_cpu_load_byte() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // Program: Test LB (load byte signed) and LBU (load byte unsigned)
+    // We'll store a word with mixed signed/unsigned bytes and load them
+    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
+    // 0x04: ADDI x2, x0, -1    ; x2 = 0xFFFFFFFF
+    // 0x08: SW   x2, 0(x1)     ; Store 0xFFFFFFFF to mem[100]
+    // 0x0C: LB   x3, 0(x1)     ; Load byte 0 (0xFF), sign-extend to 0xFFFFFFFF
+    // 0x10: LB   x4, 1(x1)     ; Load byte 1 (0xFF), sign-extend to 0xFFFFFFFF
+    // 0x14: LBU  x5, 0(x1)     ; Load byte 0 (0xFF), zero-extend to 0x000000FF
+    // 0x18: LBU  x6, 1(x1)     ; Load byte 1 (0xFF), zero-extend to 0x000000FF
+    imem.insert(0x00, addi(1, 0, 100));
+    imem.insert(0x04, addi(2, 0, -1));
+    imem.insert(0x08, sw(1, 2, 0));
+    imem.insert(0x0C, lb(3, 1, 0));
+    imem.insert(0x10, lb(4, 1, 1));
+    imem.insert(0x14, lbu(5, 1, 0));
+    imem.insert(0x18, lbu(6, 1, 1));
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    // Execute and handle memory operations
+    let mut lb_x3 = 0u32;
+    let mut lb_x4 = 0u32;
+    let mut lbu_x5 = 0u32;
+    let mut lbu_x6 = 0u32;
+
+    for cycle in 0..12 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads (before eval)
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes (after eval)
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            dmem.insert(dmem_addr, dut.dmem_wdata);
+            println!(
+                "Cycle {}: WRITE mem[{}] = 0x{:08X}",
+                cycle, dmem_addr, dut.dmem_wdata
+            );
+        }
+
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lb_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lb_x4 = dut.debug_rd_data;
+        } else if pc == 0x14 {
+            lbu_x5 = dut.debug_rd_data;
+        } else if pc == 0x18 {
+            lbu_x6 = dut.debug_rd_data;
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
+            cycle, pc, dut.debug_rd_data
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify memory operations
+    assert_eq!(
+        dmem.get(&100),
+        Some(&0xFFFFFFFF),
+        "Memory[100] should contain 0xFFFFFFFF"
+    );
+
+    // Verify load operations
+    assert_eq!(
+        lb_x3, 0xFFFFFFFF,
+        "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lb_x4, 0xFFFFFFFF,
+        "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lbu_x5, 0x000000FF,
+        "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
+    );
+    assert_eq!(
+        lbu_x6, 0x000000FF,
+        "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
+    );
+
+    println!("Successfully executed LB and LBU instructions");
+}
+
+#[test]
+fn test_cpu_load_halfword() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // Program: Test LH (load halfword signed) and LHU (load halfword unsigned)
+    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
+    // 0x04: ADDI x2, x0, -1    ; x2 = 0xFFFFFFFF
+    // 0x08: SW   x2, 0(x1)     ; Store 0xFFFFFFFF to mem[100]
+    // 0x0C: LH   x3, 0(x1)     ; Load halfword 0 (0xFFFF), sign-extend to 0xFFFFFFFF
+    // 0x10: LH   x4, 2(x1)     ; Load halfword 1 (0xFFFF), sign-extend to 0xFFFFFFFF
+    // 0x14: LHU  x5, 0(x1)     ; Load halfword 0 (0xFFFF), zero-extend to 0x0000FFFF
+    // 0x18: LHU  x6, 2(x1)     ; Load halfword 1 (0xFFFF), zero-extend to 0x0000FFFF
+    imem.insert(0x00, addi(1, 0, 100));
+    imem.insert(0x04, addi(2, 0, -1));
+    imem.insert(0x08, sw(1, 2, 0));
+    imem.insert(0x0C, lh(3, 1, 0));
+    imem.insert(0x10, lh(4, 1, 2));
+    imem.insert(0x14, lhu(5, 1, 0));
+    imem.insert(0x18, lhu(6, 1, 2));
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    // Execute and handle memory operations
+    let mut lh_x3 = 0u32;
+    let mut lh_x4 = 0u32;
+    let mut lhu_x5 = 0u32;
+    let mut lhu_x6 = 0u32;
+
+    for cycle in 0..12 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            dmem.insert(dmem_addr, dut.dmem_wdata);
+            println!(
+                "Cycle {}: WRITE mem[{}] = 0x{:08X}",
+                cycle, dmem_addr, dut.dmem_wdata
+            );
+        }
+
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lh_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lh_x4 = dut.debug_rd_data;
+        } else if pc == 0x14 {
+            lhu_x5 = dut.debug_rd_data;
+        } else if pc == 0x18 {
+            lhu_x6 = dut.debug_rd_data;
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
+            cycle, pc, dut.debug_rd_data
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify memory operations
+    assert_eq!(
+        dmem.get(&100),
+        Some(&0xFFFFFFFF),
+        "Memory[100] should contain 0xFFFFFFFF"
+    );
+
+    // Verify load operations
+    assert_eq!(
+        lh_x3, 0xFFFFFFFF,
+        "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lh_x4, 0xFFFFFFFF,
+        "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lhu_x5, 0x0000FFFF,
+        "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+    );
+    assert_eq!(
+        lhu_x6, 0x0000FFFF,
+        "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+    );
+
+    println!("Successfully executed LH and LHU instructions");
+}
+
+#[test]
+fn test_cpu_store_byte() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // Program: Test SB (store byte)
+    // We'll write individual bytes to different positions in a word
+    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
+    // 0x04: ADDI x2, x0, 0x12  ; x2 = 0x12
+    // 0x08: ADDI x3, x0, 0x34  ; x3 = 0x34
+    // 0x0C: ADDI x4, x0, 0x56  ; x4 = 0x56
+    // 0x10: ADDI x5, x0, 0x78  ; x5 = 0x78
+    // 0x14: SB   x2, 0(x1)     ; Store 0x12 to byte 0 of mem[100]
+    // 0x18: SB   x3, 1(x1)     ; Store 0x34 to byte 1 of mem[100]
+    // 0x1C: SB   x4, 2(x1)     ; Store 0x56 to byte 2 of mem[100]
+    // 0x20: SB   x5, 3(x1)     ; Store 0x78 to byte 3 of mem[100]
+    // 0x24: LW   x6, 0(x1)     ; Load full word, should be 0x78563412
+    imem.insert(0x00, addi(1, 0, 100));
+    imem.insert(0x04, addi(2, 0, 0x12));
+    imem.insert(0x08, addi(3, 0, 0x34));
+    imem.insert(0x0C, addi(4, 0, 0x56));
+    imem.insert(0x10, addi(5, 0, 0x78));
+    imem.insert(0x14, sb(1, 2, 0));
+    imem.insert(0x18, sb(1, 3, 1));
+    imem.insert(0x1C, sb(1, 4, 2));
+    imem.insert(0x20, sb(1, 5, 3));
+    imem.insert(0x24, lw(6, 1, 0));
+    imem.insert(0x28, addi(0, 0, 0)); // NOP
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    // Execute and handle memory operations
+    for cycle in 0..15 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads
+        let dmem_addr_pre = dut.dmem_addr;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes for byte stores
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            let word_addr = dmem_addr & !0x3; // Align to word boundary
+            let byte_offset = (dmem_addr & 0x3) as usize;
+            let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
+
+            // Extract the byte being written based on alignment
+            let byte_val = ((dut.dmem_wdata >> (byte_offset * 8)) & 0xFF) as u8;
+
+            // Create mask and update word
+            let mut word_bytes = current_word.to_le_bytes();
+            word_bytes[byte_offset] = byte_val;
+            let new_word = u32::from_le_bytes(word_bytes);
+
+            dmem.insert(word_addr, new_word);
+            println!(
+                "Cycle {}: SB mem[{}] byte {} = 0x{:02X}, word = 0x{:08X}",
+                cycle, word_addr, byte_offset, byte_val, new_word
+            );
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
+            cycle, pc, dut.debug_rd_data
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify memory operations - bytes stored in little-endian order
+    assert_eq!(
+        dmem.get(&100),
+        Some(&0x78563412),
+        "Memory[100] should contain 0x78563412 after byte stores"
+    );
+
+    println!("Successfully executed SB instruction");
+}
+
+#[test]
+fn test_cpu_store_halfword() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // Program: Test SH (store halfword)
+    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
+    // 0x04: ADDI x2, x0, 0x234 ; x2 = 0x234 (ADDI only supports 12-bit immediates)
+    // 0x08: ADDI x3, x0, 0x678 ; x3 = 0x678
+    // 0x0C: SH   x2, 0(x1)     ; Store 0x0234 to halfword 0 of mem[100]
+    // 0x10: SH   x3, 2(x1)     ; Store 0x0678 to halfword 1 of mem[100]
+    // 0x14: LW   x4, 0(x1)     ; Load full word, should be 0x06780234
+    imem.insert(0x00, addi(1, 0, 100));
+    imem.insert(0x04, addi(2, 0, 0x234));
+    imem.insert(0x08, addi(3, 0, 0x678));
+    imem.insert(0x0C, sh(1, 2, 0));
+    imem.insert(0x10, sh(1, 3, 2));
+    imem.insert(0x14, lw(4, 1, 0));
+    imem.insert(0x18, addi(0, 0, 0)); // NOP
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    // Execute and handle memory operations
+    for cycle in 0..12 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads
+        let dmem_addr_pre = dut.dmem_addr;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes for halfword stores
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            let word_addr = dmem_addr & !0x3; // Align to word boundary
+            let halfword_offset = ((dmem_addr & 0x2) >> 1) as usize;
+            let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
+
+            // Extract the halfword being written based on alignment
+            let halfword_val = ((dut.dmem_wdata >> (halfword_offset * 16)) & 0xFFFF) as u16;
+
+            // Create mask and update word
+            let mut word_bytes = current_word.to_le_bytes();
+            let hw_bytes = halfword_val.to_le_bytes();
+            word_bytes[halfword_offset * 2] = hw_bytes[0];
+            word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
+            let new_word = u32::from_le_bytes(word_bytes);
+
+            dmem.insert(word_addr, new_word);
+            println!(
+                "Cycle {}: SH mem[{}] halfword {} = 0x{:04X}, word = 0x{:08X}",
+                cycle, word_addr, halfword_offset, halfword_val, new_word
+            );
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
+            cycle, pc, dut.debug_rd_data
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify memory operations - halfwords stored in little-endian order
+    assert_eq!(
+        dmem.get(&100),
+        Some(&0x06780234),
+        "Memory[100] should contain 0x06780234 after halfword stores"
+    );
+
+    println!("Successfully executed SH instruction");
+}
+
+#[test]
+fn test_cpu_byte_halfword_mixed() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+
+    // Program: Test mixed byte/halfword operations with positive and negative values
+    // 0x00: ADDI x1, x0, 200   ; x1 = 200 (base address)
+    // 0x04: ADDI x2, x0, -128  ; x2 = 0xFFFFFF80 (negative byte)
+    // 0x08: SB   x2, 0(x1)     ; Store 0x80 to byte 0
+    // 0x0C: LB   x3, 0(x1)     ; Load byte (signed), should be 0xFFFFFF80
+    // 0x10: LBU  x4, 0(x1)     ; Load byte (unsigned), should be 0x00000080
+    // 0x14: ADDI x5, x0, -1    ; x5 = 0xFFFFFFFF
+    // 0x18: SH   x5, 4(x1)     ; Store 0xFFFF to halfword at offset 4
+    // 0x1C: LH   x6, 4(x1)     ; Load halfword (signed), should be 0xFFFFFFFF
+    // 0x20: LHU  x7, 4(x1)     ; Load halfword (unsigned), should be 0x0000FFFF
+    imem.insert(0x00, addi(1, 0, 200));
+    imem.insert(0x04, addi(2, 0, -128));
+    imem.insert(0x08, sb(1, 2, 0));
+    imem.insert(0x0C, lb(3, 1, 0));
+    imem.insert(0x10, lbu(4, 1, 0));
+    imem.insert(0x14, addi(5, 0, -1));
+    imem.insert(0x18, sh(1, 5, 4));
+    imem.insert(0x1C, lh(6, 1, 4));
+    imem.insert(0x20, lhu(7, 1, 4));
+    imem.insert(0x24, addi(0, 0, 0)); // NOP
+
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.clk = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    dut.eval();
+
+    // Execute and handle memory operations
+    let mut lb_x3 = 0u32;
+    let mut lbu_x4 = 0u32;
+    let mut lh_x6 = 0u32;
+    let mut lhu_x7 = 0u32;
+
+    for cycle in 0..15 {
+        let pc = dut.imem_addr;
+        let instruction = imem.get(&pc).copied().unwrap_or(0);
+        dut.imem_data = instruction;
+
+        // Handle data memory reads
+        // Memory is word-aligned, so align address to word boundary
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
+        dut.dmem_rdata = dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+
+        dut.eval();
+
+        // Handle data memory writes - generic approach based on write data format
+        let dmem_addr = dut.dmem_addr;
+        if dut.dmem_we != 0 {
+            let word_addr = dmem_addr & !0x3;
+            let byte_offset = (dmem_addr & 0x3) as usize;
+            let halfword_offset = ((dmem_addr & 0x2) >> 1) as usize;
+            let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
+            let mut word_bytes = current_word.to_le_bytes();
+
+            // Determine store type by examining write data pattern
+            // Byte store: data positioned at specific byte location
+            // Halfword store: data positioned at specific halfword location
+            let non_zero_bytes = [
+                (dut.dmem_wdata & 0x000000FF) != 0,
+                (dut.dmem_wdata & 0x0000FF00) != 0,
+                (dut.dmem_wdata & 0x00FF0000) != 0,
+                (dut.dmem_wdata & 0xFF000000) != 0,
+            ];
+
+            let non_zero_count = non_zero_bytes.iter().filter(|&&b| b).count();
+
+            if non_zero_count <= 1 {
+                // Byte store - single byte is non-zero
+                let byte_val = ((dut.dmem_wdata >> (byte_offset * 8)) & 0xFF) as u8;
+                word_bytes[byte_offset] = byte_val;
+            } else if non_zero_count == 2 {
+                // Halfword store - two consecutive bytes are non-zero
+                let halfword_val = ((dut.dmem_wdata >> (halfword_offset * 16)) & 0xFFFF) as u16;
+                let hw_bytes = halfword_val.to_le_bytes();
+                word_bytes[halfword_offset * 2] = hw_bytes[0];
+                word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
+            } else {
+                // Word store
+                word_bytes = dut.dmem_wdata.to_le_bytes();
+            }
+
+            let new_word = u32::from_le_bytes(word_bytes);
+            dmem.insert(word_addr, new_word);
+            println!(
+                "Cycle {}: WRITE mem[{}] = 0x{:08X}",
+                cycle, word_addr, new_word
+            );
+        }
+
+        // In single-cycle CPU, debug_rd_data shows what WILL be written to rd this cycle
+        // Capture on the instruction's PC
+        if pc == 0x0C {
+            lb_x3 = dut.debug_rd_data;
+        } else if pc == 0x10 {
+            lbu_x4 = dut.debug_rd_data;
+        } else if pc == 0x1C {
+            lh_x6 = dut.debug_rd_data;
+        } else if pc == 0x20 {
+            lhu_x7 = dut.debug_rd_data;
+        }
+
+        println!(
+            "Cycle {}: PC = 0x{:08X}, rd_data = 0x{:08X}",
+            cycle, pc, dut.debug_rd_data
+        );
+
+        clock_cycle!(dut);
+    }
+
+    // Verify load operations
+    assert_eq!(
+        lb_x3, 0xFFFFFF80,
+        "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
+    );
+    assert_eq!(
+        lbu_x4, 0x00000080,
+        "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
+    );
+    assert_eq!(
+        lh_x6, 0xFFFFFFFF,
+        "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+    );
+    assert_eq!(
+        lhu_x7, 0x0000FFFF,
+        "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+    );
+
+    println!("Successfully executed mixed byte/halfword operations");
 }
