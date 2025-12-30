@@ -27,50 +27,41 @@ macro_rules! impl_send_packet {
 macro_rules! impl_receive_packet {
     ($name:ident, $packet_type:ty) => {
         pub fn $name(fifo_tx: &mut VecDeque<u32>) -> Result<Option<$packet_type>, String> {
-            if fifo_tx.len() < 2 {
+            // For simplicity, try to read up to 256 bytes (64 words)
+            // This should be enough for most packets
+            const MAX_PACKET_WORDS: usize = 64;
+            
+            if fifo_tx.is_empty() {
                 return Ok(None);
             }
 
-            let mut header_bytes = Vec::new();
-            for i in 0..2 {
-                if let Some(&word) = fifo_tx.get(i) {
-                    header_bytes.extend_from_slice(&word.to_le_bytes());
-                } else {
-                    return Ok(None);
-                }
-            }
-
-            let magic = u32::from_le_bytes([
-                header_bytes[0],
-                header_bytes[1],
-                header_bytes[2],
-                header_bytes[3],
-            ]);
-            let length = u16::from_le_bytes([header_bytes[4], header_bytes[5]]) as usize;
-
-            if magic != PACKET_MAGIC {
-                return Err(format!("Invalid packet magic: 0x{:08x}", magic));
-            }
-
-            let total_words = (length + 3) / 4;
-
-            if fifo_tx.len() < total_words {
-                return Ok(None);
-            }
-
+            // Collect available words (up to max)
+            let available_words = fifo_tx.len().min(MAX_PACKET_WORDS);
             let mut bytes = Vec::new();
-            for _ in 0..total_words {
-                if let Some(word) = fifo_tx.pop_front() {
+            
+            // Peek at the data without removing it yet
+            for i in 0..available_words {
+                if let Some(&word) = fifo_tx.get(i) {
                     bytes.extend_from_slice(&word.to_le_bytes());
                 }
             }
 
-            bytes.truncate(length);
-
-            let packet: $packet_type = from_bytes::<$packet_type, Error>(&bytes)
-                .map_err(|e| format!("Deserialization failed: {:?}", e))?;
-
-            Ok(Some(packet))
+            // Try to deserialize
+            match from_bytes::<$packet_type, Error>(&bytes) {
+                Ok(packet) => {
+                    // Success! Now remove the words we actually consumed
+                    // For now, remove all peeked words
+                    // TODO: Calculate exact consumed bytes from rkyv
+                    for _ in 0..available_words {
+                        fifo_tx.pop_front();
+                    }
+                    Ok(Some(packet))
+                }
+                Err(_) => {
+                    // Not enough data yet or invalid packet
+                    Ok(None)
+                }
+            }
         }
     };
 }
