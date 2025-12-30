@@ -1,5 +1,10 @@
 use std::collections::VecDeque;
 
+/// Maximum capacity for TX FIFO buffer
+/// While the software implementation can grow indefinitely, we define a logical
+/// capacity to warn about potential hardware mismatches
+const TX_FIFO_CAPACITY: usize = 1024;
+
 /// FIFO peripheral for UART-style communication
 /// Provides buffered I/O between the simulated CPU and host
 pub struct Fifo {
@@ -46,6 +51,13 @@ impl Fifo {
     /// Write to the DATA register
     /// Pushes a u32 word to the TX queue
     pub fn write_data(&mut self, val: u32) {
+        if self.tx.len() >= TX_FIFO_CAPACITY {
+            log::warn!(
+                "FIFO TX queue write while at capacity ({}). \
+                 This may indicate the status register was not checked before writing.",
+                TX_FIFO_CAPACITY
+            );
+        }
         self.tx.push_back(val);
     }
 }
