@@ -26,9 +26,15 @@ impl SystemBus {
     pub fn read_word(&mut self, addr: u32) -> u32 {
         match addr {
             // FIFO DATA register
-            a if a == FIFO_BASE + FIFO_DATA_OFFSET => self.fifo.read_data(),
+            a if a == FIFO_BASE + FIFO_DATA_OFFSET => {
+                log::debug!("Bus read from FIFO DATA (0x{:08x})", addr);
+                self.fifo.read_data()
+            }
             // FIFO STATUS register
-            a if a == FIFO_BASE + FIFO_STATUS_OFFSET => self.fifo.read_status(),
+            a if a == FIFO_BASE + FIFO_STATUS_OFFSET => {
+                log::debug!("Bus read from FIFO STATUS (0x{:08x})", addr);
+                self.fifo.read_status()
+            }
             // Default: DRAM
             _ => self.dram.read_word(addr),
         }

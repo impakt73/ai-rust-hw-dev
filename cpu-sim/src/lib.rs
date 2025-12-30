@@ -212,6 +212,7 @@ mod tests {
         let fifo_data_clone = Arc::clone(&fifo_data);
 
         let callback = move |word: u32| {
+            println!("FIFO TX received word: 0x{:08x}", word);
             // Convert u32 word to bytes (little-endian)
             let bytes = [
                 (word & 0xFF) as u8,
@@ -223,9 +224,9 @@ mod tests {
             fifo.extend_from_slice(&bytes);
         };
 
-        // Run the simulation with FIFO callback
-        // The program writes "Hello World!" to the FIFO TX
-        let result = run_elf_with_callback(&elf_path, 10000, false, Some(callback))
+        // Run the simulation with FIFO callback and RX data
+        // The program should echo "TestData" from RX to TX
+        let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some("TestData"))
             .expect("FIFO hello world simulation should succeed");
 
         // Verify the program halted with the correct exit code (42 = 0x2a)
@@ -237,21 +238,23 @@ mod tests {
 
         // Verify the FIFO data
         let received_data = fifo_data.lock().unwrap();
+        println!("Raw received bytes: {:?}", received_data);
         // Remove trailing null bytes while preserving any embedded nulls
         let end_index = received_data.iter().rposition(|&b| b != 0);
         let trimmed_data: Vec<u8> = match end_index {
             Some(idx) => received_data[..=idx].to_vec(),
             None => Vec::new(),
         };
+        println!("Trimmed bytes: {:?}", trimmed_data);
         let received_string =
             String::from_utf8(trimmed_data).expect("FIFO data should be valid UTF-8");
 
         assert_eq!(
-            received_string, "Hello World!",
-            "Expected to receive 'Hello World!' via FIFO"
+            received_string, "TestData",
+            "Expected to receive echoed 'TestData' via FIFO"
         );
 
-        println!("✓ FIFO hello world test passed in {} cycles", result.cycles);
-        println!("✓ Received via FIFO: '{}'", received_string);
+        println!("✓ FIFO echo test passed in {} cycles", result.cycles);
+        println!("✓ Echoed data via FIFO: '{}'", received_string);
     }
 }

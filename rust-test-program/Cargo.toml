@@ -17,3 +17,4 @@ path = "src/hello_world.rs"
 test = false
 
 [dependencies]
+riscv-rt = "0.17.0"

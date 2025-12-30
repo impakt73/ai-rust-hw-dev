@@ -72,6 +72,7 @@ where
                 // Remaining bytes are implicitly 0 (zero-padding)
             }
 
+            log::info!("FIFO RX: Writing word 0x{:08x}", word);
             self.fifo_write_rx(word);
             i += 4;
         }
@@ -79,6 +80,7 @@ where
         // Add a null terminator word if the string ends on a word boundary
         // This ensures the reading side can detect the end of the string
         if bytes.len().is_multiple_of(4) {
+            log::info!("FIFO RX: Adding null terminator");
             self.fifo_write_rx(0);
         }
     }
