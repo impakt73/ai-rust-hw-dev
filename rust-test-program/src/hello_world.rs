@@ -26,15 +26,15 @@ const FIFO_DATA: u32 = FIFO_BASE + 0x0;
 const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
 
 /// FIFO status bits
+const _FIFO_RX_VALID: u32 = 0x1;
 const FIFO_TX_READY: u32 = 0x2;
 
-/// Write a u32 word (4 bytes) to the FIFO
+/// Write a byte to the FIFO
+/// Note: This is a legacy function - the FIFO actually works with u32 words
 #[inline(never)]
 fn fifo_write_word(word: u32) {
     unsafe {
-        // Poll status register before writing
-        // Note: In the current simulator implementation, TX is always ready (infinite buffer),
-        // but this demonstrates proper FIFO usage patterns for hardware with finite buffers
+        // Wait for FIFO to be ready
         loop {
             let status = core::ptr::read_volatile(FIFO_STATUS as *const u32);
             if (status & FIFO_TX_READY) != 0 {

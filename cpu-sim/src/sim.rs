@@ -48,6 +48,34 @@ where
         })
     }
 
+    /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
+    /// This allows the host to send data to the simulated program
+    pub fn fifo_write_rx(&mut self, word: u32) {
+        self.bus.fifo.rx.push_back(word);
+    }
+
+    /// Write a string to the FIFO RX queue
+    /// Chunks the string into u32 words with zero-padding
+    pub fn fifo_write_rx_string(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        let mut i = 0;
+
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+
+            // Pack up to 4 bytes into a u32 word (little-endian)
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+                // Remaining bytes are implicitly 0 (zero-padding)
+            }
+
+            self.fifo_write_rx(word);
+            i += 4;
+        }
+    }
+
     /// Reset the CPU
     /// The boot address is set to the entry point while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it

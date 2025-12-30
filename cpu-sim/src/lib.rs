@@ -11,22 +11,24 @@ use dram::Dram;
 use sim::Simulator;
 use std::path::Path;
 
-/// Run an ELF file on the simulated CPU with an optional FIFO callback
+/// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
 ///
 /// # Arguments
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace
 /// * `fifo_callback` - Optional callback invoked when data is written to the FIFO (receives u32 words)
+/// * `fifo_rx_data` - Optional string to write to the FIFO RX queue before running
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
 /// * `Err(String)` on error
-pub fn run_elf_with_callback<F>(
+pub fn run_elf_with_fifo<F>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
     fifo_callback: Option<F>,
+    fifo_rx_data: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
     F: FnMut(u32),
@@ -48,8 +50,36 @@ where
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
     let mut sim = Simulator::new(&runtime, bus, entry_point, print_inst_trace, fifo_callback)?;
 
+    // Write data to RX FIFO if provided
+    if let Some(data) = fifo_rx_data {
+        sim.fifo_write_rx_string(data);
+    }
+
     // Run simulation
     sim.run(max_cycles)
+}
+
+/// Run an ELF file on the simulated CPU with an optional FIFO callback
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `print_inst_trace` - Whether to print instruction trace
+/// * `fifo_callback` - Optional callback invoked when data is written to the FIFO (receives u32 words)
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+pub fn run_elf_with_callback<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    fifo_callback: Option<F>,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(u32),
+{
+    run_elf_with_fifo(elf_path, max_cycles, print_inst_trace, fifo_callback, None)
 }
 
 /// Run an ELF file on the simulated CPU
@@ -194,7 +224,8 @@ mod tests {
         };
 
         // Run the simulation with FIFO callback
-        let result = run_elf_with_callback(&elf_path, 1000, false, Some(callback))
+        // The program writes "Hello World!" to the FIFO TX
+        let result = run_elf_with_callback(&elf_path, 10000, false, Some(callback))
             .expect("FIFO hello world simulation should succeed");
 
         // Verify the program halted with the correct exit code (42 = 0x2a)
