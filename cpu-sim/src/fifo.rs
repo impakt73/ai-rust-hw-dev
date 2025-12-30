@@ -3,10 +3,10 @@ use std::collections::VecDeque;
 /// FIFO peripheral for UART-style communication
 /// Provides buffered I/O between the simulated CPU and host
 pub struct Fifo {
-    /// Data sent FROM CPU -> Host
-    pub tx: VecDeque<u8>,
-    /// Data sent FROM Host -> CPU
-    pub rx: VecDeque<u8>,
+    /// Data sent FROM CPU -> Host (as u32 words)
+    pub tx: VecDeque<u32>,
+    /// Data sent FROM Host -> CPU (as u32 words)
+    pub rx: VecDeque<u32>,
 }
 
 impl Fifo {
@@ -28,16 +28,16 @@ impl Fifo {
     }
 
     /// Read the DATA register
-    /// Pops a byte from the RX queue
+    /// Pops a u32 word from the RX queue
     /// Returns 0 if RX is empty
     pub fn read_data(&mut self) -> u32 {
-        self.rx.pop_front().unwrap_or(0) as u32
+        self.rx.pop_front().unwrap_or(0)
     }
 
     /// Write to the DATA register
-    /// Pushes a byte to the TX queue
+    /// Pushes a u32 word to the TX queue
     pub fn write_data(&mut self, val: u32) {
-        self.tx.push_back(val as u8);
+        self.tx.push_back(val);
     }
 }
 

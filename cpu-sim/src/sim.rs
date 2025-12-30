@@ -9,9 +9,9 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a, F = fn(u8)>
+pub struct Simulator<'a, F = fn(u32)>
 where
-    F: FnMut(u8),
+    F: FnMut(u32),
 {
     cpu: Top<'a>,
     pub bus: SystemBus,
@@ -23,14 +23,15 @@ where
 
 impl<'a, F> Simulator<'a, F>
 where
-    F: FnMut(u8),
+    F: FnMut(u32),
 {
-    /// Create a new simulator with the given bus, runtime, and entry point
+    /// Create a new simulator with the given bus, runtime, entry point, and optional FIFO callback
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         entry_point: u32,
         print_inst_trace: bool,
+        fifo_callback: Option<F>,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime
         let cpu = runtime
@@ -43,13 +44,8 @@ where
             cycle_count: 0,
             entry_point,
             print_inst_trace,
-            fifo_callback: None,
+            fifo_callback,
         })
-    }
-
-    /// Set a callback to be invoked when data is written to the FIFO
-    pub fn set_fifo_callback(&mut self, callback: F) {
-        self.fifo_callback = Some(callback);
     }
 
     /// Reset the CPU
@@ -149,15 +145,11 @@ where
             self.cpu.eval();
 
             // Process FIFO TX data
-            while let Some(byte) = self.bus.fifo.tx.pop_front() {
+            while let Some(word) = self.bus.fifo.tx.pop_front() {
                 if let Some(ref mut callback) = self.fifo_callback {
-                    callback(byte);
-                } else {
-                    // If no callback, print to stdout as fallback
-                    print!("{}", byte as char);
-                    use std::io::Write;
-                    std::io::stdout().flush().ok();
+                    callback(word);
                 }
+                // If no callback, just clear the buffer (don't print)
             }
 
             // Debug logging: print after evaluation to capture rd_data

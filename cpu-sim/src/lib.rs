@@ -17,7 +17,7 @@ use std::path::Path;
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace
-/// * `fifo_callback` - Optional callback invoked when data is written to the FIFO
+/// * `fifo_callback` - Optional callback invoked when data is written to the FIFO (receives u32 words)
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -29,7 +29,7 @@ pub fn run_elf_with_callback<F>(
     fifo_callback: Option<F>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u8),
+    F: FnMut(u32),
 {
     // Initialize DRAM and load ELF
     let mut dram = Dram::new();
@@ -46,12 +46,7 @@ where
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-    let mut sim = Simulator::new(&runtime, bus, entry_point, print_inst_trace)?;
-
-    // Set FIFO callback if provided
-    if let Some(callback) = fifo_callback {
-        sim.set_fifo_callback(callback);
-    }
+    let mut sim = Simulator::new(&runtime, bus, entry_point, print_inst_trace, fifo_callback)?;
 
     // Run simulation
     sim.run(max_cycles)
@@ -82,7 +77,7 @@ pub fn run_elf(
     max_cycles: u64,
     print_inst_trace: bool,
 ) -> Result<SimulationResult, String> {
-    run_elf_with_callback::<fn(u8)>(elf_path, max_cycles, print_inst_trace, None)
+    run_elf_with_callback::<fn(u32)>(elf_path, max_cycles, print_inst_trace, None)
 }
 
 #[cfg(test)]
@@ -186,8 +181,21 @@ mod tests {
         let fifo_data = Arc::new(Mutex::new(Vec::new()));
         let fifo_data_clone = Arc::clone(&fifo_data);
 
-        let callback = move |byte: u8| {
-            fifo_data_clone.lock().unwrap().push(byte);
+        let callback = move |word: u32| {
+            // Convert u32 word to bytes (little-endian)
+            fifo_data_clone.lock().unwrap().push((word & 0xFF) as u8);
+            fifo_data_clone
+                .lock()
+                .unwrap()
+                .push(((word >> 8) & 0xFF) as u8);
+            fifo_data_clone
+                .lock()
+                .unwrap()
+                .push(((word >> 16) & 0xFF) as u8);
+            fifo_data_clone
+                .lock()
+                .unwrap()
+                .push(((word >> 24) & 0xFF) as u8);
         };
 
         // Run the simulation with FIFO callback
@@ -203,8 +211,14 @@ mod tests {
 
         // Verify the FIFO data
         let received_data = fifo_data.lock().unwrap();
+        // Remove trailing null bytes
+        let trimmed_data: Vec<u8> = received_data
+            .iter()
+            .copied()
+            .take_while(|&b| b != 0)
+            .collect();
         let received_string =
-            String::from_utf8(received_data.clone()).expect("FIFO data should be valid UTF-8");
+            String::from_utf8(trimmed_data).expect("FIFO data should be valid UTF-8");
 
         assert_eq!(
             received_string, "Hello World!",

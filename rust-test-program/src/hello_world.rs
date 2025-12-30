@@ -30,8 +30,9 @@ const _FIFO_RX_VALID: u32 = 0x1;
 const FIFO_TX_READY: u32 = 0x2;
 
 /// Write a byte to the FIFO
+/// Note: This is a legacy function - the FIFO actually works with u32 words
 #[inline(never)]
-fn fifo_write_byte(byte: u8) {
+fn fifo_write_word(word: u32) {
     unsafe {
         // Wait for FIFO to be ready
         loop {
@@ -41,16 +42,31 @@ fn fifo_write_byte(byte: u8) {
             }
         }
 
-        // Write byte to FIFO
-        write_volatile(FIFO_DATA as *mut u32, byte as u32);
+        // Write word to FIFO
+        write_volatile(FIFO_DATA as *mut u32, word);
     }
 }
 
 /// Write a string to the FIFO
+/// Chunks the string into u32 words (4 bytes each) with zero padding at the end
 #[inline(never)]
 fn fifo_write_string(s: &str) {
-    for byte in s.bytes() {
-        fifo_write_byte(byte);
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    
+    while i < bytes.len() {
+        let mut word: u32 = 0;
+        
+        // Pack up to 4 bytes into a u32 word (little-endian)
+        for j in 0..4 {
+            if i + j < bytes.len() {
+                word |= (bytes[i + j] as u32) << (j * 8);
+            }
+            // Remaining bytes are implicitly 0 (zero-padding)
+        }
+        
+        fifo_write_word(word);
+        i += 4;
     }
 }
 
