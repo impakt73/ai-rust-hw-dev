@@ -136,7 +136,7 @@ where
 
             // Data Memory Read (use address from THIS cycle's computation)
             // After the first eval, dmem_addr contains the data memory address
-            // computed by the current instruction (for load/store operations).
+            // computed by the instruction just decoded (for load/store operations).
             // Only read if this is NOT a write instruction (dmem_we == 0) to avoid
             // spurious reads with side effects (e.g., draining FIFO queues).
             let dmem_addr = self.cpu.dmem_addr;
