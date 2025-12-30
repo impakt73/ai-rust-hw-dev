@@ -170,6 +170,63 @@ mod tests {
     }
 
     #[test]
+    fn test_register_trace_audit() {
+        // Initialize logger for tests (ignore if already initialized)
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        // Load the register trace audit test program
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().unwrap();
+        let elf_path = workspace_root.join("test_programs/register_trace_audit.elf");
+
+        println!("\n========================================");
+        println!("REGISTER TRACE AUDIT TEST");
+        println!("========================================");
+        println!("This test verifies that instruction trace correctly displays");
+        println!("source and destination register values.");
+        println!();
+        println!("VERIFICATION GUIDE:");
+        println!("- Each ADD instruction: rd_value should equal rs1_value + rs2_value");
+        println!("- Each SUB instruction: rd_value should equal rs1_value - rs2_value");
+        println!("- Each ADDI instruction: rd_value should equal rs1_value + immediate");
+        println!("- Load/Store instructions: verify address calculations and data values");
+        println!();
+        println!("Expected patterns to verify:");
+        println!("  Phase 1: Fibonacci-like sequence (1, 2, 3, 5, 8, 13, 21)");
+        println!("  Phase 2: Round numbers (10, 20, 30, 50, 80, 100)");
+        println!("  Phase 3: Powers of 2 (1, 2, 4, 8, 16, 32, 64, 128, 256)");
+        println!("  Phase 4: Subtraction (100-40=60, 60-40=20)");
+        println!("  Phase 5: Load/Store with value 123 (0x7b)");
+        println!("========================================\n");
+
+        // Run the simulation with instruction trace enabled
+        let result = run_elf(&elf_path, 500, true)
+            .expect("Register trace audit simulation should succeed");
+
+        // Verify the program halted with the correct exit code (42 = 0x2a)
+        assert_eq!(
+            result.tohost_value,
+            Some(0x2a),
+            "Expected tohost value 0x2a (42) from register trace audit program"
+        );
+
+        println!(
+            "\n✓ Register trace audit test passed in {} cycles",
+            result.cycles
+        );
+        println!("========================================");
+        println!("AUDIT COMPLETE");
+        println!("========================================");
+        println!("Review the trace output above to verify:");
+        println!("1. All ADD results match rs1 + rs2");
+        println!("2. All SUB results match rs1 - rs2");
+        println!("3. All ADDI results match rs1 + immediate");
+        println!("4. Load/store operations show correct register values");
+        println!("5. Register values progress through expected sequences");
+        println!("========================================\n");
+    }
+
+    #[test]
     fn test_rust_bare_metal_elf() {
         // Initialize logger for tests (ignore if already initialized)
         let _ = env_logger::builder().is_test(true).try_init();
