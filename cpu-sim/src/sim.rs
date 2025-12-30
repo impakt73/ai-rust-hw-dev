@@ -136,13 +136,14 @@ where
 
             // Data Memory Read (use address from THIS cycle's computation)
             // After the first eval, dmem_addr contains the data memory address
-            // computed by the current instruction (for load/store operations)
-            // Only read if this is NOT a write instruction (dmem_we == 0)
+            // computed by the current instruction (for load/store operations).
+            // Only read if this is NOT a write instruction (dmem_we == 0) to avoid
+            // spurious reads with side effects (e.g., draining FIFO queues).
             let dmem_addr = self.cpu.dmem_addr;
             let rdata = if self.cpu.dmem_we == 0 {
                 self.bus.read_word(dmem_addr)
             } else {
-                0 // For stores, rdata is not used
+                0 // For stores, rdata is not used by the CPU and should not trigger side effects
             };
             self.cpu.dmem_rdata = rdata;
 
