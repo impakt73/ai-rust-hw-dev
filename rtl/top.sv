@@ -164,8 +164,68 @@ module top (
     
     // Data memory interface
     assign dmem_addr = alu_result;
-    assign dmem_wdata = rs2_data;
     assign dmem_we = mem_write;
+    
+    // Store data formatting based on funct3 (byte/halfword/word)
+    logic [31:0] formatted_store_data;
+    always_comb begin
+        case (funct3)
+            3'b000: begin // SB - Store Byte
+                // Replicate byte to all positions based on address alignment
+                case (alu_result[1:0])
+                    2'b00: formatted_store_data = {24'b0, rs2_data[7:0]};
+                    2'b01: formatted_store_data = {16'b0, rs2_data[7:0], 8'b0};
+                    2'b10: formatted_store_data = {8'b0, rs2_data[7:0], 16'b0};
+                    2'b11: formatted_store_data = {rs2_data[7:0], 24'b0};
+                endcase
+            end
+            3'b001: begin // SH - Store Halfword
+                // Replicate halfword based on address alignment
+                case (alu_result[1])
+                    1'b0: formatted_store_data = {16'b0, rs2_data[15:0]};
+                    1'b1: formatted_store_data = {rs2_data[15:0], 16'b0};
+                endcase
+            end
+            default: formatted_store_data = rs2_data; // SW - Store Word
+        endcase
+    end
+    assign dmem_wdata = formatted_store_data;
+    
+    // Load data formatting based on funct3 (byte/halfword/word)
+    logic [31:0] formatted_load_data;
+    always_comb begin
+        case (funct3)
+            3'b000: begin // LB - Load Byte (sign-extended)
+                case (alu_result[1:0])
+                    2'b00: formatted_load_data = {{24{dmem_rdata[7]}}, dmem_rdata[7:0]};
+                    2'b01: formatted_load_data = {{24{dmem_rdata[15]}}, dmem_rdata[15:8]};
+                    2'b10: formatted_load_data = {{24{dmem_rdata[23]}}, dmem_rdata[23:16]};
+                    2'b11: formatted_load_data = {{24{dmem_rdata[31]}}, dmem_rdata[31:24]};
+                endcase
+            end
+            3'b001: begin // LH - Load Halfword (sign-extended)
+                case (alu_result[1])
+                    1'b0: formatted_load_data = {{16{dmem_rdata[15]}}, dmem_rdata[15:0]};
+                    1'b1: formatted_load_data = {{16{dmem_rdata[31]}}, dmem_rdata[31:16]};
+                endcase
+            end
+            3'b100: begin // LBU - Load Byte Unsigned (zero-extended)
+                case (alu_result[1:0])
+                    2'b00: formatted_load_data = {24'b0, dmem_rdata[7:0]};
+                    2'b01: formatted_load_data = {24'b0, dmem_rdata[15:8]};
+                    2'b10: formatted_load_data = {24'b0, dmem_rdata[23:16]};
+                    2'b11: formatted_load_data = {24'b0, dmem_rdata[31:24]};
+                endcase
+            end
+            3'b101: begin // LHU - Load Halfword Unsigned (zero-extended)
+                case (alu_result[1])
+                    1'b0: formatted_load_data = {16'b0, dmem_rdata[15:0]};
+                    1'b1: formatted_load_data = {16'b0, dmem_rdata[31:16]};
+                endcase
+            end
+            default: formatted_load_data = dmem_rdata; // LW - Load Word
+        endcase
+    end
     
     // Write-back data selection
     always_comb begin
@@ -179,8 +239,8 @@ module top (
             // JAL/JALR - Store return address (PC + 4)
             rd_data = pc + 32'd4;
         end else if (mem_to_reg) begin
-            // Load instruction - Use memory data
-            rd_data = dmem_rdata;
+            // Load instruction - Use formatted memory data
+            rd_data = formatted_load_data;
         end else begin
             // ALU result
             rd_data = alu_result;
