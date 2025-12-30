@@ -61,10 +61,10 @@ cargo clean
 
 ### Test Structure
 
-The project has 22 comprehensive tests:
+The project has 28 comprehensive tests:
 - **7 ALU tests:** Validate arithmetic/logic operations
 - **6 Register file tests:** Validate register behavior (including x0 immutability)
-- **9 CPU integration tests:** Validate complete instruction execution
+- **15 CPU integration tests:** Validate complete instruction execution (including byte/halfword operations)
 
 ### Verilator Build Process
 
@@ -146,7 +146,7 @@ top (CPU)
 - **Shifts:** SLL, SLLI, SRL, SRLI, SRA, SRAI
 - **Comparison:** SLT, SLTI, SLTU, SLTIU
 - **Branches:** BEQ, BNE, BLT, BGE, BLTU, BGEU
-- **Memory:** LW, SW
+- **Memory:** LW, LH, LB, LHU, LBU, SW, SH, SB
 - **Upper Immediate:** LUI, AUIPC
 - **Jumps:** JAL, JALR
 
@@ -206,7 +206,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 22 tests must pass.
+   All 28 tests must pass.
 
 2. **Verify code formatting:**
    ```bash
@@ -282,7 +282,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 22 tests must pass)
+2. ✅ **Tests:** `cargo test --verbose` (all 28 tests must pass)
 3. ⚠️ **Formatting:** `cargo fmt -- --check` (non-blocking but should pass)
 4. ⚠️ **Clippy:** `cargo clippy -- -D warnings` (non-blocking but should pass)
 
@@ -295,7 +295,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 22 passed
+4. **Verify all tests pass:** Look for `test result: ok` with 28 passed
 
 ### Signal Naming Conventions
 
@@ -371,5 +371,5 @@ For issues specific to this implementation, refer to:
 
 ---
 
-**Last Updated:** 2025-12-28
+**Last Updated:** 2025-12-30
 **Maintainer:** Automated by GitHub Copilot
