@@ -188,13 +188,21 @@ where
             // Sample debug signals BEFORE clock tick to capture the values that were
             // actually used during instruction execution, not the values after the write.
             // This is critical for correctness when rd == rs1 or rd == rs2.
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
-
-            // Create instruction trace structure
-            let trace =
-                InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
+            // Only sample if trace is needed (either for printing or callback)
+            let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+                let rs1_value = self.cpu.debug_rs1_data;
+                let rs2_value = self.cpu.debug_rs2_data;
+                let rd_value = self.cpu.debug_rd_data;
+                Some(InstructionTrace::from_instruction(
+                    pc,
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
+                ))
+            } else {
+                None
+            };
 
             // Clock tick
             self.cpu.clk = 0;
@@ -212,15 +220,19 @@ where
 
             // Call trace callback if provided
             if let Some(ref mut callback) = self.trace_callback {
-                callback(&trace);
+                if let Some(ref trace_data) = trace {
+                    callback(trace_data);
+                }
             }
 
             // Debug logging: print using the trace structure for backward compatibility
             if self.print_inst_trace {
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, trace
-                );
+                if let Some(ref trace_data) = trace {
+                    println!(
+                        "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                        self.cycle_count, pc, pc, instruction, trace_data
+                    );
+                }
             }
 
             // Log execution (original verbose logging)
