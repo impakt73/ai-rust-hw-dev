@@ -21,6 +21,11 @@ name = "packet_test"
 path = "src/packet_test.rs"
 test = false
 
+[[bin]]
+name = "simple_test"
+path = "src/simple_test.rs"
+test = false
+
 [dependencies]
 riscv-rt = "0.17.0"
 riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }

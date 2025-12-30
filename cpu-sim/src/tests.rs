@@ -595,3 +595,57 @@ fn test_packet_protocol_end_to_end() {
     println!("✓ Program completed with success code 42");
     println!("========================================\n");
 }
+
+#[test]
+fn test_packet_trace() {
+    use riscv_protocol::*;
+    
+    init_test_logger();
+
+    println!("\n========== PACKET TRACE TEST ==========");
+
+    let elf_path = test_program_path("packet_test.elf");
+    
+    let mut dram = crate::dram::Dram::new();
+    let entry_point = dram.load_elf(&elf_path).expect("Failed to load ELF");
+
+    let bus = crate::bus::SystemBus::new(dram);
+
+    let runtime = riscv_core::create_cpu_runtime().expect("Failed to create runtime");
+    let mut sim = crate::sim::Simulator::new(
+        &runtime,
+        bus,
+        entry_point,
+        true, // Enable trace from start  
+        None::<fn(u32)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ).expect("Failed to create simulator");
+
+    sim.reset();
+
+    let echo_request = EchoPacket {
+        header: PacketHeader::new(PacketType::Echo, 0),
+        sequence: 100,
+        timestamp: 999999,
+    };
+    sim.send_echo_packet(&echo_request).unwrap();
+    
+    println!("Sent Echo packet, running...");
+
+    // Run with trace starting from cycle 7200
+    for i in 0..7300 {
+        if let Some(tohost) = sim.step() {
+            println!("\nCPU halted at cycle {} with tohost=0x{:08x}", i, tohost);
+            break;
+        }
+        
+        // Only print trace for cycles 7200-7250
+        if i < 7200 || i > 7250 {
+            // Skip printing (trace is still collected but we don't print it)
+        }
+    }
+    
+    println!("\nFIFO at end: RX={}, TX={}", sim.bus.fifo.rx.len(), sim.bus.fifo.tx.len());
+
+    println!("\n========== END PACKET TRACE TEST ==========");
+}

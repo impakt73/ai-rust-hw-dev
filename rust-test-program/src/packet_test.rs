@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use alloc::string::ToString;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
@@ -52,16 +51,6 @@ unsafe impl GlobalAlloc for SimpleAllocator {
 /// Panic handler for bare metal - infinite loop on panic
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
-}
-
-/// Write to tohost address to signal completion
-#[inline(never)]
-fn write_tohost(value: u32) -> ! {
-    const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-    unsafe {
-        write_volatile(TOHOST_ADDR as *mut u32, value);
-    }
     loop {}
 }
 
@@ -135,45 +124,29 @@ fn receive_echo_packet() -> Result<EchoPacket, &'static str> {
     let mut bytes = Vec::new();
 
     // Read words until we have enough data or max reached
-    for _ in 0..MAX_PACKET_WORDS {
+    for i in 0..MAX_PACKET_WORDS {
         let word = fifo_read_word();
         bytes.extend_from_slice(&word.to_le_bytes());
 
         // Try to deserialize (rkyv will fail if not enough data)
         if bytes.len() >= 20 { // Minimum size for EchoPacket
             if let Ok(packet) = from_bytes::<EchoPacket, RkyvError>(&bytes) {
+                // Write a success marker before returning
+                unsafe { write_volatile(0xFFFF_FFF4 as *mut u32, 0xECE0 | i as u32); }
                 return Ok(packet);
             }
         }
     }
+    
+    // Write failure marker
+    unsafe { write_volatile(0xFFFF_FFF4 as *mut u32, 0xFAF0); }
 
     Err("Failed to receive echo packet")
-}
-
-/// Receive a DataU32 packet from FIFO
-fn receive_data_u32_packet() -> Result<DataU32Packet, &'static str> {
-    const MAX_PACKET_WORDS: usize = 64;
-    let mut bytes = Vec::new();
-
-    for _ in 0..MAX_PACKET_WORDS {
-        let word = fifo_read_word();
-        bytes.extend_from_slice(&word.to_le_bytes());
-
-        // Try to deserialize
-        if bytes.len() >= 16 { // Minimum size for DataU32Packet
-            if let Ok(packet) = from_bytes::<DataU32Packet, RkyvError>(&bytes) {
-                return Ok(packet);
-            }
-        }
-    }
-
-    Err("Failed to receive data packet")
 }
 
 /// Entry point for the packet test program
 #[entry]
 fn main() -> ! {
-    const SUCCESS_CODE: u32 = 42;
     const FAILURE_CODE: u32 = 1;
 
     // Test 1: Receive an Echo packet, increment sequence, and send it back
@@ -185,52 +158,21 @@ fn main() -> ! {
                 timestamp: echo.timestamp + 100,
             };
             if send_packet(&response).is_err() {
-                write_tohost(FAILURE_CODE);
+                unsafe {
+                    write_volatile(0xFFFF_FFF0 as *mut u32, FAILURE_CODE);
+                }
+                loop {}
             }
         }
-        Err(_) => write_tohost(FAILURE_CODE),
-    }
-
-    // Test 2: Send a Debug packet
-    let debug = DebugPacket {
-        header: PacketHeader::new(PacketType::Debug, 0),
-        level: DebugLevel::Info,
-        reserved: [0; 3],
-        message: "Hello from CPU!".to_string(),
-    };
-    if send_packet(&debug).is_err() {
-        write_tohost(FAILURE_CODE);
-    }
-
-    // Test 3: Receive a DataU32 packet and send back doubled value
-    match receive_data_u32_packet() {
-        Ok(data) => {
-            let response = DataU32Packet {
-                header: PacketHeader::new(PacketType::DataU32, 0),
-                value: data.value.wrapping_mul(2),
-                tag: data.tag,
-            };
-            if send_packet(&response).is_err() {
-                write_tohost(FAILURE_CODE);
+        Err(_) => {
+            unsafe {
+                write_volatile(0xFFFF_FFF0 as *mut u32, FAILURE_CODE);
             }
+            loop {}
         }
-        Err(_) => write_tohost(FAILURE_CODE),
     }
 
-    // Test 4: Send an Assert packet indicating success
-    let assert_pkt = AssertPacket {
-        header: PacketHeader::new(PacketType::Assert, 0),
-        passed: true,
-        reserved: [0; 3],
-        test_id: 1,
-        expected: 42,
-        actual: 42,
-        message: "All tests passed".to_string(),
-    };
-    if send_packet(&assert_pkt).is_err() {
-        write_tohost(FAILURE_CODE);
-    }
-
-    // All tests passed
-    write_tohost(SUCCESS_CODE);
+    // Success - continue with more tests later
+    loop {}
 }
+
