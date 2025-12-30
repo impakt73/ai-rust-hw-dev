@@ -3,17 +3,9 @@ name = "rust-test-program"
 version = "0.1.0"
 edition = "2021"
 
-# This package has its own workspace to avoid conflicts with the main workspace
-[workspace]
-
 [[bin]]
 name = "rust_test"
 path = "src/main.rs"
-test = false
-
-[[bin]]
-name = "hello_world"
-path = "src/hello_world.rs"
 test = false
 
 [dependencies]

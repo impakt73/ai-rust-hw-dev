@@ -1,4 +1,4 @@
-use crate::memory::Memory;
+use crate::bus::SystemBus;
 use riscv_core::Top;
 
 /// Result of a simulation run
@@ -9,26 +9,19 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a, F>
-where
-    F: FnMut(u8),
-{
+pub struct Simulator<'a> {
     cpu: Top<'a>,
-    memory: Memory,
+    pub bus: SystemBus,
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
-    fifo_callback: Option<F>,
 }
 
-impl<'a, F> Simulator<'a, F>
-where
-    F: FnMut(u8),
-{
-    /// Create a new simulator with the given memory, runtime, and entry point
+impl<'a> Simulator<'a> {
+    /// Create a new simulator with the given bus, runtime, and entry point
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
-        memory: Memory,
+        bus: SystemBus,
         entry_point: u32,
         print_inst_trace: bool,
     ) -> Result<Self, String> {
@@ -39,17 +32,11 @@ where
 
         Ok(Simulator {
             cpu,
-            memory,
+            bus,
             cycle_count: 0,
             entry_point,
             print_inst_trace,
-            fifo_callback: None,
         })
-    }
-
-    /// Set a callback to be invoked when data is written to the FIFO
-    pub fn set_fifo_callback(&mut self, callback: F) {
-        self.fifo_callback = Some(callback);
     }
 
     /// Reset the CPU
@@ -62,9 +49,6 @@ where
         // loads boot_addr whenever rst_n is low; boot_addr must be stable while
         // reset is asserted so the PC will hold this value after reset is released.
         self.cpu.boot_addr = self.entry_point;
-
-        // Initialize FIFO signals
-        self.cpu.fifo_rd_en = 0;
 
         // Drive reset low
         self.cpu.rst_n = 0;
@@ -84,30 +68,6 @@ where
         );
     }
 
-    /// Drain all data from the FIFO and invoke the callback for each byte
-    pub fn drain_fifo(&mut self) {
-        while self.cpu.fifo_empty == 0 {
-            let data = self.cpu.fifo_rd_data;
-            log::debug!("FIFO drain: 0x{:02x} ('{}')", data, data as char);
-
-            // Invoke callback if set
-            if let Some(ref mut callback) = self.fifo_callback {
-                callback(data);
-            }
-
-            // Assert rd_en and clock to pop the FIFO
-            self.cpu.fifo_rd_en = 1;
-            self.cpu.clk = 0;
-            self.cpu.eval();
-            self.cpu.clk = 1;
-            self.cpu.eval();
-
-            // Deassert rd_en
-            self.cpu.fifo_rd_en = 0;
-            self.cpu.eval();
-        }
-    }
-
     /// Run the simulation for up to max_cycles
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
@@ -121,7 +81,7 @@ where
         while self.cycle_count < max_cycles {
             // Instruction Fetch
             let pc = self.cpu.imem_addr;
-            let instruction = self.memory.read_word(pc);
+            let instruction = self.bus.read_word(pc);
             self.cpu.imem_data = instruction;
 
             // First evaluation: Decode instruction and compute addresses
@@ -134,7 +94,7 @@ where
             // After the first eval, dmem_addr contains the data memory address
             // computed by the current instruction (for load/store operations)
             let dmem_addr = self.cpu.dmem_addr;
-            let rdata = self.memory.read_word(dmem_addr);
+            let rdata = self.bus.read_word(dmem_addr);
             self.cpu.dmem_rdata = rdata;
 
             // Second evaluation: Propagate loaded data to rd_data
@@ -148,23 +108,12 @@ where
             // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
-
-                // MMIO region check (0xF0000000 - 0xF000000F)
-                const MMIO_BASE: u32 = 0xF0000000;
-                const MMIO_SIZE: u32 = 0x10;
-                let is_mmio = (MMIO_BASE..(MMIO_BASE + MMIO_SIZE)).contains(&dmem_addr);
-
-                // Only write to memory if not MMIO
-                if !is_mmio {
-                    self.memory.write_word(dmem_addr, wdata);
-                    log::debug!(
-                        "Memory Write: addr=0x{:08x}, data=0x{:08x}",
-                        dmem_addr,
-                        wdata
-                    );
-                } else {
-                    log::debug!("MMIO Write: addr=0x{:08x}, data=0x{:08x}", dmem_addr, wdata);
-                }
+                self.bus.write_word(dmem_addr, wdata);
+                log::debug!(
+                    "Memory Write: addr=0x{:08x}, data=0x{:08x}",
+                    dmem_addr,
+                    wdata
+                );
 
                 // Check for halt signal
                 if dmem_addr == TOHOST_ADDR {
@@ -173,8 +122,6 @@ where
                         TOHOST_ADDR,
                         wdata
                     );
-                    // Drain FIFO before returning
-                    self.drain_fifo();
                     return Ok(SimulationResult {
                         cycles: self.cycle_count,
                         tohost_value: Some(wdata),
@@ -187,6 +134,13 @@ where
             self.cpu.eval();
             self.cpu.clk = 1;
             self.cpu.eval();
+
+            // Print FIFO TX data to stdout
+            while let Some(byte) = self.bus.fifo.tx.pop_front() {
+                print!("{}", byte as char);
+            }
+            use std::io::Write;
+            std::io::stdout().flush().ok();
 
             // Debug logging: print after evaluation to capture rd_data
             if self.print_inst_trace {
@@ -221,8 +175,6 @@ where
         }
 
         log::warn!("Simulation reached max cycles ({})", max_cycles);
-        // Drain FIFO before returning
-        self.drain_fifo();
         Ok(SimulationResult {
             cycles: self.cycle_count,
             tohost_value: None,
