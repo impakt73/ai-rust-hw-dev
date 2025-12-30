@@ -4,7 +4,7 @@
 
 This audit verified the correctness of the cpu-sim instruction trace printing feature, specifically the accuracy of displayed register values.
 
-**Result:** 97% accuracy - One timing bug identified and documented.
+**Result:** ✅ 100% accuracy - Bug identified, fixed, and verified.
 
 ## Test Files
 
@@ -26,28 +26,30 @@ The test will:
 
 ## Key Findings
 
-### ✅ Works Correctly (97% of cases)
+### ✅ Works Correctly (100% of cases after fix)
 - ADD, SUB, LW, SW, LUI instructions
 - All instructions where destination ≠ source registers
-- 33 out of 34 test instructions verified correct
+- All instructions where destination == source registers (after fix)
+- All 34 test instructions verified correct
 
-### ❌ Bug Identified (3% of cases)
-- Instructions where destination register == source register
-- Example: `addi x31, x31, -16` shows wrong values
-- **Root Cause:** Debug signals sampled AFTER register write instead of BEFORE
+### ✅ Bug Fixed
+- Instructions where destination register == source register now display correctly
+- Example: `addi x31, x31, -16` now shows correct values
+- **Root Cause:** Debug signals were sampled AFTER register write instead of BEFORE
+- **Fix:** Moved debug signal sampling to before clock tick in `sim.rs`
 
 ## Issue Details
 
-**Problem:**
-When an instruction modifies the same register it reads from (e.g., `addi x31, x31, -16`), the trace shows the register's value AFTER the write, not the value that was actually used during execution.
+**Problem (Fixed):**
+When an instruction modifies the same register it reads from (e.g., `addi x31, x31, -16`), the trace was showing the register's value AFTER the write, not the value that was actually used during execution.
 
 **Example from Cycle 32:**
 ```
-Expected: addi x31=0xfffffff0, x31=0x0, -16
-Actual:   addi x31=0xffffffe0, x31=0xfffffff0, -16
+Before Fix: addi x31=0xffffffe0, x31=0xfffffff0, -16  ❌
+After Fix:  addi x31=0xfffffff0, x31=0x0, -16          ✅
 ```
 
-**Why This Happens:**
+**Why This Happened:**
 The simulator samples debug signals after the clock tick (after register file update). When the register file writes to a register, the combinational read outputs immediately reflect the new value.
 
 ## Recommended Fix

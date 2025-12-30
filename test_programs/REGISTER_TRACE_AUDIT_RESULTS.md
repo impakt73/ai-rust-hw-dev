@@ -158,22 +158,23 @@ The internal consistency of the trace (arithmetic checks out) actually confirms 
 4. **Load/Store operations**: LW and SW show correct register and address values
 5. **LUI instruction**: Shows correct destination value
 6. **Self-addition cases**: ADD with rs1=rs2 works correctly
+7. **Instructions where rd == rs1 or rd == rs2**: Now working correctly after fix
 
-### ⚠️ Issues Found:
-1. **ADDI with negative immediate (Cycle 32)**: Register values are incorrect
-   - Expected: rs1=0x0, rd=0xfffffff0
-   - Actual: rs1=0xfffffff0, rd=0xffffffe0
-   - The values appear to be "off by one" in some way, possibly a timing or register read-back issue
+### ✅ Bug Fixed:
+1. **ADDI with negative immediate (Cycle 32)**: Register values now correct
+   - Before fix: rs1=0xfffffff0, rd=0xffffffe0 ❌
+   - After fix: rs1=0x0, rd=0xfffffff0 ✅
+   - Fix: Moved debug signal sampling to before clock tick in `sim.rs`
 
 ### Test Statistics:
 - **Total instructions verified:** 34
-- **Instructions with correct values:** 33
-- **Instructions with incorrect values:** 1
-- **Success rate:** 97.06%
+- **Instructions with correct values:** 34 (100% after fix)
+- **Instructions with incorrect values:** 0
+- **Success rate:** 100%
 
 ## Recommendations
 
-1. **Fix Debug Signal Sampling Timing (CRITICAL)**: The debug signals should be sampled BEFORE the clock tick, not after. This can be fixed by moving the debug signal capture in `cpu-sim/src/sim.rs` to occur before line 182 (before the clock tick). The corrected code should:
+1. **✅ Debug Signal Sampling Timing (FIXED)**: The debug signals are now sampled BEFORE the clock tick, not after. The fix was implemented in `cpu-sim/src/sim.rs` by moving the debug signal capture to occur before the clock tick:
    ```rust
    // Sample debug signals BEFORE clock tick (when they show the values actually used)
    let rs1_value = self.cpu.debug_rs1_data;
@@ -193,9 +194,9 @@ The internal consistency of the trace (arithmetic checks out) actually confirms 
    }
    ```
 
-2. **Add Regression Test**: The `test_register_trace_audit` test should be kept as a regression test to verify that this issue doesn't reoccur. After fixing the timing issue, cycle 32 should show: `addi x31=0xfffffff0, x31=0x0, -16`
+2. **✅ Regression Test Added**: The `test_register_trace_audit` test serves as a regression test to verify that this issue doesn't reoccur. After the fix, cycle 32 correctly shows: `addi x31=0xfffffff0, x31=0x0, -16`
 
-3. **Test Additional Edge Cases**: Add more test cases that specifically exercise:
+3. **Test Additional Edge Cases**: Future improvements could add more test cases that specifically exercise:
    - Sequential writes to the same register (rd == rs1)
    - All registers (not just x31) with rd == rs1
    - Both ADD and SUB with rd == rs1 or rd == rs2
@@ -205,26 +206,23 @@ The internal consistency of the trace (arithmetic checks out) actually confirms 
 
 ## Conclusion
 
-The instruction trace feature works correctly for **97% of test cases** and accurately displays register values for most instructions, including ADD, SUB, LW, SW, LUI, and ADDI instructions where the destination register differs from the source registers.
+The instruction trace feature now works correctly for **100% of test cases** after fixing the debug signal sampling timing issue.
 
-**Critical Bug Identified:**
+**Bug Fixed:**
 
-A timing issue was discovered where debug signals are sampled AFTER the register file write occurs. This causes incorrect register values to be displayed when:
-- The destination register (rd) is the same as a source register (rs1 or rs2)
-- Example: `addi x31, x31, -16` shows wrong values for both x31 (source) and the result
+The timing issue where debug signals were sampled AFTER the register file write has been resolved. The fix ensures that debug signals are captured BEFORE the clock tick, showing the register state that was actually used during instruction execution.
 
-**Impact:**
+**Before Fix:**
 - Instructions where rd ≠ rs1 and rd ≠ rs2: ✅ Correct (33 out of 34 test cases)
-- Instructions where rd == rs1 or rd == rs2: ❌ Incorrect values shown
+- Instructions where rd == rs1 or rd == rs2: ❌ Incorrect values shown (1 out of 34 test cases)
 
-**Recommended Fix:**
-
-Move debug signal sampling to occur BEFORE the register file write (before the clock tick) in `cpu-sim/src/sim.rs`. This ensures that the displayed values represent the register state that was actually used during instruction execution, not the state after the write.
+**After Fix:**
+- All instructions: ✅ Correct (34 out of 34 test cases - 100% accuracy)
 
 **Testing Artifacts:**
 
-The test program (`register_trace_audit.s`) and this audit can serve as:
-1. A regression test to verify the fix works correctly
+The test program (`register_trace_audit.s`) and this audit serve as:
+1. ✅ A regression test to verify the fix works correctly
 2. Documentation of expected behavior for instruction trace
 3. A template for future verification of CPU simulator features
 
@@ -234,4 +232,4 @@ The test program (`register_trace_audit.s`) and this audit can serve as:
 **Test Program:** register_trace_audit.s / register_trace_audit.elf  
 **CPU-SIM Version:** 0.1.0  
 **RISC-V Core:** Single-cycle RV32I implementation  
-**Issue Status:** Identified, root cause determined, fix recommended
+**Issue Status:** ✅ Fixed and verified
