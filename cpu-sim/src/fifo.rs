@@ -29,9 +29,7 @@ impl Fifo {
     pub fn read_status(&self) -> u32 {
         let rx_valid = if self.rx.is_empty() { 0 } else { 1 };
         let tx_ready = 1; // Always ready (infinite buffer)
-        let status = (tx_ready << 1) | rx_valid;
-        log::debug!("FIFO status read: 0x{:08x} (RX len: {}, RX_VALID: {})", status, self.rx.len(), rx_valid);
-        status
+        (tx_ready << 1) | rx_valid
     }
 
     /// Read the DATA register
@@ -39,10 +37,7 @@ impl Fifo {
     /// Returns 0 if RX is empty
     pub fn read_data(&mut self) -> u32 {
         match self.rx.pop_front() {
-            Some(val) => {
-                log::info!("FIFO RX: Read data 0x{:08x} (remaining: {})", val, self.rx.len());
-                val
-            }
+            Some(val) => val,
             None => {
                 log::warn!(
                     "FIFO RX queue read while empty. \

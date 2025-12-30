@@ -72,7 +72,6 @@ where
                 // Remaining bytes are implicitly 0 (zero-padding)
             }
 
-            log::info!("FIFO RX: Writing word 0x{:08x}", word);
             self.fifo_write_rx(word);
             i += 4;
         }
@@ -80,7 +79,6 @@ where
         // Add a null terminator word if the string ends on a word boundary
         // This ensures the reading side can detect the end of the string
         if bytes.len().is_multiple_of(4) {
-            log::info!("FIFO RX: Adding null terminator");
             self.fifo_write_rx(0);
         }
     }
@@ -139,8 +137,13 @@ where
             // Data Memory Read (use address from THIS cycle's computation)
             // After the first eval, dmem_addr contains the data memory address
             // computed by the current instruction (for load/store operations)
+            // Only read if this is NOT a write instruction (dmem_we == 0)
             let dmem_addr = self.cpu.dmem_addr;
-            let rdata = self.bus.read_word(dmem_addr);
+            let rdata = if self.cpu.dmem_we == 0 {
+                self.bus.read_word(dmem_addr)
+            } else {
+                0 // For stores, rdata is not used
+            };
             self.cpu.dmem_rdata = rdata;
 
             // Second evaluation: Propagate loaded data to rd_data
