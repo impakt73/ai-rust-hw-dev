@@ -31,9 +31,9 @@ This specification defines a **binary packet-based communication protocol** for 
 
 The protocol is designed to be:
 - **Zero-copy efficient** using the `rkyv` serialization framework
-- **Type-safe** with shared Rust struct definitions
+- **Type-safe** with shared Rust struct definitions across host and CPU code
 - **Extensible** for future packet types and features
-- **Simple** to implement in both host Rust and simulated CPU assembly/C code
+- **Simple** to implement with Rust on both host and CPU sides, enabling code reuse
 
 ---
 
@@ -42,11 +42,12 @@ The protocol is designed to be:
 ### Primary Goals
 
 1. **Bidirectional Communication**: Enable both CPU→Host and Host→CPU data transfer
-2. **Type Safety**: Use Rust's type system to prevent protocol violations
+2. **Type Safety**: Use Rust's type system to prevent protocol violations on both host and CPU
 3. **Zero-Copy Serialization**: Minimize memory copies using `rkyv`
-4. **Compatibility**: Work with existing FIFO-based memory-mapped I/O infrastructure
-5. **Simplicity**: Easy to use from both Rust host code and CPU assembly/C programs
-6. **Extensibility**: Support for future packet types without breaking changes
+4. **Code Sharing**: Share packet definitions between host and CPU via common Rust crate
+5. **Compatibility**: Work with existing FIFO-based memory-mapped I/O infrastructure
+6. **Simplicity**: Easy to use from Rust code on both host and CPU sides
+7. **Extensibility**: Support for future packet types without breaking changes
 
 ### Non-Goals
 
@@ -54,6 +55,22 @@ The protocol is designed to be:
 - Encryption or authentication (trusted environment)
 - Flow control beyond basic FIFO status flags
 - Complex routing or multiplexing (single point-to-point channel)
+
+### Code Sharing Strategy
+
+A key advantage of using Rust for both host and CPU code is **complete code reuse** of packet definitions:
+
+1. **Shared Packet Definitions**: A single `riscv_protocol` crate defines all packet structures
+2. **No Manual Synchronization**: Both sides use identical `rkyv`-derived structs
+3. **Compile-Time Safety**: Type mismatches are caught at compile time, not runtime
+4. **`no_std` Compatibility**: The protocol crate works in both std (host) and no_std (bare-metal CPU) environments
+5. **Same Serialization**: Both sides use `rkyv::to_bytes()` and `rkyv::check_archived_root()`
+
+**Example Workflow**:
+- Host imports: `use riscv_protocol::DebugPacket;`
+- CPU imports: `use riscv_protocol::DebugPacket;` (same struct!)
+- Both serialize identically: `rkyv::to_bytes(&packet)`
+- Zero risk of protocol drift between implementations
 
 ---
 
@@ -101,10 +118,11 @@ The protocol is designed to be:
 │                                                              │
 │                    Simulated CPU                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  RISC-V RV32I Program (assembly/C/Rust)              │   │
+│  │  RISC-V RV32I Bare-Metal Rust Program                │   │
+│  │  - Uses same packet definitions via shared crate     │   │
+│  │  - Encodes/decodes packets using rkyv                │   │
 │  │  - Reads from FIFO using memory-mapped loads         │   │
 │  │  - Writes to FIFO using memory-mapped stores         │   │
-│  │  - Interprets binary packet format                   │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -659,64 +677,90 @@ The protocol uses the existing FIFO infrastructure documented in [cpu-sim/README
 
 #### Transmit Sequence (CPU→Host)
 
-```c
-// Example in C (or equivalent assembly)
-#define FIFO_DATA   ((volatile uint32_t*)0x40000000)
-#define FIFO_STATUS ((volatile uint32_t*)0x40000004)
-#define TX_READY    (1 << 1)
+**Rust Example for Bare-Metal CPU**:
 
-void send_packet(const uint8_t* packet_bytes, uint32_t length) {
+```rust
+// Memory-mapped FIFO registers (CPU-side bare metal)
+const FIFO_DATA: *mut u32 = 0x40000000 as *mut u32;
+const FIFO_STATUS: *const u32 = 0x40000004 as *const u32;
+const TX_READY: u32 = 1 << 1;
+
+/// Send a packet to the host via FIFO
+/// 
+/// # Safety
+/// This function performs volatile memory operations to FIFO MMIO registers
+pub unsafe fn send_packet(packet_bytes: &[u8]) {
     // Ensure length is multiple of 4 (pad if necessary)
-    uint32_t num_words = (length + 3) / 4;
-    const uint32_t* words = (const uint32_t*)packet_bytes;
+    let num_words = (packet_bytes.len() + 3) / 4;
     
-    for (uint32_t i = 0; i < num_words; i++) {
+    for i in 0..num_words {
         // Wait for TX ready
-        while ((*FIFO_STATUS & TX_READY) == 0) {
-            // Busy-wait (or yield)
+        while FIFO_STATUS.read_volatile() & TX_READY == 0 {
+            // Busy-wait (could use WFI instruction in real implementation)
+            core::hint::spin_loop();
+        }
+        
+        // Construct word from up to 4 bytes (little-endian)
+        let mut word: u32 = 0;
+        let base = i * 4;
+        for j in 0..4 {
+            if base + j < packet_bytes.len() {
+                word |= (packet_bytes[base + j] as u32) << (j * 8);
+            }
         }
         
         // Write word to FIFO
-        *FIFO_DATA = words[i];
+        FIFO_DATA.write_volatile(word);
     }
 }
 ```
 
 #### Receive Sequence (CPU reads from Host)
 
-```c
-#define RX_VALID    (1 << 0)
+**Rust Example for Bare-Metal CPU**:
 
-uint32_t receive_packet(uint8_t* buffer, uint32_t max_length) {
-    uint32_t* words = (uint32_t*)buffer;
-    uint32_t word_count = 0;
+```rust
+const RX_VALID: u32 = 1 << 0;
+
+/// Receive a complete packet from the host via FIFO
+/// 
+/// # Safety
+/// This function performs volatile memory operations to FIFO MMIO registers
+/// 
+/// Returns the number of bytes received, or 0 on error
+pub unsafe fn receive_packet(buffer: &mut [u8]) -> usize {
+    let max_length = buffer.len();
+    let words = buffer.as_mut_ptr() as *mut u32;
+    let mut word_count: usize = 0;
     
     // Read header first (2 words = 8 bytes)
-    while (word_count < 2) {
-        if (*FIFO_STATUS & RX_VALID) {
-            words[word_count++] = *FIFO_DATA;
+    while word_count < 2 {
+        if FIFO_STATUS.read_volatile() & RX_VALID != 0 {
+            words.add(word_count).write_volatile(FIFO_DATA.read_volatile());
+            word_count += 1;
         }
     }
     
     // Parse header to get total length
-    PacketHeader* header = (PacketHeader*)buffer;
-    if (header->magic != 0x52565043) {
+    let header = &*(buffer.as_ptr() as *const PacketHeader);
+    if header.magic != 0x52565043 {
         return 0;  // Invalid magic
     }
     
-    uint32_t total_words = (header->length + 3) / 4;
-    if (total_words * 4 > max_length) {
+    let total_words = (header.length as usize + 3) / 4;
+    if total_words * 4 > max_length {
         return 0;  // Buffer too small
     }
     
     // Read remaining words
-    while (word_count < total_words) {
-        if (*FIFO_STATUS & RX_VALID) {
-            words[word_count++] = *FIFO_DATA;
+    while word_count < total_words {
+        if FIFO_STATUS.read_volatile() & RX_VALID != 0 {
+            words.add(word_count).write_volatile(FIFO_DATA.read_volatile());
+            word_count += 1;
         }
     }
     
-    return header->length;
+    header.length as usize
 }
 ```
 
@@ -821,54 +865,48 @@ fn process_received_packet(bytes: &[u8]) -> Result<(), String> {
 
 ### Example 1: CPU Sends Debug Message to Host
 
-**CPU Side (C)**:
+**CPU Side (Rust bare-metal)**:
 
-```c
-#include <stdint.h>
-#include <string.h>
+```rust
+use rkyv::{to_bytes, rancor::Error};
 
-// Simplified packet structures (must match Rust definitions)
-typedef struct {
-    uint32_t magic;
-    uint16_t length;
-    uint8_t packet_type;
-    uint8_t reserved;
-} PacketHeader;
-
-typedef struct {
-    PacketHeader header;
-    uint8_t level;
-    uint8_t reserved[3];
-    // String data follows...
-} DebugPacket;
-
-void send_debug_message(const char* message) {
-    uint8_t buffer[256];
-    DebugPacket* pkt = (DebugPacket*)buffer;
+/// Send a debug message from CPU to host
+/// 
+/// # Safety
+/// Uses unsafe FIFO operations for memory-mapped I/O
+pub fn send_debug_message(level: DebugLevel, message: &str) {
+    // Create debug packet using shared packet definitions
+    let packet = DebugPacket {
+        header: PacketHeader {
+            magic: 0x52565043,
+            length: 0,  // Will be set by rkyv
+            packet_type: PacketType::Debug,
+            reserved: 0,
+        },
+        level,
+        reserved: [0; 3],
+        message: message.to_string(),
+    };
     
-    // Fill header
-    pkt->header.magic = 0x52565043;
-    pkt->header.packet_type = 51;  // PacketType::Debug
-    pkt->header.reserved = 0;
-    
-    // Fill debug fields
-    pkt->level = 2;  // DebugLevel::Info
-    memset(pkt->reserved, 0, 3);
-    
-    // Copy string (in real implementation, use rkyv serialization)
-    uint32_t msg_len = strlen(message) + 1;  // Include null terminator
-    memcpy(buffer + sizeof(DebugPacket), message, msg_len);
-    
-    // Set total length
-    uint32_t total_len = sizeof(DebugPacket) + msg_len;
-    pkt->header.length = total_len;
-    
-    // Pad to 4-byte boundary
-    uint32_t padded_len = (total_len + 3) & ~3;
-    memset(buffer + total_len, 0, padded_len - total_len);
+    // Serialize with rkyv (same as host side!)
+    let bytes = to_bytes::<Error>(&packet).expect("Serialization failed");
     
     // Send via FIFO
-    send_packet(buffer, padded_len);
+    unsafe {
+        send_packet(&bytes);
+    }
+}
+
+// Example usage in CPU program
+#[no_mangle]
+pub extern "C" fn main() -> ! {
+    // Initialize hardware...
+    
+    send_debug_message(DebugLevel::Info, "CPU started successfully");
+    
+    // ... rest of program ...
+    
+    loop {}
 }
 ```
 
@@ -876,29 +914,37 @@ void send_debug_message(const char* message) {
 
 ```rust
 use cpu_sim::Simulator;
+use rkyv::{check_archived_root, Deserialize};
 
-// In simulation loop or callback
+/// Handle debug messages from CPU
 fn handle_cpu_debug_messages(simulator: &mut Simulator) {
+    // Collect complete packet from FIFO TX queue
+    let mut bytes = vec![];
     while let Some(word) = simulator.bus.fifo.tx.pop_front() {
-        // Collect complete packet
-        let mut bytes = vec![];
         bytes.extend_from_slice(&word.to_le_bytes());
         
-        // Read more words until we have complete packet
-        // (simplified - actual implementation needs proper buffering)
-        
-        // Deserialize
-        if let Ok(archived) = check_archived_root::<DebugPacket>(&bytes) {
-            let packet = archived.deserialize(&mut rkyv::Infallible).unwrap();
-            println!("[CPU DEBUG] {}: {}", 
-                match packet.level {
-                    DebugLevel::Info => "INFO",
-                    DebugLevel::Error => "ERROR",
-                    _ => "DEBUG",
-                },
-                packet.message
-            );
+        // Check if we have a complete packet
+        if bytes.len() >= 8 {
+            let header = unsafe { &*(bytes.as_ptr() as *const PacketHeader) };
+            if header.magic == 0x52565043 && bytes.len() >= header.length as usize {
+                break;
+            }
         }
+    }
+    
+    // Deserialize using rkyv (same as CPU side!)
+    if let Ok(archived) = check_archived_root::<DebugPacket>(&bytes) {
+        let packet: DebugPacket = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        println!("[CPU DEBUG] {}: {}", 
+            match packet.level {
+                DebugLevel::Info => "INFO",
+                DebugLevel::Error => "ERROR",
+                DebugLevel::Warning => "WARN",
+                DebugLevel::Debug => "DEBUG",
+                DebugLevel::Trace => "TRACE",
+            },
+            packet.message
+        );
     }
 }
 ```
@@ -910,6 +956,8 @@ fn handle_cpu_debug_messages(simulator: &mut Simulator) {
 **Host Side (Rust)**:
 
 ```rust
+use rkyv::{to_bytes, check_archived_root, Deserialize, rancor::Error};
+
 fn read_cpu_registers(simulator: &mut Simulator, registers: &[u8]) -> Vec<u32> {
     // Create request packet
     let request = RegisterReadPacket {
@@ -947,31 +995,69 @@ fn read_cpu_registers(simulator: &mut Simulator, registers: &[u8]) -> Vec<u32> {
     
     // Deserialize response
     let archived = check_archived_root::<RegisterReadResponsePacket>(&response_bytes).unwrap();
-    let response = archived.deserialize(&mut rkyv::Infallible).unwrap();
+    let response: RegisterReadResponsePacket = archived.deserialize(&mut rkyv::Infallible).unwrap();
     response.values
 }
 ```
 
-**CPU Side (Handler)**:
+**CPU Side (Rust bare-metal handler)**:
 
-```c
-void handle_register_read_request(const uint8_t* packet_bytes) {
-    RegisterReadPacket* req = (RegisterReadPacket*)packet_bytes;
+```rust
+use rkyv::{to_bytes, check_archived_root, Deserialize, rancor::Error};
+
+/// Handle register read request from host
+/// 
+/// # Safety
+/// Accesses CPU registers and FIFO hardware
+pub unsafe fn handle_register_read_request(packet_bytes: &[u8]) {
+    // Deserialize request using shared packet definitions
+    let archived = check_archived_root::<RegisterReadPacket>(packet_bytes)
+        .expect("Invalid packet");
+    let request: RegisterReadPacket = archived.deserialize(&mut rkyv::Infallible)
+        .expect("Deserialization failed");
     
-    // Get register values
-    uint32_t values[32];
-    for (int i = 0; i < req->num_registers; i++) {
-        uint8_t reg_idx = req->register_indices[i];
-        values[i] = read_cpu_register(reg_idx);
+    // Read CPU registers (implementation specific)
+    let mut values = vec![];
+    for &reg_idx in &request.register_indices {
+        let value = read_cpu_register(reg_idx);
+        values.push(value);
     }
     
     // Build response packet
-    RegisterReadResponsePacket response;
-    response.header.magic = 0x52565043;
-    response.header.packet_type = 30;  // RegisterRead response
-    // ... serialize values array with rkyv ...
+    let response = RegisterReadResponsePacket {
+        header: PacketHeader {
+            magic: 0x52565043,
+            length: 0,  // Will be set by rkyv
+            packet_type: PacketType::RegisterRead,
+            reserved: 0,
+        },
+        values,
+    };
     
-    send_packet((uint8_t*)&response, response.header.length);
+    // Serialize and send (same as host!)
+    let bytes = to_bytes::<Error>(&response).expect("Serialization failed");
+    send_packet(&bytes);
+}
+
+/// Read a CPU register value (bare-metal implementation)
+/// This would use inline assembly or intrinsics
+unsafe fn read_cpu_register(index: u8) -> u32 {
+    // Example: reading from register file
+    // In real implementation, might use inline asm or global register array
+    match index {
+        0 => 0,  // x0 is always zero
+        1..=31 => {
+            // Read from actual register file
+            // This is implementation-specific
+            core::arch::asm!(
+                "mv {0}, x{1}",
+                out(reg) _,
+                const index,
+            );
+            0  // Placeholder
+        }
+        _ => 0,
+    }
 }
 ```
 
@@ -979,20 +1065,26 @@ void handle_register_read_request(const uint8_t* packet_bytes) {
 
 ### Example 3: CPU Performs Self-Test and Reports Results
 
+**CPU Side (Rust bare-metal)**:
+
 ```rust
-// CPU-side pseudo-code (assembly/C)
-fn run_self_test() {
+use rkyv::{to_bytes, rancor::Error};
+
+/// Run a self-test and report results to host
+pub fn run_self_test() {
     let test_value = compute_something();
     let expected = 0x1234;
     
+    // Create assertion packet using shared definitions
     let packet = AssertPacket {
         header: PacketHeader {
             magic: 0x52565043,
-            length: size_of::<AssertPacket>(),
+            length: 0,  // Will be set by rkyv
             packet_type: PacketType::Assert,
             reserved: 0,
         },
         passed: test_value == expected,
+        reserved: [0; 3],
         test_id: 1,
         expected,
         actual: test_value,
@@ -1003,21 +1095,73 @@ fn run_self_test() {
         },
     };
     
-    send_packet(&packet);
+    // Serialize with rkyv (same as host!)
+    let bytes = to_bytes::<Error>(&packet).expect("Serialization failed");
+    
+    // Send to host
+    unsafe {
+        send_packet(&bytes);
+    }
 }
 
-// Host side
+fn compute_something() -> u32 {
+    // Actual test computation
+    0x1234
+}
+```
+
+**Host Side (Rust)**:
+
+```rust
+use rkyv::{check_archived_root, Deserialize};
+
+/// Collect test results from CPU
 fn collect_test_results(simulator: &mut Simulator) -> Vec<AssertPacket> {
     let mut results = vec![];
     
-    while let Some(packet_bytes) = read_packet_from_fifo(&simulator.bus.fifo.tx) {
+    // Read all assertion packets from FIFO
+    while let Some(packet_bytes) = read_packet_from_fifo(&mut simulator.bus.fifo.tx) {
+        // Deserialize using shared packet definitions
         if let Ok(archived) = check_archived_root::<AssertPacket>(&packet_bytes) {
-            let packet = archived.deserialize(&mut rkyv::Infallible).unwrap();
+            let packet: AssertPacket = archived.deserialize(&mut rkyv::Infallible).unwrap();
             results.push(packet);
         }
     }
     
     results
+}
+
+/// Helper to read a complete packet from FIFO
+fn read_packet_from_fifo(fifo_tx: &mut std::collections::VecDeque<u32>) -> Option<Vec<u8>> {
+    if fifo_tx.is_empty() {
+        return None;
+    }
+    
+    let mut bytes = vec![];
+    
+    // Read header
+    for _ in 0..2 {
+        if let Some(word) = fifo_tx.pop_front() {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        } else {
+            return None;
+        }
+    }
+    
+    // Parse header to get length
+    let header = unsafe { &*(bytes.as_ptr() as *const PacketHeader) };
+    let total_words = (header.length as usize + 3) / 4;
+    
+    // Read remaining words
+    for _ in 2..total_words {
+        if let Some(word) = fifo_tx.pop_front() {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        } else {
+            return None;
+        }
+    }
+    
+    Some(bytes)
 }
 ```
 
@@ -1033,8 +1177,8 @@ When implementing packet reception:
 - Use dynamic `Vec<u8>` buffers (no fixed size needed)
 - Allocate based on `length` field from header
 
-**CPU Side** (limited memory):
-- Preallocate fixed-size receive buffer
+**CPU Side** (bare-metal Rust with limited memory):
+- Preallocate fixed-size receive buffer (use static arrays)
 - Typical sizes:
   - Minimal: 64 bytes (supports most control packets)
   - Standard: 256 bytes (supports small data transfers)
@@ -1042,25 +1186,63 @@ When implementing packet reception:
 
 ### Example CPU Buffer Management
 
-```c
-#define MAX_PACKET_SIZE 256
-static uint8_t rx_buffer[MAX_PACKET_SIZE];
+**Rust Bare-Metal Example**:
 
-int receive_packet_safe(uint8_t* out_buffer, uint32_t max_size) {
-    // Receive into temp buffer first
-    uint32_t length = receive_packet(rx_buffer, MAX_PACKET_SIZE);
+```rust
+use core::mem::MaybeUninit;
+
+const MAX_PACKET_SIZE: usize = 256;
+
+/// Global receive buffer for packet reception
+static mut RX_BUFFER: [MaybeUninit<u8>; MAX_PACKET_SIZE] = 
+    [MaybeUninit::uninit(); MAX_PACKET_SIZE];
+
+/// Safely receive a packet into a provided buffer
+/// 
+/// # Safety
+/// Uses unsafe FIFO operations and global mutable state
+pub unsafe fn receive_packet_safe(out_buffer: &mut [u8]) -> usize {
+    // Receive into temporary buffer first
+    let rx_buf = &mut RX_BUFFER;
+    let rx_slice = core::slice::from_raw_parts_mut(
+        rx_buf.as_mut_ptr() as *mut u8,
+        MAX_PACKET_SIZE
+    );
     
-    if (length == 0) {
+    let length = receive_packet(rx_slice);
+    
+    if length == 0 {
         return 0;  // Error
     }
     
-    if (length > max_size) {
-        send_error_packet(ErrorCode::BufferOverflow);
+    if length > out_buffer.len() {
+        // Send error packet to host
+        send_error_response(ErrorCode::BufferOverflow);
         return 0;
     }
     
-    memcpy(out_buffer, rx_buffer, length);
-    return length;
+    // Copy to output buffer
+    out_buffer[..length].copy_from_slice(&rx_slice[..length]);
+    length
+}
+
+/// Send an error response to the host
+unsafe fn send_error_response(error_code: ErrorCode) {
+    let packet = ErrorPacket {
+        header: PacketHeader {
+            magic: 0x52565043,
+            length: 0,
+            packet_type: PacketType::Error,
+            reserved: 0,
+        },
+        error_code,
+        reserved: [0; 3],
+        details: "Buffer overflow".to_string(),
+    };
+    
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&packet)
+        .expect("Error packet serialization failed");
+    send_packet(&bytes);
 }
 ```
 
@@ -1202,27 +1384,34 @@ When adding new packet types:
 
 ### Phase 1: Core Infrastructure
 - [ ] Create `riscv_protocol` crate with packet definitions
+  - [ ] Support `no_std` for bare-metal CPU usage
+  - [ ] Add `rkyv` dependency with appropriate features
 - [ ] Implement packet serialization/deserialization helpers
 - [ ] Add packet framing and validation utilities
-- [ ] Write unit tests for all packet types
+- [ ] Write unit tests for all packet types (host and `no_std` environments)
 
 ### Phase 2: Integration
-- [ ] Integrate with cpu-sim FIFO infrastructure
+- [ ] Integrate with cpu-sim FIFO infrastructure (host side)
 - [ ] Add packet send/receive functions to Simulator
-- [ ] Implement CPU-side packet handlers (C library)
-- [ ] Create example programs using the protocol
+- [ ] Create CPU-side Rust library for bare-metal packet handling
+  - [ ] Implement MMIO wrappers for FIFO access
+  - [ ] Add packet send/receive functions for `no_std`
+  - [ ] Include examples of using shared packet definitions
+- [ ] Create example bare-metal Rust programs using the protocol
 
 ### Phase 3: Advanced Features
-- [ ] Implement register/memory access handlers
+- [ ] Implement register/memory access handlers (both host and CPU)
 - [ ] Add debug packet support to cpu-sim
 - [ ] Create automated test framework using AssertPacket
 - [ ] Write comprehensive integration tests
+- [ ] Add cross-compilation support for RISC-V bare-metal targets
 
 ### Phase 4: Documentation & Examples
-- [ ] Document API usage with examples
-- [ ] Create tutorial programs (CPU and host)
+- [ ] Document API usage with Rust examples (host and bare-metal)
+- [ ] Create tutorial programs (CPU bare-metal and host)
 - [ ] Add protocol conformance tests
 - [ ] Performance benchmarking and optimization
+- [ ] Document `no_std` considerations and memory requirements
 
 ---
 
@@ -1262,31 +1451,87 @@ When adding new packet types:
 
 ## Appendix B: Rust Module Structure
 
-Suggested directory layout for implementation:
+Suggested directory layout for implementation with code sharing between host and CPU:
 
 ```
-riscv_protocol/
+riscv_protocol/                 # Shared packet definitions (no_std compatible)
+├── Cargo.toml                  # Features: std (default), no_std
+├── src/
+│   ├── lib.rs                  # Re-exports and public API
+│   ├── header.rs               # PacketHeader, PacketType
+│   ├── packets/
+│   │   ├── mod.rs              # Packet module exports
+│   │   ├── control.rs          # Reset, Halt, Status
+│   │   ├── data.rs             # DataU32, DataI32, DataBuffer, DataString
+│   │   ├── register.rs         # RegisterRead, RegisterWrite
+│   │   ├── memory.rs           # MemoryRead, MemoryWrite
+│   │   ├── debug.rs            # Assert, Debug
+│   │   └── error.rs            # ErrorPacket, ErrorCode
+│   └── validation.rs           # Validation helpers (optional for no_std)
+└── tests/
+    ├── roundtrip.rs            # Serialization roundtrip tests
+    ├── validation.rs           # Validation tests
+    └── examples.rs             # Example usage tests
+
+riscv_protocol_host/            # Host-side utilities (depends on riscv_protocol)
 ├── Cargo.toml
 ├── src/
-│   ├── lib.rs              # Re-exports and public API
-│   ├── header.rs           # PacketHeader, PacketType
-│   ├── packets/
-│   │   ├── mod.rs          # Packet module exports
-│   │   ├── control.rs      # Reset, Halt, Status
-│   │   ├── data.rs         # DataU32, DataI32, DataBuffer, DataString
-│   │   ├── register.rs     # RegisterRead, RegisterWrite
-│   │   ├── memory.rs       # MemoryRead, MemoryWrite
-│   │   ├── debug.rs        # Assert, Debug
-│   │   └── error.rs        # ErrorPacket, ErrorCode
+│   ├── lib.rs
 │   ├── transport/
 │   │   ├── mod.rs
-│   │   ├── fifo.rs         # FIFO-specific helpers
-│   │   └── framing.rs      # Packet framing utilities
-│   └── validation.rs       # Validation helpers
-└── tests/
-    ├── roundtrip.rs        # Serialization roundtrip tests
-    ├── validation.rs       # Validation tests
-    └── examples.rs         # Example usage tests
+│   │   ├── fifo.rs             # Host FIFO integration
+│   │   └── framing.rs          # Packet framing for host
+│   └── simulator.rs            # Simulator extensions for packet I/O
+
+riscv_protocol_cpu/             # CPU bare-metal utilities (depends on riscv_protocol)
+├── Cargo.toml                  # Target: riscv32i-unknown-none-elf
+├── src/
+│   ├── lib.rs                  # no_std library
+│   ├── mmio.rs                 # FIFO MMIO register wrappers
+│   ├── send.rs                 # Packet transmission (unsafe MMIO)
+│   ├── receive.rs              # Packet reception (unsafe MMIO)
+│   └── handlers.rs             # Example packet handlers
+└── examples/
+    ├── debug_hello.rs          # Send debug message
+    ├── self_test.rs            # Run tests and report with AssertPacket
+    └── echo_server.rs          # Respond to host packets
+```
+
+### Key Design Points
+
+1. **`riscv_protocol` crate**: Core packet definitions, `no_std` compatible
+   - Used by both host and CPU code
+   - Conditional compilation for `alloc` features (Vec, String)
+   - Supports both `std` and `no_std` environments
+
+2. **`riscv_protocol_host` crate**: Host-specific utilities
+   - Depends on `riscv_protocol` with `std` feature
+   - Integration with cpu-sim
+   - High-level packet send/receive APIs
+
+3. **`riscv_protocol_cpu` crate**: Bare-metal CPU utilities
+   - Depends on `riscv_protocol` with `no_std` feature
+   - MMIO abstractions for FIFO hardware
+   - Example bare-metal programs
+
+### Example `Cargo.toml` for `riscv_protocol`
+
+```toml
+[package]
+name = "riscv_protocol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rkyv = { version = "0.8", default-features = false, features = ["size_32"] }
+
+[features]
+default = ["std"]
+std = ["rkyv/std", "alloc"]
+alloc = ["rkyv/alloc"]
+
+[dev-dependencies]
+rkyv = { version = "0.8", features = ["std"] }
 ```
 
 ---
