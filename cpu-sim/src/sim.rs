@@ -1,6 +1,7 @@
 use crate::bus::SystemBus;
 use riscv_core::trace::InstructionTrace;
 use riscv_core::Top;
+use riscv_protocol::*;
 
 /// Result of a simulation run
 #[derive(Debug)]
@@ -255,5 +256,35 @@ where
             cycles: self.cycle_count,
             tohost_value: None,
         })
+    }
+
+    /// Send an Echo packet to the simulated CPU
+    pub fn send_echo_packet(&mut self, packet: &EchoPacket) -> Result<(), String> {
+        crate::packet_transport::send_echo_packet(packet, &mut self.bus.fifo.rx)
+    }
+
+    /// Send a DataU32 packet to the simulated CPU
+    pub fn send_data_u32_packet(&mut self, packet: &DataU32Packet) -> Result<(), String> {
+        crate::packet_transport::send_data_u32_packet(packet, &mut self.bus.fifo.rx)
+    }
+
+    /// Try to receive an Echo packet from the simulated CPU
+    pub fn try_receive_echo_packet(&mut self) -> Result<Option<EchoPacket>, String> {
+        crate::packet_transport::receive_echo_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive a DataU32 packet from the simulated CPU
+    pub fn try_receive_data_u32_packet(&mut self) -> Result<Option<DataU32Packet>, String> {
+        crate::packet_transport::receive_data_u32_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive a Debug packet from the simulated CPU
+    pub fn try_receive_debug_packet(&mut self) -> Result<Option<DebugPacket>, String> {
+        crate::packet_transport::receive_debug_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive an Assert packet from the simulated CPU
+    pub fn try_receive_assert_packet(&mut self) -> Result<Option<AssertPacket>, String> {
+        crate::packet_transport::receive_assert_packet(&mut self.bus.fifo.tx)
     }
 }
