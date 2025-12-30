@@ -2,7 +2,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use core::ptr::write_volatile;
+use core::ptr::{read_volatile, write_volatile};
+use riscv_rt::entry;
 
 /// Panic handler for bare metal - infinite loop on panic
 #[panic_handler]
@@ -23,61 +24,42 @@ fn write_tohost(value: u32) -> ! {
 /// FIFO memory-mapped I/O addresses
 const FIFO_BASE: u32 = 0x4000_0000;
 const FIFO_DATA: u32 = FIFO_BASE + 0x0;
-const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
 
-/// FIFO status bits
-const _FIFO_RX_VALID: u32 = 0x1;
-const FIFO_TX_READY: u32 = 0x2;
+/// Read a word from the FIFO (without status check - just read and return)
+#[inline(never)]
+fn fifo_read_word_unchecked() -> u32 {
+    unsafe { read_volatile(FIFO_DATA as *const u32) }
+}
 
-/// Write a byte to the FIFO
-/// Note: This is a legacy function - the FIFO actually works with u32 words
+/// Write a word to the FIFO
 #[inline(never)]
 fn fifo_write_word(word: u32) {
     unsafe {
-        // Wait for FIFO to be ready
-        loop {
-            let status = core::ptr::read_volatile(FIFO_STATUS as *const u32);
-            if (status & FIFO_TX_READY) != 0 {
-                break;
-            }
-        }
-
-        // Write word to FIFO
+        // TX is always ready in simulation, so just write
         write_volatile(FIFO_DATA as *mut u32, word);
     }
 }
 
-/// Write a string to the FIFO
-/// Chunks the string into u32 words (4 bytes each) with zero padding at the end
-#[inline(never)]
-fn fifo_write_string(s: &str) {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    
-    while i < bytes.len() {
-        let mut word: u32 = 0;
-        
-        // Pack up to 4 bytes into a u32 word (little-endian)
-        for j in 0..4 {
-            if i + j < bytes.len() {
-                word |= (bytes[i + j] as u32) << (j * 8);
-            }
-            // Remaining bytes are implicitly 0 (zero-padding)
-        }
-        
-        fifo_write_word(word);
-        i += 4;
-    }
-}
-
 /// Entry point for the bare metal Rust program
-#[no_mangle]
-#[link_section = ".text"]
-pub extern "C" fn _start() -> ! {
+/// Uses riscv_rt which properly initializes stack pointer
+#[entry]
+fn main() -> ! {
     const SUCCESS_CODE: u32 = 42;
 
-    // Write "Hello World!" to the FIFO
-    fifo_write_string("Hello World!");
+    // Echo functionality: Read from RX FIFO and write to TX FIFO
+    // Continue until we receive a null terminator word (0x00000000)
+    // Maximum of 50 iterations to prevent infinite loops
+    for _ in 0..50 {
+        let word = fifo_read_word_unchecked();
+        
+        // If we read a null terminator, we're done
+        if word == 0 {
+            break;
+        }
+        
+        // Echo non-zero words
+        fifo_write_word(word);
+    }
 
     // Exit with success
     write_tohost(SUCCESS_CODE);
