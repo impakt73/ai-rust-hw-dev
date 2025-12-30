@@ -10,7 +10,9 @@ fn init_test_logger() {
 /// Helper function to get path to a test program ELF file
 fn test_program_path(filename: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir.parent().unwrap();
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("CARGO_MANIFEST_DIR should have a parent directory (workspace root)");
     workspace_root.join("test_programs").join(filename)
 }
 
@@ -39,7 +41,9 @@ fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(u32)) {
             ((word >> 16) & 0xFF) as u8,
             ((word >> 24) & 0xFF) as u8,
         ];
-        let mut fifo = fifo_data_clone.lock().unwrap();
+        let mut fifo = fifo_data_clone
+            .lock()
+            .expect("Failed to lock FIFO data mutex in create_fifo_collector callback");
         fifo.extend_from_slice(&bytes);
     };
 
