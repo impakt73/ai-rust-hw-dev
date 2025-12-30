@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 macro_rules! impl_send_packet {
     ($name:ident, $packet_type:ty) => {
         pub fn $name(packet: &$packet_type, fifo_rx: &mut VecDeque<u32>) -> Result<(), String> {
-            let bytes = to_bytes::<Error>(packet)
-                .map_err(|e| format!("Serialization failed: {:?}", e))?;
+            let bytes =
+                to_bytes::<Error>(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
 
             for chunk in bytes.as_ref().chunks(4) {
                 let mut word: u32 = 0;
@@ -30,7 +30,7 @@ macro_rules! impl_receive_packet {
             // For simplicity, try to read up to 256 bytes (64 words)
             // This should be enough for most packets
             const MAX_PACKET_WORDS: usize = 64;
-            
+
             if fifo_tx.is_empty() {
                 return Ok(None);
             }
@@ -38,7 +38,7 @@ macro_rules! impl_receive_packet {
             // Collect available words (up to max)
             let available_words = fifo_tx.len().min(MAX_PACKET_WORDS);
             let mut bytes = Vec::new();
-            
+
             // Peek at the data without removing it yet
             for i in 0..available_words {
                 if let Some(&word) = fifo_tx.get(i) {
@@ -75,7 +75,7 @@ impl_send_packet!(send_debug_packet, DebugPacket);
 impl_send_packet!(send_halt_packet, HaltPacket);
 impl_send_packet!(send_assert_packet, AssertPacket);
 
-// Implement receive functions for all packet types  
+// Implement receive functions for all packet types
 impl_receive_packet!(receive_nop_packet, NopPacket);
 impl_receive_packet!(receive_echo_packet, EchoPacket);
 impl_receive_packet!(receive_data_u32_packet, DataU32Packet);
@@ -167,4 +167,3 @@ mod tests {
         assert_eq!(received.message, "Test message");
     }
 }
-

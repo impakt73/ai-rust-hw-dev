@@ -1,12 +1,12 @@
-use rkyv::{Archive, Deserialize, Serialize};
 use crate::header::PacketHeader;
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Reset type enumeration
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ResetType {
-    Soft = 0,    // Software-triggered reset
-    Hard = 1,    // Hardware reset (full state clear)
+    Soft = 0, // Software-triggered reset
+    Hard = 1, // Hardware reset (full state clear)
 }
 
 /// Request CPU reset
@@ -21,14 +21,14 @@ pub struct ResetPacket {
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct HaltPacket {
     pub header: PacketHeader,
-    pub exit_code: i32,   // Exit code (0 = success, non-zero = error)
+    pub exit_code: i32, // Exit code (0 = success, non-zero = error)
 }
 
 /// Query or report system status
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct StatusPacket {
     pub header: PacketHeader,
-    pub cycle_count: u64,      // Current cycle count
-    pub pc: u32,               // Current program counter
-    pub status_flags: u32,     // Bit flags for various status indicators
+    pub cycle_count: u64,  // Current cycle count
+    pub pc: u32,           // Current program counter
+    pub status_flags: u32, // Bit flags for various status indicators
 }

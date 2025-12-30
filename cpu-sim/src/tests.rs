@@ -343,7 +343,7 @@ fn test_trace_callback() {
 #[test]
 fn test_packet_protocol_infrastructure() {
     use riscv_protocol::*;
-    
+
     init_test_logger();
 
     println!("\n========================================");
@@ -353,54 +353,60 @@ fn test_packet_protocol_infrastructure() {
 
     // Create a simple test without running actual CPU code
     // Just test the packet transport infrastructure
-    
+
     // Test Echo packet
     let echo_packet = EchoPacket {
         header: PacketHeader::new(PacketType::Echo, 20),
         sequence: 42,
         timestamp: 123456789,
     };
-    
+
     let mut fifo_rx = std::collections::VecDeque::new();
     packet_transport::send_echo_packet(&echo_packet, &mut fifo_rx).unwrap();
-    
+
     // Simulate CPU echoing the packet back
     let mut fifo_tx = std::collections::VecDeque::new();
     while let Some(word) = fifo_rx.pop_front() {
         fifo_tx.push_back(word);
     }
-    
+
     let received_echo = packet_transport::receive_echo_packet(&mut fifo_tx)
         .unwrap()
         .expect("Should receive echo packet");
-    
+
     assert_eq!(received_echo.sequence, 42);
     assert_eq!(received_echo.timestamp, 123456789);
-    println!("✓ Echo packet: sequence={}, timestamp={}", received_echo.sequence, received_echo.timestamp);
-    
+    println!(
+        "✓ Echo packet: sequence={}, timestamp={}",
+        received_echo.sequence, received_echo.timestamp
+    );
+
     // Test DataU32 packet
     let data_packet = DataU32Packet {
         header: PacketHeader::new(PacketType::DataU32, 16),
         value: 0xDEADBEEF,
         tag: 100,
     };
-    
+
     let mut fifo_rx2 = std::collections::VecDeque::new();
     packet_transport::send_data_u32_packet(&data_packet, &mut fifo_rx2).unwrap();
-    
+
     let mut fifo_tx2 = std::collections::VecDeque::new();
     while let Some(word) = fifo_rx2.pop_front() {
         fifo_tx2.push_back(word);
     }
-    
+
     let received_data = packet_transport::receive_data_u32_packet(&mut fifo_tx2)
         .unwrap()
         .expect("Should receive data packet");
-    
+
     assert_eq!(received_data.value, 0xDEADBEEF);
     assert_eq!(received_data.tag, 100);
-    println!("✓ DataU32 packet: value=0x{:08x}, tag={}", received_data.value, received_data.tag);
-    
+    println!(
+        "✓ DataU32 packet: value=0x{:08x}, tag={}",
+        received_data.value, received_data.tag
+    );
+
     // Test Debug packet
     let debug_packet = DebugPacket {
         header: PacketHeader::new(PacketType::Debug, 0),
@@ -408,23 +414,26 @@ fn test_packet_protocol_infrastructure() {
         reserved: [0; 3],
         message: "Hello from CPU!".to_string(),
     };
-    
+
     let mut fifo_rx3 = std::collections::VecDeque::new();
     packet_transport::send_debug_packet(&debug_packet, &mut fifo_rx3).unwrap();
-    
+
     let mut fifo_tx3 = std::collections::VecDeque::new();
     while let Some(word) = fifo_rx3.pop_front() {
         fifo_tx3.push_back(word);
     }
-    
+
     let received_debug = packet_transport::receive_debug_packet(&mut fifo_tx3)
         .unwrap()
         .expect("Should receive debug packet");
-    
+
     assert_eq!(received_debug.level, DebugLevel::Info);
     assert_eq!(received_debug.message, "Hello from CPU!");
-    println!("✓ Debug packet: level={:?}, message=\"{}\"", received_debug.level, received_debug.message);
-    
+    println!(
+        "✓ Debug packet: level={:?}, message=\"{}\"",
+        received_debug.level, received_debug.message
+    );
+
     println!("\n========================================");
     println!("PACKET PROTOCOL TEST COMPLETE");
     println!("========================================");
@@ -436,8 +445,13 @@ fn test_packet_protocol_infrastructure() {
 #[test]
 fn test_packet_protocol_end_to_end() {
     use riscv_protocol::*;
-    
+
     init_test_logger();
+
+    // Configurable timeout for packet exchange operations.
+    // This value balances reasonable wait time for packet operations against
+    // quick failure detection. Adjust based on packet complexity and CPU speed.
+    const PACKET_EXCHANGE_TIMEOUT_CYCLES: u32 = 10000;
 
     println!("\n========================================");
     println!("PACKET PROTOCOL END-TO-END TEST");
@@ -445,7 +459,7 @@ fn test_packet_protocol_end_to_end() {
     println!("Testing bidirectional CPU↔Host packet communication...\n");
 
     let elf_path = test_program_path("packet_test.elf");
-    
+
     // Initialize DRAM and load ELF
     let mut dram = crate::dram::Dram::new();
     let entry_point = dram
@@ -466,8 +480,7 @@ fn test_packet_protocol_end_to_end() {
     };
 
     // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .expect("Failed to create CPU runtime");
+    let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
@@ -482,11 +495,11 @@ fn test_packet_protocol_end_to_end() {
     sim.reset();
 
     println!("Running CPU program and exchanging packets...\n");
-    
+
     // Step 1: Run CPU until it sends initial Debug packet
     println!("Step 1: Waiting for initial Debug packet from CPU...");
     let mut received_initial_debug = false;
-    for _ in 0..10000 {
+    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
         sim.step();
         let words = fifo_data.lock().unwrap();
         if !words.is_empty() {
@@ -495,7 +508,10 @@ fn test_packet_protocol_end_to_end() {
             break;
         }
     }
-    assert!(received_initial_debug, "Should receive initial Debug packet from CPU");
+    assert!(
+        received_initial_debug,
+        "Should receive initial Debug packet from CPU"
+    );
 
     // Step 2: Send Echo packet to CPU
     println!("\nStep 2: Sending Echo packet (seq=100) to CPU...");
@@ -511,7 +527,7 @@ fn test_packet_protocol_end_to_end() {
     // Step 3: Run CPU and wait for Echo response
     println!("\nStep 3: Waiting for Echo response from CPU...");
     let initial_word_count = fifo_data.lock().unwrap().len();
-    for _ in 0..10000 {
+    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
         sim.step();
         let words = fifo_data.lock().unwrap();
         if words.len() > initial_word_count {
@@ -534,11 +550,14 @@ fn test_packet_protocol_end_to_end() {
     // Step 5: Run CPU and wait for DataU32 response
     println!("\nStep 5: Waiting for DataU32 response from CPU...");
     let words_before_data = fifo_data.lock().unwrap().len();
-    for _ in 0..10000 {
+    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
         sim.step();
         let words = fifo_data.lock().unwrap();
         if words.len() > words_before_data {
-            println!("  ✓ Received DataU32 response ({} words total)", words.len());
+            println!(
+                "  ✓ Received DataU32 response ({} words total)",
+                words.len()
+            );
             break;
         }
     }
@@ -548,7 +567,10 @@ fn test_packet_protocol_end_to_end() {
     let mut final_tohost = None;
     for cycle in 0..50000 {
         if let Some(tohost) = sim.step() {
-            println!("  ✓ CPU halted at cycle {} with tohost=0x{:08x}", cycle, tohost);
+            println!(
+                "  ✓ CPU halted at cycle {} with tohost=0x{:08x}",
+                cycle, tohost
+            );
             final_tohost = Some(tohost);
             // Continue for a few more cycles to ensure we get all packets
             for _ in 0..100 {
@@ -557,76 +579,104 @@ fn test_packet_protocol_end_to_end() {
             break;
         }
     }
-    
+
     // Verify results
     println!("\n========================================");
     println!("VERIFICATION");
     println!("========================================");
-    
+
     let fifo_words = fifo_data.lock().unwrap();
-    println!("Total packets received from CPU: {} words ({} bytes)", 
-             fifo_words.len(), fifo_words.len() * 4);
-    
+    println!(
+        "Total packets received from CPU: {} words ({} bytes)",
+        fifo_words.len(),
+        fifo_words.len() * 4
+    );
+
     // Convert words to bytes for packet parsing
     let mut all_bytes = Vec::new();
     for &word in fifo_words.iter() {
         all_bytes.extend_from_slice(&word.to_le_bytes());
     }
-    
+
     println!("Parsing received packets...");
-    println!("First 64 bytes: {:02x?}", &all_bytes[..all_bytes.len().min(64)]);
-    
+    println!(
+        "First 64 bytes: {:02x?}",
+        &all_bytes[..all_bytes.len().min(64)]
+    );
+
     // Try to deserialize packets from the byte stream
     // Note: Simple approach - try each packet type at various offsets
     let mut found_debug = false;
     let mut found_echo = false;
     let mut found_data = false;
     let mut found_assert = false;
-    
+
     // Debug: Check magic number at offset 0
     if all_bytes.len() >= 4 {
         let magic = u32::from_le_bytes([all_bytes[0], all_bytes[1], all_bytes[2], all_bytes[3]]);
         println!("Magic at offset 0: 0x{:08x} (expected 0x52565043)", magic);
     }
-    
+
     // Try to find Debug packet
     if let Some(debug_pkt) = try_receive_debug_packet(&all_bytes) {
-        println!("  ✓ Debug packet: level={:?}, message='{}'", debug_pkt.level, debug_pkt.message);
+        println!(
+            "  ✓ Debug packet: level={:?}, message='{}'",
+            debug_pkt.level, debug_pkt.message
+        );
         found_debug = true;
     } else {
         println!("  ✗ Failed to deserialize Debug packet");
     }
-    
+
     // Try to find Echo packet (should have sequence=101)
     if let Some(echo_pkt) = try_receive_echo_packet(&all_bytes) {
-        println!("  ✓ Echo response: sequence={} (expected 101)", echo_pkt.sequence);
-        assert_eq!(echo_pkt.sequence, 101, "Echo sequence should be incremented");
+        println!(
+            "  ✓ Echo response: sequence={} (expected 101)",
+            echo_pkt.sequence
+        );
+        assert_eq!(
+            echo_pkt.sequence, 101,
+            "Echo sequence should be incremented"
+        );
         found_echo = true;
     }
-    
+
     // Try to find DataU32 packet (should have value=2000, which is 1000*2)
     if let Some(data_pkt) = try_receive_data_u32_packet(&all_bytes) {
-        println!("  ✓ DataU32 response: value={} (expected 2000)", data_pkt.value);
+        println!(
+            "  ✓ DataU32 response: value={} (expected 2000)",
+            data_pkt.value
+        );
         assert_eq!(data_pkt.value, 2000, "DataU32 value should be doubled");
         found_data = true;
     }
-    
+
     // Try to find Assert packet
     if let Some(assert_pkt) = try_receive_assert_packet(&all_bytes) {
-        println!("  ✓ Assert packet: passed={}, message='{}'", assert_pkt.passed, assert_pkt.message);
-        assert!(assert_pkt.passed, "Assert packet should indicate test passed");
+        println!(
+            "  ✓ Assert packet: passed={}, message='{}'",
+            assert_pkt.passed, assert_pkt.message
+        );
+        assert!(
+            assert_pkt.passed,
+            "Assert packet should indicate test passed"
+        );
         found_assert = true;
     }
-    
+
     // Verify we received all expected packets
     assert!(found_debug, "Should receive Debug packet from CPU");
     assert!(found_echo, "Should receive Echo response from CPU");
     assert!(found_data, "Should receive DataU32 response from CPU");
     assert!(found_assert, "Should receive Assert packet from CPU");
-    
+
     // Verify successful completion
-    assert_eq!(final_tohost, Some(42), "Program should complete with success code 42");
-    
+    assert_eq!(
+        final_tohost,
+        Some(42),
+        "Program should complete with success code 42"
+    );
+
     println!("\n========================================");
     println!("END-TO-END TEST COMPLETE ✓");
     println!("========================================");
@@ -641,17 +691,37 @@ fn test_packet_protocol_end_to_end() {
 }
 
 // Helper functions to try deserializing packets from byte stream
+/// Attempts to deserialize a DebugPacket from the byte stream.
+/// Optimized to check magic number before attempting full deserialization.
 fn try_receive_debug_packet(bytes: &[u8]) -> Option<DebugPacket> {
     use rkyv::{from_bytes, util::AlignedVec};
-    
-    // Try different offsets to find the packet
-    for offset in (0..bytes.len().saturating_sub(20)).step_by(4) {
+
+    const MAGIC: u32 = 0x52565043;
+    const MIN_PACKET_SIZE: usize = 20;
+
+    // Try different 4-byte aligned offsets to find the packet
+    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
+        // Quick check: verify magic number before attempting deserialization
+        if bytes.len() >= offset + 4 {
+            let magic_bytes = &bytes[offset..offset + 4];
+            let magic = u32::from_le_bytes([
+                magic_bytes[0],
+                magic_bytes[1],
+                magic_bytes[2],
+                magic_bytes[3],
+            ]);
+
+            if magic != MAGIC {
+                continue; // Skip this offset, no valid packet header
+            }
+        }
+
         // Copy to aligned buffer (8-byte alignment for rkyv)
         let mut aligned: AlignedVec<8> = AlignedVec::new();
         aligned.extend_from_slice(&bytes[offset..]);
-        
+
         if let Ok(pkt) = from_bytes::<DebugPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == 0x52565043 && pkt.header.packet_type == PacketType::Debug {
+            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Debug {
                 return Some(pkt);
             }
         }
@@ -659,15 +729,35 @@ fn try_receive_debug_packet(bytes: &[u8]) -> Option<DebugPacket> {
     None
 }
 
+/// Attempts to deserialize an EchoPacket from the byte stream.
+/// Optimized to check magic number before attempting full deserialization.
 fn try_receive_echo_packet(bytes: &[u8]) -> Option<EchoPacket> {
     use rkyv::{from_bytes, util::AlignedVec};
-    
-    for offset in (0..bytes.len().saturating_sub(20)).step_by(4) {
+
+    const MAGIC: u32 = 0x52565043;
+    const MIN_PACKET_SIZE: usize = 20;
+
+    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
+        // Quick check: verify magic number before attempting deserialization
+        if bytes.len() >= offset + 4 {
+            let magic_bytes = &bytes[offset..offset + 4];
+            let magic = u32::from_le_bytes([
+                magic_bytes[0],
+                magic_bytes[1],
+                magic_bytes[2],
+                magic_bytes[3],
+            ]);
+
+            if magic != MAGIC {
+                continue; // Skip this offset, no valid packet header
+            }
+        }
+
         let mut aligned: AlignedVec<8> = AlignedVec::new();
         aligned.extend_from_slice(&bytes[offset..]);
-        
+
         if let Ok(pkt) = from_bytes::<EchoPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == 0x52565043 && pkt.header.packet_type == PacketType::Echo {
+            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Echo {
                 return Some(pkt);
             }
         }
@@ -675,15 +765,35 @@ fn try_receive_echo_packet(bytes: &[u8]) -> Option<EchoPacket> {
     None
 }
 
+/// Attempts to deserialize a DataU32Packet from the byte stream.
+/// Optimized to check magic number before attempting full deserialization.
 fn try_receive_data_u32_packet(bytes: &[u8]) -> Option<DataU32Packet> {
     use rkyv::{from_bytes, util::AlignedVec};
-    
-    for offset in (0..bytes.len().saturating_sub(16)).step_by(4) {
+
+    const MAGIC: u32 = 0x52565043;
+    const MIN_PACKET_SIZE: usize = 16;
+
+    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
+        // Quick check: verify magic number before attempting deserialization
+        if bytes.len() >= offset + 4 {
+            let magic_bytes = &bytes[offset..offset + 4];
+            let magic = u32::from_le_bytes([
+                magic_bytes[0],
+                magic_bytes[1],
+                magic_bytes[2],
+                magic_bytes[3],
+            ]);
+
+            if magic != MAGIC {
+                continue; // Skip this offset, no valid packet header
+            }
+        }
+
         let mut aligned: AlignedVec<8> = AlignedVec::new();
         aligned.extend_from_slice(&bytes[offset..]);
-        
+
         if let Ok(pkt) = from_bytes::<DataU32Packet, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == 0x52565043 && pkt.header.packet_type == PacketType::DataU32 {
+            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::DataU32 {
                 return Some(pkt);
             }
         }
@@ -691,15 +801,35 @@ fn try_receive_data_u32_packet(bytes: &[u8]) -> Option<DataU32Packet> {
     None
 }
 
+/// Attempts to deserialize an AssertPacket from the byte stream.
+/// Optimized to check magic number before attempting full deserialization.
 fn try_receive_assert_packet(bytes: &[u8]) -> Option<AssertPacket> {
     use rkyv::{from_bytes, util::AlignedVec};
-    
-    for offset in (0..bytes.len().saturating_sub(24)).step_by(4) {
+
+    const MAGIC: u32 = 0x52565043;
+    const MIN_PACKET_SIZE: usize = 24;
+
+    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
+        // Quick check: verify magic number before attempting deserialization
+        if bytes.len() >= offset + 4 {
+            let magic_bytes = &bytes[offset..offset + 4];
+            let magic = u32::from_le_bytes([
+                magic_bytes[0],
+                magic_bytes[1],
+                magic_bytes[2],
+                magic_bytes[3],
+            ]);
+
+            if magic != MAGIC {
+                continue; // Skip this offset, no valid packet header
+            }
+        }
+
         let mut aligned: AlignedVec<8> = AlignedVec::new();
         aligned.extend_from_slice(&bytes[offset..]);
-        
+
         if let Ok(pkt) = from_bytes::<AssertPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == 0x52565043 && pkt.header.packet_type == PacketType::Assert {
+            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Assert {
                 return Some(pkt);
             }
         }

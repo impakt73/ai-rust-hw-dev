@@ -1,5 +1,5 @@
-use rkyv::{Archive, Deserialize, Serialize};
 use crate::header::PacketHeader;
+use rkyv::{Archive, Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct RegisterReadPacket {
     pub header: PacketHeader,
-    pub register_indices: Vec<u8>,  // List of register numbers (0-31)
+    pub register_indices: Vec<u8>, // List of register numbers (0-31)
 }
 
 /// Response packet for register read
@@ -19,7 +19,7 @@ pub struct RegisterReadPacket {
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct RegisterReadResponsePacket {
     pub header: PacketHeader,
-    pub values: Vec<u32>,    // Register values in same order as request
+    pub values: Vec<u32>, // Register values in same order as request
 }
 
 /// Single register write operation
