@@ -9,15 +9,22 @@ pub struct SimulationResult {
 }
 
 /// RISC-V CPU Simulator
-pub struct Simulator<'a> {
+pub struct Simulator<'a, F = fn(u8)>
+where
+    F: FnMut(u8),
+{
     cpu: Top<'a>,
     pub bus: SystemBus,
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
+    fifo_callback: Option<F>,
 }
 
-impl<'a> Simulator<'a> {
+impl<'a, F> Simulator<'a, F>
+where
+    F: FnMut(u8),
+{
     /// Create a new simulator with the given bus, runtime, and entry point
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
@@ -36,7 +43,13 @@ impl<'a> Simulator<'a> {
             cycle_count: 0,
             entry_point,
             print_inst_trace,
+            fifo_callback: None,
         })
+    }
+
+    /// Set a callback to be invoked when data is written to the FIFO
+    pub fn set_fifo_callback(&mut self, callback: F) {
+        self.fifo_callback = Some(callback);
     }
 
     /// Reset the CPU
@@ -135,12 +148,17 @@ impl<'a> Simulator<'a> {
             self.cpu.clk = 1;
             self.cpu.eval();
 
-            // Print FIFO TX data to stdout
+            // Process FIFO TX data
             while let Some(byte) = self.bus.fifo.tx.pop_front() {
-                print!("{}", byte as char);
+                if let Some(ref mut callback) = self.fifo_callback {
+                    callback(byte);
+                } else {
+                    // If no callback, print to stdout as fallback
+                    print!("{}", byte as char);
+                    use std::io::Write;
+                    std::io::stdout().flush().ok();
+                }
             }
-            use std::io::Write;
-            std::io::stdout().flush().ok();
 
             // Debug logging: print after evaluation to capture rd_data
             if self.print_inst_trace {
