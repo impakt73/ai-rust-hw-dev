@@ -642,16 +642,54 @@ const ISA: &str = "rv32im";
 
 ### 4. CI/CD Pipeline
 
-**File:** `.github/workflows/ci.yml`
+**Files to modify:**
+- `.github/workflows/ci.yml`
+- `.github/workflows/copilot-setup-steps.yml`
 
-**Verify:**
-- Verilator installation still works (no changes needed)
-- All tests include new M extension tests
-- Build commands use correct targets
+**Changes needed:**
 
-**Potential additions:**
+#### Update copilot-setup-steps.yml (REQUIRED)
+
+The copilot setup workflow currently installs `riscv32i-unknown-none-elf` (line 46) and needs to be updated to install `riscv32im-unknown-none-elf` instead:
+
 ```yaml
-- name: Verify RV32IM target
+# OLD (line 45-46)
+- name: Install RISC-V Rust Target
+  run: rustup target add riscv32i-unknown-none-elf
+
+# NEW
+- name: Install RISC-V Rust Target
+  run: rustup target add riscv32im-unknown-none-elf
+```
+
+Also update the verification step (line 48-49):
+
+```yaml
+# OLD
+- name: Verify RISC-V Rust target
+  run: rustup target list --installed | grep riscv32i-unknown-none-elf
+
+# NEW
+- name: Verify RISC-V Rust target
+  run: rustup target list --installed | grep riscv32im-unknown-none-elf
+```
+
+And update the summary output (line 73):
+
+```yaml
+# OLD
+echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32i-unknown-none-elf)"
+
+# NEW
+echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32im-unknown-none-elf)"
+```
+
+#### Update ci.yml (optional additions)
+
+The CI workflow doesn't currently install the RISC-V target, but you may want to add it for building test programs:
+
+```yaml
+- name: Install RISC-V Rust Target
   run: rustup target add riscv32im-unknown-none-elf
 
 - name: Build RV32IM test programs
@@ -772,7 +810,14 @@ const ISA: &str = "rv32im";
    cargo build --release --target riscv32im-unknown-none-elf
    ```
 
-5. [ ] Update documentation
+5. [ ] Update CI/CD workflows
+   - Modify `.github/workflows/copilot-setup-steps.yml`
+   - Change `rustup target add riscv32i-unknown-none-elf` to `riscv32im-unknown-none-elf` (line 46)
+   - Update target verification to check for `riscv32im-unknown-none-elf` (line 49)
+   - Update summary output to show `riscv32im-unknown-none-elf` (line 73)
+   - Optionally add RISC-V target installation to `.github/workflows/ci.yml`
+
+6. [ ] Update documentation
    - Modify `README.md` to reflect RV32IM support
    - Update `AGENTS.md` with M extension information
    - Add M extension instructions to supported instruction list
@@ -780,6 +825,7 @@ const ISA: &str = "rv32im";
 **Validation:**
 - All test programs build successfully with RV32IM target
 - No build errors or warnings
+- CI/CD workflows install correct target
 - Documentation accurately reflects new capabilities
 
 ### Phase 5: System-Level Testing (Estimated: 1-2 days)
