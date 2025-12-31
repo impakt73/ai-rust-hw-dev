@@ -56,3 +56,18 @@ test = false
 name = "test_allocator"
 path = "src/test_allocator.rs"
 test = false
+
+[[bin]]
+name = "test_heap_directly"
+path = "src/test_heap_directly.rs"
+test = false
+
+[[bin]]
+name = "test_stack_memory"
+path = "src/test_stack_memory.rs"
+test = false
+
+[[bin]]
+name = "test_static_heap"
+path = "src/test_static_heap.rs"
+test = false

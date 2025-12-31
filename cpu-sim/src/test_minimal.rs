@@ -273,4 +273,258 @@ mod tests {
             println!("✗ ALLOCATOR OR VEC IS CORRUPTING DATA!");
         }
     }
+
+    #[test]
+    fn test_heap_directly() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        
+        let elf_path = test_program_path("test_heap_directly.elf");
+        
+        let fifo_data = Arc::new(Mutex::new(Vec::new()));
+        let fifo_data_clone = fifo_data.clone();
+        let fifo_callback = move |word: u32| {
+            fifo_data_clone.lock().unwrap().push(word);
+        };
+        
+        let mut dram = Dram::new();
+        let entry_point = dram.load_elf(&elf_path).expect("Failed to load ELF");
+        let bus = SystemBus::new(dram);
+        let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
+        
+        let mut sim = Simulator::new(
+            &runtime,
+            bus,
+            entry_point,
+            false,
+            Some(fifo_callback),
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+        ).expect("Failed to create simulator");
+        
+        sim.reset();
+        
+        let mut result = None;
+        for _ in 0..10000 {
+            if let Some(tohost) = sim.step() {
+                result = Some(tohost);
+                break;
+            }
+        }
+        
+        assert_eq!(result, Some(42), "Program should exit with code 42");
+        
+        let words = fifo_data.lock().unwrap();
+        println!("\n=== HEAP DIRECT ACCESS TEST ===");
+        println!("All words: {:08x?}", &words);
+        
+        // Find markers
+        let marker_a = words.iter().position(|&w| w == 0xAAAAAAAA);
+        let marker_b = words.iter().position(|&w| w == 0xBBBBBBBB);
+        let marker_c = words.iter().position(|&w| w == 0xCCCCCCCC);
+        
+        if let Some(a_pos) = marker_a {
+            println!("\nTest 1: Direct heap allocation + ptr::write + ptr::read");
+            println!("Marker A at position {}", a_pos);
+            if let Some(b_pos) = marker_b {
+                println!("Marker B at position {}", b_pos);
+                println!("Bytes between markers (expected [12, 34, 56, 78, 9a, bc, de, f0]):");
+                for i in (a_pos+1)..b_pos {
+                    println!("  Byte {}: 0x{:02x}", i-a_pos-1, words[i] as u8);
+                }
+            }
+        }
+        
+        if let Some(c_pos) = marker_c {
+            println!("\nTest 2: Vec::with_capacity + set_len");
+            println!("Marker C at position {}", c_pos);
+            println!("Bytes after marker (expected [aa, bb, cc, dd]):");
+            for i in (c_pos+1)..words.len().min(c_pos+5) {
+                println!("  Byte {}: 0x{:02x}", i-c_pos-1, words[i] as u8);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stack_memory() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        
+        let elf_path = test_program_path("test_stack_memory.elf");
+        
+        let fifo_data = Arc::new(Mutex::new(Vec::new()));
+        let fifo_data_clone = fifo_data.clone();
+        let fifo_callback = move |word: u32| {
+            fifo_data_clone.lock().unwrap().push(word);
+        };
+        
+        let mut dram = Dram::new();
+        let entry_point = dram.load_elf(&elf_path).expect("Failed to load ELF");
+        let bus = SystemBus::new(dram);
+        let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
+        
+        let mut sim = Simulator::new(
+            &runtime,
+            bus,
+            entry_point,
+            false,
+            Some(fifo_callback),
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+        ).expect("Failed to create simulator");
+        
+        sim.reset();
+        
+        let mut result = None;
+        for _ in 0..10000 {
+            if let Some(tohost) = sim.step() {
+                result = Some(tohost);
+                break;
+            }
+        }
+        
+        assert_eq!(result, Some(42), "Program should exit with code 42");
+        
+        let words = fifo_data.lock().unwrap();
+        println!("\n=== STACK MEMORY TEST ===");
+        println!("All words: {:08x?}", &words);
+        
+        let marker_a = words.iter().position(|&w| w == 0xAAAAAAAA);
+        let marker_b = words.iter().position(|&w| w == 0xBBBBBBBB);
+        let marker_c = words.iter().position(|&w| w == 0xCCCCCCCC);
+        
+        if let Some(a_pos) = marker_a {
+            println!("\nTest 1: Stack array + ptr::write");
+            if let Some(b_pos) = marker_b {
+                println!("Bytes between markers A and B (expected [12, 34, 56, 78, 9a, bc, de, f0]):");
+                for i in (a_pos+1)..b_pos {
+                    println!("  Byte {}: 0x{:02x}", i-a_pos-1, words[i] as u8);
+                }
+                
+                let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+                let mut all_match = true;
+                for (idx, exp) in expected.iter().enumerate() {
+                    let actual = words[a_pos + 1 + idx] as u8;
+                    if actual != *exp {
+                        println!("  ✗ Mismatch at byte {}: got 0x{:02x}, expected 0x{:02x}", idx, actual, exp);
+                        all_match = false;
+                    }
+                }
+                if all_match {
+                    println!("  ✓ Stack test 1 PASSED!");
+                }
+            }
+        }
+        
+        if let Some(c_pos) = marker_c {
+            println!("\nTest 2: Stack array with direct initialization");
+            println!("Bytes after marker C (expected [11, 22, 33, 44, 55, 66, 77, 88]):");
+            for i in (c_pos+1)..words.len().min(c_pos+9) {
+                println!("  Byte {}: 0x{:02x}", i-c_pos-1, words[i] as u8);
+            }
+            
+            let expected = vec![0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+            let mut all_match = true;
+            for (idx, exp) in expected.iter().enumerate() {
+                let actual = words[c_pos + 1 + idx] as u8;
+                if actual != *exp {
+                    println!("  ✗ Mismatch at byte {}: got 0x{:02x}, expected 0x{:02x}", idx, actual, exp);
+                    all_match = false;
+                }
+            }
+            if all_match {
+                println!("  ✓ Stack test 2 PASSED!");
+            }
+        }
+}
+}
+
+    #[test]
+    fn test_static_heap() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        
+        let elf_path = test_program_path("test_static_heap.elf");
+        
+        let fifo_data = Arc::new(Mutex::new(Vec::new()));
+        let fifo_data_clone = fifo_data.clone();
+        let fifo_callback = move |word: u32| {
+            fifo_data_clone.lock().unwrap().push(word);
+        };
+        
+        let mut dram = Dram::new();
+        let entry_point = dram.load_elf(&elf_path).expect("Failed to load ELF");
+        let bus = SystemBus::new(dram);
+        let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
+        
+        let mut sim = Simulator::new(
+            &runtime,
+            bus,
+            entry_point,
+            false,
+            Some(fifo_callback),
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+        ).expect("Failed to create simulator");
+        
+        sim.reset();
+        
+        let mut result = None;
+        for _ in 0..10000 {
+            if let Some(tohost) = sim.step() {
+                result = Some(tohost);
+                break;
+            }
+        }
+        
+        assert_eq!(result, Some(42), "Program should exit with code 42");
+        
+        let words = fifo_data.lock().unwrap();
+        println!("\n=== STATIC HEAP TEST ===");
+        println!("All words: {:08x?}", &words);
+        
+        let marker_a = words.iter().position(|&w| w == 0xAAAAAAAA);
+        let marker_b = words.iter().position(|&w| w == 0xBBBBBBBB);
+        
+        if let Some(a_pos) = marker_a {
+            println!("\nTest 1: static mut HEAP with ptr::write/read");
+            if let Some(b_pos) = marker_b {
+                println!("Bytes between markers A and B (expected [12, 34, 56, 78, 9a, bc, de, f0]):");
+                for i in (a_pos+1)..b_pos {
+                    println!("  Byte {}: 0x{:02x}", i-a_pos-1, words[i] as u8);
+                }
+                
+                let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+                let mut all_match = true;
+                for (idx, exp) in expected.iter().enumerate() {
+                    let actual = words[a_pos + 1 + idx] as u8;
+                    if actual != *exp {
+                        println!("  ✗ Mismatch at byte {}: got 0x{:02x}, expected 0x{:02x}", idx, actual, exp);
+                        all_match = false;
+                    }
+                }
+                if all_match {
+                    println!("  ✓ HEAP test 1 PASSED!");
+                } else {
+                    println!("  ✗ HEAP test 1 FAILED - corruption detected!");
+                }
+            }
+        }
+        
+        if let Some(b_pos) = marker_b {
+            println!("\nTest 2: static mut HEAP with array index notation");
+            println!("Bytes after marker B (expected [aa, bb, cc, dd]):");
+            for i in (b_pos+1)..words.len().min(b_pos+5) {
+                println!("  Byte {}: 0x{:02x}", i-b_pos-1, words[i] as u8);
+            }
+            
+            let expected = vec![0xAAu8, 0xBB, 0xCC, 0xDD];
+            let mut all_match = true;
+            for (idx, exp) in expected.iter().enumerate() {
+                let actual = words[b_pos + 1 + idx] as u8;
+                if actual != *exp {
+                    println!("  ✗ Mismatch at byte {}: got 0x{:02x}, expected 0x{:02x}", idx, actual, exp);
+                    all_match = false;
+                }
+            }
+            if all_match {
+                println!("  ✓ HEAP test 2 PASSED!");
+            } else {
+                println!("  ✗ HEAP test 2 FAILED - corruption detected!");
+            }
+        }
 }
