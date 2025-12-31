@@ -29,7 +29,8 @@ test = false
 [dependencies]
 riscv-rt = "0.17.0"
 riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }
-rkyv = { version = "0.8", default-features = false, features = ["alloc", "bytecheck"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [[bin]]
 name = "simple_fifo_test"

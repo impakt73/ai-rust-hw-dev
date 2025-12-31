@@ -1,21 +1,25 @@
 /// Packet transport utilities for FIFO-based communication
 use riscv_protocol::*;
-use rkyv::{from_bytes, rancor::Error, to_bytes};
+use postcard::{from_bytes, to_allocvec};
 use std::collections::VecDeque;
 
 /// Helper macro to send any packet type
 macro_rules! impl_send_packet {
     ($name:ident, $packet_type:ty) => {
         pub fn $name(packet: &$packet_type, fifo_rx: &mut VecDeque<u32>) -> Result<(), String> {
-            let bytes =
-                to_bytes::<Error>(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
+            let bytes: Vec<u8> =
+                to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
 
-            for chunk in bytes.as_ref().chunks(4) {
+            let mut i = 0;
+            while i < bytes.len() {
                 let mut word: u32 = 0;
-                for (i, &byte) in chunk.iter().enumerate() {
-                    word |= (byte as u32) << (i * 8);
+                for j in 0..4 {
+                    if i + j < bytes.len() {
+                        word |= (bytes[i + j] as u32) << (j * 8);
+                    }
                 }
                 fifo_rx.push_back(word);
+                i += 4;
             }
 
             Ok(())
@@ -47,11 +51,11 @@ macro_rules! impl_receive_packet {
             }
 
             // Try to deserialize
-            match from_bytes::<$packet_type, Error>(&bytes) {
+            match from_bytes::<$packet_type>(&bytes) {
                 Ok(packet) => {
                     // Success! Now remove the words we actually consumed
                     // For now, remove all peeked words
-                    // TODO: Calculate exact consumed bytes from rkyv
+                    // TODO: Calculate exact consumed bytes from postcard
                     for _ in 0..available_words {
                         fifo_tx.pop_front();
                     }

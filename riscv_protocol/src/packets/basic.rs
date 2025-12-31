@@ -1,14 +1,14 @@
 use crate::header::PacketHeader;
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// No operation / keepalive packet
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NopPacket {
     pub header: PacketHeader,
 }
 
 /// Echo request/response packet for testing
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EchoPacket {
     pub header: PacketHeader,
     pub sequence: u32,  // Sequence number for matching request/response

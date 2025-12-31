@@ -1,5 +1,5 @@
 use crate::header::PacketHeader;
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -7,13 +7,13 @@ extern crate alloc;
 use alloc::string::String;
 
 /// Error code enumeration
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ErrorCode {
     InvalidMagic = 1,          // Bad magic number
     InvalidLength = 2,         // Length field doesn't match data
     UnknownPacketType = 3,     // Unrecognized packet type
-    DeserializationFailed = 4, // rkyv deserialization error
+    DeserializationFailed = 4, // deserialization error
     BufferOverflow = 5,        // Packet too large for buffer
     FifoOverflow = 6,          // FIFO queue full
     InvalidAddress = 7,        // Memory access to invalid address
@@ -23,7 +23,7 @@ pub enum ErrorCode {
 
 /// Report errors in packet processing
 #[cfg(feature = "alloc")]
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ErrorPacket {
     pub header: PacketHeader,
     pub error_code: ErrorCode,
