@@ -100,18 +100,18 @@ This document outlines a comprehensive plan to add real-time video and audio out
 | Address Range              | Size      | Description                           | Access   |
 |----------------------------|-----------|---------------------------------------|----------|
 | 0x0000_0000 - 0x3FFF_FFFF  | 1 GB      | DRAM (code, data, stack, heap)        | R/W      |
-| 0x4000_0000 - 0x4000_0004  | 8 bytes   | FIFO DATA register (existing)         | R/W      |
-| 0x4000_0004 - 0x4000_0008  | 4 bytes   | FIFO STATUS register (existing)       | R        |
+| 0x4000_0000 - 0x4000_0003  | 4 bytes   | FIFO DATA register (existing)         | R/W      |
+| 0x4000_0004 - 0x4000_0007  | 4 bytes   | FIFO STATUS register (existing)       | R        |
 | 0x5000_0000 - 0x500F_FFFF  | 1 MB      | **Video Framebuffer**                 | W        |
-| 0x5010_0000 - 0x5010_0000  | 4 bytes   | **Video Control** (frame ready flag)  | R/W      |
-| 0x5010_0004 - 0x5010_0004  | 4 bytes   | **Video Width** (default: 320)        | R/W      |
-| 0x5010_0008 - 0x5010_0008  | 4 bytes   | **Video Height** (default: 240)       | R/W      |
-| 0x5010_000C - 0x5010_000C  | 4 bytes   | **Video Format** (RGB888, RGB565...)  | R/W      |
+| 0x5010_0000 - 0x5010_0003  | 4 bytes   | **Video Control** (frame ready flag)  | R/W      |
+| 0x5010_0004 - 0x5010_0007  | 4 bytes   | **Video Width** (default: 320)        | R/W      |
+| 0x5010_0008 - 0x5010_000B  | 4 bytes   | **Video Height** (default: 240)       | R/W      |
+| 0x5010_000C - 0x5010_000F  | 4 bytes   | **Video Format** (RGB888, RGB565...)  | R/W      |
 | 0x6000_0000 - 0x600F_FFFF  | 1 MB      | **Audio Sample Buffer** (ring buffer) | W        |
-| 0x6010_0000 - 0x6010_0000  | 4 bytes   | **Audio Write Pointer**               | R/W      |
-| 0x6010_0004 - 0x6010_0004  | 4 bytes   | **Audio Read Pointer** (read-only)    | R        |
-| 0x6010_0008 - 0x6010_0008  | 4 bytes   | **Audio Sample Rate** (Hz)            | R/W      |
-| 0x6010_000C - 0x6010_000C  | 4 bytes   | **Audio Format** (mono/stereo, bits)  | R/W      |
+| 0x6010_0000 - 0x6010_0003  | 4 bytes   | **Audio Write Pointer**               | R/W      |
+| 0x6010_0004 - 0x6010_0007  | 4 bytes   | **Audio Read Pointer** (read-only)    | R        |
+| 0x6010_0008 - 0x6010_000B  | 4 bytes   | **Audio Sample Rate** (Hz)            | R/W      |
+| 0x6010_000C - 0x6010_000F  | 4 bytes   | **Audio Format** (mono/stereo, bits)  | R/W      |
 | 0xFFFF_FFF0 - 0xFFFF_FFFF  | 16 bytes  | TOHOST (program termination signal)   | W        |
 
 ### Video Framebuffer Details
@@ -283,7 +283,7 @@ impl SystemBus {
             0x5010_000C => self.video.format as u32,
             
             // Audio control registers
-            0x6010_0000 => self.video.get_write_ptr(),
+            0x6010_0000 => self.audio.get_write_ptr(),
             0x6010_0004 => self.audio.get_read_ptr(),
             0x6010_0008 => self.audio.sample_rate,
             0x6010_000C => self.audio.format_to_u32(),
@@ -360,6 +360,12 @@ env_logger = "0.10"
 
 **Main Viewer Loop (`viewer.rs`):**
 ```rust
+pub struct ViewerConfig {
+    pub target_fps: u32,
+    pub enable_audio: bool,
+    pub max_cycles: u64,
+}
+
 pub struct SimViewer {
     simulator: Simulator,
     window: minifb::Window,
@@ -464,32 +470,93 @@ impl AudioOutput {
         let device = host.default_output_device()
             .ok_or("No audio output device available")?;
         
-        let config = device.default_output_config()
+        let supported_config = device.default_output_config()
             .map_err(|e| format!("Failed to get audio config: {}", e))?;
+        let sample_format = supported_config.sample_format();
+        let config: cpal::StreamConfig = supported_config.into();
         
         let buffer_ref = audio_device.clone();
         
-        let stream = device.build_output_stream(
-            &config.into(),
-            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                let mut buffer = buffer_ref.lock().unwrap();
-                let samples = buffer.read_samples(data.len());
-                
-                // Copy samples to output buffer
-                for (i, sample) in samples.iter().enumerate() {
-                    if i < data.len() {
-                        data[i] = *sample;
-                    }
-                }
-                
-                // Fill remaining with silence if needed
-                for i in samples.len()..data.len() {
-                    data[i] = 0;
-                }
-            },
-            |err| eprintln!("Audio stream error: {}", err),
-            None,
-        ).map_err(|e| format!("Failed to build audio stream: {}", e))?;
+        let stream_result = match sample_format {
+            cpal::SampleFormat::I16 => {
+                let buffer_ref = buffer_ref.clone();
+                device.build_output_stream(
+                    &config,
+                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                        let mut buffer = buffer_ref.lock().unwrap();
+                        let samples = buffer.read_samples(data.len());
+                        
+                        // Copy samples to output buffer
+                        for (i, sample) in samples.iter().enumerate() {
+                            if i < data.len() {
+                                data[i] = *sample;
+                            }
+                        }
+                        
+                        // Fill remaining with silence if needed
+                        for i in samples.len()..data.len() {
+                            data[i] = 0;
+                        }
+                    },
+                    |err| eprintln!("Audio stream error: {}", err),
+                    None,
+                )
+            }
+            cpal::SampleFormat::F32 => {
+                let buffer_ref = buffer_ref.clone();
+                device.build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let mut buffer = buffer_ref.lock().unwrap();
+                        let samples = buffer.read_samples(data.len());
+                        
+                        // Convert i16 samples to f32 in [-1.0, 1.0]
+                        for (i, sample) in samples.iter().enumerate() {
+                            if i < data.len() {
+                                data[i] = *sample as f32 / i16::MAX as f32;
+                            }
+                        }
+                        
+                        // Fill remaining with silence if needed
+                        for i in samples.len()..data.len() {
+                            data[i] = 0.0;
+                        }
+                    },
+                    |err| eprintln!("Audio stream error: {}", err),
+                    None,
+                )
+            }
+            cpal::SampleFormat::U16 => {
+                let buffer_ref = buffer_ref.clone();
+                device.build_output_stream(
+                    &config,
+                    move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+                        let mut buffer = buffer_ref.lock().unwrap();
+                        let samples = buffer.read_samples(data.len());
+                        
+                        // Convert i16 samples to u16 in [0, u16::MAX]
+                        for (i, sample) in samples.iter().enumerate() {
+                            if i < data.len() {
+                                let shifted = *sample as i32 + i16::MAX as i32 + 1;
+                                let clamped = shifted.clamp(0, u16::MAX as i32) as u16;
+                                data[i] = clamped;
+                            }
+                        }
+                        
+                        // Fill remaining with silence if needed
+                        for i in samples.len()..data.len() {
+                            data[i] = u16::MAX / 2;
+                        }
+                    },
+                    |err| eprintln!("Audio stream error: {}", err),
+                    None,
+                )
+            }
+            _ => return Err(format!("Unsupported sample format: {:?}", sample_format)),
+        };
+        
+        let stream = stream_result
+            .map_err(|e| format!("Failed to build audio stream: {}", e))?;
         
         stream.play().map_err(|e| format!("Failed to start audio: {}", e))?;
         
@@ -582,13 +649,16 @@ _start:
     
     # Fill framebuffer with red (RGB888 format)
     lui x3, 0x50000      # x3 = 0x50000000 (framebuffer base)
-    li x4, 0xFF0000      # Red color (0x00RRGGBB)
-    li x5, 230400        # Total bytes (320*240*3)
+    li x4, 0xFF          # Red channel value
+    li x6, 0             # Zero for green and blue channels
+    li x5, 76800         # Total pixels (320*240)
     
 fill_loop:
-    sw x4, 0(x3)         # Write pixel
-    addi x3, x3, 4       # Next pixel (assuming word writes)
-    addi x5, x5, -4      # Decrement counter
+    sb x4, 0(x3)         # R
+    sb x6, 1(x3)         # G
+    sb x6, 2(x3)         # B
+    addi x3, x3, 3       # Next pixel (3 bytes per pixel)
+    addi x5, x5, -1      # Decrement pixel counter
     bnez x5, fill_loop   # Continue if not done
     
     # Signal frame ready
@@ -683,6 +753,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 ```rust
 // rust-test-program/src/audio_demo.rs
 
+#![no_std]
+#![no_main]
+
 const AUDIO_BUFFER_BASE: usize = 0x6000_0000;
 const AUDIO_CTRL_BASE: usize = 0x6010_0000;
 const SAMPLE_RATE: u32 = 48000;
@@ -716,18 +789,48 @@ impl AudioDevice {
     }
 }
 
+// Simple integer-based sine approximation using lookup table
+// Pre-computed sine values for 360 degrees (scaled by 16000 for amplitude)
+const SINE_TABLE: [i16; 360] = [
+    0, 279, 558, 836, 1115, 1392, 1668, 1943, 2217, 2489, 2760, 3029, 3296, 3561, 3824, 4085,
+    4343, 4599, 4852, 5103, 5350, 5595, 5836, 6074, 6309, 6540, 6768, 6992, 7212, 7428, 7641,
+    7849, 8053, 8253, 8449, 8640, 8827, 9009, 9187, 9361, 9529, 9693, 9852, 10006, 10155, 10299,
+    10438, 10571, 10699, 10822, 10940, 11052, 11158, 11259, 11355, 11445, 11529, 11608, 11681,
+    11748, 11809, 11865, 11915, 11959, 11997, 12029, 12056, 12076, 12091, 12099, 12102, 12099,
+    12091, 12076, 12056, 12029, 11997, 11959, 11915, 11865, 11809, 11748, 11681, 11608, 11529,
+    11445, 11355, 11259, 11158, 11052, 10940, 10822, 10699, 10571, 10438, 10299, 10155, 10006,
+    9852, 9693, 9529, 9361, 9187, 9009, 8827, 8640, 8449, 8253, 8053, 7849, 7641, 7428, 7212,
+    6992, 6768, 6540, 6309, 6074, 5836, 5595, 5350, 5103, 4852, 4599, 4343, 4085, 3824, 3561,
+    3296, 3029, 2760, 2489, 2217, 1943, 1668, 1392, 1115, 836, 558, 279, 0, -279, -558, -836,
+    -1115, -1392, -1668, -1943, -2217, -2489, -2760, -3029, -3296, -3561, -3824, -4085, -4343,
+    -4599, -4852, -5103, -5350, -5595, -5836, -6074, -6309, -6540, -6768, -6992, -7212, -7428,
+    -7641, -7849, -8053, -8253, -8449, -8640, -8827, -9009, -9187, -9361, -9529, -9693, -9852,
+    -10006, -10155, -10299, -10438, -10571, -10699, -10822, -10940, -11052, -11158, -11259,
+    -11355, -11445, -11529, -11608, -11681, -11748, -11809, -11865, -11915, -11959, -11997,
+    -12029, -12056, -12076, -12091, -12099, -12102, -12099, -12091, -12076, -12056, -12029,
+    -11997, -11959, -11915, -11865, -11809, -11748, -11681, -11608, -11529, -11445, -11355,
+    -11259, -11158, -11052, -10940, -10822, -10699, -10571, -10438, -10299, -10155, -10006,
+    -9852, -9693, -9529, -9361, -9187, -9009, -8827, -8640, -8449, -8253, -8053, -7849, -7641,
+    -7428, -7212, -6992, -6768, -6540, -6309, -6074, -5836, -5595, -5350, -5103, -4852, -4599,
+    -4343, -4085, -3824, -3561, -3296, -3029, -2760, -2489, -2217, -1943, -1668, -1392, -1115,
+    -836, -558, -279,
+];
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     let mut audio = AudioDevice::new();
     
-    // Generate a 440 Hz sine wave (A note)
-    let frequency = 440.0;
-    let amplitude = 16000.0; // ~50% of i16 max
+    // Generate a 440 Hz tone using integer math
+    // At 48000 Hz sample rate, 440 Hz means we need 48000/440 ≈ 109 samples per cycle
+    // Phase increment per sample = 360 * 440 / 48000 ≈ 3.3 degrees
+    let phase_increment = (360 * 440) / SAMPLE_RATE; // Integer math: ~3 degrees
+    let mut phase = 0u32;
     
-    for i in 0..48000 { // 1 second of audio
-        let t = i as f32 / SAMPLE_RATE as f32;
-        let sample = (amplitude * (2.0 * 3.14159 * frequency * t).sin()) as i16;
+    for _ in 0..48000 { // 1 second of audio
+        let angle = (phase % 360) as usize;
+        let sample = SINE_TABLE[angle];
         audio.write_sample(sample, sample); // Mono (same both channels)
+        phase += phase_increment;
     }
     
     // Halt
@@ -736,6 +839,11 @@ pub extern "C" fn _start() -> ! {
         core::ptr::write_volatile(tohost, 42);
     }
     
+    loop {}
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 ```
@@ -913,7 +1021,7 @@ pub extern "C" fn _start() -> ! {
 ```assembly
 # Set pixel at (100, 50) to red
 lui x1, 0x50000          # Framebuffer base
-li x2, 15000             # Offset = (50 * 320 + 100) * 3
+li x2, 48300             # Offset = (50 * 320 + 100) * 3
 add x1, x1, x2
 li x3, 0xFF              # Red component
 sb x3, 0(x1)
