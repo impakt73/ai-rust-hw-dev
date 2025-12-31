@@ -1368,9 +1368,9 @@ fn test_cpu_fence_instruction() {
     // Create instruction memory
     let mut imem = HashMap::new();
     imem.insert(0x00, addi(1, 0, 10)); // x1 = 10
-    imem.insert(0x04, fence());         // FENCE (should be NOP for single-cycle CPU)
-    imem.insert(0x08, addi(2, 1, 5));  // x2 = x1 + 5 = 15
-    imem.insert(0x0C, addi(0, 0, 0));  // NOP
+    imem.insert(0x04, fence()); // FENCE (should be NOP for single-cycle CPU)
+    imem.insert(0x08, addi(2, 1, 5)); // x2 = x1 + 5 = 15
+    imem.insert(0x0C, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -1401,9 +1401,9 @@ fn test_cpu_ecall_instruction() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    imem.insert(0x00, addi(1, 0, 42));  // x1 = 42
-    imem.insert(0x04, ecall());          // ECALL - should halt CPU
-    imem.insert(0x08, addi(2, 0, 99));  // Should not execute
+    imem.insert(0x00, addi(1, 0, 42)); // x1 = 42
+    imem.insert(0x04, ecall()); // ECALL - should halt CPU
+    imem.insert(0x08, addi(2, 0, 99)); // Should not execute
 
     let _dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -1441,7 +1441,7 @@ fn test_cpu_ebreak_instruction() {
     // Create instruction memory
     let mut imem = HashMap::new();
     imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
-    imem.insert(0x04, ebreak());         // EBREAK - should halt CPU
+    imem.insert(0x04, ebreak()); // EBREAK - should halt CPU
     imem.insert(0x08, addi(2, 0, 200)); // Should not execute
 
     let _dmem: HashMap<u32, u32> = HashMap::new();
@@ -1479,13 +1479,13 @@ fn test_cpu_csr_read_write() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Test CSRRW (CSR Read/Write)
     // CSR address 0x300 (mstatus in real RISC-V, but we treat it as generic)
-    imem.insert(0x00, addi(1, 0, 100));      // x1 = 100
-    imem.insert(0x04, csrrw(2, 1, 0x300));   // x2 = CSR[0x300]; CSR[0x300] = x1
-    imem.insert(0x08, csrrw(3, 0, 0x300));   // x3 = CSR[0x300]; CSR[0x300] = 0
-    imem.insert(0x0C, addi(0, 0, 0));        // NOP
+    imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
+    imem.insert(0x04, csrrw(2, 1, 0x300)); // x2 = CSR[0x300]; CSR[0x300] = x1
+    imem.insert(0x08, csrrw(3, 0, 0x300)); // x3 = CSR[0x300]; CSR[0x300] = 0
+    imem.insert(0x0C, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -1513,17 +1513,17 @@ fn test_cpu_csr_set_clear() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Test CSRRS (CSR Read and Set)
-    imem.insert(0x00, addi(1, 0, 0b1010));   // x1 = 0b1010
-    imem.insert(0x04, csrrw(0, 1, 0x301));   // CSR[0x301] = 0b1010 (write initial value)
-    imem.insert(0x08, addi(2, 0, 0b0101));   // x2 = 0b0101
-    imem.insert(0x0C, csrrs(3, 2, 0x301));   // x3 = CSR[0x301]; CSR[0x301] |= x2
-    // After CSRRS: CSR[0x301] should be 0b1111
-    imem.insert(0x10, addi(4, 0, 0b1000));   // x4 = 0b1000
-    imem.insert(0x14, csrrc(5, 4, 0x301));   // x5 = CSR[0x301]; CSR[0x301] &= ~x4
-    // After CSRRC: CSR[0x301] should be 0b0111
-    imem.insert(0x18, addi(0, 0, 0));        // NOP
+    imem.insert(0x00, addi(1, 0, 0b1010)); // x1 = 0b1010
+    imem.insert(0x04, csrrw(0, 1, 0x301)); // CSR[0x301] = 0b1010 (write initial value)
+    imem.insert(0x08, addi(2, 0, 0b0101)); // x2 = 0b0101
+    imem.insert(0x0C, csrrs(3, 2, 0x301)); // x3 = CSR[0x301]; CSR[0x301] |= x2
+                                           // After CSRRS: CSR[0x301] should be 0b1111
+    imem.insert(0x10, addi(4, 0, 0b1000)); // x4 = 0b1000
+    imem.insert(0x14, csrrc(5, 4, 0x301)); // x5 = CSR[0x301]; CSR[0x301] &= ~x4
+                                           // After CSRRC: CSR[0x301] should be 0b0111
+    imem.insert(0x18, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 
@@ -1551,12 +1551,12 @@ fn test_cpu_csr_immediate() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
-    
+
     // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
-    imem.insert(0x00, csrrwi(1, 15, 0x302));    // CSR[0x302] = 15; x1 = old value (0)
-    imem.insert(0x04, csrrsi(2, 8, 0x302));     // CSR[0x302] |= 8; x2 = old value (15)
-    imem.insert(0x08, csrrci(3, 4, 0x302));     // CSR[0x302] &= ~4; x3 = old value (15)
-    imem.insert(0x0C, addi(0, 0, 0));           // NOP
+    imem.insert(0x00, csrrwi(1, 15, 0x302)); // CSR[0x302] = 15; x1 = old value (0)
+    imem.insert(0x04, csrrsi(2, 8, 0x302)); // CSR[0x302] |= 8; x2 = old value (15)
+    imem.insert(0x08, csrrci(3, 4, 0x302)); // CSR[0x302] &= ~4; x3 = old value (15)
+    imem.insert(0x0C, addi(0, 0, 0)); // NOP
 
     let dmem: HashMap<u32, u32> = HashMap::new();
 

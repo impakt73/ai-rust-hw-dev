@@ -4,13 +4,16 @@ A **single-cycle RISC-V RV32I CPU** implementation in SystemVerilog with Rust-ba
 
 ## Features
 
-- ✅ **Complete RV32I Base Instruction Set**: All 40+ RV32I instructions including:
+- ✅ **Complete RV32I Base Instruction Set**: All 47 RV32I instructions including:
   - Arithmetic, logic, and shift operations
   - Load/store with byte, halfword, and word access (LB, LH, LW, LBU, LHU, SB, SH, SW)
   - Branch and jump instructions
   - Upper immediate instructions (LUI, AUIPC)
+  - Memory ordering (FENCE)
+  - System instructions (ECALL, EBREAK)
+  - CSR (Control and Status Register) access instructions
 - ✅ **Single-cycle Execution**: All instructions complete in one clock cycle
-- ✅ **Verilator-based Verification**: 28 comprehensive tests using Rust + marlin framework
+- ✅ **Verilator-based Verification**: 34 comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 
