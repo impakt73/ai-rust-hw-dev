@@ -254,7 +254,7 @@ fn test_alu_all_operations() {
     for _ in 0..100 {
         let a: u32 = rng.gen();
         let b: u32 = rng.gen();
-        let alu_op = rng.gen_range(0..=9); // 0-9 for all valid operations
+        let alu_op = rng.gen_range(0..=9); // 0-9 for RV32I base operations (M extension tested separately)
 
         let expected = calculate_expected(a, b, alu_op);
 
