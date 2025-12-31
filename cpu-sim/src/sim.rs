@@ -21,6 +21,7 @@ where
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
+    print_debug_packets: bool,
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
 }
@@ -50,9 +51,15 @@ where
             cycle_count: 0,
             entry_point,
             print_inst_trace,
+            print_debug_packets: true, // Enable by default
             fifo_callback,
             trace_callback,
         })
+    }
+
+    /// Enable or disable automatic printing of DebugPacket messages
+    pub fn set_print_debug_packets(&mut self, enable: bool) {
+        self.print_debug_packets = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -184,6 +191,21 @@ where
         while let Some(word) = self.bus.fifo.tx.pop_front() {
             if let Some(ref mut callback) = self.fifo_callback {
                 callback(word);
+            }
+        }
+
+        // Try to receive and print DebugPackets
+        if self.print_debug_packets {
+            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
+                // Format the message with level prefix
+                let level_str = match debug_pkt.level {
+                    DebugLevel::Trace => "[TRACE]",
+                    DebugLevel::Debug => "[DEBUG]",
+                    DebugLevel::Info => "[INFO]",
+                    DebugLevel::Warning => "[WARN]",
+                    DebugLevel::Error => "[ERROR]",
+                };
+                println!("{} {}", level_str, debug_pkt.message);
             }
         }
 

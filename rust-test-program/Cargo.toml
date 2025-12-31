@@ -29,6 +29,7 @@ test = false
 [dependencies]
 riscv-rt = "0.17.0"
 riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }
+riscv_macros = { path = "../riscv_macros", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 
@@ -80,4 +81,19 @@ test = false
 [[bin]]
 name = "test_alloc_only"
 path = "src/test_alloc_only.rs"
+test = false
+
+[[bin]]
+name = "println_test"
+path = "src/println_test.rs"
+test = false
+
+[[bin]]
+name = "test_minimal_halt"
+path = "src/test_minimal_halt.rs"
+test = false
+
+[[bin]]
+name = "test_one_println"
+path = "src/test_one_println.rs"
 test = false

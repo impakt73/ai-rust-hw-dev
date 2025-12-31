@@ -713,3 +713,93 @@ fn test_packet_protocol_end_to_end() {
     println!("✓ Program completed with success code 42");
     println!("========================================\n");
 }
+
+#[test]
+fn test_println_macro() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("PRINTLN MACRO TEST");
+    println!("========================================");
+    println!("Testing cprintln! macro functionality...\n");
+
+    let elf_path = test_program_path("println_test.elf");
+
+    // Initialize DRAM and load ELF
+    let mut dram = crate::dram::Dram::new();
+    let entry_point = dram
+        .load_elf(&elf_path)
+        .expect("Failed to load println_test.elf");
+
+    // Create system bus with DRAM and FIFO
+    let bus = crate::bus::SystemBus::new(dram);
+
+    // Create a callback to collect FIFO data from CPU
+    let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fifo_data_clone = fifo_data.clone();
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
+    };
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut sim = crate::sim::Simulator::new(
+        &runtime,
+        bus,
+        entry_point,
+        false,  // Disable instruction trace
+        Some(fifo_callback),
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+    )
+    .expect("Failed to create simulator");
+
+    // Reset the CPU before starting
+    sim.reset();
+
+    println!("Running CPU program...\n");
+
+    // Run until halt
+    let result = sim.run(10000).expect("Simulation should succeed");
+
+    // Check FIFO data
+    let fifo_words = fifo_data.lock().unwrap();
+    println!("FIFO TX words received: {} words", fifo_words.len());
+    
+    // Convert words to VecDeque for packet parsing
+    let mut fifo_tx = std::collections::VecDeque::new();
+    for &word in fifo_words.iter() {
+        fifo_tx.push_back(word);
+    }
+
+    // Try to receive DebugPackets
+    let mut packet_count = 0;
+    while let Ok(Some(debug_pkt)) = crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
+        packet_count += 1;
+        let level_str = match debug_pkt.level {
+            riscv_protocol::DebugLevel::Trace => "[TRACE]",
+            riscv_protocol::DebugLevel::Debug => "[DEBUG]",
+            riscv_protocol::DebugLevel::Info => "[INFO]",
+            riscv_protocol::DebugLevel::Warning => "[WARN]",
+            riscv_protocol::DebugLevel::Error => "[ERROR]",
+        };
+        println!("{} {}", level_str, debug_pkt.message);
+    }
+
+    println!("\nReceived {} DebugPacket(s)", packet_count);
+
+    // Verify successful completion
+    assert_eq!(
+        result.tohost_value,
+        Some(42),
+        "Program should complete with success code 42"
+    );
+
+    assert!(packet_count > 0, "Should have received at least one DebugPacket");
+
+    println!("\n========================================");
+    println!("PRINTLN MACRO TEST COMPLETE ✓");
+    println!("========================================");
+    println!("✓ cprintln! messages received and printed");
+    println!("✓ Program completed successfully in {} cycles", result.cycles);
+    println!("========================================\n");
+}
