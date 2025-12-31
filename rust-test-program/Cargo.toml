@@ -36,3 +36,23 @@ postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 name = "simple_fifo_test"
 path = "src/simple_fifo_test.rs"
 test = false
+
+[[bin]]
+name = "minimal_postcard_test"
+path = "src/minimal_postcard_test.rs"
+test = false
+
+[[bin]]
+name = "minimal_postcard_test2"
+path = "src/minimal_postcard_test2.rs"
+test = false
+
+[[bin]]
+name = "minimal_debug_test"
+path = "src/minimal_debug_test.rs"
+test = false
+
+[[bin]]
+name = "test_allocator"
+path = "src/test_allocator.rs"
+test = false
