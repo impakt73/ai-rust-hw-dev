@@ -146,8 +146,9 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32I Base Instruction Set (47 instructions):**
+**Complete RV32I Base Instruction Set (40 instructions) + Zicsr Extension (6 instructions):**
 
+**RV32I Base:**
 - **Arithmetic:** ADD, ADDI, SUB
 - **Logic:** AND, ANDI, OR, ORI, XOR, XORI
 - **Shifts:** SLL, SLLI, SRL, SRLI, SRA, SRAI
@@ -156,8 +157,10 @@ top (CPU)
 - **Memory:** LW, LH, LB, LHU, LBU, SW, SH, SB
 - **Upper Immediate:** LUI, AUIPC
 - **Jumps:** JAL, JALR
-- **Memory Ordering:** FENCE (NOP for single-cycle CPU)
+- **Memory Ordering:** FENCE
 - **System:** ECALL, EBREAK
+
+**Zicsr Extension:**
 - **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 
 ## Common Issues and Solutions
