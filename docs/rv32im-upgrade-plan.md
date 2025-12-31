@@ -110,7 +110,7 @@ end
 
 #### Changes Needed:
 
-**A. Expand alu_op encoding (4 bits → 4 bits, currently sufficient)**
+**A. Expand alu_op encoding (4 bits → 5 bits, recommended)**
 
 Add 8 new operation codes:
 ```systemverilog
@@ -180,9 +180,6 @@ end
 
 ```systemverilog
 // Division and remainder operations
-logic [31:0] div_result;
-logic [31:0] rem_result;
-
 always_comb begin
     case (alu_op)
         ALU_DIV: begin
