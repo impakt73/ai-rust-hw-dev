@@ -28,8 +28,8 @@ module ifetch (
             // PC is word-aligned: use lower 16 bits
             current_half = imem_data[15:0];
         end else begin
-            // PC is half-word aligned: use buffered upper 16 bits
-            current_half = buffered_half;
+            // PC is half-word aligned: use buffered upper 16 bits if valid, else zero
+            current_half = buffer_valid ? buffered_half : 16'h0000;
         end
     end
     
@@ -62,7 +62,7 @@ module ifetch (
         if (!rst_n) begin
             buffered_half <= 16'h0000;
             buffer_valid <= 1'b0;
-        end else begin
+        end else if (valid) begin
             if (!pc[1]) begin
                 // PC is word-aligned: buffer the upper 16 bits for potential next use
                 buffered_half <= imem_data[31:16];

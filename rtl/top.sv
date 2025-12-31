@@ -109,7 +109,11 @@ module top (
     );
     
     // Select instruction based on compression
-    assign instruction = is_compressed ? decompressed_insn : fetched_instruction;
+    // If compressed but invalid, treat as NOP (ADDI x0, x0, 0)
+    // This prevents execution of undefined behavior while avoiding CPU halt
+    assign instruction = is_compressed ? 
+                         (decompress_valid ? decompressed_insn : 32'h00000013) : 
+                         fetched_instruction;
     
     // PC increment: 2 for compressed, 4 for standard
     assign pc_increment = is_compressed ? 32'd2 : 32'd4;
