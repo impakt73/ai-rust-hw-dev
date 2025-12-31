@@ -32,6 +32,14 @@ module top (
     logic [31:0] next_pc;
     logic [31:0] instruction;
     
+    // RV32C support signals
+    logic [31:0] fetched_instruction;  // Full instruction from ifetch
+    logic        fetch_valid;
+    logic [31:0] decompressed_insn;
+    logic        is_compressed;
+    logic        decompress_valid;
+    logic [31:0] pc_increment;  // 2 or 4 based on instruction size
+    
     // Decoder outputs
     logic [6:0]  opcode;
     logic [4:0]  rd;
@@ -78,9 +86,33 @@ module top (
     
     assign csr_addr = imm_i[11:0];  // CSR address from immediate field
     
-    // Program Counter
-    assign imem_addr = pc;
-    assign instruction = imem_data;
+    // Program Counter and instruction fetch
+    // Note: imem_addr is now driven by ifetch module
+    
+    // Instruction fetch unit - handles 16/32-bit instruction fetching
+    ifetch u_ifetch (
+        .clk(clk),
+        .rst_n(rst_n),
+        .pc(pc),
+        .imem_data(imem_data),
+        .imem_addr(imem_addr),
+        .instruction(fetched_instruction),
+        .valid(fetch_valid)
+    );
+    
+    // Decompressor - expands compressed instructions to standard 32-bit format
+    decompress u_decompress (
+        .insn_16(fetched_instruction[15:0]),
+        .insn_32(decompressed_insn),
+        .is_compressed(is_compressed),
+        .is_valid(decompress_valid)
+    );
+    
+    // Select instruction based on compression
+    assign instruction = is_compressed ? decompressed_insn : fetched_instruction;
+    
+    // PC increment: 2 for compressed, 4 for standard
+    assign pc_increment = is_compressed ? 32'd2 : 32'd4;
     
     // Halt control for ECALL/EBREAK
     always_ff @(posedge clk or negedge rst_n) begin
@@ -102,7 +134,7 @@ module top (
         // If halted or executing ECALL/EBREAK, PC stays the same
     end
     
-    // Next PC calculation
+    // Next PC calculation - updated for RV32C support
     always_comb begin
         if (jump) begin
             // JAL or JALR
@@ -116,7 +148,8 @@ module top (
         end else if (branch && take_branch) begin
             next_pc = pc + imm_b;
         end else begin
-            next_pc = pc + 32'd4;  // Next sequential instruction
+            // Sequential: increment by 2 or 4 depending on instruction size
+            next_pc = pc + pc_increment;
         end
     end
     
