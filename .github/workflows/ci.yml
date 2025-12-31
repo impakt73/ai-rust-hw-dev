@@ -54,8 +54,6 @@ jobs:
     
     - name: Check formatting
       run: cargo fmt -- --check
-      continue-on-error: true
     
     - name: Run clippy
       run: cargo clippy -- -D warnings
-      continue-on-error: true
