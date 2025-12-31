@@ -56,6 +56,8 @@ macro_rules! impl_receive_packet {
                     // Success! Calculate how many bytes were consumed
                     let consumed_bytes = bytes.len() - remaining.len();
                     // Remove the consumed words (rounding up to complete words)
+                    // Use ceiling division: (consumed_bytes + 3) / 4 to round up to word boundary
+                    // Example: 10 bytes = (10 + 3) / 4 = 3 words (12 bytes)
                     let consumed_words = (consumed_bytes + 3) / 4;
                     for _ in 0..consumed_words {
                         fifo_tx.pop_front();
