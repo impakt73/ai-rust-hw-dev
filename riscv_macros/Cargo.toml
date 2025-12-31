@@ -7,7 +7,3 @@ edition = "2021"
 riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
-
-[features]
-default = []
-alloc = []

@@ -15,6 +15,14 @@ const FIFO_DATA: u32 = 0x4000_0000;
 ///
 /// This function serializes a DebugPacket using postcard and writes it
 /// word-by-word to the FIFO_DATA register.
+///
+/// # Error Handling
+///
+/// If postcard serialization fails, the function silently returns without
+/// sending any data. In a bare-metal `no_std` environment, there are limited
+/// options for error handling, and the macro invocation sites cannot easily
+/// handle errors. The function is designed to be fail-safe: if serialization
+/// fails, the program continues execution without the debug message.
 pub fn send_debug_message(level: DebugLevel, message: String) {
     let packet = DebugPacket {
         header: PacketHeader::new(PacketType::Debug, 0),

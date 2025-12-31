@@ -187,9 +187,18 @@ where
         self.cpu.clk = 1;
         self.cpu.eval();
 
-        // Process FIFO TX data and optionally print DebugPackets
+        // Process FIFO TX data
+        // Always drain the FIFO to prevent accumulation
+        while let Some(word) = self.bus.fifo.tx.pop_front() {
+            // Invoke callback if provided
+            if let Some(ref mut callback) = self.fifo_callback {
+                callback(word);
+            }
+        }
+
+        // Additionally, if auto-printing is enabled and no callback is provided,
+        // try to parse and print DebugPackets from the accumulated data
         if self.print_debug_packets && self.fifo_callback.is_none() {
-            // No callback - try to receive and print DebugPackets directly
             while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
                 // Format the message with level prefix
                 let level_str = match debug_pkt.level {
@@ -200,13 +209,6 @@ where
                     DebugLevel::Error => "[ERROR]",
                 };
                 println!("{} {}", level_str, debug_pkt.message);
-            }
-        } else {
-            // Callback provided - just invoke it for each word
-            while let Some(word) = self.bus.fifo.tx.pop_front() {
-                if let Some(ref mut callback) = self.fifo_callback {
-                    callback(word);
-                }
             }
         }
 

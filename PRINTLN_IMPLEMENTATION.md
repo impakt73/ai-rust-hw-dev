@@ -39,7 +39,8 @@ A new `no_std` compatible library that provides six macros:
 #[macro_export]
 macro_rules! rvprintln {
     ($($arg:tt)*) => {{
-        let msg = $crate::alloc::format!("{}\n", $crate::alloc::format!($($arg)*));
+        let mut msg = $crate::alloc::format!($($arg)*);
+        msg.push('\n');
         $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Info, msg);
     }};
 }
