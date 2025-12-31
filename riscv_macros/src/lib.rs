@@ -12,7 +12,7 @@ use riscv_protocol::{DebugLevel, DebugPacket, PacketHeader, PacketType};
 const FIFO_DATA: u32 = 0x4000_0000;
 
 /// Send a DebugPacket to the host via MMIO FIFO
-/// 
+///
 /// This function serializes a DebugPacket using postcard and writes it
 /// word-by-word to the FIFO_DATA register.
 pub fn send_debug_message(level: DebugLevel, message: String) {
@@ -39,9 +39,9 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
 }
 
 /// Print formatted output to the host console (Info level)
-/// 
+///
 /// Usage: `cprintln!("Hello, {}!", "world");`
-/// 
+///
 /// This macro works like println! but sends the output to the host
 /// via the MMIO FIFO using DebugPacket protocol.
 #[macro_export]

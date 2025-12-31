@@ -747,7 +747,7 @@ fn test_println_macro() {
         &runtime,
         bus,
         entry_point,
-        false,  // Disable instruction trace
+        false, // Disable instruction trace
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
@@ -764,7 +764,7 @@ fn test_println_macro() {
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();
     println!("FIFO TX words received: {} words", fifo_words.len());
-    
+
     // Convert words to VecDeque for packet parsing
     let mut fifo_tx = std::collections::VecDeque::new();
     for &word in fifo_words.iter() {
@@ -794,12 +794,18 @@ fn test_println_macro() {
         "Program should complete with success code 42"
     );
 
-    assert!(packet_count > 0, "Should have received at least one DebugPacket");
+    assert!(
+        packet_count > 0,
+        "Should have received at least one DebugPacket"
+    );
 
     println!("\n========================================");
     println!("PRINTLN MACRO TEST COMPLETE ✓");
     println!("========================================");
     println!("✓ cprintln! messages received and printed");
-    println!("✓ Program completed successfully in {} cycles", result.cycles);
+    println!(
+        "✓ Program completed successfully in {} cycles",
+        result.cycles
+    );
     println!("========================================\n");
 }
