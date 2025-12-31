@@ -31,13 +31,17 @@ module alu (
     localparam logic [4:0] ALU_REM    = 5'b10000;  // Remainder (signed)
     localparam logic [4:0] ALU_REMU   = 5'b10001;  // Remainder (unsigned)
 
-    // Multiplication intermediate result (64-bit)
+    // Multiplication intermediate results (64-bit)
     logic [63:0] mul_result;
+    logic signed [63:0] mulhsu_a_ext;
+    logic [63:0] mulhsu_b_ext;
 
     always_comb begin
         // Default initialization to avoid latches
         mul_result = 64'd0;
         result = 32'd0;
+        mulhsu_a_ext = 64'sd0;
+        mulhsu_b_ext = 64'd0;
         
         case (alu_op)
             // RV32I operations
@@ -62,8 +66,12 @@ module alu (
                 result = mul_result[63:32];  // Upper 32 bits (signed×signed)
             end
             ALU_MULHSU: begin
-                mul_result = $signed(a) * $unsigned(b);
-                result = mul_result[63:32];  // Upper 32 bits (signed×unsigned)
+                // MULHSU: signed(rs1) × unsigned(rs2), upper 32 bits
+                // Sign-extend a to 64-bit, zero-extend b to 64-bit, then multiply
+                mulhsu_a_ext = {{32{a[31]}}, a};  // Sign-extend 32-bit to 64-bit
+                mulhsu_b_ext = {32'b0, b};  // Zero-extend 32-bit to 64-bit
+                mul_result = $signed(mulhsu_a_ext) * $signed(mulhsu_b_ext);  // Multiply as signed
+                result = mul_result[63:32];  // Upper 32 bits
             end
             ALU_MULHU: begin
                 mul_result = $unsigned(a) * $unsigned(b);
