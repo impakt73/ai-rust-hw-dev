@@ -24,27 +24,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Cache apt packages
-        uses: actions/cache@v4
+      - name: Cache and install apt packages
+        uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          # Static version key - bump version (v1 -> v2) to force cache refresh
-          key: ${{ runner.os }}-apt-riscv-v1
-          restore-keys: |
-            ${{ runner.os }}-apt-riscv-
-      
-      - name: Install Verilator and RISC-V GCC
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y verilator gcc-riscv64-unknown-elf
+          packages: verilator gcc-riscv64-unknown-elf
+          # Bump version (v1 -> v2) to force cache refresh
+          version: v1
       
       - name: Install Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          # Using manual cargo caching below with better cache keys
+          # Disable built-in cache; use manual Cargo caching below for better control
           cache: false
       
       - name: Install RISC-V Rust Target
@@ -58,9 +49,8 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
             ${{ runner.os }}-cargo-
       
       - name: Verify installations

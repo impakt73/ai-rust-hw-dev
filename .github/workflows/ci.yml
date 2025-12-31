@@ -15,21 +15,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Cache apt packages
-      uses: actions/cache@v4
+    - name: Cache and install Verilator
+      uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        path: |
-          /var/cache/apt/archives
-          /var/lib/apt/lists
-        # Static version key - bump version (v1 -> v2) to force cache refresh
-        key: ${{ runner.os }}-apt-verilator-v1
-        restore-keys: |
-          ${{ runner.os }}-apt-verilator-
-    
-    - name: Install Verilator
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y verilator
+        packages: verilator
+        # Bump version (v1 -> v2) to force cache refresh
+        version: v1
     
     - name: Verify Verilator installation
       run: verilator --version
@@ -38,7 +29,7 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
-        # Using manual cargo caching below with better cache keys
+        # Disable built-in cache; use manual Cargo caching below for better control
         cache: false
     
     - name: Cache cargo dependencies and build artifacts
@@ -49,9 +40,8 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
           ${{ runner.os }}-cargo-
     
     - name: Build
