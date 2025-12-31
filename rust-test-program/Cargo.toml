@@ -30,3 +30,8 @@ test = false
 riscv-rt = "0.17.0"
 riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }
 rkyv = { version = "0.8", default-features = false, features = ["alloc", "bytecheck"] }
+
+[[bin]]
+name = "simple_fifo_test"
+path = "src/simple_fifo_test.rs"
+test = false
