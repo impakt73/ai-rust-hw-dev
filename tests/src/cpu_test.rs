@@ -1479,15 +1479,18 @@ fn test_cpu_csr_read_write() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
 
     // Test CSRRW (CSR Read/Write)
     // CSR address 0x300 (mstatus in real RISC-V, but we treat it as generic)
     imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
-    imem.insert(0x04, csrrw(2, 1, 0x300)); // x2 = CSR[0x300]; CSR[0x300] = x1
-    imem.insert(0x08, csrrw(3, 0, 0x300)); // x3 = CSR[0x300]; CSR[0x300] = 0
-    imem.insert(0x0C, addi(0, 0, 0)); // NOP
-
-    let dmem: HashMap<u32, u32> = HashMap::new();
+    imem.insert(0x04, csrrw(2, 1, 0x300)); // x2 = CSR[0x300] (old value, should be 0); CSR[0x300] = x1 (100)
+    imem.insert(0x08, sw(0, 2, 0x100)); // Store x2 to memory[0x100] to verify it's 0
+    imem.insert(0x0C, csrrw(3, 0, 0x300)); // x3 = CSR[0x300] (should be 100); CSR[0x300] = 0
+    imem.insert(0x10, sw(0, 3, 0x104)); // Store x3 to memory[0x104] to verify it's 100
+    imem.insert(0x14, csrrw(4, 0, 0x300)); // x4 = CSR[0x300] (should be 0); CSR[0x300] = 0
+    imem.insert(0x18, sw(0, 4, 0x108)); // Store x4 to memory[0x108] to verify it's 0
+    imem.insert(0x1C, addi(0, 0, 0)); // NOP
 
     // Reset
     dut.rst_n = 0;
@@ -1496,14 +1499,38 @@ fn test_cpu_csr_read_write() {
     dut.rst_n = 1;
 
     // Execute instructions
-    for _ in 0..6 {
+    for _ in 0..12 {
         let pc = dut.imem_addr;
         dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
         dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
         clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
     }
 
     assert_eq!(dut.halted, 0, "CPU should not be halted");
+
+    // Verify CSR operations
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0,
+        "First CSRRW should read 0 from uninitialized CSR"
+    );
+    assert_eq!(
+        dmem.get(&0x104).copied().unwrap_or(0xDEADBEEF),
+        100,
+        "Second CSRRW should read 100 from CSR (written by first CSRRW)"
+    );
+    assert_eq!(
+        dmem.get(&0x108).copied().unwrap_or(0xDEADBEEF),
+        0,
+        "Third CSRRW should read 0 from CSR (written by second CSRRW)"
+    );
 }
 
 #[test]
@@ -1513,19 +1540,20 @@ fn test_cpu_csr_set_clear() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
 
-    // Test CSRRS (CSR Read and Set)
+    // Test CSRRS (CSR Read and Set) and CSRRC (CSR Read and Clear)
     imem.insert(0x00, addi(1, 0, 0b1010)); // x1 = 0b1010
     imem.insert(0x04, csrrw(0, 1, 0x301)); // CSR[0x301] = 0b1010 (write initial value)
     imem.insert(0x08, addi(2, 0, 0b0101)); // x2 = 0b0101
-    imem.insert(0x0C, csrrs(3, 2, 0x301)); // x3 = CSR[0x301]; CSR[0x301] |= x2
-                                           // After CSRRS: CSR[0x301] should be 0b1111
-    imem.insert(0x10, addi(4, 0, 0b1000)); // x4 = 0b1000
-    imem.insert(0x14, csrrc(5, 4, 0x301)); // x5 = CSR[0x301]; CSR[0x301] &= ~x4
-                                           // After CSRRC: CSR[0x301] should be 0b0111
-    imem.insert(0x18, addi(0, 0, 0)); // NOP
-
-    let dmem: HashMap<u32, u32> = HashMap::new();
+    imem.insert(0x0C, csrrs(3, 2, 0x301)); // x3 = CSR[0x301] (0b1010); CSR[0x301] |= x2 (becomes 0b1111)
+    imem.insert(0x10, sw(0, 3, 0x100)); // Store x3 to verify it read 0b1010
+    imem.insert(0x14, addi(4, 0, 0b1000)); // x4 = 0b1000
+    imem.insert(0x18, csrrc(5, 4, 0x301)); // x5 = CSR[0x301] (0b1111); CSR[0x301] &= ~x4 (becomes 0b0111)
+    imem.insert(0x1C, sw(0, 5, 0x104)); // Store x5 to verify it read 0b1111
+    imem.insert(0x20, csrrw(6, 0, 0x301)); // x6 = CSR[0x301] (final value, should be 0b0111)
+    imem.insert(0x24, sw(0, 6, 0x108)); // Store x6 to verify final CSR value
+    imem.insert(0x28, addi(0, 0, 0)); // NOP
 
     // Reset
     dut.rst_n = 0;
@@ -1534,14 +1562,38 @@ fn test_cpu_csr_set_clear() {
     dut.rst_n = 1;
 
     // Execute instructions
-    for _ in 0..10 {
+    for _ in 0..15 {
         let pc = dut.imem_addr;
         dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
         dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
         clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
     }
 
     assert_eq!(dut.halted, 0, "CPU should not be halted");
+
+    // Verify CSR operations
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0b1010,
+        "CSRRS should read old value 0b1010"
+    );
+    assert_eq!(
+        dmem.get(&0x104).copied().unwrap_or(0xDEADBEEF),
+        0b1111,
+        "CSRRC should read value 0b1111 (after CSRRS set bits)"
+    );
+    assert_eq!(
+        dmem.get(&0x108).copied().unwrap_or(0xDEADBEEF),
+        0b0111,
+        "Final CSR value should be 0b0111 (after CSRRC cleared bit 3)"
+    );
 }
 
 #[test]
@@ -1551,14 +1603,18 @@ fn test_cpu_csr_immediate() {
 
     // Create instruction memory
     let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
 
     // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
     imem.insert(0x00, csrrwi(1, 15, 0x302)); // CSR[0x302] = 15; x1 = old value (0)
-    imem.insert(0x04, csrrsi(2, 8, 0x302)); // CSR[0x302] |= 8; x2 = old value (15)
-    imem.insert(0x08, csrrci(3, 4, 0x302)); // CSR[0x302] &= ~4; x3 = old value (15)
-    imem.insert(0x0C, addi(0, 0, 0)); // NOP
-
-    let dmem: HashMap<u32, u32> = HashMap::new();
+    imem.insert(0x04, sw(0, 1, 0x100)); // Store x1 to verify it's 0
+    imem.insert(0x08, csrrsi(2, 8, 0x302)); // CSR[0x302] |= 8 (15 | 8 = 15); x2 = old value (15)
+    imem.insert(0x0C, sw(0, 2, 0x104)); // Store x2 to verify it's 15
+    imem.insert(0x10, csrrci(3, 4, 0x302)); // CSR[0x302] &= ~4 (15 & ~4 = 11); x3 = old value (15)
+    imem.insert(0x14, sw(0, 3, 0x108)); // Store x3 to verify it's 15
+    imem.insert(0x18, csrrw(4, 0, 0x302)); // x4 = CSR[0x302] (final value, should be 11)
+    imem.insert(0x1C, sw(0, 4, 0x10C)); // Store x4 to verify final CSR value
+    imem.insert(0x20, addi(0, 0, 0)); // NOP
 
     // Reset
     dut.rst_n = 0;
@@ -1567,12 +1623,41 @@ fn test_cpu_csr_immediate() {
     dut.rst_n = 1;
 
     // Execute instructions
-    for _ in 0..6 {
+    for _ in 0..12 {
         let pc = dut.imem_addr;
         dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
         dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
         clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
     }
 
     assert_eq!(dut.halted, 0, "CPU should not be halted");
+
+    // Verify CSR operations
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0,
+        "CSRRWI should read 0 from uninitialized CSR"
+    );
+    assert_eq!(
+        dmem.get(&0x104).copied().unwrap_or(0xDEADBEEF),
+        15,
+        "CSRRSI should read 15 (value written by CSRRWI)"
+    );
+    assert_eq!(
+        dmem.get(&0x108).copied().unwrap_or(0xDEADBEEF),
+        15,
+        "CSRRCI should read 15 (15 | 8 = 15, so unchanged)"
+    );
+    assert_eq!(
+        dmem.get(&0x10C).copied().unwrap_or(0xDEADBEEF),
+        11,
+        "Final CSR value should be 11 (15 & ~4 = 11)"
+    );
 }

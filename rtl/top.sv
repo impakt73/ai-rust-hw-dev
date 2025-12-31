@@ -72,8 +72,6 @@ module top (
     logic [31:0] csr_file [0:4095];
     logic [11:0] csr_addr;
     logic [31:0] csr_rdata;
-    logic [31:0] csr_wdata;
-    logic [31:0] csr_write_mask;
     
     assign csr_addr = imm_i[11:0];  // CSR address from immediate field
     
@@ -94,10 +92,11 @@ module top (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pc <= boot_addr;
-        end else if (!halted) begin
+        end else if (!halted && !is_ecall && !is_ebreak) begin
+            // Advance PC only when not halted and not executing ECALL/EBREAK
             pc <= next_pc;
         end
-        // If halted, PC stays the same
+        // If halted or executing ECALL/EBREAK, PC stays the same
     end
     
     // Next PC calculation
@@ -271,12 +270,12 @@ module top (
         end else if (is_csr) begin
             // CSR write operations
             case (funct3)
-                3'b001: csr_file[csr_addr] <= rs1_data;                    // CSRRW
-                3'b010: csr_file[csr_addr] <= csr_rdata | rs1_data;        // CSRRS
-                3'b011: csr_file[csr_addr] <= csr_rdata & ~rs1_data;       // CSRRC
-                3'b101: csr_file[csr_addr] <= {27'b0, rs1};                // CSRRWI
-                3'b110: csr_file[csr_addr] <= csr_rdata | {27'b0, rs1};    // CSRRSI
-                3'b111: csr_file[csr_addr] <= csr_rdata & ~{27'b0, rs1};   // CSRRCI
+                3'b001: csr_file[csr_addr] <= rs1_data;                                     // CSRRW
+                3'b010: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | rs1_data;        // CSRRS (no write when rs1 == x0)
+                3'b011: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~rs1_data;       // CSRRC (no write when rs1 == x0)
+                3'b101: csr_file[csr_addr] <= {27'b0, rs1};                                 // CSRRWI
+                3'b110: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | {27'b0, rs1};    // CSRRSI (no write when zimm[4:0] == 0)
+                3'b111: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~{27'b0, rs1};   // CSRRCI (no write when zimm[4:0] == 0)
                 default: ; // Do nothing
             endcase
         end
