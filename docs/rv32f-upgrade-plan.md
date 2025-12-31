@@ -1,0 +1,1891 @@
+# RV32F Single Precision Floating Point Extension - Implementation Plan
+
+## Executive Summary
+
+This document provides a comprehensive technical plan to upgrade the current **RV32IM** single-cycle RISC-V CPU implementation to **RV32IMF**, adding the **F (Single-Precision Floating Point)** extension. This plan is specifically optimized for implementation by AI coding agents, with clear phase-by-phase instructions, detailed technical specifications, and comprehensive testing strategies.
+
+## Table of Contents
+
+1. [Overview of RV32F Extension](#overview-of-rv32f-extension)
+2. [Current Architecture Analysis](#current-architecture-analysis)
+3. [RV32F Architecture Overview](#rv32f-architecture-overview)
+4. [RTL Modifications Required](#rtl-modifications-required)
+5. [Testing Strategy](#testing-strategy)
+6. [Build Configuration Updates](#build-configuration-updates)
+7. [Implementation Phases](#implementation-phases)
+8. [Risk Assessment](#risk-assessment)
+9. [Validation Criteria](#validation-criteria)
+10. [Appendices](#appendices)
+
+---
+
+## Overview of RV32F Extension
+
+### What is RV32F?
+
+RV32F = RV32I (base integer instruction set) + F (single-precision floating point extension)
+
+The F extension adds support for 32-bit IEEE 754-2008 floating point operations, including:
+- 32 dedicated floating point registers (f0-f31)
+- Floating point arithmetic operations
+- Floating point comparison operations
+- Floating point load/store operations
+- Floating point conversion operations (int ↔ float)
+- Floating point classification and sign injection
+
+### RV32F Key Characteristics
+
+- **Register File:** 32 × 32-bit floating point registers (separate from integer registers)
+- **IEEE 754-2008:** Compliant single-precision (32-bit) floating point
+- **Rounding Modes:** 5 modes (RNE, RTZ, RDN, RUP, RMM) controlled via fcsr.frm
+- **Exception Flags:** 5 flags (NV, DZ, OF, UF, NX) in fcsr.fflags
+- **NaN Boxing:** Upper bits must be all 1's for valid single-precision values (not required for RV32F-only implementation)
+
+
+### F Extension Instructions (26 instructions)
+
+The F extension adds **26 new instructions** across multiple categories:
+
+#### Floating Point Load/Store (2 instructions)
+| Instruction | Opcode | Funct3 | Description |
+|------------|--------|--------|-------------|
+| **FLW** | 0000111 | 010 | Load floating point word from memory to FP register |
+| **FSW** | 0100111 | 010 | Store floating point word from FP register to memory |
+
+#### Floating Point Computational (14 instructions)
+| Instruction | Opcode | Funct7 | Funct3 | Description |
+|------------|--------|--------|--------|-------------|
+| **FADD.S** | 1010011 | 0000000 | rm | Add single-precision (fd = fs1 + fs2) |
+| **FSUB.S** | 1010011 | 0000100 | rm | Subtract single-precision (fd = fs1 - fs2) |
+| **FMUL.S** | 1010011 | 0001000 | rm | Multiply single-precision (fd = fs1 × fs2) |
+| **FDIV.S** | 1010011 | 0001100 | rm | Divide single-precision (fd = fs1 ÷ fs2) |
+| **FSQRT.S** | 1010011 | 0101100 | rm | Square root (fd = √fs1) |
+| **FMIN.S** | 1010011 | 0010100 | 000 | Minimum (fd = min(fs1, fs2)) |
+| **FMAX.S** | 1010011 | 0010100 | 001 | Maximum (fd = max(fs1, fs2)) |
+| **FMADD.S** | 1000011 | rs3[4:0] | rm | Fused multiply-add (fd = fs1 × fs2 + fs3) |
+| **FMSUB.S** | 1000111 | rs3[4:0] | rm | Fused multiply-sub (fd = fs1 × fs2 - fs3) |
+| **FNMSUB.S** | 1001011 | rs3[4:0] | rm | Fused negate-mul-sub (fd = -(fs1 × fs2 - fs3)) |
+| **FNMADD.S** | 1001111 | rs3[4:0] | rm | Fused negate-mul-add (fd = -(fs1 × fs2 + fs3)) |
+| **FSGNJ.S** | 1010011 | 0010000 | 000 | Sign injection (fd = {fs2[31], fs1[30:0]}) |
+| **FSGNJN.S** | 1010011 | 0010000 | 001 | Sign injection negated |
+| **FSGNJX.S** | 1010011 | 0010000 | 010 | Sign injection XOR |
+
+#### Floating Point Comparison (3 instructions)
+| Instruction | Opcode | Funct7 | Funct3 | Description |
+|------------|--------|--------|--------|-------------|
+| **FLE.S** | 1010011 | 1010000 | 000 | Less than or equal (rd = fs1 ≤ fs2) |
+| **FLT.S** | 1010011 | 1010000 | 001 | Less than (rd = fs1 < fs2) |
+| **FEQ.S** | 1010011 | 1010000 | 010 | Equal (rd = fs1 == fs2) |
+
+#### Floating Point Conversion (6 instructions)
+| Instruction | Opcode | Funct7 | Funct3 | rs2   | Description |
+|------------|--------|--------|--------|-------|-------------|
+| **FCVT.W.S**   | 1010011 | 1100000 | rm     | 00000 | Convert float to signed int |
+| **FCVT.WU.S**  | 1010011 | 1100000 | rm     | 00001 | Convert float to unsigned int |
+| **FCVT.S.W**   | 1010011 | 1101000 | rm     | 00000 | Convert signed int to float |
+| **FCVT.S.WU**  | 1010011 | 1101000 | rm     | 00001 | Convert unsigned int to float |
+| **FMV.X.W**    | 1010011 | 1110000 | 000    | 00000 | Move FP reg to int reg (bitwise) |
+| **FMV.W.X**    | 1010011 | 1111000 | 000    | 00000 | Move int reg to FP reg (bitwise) |
+
+#### Floating Point Classification (1 instruction)
+| Instruction | Opcode | Funct7 | Funct3 | rs2   | Description |
+|------------|--------|--------|--------|-------|-------------|
+| **FCLASS.S**   | 1010011 | 1110000 | 001    | 00000 | Classify FP number |
+
+### IEEE 754-2008 Special Values
+
+- **Positive Zero:** `0x00000000`
+- **Negative Zero:** `0x80000000`
+- **Positive Infinity:** `0x7F800000`
+- **Negative Infinity:** `0xFF800000`
+- **Quiet NaN (canonical):** `0x7FC00000`
+- **Signaling NaN:** Any NaN with MSB of mantissa = 0
+
+### Rounding Modes (frm field)
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| **RNE** | 000 | Round to Nearest, ties to Even (default) |
+| **RTZ** | 001 | Round Towards Zero |
+| **RDN** | 010 | Round Down (towards -∞) |
+| **RUP** | 011 | Round Up (towards +∞) |
+| **RMM** | 100 | Round to Nearest, ties to Max Magnitude |
+| **Reserved** | 101-110 | Reserved for future use |
+| **DYN** | 111 | Dynamic (use fcsr.frm) |
+
+### Exception Flags (fflags field)
+
+| Bit | Flag | Description |
+|-----|------|-------------|
+| 0 | **NX** | Inexact |
+| 1 | **UF** | Underflow |
+| 2 | **OF** | Overflow |
+| 3 | **DZ** | Divide by Zero |
+| 4 | **NV** | Invalid Operation |
+
+### FCSR (Floating Point Control and Status Register)
+
+```
+31                   8 7   5 4   0
+┌─────────────────────┬─────┬─────┐
+│     Reserved (0)     │ frm │fflags│
+└─────────────────────┴─────┴─────┘
+```
+
+- **CSR Address:** 0x003
+- **frm (bits 7-5):** Rounding mode
+- **fflags (bits 4-0):** Exception flags
+
+---
+
+## Current Architecture Analysis
+
+### Existing RTL Modules
+
+```
+top.sv (CPU top-level)
+├── decoder.sv (Instruction decoder for RV32IM + Zicsr)
+├── alu.sv (Integer ALU - RV32I + M extension)
+└── regfile.sv (32×32-bit integer register file)
+```
+
+### Current Capabilities
+
+The CPU currently implements:
+- **RV32I Base:** 40 instructions (arithmetic, logic, shifts, branches, jumps, loads, stores)
+- **M Extension:** 8 instructions (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+- **Zicsr Extension:** 6 instructions (CSR read/write/set/clear)
+- **Single-cycle execution:** All instructions complete in one clock cycle
+- **Exposed memory ports:** Instruction and data memory are external
+
+### Gaps for RV32F Support
+
+1. **No floating point register file** - Need 32 × 32-bit FP registers (f0-f31)
+2. **No floating point unit (FPU)** - Need FP arithmetic, comparison, conversion logic
+3. **No FP control/status register (fcsr)** - Need frm and fflags in CSR space
+4. **Decoder doesn't recognize FP opcodes** - Need to decode 6 new opcodes
+5. **Top module doesn't route FP data paths** - Need FP register file and FPU integration
+6. **No FP load/store support** - Need separate FP data path for FLW/FSW
+
+---
+
+## RV32F Architecture Overview
+
+### Proposed Module Hierarchy
+
+```
+top.sv (CPU top-level)
+├── decoder.sv (Instruction decoder - updated for FP instructions)
+├── alu.sv (Integer ALU - unchanged)
+├── regfile.sv (Integer register file - unchanged)
+├── fp_regfile.sv (NEW: 32×32-bit FP register file)
+└── fpu.sv (NEW: Floating Point Unit)
+    ├── FP adder/subtractor
+    ├── FP multiplier
+    ├── FP divider
+    ├── FP square root
+    ├── FP comparator
+    ├── FP converter (int ↔ float)
+    ├── FP classifier
+    └── Rounding logic
+```
+
+### Data Path Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Top Module                          │
+│                                                           │
+│  ┌──────────┐    ┌──────────┐    ┌───────────────────┐  │
+│  │  Integer │    │ Floating  │    │   Decoder         │  │
+│  │ Regfile  │    │  Point    │    │  (RV32IMF + Zicsr)│  │
+│  │  (x0-x31)│    │ Regfile   │    └───────────────────┘  │
+│  └──────────┘    │  (f0-f31) │                           │
+│       │          └──────────┘                           │
+│       │                │                                 │
+│  ┌────▼────┐     ┌────▼────┐                           │
+│  │   ALU   │     │   FPU   │                           │
+│  │  (INT)  │     │  (FP)   │                           │
+│  └────┬────┘     └────┬────┘                           │
+│       │               │                                 │
+│       └───────┬───────┘                                 │
+│            (Result Mux)                                 │
+│                 │                                       │
+│          (Writeback Logic)                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+1. **Separate FP register file** - Independent from integer registers for clarity
+2. **Dedicated FPU module** - Encapsulates all FP operations
+3. **IEEE 754-2008 compliant** - Use SystemVerilog real/shortreal types or custom implementation
+4. **Single-cycle FP operations** - All FP ops complete in one cycle (may limit frequency)
+5. **Shared memory interface** - FLW/FSW use existing dmem ports with FP register file
+6. **CSR integration** - fcsr at address 0x003 (standard F extension address)
+7. **Exception flag updates** - FPU sets fflags on each operation
+8. **NaN propagation** - Canonical NaN (0x7FC00000) for all NaN results
+
+---
+
+## RTL Modifications Required
+
+### 1. Create FP Register File (`rtl/fp_regfile.sv`)
+
+**New module needed:** 32 × 32-bit floating point register file
+
+```systemverilog
+module fp_regfile (
+    input  logic        clk,
+    input  logic        rst,
+    input  logic [4:0]  rs1,        // FP source register 1
+    input  logic [4:0]  rs2,        // FP source register 2  
+    input  logic [4:0]  rs3,        // FP source register 3 (for FMADD, etc.)
+    input  logic [4:0]  rd,         // FP destination register
+    input  logic [31:0] rd_data,    // FP write data
+    input  logic        wr_en,      // Write enable
+    output logic [31:0] rs1_data,   // FP read data 1
+    output logic [31:0] rs2_data,   // FP read data 2
+    output logic [31:0] rs3_data    // FP read data 3
+);
+
+    // 32 floating point registers
+    logic [31:0] fp_regs [31:0];
+    
+    // Asynchronous reads
+    assign rs1_data = fp_regs[rs1];
+    assign rs2_data = fp_regs[rs2];
+    assign rs3_data = fp_regs[rs3];
+    
+    // Synchronous write
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            // Reset all FP registers to +0.0 (0x00000000)
+            for (int i = 0; i < 32; i++) begin
+                fp_regs[i] <= 32'h00000000;
+            end
+        end else if (wr_en) begin
+            fp_regs[rd] <= rd_data;
+        end
+    end
+
+endmodule
+```
+
+**Key Features:**
+- 3 read ports (rs1, rs2, rs3 for fused multiply-add)
+- 1 write port
+- All registers can be written (unlike x0 in integer regfile)
+- Reset to +0.0 (not strictly required by spec, but good practice)
+
+### 2. Create Floating Point Unit (`rtl/fpu.sv`)
+
+**New module needed:** Complete floating point unit with all F extension operations
+
+```systemverilog
+module fpu (
+    input  logic [31:0] fs1,         // FP source 1
+    input  logic [31:0] fs2,         // FP source 2
+    input  logic [31:0] fs3,         // FP source 3 (for fused ops)
+    input  logic [31:0] int_src,     // Integer source (for conversions)
+    input  logic [4:0]  fpu_op,      // FPU operation selector
+    input  logic [2:0]  rm,          // Rounding mode
+    output logic [31:0] fp_result,   // FP result
+    output logic [31:0] int_result,  // Integer result (for conversions/compares)
+    output logic [4:0]  fflags       // Exception flags (NV, DZ, OF, UF, NX)
+);
+
+    // FPU Operation Encodings
+    localparam logic [4:0] FPU_ADD    = 5'b00000;  // FADD.S
+    localparam logic [4:0] FPU_SUB    = 5'b00001;  // FSUB.S
+    localparam logic [4:0] FPU_MUL    = 5'b00010;  // FMUL.S
+    localparam logic [4:0] FPU_DIV    = 5'b00011;  // FDIV.S
+    localparam logic [4:0] FPU_SQRT   = 5'b00100;  // FSQRT.S
+    localparam logic [4:0] FPU_MIN    = 5'b00101;  // FMIN.S
+    localparam logic [4:0] FPU_MAX    = 5'b00110;  // FMAX.S
+    localparam logic [4:0] FPU_MADD   = 5'b00111;  // FMADD.S
+    localparam logic [4:0] FPU_MSUB   = 5'b01000;  // FMSUB.S
+    localparam logic [4:0] FPU_NMSUB  = 5'b01001;  // FNMSUB.S
+    localparam logic [4:0] FPU_NMADD  = 5'b01010;  // FNMADD.S
+    localparam logic [4:0] FPU_SGNJ   = 5'b01011;  // FSGNJ.S
+    localparam logic [4:0] FPU_SGNJN  = 5'b01100;  // FSGNJN.S
+    localparam logic [4:0] FPU_SGNJX  = 5'b01101;  // FSGNJX.S
+    localparam logic [4:0] FPU_CVTWS  = 5'b01110;  // FCVT.W.S
+    localparam logic [4:0] FPU_CVTWUS = 5'b01111;  // FCVT.WU.S
+    localparam logic [4:0] FPU_CVTSW  = 5'b10000;  // FCVT.S.W
+    localparam logic [4:0] FPU_CVTSWU = 5'b10001;  // FCVT.S.WU
+    localparam logic [4:0] FPU_FEQ    = 5'b10010;  // FEQ.S
+    localparam logic [4:0] FPU_FLT    = 5'b10011;  // FLT.S
+    localparam logic [4:0] FPU_FLE    = 5'b10100;  // FLE.S
+    localparam logic [4:0] FPU_FCLASS = 5'b10101;  // FCLASS.S
+    localparam logic [4:0] FPU_MVXW   = 5'b10110;  // FMV.X.W
+    localparam logic [4:0] FPU_MVWX   = 5'b10111;  // FMV.W.X
+
+    // Convert inputs to shortreal (IEEE 754 single precision)
+    shortreal fs1_real, fs2_real, fs3_real;
+    shortreal result_real;
+    integer int_temp;
+    
+    assign fs1_real = $bitstoshortreal(fs1);
+    assign fs2_real = $bitstoshortreal(fs2);
+    assign fs3_real = $bitstoshortreal(fs3);
+    
+    always_comb begin
+        // Default values
+        fp_result = 32'h00000000;
+        int_result = 32'h00000000;
+        fflags = 5'b00000;
+        result_real = 0.0;
+        int_temp = 0;
+        
+        case (fpu_op)
+            FPU_ADD: begin
+                result_real = fs1_real + fs2_real;
+                fp_result = $shortrealtobits(result_real);
+                // Set fflags based on result (simplified - full implementation needs IEEE checks)
+            end
+            
+            FPU_SUB: begin
+                result_real = fs1_real - fs2_real;
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_MUL: begin
+                result_real = fs1_real * fs2_real;
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_DIV: begin
+                if (fs2_real == 0.0) begin
+                    // Division by zero
+                    if (fs1_real == 0.0) begin
+                        fp_result = 32'h7FC00000;  // NaN
+                        fflags[4] = 1'b1;  // Invalid
+                    end else begin
+                        // Return infinity with appropriate sign
+                        fp_result = fs1[31] ? 32'hFF800000 : 32'h7F800000;
+                        fflags[3] = 1'b1;  // Divide by zero
+                    end
+                end else begin
+                    result_real = fs1_real / fs2_real;
+                    fp_result = $shortrealtobits(result_real);
+                end
+            end
+            
+            FPU_SQRT: begin
+                if (fs1_real < 0.0 && fs1 != 32'h80000000) begin
+                    // Negative number (not -0.0)
+                    fp_result = 32'h7FC00000;  // NaN
+                    fflags[4] = 1'b1;  // Invalid
+                end else begin
+                    result_real = $sqrt(fs1_real);
+                    fp_result = $shortrealtobits(result_real);
+                end
+            end
+            
+            FPU_MIN: begin
+                // Handle NaN and signed zero cases
+                logic is_fs1_nan, is_fs2_nan;
+                is_fs1_nan = (fs1[30:23] == 8'hFF) && (fs1[22:0] != 23'h0);
+                is_fs2_nan = (fs2[30:23] == 8'hFF) && (fs2[22:0] != 23'h0);
+                
+                if (is_fs1_nan || is_fs2_nan) begin
+                    fp_result = 32'h7FC00000;  // Propagate canonical NaN
+                end else begin
+                    result_real = (fs1_real < fs2_real) ? fs1_real : fs2_real;
+                    fp_result = $shortrealtobits(result_real);
+                end
+            end
+            
+            FPU_MAX: begin
+                logic is_fs1_nan, is_fs2_nan;
+                is_fs1_nan = (fs1[30:23] == 8'hFF) && (fs1[22:0] != 23'h0);
+                is_fs2_nan = (fs2[30:23] == 8'hFF) && (fs2[22:0] != 23'h0);
+                
+                if (is_fs1_nan || is_fs2_nan) begin
+                    fp_result = 32'h7FC00000;  // Propagate canonical NaN
+                end else begin
+                    result_real = (fs1_real > fs2_real) ? fs1_real : fs2_real;
+                    fp_result = $shortrealtobits(result_real);
+                end
+            end
+            
+            FPU_MADD: begin
+                // fd = fs1 * fs2 + fs3
+                result_real = (fs1_real * fs2_real) + fs3_real;
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_MSUB: begin
+                // fd = fs1 * fs2 - fs3
+                result_real = (fs1_real * fs2_real) - fs3_real;
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_NMSUB: begin
+                // fd = -(fs1 * fs2 - fs3) = fs3 - fs1 * fs2
+                result_real = fs3_real - (fs1_real * fs2_real);
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_NMADD: begin
+                // fd = -(fs1 * fs2 + fs3)
+                result_real = -((fs1_real * fs2_real) + fs3_real);
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_SGNJ: begin
+                // Copy sign of fs2 to fs1
+                fp_result = {fs2[31], fs1[30:0]};
+            end
+            
+            FPU_SGNJN: begin
+                // Copy inverted sign of fs2 to fs1
+                fp_result = {~fs2[31], fs1[30:0]};
+            end
+            
+            FPU_SGNJX: begin
+                // XOR signs
+                fp_result = {fs1[31] ^ fs2[31], fs1[30:0]};
+            end
+            
+            FPU_CVTWS: begin
+                // Float to signed int
+                int_temp = $rtoi(fs1_real);
+                int_result = int_temp[31:0];
+            end
+            
+            FPU_CVTWUS: begin
+                // Float to unsigned int
+                if (fs1_real < 0.0) begin
+                    int_result = 32'h00000000;
+                    fflags[4] = 1'b1;  // Invalid
+                end else begin
+                    int_temp = $rtoi(fs1_real);
+                    int_result = int_temp[31:0];
+                end
+            end
+            
+            FPU_CVTSW: begin
+                // Signed int to float
+                int_temp = $signed(int_src);
+                result_real = $itor(int_temp);
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_CVTSWU: begin
+                // Unsigned int to float
+                result_real = $itor(int_src);
+                fp_result = $shortrealtobits(result_real);
+            end
+            
+            FPU_FEQ: begin
+                // Floating point equal
+                int_result = (fs1_real == fs2_real) ? 32'h00000001 : 32'h00000000;
+            end
+            
+            FPU_FLT: begin
+                // Floating point less than
+                int_result = (fs1_real < fs2_real) ? 32'h00000001 : 32'h00000000;
+            end
+            
+            FPU_FLE: begin
+                // Floating point less than or equal
+                int_result = (fs1_real <= fs2_real) ? 32'h00000001 : 32'h00000000;
+            end
+            
+            FPU_FCLASS: begin
+                // Classify floating point number
+                // Bit 0: negative infinity
+                // Bit 1: negative normal
+                // Bit 2: negative subnormal
+                // Bit 3: negative zero
+                // Bit 4: positive zero
+                // Bit 5: positive subnormal
+                // Bit 6: positive normal
+                // Bit 7: positive infinity
+                // Bit 8: signaling NaN
+                // Bit 9: quiet NaN
+                
+                logic is_zero, is_inf, is_nan, is_neg;
+                is_zero = (fs1[30:0] == 31'h00000000);
+                is_inf = (fs1[30:23] == 8'hFF) && (fs1[22:0] == 23'h000000);
+                is_nan = (fs1[30:23] == 8'hFF) && (fs1[22:0] != 23'h000000);
+                is_neg = fs1[31];
+                
+                if (is_nan) begin
+                    int_result = (fs1[22]) ? 32'h00000200 : 32'h00000100;  // Quiet or signaling NaN
+                end else if (is_inf) begin
+                    int_result = is_neg ? 32'h00000001 : 32'h00000080;  // -inf or +inf
+                end else if (is_zero) begin
+                    int_result = is_neg ? 32'h00000008 : 32'h00000010;  // -0 or +0
+                end else begin
+                    // Normal or subnormal (simplified - doesn't check for subnormal)
+                    int_result = is_neg ? 32'h00000002 : 32'h00000040;  // Negative or positive normal
+                end
+            end
+            
+            FPU_MVXW: begin
+                // Move FP register to integer register (bitwise)
+                int_result = fs1;
+            end
+            
+            FPU_MVWX: begin
+                // Move integer register to FP register (bitwise)
+                fp_result = int_src;
+            end
+            
+            default: begin
+                fp_result = 32'h00000000;
+                int_result = 32'h00000000;
+            end
+        endcase
+    end
+
+endmodule
+```
+
+**Implementation Notes:**
+- Uses SystemVerilog `shortreal` type for IEEE 754 compliance
+- Simplified exception flag handling (full implementation needs detailed IEEE checks)
+- NaN canonicalization to 0x7FC00000
+- Rounding mode handling simplified (SystemVerilog handles rounding internally)
+- Division by zero and invalid operation handling
+
+
+### 3. Update Decoder Module (`rtl/decoder.sv`)
+
+**Changes needed:** Add FP instruction decoding logic
+
+**New outputs to add:**
+```systemverilog
+output logic [4:0]  fpu_op,        // FPU operation selector
+output logic        fp_reg_write,  // FP register write enable
+output logic        fp_to_int,     // FP result goes to integer register
+output logic        int_to_fp,     // Integer source goes to FP unit
+output logic        is_fp_load,    // FLW instruction
+output logic        is_fp_store    // FSW instruction
+```
+
+**New local parameters:**
+```systemverilog
+// FP opcodes
+localparam logic [6:0] OP_FP_LOAD  = 7'b0000111;
+localparam logic [6:0] OP_FP_STORE = 7'b0100111;
+localparam logic [6:0] OP_FP       = 7'b1010011;  // FP computational
+localparam logic [6:0] OP_FMADD    = 7'b1000011;
+localparam logic [6:0] OP_FMSUB    = 7'b1000111;
+localparam logic [6:0] OP_FNMSUB   = 7'b1001011;
+localparam logic [6:0] OP_FNMADD   = 7'b1001111;
+```
+
+**Decoding logic to add:**
+```systemverilog
+always_comb begin
+    // ... existing decoder logic ...
+    
+    // FP instruction decoding
+    case (opcode)
+        OP_FP_LOAD: begin  // FLW
+            if (funct3 == 3'b010) begin
+                alu_src = 1'b1;  // Use immediate
+                mem_read = 1'b1;
+                is_fp_load = 1'b1;
+                fp_reg_write = 1'b1;
+            end
+        end
+        
+        OP_FP_STORE: begin  // FSW
+            if (funct3 == 3'b010) begin
+                alu_src = 1'b1;  // Use immediate
+                mem_write = 1'b1;
+                is_fp_store = 1'b1;
+            end
+        end
+        
+        OP_FP: begin  // FP computational instructions
+            fp_reg_write = 1'b1;
+            case (funct7)
+                7'b0000000: fpu_op = FPU_ADD;    // FADD.S
+                7'b0000100: fpu_op = FPU_SUB;    // FSUB.S
+                7'b0001000: fpu_op = FPU_MUL;    // FMUL.S
+                7'b0001100: fpu_op = FPU_DIV;    // FDIV.S
+                7'b0101100: fpu_op = FPU_SQRT;   // FSQRT.S
+                7'b0010000: begin  // Sign injection
+                    case (funct3)
+                        3'b000: fpu_op = FPU_SGNJ;
+                        3'b001: fpu_op = FPU_SGNJN;
+                        3'b010: fpu_op = FPU_SGNJX;
+                    endcase
+                end
+                7'b0010100: begin  // MIN/MAX
+                    fpu_op = (funct3 == 3'b000) ? FPU_MIN : FPU_MAX;
+                end
+                7'b1010000: begin  // Comparisons
+                    fp_reg_write = 1'b0;
+                    reg_write = 1'b1;  // Write to integer register
+                    fp_to_int = 1'b1;
+                    case (funct3)
+                        3'b000: fpu_op = FPU_FLE;
+                        3'b001: fpu_op = FPU_FLT;
+                        3'b010: fpu_op = FPU_FEQ;
+                    endcase
+                end
+                7'b1100000: begin  // FCVT.W.S, FCVT.WU.S
+                    fp_reg_write = 1'b0;
+                    reg_write = 1'b1;
+                    fp_to_int = 1'b1;
+                    fpu_op = (rs2 == 5'b00000) ? FPU_CVTWS : FPU_CVTWUS;
+                end
+                7'b1101000: begin  // FCVT.S.W, FCVT.S.WU
+                    int_to_fp = 1'b1;
+                    fpu_op = (rs2 == 5'b00000) ? FPU_CVTSW : FPU_CVTSWU;
+                end
+                7'b1110000: begin
+                    if (funct3 == 3'b000) begin
+                        // FMV.X.W
+                        fp_reg_write = 1'b0;
+                        reg_write = 1'b1;
+                        fp_to_int = 1'b1;
+                        fpu_op = FPU_MVXW;
+                    end else begin
+                        // FCLASS.S
+                        fp_reg_write = 1'b0;
+                        reg_write = 1'b1;
+                        fp_to_int = 1'b1;
+                        fpu_op = FPU_FCLASS;
+                    end
+                end
+                7'b1111000: begin  // FMV.W.X
+                    int_to_fp = 1'b1;
+                    fpu_op = FPU_MVWX;
+                end
+            endcase
+        end
+        
+        OP_FMADD:  begin  // FMADD.S
+            fp_reg_write = 1'b1;
+            fpu_op = FPU_MADD;
+        end
+        
+        OP_FMSUB:  begin  // FMSUB.S
+            fp_reg_write = 1'b1;
+            fpu_op = FPU_MSUB;
+        end
+        
+        OP_FNMSUB: begin  // FNMSUB.S
+            fp_reg_write = 1'b1;
+            fpu_op = FPU_NMSUB;
+        end
+        
+        OP_FNMADD: begin  // FNMADD.S
+            fp_reg_write = 1'b1;
+            fpu_op = FPU_NMADD;
+        end
+    endcase
+end
+```
+
+### 4. Update Top Module (`rtl/top.sv`)
+
+**Changes needed:** Integrate FP register file and FPU
+
+**New internal signals:**
+```systemverilog
+// FP register file signals
+logic [31:0] fp_rs1_data, fp_rs2_data, fp_rs3_data;
+logic [31:0] fp_rd_data;
+logic        fp_reg_write;
+logic [4:0]  fpu_op;
+logic        fp_to_int, int_to_fp;
+logic        is_fp_load, is_fp_store;
+
+// FPU signals
+logic [31:0] fpu_fp_result, fpu_int_result;
+logic [4:0]  fpu_fflags;
+
+// CSR for FP
+logic [31:0] fcsr;
+logic [2:0]  frm;     // Rounding mode (fcsr[7:5])
+logic [4:0]  fflags;  // Exception flags (fcsr[4:0])
+```
+
+**Module instantiations to add:**
+```systemverilog
+// Floating point register file
+fp_regfile fp_regfile_inst (
+    .clk       (clk),
+    .rst       (rst),
+    .rs1       (instruction[19:15]),  // fs1
+    .rs2       (instruction[24:20]),  // fs2
+    .rs3       (instruction[31:27]),  // fs3 (for fused ops)
+    .rd        (instruction[11:7]),   // fd
+    .rd_data   (fp_rd_data),
+    .wr_en     (fp_reg_write),
+    .rs1_data  (fp_rs1_data),
+    .rs2_data  (fp_rs2_data),
+    .rs3_data  (fp_rs3_data)
+);
+
+// Floating point unit
+fpu fpu_inst (
+    .fs1        (fp_rs1_data),
+    .fs2        (fp_rs2_data),
+    .fs3        (fp_rs3_data),
+    .int_src    (rs1_data),  // From integer register file
+    .fpu_op     (fpu_op),
+    .rm         (frm),
+    .fp_result  (fpu_fp_result),
+    .int_result (fpu_int_result),
+    .fflags     (fpu_fflags)
+);
+```
+
+**Data path updates:**
+```systemverilog
+// FP load/store handling
+always_comb begin
+    if (is_fp_load) begin
+        // FLW: load from memory to FP register
+        fp_rd_data = dmem_rdata;
+    end else if (is_fp_store) begin
+        // FSW: store from FP register to memory
+        dmem_wdata = fp_rs2_data;
+    end else if (int_to_fp) begin
+        // Integer to FP conversion/move
+        fp_rd_data = fpu_fp_result;
+    end else begin
+        // Normal FP operation
+        fp_rd_data = fpu_fp_result;
+    end
+end
+
+// Writeback to integer registers (for FP comparisons, conversions)
+always_comb begin
+    if (fp_to_int) begin
+        wr_data = fpu_int_result;
+    end else begin
+        // Existing integer writeback logic
+        wr_data = ...;  // (unchanged)
+    end
+end
+
+// FCSR updates
+always_ff @(posedge clk) begin
+    if (rst) begin
+        fcsr <= 32'h00000000;  // Default: RNE rounding, no flags
+    end else begin
+        // Update fflags on FP operations
+        if (fp_reg_write || fp_to_int) begin
+            fcsr[4:0] <= fcsr[4:0] | fpu_fflags;  // Accumulate exception flags
+        end
+        
+        // CSR writes to fcsr (from CSRRW, CSRRS, etc.)
+        if (is_csr && csr_addr == 12'h003) begin
+            fcsr <= csr_wdata;
+        end
+    end
+end
+
+assign frm = fcsr[7:5];
+assign fflags = fcsr[4:0];
+```
+
+### 5. Update CSR Handling
+
+**Expand CSR decoder** to recognize fcsr (0x003), frm (0x002), fflags (0x001):
+
+```systemverilog
+case (csr_addr)
+    12'h001: csr_rdata = {27'b0, fflags};        // fflags
+    12'h002: csr_rdata = {29'b0, frm};           // frm
+    12'h003: csr_rdata = fcsr;                   // fcsr
+    // ... existing CSRs ...
+endcase
+```
+
+---
+
+## Testing Strategy
+
+### Test Categories
+
+#### 1. FPU Unit Tests (`cpu-sim/tests/fpu_test.rs`)
+
+Create comprehensive FPU unit tests for isolated testing of floating point operations.
+
+**Test structure:**
+```rust
+#[test]
+fn test_fpu_add_basic() {
+    // Test FADD.S with simple values
+    // 1.0 + 2.0 = 3.0
+    // -1.5 + 2.5 = 1.0
+}
+
+#[test]
+fn test_fpu_add_special_values() {
+    // +inf + 1.0 = +inf
+    // -inf + -inf = -inf
+    // +inf + -inf = NaN
+    // NaN + anything = NaN
+}
+
+#[test]
+fn test_fpu_mul_div() {
+    // Test FMUL.S and FDIV.S
+    // 3.5 * 2.0 = 7.0
+    // 10.0 / 2.5 = 4.0
+    // Division by zero handling
+}
+
+#[test]
+fn test_fpu_sqrt() {
+    // Test FSQRT.S
+    // sqrt(4.0) = 2.0
+    // sqrt(0.0) = 0.0
+    // sqrt(-1.0) = NaN (invalid)
+}
+
+#[test]
+fn test_fpu_comparisons() {
+    // Test FEQ.S, FLT.S, FLE.S
+    // 1.5 < 2.0 => 1
+    // 2.0 == 2.0 => 1
+    // NaN == NaN => 0 (per IEEE 754)
+}
+
+#[test]
+fn test_fpu_conversions() {
+    // Test FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU
+    // float(5) = 5.0
+    // int(3.7) = 3 (with RTZ rounding)
+}
+
+#[test]
+fn test_fpu_fused_ops() {
+    // Test FMADD.S, FMSUB.S, FNMSUB.S, FNMADD.S
+    // (2.0 * 3.0) + 1.0 = 7.0
+}
+
+#[test]
+fn test_fpu_sign_injection() {
+    // Test FSGNJ.S, FSGNJN.S, FSGNJX.S
+    // FSGNJ(1.5, -0.0) = -1.5
+}
+
+#[test]
+fn test_fpu_classify() {
+    // Test FCLASS.S
+    // fclass(0.0) = positive zero
+    // fclass(+inf) = positive infinity
+    // fclass(NaN) = quiet NaN
+}
+```
+
+**Estimated:** 15-20 test functions, ~60+ individual test cases
+
+#### 2. FP Register File Tests (`cpu-sim/tests/fp_regfile_test.rs`)
+
+```rust
+#[test]
+fn test_fp_regfile_basic_read_write() {
+    // Test writing and reading FP registers
+    // Verify all 32 registers work independently
+}
+
+#[test]
+fn test_fp_regfile_simultaneous_reads() {
+    // Test reading rs1, rs2, rs3 simultaneously
+    // Important for fused multiply-add operations
+}
+
+#[test]
+fn test_fp_regfile_write_priority() {
+    // Test write timing and priority
+}
+
+#[test]
+fn test_fp_regfile_reset() {
+    // Verify reset behavior (all registers to +0.0)
+}
+```
+
+**Estimated:** 5 test functions
+
+#### 3. CPU Integration Tests (`cpu-sim/tests/cpu_test.rs`)
+
+```rust
+#[test]
+fn test_cpu_flw_fsw() {
+    // Test FP load/store
+    // Load floating point value from memory
+    // Perform operation
+    // Store back to memory
+    // Verify correct value
+}
+
+#[test]
+fn test_cpu_fp_arithmetic_sequence() {
+    // Test sequence of FP operations
+    // a = 1.5
+    // b = 2.0
+    // c = a + b  // 3.5
+    // d = c * a  // 5.25
+    // e = d / b  // 2.625
+}
+
+#[test]
+fn test_cpu_fp_int_interaction() {
+    // Test mixed FP and integer operations
+    // Load integer, convert to float
+    // Perform FP arithmetic
+    // Convert back to integer, store
+}
+
+#[test]
+fn test_cpu_fcsr_operations() {
+    // Test CSR access to fcsr, frm, fflags
+    // Set rounding mode
+    // Perform operation
+    // Check exception flags
+}
+
+#[test]
+fn test_cpu_fp_branching() {
+    // Test FP comparisons with branches
+    // if (fa < fb) goto label
+}
+
+#[test]
+fn test_cpu_fused_multiply_add() {
+    // Test FMADD and variants in CPU context
+    // Verify single-rounding (vs separate mul+add)
+}
+```
+
+**Estimated:** 10-15 test functions
+
+#### 4. Compliance Tests
+
+Use RISC-V Architectural Test Suite for F extension:
+```bash
+# Clone riscv-arch-test
+git clone https://github.com/riscv-non-isa/riscv-arch-test
+
+# Run F extension tests (after implementing test harness)
+```
+
+Key test cases from compliance suite:
+- `fadd` - Addition tests
+- `fsub` - Subtraction tests
+- `fmul` - Multiplication tests
+- `fdiv` - Division tests
+- `fsqrt` - Square root tests
+- `fmadd` - Fused multiply-add tests
+- `fcmp` - Comparison tests
+- `fcvt` - Conversion tests
+- `fclass` - Classification tests
+
+#### 5. Edge Case Testing
+
+**Critical edge cases to test:**
+
+1. **NaN handling:**
+   - Signaling vs quiet NaN
+   - NaN propagation
+   - NaN canonicalization
+
+2. **Infinity handling:**
+   - inf + inf, inf - inf, inf * 0, etc.
+   - Comparisons with infinity
+
+3. **Zero handling:**
+   - Signed zero (+0.0 vs -0.0)
+   - Operations with zero
+
+4. **Rounding modes:**
+   - Test all 5 rounding modes (RNE, RTZ, RDN, RUP, RMM)
+   - Verify correct rounding in edge cases
+
+5. **Subnormal numbers:**
+   - Operations with denormalized numbers
+   - Underflow conditions
+
+6. **Overflow/Underflow:**
+   - Very large number operations
+   - Very small number operations
+
+---
+
+## Build Configuration Updates
+
+### 1. Rust Test Program Target
+
+Update to include F extension support:
+
+**File:** `rust-test-program/.cargo/config.toml`
+
+```toml
+[build]
+target = "riscv32imf-unknown-none-elf"  # CHANGED: rv32im → rv32imf
+```
+
+**Note:** The `riscv32imf-unknown-none-elf` target may not be available in standard Rust. You may need to:
+- Use custom target specification
+- Or compile with `riscv32gc-unknown-none-elf` (includes F and D extensions)
+- Or use `-C target-feature=+f` flag
+
+**Alternative approach:**
+```toml
+[build]
+target = "riscv32gc-unknown-none-elf"
+
+[target.riscv32gc-unknown-none-elf]
+rustflags = ["-C", "target-feature=+f,-d,-c,-a"]
+```
+
+### 2. Assembly Test Programs
+
+Update assembler flags:
+
+**Old:**
+```bash
+riscv64-unknown-elf-as -march=rv32im -mabi=ilp32 -o test.o test.s
+```
+
+**New:**
+```bash
+riscv64-unknown-elf-as -march=rv32imf -mabi=ilp32 -o test.o test.s
+```
+
+**Note:** ABI remains `ilp32` (not `ilp32f`) since we're not using hardware FP calling conventions.
+
+### 3. Create F Extension Test Programs
+
+**New assembly test:** `test_programs/f_extension_test.s`
+
+```assembly
+.section .text
+.global _start
+
+_start:
+    # Test FLW/FSW
+    la x1, float_data
+    flw f0, 0(x1)      # Load 3.14
+    flw f1, 4(x1)      # Load 2.71
+    
+    # Test FADD.S
+    fadd.s f2, f0, f1  # f2 = 3.14 + 2.71 = 5.85
+    
+    # Test FSUB.S
+    fsub.s f3, f0, f1  # f3 = 3.14 - 2.71 = 0.43
+    
+    # Test FMUL.S
+    fmul.s f4, f0, f1  # f4 = 3.14 * 2.71 = 8.5094
+    
+    # Test FDIV.S
+    fdiv.s f5, f0, f1  # f5 = 3.14 / 2.71 = 1.1587
+    
+    # Test FLT.S (comparison)
+    flt.s x2, f1, f0   # x2 = (2.71 < 3.14) = 1
+    
+    # Test FCVT.W.S (float to int)
+    fcvt.w.s x3, f0    # x3 = int(3.14) = 3
+    
+    # Test FCVT.S.W (int to float)
+    addi x4, x0, 42
+    fcvt.s.w f6, x4    # f6 = float(42) = 42.0
+    
+    # Test FSQRT.S
+    fsqrt.s f7, f0     # f7 = sqrt(3.14) ≈ 1.772
+    
+    # Test FMADD.S
+    fmadd.s f8, f0, f1, f2  # f8 = (3.14 * 2.71) + 5.85
+    
+    # Store results
+    fsw f2, 8(x1)
+    fsw f3, 12(x1)
+    fsw f4, 16(x1)
+    
+    # Halt
+    j .
+
+.section .data
+float_data:
+    .float 3.14        # Offset 0
+    .float 2.71        # Offset 4
+    .float 0.0         # Offset 8 (result slot)
+    .float 0.0         # Offset 12 (result slot)
+    .float 0.0         # Offset 16 (result slot)
+```
+
+### 4. CI/CD Pipeline Updates
+
+**File:** `.github/workflows/copilot-setup-steps.yml`
+
+```yaml
+# Update target installation
+- name: Install RISC-V Rust Target
+  run: rustup target add riscv32gc-unknown-none-elf  # Includes F extension
+
+# Update verification
+- name: Verify RISC-V Rust target
+  run: rustup target list --installed | grep riscv32gc-unknown-none-elf
+```
+
+**File:** `.github/workflows/ci.yml`
+
+Add optional F extension test builds:
+```yaml
+- name: Build F extension test programs
+  run: |
+    cd test_programs
+    riscv64-unknown-elf-as -march=rv32imf -mabi=ilp32 -o f_test.o f_extension_test.s
+    riscv64-unknown-elf-ld -T linker.ld -o f_test.elf f_test.o
+```
+
+### 5. Documentation Updates
+
+**Files to update:**
+- `README.md` - Add RV32F to feature list
+- `AGENTS.md` - Add F extension instructions, update test count
+- `cpu-sim/README.md` - Add FP operation examples
+
+---
+
+## Implementation Phases
+
+### Phase 1: Create FP Register File (Estimated: 1-2 days)
+
+**Objective:** Implement and test the floating point register file module
+
+**Tasks:**
+1. [ ] Create `rtl/fp_regfile.sv`
+   - 32 × 32-bit register array
+   - 3 read ports (rs1, rs2, rs3)
+   - 1 write port
+   - Synchronous write, asynchronous read
+   - Reset all registers to +0.0 (0x00000000)
+
+2. [ ] Create unit tests in `tests/src/fp_regfile_test.rs`
+   - Test basic read/write
+   - Test simultaneous 3-port reads
+   - Test write-through behavior
+   - Test reset functionality
+   - Test all 32 registers independently
+
+3. [ ] Lint and verify RTL
+   ```bash
+   verilator --lint-only rtl/fp_regfile.sv
+   ```
+
+4. [ ] Run unit tests
+   ```bash
+   cargo test --package cpu_verifier -- fp_regfile_test
+   ```
+
+**Validation:**
+- [ ] FP register file module compiles without errors
+- [ ] All lint checks pass
+- [ ] All unit tests pass (5+ tests)
+
+**Deliverables:**
+- `rtl/fp_regfile.sv` (new file)
+- `tests/src/fp_regfile_test.rs` (new file)
+- Update `tests/src/lib.rs` to include `mod fp_regfile_test;`
+
+---
+
+### Phase 2: Create Basic FPU (Estimated: 3-5 days)
+
+**Objective:** Implement floating point unit with core arithmetic operations
+
+**Tasks:**
+1. [ ] Create `rtl/fpu.sv` with basic operations
+   - FPU_ADD, FPU_SUB, FPU_MUL, FPU_DIV
+   - Use SystemVerilog `shortreal` for IEEE 754 compliance
+   - Implement special value handling (NaN, infinity, zero)
+   - Basic exception flag generation
+
+2. [ ] Create unit tests in `tests/src/fpu_test.rs`
+   - Test FADD.S with various inputs
+   - Test FSUB.S edge cases
+   - Test FMUL.S including overflow
+   - Test FDIV.S including division by zero
+   - Test NaN propagation
+   - Test infinity handling
+
+3. [ ] Lint and verify RTL
+   ```bash
+   verilator --lint-only rtl/fpu.sv
+   ```
+
+4. [ ] Run unit tests
+   ```bash
+   cargo test --package cpu_verifier -- fpu_test
+   ```
+
+**Validation:**
+- [ ] FPU module compiles without errors
+- [ ] Basic arithmetic operations work correctly
+- [ ] Special values handled per IEEE 754
+- [ ] 10+ FPU tests pass
+
+**Deliverables:**
+- `rtl/fpu.sv` (new file, basic operations only)
+- `tests/src/fpu_test.rs` (new file)
+- Update `tests/src/lib.rs` to include `mod fpu_test;`
+
+---
+
+### Phase 3: Expand FPU Operations (Estimated: 2-3 days)
+
+**Objective:** Add remaining FP operations to FPU
+
+**Tasks:**
+1. [ ] Add to `rtl/fpu.sv`:
+   - FSQRT.S (square root)
+   - FMIN.S, FMAX.S
+   - FSGNJ.S, FSGNJN.S, FSGNJX.S (sign injection)
+   - FEQ.S, FLT.S, FLE.S (comparisons)
+   - FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU (conversions)
+   - FMV.X.W, FMV.W.X (moves)
+   - FCLASS.S (classification)
+   - FMADD.S, FMSUB.S, FNMSUB.S, FNMADD.S (fused operations)
+
+2. [ ] Expand tests in `tests/src/fpu_test.rs`
+   - Test each new operation
+   - Test edge cases for each
+   - Test rounding mode effects
+   - Test exception flag generation
+
+3. [ ] Run expanded tests
+   ```bash
+   cargo test --package cpu_verifier -- fpu_test
+   ```
+
+**Validation:**
+- [ ] All 26 FP operations implemented
+- [ ] All FPU tests pass (20+ tests, 60+ test cases)
+
+**Deliverables:**
+- Updated `rtl/fpu.sv` (complete)
+- Updated `tests/src/fpu_test.rs` (complete)
+
+---
+
+### Phase 4: Update Decoder (Estimated: 1-2 days)
+
+**Objective:** Add FP instruction decoding to decoder module
+
+**Tasks:**
+1. [ ] Update `rtl/decoder.sv`
+   - Add new output ports (fpu_op, fp_reg_write, fp_to_int, int_to_fp, is_fp_load, is_fp_store)
+   - Add FP opcode parameters (OP_FP_LOAD, OP_FP_STORE, OP_FP, OP_FMADD, etc.)
+   - Add FPU operation parameters (matching fpu.sv)
+   - Implement FP instruction decoding logic
+   - Handle all 6 FP opcode types
+
+2. [ ] Lint updated decoder
+   ```bash
+   verilator --lint-only rtl/decoder.sv
+   ```
+
+3. [ ] Verify existing tests still pass
+   ```bash
+   cargo test --package cpu_verifier -- decoder_test
+   ```
+
+**Validation:**
+- [ ] Decoder compiles without errors
+- [ ] FP instructions decoded correctly
+- [ ] Existing RV32IM decoding unaffected
+
+**Deliverables:**
+- Updated `rtl/decoder.sv`
+
+---
+
+### Phase 5: Integrate into Top Module (Estimated: 2-3 days)
+
+**Objective:** Connect FP register file and FPU to top module
+
+**Tasks:**
+1. [ ] Update `rtl/top.sv`
+   - Add FP register file instantiation
+   - Add FPU instantiation
+   - Add internal signals for FP data paths
+   - Implement FP load/store logic
+   - Implement FP-to-int and int-to-FP data routing
+   - Add FCSR register (fcsr, frm, fflags)
+   - Update CSR read/write logic
+   - Connect exception flags to FCSR
+
+2. [ ] Lint updated top module
+   ```bash
+   verilator --lint-only rtl/top.sv
+   ```
+
+3. [ ] Run regression tests
+   ```bash
+   cargo test --verbose
+   ```
+
+**Validation:**
+- [ ] Top module compiles without errors
+- [ ] All existing tests still pass (regression)
+- [ ] FP modules properly integrated
+
+**Deliverables:**
+- Updated `rtl/top.sv`
+
+---
+
+### Phase 6: CPU Integration Tests (Estimated: 2-3 days)
+
+**Objective:** Test FP instructions in full CPU context
+
+**Tasks:**
+1. [ ] Create CPU-level FP tests in `tests/src/cpu_test.rs`
+   - Test FLW/FSW (FP load/store)
+   - Test FP arithmetic in CPU
+   - Test FP comparisons with branches
+   - Test FP/integer conversions
+   - Test FP/integer interaction
+   - Test CSR access (fcsr, frm, fflags)
+   - Test exception flag accumulation
+
+2. [ ] Run CPU integration tests
+   ```bash
+   cargo test --package cpu_verifier -- cpu_test
+   ```
+
+3. [ ] Debug any failures
+   - Use `--nocapture` for debugging output
+   - Check signal values and data paths
+   - Verify instruction encoding
+
+**Validation:**
+- [ ] All CPU FP tests pass (10-15 new tests)
+- [ ] All existing CPU tests pass (regression)
+- [ ] Total test count: 84 (existing) + 35+ (FP) = 119+ tests
+
+**Deliverables:**
+- Updated `tests/src/cpu_test.rs` with FP tests
+
+---
+
+### Phase 7: Assembly Test Programs (Estimated: 1-2 days)
+
+**Objective:** Create and test F extension assembly programs
+
+**Tasks:**
+1. [ ] Create `test_programs/f_extension_test.s`
+   - Test all major FP operations
+   - Test FP arithmetic sequence
+   - Test FP load/store
+   - Test FP/int conversions
+   - Include floating point data section
+
+2. [ ] Build test program
+   ```bash
+   cd test_programs
+   riscv64-unknown-elf-as -march=rv32imf -mabi=ilp32 -o f_test.o f_extension_test.s
+   riscv64-unknown-elf-ld -T linker.ld -o f_test.elf f_test.o
+   ```
+
+3. [ ] Run in CPU simulator
+   ```bash
+   cargo run --package cpu-sim -- test_programs/f_test.elf --verbose
+   ```
+
+4. [ ] Verify results
+   - Check FP register final values
+   - Check memory contents
+   - Check FCSR flags
+
+**Validation:**
+- [ ] Test program assembles without errors
+- [ ] Program executes correctly in simulator
+- [ ] All FP operations produce expected results
+
+**Deliverables:**
+- `test_programs/f_extension_test.s` (new file)
+- `test_programs/f_test.elf` (generated)
+
+---
+
+### Phase 8: Build Configuration Updates (Estimated: 1 day)
+
+**Objective:** Update build configurations and toolchain support
+
+**Tasks:**
+1. [ ] Update Rust target configuration
+   - Modify `rust-test-program/.cargo/config.toml`
+   - Change to `riscv32gc-unknown-none-elf` or custom target
+
+2. [ ] Update CI/CD workflows
+   - Modify `.github/workflows/copilot-setup-steps.yml`
+   - Update target installation
+   - Update verification checks
+
+3. [ ] Verify builds work
+   ```bash
+   cd rust-test-program
+   cargo build --release
+   ```
+
+**Validation:**
+- [ ] Rust programs build with F extension support
+- [ ] CI workflows install correct target
+
+**Deliverables:**
+- Updated `rust-test-program/.cargo/config.toml`
+- Updated `.github/workflows/copilot-setup-steps.yml`
+
+---
+
+### Phase 9: Documentation Updates (Estimated: 1 day)
+
+**Objective:** Update all documentation to reflect F extension support
+
+**Tasks:**
+1. [ ] Update `README.md`
+   - Change "RV32IM" to "RV32IMF"
+   - Add F extension to feature list
+   - Update instruction count (54 → 80 instructions)
+
+2. [ ] Update `AGENTS.md`
+   - Add F extension instructions to supported list
+   - Update test count (84 → 119+)
+   - Add FP operation notes
+   - Document FCSR and exception flags
+
+3. [ ] Update `test_programs/README.md`
+   - Add F extension examples
+   - Update assembler flags
+
+4. [ ] Update `cpu-sim/README.md`
+   - Add FP operation documentation
+   - Add example FP programs
+
+**Validation:**
+- [ ] All documentation accurate and complete
+- [ ] No broken links or references
+
+**Deliverables:**
+- Updated `README.md`
+- Updated `AGENTS.md`
+- Updated `test_programs/README.md`
+- Updated `cpu-sim/README.md`
+
+---
+
+### Phase 10: Final Validation and Compliance (Estimated: 2-3 days)
+
+**Objective:** Comprehensive testing and compliance verification
+
+**Tasks:**
+1. [ ] Run complete test suite
+   ```bash
+   cargo test --verbose
+   cargo test --package cpu-sim
+   ```
+
+2. [ ] Run code quality checks
+   ```bash
+   cargo fmt -- --check
+   cargo clippy -- -D warnings
+   verilator --lint-only rtl/*.sv
+   ```
+
+3. [ ] Test with RISC-V compliance suite (optional)
+   ```bash
+   # Run riscv-arch-test F extension tests
+   ```
+
+4. [ ] Performance testing
+   - Measure simulation speed
+   - Check for timing issues
+   - Profile critical paths
+
+5. [ ] Edge case testing
+   - Test all rounding modes
+   - Test all exception conditions
+   - Test NaN, infinity, subnormal handling
+
+**Validation:**
+- [ ] All 119+ tests pass
+- [ ] Code quality checks pass
+- [ ] Compliance tests pass (if run)
+- [ ] No performance regressions
+
+**Deliverables:**
+- Test report document
+- Performance analysis (optional)
+
+---
+
+## Summary of Implementation Phases
+
+| Phase | Duration | Dependencies | Key Deliverables |
+|-------|----------|--------------|------------------|
+| Phase 1 | 1-2 days | None | FP register file RTL + tests |
+| Phase 2 | 3-5 days | Phase 1 | Basic FPU RTL + tests |
+| Phase 3 | 2-3 days | Phase 2 | Complete FPU with all operations |
+| Phase 4 | 1-2 days | Phase 3 | Updated decoder |
+| Phase 5 | 2-3 days | Phases 1-4 | Integrated top module |
+| Phase 6 | 2-3 days | Phase 5 | CPU integration tests |
+| Phase 7 | 1-2 days | Phase 6 | Assembly test programs |
+| Phase 8 | 1 day | None (parallel) | Build configuration |
+| Phase 9 | 1 day | All phases | Documentation |
+| Phase 10 | 2-3 days | All phases | Final validation |
+
+**Total Estimated Time: 16-25 days**
+
+**Critical Path:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 10
+
+**Parallel Activities:** Phase 8 can start anytime after Phase 1
+
+---
+
+## Risk Assessment
+
+### High-Risk Areas
+
+#### 1. Floating Point Hardware Complexity
+
+**Risk:** FP arithmetic (especially division and square root) creates very long combinational paths, potentially violating timing in single-cycle design.
+
+**Mitigation:**
+- Initial implementation uses SystemVerilog `shortreal` with synthesis tool inference
+- Monitor synthesis reports for critical path violations
+- Consider multi-cycle FP operations if timing cannot be met
+- Alternative: Use iterative algorithms with state machines
+- May need to relax single-cycle requirement for FP ops
+
+**Impact:** High
+**Likelihood:** High
+
+#### 2. IEEE 754 Compliance
+
+**Risk:** Incorrect handling of special values (NaN, infinity, subnormal) and rounding modes leads to non-compliant behavior.
+
+**Mitigation:**
+- Use SystemVerilog built-in FP types (`shortreal`)
+- Extensive testing with RISC-V compliance suite
+- Test all edge cases explicitly
+- Reference implementation comparison (QEMU, Spike)
+- Document any known deviations
+
+**Impact:** High
+**Likelihood:** Medium
+
+#### 3. Test Coverage Gaps
+
+**Risk:** Complex FP behavior has many edge cases that may not be covered by initial tests.
+
+**Mitigation:**
+- Systematic edge case testing (NaN, infinity, zero, subnormal)
+- Use RISC-V architectural test suite
+- Test all rounding modes
+- Test all exception conditions
+- Fuzz testing with random FP values
+
+**Impact:** Medium
+**Likelihood:** Medium
+
+### Medium-Risk Areas
+
+#### 4. Backwards Compatibility
+
+**Risk:** F extension changes break existing RV32IM functionality.
+
+**Mitigation:**
+- Run all 84 existing tests after each change
+- Keep integer and FP data paths separate
+- No changes to integer ALU or register file
+- Regression testing at every phase
+
+**Impact:** High
+**Likelihood:** Low
+
+#### 5. Toolchain Limitations
+
+**Risk:** Rust/assembly toolchain may not fully support RV32F or may have bugs.
+
+**Mitigation:**
+- Test with multiple toolchain versions
+- Use well-established targets (riscv32gc)
+- Verify assembly output manually
+- Document toolchain requirements
+
+**Impact:** Medium
+**Likelihood:** Medium
+
+#### 6. Simulation Performance
+
+**Risk:** FP operations significantly slow down simulation.
+
+**Mitigation:**
+- Profile simulation performance
+- Optimize FPU implementation if needed
+- Use caching strategies
+- Consider parallel testing
+
+**Impact:** Low
+**Likelihood:** Medium
+
+### Low-Risk Areas
+
+#### 7. Documentation Drift
+
+**Risk:** Documentation doesn't reflect actual implementation.
+
+**Mitigation:**
+- Update documentation in parallel with implementation
+- Review documentation in final phase
+- Include examples that are actually tested
+
+**Impact:** Low
+**Likelihood:** Low
+
+---
+
+## Validation Criteria
+
+### Functional Validation
+
+**RTL Level:**
+- [ ] FP register file stores and retrieves 32-bit FP values correctly
+- [ ] FPU produces IEEE 754-compliant results for all operations
+- [ ] Special values (NaN, infinity, zero) handled correctly
+- [ ] All 26 F extension instructions decode correctly
+- [ ] Exception flags (fflags) set correctly
+- [ ] Rounding modes honored (or documented as unsupported)
+
+**CPU Level:**
+- [ ] FLW/FSW load and store FP values correctly
+- [ ] FP instructions execute in CPU context
+- [ ] FP and integer register files operate independently
+- [ ] FP/integer conversions work bidirectionally
+- [ ] FCSR CSR accessible and functional
+- [ ] Exception flags accumulate correctly
+
+**System Level:**
+- [ ] Assembly FP programs execute correctly
+- [ ] Rust FP programs (using `f32`) work correctly
+- [ ] CPU simulator runs F extension ELF files
+- [ ] Multi-instruction FP sequences produce correct results
+
+### Quality Validation
+
+**Code Quality:**
+- [ ] `cargo fmt -- --check` passes
+- [ ] `cargo clippy -- -D warnings` passes
+- [ ] `verilator --lint-only rtl/*.sv` passes for all files
+- [ ] No compiler warnings in Rust or SystemVerilog
+
+**Testing:**
+- [ ] Test count increases from 84 to 119+ (35+ new tests)
+- [ ] All new FP tests pass
+- [ ] All existing tests pass (no regressions)
+- [ ] Code coverage includes all FP instructions
+- [ ] Edge cases comprehensively tested
+
+**Documentation:**
+- [ ] README.md updated with RV32F support
+- [ ] AGENTS.md updated with F extension instructions
+- [ ] Test programs documented with FP examples
+- [ ] Build configuration changes documented
+- [ ] Known limitations documented
+
+### CI/CD Validation
+
+**Automated Checks:**
+- [ ] GitHub Actions CI passes all jobs
+- [ ] Build job completes successfully
+- [ ] Test job runs all 119+ tests successfully
+- [ ] Format check passes
+- [ ] Clippy check passes
+
+**Manual Review:**
+- [ ] Code review completed
+- [ ] Architecture changes approved
+- [ ] Test coverage deemed sufficient
+- [ ] Performance acceptable
+
+---
+
+## Appendices
+
+### Appendix A: RISC-V F Extension Quick Reference
+
+**Floating Point Register Naming:**
+- **f0-f31:** 32 floating point registers (separate from x0-x31)
+
+**Common Instructions:**
+```assembly
+flw f0, 0(x1)          # Load FP word from memory
+fsw f1, 4(x2)          # Store FP word to memory
+fadd.s f2, f0, f1      # f2 = f0 + f1
+fmul.s f3, f0, f1      # f3 = f0 * f1
+fmadd.s f4, f0, f1, f2 # f4 = (f0 * f1) + f2
+flt.s x3, f0, f1       # x3 = (f0 < f1)
+fcvt.w.s x4, f0        # x4 = int(f0)
+fcvt.s.w f5, x5        # f5 = float(x5)
+```
+
+### Appendix B: IEEE 754 Single-Precision Format
+
+```
+31    30      23 22                    0
+┌─────┬─────────┬──────────────────────┐
+│ S   │ Exponent│      Mantissa        │
+└─────┴─────────┴──────────────────────┘
+  1 bit  8 bits        23 bits
+
+Sign: 0 = positive, 1 = negative
+Exponent: Biased by 127 (actual exponent = exponent - 127)
+Mantissa: Implicit leading 1 (1.mantissa)
+
+Value = (-1)^S × 1.mantissa × 2^(exponent-127)
+```
+
+**Special Values:**
+- **Zero:** Exponent = 0, Mantissa = 0
+- **Subnormal:** Exponent = 0, Mantissa ≠ 0
+- **Infinity:** Exponent = 255, Mantissa = 0
+- **NaN:** Exponent = 255, Mantissa ≠ 0
+
+### Appendix C: Rounding Mode Details
+
+**RNE (Round to Nearest, ties to Even):**
+- Round to nearest representable value
+- If exactly halfway, round to even (LSB = 0)
+- Default mode, most commonly used
+
+**RTZ (Round Toward Zero):**
+- Truncate toward zero (like C-style int cast)
+- Always rounds down for positive, up for negative
+
+**RDN (Round Down):**
+- Always round toward negative infinity
+- Useful for interval arithmetic
+
+**RUP (Round Up):**
+- Always round toward positive infinity
+- Useful for interval arithmetic
+
+**RMM (Round to Nearest, ties to Max Magnitude):**
+- Round to nearest representable value
+- If exactly halfway, round away from zero
+
+### Appendix D: Exception Flag Meanings
+
+**NV (Invalid Operation):**
+- sqrt(negative)
+- infinity - infinity
+- 0 / 0
+- infinity / infinity
+- Invalid conversions
+
+**DZ (Divide by Zero):**
+- Finite non-zero number divided by zero
+- Result is infinity with appropriate sign
+
+**OF (Overflow):**
+- Result exceeds maximum representable value
+- Result rounded to infinity (or max value depending on rounding mode)
+
+**UF (Underflow):**
+- Non-zero result smaller than minimum normal number
+- Result may be denormalized or rounded to zero
+
+**NX (Inexact):**
+- Result cannot be represented exactly
+- Most common exception (almost all FP ops set this)
+
+### Appendix E: FPU Operation Encoding Summary
+
+| Operation | Code | Operands | Result Type |
+|-----------|------|----------|-------------|
+| FPU_ADD | 0x00 | fs1, fs2 | FP |
+| FPU_SUB | 0x01 | fs1, fs2 | FP |
+| FPU_MUL | 0x02 | fs1, fs2 | FP |
+| FPU_DIV | 0x03 | fs1, fs2 | FP |
+| FPU_SQRT | 0x04 | fs1 | FP |
+| FPU_MIN | 0x05 | fs1, fs2 | FP |
+| FPU_MAX | 0x06 | fs1, fs2 | FP |
+| FPU_MADD | 0x07 | fs1, fs2, fs3 | FP |
+| FPU_MSUB | 0x08 | fs1, fs2, fs3 | FP |
+| FPU_NMSUB | 0x09 | fs1, fs2, fs3 | FP |
+| FPU_NMADD | 0x0A | fs1, fs2, fs3 | FP |
+| FPU_SGNJ | 0x0B | fs1, fs2 | FP |
+| FPU_SGNJN | 0x0C | fs1, fs2 | FP |
+| FPU_SGNJX | 0x0D | fs1, fs2 | FP |
+| FPU_CVTWS | 0x0E | fs1 | INT |
+| FPU_CVTWUS | 0x0F | fs1 | INT |
+| FPU_CVTSW | 0x10 | int_src | FP |
+| FPU_CVTSWU | 0x11 | int_src | FP |
+| FPU_FEQ | 0x12 | fs1, fs2 | INT |
+| FPU_FLT | 0x13 | fs1, fs2 | INT |
+| FPU_FLE | 0x14 | fs1, fs2 | INT |
+| FPU_FCLASS | 0x15 | fs1 | INT |
+| FPU_MVXW | 0x16 | fs1 | INT |
+| FPU_MVWX | 0x17 | int_src | FP |
+
+### Appendix F: Resources and References
+
+**RISC-V Specifications:**
+- [RISC-V Unprivileged ISA v20191213](https://riscv.org/wp-content/uploads/2019/12/riscv-spec-20191213.pdf)
+  - Chapter 11: "F" Standard Extension for Single-Precision Floating-Point
+- [RISC-V Reader (Patterson & Waterman)](http://riscvbook.com/)
+
+**IEEE 754 Standard:**
+- [IEEE 754-2008 Standard](https://ieeexplore.ieee.org/document/4610935)
+- [What Every Computer Scientist Should Know About Floating-Point Arithmetic](https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html)
+
+**Testing Resources:**
+- [RISC-V Architectural Test Suite](https://github.com/riscv-non-isa/riscv-arch-test)
+- [RISC-V Tests (riscv-tests)](https://github.com/riscv-software-src/riscv-tests)
+- [Berkeley TestFloat](http://www.jhauser.us/arithmetic/TestFloat.html)
+
+**Tools and Simulators:**
+- [Spike RISC-V Simulator](https://github.com/riscv-software-src/riscv-isa-sim)
+- [QEMU RISC-V](https://www.qemu.org/)
+- [Verilator](https://verilator.org/)
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2025-12-31 | GitHub Copilot | Initial comprehensive plan for RV32F extension |
+
+---
+
+## Document Status
+
+✅ **Ready for Implementation**
+
+This plan provides a complete roadmap for adding single-precision floating point support to the RISC-V CPU. All phases are detailed with specific tasks, validation criteria, RTL code examples, and estimated timelines. The plan is optimized for AI coding agent implementation with:
+
+- Clear, sequential phases with dependencies
+- Specific file names and code snippets
+- Comprehensive testing strategy
+- Build configuration details
+- Risk mitigation strategies
+- Validation checklists
+
+**Next Steps:**
+1. Review and approve this plan
+2. Begin Phase 1 implementation
+3. Track progress using the phase checklists
+4. Report progress after each phase completion
+
+---
+
+**END OF DOCUMENT**
