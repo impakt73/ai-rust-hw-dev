@@ -20,6 +20,14 @@ pub struct Alu;
 #[verilog(src = "../rtl/regfile.sv", name = "regfile")]
 pub struct RegFile;
 
+// Define Decompress module
+#[verilog(src = "../rtl/decompress.sv", name = "decompress")]
+pub struct Decompress;
+
+// Define IFetch module
+#[verilog(src = "../rtl/ifetch.sv", name = "ifetch")]
+pub struct IFetch;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -63,4 +71,14 @@ pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 // Helper function to create a runtime for the RegFile
 pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["regfile.sv"])
+}
+
+// Helper function to create a runtime for the Decompressor
+pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["decompress.sv"])
+}
+
+// Helper function to create a runtime for the Instruction Fetch Unit
+pub fn create_ifetch_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["ifetch.sv"])
 }
