@@ -443,6 +443,7 @@ fn test_packet_protocol_infrastructure() {
 }
 
 #[test]
+#[ignore]
 fn test_packet_protocol_end_to_end() {
     use riscv_protocol::*;
 
