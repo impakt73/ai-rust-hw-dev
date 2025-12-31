@@ -135,7 +135,7 @@ where
 
         // Data Memory Read
         let dmem_addr = self.cpu.dmem_addr;
-        let rdata = if self.cpu.dmem_we == 0 {
+        let rdata = if self.cpu.dmem_re != 0 {
             self.bus.read_word(dmem_addr)
         } else {
             0
@@ -214,133 +214,34 @@ where
     pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
         self.reset();
 
-        // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         while self.cycle_count < max_cycles {
-            // Instruction Fetch
-            let pc = self.cpu.imem_addr;
-            let instruction = self.bus.read_word(pc);
-            self.cpu.imem_data = instruction;
-
-            // First evaluation: Decode instruction and compute addresses
-            // This eval() propagates the new instruction through the combinational
-            // logic, computing outputs like dmem_addr (for load/store operations),
-            // dmem_we, dmem_wdata, etc.
-            self.cpu.eval();
-
-            // Data Memory Read (use address from THIS cycle's computation)
-            // After the first eval, dmem_addr contains the data memory address
-            // computed by the instruction just decoded (for load/store operations).
-            // Only read if this is NOT a write instruction (dmem_we == 0) to avoid
-            // spurious reads with side effects (e.g., draining FIFO queues).
-            let dmem_addr = self.cpu.dmem_addr;
-            let rdata = if self.cpu.dmem_we == 0 {
-                self.bus.read_word(dmem_addr)
-            } else {
-                0 // For stores, rdata is not used by the CPU and should not trigger side effects
-            };
-            self.cpu.dmem_rdata = rdata;
-
-            // Second evaluation: Propagate loaded data to rd_data
-            // For load instructions, this eval() propagates dmem_rdata through the
-            // combinational path to rd_data so it can be written to the register file
-            // on the next clock edge. This is necessary because Verilator requires
-            // explicit eval() calls to propagate combinational logic changes.
-            self.cpu.eval();
-
-            // Data Memory Write
-            // dmem_we and dmem_wdata are stable after eval
-            if self.cpu.dmem_we != 0 {
-                let wdata = self.cpu.dmem_wdata;
-                let byte_enable = self.cpu.dmem_be;
-                self.bus.write_word_with_be(dmem_addr, wdata, byte_enable);
-                log::debug!(
-                    "Memory Write: addr=0x{:08x}, data=0x{:08x}, be=0x{:02x}",
-                    dmem_addr,
-                    wdata,
-                    byte_enable
+            // Execute one step and check for halt
+            if let Some(tohost_value) = self.step() {
+                log::info!(
+                    "Halt signal detected at tohost (0x{:08x}), value=0x{:08x}",
+                    TOHOST_ADDR,
+                    tohost_value
                 );
-
-                // Check for halt signal
-                if dmem_addr == TOHOST_ADDR {
-                    log::info!(
-                        "Halt signal detected at tohost (0x{:08x}), value=0x{:08x}",
-                        TOHOST_ADDR,
-                        wdata
-                    );
-                    return Ok(SimulationResult {
-                        cycles: self.cycle_count,
-                        tohost_value: Some(wdata),
-                    });
-                }
+                return Ok(SimulationResult {
+                    cycles: self.cycle_count,
+                    tohost_value: Some(tohost_value),
+                });
             }
 
-            // Sample debug signals BEFORE clock tick to capture the values that were
-            // actually used during instruction execution, not the values after the write.
-            // This is critical for correctness when rd == rs1 or rd == rs2.
-            // Only sample if trace is needed (either for printing or callback)
-            let trace = if self.print_inst_trace || self.trace_callback.is_some() {
-                let rs1_value = self.cpu.debug_rs1_data;
-                let rs2_value = self.cpu.debug_rs2_data;
-                let rd_value = self.cpu.debug_rd_data;
-                Some(InstructionTrace::from_instruction(
-                    pc,
-                    instruction,
-                    rs1_value,
-                    rs2_value,
-                    rd_value,
-                ))
-            } else {
-                None
-            };
-
-            // Clock tick
-            self.cpu.clk = 0;
-            self.cpu.eval();
-            self.cpu.clk = 1;
-            self.cpu.eval();
-
-            // Process FIFO TX data
-            while let Some(word) = self.bus.fifo.tx.pop_front() {
-                if let Some(ref mut callback) = self.fifo_callback {
-                    callback(word);
-                }
-                // If no callback, just clear the buffer (don't print)
-            }
-
-            // Call trace callback if provided
-            if let Some(ref mut callback) = self.trace_callback {
-                if let Some(ref trace_data) = trace {
-                    callback(trace_data);
-                }
-            }
-
-            // Debug logging: print using the trace structure for backward compatibility
-            if self.print_inst_trace {
-                if let Some(ref trace_data) = trace {
-                    println!(
-                        "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                        self.cycle_count, pc, pc, instruction, trace_data
-                    );
-                }
-            }
-
-            // Log execution (original verbose logging)
+            // Log execution periodically for debugging
             if !self.print_inst_trace
                 && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
             {
                 log::debug!(
-                    "Cycle {}: PC=0x{:08x}, Instr=0x{:08x}",
+                    "Cycle {}: PC=0x{:08x}",
                     self.cycle_count,
-                    pc,
-                    instruction
+                    self.cpu.imem_addr
                 );
             }
-
-            self.cycle_count += 1;
         }
 
         log::warn!("Simulation reached max cycles ({})", max_cycles);

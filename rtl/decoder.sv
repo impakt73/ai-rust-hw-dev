@@ -18,6 +18,7 @@ module decoder (
     output logic        alu_src,      // 0: rs2, 1: immediate
     output logic        reg_write,
     output logic        mem_write,
+    output logic        mem_read,
     output logic        mem_to_reg,
     output logic        branch,
     output logic        jump,
@@ -83,6 +84,7 @@ module decoder (
         alu_src = 1'b0;
         reg_write = 1'b0;
         mem_write = 1'b0;
+        mem_read = 1'b0;
         mem_to_reg = 1'b0;
         branch = 1'b0;
         jump = 1'b0;
@@ -131,6 +133,7 @@ module decoder (
                 alu_op = ALU_ADD;  // Calculate address
                 alu_src = 1'b1;    // Use immediate offset
                 reg_write = 1'b1;
+                mem_read = 1'b1;
                 mem_to_reg = 1'b1;
             end
 
