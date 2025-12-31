@@ -52,6 +52,12 @@ mod tests {
         println!("\n=== BYTE ENABLE TEST: HEAP DIRECT ACCESS ===");
         println!("Total words received: {}", words.len());
         
+        // Print all words for debugging
+        println!("\nAll FIFO words:");
+        for (i, &word) in words.iter().enumerate() {
+            println!("  [{}]: 0x{:08x} ({})", i, word, word);
+        }
+        
         // Find markers
         let marker_a = words.iter().position(|&w| w == 0xAAAAAAAA);
         let marker_b = words.iter().position(|&w| w == 0xBBBBBBBB);

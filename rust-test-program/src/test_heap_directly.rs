@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 use riscv_rt::entry;
@@ -57,15 +56,40 @@ fn write_tohost(value: u32) -> ! {
 
 #[entry]
 fn main() -> ! {
-    // Test 1: Write directly to allocated memory
+    // Test 1: Write directly to allocated memory - ONE BYTE AT A TIME
     unsafe {
         let layout = Layout::from_size_align(8, 1).unwrap();
         let ptr = ALLOCATOR.alloc(layout);
         
-        // Write known pattern
+        // Send the pointer address to FIFO for debugging
+        write_volatile(FIFO_DATA as *mut u32, 0xDEADBEEF);  // Debug marker
+        write_volatile(FIFO_DATA as *mut u32, ptr as u32);  // Pointer address
+        
+        // Write first byte
         core::ptr::write(ptr.add(0), 0x12u8);
+        // Read it back immediately
+        let val0 = core::ptr::read(ptr.add(0));
+        write_volatile(FIFO_DATA as *mut u32, val0 as u32);
+        
+        // Write second byte
         core::ptr::write(ptr.add(1), 0x34u8);
+        // Read both bytes back
+        let val0_after = core::ptr::read(ptr.add(0));
+        let val1 = core::ptr::read(ptr.add(1));
+        write_volatile(FIFO_DATA as *mut u32, val0_after as u32);
+        write_volatile(FIFO_DATA as *mut u32, val1 as u32);
+        
+        // Write third byte
         core::ptr::write(ptr.add(2), 0x56u8);
+        // Read all three bytes back
+        let val0_after2 = core::ptr::read(ptr.add(0));
+        let val1_after = core::ptr::read(ptr.add(1));
+        let val2 = core::ptr::read(ptr.add(2));
+        write_volatile(FIFO_DATA as *mut u32, val0_after2 as u32);
+        write_volatile(FIFO_DATA as *mut u32, val1_after as u32);
+        write_volatile(FIFO_DATA as *mut u32, val2 as u32);
+        
+        // Now write the remaining bytes
         core::ptr::write(ptr.add(3), 0x78u8);
         core::ptr::write(ptr.add(4), 0x9Au8);
         core::ptr::write(ptr.add(5), 0xBCu8);
@@ -75,7 +99,7 @@ fn main() -> ! {
         // Write marker
         write_volatile(FIFO_DATA as *mut u32, 0xAAAAAAAA);
         
-        // Read back and write to FIFO
+        // Read back all and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
             write_volatile(FIFO_DATA as *mut u32, byte as u32);
@@ -83,28 +107,6 @@ fn main() -> ! {
         
         // Write marker
         write_volatile(FIFO_DATA as *mut u32, 0xBBBBBBBB);
-    }
-    
-    // Test 2: Use Vec::with_capacity and set_len
-    unsafe {
-        let mut v = Vec::with_capacity(8);
-        let ptr: *mut u8 = v.as_mut_ptr();
-        
-        // Write directly to the Vec's buffer
-        core::ptr::write(ptr.add(0), 0xAAu8);
-        core::ptr::write(ptr.add(1), 0xBBu8);
-        core::ptr::write(ptr.add(2), 0xCCu8);
-        core::ptr::write(ptr.add(3), 0xDDu8);
-        
-        v.set_len(4);
-        
-        // Write marker
-        write_volatile(FIFO_DATA as *mut u32, 0xCCCCCCCC);
-        
-        // Read through Vec API
-        for &byte in v.iter() {
-            write_volatile(FIFO_DATA as *mut u32, byte as u32);
-        }
     }
     
     write_tohost(42);
