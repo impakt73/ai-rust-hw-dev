@@ -1,5 +1,5 @@
-use riscv_protocol::*;
 use postcard::{from_bytes, to_allocvec};
+use riscv_protocol::*;
 
 #[test]
 fn test_nop_packet_roundtrip() {

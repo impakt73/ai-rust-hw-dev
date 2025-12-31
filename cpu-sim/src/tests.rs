@@ -598,7 +598,7 @@ fn test_packet_protocol_end_to_end() {
     }
 
     println!("Parsing received packets using postcard...");
-    
+
     // Convert first few words to bytes for debug display
     let mut first_bytes = Vec::new();
     for i in 0..fifo_words.len().min(16) {
@@ -621,8 +621,14 @@ fn test_packet_protocol_end_to_end() {
             "  ✓ Debug packet: level={:?}, message='{}'",
             debug_pkt.level, debug_pkt.message
         );
-        assert_eq!(debug_pkt.header.magic, 0x52565043, "Debug packet should have correct magic");
-        assert_eq!(debug_pkt.message, "CPU Started", "Debug message should match");
+        assert_eq!(
+            debug_pkt.header.magic, 0x52565043,
+            "Debug packet should have correct magic"
+        );
+        assert_eq!(
+            debug_pkt.message, "CPU Started",
+            "Debug message should match"
+        );
         found_debug = true;
     } else {
         println!("  ✗ Failed to deserialize Debug packet");
@@ -634,7 +640,10 @@ fn test_packet_protocol_end_to_end() {
             "  ✓ Echo response: sequence={} (expected 101)",
             echo_pkt.sequence
         );
-        assert_eq!(echo_pkt.header.magic, 0x52565043, "Echo packet should have correct magic");
+        assert_eq!(
+            echo_pkt.header.magic, 0x52565043,
+            "Echo packet should have correct magic"
+        );
         assert_eq!(
             echo_pkt.sequence, 101,
             "Echo sequence should be incremented"
@@ -650,7 +659,10 @@ fn test_packet_protocol_end_to_end() {
             "  ✓ DataU32 response: value={} (expected 2000)",
             data_pkt.value
         );
-        assert_eq!(data_pkt.header.magic, 0x52565043, "DataU32 packet should have correct magic");
+        assert_eq!(
+            data_pkt.header.magic, 0x52565043,
+            "DataU32 packet should have correct magic"
+        );
         assert_eq!(data_pkt.value, 2000, "DataU32 value should be doubled");
         found_data = true;
     } else {
@@ -663,7 +675,10 @@ fn test_packet_protocol_end_to_end() {
             "  ✓ Assert packet: passed={}, message='{}'",
             assert_pkt.passed, assert_pkt.message
         );
-        assert_eq!(assert_pkt.header.magic, 0x52565043, "Assert packet should have correct magic");
+        assert_eq!(
+            assert_pkt.header.magic, 0x52565043,
+            "Assert packet should have correct magic"
+        );
         assert!(
             assert_pkt.passed,
             "Assert packet should indicate test passed"
