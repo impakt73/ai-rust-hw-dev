@@ -6,7 +6,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 use riscv_rt::entry;
-use riscv_macros::cprintln;
+use riscv_macros::rvprintln;
 
 // Simple bump allocator
 use core::alloc::{GlobalAlloc, Layout};
@@ -56,6 +56,6 @@ fn write_tohost(value: u32) -> ! {
 
 #[entry]
 fn main() -> ! {
-    cprintln!("Hello!");
+    rvprintln!("Hello!");
     write_tohost(42);
 }

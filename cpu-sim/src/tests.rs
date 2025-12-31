@@ -721,7 +721,7 @@ fn test_println_macro() {
     println!("\n========================================");
     println!("PRINTLN MACRO TEST");
     println!("========================================");
-    println!("Testing cprintln! macro functionality...\n");
+    println!("Testing rvprintln! macro functionality...\n");
 
     let elf_path = test_program_path("println_test.elf");
 
@@ -759,7 +759,7 @@ fn test_println_macro() {
     println!("Running CPU program...\n");
 
     // Run until halt
-    let result = sim.run(10000).expect("Simulation should succeed");
+    let result = sim.run(15000).expect("Simulation should succeed");
 
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();
@@ -771,21 +771,69 @@ fn test_println_macro() {
         fifo_tx.push_back(word);
     }
 
-    // Try to receive DebugPackets
+    // Expected messages from the test program
+    let expected_messages = vec![
+        ("Hello from RISC-V CPU!\n", riscv_protocol::DebugLevel::Info),
+        ("The answer is 42\n", riscv_protocol::DebugLevel::Info),
+        ("Testing println macro\n", riscv_protocol::DebugLevel::Info),
+    ];
+
+    // Try to receive and validate DebugPackets
     let mut packet_count = 0;
-    while let Ok(Some(debug_pkt)) = crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
-        packet_count += 1;
-        let level_str = match debug_pkt.level {
-            riscv_protocol::DebugLevel::Trace => "[TRACE]",
-            riscv_protocol::DebugLevel::Debug => "[DEBUG]",
-            riscv_protocol::DebugLevel::Info => "[INFO]",
-            riscv_protocol::DebugLevel::Warning => "[WARN]",
-            riscv_protocol::DebugLevel::Error => "[ERROR]",
-        };
-        println!("{} {}", level_str, debug_pkt.message);
+    for (expected_msg, expected_level) in expected_messages.iter() {
+        match crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
+            Ok(Some(debug_pkt)) => {
+                packet_count += 1;
+
+                // Validate packet level
+                assert_eq!(
+                    debug_pkt.level, *expected_level,
+                    "Packet {} should have level {:?}",
+                    packet_count, expected_level
+                );
+
+                // Validate packet message
+                assert_eq!(
+                    debug_pkt.message, *expected_msg,
+                    "Packet {} should have message '{}'",
+                    packet_count, expected_msg
+                );
+
+                // Validate packet header magic
+                assert_eq!(
+                    debug_pkt.header.magic, 0x52565043,
+                    "Packet {} should have correct magic number",
+                    packet_count
+                );
+
+                // Validate packet type
+                assert_eq!(
+                    debug_pkt.header.packet_type,
+                    riscv_protocol::PacketType::Debug,
+                    "Packet {} should be a Debug packet",
+                    packet_count
+                );
+
+                // Print for visibility
+                let level_str = match debug_pkt.level {
+                    riscv_protocol::DebugLevel::Trace => "[TRACE]",
+                    riscv_protocol::DebugLevel::Debug => "[DEBUG]",
+                    riscv_protocol::DebugLevel::Info => "[INFO]",
+                    riscv_protocol::DebugLevel::Warning => "[WARN]",
+                    riscv_protocol::DebugLevel::Error => "[ERROR]",
+                };
+                print!("{} {}", level_str, debug_pkt.message);
+            }
+            Ok(None) => {
+                panic!("Expected packet {} but received None", packet_count + 1);
+            }
+            Err(e) => {
+                panic!("Failed to deserialize packet {}: {}", packet_count + 1, e);
+            }
+        }
     }
 
-    println!("\nReceived {} DebugPacket(s)", packet_count);
+    println!("\nReceived and validated {} DebugPacket(s)", packet_count);
 
     // Verify successful completion
     assert_eq!(
@@ -794,15 +842,15 @@ fn test_println_macro() {
         "Program should complete with success code 42"
     );
 
-    assert!(
-        packet_count > 0,
-        "Should have received at least one DebugPacket"
+    assert_eq!(
+        packet_count, 3,
+        "Should have received exactly 3 DebugPackets"
     );
 
     println!("\n========================================");
     println!("PRINTLN MACRO TEST COMPLETE ✓");
     println!("========================================");
-    println!("✓ cprintln! messages received and printed");
+    println!("✓ rvprintln! messages received and validated");
     println!(
         "✓ Program completed successfully in {} cycles",
         result.cycles

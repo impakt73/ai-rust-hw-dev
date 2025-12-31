@@ -6,7 +6,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 use riscv_rt::entry;
-use riscv_macros::cprintln;
+use riscv_macros::rvprintln;
 
 // Simple bump allocator
 use core::alloc::{GlobalAlloc, Layout};
@@ -57,13 +57,13 @@ fn write_tohost(value: u32) -> ! {
 #[entry]
 fn main() -> ! {
     // Test basic println functionality
-    cprintln!("Hello from RISC-V CPU!");
+    rvprintln!("Hello from RISC-V CPU!");
     
     // Test formatted output with arguments
-    cprintln!("The answer is {}", 42);
+    rvprintln!("The answer is {}", 42);
     
     // Test multiple messages
-    cprintln!("Testing println macro");
+    rvprintln!("Testing println macro");
     
     // Signal success
     write_tohost(42);

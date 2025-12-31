@@ -38,34 +38,69 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
     }
 }
 
-/// Print formatted output to the host console (Info level)
+/// Print formatted output to the host console (Info level) without newline
 ///
-/// Usage: `cprintln!("Hello, {}!", "world");`
+/// Usage: `rvprint!("Hello, {}!", "world");`
 ///
-/// This macro works like println! but sends the output to the host
+/// This macro works like print! but sends the output to the host
 /// via the MMIO FIFO using DebugPacket protocol.
 #[macro_export]
-macro_rules! cprintln {
+macro_rules! rvprint {
     ($($arg:tt)*) => {{
         let msg = $crate::alloc::format!($($arg)*);
         $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Info, msg);
     }};
 }
 
-/// Print formatted debug output to the host console (Debug level)
+/// Print formatted output to the host console (Info level) with newline
+///
+/// Usage: `rvprintln!("Hello, {}!", "world");`
+///
+/// This macro works like println! but sends the output to the host
+/// via the MMIO FIFO using DebugPacket protocol.
 #[macro_export]
-macro_rules! cdebugln {
+macro_rules! rvprintln {
+    ($($arg:tt)*) => {{
+        let mut msg = $crate::alloc::format!($($arg)*);
+        msg.push('\n');
+        $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Info, msg);
+    }};
+}
+
+/// Print formatted debug output to the host console (Debug level) without newline
+#[macro_export]
+macro_rules! rvdebug {
     ($($arg:tt)*) => {{
         let msg = $crate::alloc::format!($($arg)*);
         $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Debug, msg);
     }};
 }
 
-/// Print formatted error output to the host console (Error level)
+/// Print formatted debug output to the host console (Debug level) with newline
 #[macro_export]
-macro_rules! cerrorln {
+macro_rules! rvdebugln {
+    ($($arg:tt)*) => {{
+        let mut msg = $crate::alloc::format!($($arg)*);
+        msg.push('\n');
+        $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Debug, msg);
+    }};
+}
+
+/// Print formatted error output to the host console (Error level) without newline
+#[macro_export]
+macro_rules! rverror {
     ($($arg:tt)*) => {{
         let msg = $crate::alloc::format!($($arg)*);
+        $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Error, msg);
+    }};
+}
+
+/// Print formatted error output to the host console (Error level) with newline
+#[macro_export]
+macro_rules! rverrorln {
+    ($($arg:tt)*) => {{
+        let mut msg = $crate::alloc::format!($($arg)*);
+        msg.push('\n');
         $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Error, msg);
     }};
 }

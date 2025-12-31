@@ -19,21 +19,33 @@ The task was to create a println!-like macro that:
 #### 1. riscv_macros Library (New)
 **Location:** `riscv_macros/`
 
-A new `no_std` compatible library that provides three macros:
-- `cprintln!()` - Info level formatted print
-- `cdebugln!()` - Debug level formatted print  
-- `cerrorln!()` - Error level formatted print
+A new `no_std` compatible library that provides six macros:
+- `rvprint!()` - Info level formatted print without newline
+- `rvprintln!()` - Info level formatted print with newline
+- `rvdebug!()` - Debug level formatted print without newline
+- `rvdebugln!()` - Debug level formatted print with newline
+- `rverror!()` - Error level formatted print without newline
+- `rverrorln!()` - Error level formatted print with newline
 
 **Implementation Details:**
 - Uses Rust's `format!()` macro for string formatting
 - Creates DebugPacket with formatted message
 - Serializes packet using postcard
 - Writes to MMIO FIFO at address `0x4000_0000`
+- The `*ln` variants append a newline to the formatted message
 
 **Key Code:**
 ```rust
 #[macro_export]
-macro_rules! cprintln {
+macro_rules! rvprintln {
+    ($($arg:tt)*) => {{
+        let msg = $crate::alloc::format!("{}\n", $crate::alloc::format!($($arg)*));
+        $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Info, msg);
+    }};
+}
+
+#[macro_export]
+macro_rules! rvprint {
     ($($arg:tt)*) => {{
         let msg = $crate::alloc::format!($($arg)*);
         $crate::send_debug_message($crate::riscv_protocol::DebugLevel::Info, msg);
@@ -65,7 +77,7 @@ if self.print_debug_packets && self.fifo_callback.is_none() {
 **Output:** `test_programs/println_test.elf`
 
 A demonstration program that:
-- Uses cprintln! to print messages
+- Uses rvprintln! to print messages
 - Tests formatted output with arguments
 - Validates the macro functionality
 
@@ -76,19 +88,19 @@ Comprehensive test that:
 - Loads and runs println_test.elf
 - Captures FIFO output via callback
 - Parses DebugPackets
-- Verifies all messages are received
-- Checks formatted content
+- Validates message content, level, and packet structure
+- Checks that exactly 3 packets are received with expected content
 
 ## How It Works (End-to-End)
 
-1. **CPU Program** calls `cprintln!("Hello {}", 42)`
-2. **Macro** formats string to "Hello 42"
+1. **CPU Program** calls `rvprintln!("Hello {}", 42)`
+2. **Macro** formats string to "Hello 42\n"
 3. **send_debug_message()** creates DebugPacket
 4. **Postcard** serializes packet to bytes
 5. **MMIO Write** sends bytes to FIFO_DATA (0x4000_0000)
 6. **FIFO** transfers data from CPU to host
 7. **Simulator** receives bytes via FIFO TX
-8. **Automatic Printing** deserializes and prints: `[INFO] Hello 42`
+8. **Automatic Printing** deserializes and prints: `[INFO] Hello 42` (with newline)
 
 ## Testing
 
@@ -107,8 +119,8 @@ Output:
 [INFO] The answer is 42
 [INFO] Testing println macro
 
-Received 3 DebugPacket(s)
-✓ cprintln! messages received and printed
+Received and validated 3 DebugPacket(s)
+✓ rvprintln! messages received and validated
 ✓ Program completed successfully in 9625 cycles
 ```
 
@@ -131,27 +143,18 @@ Output shows formatted messages with `[INFO]` prefix.
 ### Modified Files
 - `Cargo.toml` - Added riscv_macros to workspace
 - `cpu-sim/src/sim.rs` - Automatic DebugPacket printing
-- `cpu-sim/src/tests.rs` - Integration test
+- `cpu-sim/src/tests.rs` - Integration test with content validation
 - `rust-test-program/Cargo.toml` - Added riscv_macros dependency
 
 ## Benefits
 
 1. **Easy to Use:** Familiar println!-like syntax
 2. **No Code Duplication:** Reuses existing packet infrastructure
-3. **Flexible:** Three log levels (Info, Debug, Error)
-4. **Well Tested:** Integration test and manual verification
+3. **Flexible:** Three log levels (Info, Debug, Error) with and without newline
+4. **Well Tested:** Integration test validates content and structure
 5. **Documented:** README with examples
 6. **Minimal Changes:** Small, focused modifications
 
-## Future Enhancements
-
-Potential improvements:
-- Add more log levels (Trace, Warning)
-- Support for print! (without newline)
-- Binary data printing (hexdump style)
-- Conditional compilation for debug builds only
-- Performance optimization for large messages
-
 ## Conclusion
 
-The implementation successfully provides a println!-like macro for RISC-V bare-metal programs. It leverages the existing DebugPacket and MMIO FIFO infrastructure, requires minimal code changes, and is well-tested and documented.
+The implementation successfully provides a println!-like macro for RISC-V bare-metal programs. It leverages the existing DebugPacket and MMIO FIFO infrastructure, requires minimal code changes, and is well-tested and documented. The macros use the `rv` prefix to clearly indicate they are specific to the RISC-V simulated CPU environment.

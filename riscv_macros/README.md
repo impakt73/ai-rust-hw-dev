@@ -8,39 +8,46 @@ This library provides formatted print macros that send messages from the simulat
 
 ## Macros
 
-### `cprintln!(...)`
+### `rvprint!(...)` and `rvprintln!(...)`
 
 Print formatted output to the host console at Info level.
 
 **Usage:**
 ```rust
-use riscv_macros::cprintln;
+use riscv_macros::{rvprint, rvprintln};
 
-cprintln!("Hello, world!");
-cprintln!("The answer is: {}", 42);
-cprintln!("x = {}, y = {}", 10, 20);
+rvprintln!("Hello, world!");
+rvprintln!("The answer is: {}", 42);
+rvprintln!("x = {}, y = {}", 10, 20);
+
+rvprint!("No newline");
+rvprint!(" continuation");
 ```
 
-### `cdebugln!(...)`
+### `rvdebug!(...)` and `rvdebugln!(...)`
 
 Print formatted debug output to the host console at Debug level.
 
 **Usage:**
 ```rust
-use riscv_macros::cdebugln;
+use riscv_macros::{rvdebug, rvdebugln};
 
-cdebugln!("Debug: variable value = {}", value);
+rvdebugln!("Debug: variable value = {}", value);
+rvdebug!("partial ");
+rvdebug!("message");
 ```
 
-### `cerrorln!(...)`
+### `rverror!(...)` and `rverrorln!(...)`
 
 Print formatted error output to the host console at Error level.
 
 **Usage:**
 ```rust
-use riscv_macros::cerrorln;
+use riscv_macros::{rverror, rverrorln};
 
-cerrorln!("Error: invalid state = {}", state);
+rverrorln!("Error: invalid state = {}", state);
+rverror!("Error code: ");
+rverror!("{}", code);
 ```
 
 ## Requirements
@@ -56,14 +63,14 @@ cerrorln!("Error: invalid state = {}", state);
 #![no_main]
 
 extern crate alloc;
-use riscv_macros::cprintln;
+use riscv_macros::rvprintln;
 
 // ... allocator setup ...
 
 #[entry]
 fn main() -> ! {
-    cprintln!("Hello from RISC-V CPU!");
-    cprintln!("The answer is {}", 42);
+    rvprintln!("Hello from RISC-V CPU!");
+    rvprintln!("The answer is {}", 42);
     
     // Signal program completion
     write_tohost(42);
@@ -81,9 +88,9 @@ fn main() -> ! {
 ## Output
 
 Messages are printed with a level prefix:
-- `[INFO]` for `cprintln!`
-- `[DEBUG]` for `cdebugln!`
-- `[ERROR]` for `cerrorln!`
+- `[INFO]` for `rvprint!` and `rvprintln!`
+- `[DEBUG]` for `rvdebug!` and `rvdebugln!`
+- `[ERROR]` for `rverror!` and `rverrorln!`
 
 Example output:
 ```
