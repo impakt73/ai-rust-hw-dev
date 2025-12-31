@@ -21,10 +21,16 @@ module top (
     // System control signals
     output logic        halted,       // CPU halted (ECALL/EBREAK)
     
-    // Debug outputs (for tracing register values)
+    // Debug outputs (for tracing register values and instruction info)
     output logic [31:0] debug_rs1_data,
     output logic [31:0] debug_rs2_data,
-    output logic [31:0] debug_rd_data
+    output logic [31:0] debug_rd_data,
+    
+    // Debug outputs for RV32C support (instruction tracing)
+    output logic [31:0] debug_pc,              // Current PC value
+    output logic [31:0] debug_fetched_insn,    // Raw instruction from ifetch
+    output logic [31:0] debug_executed_insn,   // Instruction being executed (post-decompression)
+    output logic        debug_is_compressed    // Whether current instruction is compressed
 );
 
     // Internal signals
@@ -367,5 +373,11 @@ module top (
     assign debug_rs1_data = rs1_data;
     assign debug_rs2_data = rs2_data;
     assign debug_rd_data = rd_data;
+    
+    // Debug outputs for RV32C support
+    assign debug_pc = pc;
+    assign debug_fetched_insn = fetched_instruction;
+    assign debug_executed_insn = instruction;
+    assign debug_is_compressed = is_compressed;
 
 endmodule

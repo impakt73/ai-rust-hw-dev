@@ -126,9 +126,9 @@ where
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
         // Instruction Fetch
-        let pc = self.cpu.imem_addr;
-        let instruction = self.bus.read_word(pc);
-        self.cpu.imem_data = instruction;
+        let pc_addr = self.cpu.imem_addr;
+        let instruction_data = self.bus.read_word(pc_addr);
+        self.cpu.imem_data = instruction_data;
 
         // First evaluation: Decode instruction and compute addresses
         self.cpu.eval();
@@ -159,7 +159,10 @@ where
         }
 
         // Sample debug signals BEFORE clock tick
+        // Use the debug signals from the CPU which correctly show PC and instruction
         let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+            let pc = self.cpu.debug_pc;                    // Actual PC value
+            let instruction = self.cpu.debug_executed_insn; // Executed instruction (post-decompression)
             let rs1_value = self.cpu.debug_rs1_data;
             let rs2_value = self.cpu.debug_rs2_data;
             let rd_value = self.cpu.debug_rd_data;
@@ -197,9 +200,15 @@ where
         // Debug logging
         if self.print_inst_trace {
             if let Some(ref trace_data) = trace {
+                let pc = self.cpu.debug_pc;
+                let fetched_insn = self.cpu.debug_fetched_insn;
+                let executed_insn = self.cpu.debug_executed_insn;
+                let is_compressed = self.cpu.debug_is_compressed != 0;
+                let insn_size = if is_compressed { 2 } else { 4 };
+                
                 println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, trace_data
+                    "Cycle {:6} | PC: 0x{:08x} | Fetch: 0x{:08x} | Exec: 0x{:08x} | Size: {} | {}",
+                    self.cycle_count, pc, fetched_insn, executed_insn, insn_size, trace_data
                 );
             }
         }

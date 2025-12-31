@@ -17,6 +17,8 @@ module ifetch (
     logic        buffer_valid;
     
     // Word-align memory address (mask off lower 2 bits)
+    // When PC is half-word aligned, we need to read from the word that contains
+    // the current instruction (which might span two words for 32-bit instructions)
     assign imem_addr = {pc[31:2], 2'b00};
     
     // Current 16-bit instruction being fetched
@@ -28,8 +30,8 @@ module ifetch (
             // PC is word-aligned: use lower 16 bits
             current_half = imem_data[15:0];
         end else begin
-            // PC is half-word aligned: use buffered upper 16 bits if valid, else zero
-            current_half = buffer_valid ? buffered_half : 16'h0000;
+            // PC is half-word aligned: use buffered upper 16 bits if valid, else upper half of current word
+            current_half = buffer_valid ? buffered_half : imem_data[31:16];
         end
     end
     
@@ -50,7 +52,8 @@ module ifetch (
                 instruction = imem_data;
                 valid = 1'b1;
             end else begin
-                // PC is half-word aligned: lower half is buffered, upper half is in imem_data
+                // PC is half-word aligned: lower half is buffered (or from upper of current word),
+                // upper half is in imem_data lower bits (from next word)
                 instruction = {imem_data[15:0], current_half};
                 valid = 1'b1;
             end
@@ -63,15 +66,9 @@ module ifetch (
             buffered_half <= 16'h0000;
             buffer_valid <= 1'b0;
         end else if (valid) begin
-            if (!pc[1]) begin
-                // PC is word-aligned: buffer the upper 16 bits for potential next use
-                buffered_half <= imem_data[31:16];
-                buffer_valid <= 1'b1;
-            end else begin
-                // PC is half-word aligned: buffer the lower 16 bits for next fetch
-                buffered_half <= imem_data[15:0];
-                buffer_valid <= 1'b1;
-            end
+            // Always buffer the upper 16 bits of the current word for potential next use
+            buffered_half <= imem_data[31:16];
+            buffer_valid <= 1'b1;
         end
     end
 
