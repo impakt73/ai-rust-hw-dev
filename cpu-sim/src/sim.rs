@@ -149,7 +149,8 @@ where
         let mut halt_value = None;
         if self.cpu.dmem_we != 0 {
             let wdata = self.cpu.dmem_wdata;
-            self.bus.write_word(dmem_addr, wdata);
+            let byte_enable = self.cpu.dmem_be;
+            self.bus.write_word_with_be(dmem_addr, wdata, byte_enable);
 
             // Check for halt signal
             if dmem_addr == TOHOST_ADDR {
@@ -254,11 +255,13 @@ where
             // dmem_we and dmem_wdata are stable after eval
             if self.cpu.dmem_we != 0 {
                 let wdata = self.cpu.dmem_wdata;
-                self.bus.write_word(dmem_addr, wdata);
+                let byte_enable = self.cpu.dmem_be;
+                self.bus.write_word_with_be(dmem_addr, wdata, byte_enable);
                 log::debug!(
-                    "Memory Write: addr=0x{:08x}, data=0x{:08x}",
+                    "Memory Write: addr=0x{:08x}, data=0x{:08x}, be=0x{:02x}",
                     dmem_addr,
-                    wdata
+                    wdata,
+                    byte_enable
                 );
 
                 // Check for halt signal

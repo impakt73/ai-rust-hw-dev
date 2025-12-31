@@ -91,6 +91,31 @@ impl Dram {
         self.data
             .insert(addr.wrapping_add(3), ((data >> 24) & 0xFF) as u8);
     }
+
+    /// Write a 32-bit word to DRAM with byte enables (little-endian)
+    /// Only writes bytes where the corresponding bit in byte_enable is set
+    /// The address is the unaligned address; we align it and use byte_enable to select bytes
+    pub fn write_word_with_be(&mut self, addr: u32, data: u32, byte_enable: u8) {
+        // Align address to word boundary
+        let aligned_addr = addr & !3;
+        
+        // Since the RTL replicates bytes/halfwords across the data word,
+        // we can always extract from the lowest byte/halfword
+        let byte_value = (data & 0xFF) as u8;
+        
+        if byte_enable & 0b0001 != 0 {
+            self.data.insert(aligned_addr, byte_value);
+        }
+        if byte_enable & 0b0010 != 0 {
+            self.data.insert(aligned_addr.wrapping_add(1), byte_value);
+        }
+        if byte_enable & 0b0100 != 0 {
+            self.data.insert(aligned_addr.wrapping_add(2), byte_value);
+        }
+        if byte_enable & 0b1000 != 0 {
+            self.data.insert(aligned_addr.wrapping_add(3), byte_value);
+        }
+    }
 }
 
 impl Default for Dram {

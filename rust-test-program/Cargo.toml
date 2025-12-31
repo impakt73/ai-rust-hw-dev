@@ -71,3 +71,13 @@ test = false
 name = "test_static_heap"
 path = "src/test_static_heap.rs"
 test = false
+
+[[bin]]
+name = "test_byte_store_simple"
+path = "src/test_byte_store_simple.rs"
+test = false
+
+[[bin]]
+name = "test_alloc_only"
+path = "src/test_alloc_only.rs"
+test = false

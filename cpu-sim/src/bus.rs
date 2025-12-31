@@ -48,4 +48,19 @@ impl SystemBus {
             _ => self.dram.write_word(addr, data),
         }
     }
+
+    /// Write to the bus with byte enables
+    /// Only writes the bytes indicated by the byte_enable mask
+    pub fn write_word_with_be(&mut self, addr: u32, data: u32, byte_enable: u8) {
+        match addr {
+            // FIFO DATA register - always writes full word
+            a if a == FIFO_BASE + FIFO_DATA_OFFSET => self.fifo.write_data(data),
+            // FIFO STATUS register (read-only, ignore writes)
+            a if a == FIFO_BASE + FIFO_STATUS_OFFSET => {
+                // Status is read-only, ignore write
+            }
+            // Default: DRAM with byte enables
+            _ => self.dram.write_word_with_be(addr, data, byte_enable),
+        }
+    }
 }
