@@ -52,7 +52,7 @@ The F extension adds **26 new instructions** across multiple categories:
 | **FLW** | 0000111 | 010 | Load floating point word from memory to FP register |
 | **FSW** | 0100111 | 010 | Store floating point word from FP register to memory |
 
-#### Floating Point Computational (12 instructions)
+#### Floating Point Computational (14 instructions)
 | Instruction | Opcode | Funct7 | Funct3 | Description |
 |------------|--------|--------|--------|-------------|
 | **FADD.S** | 1010011 | 0000000 | rm | Add single-precision (fd = fs1 + fs2) |
@@ -78,15 +78,19 @@ The F extension adds **26 new instructions** across multiple categories:
 | **FEQ.S** | 1010011 | 1010000 | 010 | Equal (rd = fs1 == fs2) |
 
 #### Floating Point Conversion (6 instructions)
-| Instruction | Opcode | Funct7 | rs2 | Description |
-|------------|--------|--------|-----|-------------|
-| **FCVT.W.S** | 1010011 | 1100000 | 00000 | Convert float to signed int |
-| **FCVT.WU.S** | 1010011 | 1100000 | 00001 | Convert float to unsigned int |
-| **FCVT.S.W** | 1010011 | 1101000 | 00000 | Convert signed int to float |
-| **FCVT.S.WU** | 1010011 | 1101000 | 00001 | Convert unsigned int to float |
-| **FMV.X.W** | 1010011 | 1110000 | 00000 | Move FP reg to int reg (bitwise) |
-| **FMV.W.X** | 1010011 | 1111000 | 00000 | Move int reg to FP reg (bitwise) |
-| **FCLASS.S** | 1010011 | 1110000 | 00000 | Classify FP number |
+| Instruction | Opcode | Funct7 | Funct3 | rs2   | Description |
+|------------|--------|--------|--------|-------|-------------|
+| **FCVT.W.S**   | 1010011 | 1100000 | rm     | 00000 | Convert float to signed int |
+| **FCVT.WU.S**  | 1010011 | 1100000 | rm     | 00001 | Convert float to unsigned int |
+| **FCVT.S.W**   | 1010011 | 1101000 | rm     | 00000 | Convert signed int to float |
+| **FCVT.S.WU**  | 1010011 | 1101000 | rm     | 00001 | Convert unsigned int to float |
+| **FMV.X.W**    | 1010011 | 1110000 | 000    | 00000 | Move FP reg to int reg (bitwise) |
+| **FMV.W.X**    | 1010011 | 1111000 | 000    | 00000 | Move int reg to FP reg (bitwise) |
+
+#### Floating Point Classification (1 instruction)
+| Instruction | Opcode | Funct7 | Funct3 | rs2   | Description |
+|------------|--------|--------|--------|-------|-------------|
+| **FCLASS.S**   | 1010011 | 1110000 | 001    | 00000 | Classify FP number |
 
 ### IEEE 754-2008 Special Values
 
@@ -381,8 +385,12 @@ module fpu (
             
             FPU_MIN: begin
                 // Handle NaN and signed zero cases
-                if (fs1 == 32'h7FC00000 || fs2 == 32'h7FC00000) begin
-                    fp_result = 32'h7FC00000;  // Propagate NaN
+                logic is_fs1_nan, is_fs2_nan;
+                is_fs1_nan = (fs1[30:23] == 8'hFF) && (fs1[22:0] != 23'h0);
+                is_fs2_nan = (fs2[30:23] == 8'hFF) && (fs2[22:0] != 23'h0);
+                
+                if (is_fs1_nan || is_fs2_nan) begin
+                    fp_result = 32'h7FC00000;  // Propagate canonical NaN
                 end else begin
                     result_real = (fs1_real < fs2_real) ? fs1_real : fs2_real;
                     fp_result = $shortrealtobits(result_real);
@@ -390,8 +398,12 @@ module fpu (
             end
             
             FPU_MAX: begin
-                if (fs1 == 32'h7FC00000 || fs2 == 32'h7FC00000) begin
-                    fp_result = 32'h7FC00000;  // Propagate NaN
+                logic is_fs1_nan, is_fs2_nan;
+                is_fs1_nan = (fs1[30:23] == 8'hFF) && (fs1[22:0] != 23'h0);
+                is_fs2_nan = (fs2[30:23] == 8'hFF) && (fs2[22:0] != 23'h0);
+                
+                if (is_fs1_nan || is_fs2_nan) begin
+                    fp_result = 32'h7FC00000;  // Propagate canonical NaN
                 end else begin
                     result_real = (fs1_real > fs2_real) ? fs1_real : fs2_real;
                     fp_result = $shortrealtobits(result_real);
@@ -557,7 +569,7 @@ output logic        is_fp_store    // FSW instruction
 
 **New local parameters:**
 ```systemverilog
-// Opco FP opcodes
+// FP opcodes
 localparam logic [6:0] OP_FP_LOAD  = 7'b0000111;
 localparam logic [6:0] OP_FP_STORE = 7'b0100111;
 localparam logic [6:0] OP_FP       = 7'b1010011;  // FP computational
