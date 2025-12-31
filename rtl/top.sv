@@ -44,7 +44,7 @@ module top (
     logic [31:0] imm_b;
     logic [31:0] imm_u;
     logic [31:0] imm_j;
-    logic [3:0]  alu_op;
+    logic [4:0]  alu_op;
     logic        alu_src;
     logic        reg_write;
     logic        mem_write;

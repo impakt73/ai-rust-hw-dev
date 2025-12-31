@@ -43,10 +43,10 @@ jobs:
           cargo --version
       
       - name: Install RISC-V Rust Target
-        run: rustup target add riscv32i-unknown-none-elf
+        run: rustup target add riscv32im-unknown-none-elf
       
       - name: Verify RISC-V Rust target
-        run: rustup target list --installed | grep riscv32i-unknown-none-elf
+        run: rustup target list --installed | grep riscv32im-unknown-none-elf
       
       - name: Verify RISC-V GCC installation
         run: riscv64-unknown-elf-gcc --version
@@ -70,7 +70,7 @@ jobs:
           echo "Verilator: $(verilator --version | head -1)"
           echo "Rust: $(rustc --version)"
           echo "Cargo: $(cargo --version)"
-          echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32i-unknown-none-elf)"
+          echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32im-unknown-none-elf)"
           echo "RISC-V GCC: $(riscv64-unknown-elf-gcc --version | head -1)"
           echo ""
           echo "Common commands:"
