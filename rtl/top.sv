@@ -17,6 +17,9 @@ module top (
     output logic        dmem_we,
     output logic [3:0]  dmem_be,    // Byte enable (one bit per byte)
     
+    // System control signals
+    output logic        halted,       // CPU halted (ECALL/EBREAK)
+    
     // Debug outputs (for tracing register values)
     output logic [31:0] debug_rs1_data,
     output logic [31:0] debug_rs2_data,
@@ -47,6 +50,10 @@ module top (
     logic        mem_to_reg;
     logic        branch;
     logic        jump;
+    logic        is_ecall;
+    logic        is_ebreak;
+    logic        is_fence;
+    logic        is_csr;
     
     // Register file signals
     logic [31:0] rs1_data;
@@ -62,17 +69,35 @@ module top (
     // Branch/Jump logic
     logic        take_branch;
     
+    // CSR registers (4096 possible, but we only implement a few)
+    logic [31:0] csr_file [0:4095];
+    logic [11:0] csr_addr;
+    logic [31:0] csr_rdata;
+    
+    assign csr_addr = imm_i[11:0];  // CSR address from immediate field
+    
     // Program Counter
     assign imem_addr = pc;
     assign instruction = imem_data;
+    
+    // Halt control for ECALL/EBREAK
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            halted <= 1'b0;
+        end else if (is_ecall || is_ebreak) begin
+            halted <= 1'b1;
+        end
+    end
     
     // PC update logic
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pc <= boot_addr;
-        end else begin
+        end else if (!halted && !is_ecall && !is_ebreak) begin
+            // Advance PC only when not halted and not executing ECALL/EBREAK
             pc <= next_pc;
         end
+        // If halted or executing ECALL/EBREAK, PC stays the same
     end
     
     // Next PC calculation
@@ -129,7 +154,11 @@ module top (
         .mem_write(mem_write),
         .mem_to_reg(mem_to_reg),
         .branch(branch),
-        .jump(jump)
+        .jump(jump),
+        .is_ecall(is_ecall),
+        .is_ebreak(is_ebreak),
+        .is_fence(is_fence),
+        .is_csr(is_csr)
     );
     
     // Register file instantiation
@@ -245,6 +274,31 @@ module top (
         endcase
     end
     
+    // CSR register file
+    // Read CSR value
+    assign csr_rdata = csr_file[csr_addr];
+    
+    // CSR write logic
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // Initialize all CSRs to 0
+            for (int i = 0; i < 4096; i++) begin
+                csr_file[i] = 32'h0;  // Use blocking assignment for initialization
+            end
+        end else if (is_csr) begin
+            // CSR write operations
+            case (funct3)
+                3'b001: csr_file[csr_addr] <= rs1_data;                                     // CSRRW
+                3'b010: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | rs1_data;        // CSRRS (no write when rs1 == x0)
+                3'b011: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~rs1_data;       // CSRRC (no write when rs1 == x0)
+                3'b101: csr_file[csr_addr] <= {27'b0, rs1};                                 // CSRRWI
+                3'b110: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | {27'b0, rs1};    // CSRRSI (no write when zimm[4:0] == 0)
+                3'b111: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~{27'b0, rs1};   // CSRRCI (no write when zimm[4:0] == 0)
+                default: ; // Do nothing
+            endcase
+        end
+    end
+    
     // Write-back data selection
     always_comb begin
         if (opcode == 7'b0110111) begin
@@ -256,6 +310,9 @@ module top (
         end else if (jump) begin
             // JAL/JALR - Store return address (PC + 4)
             rd_data = pc + 32'd4;
+        end else if (is_csr) begin
+            // CSR instruction - Return old CSR value
+            rd_data = csr_rdata;
         end else if (mem_to_reg) begin
             // Load instruction - Use formatted memory data
             rd_data = formatted_load_data;

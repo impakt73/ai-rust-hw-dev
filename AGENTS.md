@@ -61,10 +61,15 @@ cargo clean
 
 ### Test Structure
 
-The project has 28 comprehensive tests:
+The project has 34 comprehensive tests:
 - **7 ALU tests:** Validate arithmetic/logic operations
 - **6 Register file tests:** Validate register behavior (including x0 immutability)
-- **15 CPU integration tests:** Validate complete instruction execution (including byte/halfword operations)
+- **21 CPU integration tests:** Validate complete instruction execution including:
+  - Arithmetic, logic, and memory operations
+  - Branches and jumps
+  - Byte/halfword operations
+  - System instructions (FENCE, ECALL, EBREAK)
+  - CSR operations (read/write, set/clear, immediate variants)
 
 ### Verilator Build Process
 
@@ -141,6 +146,9 @@ top (CPU)
 
 ### Supported Instructions
 
+**Complete RV32I Base Instruction Set (40 instructions) + Zicsr Extension (6 instructions):**
+
+**RV32I Base:**
 - **Arithmetic:** ADD, ADDI, SUB
 - **Logic:** AND, ANDI, OR, ORI, XOR, XORI
 - **Shifts:** SLL, SLLI, SRL, SRLI, SRA, SRAI
@@ -149,6 +157,11 @@ top (CPU)
 - **Memory:** LW, LH, LB, LHU, LBU, SW, SH, SB
 - **Upper Immediate:** LUI, AUIPC
 - **Jumps:** JAL, JALR
+- **Memory Ordering:** FENCE
+- **System:** ECALL, EBREAK
+
+**Zicsr Extension:**
+- **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 
 ## Common Issues and Solutions
 
@@ -206,7 +219,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 28 tests must pass.
+   All 34 tests must pass.
 
 2. **Verify code formatting:**
    ```bash
@@ -282,7 +295,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 28 tests must pass)
+2. ✅ **Tests:** `cargo test --verbose` (all 34 tests must pass)
 3. ⚠️ **Formatting:** `cargo fmt -- --check` (non-blocking but should pass)
 4. ⚠️ **Clippy:** `cargo clippy -- -D warnings` (non-blocking but should pass)
 
