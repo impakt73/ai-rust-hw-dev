@@ -1,10 +1,10 @@
 # ai-rust-hw-dev
 
-A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
+A **single-cycle RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
 
 ## Features
 
-- ✅ **Complete RV32IM Instruction Set (RV32I + M Extension + Zicsr)**: All 54 instructions including:
+- ✅ **Complete RV32IMC Instruction Set (RV32I + M Extension + C Extension + Zicsr)**: All 81 instructions including:
   - **RV32I Base (40 instructions):**
     - Arithmetic, logic, and shift operations
     - Load/store with byte, halfword, and word access (LB, LH, LW, LBU, LHU, SB, SH, SW)
@@ -15,10 +15,15 @@ A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-b
   - **M Extension (8 instructions):**
     - Integer multiplication: MUL, MULH, MULHSU, MULHU
     - Integer division and remainder: DIV, DIVU, REM, REMU
+  - **C Extension (27 instructions):**
+    - 16-bit compressed instruction support for improved code density (25-30% size reduction)
+    - Automatic decompression to 32-bit equivalents
+    - Dynamic PC increment (2 bytes for compressed, 4 for standard)
+    - All quadrants supported: arithmetic, memory access, control flow
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
 - ✅ **Single-cycle Execution**: All instructions complete in one clock cycle
-- ✅ **Verilator-based Verification**: 84 comprehensive tests using Rust + marlin framework (50 in cpu_verifier package)
+- ✅ **Verilator-based Verification**: 92 comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 

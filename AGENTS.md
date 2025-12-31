@@ -4,12 +4,17 @@ This document provides essential information for AI coding agents working on thi
 
 ## Project Overview
 
-This is a **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **single-cycle RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
 - **Verification (Rust):** Test harness in `tests/` directory using marlin + Verilator
 - **Architecture:** Single-cycle design with exposed memory ports (no internal memory)
+- **Instruction Set:** Full RV32IMC support (81 total instructions):
+  - RV32I Base: 40 instructions
+  - M Extension: 8 instructions  
+  - C Extension: 27 compressed instructions (16-bit)
+  - Zicsr: 6 CSR instructions
 
 ## Critical Prerequisites
 
@@ -61,8 +66,10 @@ cargo clean
 
 ### Test Structure
 
-The project has 84 comprehensive tests across all packages:
-- **cpu_verifier package (50 tests):**
+The project has 92 comprehensive tests across all packages:
+- **cpu_verifier package (70 tests):**
+  - 31 Decompressor tests: Validate all 27 RV32C compressed instructions
+  - 11 Instruction fetch tests: Validate 16/32-bit instruction fetching and buffering
   - 16 ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
   - 6 Register file tests: Validate register behavior (including x0 immutability)
   - 28 CPU integration tests: Validate complete instruction execution including:
@@ -72,7 +79,8 @@ The project has 84 comprehensive tests across all packages:
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (34 tests):**
+    - Compressed instruction support (automatic decompression and execution)
+- **Other packages (22 tests):**
   - Additional integration and utility tests
 
 ### Verilator Build Process
@@ -115,6 +123,8 @@ All code should pass these checks before committing.
 │   ├── alu.sv             # Arithmetic Logic Unit
 │   ├── regfile.sv         # 32x32-bit register file
 │   ├── decoder.sv         # Instruction decoder
+│   ├── decompress.sv      # RV32C compressed instruction decompressor
+│   ├── ifetch.sv          # Instruction fetch unit (16/32-bit aware)
 │   └── top.sv             # Top-level CPU module
 ├── tests/                  # Rust verification
 │   ├── Cargo.toml         # Test package dependencies
@@ -123,6 +133,8 @@ All code should pass these checks before committing.
 │       ├── lib.rs         # Test module declarations
 │       ├── alu_test.rs    # ALU verification tests
 │       ├── regfile_test.rs # Register file tests
+│       ├── decompress_test.rs # Compressed instruction decompressor tests
+│       ├── ifetch_test.rs # Instruction fetch unit tests
 │       └── cpu_test.rs    # CPU integration tests
 └── .github/
     └── workflows/
@@ -135,6 +147,8 @@ All code should pass these checks before committing.
 
 ```
 top (CPU)
+├── ifetch (Instruction fetch - 16/32-bit aware)
+├── decompress (Compressed instruction decompressor)
 ├── decoder (Instruction decoder)
 ├── alu (ALU operations)
 └── regfile (Register file)
@@ -150,9 +164,9 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32IM Instruction Set (54 instructions):**
+**Complete RV32IMC Instruction Set (81 instructions):**
 
-**RV32I Base:**
+**RV32I Base (40 instructions):**
 - **Arithmetic:** ADD, ADDI, SUB
 - **Logic:** AND, ANDI, OR, ORI, XOR, XORI
 - **Shifts:** SLL, SLLI, SRL, SRLI, SRA, SRAI
@@ -164,12 +178,19 @@ top (CPU)
 - **Memory Ordering:** FENCE
 - **System:** ECALL, EBREAK
 
-**M Extension (Integer Multiplication and Division):**
+**M Extension (8 instructions - Integer Multiplication and Division):**
 - **Multiplication:** MUL, MULH, MULHSU, MULHU
 - **Division:** DIV, DIVU
 - **Remainder:** REM, REMU
 
-**Zicsr Extension:**
+**C Extension (27 instructions - Compressed 16-bit Instructions):**
+- **Quadrant 0 (3 instructions):** C.ADDI4SPN, C.LW, C.SW
+- **Quadrant 1 (16 instructions):** C.NOP, C.ADDI, C.JAL, C.LI, C.ADDI16SP, C.LUI, C.SRLI, C.SRAI, C.ANDI, C.SUB, C.XOR, C.OR, C.AND, C.J, C.BEQZ, C.BNEZ
+- **Quadrant 2 (8 instructions):** C.SLLI, C.LWSP, C.JR, C.MV, C.EBREAK, C.JALR, C.ADD, C.SWSP
+- **Automatic decompression:** All compressed instructions transparently decompressed to 32-bit equivalents
+- **PC management:** Dynamic 2-byte increment for compressed, 4-byte for standard
+
+**Zicsr Extension (6 instructions):**
 - **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 
 ## Common Issues and Solutions
@@ -228,7 +249,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 84 tests must pass (50 in cpu_verifier + 34 in other packages).
+   All 92 tests must pass (70 in cpu_verifier + 22 in other packages).
 
 2. **Verify code formatting:**
    ```bash
@@ -304,7 +325,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 84 tests must pass: 50 in cpu_verifier + 34 in other packages)
+2. ✅ **Tests:** `cargo test --verbose` (all 92 tests must pass: 70 in cpu_verifier + 22 in other packages)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
@@ -317,7 +338,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 84 total tests passed (50 in cpu_verifier + 34 in other packages)
+4. **Verify all tests pass:** Look for `test result: ok` with 92 total tests passed (70 in cpu_verifier + 22 in other packages)
 
 ### Signal Naming Conventions
 
