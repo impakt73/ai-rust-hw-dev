@@ -125,12 +125,16 @@ where
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
+        // First evaluation: Update imem_addr based on current PC
+        // This is critical for RV32C support where imem_addr depends combinationally on PC
+        self.cpu.eval();
+
         // Instruction Fetch
         let pc_addr = self.cpu.imem_addr;
         let instruction_data = self.bus.read_word(pc_addr);
         self.cpu.imem_data = instruction_data;
 
-        // First evaluation: Decode instruction and compute addresses
+        // Second evaluation: Decode instruction and compute addresses
         self.cpu.eval();
 
         // Data Memory Read
