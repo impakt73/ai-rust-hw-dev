@@ -94,8 +94,8 @@ fn test_ifetch_halfword_aligned_compressed() {
     // Second cycle: PC = 0x0002 (half-word aligned)
     // Should use buffered upper half from previous fetch
     dut.pc = 0x0002;
-    // Note: imem_addr should still be 0x0000 because PC[31:2] = 0
-    // So imem_data should still be the same word
+    // With RV32C fix: imem_addr points to NEXT word (0x0004) when PC is half-word aligned
+    dut.imem_data = 0xABCD9999; // Next word data (not used for compressed insn)
     dut.clk = 0;
     dut.eval();
 
@@ -103,8 +103,8 @@ fn test_ifetch_halfword_aligned_compressed() {
     assert_eq!(dut.instruction, 0x00000005, "Wrong buffered instruction");
     assert_eq!(dut.valid, 1, "Instruction should be valid");
     assert_eq!(
-        dut.imem_addr, 0x0000,
-        "Wrong memory address (should still be word-aligned)"
+        dut.imem_addr, 0x0004,
+        "Memory address should point to next word when PC is half-word aligned"
     );
 }
 
@@ -137,9 +137,9 @@ fn test_ifetch_halfword_aligned_standard() {
 
     // Second cycle: PC = 0x0002, standard instruction starting here
     // current_half = buffered (0x001B), which has bits[1:0] = 11 (standard)
-    // Need upper 16 bits from current imem_data's lower half
+    // Need upper 16 bits from NEXT word's lower half (imem_addr = 0x0004)
     dut.pc = 0x0002;
-    dut.imem_data = 0x00051234; // Lower = 0x1234, Upper = 0x0005
+    dut.imem_data = 0x00051234; // Lower = 0x1234 (upper half of our 32-bit insn), Upper = 0x0005
     dut.clk = 0;
     dut.eval();
 
@@ -149,6 +149,7 @@ fn test_ifetch_halfword_aligned_standard() {
         "Wrong assembled standard instruction"
     );
     assert_eq!(dut.valid, 1, "Instruction should be valid");
+    assert_eq!(dut.imem_addr, 0x0004, "Should fetch from next word");
 }
 
 #[test]
@@ -199,33 +200,35 @@ fn test_ifetch_address_calculation() {
 
     dut.rst_n = 1;
 
-    // Test that imem_addr is always word-aligned regardless of PC
+    // Test imem_addr calculation for RV32C support
+    // When PC is word-aligned, imem_addr = word-aligned PC
+    // When PC is half-word aligned, imem_addr = next word (PC & ~3) + 4
 
-    // PC = 0x0000 -> imem_addr = 0x0000
+    // PC = 0x0000 (word-aligned) -> imem_addr = 0x0000
     dut.pc = 0x0000;
     dut.imem_data = 0x12345678;
     clock_cycle!(dut);
     assert_eq!(dut.imem_addr, 0x0000, "Wrong address for PC=0x0000");
 
-    // PC = 0x0002 -> imem_addr = 0x0000 (word-aligned)
+    // PC = 0x0002 (half-word aligned) -> imem_addr = 0x0004 (next word for upper half of 32-bit insn)
     dut.pc = 0x0002;
     dut.imem_data = 0x12345678;
     clock_cycle!(dut);
-    assert_eq!(dut.imem_addr, 0x0000, "Wrong address for PC=0x0002");
+    assert_eq!(dut.imem_addr, 0x0004, "Wrong address for PC=0x0002");
 
-    // PC = 0x0004 -> imem_addr = 0x0004
+    // PC = 0x0004 (word-aligned) -> imem_addr = 0x0004
     dut.pc = 0x0004;
     dut.imem_data = 0xABCDEF00;
     clock_cycle!(dut);
     assert_eq!(dut.imem_addr, 0x0004, "Wrong address for PC=0x0004");
 
-    // PC = 0x0006 -> imem_addr = 0x0004 (word-aligned)
+    // PC = 0x0006 (half-word aligned) -> imem_addr = 0x0008 (next word)
     dut.pc = 0x0006;
     dut.imem_data = 0xABCDEF00;
     clock_cycle!(dut);
-    assert_eq!(dut.imem_addr, 0x0004, "Wrong address for PC=0x0006");
+    assert_eq!(dut.imem_addr, 0x0008, "Wrong address for PC=0x0006");
 
-    // PC = 0x0100 -> imem_addr = 0x0100
+    // PC = 0x0100 (word-aligned) -> imem_addr = 0x0100
     dut.pc = 0x0100;
     dut.imem_data = 0x11111111;
     clock_cycle!(dut);
@@ -245,8 +248,8 @@ fn test_ifetch_boundary_crossing() {
     clock_cycle!(dut);
     dut.rst_n = 1;
 
-    // Simplified test: Verify address calculation across word boundaries
-    // Test that imem_addr is properly word-aligned for different PC values
+    // Test address calculation across word boundaries for RV32C
+    // Half-word aligned PC needs to fetch from next word for 32-bit instructions
 
     dut.pc = 0x0000;
     dut.eval();
@@ -254,7 +257,7 @@ fn test_ifetch_boundary_crossing() {
 
     dut.pc = 0x0002;
     dut.eval();
-    assert_eq!(dut.imem_addr, 0x0000, "PC=0x0002 should map to addr 0x0000");
+    assert_eq!(dut.imem_addr, 0x0004, "PC=0x0002 should map to addr 0x0004 (next word)");
 
     dut.pc = 0x0004;
     dut.eval();
@@ -262,7 +265,7 @@ fn test_ifetch_boundary_crossing() {
 
     dut.pc = 0x0006;
     dut.eval();
-    assert_eq!(dut.imem_addr, 0x0004, "PC=0x0006 should map to addr 0x0004");
+    assert_eq!(dut.imem_addr, 0x0008, "PC=0x0006 should map to addr 0x0008 (next word)");
 }
 
 #[test]
@@ -412,15 +415,18 @@ fn test_ifetch_high_addresses() {
     dut.pc = 0x80000000;
     dut.imem_data = 0xDEADBEEF;
     clock_cycle!(dut);
-    assert_eq!(dut.imem_addr, 0x80000000, "Wrong address for high PC");
+    assert_eq!(dut.imem_addr, 0x80000000, "Wrong address for high PC (word-aligned)");
     assert_eq!(
         dut.instruction & 0xFFFF,
         0xBEEF,
         "Wrong instruction at high address"
     );
 
+    // Test half-word aligned high address
     dut.pc = 0xFFFFFFFE;
     dut.imem_data = 0xCAFEBABE;
     clock_cycle!(dut);
-    assert_eq!(dut.imem_addr, 0xFFFFFFFC, "Wrong address for max PC");
+    // When PC is half-word aligned (0xFFFFFFFE), imem_addr = (PC & ~3) + 4
+    // (0xFFFFFFFC) + 4 = 0x100000000, but truncated to 32 bits = 0x00000000
+    assert_eq!(dut.imem_addr, 0x00000000, "Address should wrap around for max PC + 4");
 }

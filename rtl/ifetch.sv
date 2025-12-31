@@ -18,8 +18,8 @@ module ifetch (
     
     // Word-align memory address (mask off lower 2 bits)
     // When PC is half-word aligned, we need to read from the word that contains
-    // the current instruction (which might span two words for 32-bit instructions)
-    assign imem_addr = {pc[31:2], 2'b00};
+    // the upper half of a potential 32-bit instruction (the next word)
+    assign imem_addr = pc[1] ? {pc[31:2], 2'b00} + 32'd4 : {pc[31:2], 2'b00};
     
     // Current 16-bit instruction being fetched
     logic [15:0] current_half;
