@@ -27,7 +27,7 @@ This plan is specifically optimized for implementation by AI coding agents and i
 
 **RV32C** is the RISC-V Compressed Instruction Extension that provides:
 - **16-bit instruction encoding** (half the size of standard 32-bit instructions)
-- **40+ compressed instructions** covering common operations
+- **27 compressed instructions** covering common operations
 - **Code density improvement** of 25-30% for typical programs
 - **100% backward compatibility** with RV32IM base ISA
 - **Seamless mixing** of 16-bit and 32-bit instructions in the same program
@@ -71,46 +71,58 @@ Where:
 
 ### Compressed Instructions Summary
 
-**Total: 40+ instructions across multiple categories**
+**Total: 27 RV32C instructions**
 
-#### 1. Stack Operations (6 instructions)
-- `C.LWSP` - Load word from stack (sp-relative)
-- `C.SWSP` - Store word to stack (sp-relative)
-- `C.ADDI16SP` - Adjust stack pointer by immediate
-- `C.ADDI4SPN` - Add immediate to sp and write to rd'
+The RV32C extension provides 27 unique compressed instructions organized across three quadrants:
 
-#### 2. Register-Immediate Instructions (10 instructions)
-- `C.LI` - Load immediate
-- `C.LUI` - Load upper immediate
-- `C.ADDI` - Add immediate
-- `C.SLLI` - Shift left logical immediate
-- `C.SRLI` - Shift right logical immediate
-- `C.SRAI` - Shift right arithmetic immediate
-- `C.ANDI` - AND immediate
+#### All RV32C Instructions (alphabetical)
 
-#### 3. Register-Register Instructions (8 instructions)
-- `C.MV` - Move (copy register)
-- `C.ADD` - Add registers
-- `C.SUB` - Subtract
-- `C.XOR` - Exclusive OR
-- `C.OR` - OR
-- `C.AND` - AND
+1. `C.ADD` - Add registers
+2. `C.ADDI` - Add immediate
+3. `C.ADDI16SP` - Adjust stack pointer by immediate
+4. `C.ADDI4SPN` - Add immediate to sp and write to rd'
+5. `C.AND` - Bitwise AND
+6. `C.ANDI` - AND immediate
+7. `C.BEQZ` - Branch if equal to zero
+8. `C.BNEZ` - Branch if not equal to zero
+9. `C.EBREAK` - Environment break
+10. `C.J` - Jump
+11. `C.JAL` - Jump and link (RV32C only, not in RV64C)
+12. `C.JALR` - Jump and link register
+13. `C.JR` - Jump register
+14. `C.LI` - Load immediate
+15. `C.LUI` - Load upper immediate
+16. `C.LW` - Load word (base+offset)
+17. `C.LWSP` - Load word from stack (sp-relative)
+18. `C.MV` - Move (copy register)
+19. `C.NOP` - No operation
+20. `C.OR` - Bitwise OR
+21. `C.SLLI` - Shift left logical immediate
+22. `C.SRAI` - Shift right arithmetic immediate
+23. `C.SRLI` - Shift right logical immediate
+24. `C.SUB` - Subtract
+25. `C.SW` - Store word (base+offset)
+26. `C.SWSP` - Store word to stack (sp-relative)
+27. `C.XOR` - Exclusive OR
 
-#### 4. Load/Store Instructions (6 instructions)
-- `C.LW` - Load word (base+offset)
-- `C.SW` - Store word (base+offset)
+#### Instructions by Category
 
-#### 5. Control Transfer Instructions (6 instructions)
-- `C.J` - Jump
-- `C.JAL` - Jump and link (RV32C only, not in RV64C)
-- `C.JR` - Jump register
-- `C.JALR` - Jump and link register
-- `C.BEQZ` - Branch if equal to zero
-- `C.BNEZ` - Branch if not equal to zero
+**Stack-Pointer Based (4 instructions):**
+- `C.ADDI4SPN`, `C.ADDI16SP`, `C.LWSP`, `C.SWSP`
 
-#### 6. Special Instructions (4 instructions)
-- `C.NOP` - No operation
-- `C.EBREAK` - Environment break
+**Integer Computational (11 instructions):**
+- `C.LI`, `C.LUI`, `C.ADDI`, `C.SLLI`, `C.SRLI`, `C.SRAI`, `C.ANDI`, `C.MV`, `C.ADD`, `C.SUB`, `C.AND`, `C.OR`, `C.XOR`
+
+**Load/Store (4 instructions):**
+- `C.LW`, `C.SW`, `C.LWSP`, `C.SWSP`
+
+**Control Transfer (6 instructions):**
+- `C.J`, `C.JAL`, `C.JR`, `C.JALR`, `C.BEQZ`, `C.BNEZ`
+
+**System (2 instructions):**
+- `C.NOP`, `C.EBREAK`
+
+**Note:** Some instructions appear in multiple categories based on their usage patterns.
 
 ---
 
@@ -597,7 +609,7 @@ tests/src/
 
 ### Level 1: Decompressor Unit Tests (`decompress_test.rs`)
 
-**Purpose:** Verify all 40+ compressed instructions decompress correctly
+**Purpose:** Verify all 27 compressed instructions decompress correctly
 
 **Test Structure:**
 
@@ -882,7 +894,7 @@ cargo build --release --target riscv32imc-unknown-none-elf
    - [ ] Add helper functions for encoding compressed instructions
 
 3. **Write comprehensive unit tests:**
-   - [ ] Test all 40+ compressed instruction patterns
+   - [ ] Test all 27 compressed instructions with multiple test cases each
    - [ ] Test illegal instruction detection
    - [ ] Test edge cases (max/min immediates)
    - [ ] Verify immediate encoding correctness
@@ -1040,7 +1052,7 @@ cargo build --release --target riscv32imc-unknown-none-elf
 1. **Update documentation:**
    - [ ] Update `README.md` to advertise RV32IMC support
    - [ ] Update `AGENTS.md` with:
-     - New instruction count (54 + 40 = 94 total)
+     - New instruction count (54 + 27 = 81 total)
      - New test count (120+ tests)
      - RV32C implementation notes
    - [ ] Update `test_programs/README.md` with C extension examples
@@ -1107,7 +1119,7 @@ cargo build --release --target riscv32imc-unknown-none-elf
 ### Functional Validation
 
 **Decompressor Level:**
-- [ ] All 40+ compressed instructions decompress correctly
+- [ ] All 27 compressed instructions decompress correctly
 - [ ] Illegal instructions detected and flagged
 - [ ] Immediate encoding/decoding is correct
 - [ ] Pass-through of 32-bit instructions works
@@ -1204,7 +1216,7 @@ cargo build --release --target riscv32imc-unknown-none-elf
 **Risk:** Incorrect decompression of compressed instructions, especially immediate encoding.
 
 **Mitigation:**
-- Comprehensive unit tests for all 40+ instructions
+- Comprehensive unit tests for all 27 instructions with multiple test cases each
 - Cross-reference with RISC-V specification
 - Test all immediate value ranges
 - Verify against reference decompressor
@@ -1342,8 +1354,8 @@ assign rd_full = {2'b01, rd_compressed};  // 01xxx = x8-x15
 | RV32I | 40 instructions | ✅ Implemented |
 | M | 8 instructions | ✅ Implemented |
 | Zicsr | 6 instructions | ✅ Implemented |
-| C | 40+ instructions | 🔄 **To Be Implemented** |
-| **Total** | **94+ instructions** | |
+| C | 27 instructions | 🔄 **To Be Implemented** |
+| **Total** | **81 instructions** | |
 
 **ISA String:** `rv32imc_zicsr`
 
