@@ -30,7 +30,7 @@ jobs:
           path: |
             /var/cache/apt/archives
             /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-riscv-${{ hashFiles('.github/workflows/copilot-setup-steps.yml') }}
+          key: ${{ runner.os }}-apt-riscv-v1
           restore-keys: |
             ${{ runner.os }}-apt-riscv-
       
