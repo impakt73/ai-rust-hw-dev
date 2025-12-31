@@ -482,7 +482,10 @@ fn test_alu_divu() {
     dut.b = 0;
     dut.alu_op = ALU_DIVU as u8;
     dut.eval();
-    assert_eq!(dut.result, 0xFFFFFFFF, "DIVU: division by zero = 0xFFFFFFFF");
+    assert_eq!(
+        dut.result, 0xFFFFFFFF,
+        "DIVU: division by zero = 0xFFFFFFFF"
+    );
 }
 
 // ============================================================================
@@ -574,23 +577,37 @@ fn test_alu_m_extension_edge_cases() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test all M operations with zero
-    let m_ops = [ALU_MUL, ALU_MULH, ALU_MULHSU, ALU_MULHU, ALU_DIV, ALU_DIVU, ALU_REM, ALU_REMU];
-    
+    let m_ops = [
+        ALU_MUL, ALU_MULH, ALU_MULHSU, ALU_MULHU, ALU_DIV, ALU_DIVU, ALU_REM, ALU_REMU,
+    ];
+
     for &op in &m_ops {
         dut.a = 0;
         dut.b = 12345;
         dut.alu_op = op as u8;
         dut.eval();
-        
+
         match op {
             ALU_MUL | ALU_MULH | ALU_MULHSU | ALU_MULHU => {
-                assert_eq!(dut.result, 0, "M-ext op {} with zero operand should be 0", op);
+                assert_eq!(
+                    dut.result, 0,
+                    "M-ext op {} with zero operand should be 0",
+                    op
+                );
             }
             ALU_DIV | ALU_DIVU => {
-                assert_eq!(dut.result, 0, "M-ext div op {} with zero dividend should be 0", op);
+                assert_eq!(
+                    dut.result, 0,
+                    "M-ext div op {} with zero dividend should be 0",
+                    op
+                );
             }
             ALU_REM | ALU_REMU => {
-                assert_eq!(dut.result, 0, "M-ext rem op {} with zero dividend should be 0", op);
+                assert_eq!(
+                    dut.result, 0,
+                    "M-ext rem op {} with zero dividend should be 0",
+                    op
+                );
             }
             _ => {}
         }
@@ -602,7 +619,7 @@ fn test_alu_m_extension_edge_cases() {
         dut.b = 1;
         dut.alu_op = op as u8;
         dut.eval();
-        
+
         match op {
             ALU_MUL => assert_eq!(dut.result, 0x12345678, "x × 1 = x"),
             ALU_DIV | ALU_DIVU => assert_eq!(dut.result, 0x12345678, "x ÷ 1 = x"),

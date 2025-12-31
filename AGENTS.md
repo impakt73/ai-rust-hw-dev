@@ -4,7 +4,7 @@ This document provides essential information for AI coding agents working on thi
 
 ## Project Overview
 
-This is a **single-cycle RISC-V RV32I CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
@@ -61,15 +61,16 @@ cargo clean
 
 ### Test Structure
 
-The project has 34 comprehensive tests:
-- **7 ALU tests:** Validate arithmetic/logic operations
+The project has 84 comprehensive tests:
+- **16 ALU tests:** Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
 - **6 Register file tests:** Validate register behavior (including x0 immutability)
-- **21 CPU integration tests:** Validate complete instruction execution including:
+- **50 CPU integration tests:** Validate complete instruction execution including:
   - Arithmetic, logic, and memory operations
   - Branches and jumps
   - Byte/halfword operations
   - System instructions (FENCE, ECALL, EBREAK)
   - CSR operations (read/write, set/clear, immediate variants)
+  - M extension operations (multiplication, division, remainder)
 
 ### Verilator Build Process
 
@@ -146,7 +147,7 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32I Base Instruction Set (40 instructions) + Zicsr Extension (6 instructions):**
+**Complete RV32IM Instruction Set (54 instructions):**
 
 **RV32I Base:**
 - **Arithmetic:** ADD, ADDI, SUB
@@ -159,6 +160,11 @@ top (CPU)
 - **Jumps:** JAL, JALR
 - **Memory Ordering:** FENCE
 - **System:** ECALL, EBREAK
+
+**M Extension (Integer Multiplication and Division):**
+- **Multiplication:** MUL, MULH, MULHSU, MULHU
+- **Division:** DIV, DIVU
+- **Remainder:** REM, REMU
 
 **Zicsr Extension:**
 - **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
@@ -219,7 +225,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 34 tests must pass.
+   All 84 tests must pass.
 
 2. **Verify code formatting:**
    ```bash
@@ -295,7 +301,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 34 tests must pass)
+2. ✅ **Tests:** `cargo test --verbose` (all 84 tests must pass)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
@@ -308,7 +314,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 28 passed
+4. **Verify all tests pass:** Look for `test result: ok` with 84 passed
 
 ### Signal Naming Conventions
 

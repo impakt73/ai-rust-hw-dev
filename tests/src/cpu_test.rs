@@ -1994,18 +1994,18 @@ fn test_cpu_m_extension_program() {
     // Calculate: result = (a × b) ÷ c + (d % e)
     // where a=12, b=5, c=3, d=17, e=5
     // result = (12 × 5) ÷ 3 + (17 % 5) = 60 ÷ 3 + 2 = 20 + 2 = 22
-    
+
     imem.insert(0x00, addi(1, 0, 12)); // x1 = a = 12
     imem.insert(0x04, addi(2, 0, 5)); // x2 = b = 5
     imem.insert(0x08, addi(3, 0, 3)); // x3 = c = 3
     imem.insert(0x0C, addi(4, 0, 17)); // x4 = d = 17
     imem.insert(0x10, addi(5, 0, 5)); // x5 = e = 5
-    
+
     imem.insert(0x14, mul(6, 1, 2)); // x6 = a × b = 60
     imem.insert(0x18, div(7, 6, 3)); // x7 = (a × b) ÷ c = 20
     imem.insert(0x1C, rem(8, 4, 5)); // x8 = d % e = 2
     imem.insert(0x20, add(9, 7, 8)); // x9 = x7 + x8 = 22
-    
+
     imem.insert(0x24, sw(0, 9, 0x100)); // Store final result
     imem.insert(0x28, addi(0, 0, 0)); // NOP
 
