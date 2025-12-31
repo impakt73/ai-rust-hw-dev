@@ -186,6 +186,47 @@ fn csrrci(rd: u32, imm: u32, csr: u32) -> u32 {
     encode_i_type(0b1110011, rd, 0b111, imm, csr as i32)
 }
 
+// M Extension instructions
+#[allow(dead_code)]
+fn mul(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b000, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn mulh(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b001, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn mulhsu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b010, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn mulhu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b011, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn div(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b100, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn divu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b101, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn rem(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b110, rs1, rs2, 0b0000001)
+}
+
+#[allow(dead_code)]
+fn remu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_r_type(0b0110011, rd, 0b111, rs1, rs2, 0b0000001)
+}
+
 #[test]
 fn test_cpu_basic_execution() {
     let runtime = create_runtime();
@@ -1659,5 +1700,339 @@ fn test_cpu_csr_immediate() {
         dmem.get(&0x10C).copied().unwrap_or(0xDEADBEEF),
         11,
         "Final CSR value should be 11 (15 & ~4 = 11)"
+    );
+}
+
+// ============================================================================
+// M Extension CPU Tests
+// ============================================================================
+
+#[test]
+fn test_cpu_mul_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test MUL instruction
+    imem.insert(0x00, addi(1, 0, 10)); // x1 = 10
+    imem.insert(0x04, addi(2, 0, 20)); // x2 = 20
+    imem.insert(0x08, mul(3, 1, 2)); // x3 = x1 × x2 = 200
+    imem.insert(0x0C, sw(0, 3, 0x100)); // Store result
+    imem.insert(0x10, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        200,
+        "MUL: 10 × 20 should be 200"
+    );
+}
+
+#[test]
+fn test_cpu_mulh_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test MULH instruction (signed × signed, upper 32 bits)
+    // Load large values that will produce non-zero upper 32 bits
+    imem.insert(0x00, lui(1, 0x10000)); // x1 = 0x00010000
+    imem.insert(0x04, lui(2, 0x10000)); // x2 = 0x00010000
+    imem.insert(0x08, mulh(3, 1, 2)); // x3 = upper 32 bits of x1 × x2
+    imem.insert(0x0C, sw(0, 3, 0x100)); // Store result
+    imem.insert(0x10, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    // 0x00010000 × 0x00010000 = 0x0000000100000000
+    // Upper 32 bits = 0x00000001
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0x00000001,
+        "MULH: upper 32 bits should be 0x00000001"
+    );
+}
+
+#[test]
+fn test_cpu_div_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test DIV instruction
+    imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
+    imem.insert(0x04, addi(2, 0, 7)); // x2 = 7
+    imem.insert(0x08, div(3, 1, 2)); // x3 = x1 ÷ x2 = 14
+    imem.insert(0x0C, sw(0, 3, 0x100)); // Store quotient
+    imem.insert(0x10, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        14,
+        "DIV: 100 ÷ 7 should be 14"
+    );
+}
+
+#[test]
+fn test_cpu_div_by_zero() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test division by zero
+    imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
+    imem.insert(0x04, addi(2, 0, 0)); // x2 = 0
+    imem.insert(0x08, div(3, 1, 2)); // x3 = x1 ÷ 0 = 0xFFFFFFFF
+    imem.insert(0x0C, sw(0, 3, 0x100)); // Store result
+    imem.insert(0x10, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0xFFFFFFFF,
+        "DIV by zero should return 0xFFFFFFFF"
+    );
+}
+
+#[test]
+fn test_cpu_rem_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test REM instruction
+    imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
+    imem.insert(0x04, addi(2, 0, 7)); // x2 = 7
+    imem.insert(0x08, rem(3, 1, 2)); // x3 = x1 % x2 = 2
+    imem.insert(0x0C, sw(0, 3, 0x100)); // Store remainder
+    imem.insert(0x10, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        2,
+        "REM: 100 % 7 should be 2"
+    );
+}
+
+#[test]
+fn test_cpu_divu_remu_unsigned() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Test DIVU and REMU with large unsigned values
+    imem.insert(0x00, addi(1, 0, -1)); // x1 = 0xFFFFFFFF (max u32)
+    imem.insert(0x04, addi(2, 0, 2)); // x2 = 2
+    imem.insert(0x08, divu(3, 1, 2)); // x3 = 0xFFFFFFFF ÷ 2 = 0x7FFFFFFF
+    imem.insert(0x0C, remu(4, 1, 2)); // x4 = 0xFFFFFFFF % 2 = 1
+    imem.insert(0x10, sw(0, 3, 0x100)); // Store quotient
+    imem.insert(0x14, sw(0, 4, 0x104)); // Store remainder
+    imem.insert(0x18, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..8 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        0x7FFFFFFF,
+        "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
+    );
+    assert_eq!(
+        dmem.get(&0x104).copied().unwrap_or(0xDEADBEEF),
+        1,
+        "REMU: 0xFFFFFFFF % 2 should be 1"
+    );
+}
+
+#[test]
+fn test_cpu_m_extension_program() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    let mut dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Complex program using multiple M extension instructions
+    // Calculate: result = (a × b) ÷ c + (d % e)
+    // where a=12, b=5, c=3, d=17, e=5
+    // result = (12 × 5) ÷ 3 + (17 % 5) = 60 ÷ 3 + 2 = 20 + 2 = 22
+    
+    imem.insert(0x00, addi(1, 0, 12)); // x1 = a = 12
+    imem.insert(0x04, addi(2, 0, 5)); // x2 = b = 5
+    imem.insert(0x08, addi(3, 0, 3)); // x3 = c = 3
+    imem.insert(0x0C, addi(4, 0, 17)); // x4 = d = 17
+    imem.insert(0x10, addi(5, 0, 5)); // x5 = e = 5
+    
+    imem.insert(0x14, mul(6, 1, 2)); // x6 = a × b = 60
+    imem.insert(0x18, div(7, 6, 3)); // x7 = (a × b) ÷ c = 20
+    imem.insert(0x1C, rem(8, 4, 5)); // x8 = d % e = 2
+    imem.insert(0x20, add(9, 7, 8)); // x9 = x7 + x8 = 22
+    
+    imem.insert(0x24, sw(0, 9, 0x100)); // Store final result
+    imem.insert(0x28, addi(0, 0, 0)); // NOP
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..15 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+
+        clock_cycle!(dut);
+
+        // Capture writes to data memory
+        if dut.dmem_we != 0 {
+            let addr = dut.dmem_addr;
+            dmem.insert(addr, dut.dmem_wdata);
+        }
+    }
+
+    assert_eq!(
+        dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
+        22,
+        "Complex M extension program result should be 22"
     );
 }
