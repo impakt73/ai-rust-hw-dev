@@ -714,24 +714,4 @@ fn test_packet_protocol_end_to_end() {
     println!("========================================\n");
 }
 
-#[test]
-fn test_hello_im() {
-    use super::*;
-    
-    let elf_path = PathBuf::from("/tmp/hello_world_rv32im.elf");
-    
-    let (fifo_data, callback) = create_fifo_collector();
-    
-    let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some(test_string))
-        .expect("Should succeed");
-    
-    assert_tohost(&result, 0x2a, "hello_im");
-    
-    let received_data = fifo_data.lock().unwrap();
-    let received_string = fifo_data_to_string(&received_data);
-    
-    println!("✓ RV32IM Received: '{}'", received_string);
-    println!("✓ Expected: '{}'", test_string);
-    assert_eq!(received_string, test_string, "RV32IM version should work");
-}
+

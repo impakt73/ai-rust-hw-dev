@@ -73,14 +73,14 @@ impl Dram {
     }
 
     /// Read a 32-bit word from DRAM (little-endian)
-    /// The address is aligned to a word boundary before reading
+    /// Address can be 2-byte aligned (for compressed instruction support)
+    /// Reads 4 consecutive bytes starting from the provided address
     pub fn read_word(&self, addr: u32) -> u32 {
-        // Align address to word boundary
-        let aligned_addr = addr & !3;
-        let b0 = *self.data.get(&aligned_addr).unwrap_or(&0) as u32;
-        let b1 = *self.data.get(&aligned_addr.wrapping_add(1)).unwrap_or(&0) as u32;
-        let b2 = *self.data.get(&aligned_addr.wrapping_add(2)).unwrap_or(&0) as u32;
-        let b3 = *self.data.get(&aligned_addr.wrapping_add(3)).unwrap_or(&0) as u32;
+        // No alignment - support 2-byte aligned reads for compressed instructions
+        let b0 = *self.data.get(&addr).unwrap_or(&0) as u32;
+        let b1 = *self.data.get(&addr.wrapping_add(1)).unwrap_or(&0) as u32;
+        let b2 = *self.data.get(&addr.wrapping_add(2)).unwrap_or(&0) as u32;
+        let b3 = *self.data.get(&addr.wrapping_add(3)).unwrap_or(&0) as u32;
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
