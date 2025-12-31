@@ -713,3 +713,64 @@ fn test_packet_protocol_end_to_end() {
     println!("✓ Program completed with success code 42");
     println!("========================================\n");
 }
+#[test]
+fn test_hello_im() {
+    use cpu_sim::*;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    
+    let _ = env_logger::builder().is_test(true).try_init();
+    
+    let elf_path = PathBuf::from("/tmp/hello_world_rv32im.elf");
+    
+    let fifo_data = Arc::new(Mutex::new(Vec::new()));
+    let fifo_data_clone = Arc::clone(&fifo_data);
+    
+    let callback = move |word: u32| {
+        let bytes = [
+            (word & 0xFF) as u8,
+            ((word >> 8) & 0xFF) as u8,
+            ((word >> 16) & 0xFF) as u8,
+            ((word >> 24) & 0xFF) as u8,
+        ];
+        let mut fifo = fifo_data_clone.lock().unwrap();
+        fifo.extend_from_slice(&bytes);
+    };
+    
+    let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some(test_string))
+        .expect("Should succeed");
+    
+    assert_eq!(result.tohost_value, Some(0x2a));
+    
+    let received_data = fifo_data.lock().unwrap();
+    let received_string: String = received_data.iter()
+        .take_while(|&&b| b != 0)
+        .map(|&b| b as char)
+        .collect();
+    
+    println!("✓ Received: '{}'", received_string);
+    println!("✓ Expected: '{}'", test_string);
+    assert_eq!(received_string, test_string);
+}
+#[test]
+fn test_hello_im() {
+    use super::*;
+    
+    let elf_path = PathBuf::from("/tmp/hello_world_rv32im.elf");
+    
+    let (fifo_data, callback) = create_fifo_collector();
+    
+    let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some(test_string))
+        .expect("Should succeed");
+    
+    assert_tohost(&result, 0x2a, "hello_im");
+    
+    let received_data = fifo_data.lock().unwrap();
+    let received_string = fifo_data_to_string(&received_data);
+    
+    println!("✓ RV32IM Received: '{}'", received_string);
+    println!("✓ Expected: '{}'", test_string);
+    assert_eq!(received_string, test_string, "RV32IM version should work");
+}
