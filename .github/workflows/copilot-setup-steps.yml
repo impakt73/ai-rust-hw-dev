@@ -30,6 +30,7 @@ jobs:
           path: |
             /var/cache/apt/archives
             /var/lib/apt/lists
+          # Static version key - bump version (v1 -> v2) to force cache refresh
           key: ${{ runner.os }}-apt-riscv-v1
           restore-keys: |
             ${{ runner.os }}-apt-riscv-
