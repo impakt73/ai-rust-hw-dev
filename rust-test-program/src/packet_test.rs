@@ -8,7 +8,7 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_protocol::*;
 use riscv_rt::entry;
-use rkyv::to_bytes;
+use postcard::to_allocvec;
 
 // Simple bump allocator for bare-metal environment.
 // Thread Safety: This allocator uses AtomicUsize with Ordering::Relaxed, which is safe
@@ -67,17 +67,11 @@ fn write_tohost(value: u32) -> ! {
 
 fn send_packet<T>(packet: &T) -> Result<(), &'static str>
 where
-    for<'a> T: rkyv::Serialize<
-        rkyv::api::high::HighSerializer<
-            rkyv::util::AlignedVec,
-            rkyv::ser::allocator::ArenaHandle<'a>,
-            rkyv::rancor::Error,
-        >,
-    >,
+    T: serde::Serialize,
 {
-    let bytes = to_bytes::<rkyv::rancor::Error>(packet).map_err(|_| "Serialization failed")?;
+    let bytes = to_allocvec(packet).map_err(|_| "Serialization failed")?;
 
-    for chunk in bytes.as_ref().chunks(4) {
+    for chunk in bytes.chunks(4) {
         let mut word: u32 = 0;
         for (i, &byte) in chunk.iter().enumerate() {
             word |= (byte as u32) << (i * 8);

@@ -1,5 +1,4 @@
 use super::*;
-use riscv_protocol::*;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -443,7 +442,6 @@ fn test_packet_protocol_infrastructure() {
 }
 
 #[test]
-#[ignore]
 fn test_packet_protocol_end_to_end() {
     use riscv_protocol::*;
 
@@ -593,76 +591,86 @@ fn test_packet_protocol_end_to_end() {
         fifo_words.len() * 4
     );
 
-    // Convert words to bytes for packet parsing
-    let mut all_bytes = Vec::new();
+    // Convert words to VecDeque for packet parsing (using packet_transport functions)
+    let mut fifo_tx = std::collections::VecDeque::new();
     for &word in fifo_words.iter() {
-        all_bytes.extend_from_slice(&word.to_le_bytes());
+        fifo_tx.push_back(word);
     }
 
-    println!("Parsing received packets...");
+    println!("Parsing received packets using postcard...");
+    
+    // Convert first few words to bytes for debug display
+    let mut first_bytes = Vec::new();
+    for i in 0..fifo_words.len().min(16) {
+        first_bytes.extend_from_slice(&fifo_words[i].to_le_bytes());
+    }
     println!(
         "First 64 bytes: {:02x?}",
-        &all_bytes[..all_bytes.len().min(64)]
+        &first_bytes[..first_bytes.len().min(64)]
     );
 
-    // Try to deserialize packets from the byte stream
-    // Note: Simple approach - try each packet type at various offsets
+    // Parse packets using packet_transport functions
     let mut found_debug = false;
     let mut found_echo = false;
     let mut found_data = false;
     let mut found_assert = false;
 
-    // Debug: Check magic number at offset 0
-    if all_bytes.len() >= 4 {
-        let magic = u32::from_le_bytes([all_bytes[0], all_bytes[1], all_bytes[2], all_bytes[3]]);
-        println!("Magic at offset 0: 0x{:08x} (expected 0x52565043)", magic);
-    }
-
-    // Try to find Debug packet
-    if let Some(debug_pkt) = try_receive_debug_packet(&all_bytes) {
+    // Try to receive Debug packet (first packet from CPU)
+    if let Ok(Some(debug_pkt)) = crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
         println!(
             "  ✓ Debug packet: level={:?}, message='{}'",
             debug_pkt.level, debug_pkt.message
         );
+        assert_eq!(debug_pkt.header.magic, 0x52565043, "Debug packet should have correct magic");
+        assert_eq!(debug_pkt.message, "CPU Started", "Debug message should match");
         found_debug = true;
     } else {
         println!("  ✗ Failed to deserialize Debug packet");
     }
 
-    // Try to find Echo packet (should have sequence=101)
-    if let Some(echo_pkt) = try_receive_echo_packet(&all_bytes) {
+    // Try to receive Echo response (should have sequence=101)
+    if let Ok(Some(echo_pkt)) = crate::packet_transport::receive_echo_packet(&mut fifo_tx) {
         println!(
             "  ✓ Echo response: sequence={} (expected 101)",
             echo_pkt.sequence
         );
+        assert_eq!(echo_pkt.header.magic, 0x52565043, "Echo packet should have correct magic");
         assert_eq!(
             echo_pkt.sequence, 101,
             "Echo sequence should be incremented"
         );
         found_echo = true;
+    } else {
+        println!("  ✗ Failed to deserialize Echo packet");
     }
 
-    // Try to find DataU32 packet (should have value=2000, which is 1000*2)
-    if let Some(data_pkt) = try_receive_data_u32_packet(&all_bytes) {
+    // Try to receive DataU32 response (should have value=2000, which is 1000*2)
+    if let Ok(Some(data_pkt)) = crate::packet_transport::receive_data_u32_packet(&mut fifo_tx) {
         println!(
             "  ✓ DataU32 response: value={} (expected 2000)",
             data_pkt.value
         );
+        assert_eq!(data_pkt.header.magic, 0x52565043, "DataU32 packet should have correct magic");
         assert_eq!(data_pkt.value, 2000, "DataU32 value should be doubled");
         found_data = true;
+    } else {
+        println!("  ✗ Failed to deserialize DataU32 packet");
     }
 
-    // Try to find Assert packet
-    if let Some(assert_pkt) = try_receive_assert_packet(&all_bytes) {
+    // Try to receive Assert packet
+    if let Ok(Some(assert_pkt)) = crate::packet_transport::receive_assert_packet(&mut fifo_tx) {
         println!(
             "  ✓ Assert packet: passed={}, message='{}'",
             assert_pkt.passed, assert_pkt.message
         );
+        assert_eq!(assert_pkt.header.magic, 0x52565043, "Assert packet should have correct magic");
         assert!(
             assert_pkt.passed,
             "Assert packet should indicate test passed"
         );
         found_assert = true;
+    } else {
+        println!("  ✗ Failed to deserialize Assert packet");
     }
 
     // Verify we received all expected packets
@@ -689,151 +697,4 @@ fn test_packet_protocol_end_to_end() {
     println!("✓ All packet types validated");
     println!("✓ Program completed with success code 42");
     println!("========================================\n");
-}
-
-// Helper functions to try deserializing packets from byte stream
-/// Attempts to deserialize a DebugPacket from the byte stream.
-/// Optimized to check magic number before attempting full deserialization.
-fn try_receive_debug_packet(bytes: &[u8]) -> Option<DebugPacket> {
-    use rkyv::{from_bytes, util::AlignedVec};
-
-    const MAGIC: u32 = 0x52565043;
-    const MIN_PACKET_SIZE: usize = 20;
-
-    // Try different 4-byte aligned offsets to find the packet
-    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
-        // Quick check: verify magic number before attempting deserialization
-        if bytes.len() >= offset + 4 {
-            let magic_bytes = &bytes[offset..offset + 4];
-            let magic = u32::from_le_bytes([
-                magic_bytes[0],
-                magic_bytes[1],
-                magic_bytes[2],
-                magic_bytes[3],
-            ]);
-
-            if magic != MAGIC {
-                continue; // Skip this offset, no valid packet header
-            }
-        }
-
-        // Copy to aligned buffer (8-byte alignment for rkyv)
-        let mut aligned: AlignedVec<8> = AlignedVec::new();
-        aligned.extend_from_slice(&bytes[offset..]);
-
-        if let Ok(pkt) = from_bytes::<DebugPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Debug {
-                return Some(pkt);
-            }
-        }
-    }
-    None
-}
-
-/// Attempts to deserialize an EchoPacket from the byte stream.
-/// Optimized to check magic number before attempting full deserialization.
-fn try_receive_echo_packet(bytes: &[u8]) -> Option<EchoPacket> {
-    use rkyv::{from_bytes, util::AlignedVec};
-
-    const MAGIC: u32 = 0x52565043;
-    const MIN_PACKET_SIZE: usize = 20;
-
-    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
-        // Quick check: verify magic number before attempting deserialization
-        if bytes.len() >= offset + 4 {
-            let magic_bytes = &bytes[offset..offset + 4];
-            let magic = u32::from_le_bytes([
-                magic_bytes[0],
-                magic_bytes[1],
-                magic_bytes[2],
-                magic_bytes[3],
-            ]);
-
-            if magic != MAGIC {
-                continue; // Skip this offset, no valid packet header
-            }
-        }
-
-        let mut aligned: AlignedVec<8> = AlignedVec::new();
-        aligned.extend_from_slice(&bytes[offset..]);
-
-        if let Ok(pkt) = from_bytes::<EchoPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Echo {
-                return Some(pkt);
-            }
-        }
-    }
-    None
-}
-
-/// Attempts to deserialize a DataU32Packet from the byte stream.
-/// Optimized to check magic number before attempting full deserialization.
-fn try_receive_data_u32_packet(bytes: &[u8]) -> Option<DataU32Packet> {
-    use rkyv::{from_bytes, util::AlignedVec};
-
-    const MAGIC: u32 = 0x52565043;
-    const MIN_PACKET_SIZE: usize = 16;
-
-    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
-        // Quick check: verify magic number before attempting deserialization
-        if bytes.len() >= offset + 4 {
-            let magic_bytes = &bytes[offset..offset + 4];
-            let magic = u32::from_le_bytes([
-                magic_bytes[0],
-                magic_bytes[1],
-                magic_bytes[2],
-                magic_bytes[3],
-            ]);
-
-            if magic != MAGIC {
-                continue; // Skip this offset, no valid packet header
-            }
-        }
-
-        let mut aligned: AlignedVec<8> = AlignedVec::new();
-        aligned.extend_from_slice(&bytes[offset..]);
-
-        if let Ok(pkt) = from_bytes::<DataU32Packet, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::DataU32 {
-                return Some(pkt);
-            }
-        }
-    }
-    None
-}
-
-/// Attempts to deserialize an AssertPacket from the byte stream.
-/// Optimized to check magic number before attempting full deserialization.
-fn try_receive_assert_packet(bytes: &[u8]) -> Option<AssertPacket> {
-    use rkyv::{from_bytes, util::AlignedVec};
-
-    const MAGIC: u32 = 0x52565043;
-    const MIN_PACKET_SIZE: usize = 24;
-
-    for offset in (0..bytes.len().saturating_sub(MIN_PACKET_SIZE)).step_by(4) {
-        // Quick check: verify magic number before attempting deserialization
-        if bytes.len() >= offset + 4 {
-            let magic_bytes = &bytes[offset..offset + 4];
-            let magic = u32::from_le_bytes([
-                magic_bytes[0],
-                magic_bytes[1],
-                magic_bytes[2],
-                magic_bytes[3],
-            ]);
-
-            if magic != MAGIC {
-                continue; // Skip this offset, no valid packet header
-            }
-        }
-
-        let mut aligned: AlignedVec<8> = AlignedVec::new();
-        aligned.extend_from_slice(&bytes[offset..]);
-
-        if let Ok(pkt) = from_bytes::<AssertPacket, rkyv::rancor::Error>(&aligned) {
-            if pkt.header.magic == MAGIC && pkt.header.packet_type == PacketType::Assert {
-                return Some(pkt);
-            }
-        }
-    }
-    None
 }

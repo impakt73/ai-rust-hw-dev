@@ -215,3 +215,15 @@ pub fn run_elf(
 ) -> Result<SimulationResult, String> {
     run_elf_with_callback(elf_path, max_cycles, print_inst_trace, None::<fn(u32)>)
 }
+// Disabled broken test module
+// #[cfg(test)]
+// mod test_minimal;
+
+#[cfg(test)]
+mod test_byte_enable;
+
+#[cfg(test)]
+mod test_simple_byte_store;
+
+#[cfg(test)]
+mod test_alloc_only;

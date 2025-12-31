@@ -1,5 +1,5 @@
 use crate::header::PacketHeader;
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -7,7 +7,7 @@ extern crate alloc;
 use alloc::string::String;
 
 /// Debug level enumeration
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DebugLevel {
     Trace = 0,
@@ -19,7 +19,7 @@ pub enum DebugLevel {
 
 /// General debug messages from CPU to host
 #[cfg(feature = "alloc")]
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DebugPacket {
     pub header: PacketHeader,
     pub level: DebugLevel,
@@ -29,7 +29,7 @@ pub struct DebugPacket {
 
 /// Report test assertion results
 #[cfg(feature = "alloc")]
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssertPacket {
     pub header: PacketHeader,
     pub passed: bool, // True if assertion passed

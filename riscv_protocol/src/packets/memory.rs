@@ -1,5 +1,5 @@
 use crate::header::PacketHeader;
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -7,7 +7,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 /// Read a contiguous memory region
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryReadPacket {
     pub header: PacketHeader,
     pub address: u32, // Starting memory address
@@ -16,7 +16,7 @@ pub struct MemoryReadPacket {
 
 /// Response packet for memory read
 #[cfg(feature = "alloc")]
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryReadResponsePacket {
     pub header: PacketHeader,
     pub address: u32,  // Starting address (echoed from request)
@@ -25,7 +25,7 @@ pub struct MemoryReadResponsePacket {
 
 /// Write to a contiguous memory region
 #[cfg(feature = "alloc")]
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryWritePacket {
     pub header: PacketHeader,
     pub address: u32,  // Starting memory address

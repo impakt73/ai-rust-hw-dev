@@ -15,6 +15,7 @@ module top (
     output logic [31:0] dmem_wdata,
     input  logic [31:0] dmem_rdata,
     output logic        dmem_we,
+    output logic [3:0]  dmem_be,    // Byte enable (one bit per byte)
     
     // Debug outputs (for tracing register values)
     output logic [31:0] debug_rs1_data,
@@ -171,25 +172,42 @@ module top (
     always_comb begin
         case (funct3)
             3'b000: begin // SB - Store Byte
-                // Position byte at correct location based on address alignment
-                case (alu_result[1:0])
-                    2'b00: formatted_store_data = {24'b0, rs2_data[7:0]};
-                    2'b01: formatted_store_data = {16'b0, rs2_data[7:0], 8'b0};
-                    2'b10: formatted_store_data = {8'b0, rs2_data[7:0], 16'b0};
-                    2'b11: formatted_store_data = {rs2_data[7:0], 24'b0};
-                endcase
+                // Replicate byte to all positions - byte enable mask selects which to write
+                formatted_store_data = {rs2_data[7:0], rs2_data[7:0], rs2_data[7:0], rs2_data[7:0]};
             end
             3'b001: begin // SH - Store Halfword
-                // Position halfword based on address alignment
-                case (alu_result[1])
-                    1'b0: formatted_store_data = {16'b0, rs2_data[15:0]};
-                    1'b1: formatted_store_data = {rs2_data[15:0], 16'b0};
-                endcase
+                // Replicate halfword to both positions - byte enable mask selects which to write
+                formatted_store_data = {rs2_data[15:0], rs2_data[15:0]};
             end
             default: formatted_store_data = rs2_data; // SW - Store Word
         endcase
     end
     assign dmem_wdata = formatted_store_data;
+    
+    // Byte enable generation based on funct3 (byte/halfword/word) and address alignment
+    logic [3:0] byte_enable;
+    always_comb begin
+        case (funct3)
+            3'b000: begin // SB - Store Byte
+                // Enable only the byte at the target address
+                case (alu_result[1:0])
+                    2'b00: byte_enable = 4'b0001;  // Byte 0
+                    2'b01: byte_enable = 4'b0010;  // Byte 1
+                    2'b10: byte_enable = 4'b0100;  // Byte 2
+                    2'b11: byte_enable = 4'b1000;  // Byte 3
+                endcase
+            end
+            3'b001: begin // SH - Store Halfword
+                // Enable the two bytes at the target address
+                case (alu_result[1])
+                    1'b0: byte_enable = 4'b0011;  // Bytes 0-1
+                    1'b1: byte_enable = 4'b1100;  // Bytes 2-3
+                endcase
+            end
+            default: byte_enable = 4'b1111; // SW - Store Word (all bytes)
+        endcase
+    end
+    assign dmem_be = byte_enable;
     
     // Load data formatting based on funct3 (byte/halfword/word)
     logic [31:0] formatted_load_data;
