@@ -18,7 +18,7 @@ A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-b
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
 - ✅ **Single-cycle Execution**: All instructions complete in one clock cycle
-- ✅ **Verilator-based Verification**: 84 comprehensive tests using Rust + marlin framework
+- ✅ **Verilator-based Verification**: 84 comprehensive tests using Rust + marlin framework (50 in cpu_verifier package)
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 

@@ -61,16 +61,19 @@ cargo clean
 
 ### Test Structure
 
-The project has 84 comprehensive tests:
-- **16 ALU tests:** Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
-- **6 Register file tests:** Validate register behavior (including x0 immutability)
-- **50 CPU integration tests:** Validate complete instruction execution including:
-  - Arithmetic, logic, and memory operations
-  - Branches and jumps
-  - Byte/halfword operations
-  - System instructions (FENCE, ECALL, EBREAK)
-  - CSR operations (read/write, set/clear, immediate variants)
-  - M extension operations (multiplication, division, remainder)
+The project has 84 comprehensive tests across all packages:
+- **cpu_verifier package (50 tests):**
+  - 16 ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+  - 6 Register file tests: Validate register behavior (including x0 immutability)
+  - 28 CPU integration tests: Validate complete instruction execution including:
+    - Arithmetic, logic, and memory operations
+    - Branches and jumps
+    - Byte/halfword operations
+    - System instructions (FENCE, ECALL, EBREAK)
+    - CSR operations (read/write, set/clear, immediate variants)
+    - M extension operations (multiplication, division, remainder)
+- **Other packages (34 tests):**
+  - Additional integration and utility tests
 
 ### Verilator Build Process
 
@@ -225,7 +228,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 84 tests must pass.
+   All 84 tests must pass (50 in cpu_verifier + 34 in other packages).
 
 2. **Verify code formatting:**
    ```bash
@@ -301,7 +304,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 84 tests must pass)
+2. ✅ **Tests:** `cargo test --verbose` (all 84 tests must pass: 50 in cpu_verifier + 34 in other packages)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
@@ -314,7 +317,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 84 passed
+4. **Verify all tests pass:** Look for `test result: ok` with 84 total tests passed (50 in cpu_verifier + 34 in other packages)
 
 ### Signal Naming Conventions
 
