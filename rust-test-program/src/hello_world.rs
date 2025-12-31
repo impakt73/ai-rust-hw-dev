@@ -51,12 +51,12 @@ fn main() -> ! {
     // Maximum of 50 iterations to prevent infinite loops
     for _ in 0..50 {
         let word = fifo_read_word_unchecked();
-        
+
         // If we read a null terminator, we're done
         if word == 0 {
             break;
         }
-        
+
         // Echo non-zero words
         fifo_write_word(word);
     }

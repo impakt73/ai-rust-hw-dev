@@ -1,0 +1,15 @@
+[package]
+name = "riscv_protocol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rkyv = { version = "0.8", default-features = false }
+
+[features]
+default = ["std"]
+std = ["rkyv/std", "alloc"]
+alloc = ["rkyv/alloc"]
+
+[dev-dependencies]
+rkyv = "0.8"

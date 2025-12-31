@@ -1,6 +1,7 @@
 use crate::bus::SystemBus;
 use riscv_core::trace::InstructionTrace;
 use riscv_core::Top;
+use riscv_protocol::*;
 
 /// Result of a simulation run
 #[derive(Debug)]
@@ -116,6 +117,95 @@ where
             "CPU reset complete with entry point: 0x{:08x}",
             self.entry_point
         );
+    }
+
+    /// Execute a single simulation step (one cycle)
+    /// Returns Some(tohost_value) if halt detected, None otherwise
+    pub fn step(&mut self) -> Option<u32> {
+        // Magic address for halt signal (tohost mechanism)
+        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+
+        // Instruction Fetch
+        let pc = self.cpu.imem_addr;
+        let instruction = self.bus.read_word(pc);
+        self.cpu.imem_data = instruction;
+
+        // First evaluation: Decode instruction and compute addresses
+        self.cpu.eval();
+
+        // Data Memory Read
+        let dmem_addr = self.cpu.dmem_addr;
+        let rdata = if self.cpu.dmem_we == 0 {
+            self.bus.read_word(dmem_addr)
+        } else {
+            0
+        };
+        self.cpu.dmem_rdata = rdata;
+
+        // Second evaluation: Propagate loaded data
+        self.cpu.eval();
+
+        // Data Memory Write
+        let mut halt_value = None;
+        if self.cpu.dmem_we != 0 {
+            let wdata = self.cpu.dmem_wdata;
+            self.bus.write_word(dmem_addr, wdata);
+
+            // Check for halt signal
+            if dmem_addr == TOHOST_ADDR {
+                halt_value = Some(wdata);
+            }
+        }
+
+        // Sample debug signals BEFORE clock tick
+        let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+            Some(InstructionTrace::from_instruction(
+                pc,
+                instruction,
+                rs1_value,
+                rs2_value,
+                rd_value,
+            ))
+        } else {
+            None
+        };
+
+        // Clock tick
+        self.cpu.clk = 0;
+        self.cpu.eval();
+        self.cpu.clk = 1;
+        self.cpu.eval();
+
+        // Process FIFO TX data
+        while let Some(word) = self.bus.fifo.tx.pop_front() {
+            if let Some(ref mut callback) = self.fifo_callback {
+                callback(word);
+            }
+        }
+
+        // Call trace callback if provided
+        if let Some(ref mut callback) = self.trace_callback {
+            if let Some(ref trace_data) = trace {
+                callback(trace_data);
+            }
+        }
+
+        // Debug logging
+        if self.print_inst_trace {
+            if let Some(ref trace_data) = trace {
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                    self.cycle_count, pc, pc, instruction, trace_data
+                );
+            }
+        }
+
+        self.cycle_count += 1;
+
+        halt_value
     }
 
     /// Run the simulation for up to max_cycles
@@ -255,5 +345,35 @@ where
             cycles: self.cycle_count,
             tohost_value: None,
         })
+    }
+
+    /// Send an Echo packet to the simulated CPU
+    pub fn send_echo_packet(&mut self, packet: &EchoPacket) -> Result<(), String> {
+        crate::packet_transport::send_echo_packet(packet, &mut self.bus.fifo.rx)
+    }
+
+    /// Send a DataU32 packet to the simulated CPU
+    pub fn send_data_u32_packet(&mut self, packet: &DataU32Packet) -> Result<(), String> {
+        crate::packet_transport::send_data_u32_packet(packet, &mut self.bus.fifo.rx)
+    }
+
+    /// Try to receive an Echo packet from the simulated CPU
+    pub fn try_receive_echo_packet(&mut self) -> Result<Option<EchoPacket>, String> {
+        crate::packet_transport::receive_echo_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive a DataU32 packet from the simulated CPU
+    pub fn try_receive_data_u32_packet(&mut self) -> Result<Option<DataU32Packet>, String> {
+        crate::packet_transport::receive_data_u32_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive a Debug packet from the simulated CPU
+    pub fn try_receive_debug_packet(&mut self) -> Result<Option<DebugPacket>, String> {
+        crate::packet_transport::receive_debug_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Try to receive an Assert packet from the simulated CPU
+    pub fn try_receive_assert_packet(&mut self) -> Result<Option<AssertPacket>, String> {
+        crate::packet_transport::receive_assert_packet(&mut self.bus.fifo.tx)
     }
 }
