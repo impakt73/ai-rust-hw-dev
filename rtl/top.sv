@@ -15,6 +15,7 @@ module top (
     output logic [31:0] dmem_wdata,
     input  logic [31:0] dmem_rdata,
     output logic        dmem_we,
+    output logic        dmem_re,    // Memory read enable
     output logic [3:0]  dmem_be,    // Byte enable (one bit per byte)
     
     // Debug outputs (for tracing register values)
@@ -44,6 +45,7 @@ module top (
     logic        alu_src;
     logic        reg_write;
     logic        mem_write;
+    logic        mem_read;
     logic        mem_to_reg;
     logic        branch;
     logic        jump;
@@ -127,6 +129,7 @@ module top (
         .alu_src(alu_src),
         .reg_write(reg_write),
         .mem_write(mem_write),
+        .mem_read(mem_read),
         .mem_to_reg(mem_to_reg),
         .branch(branch),
         .jump(jump)
@@ -166,6 +169,7 @@ module top (
     // Data memory interface
     assign dmem_addr = alu_result;
     assign dmem_we = mem_write;
+    assign dmem_re = mem_read;
     
     // Store data formatting based on funct3 (byte/halfword/word)
     logic [31:0] formatted_store_data;
