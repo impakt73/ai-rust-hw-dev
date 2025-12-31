@@ -296,10 +296,10 @@ The CI workflow runs automatically on:
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
 2. ✅ **Tests:** `cargo test --verbose` (all 34 tests must pass)
-3. ⚠️ **Formatting:** `cargo fmt -- --check` (non-blocking but should pass)
-4. ⚠️ **Clippy:** `cargo clippy -- -D warnings` (non-blocking but should pass)
+3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
+4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
-**Note:** While formatting and clippy checks are marked as non-blocking in CI, you should still ensure they pass before requesting review for code quality.
+**Note:** All checks including formatting and clippy are now blocking in CI. Your code must pass all checks before it can be merged.
 
 ## Modifying RTL
 
@@ -323,10 +323,10 @@ GitHub Actions automatically:
 2. Caches dependencies for faster builds
 3. Runs `cargo build --verbose`
 4. Runs `cargo test --verbose`
-5. Checks formatting with `cargo fmt --check` (non-blocking)
-6. Runs `cargo clippy` (non-blocking)
+5. Checks formatting with `cargo fmt --check` (blocking - must pass)
+6. Runs `cargo clippy -- -D warnings` (blocking - must pass)
 
-**Note:** CI runs on every push to `copilot/**` branches and PRs to `main`.
+**Note:** CI runs on every push to `copilot/**` branches and PRs to `main`. All checks are mandatory and must pass for CI to succeed.
 
 **⚠️ IMPORTANT:** Before marking a PR as ready for review, verify that all CI checks pass. See the [PR Readiness and CI Verification](#pr-readiness-and-ci-verification) section for detailed requirements.
 
