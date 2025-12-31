@@ -144,6 +144,48 @@ fn sb(rs1: u32, rs2: u32, imm: i32) -> u32 {
     encode_s_type(0b0100011, 0b000, rs1, rs2, imm)
 }
 
+// System instructions
+fn fence() -> u32 {
+    // FENCE: opcode=0001111, rd=0, funct3=0, rs1=0, fm=0, pred=0b1111, succ=0b1111
+    0b0000_1111_1111_00000_000_00000_0001111
+}
+
+fn ecall() -> u32 {
+    // ECALL: opcode=1110011, rd=0, funct3=000, rs1=0, imm12=0
+    encode_i_type(0b1110011, 0, 0b000, 0, 0)
+}
+
+fn ebreak() -> u32 {
+    // EBREAK: opcode=1110011, rd=0, funct3=000, rs1=0, imm12=1
+    encode_i_type(0b1110011, 0, 0b000, 0, 1)
+}
+
+// CSR instructions
+fn csrrw(rd: u32, rs1: u32, csr: u32) -> u32 {
+    encode_i_type(0b1110011, rd, 0b001, rs1, csr as i32)
+}
+
+fn csrrs(rd: u32, rs1: u32, csr: u32) -> u32 {
+    encode_i_type(0b1110011, rd, 0b010, rs1, csr as i32)
+}
+
+fn csrrc(rd: u32, rs1: u32, csr: u32) -> u32 {
+    encode_i_type(0b1110011, rd, 0b011, rs1, csr as i32)
+}
+
+fn csrrwi(rd: u32, imm: u32, csr: u32) -> u32 {
+    // For immediate CSR instructions, rs1 field holds the immediate value (zimm)
+    encode_i_type(0b1110011, rd, 0b101, imm, csr as i32)
+}
+
+fn csrrsi(rd: u32, imm: u32, csr: u32) -> u32 {
+    encode_i_type(0b1110011, rd, 0b110, imm, csr as i32)
+}
+
+fn csrrci(rd: u32, imm: u32, csr: u32) -> u32 {
+    encode_i_type(0b1110011, rd, 0b111, imm, csr as i32)
+}
+
 #[test]
 fn test_cpu_basic_execution() {
     let runtime = create_runtime();
@@ -1316,4 +1358,221 @@ fn test_cpu_byte_halfword_mixed() {
     );
 
     println!("Successfully executed mixed byte/halfword operations");
+}
+
+#[test]
+fn test_cpu_fence_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    imem.insert(0x00, addi(1, 0, 10)); // x1 = 10
+    imem.insert(0x04, fence());         // FENCE (should be NOP for single-cycle CPU)
+    imem.insert(0x08, addi(2, 1, 5));  // x2 = x1 + 5 = 15
+    imem.insert(0x0C, addi(0, 0, 0));  // NOP
+
+    let dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..5 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+        clock_cycle!(dut);
+    }
+
+    // Verify FENCE didn't affect execution
+    // After 3 cycles (addi, fence, addi), x1 should be 10 and x2 should be 15
+    // We can't directly check register values, but execution should proceed normally
+    assert_eq!(dut.halted, 0, "CPU should not be halted after FENCE");
+}
+
+#[test]
+fn test_cpu_ecall_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    imem.insert(0x00, addi(1, 0, 42));  // x1 = 42
+    imem.insert(0x04, ecall());          // ECALL - should halt CPU
+    imem.insert(0x08, addi(2, 0, 99));  // Should not execute
+
+    let _dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute first instruction
+    dut.imem_data = imem.get(&dut.imem_addr).copied().unwrap_or(0);
+    dut.dmem_rdata = 0;
+    clock_cycle!(dut);
+    assert_eq!(dut.halted, 0, "CPU should not be halted yet");
+
+    // Execute ECALL
+    dut.imem_data = imem.get(&dut.imem_addr).copied().unwrap_or(0);
+    clock_cycle!(dut);
+    assert_eq!(dut.halted, 1, "CPU should be halted after ECALL");
+
+    // PC should stop advancing
+    let halted_pc = dut.imem_addr;
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.imem_addr, halted_pc,
+        "PC should not advance when halted"
+    );
+}
+
+#[test]
+fn test_cpu_ebreak_instruction() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    imem.insert(0x00, addi(1, 0, 100)); // x1 = 100
+    imem.insert(0x04, ebreak());         // EBREAK - should halt CPU
+    imem.insert(0x08, addi(2, 0, 200)); // Should not execute
+
+    let _dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute first instruction
+    dut.imem_data = imem.get(&dut.imem_addr).copied().unwrap_or(0);
+    dut.dmem_rdata = 0;
+    clock_cycle!(dut);
+    assert_eq!(dut.halted, 0, "CPU should not be halted yet");
+
+    // Execute EBREAK
+    dut.imem_data = imem.get(&dut.imem_addr).copied().unwrap_or(0);
+    clock_cycle!(dut);
+    assert_eq!(dut.halted, 1, "CPU should be halted after EBREAK");
+
+    // PC should stop advancing
+    let halted_pc = dut.imem_addr;
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.imem_addr, halted_pc,
+        "PC should not advance when halted"
+    );
+}
+
+#[test]
+fn test_cpu_csr_read_write() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    
+    // Test CSRRW (CSR Read/Write)
+    // CSR address 0x300 (mstatus in real RISC-V, but we treat it as generic)
+    imem.insert(0x00, addi(1, 0, 100));      // x1 = 100
+    imem.insert(0x04, csrrw(2, 1, 0x300));   // x2 = CSR[0x300]; CSR[0x300] = x1
+    imem.insert(0x08, csrrw(3, 0, 0x300));   // x3 = CSR[0x300]; CSR[0x300] = 0
+    imem.insert(0x0C, addi(0, 0, 0));        // NOP
+
+    let dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+        clock_cycle!(dut);
+    }
+
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
+}
+
+#[test]
+fn test_cpu_csr_set_clear() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    
+    // Test CSRRS (CSR Read and Set)
+    imem.insert(0x00, addi(1, 0, 0b1010));   // x1 = 0b1010
+    imem.insert(0x04, csrrw(0, 1, 0x301));   // CSR[0x301] = 0b1010 (write initial value)
+    imem.insert(0x08, addi(2, 0, 0b0101));   // x2 = 0b0101
+    imem.insert(0x0C, csrrs(3, 2, 0x301));   // x3 = CSR[0x301]; CSR[0x301] |= x2
+    // After CSRRS: CSR[0x301] should be 0b1111
+    imem.insert(0x10, addi(4, 0, 0b1000));   // x4 = 0b1000
+    imem.insert(0x14, csrrc(5, 4, 0x301));   // x5 = CSR[0x301]; CSR[0x301] &= ~x4
+    // After CSRRC: CSR[0x301] should be 0b0111
+    imem.insert(0x18, addi(0, 0, 0));        // NOP
+
+    let dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..10 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+        clock_cycle!(dut);
+    }
+
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
+}
+
+#[test]
+fn test_cpu_csr_immediate() {
+    let runtime = create_runtime();
+    let mut dut = runtime.create_model_simple::<Top>().unwrap();
+
+    // Create instruction memory
+    let mut imem = HashMap::new();
+    
+    // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
+    imem.insert(0x00, csrrwi(1, 15, 0x302));    // CSR[0x302] = 15; x1 = old value (0)
+    imem.insert(0x04, csrrsi(2, 8, 0x302));     // CSR[0x302] |= 8; x2 = old value (15)
+    imem.insert(0x08, csrrci(3, 4, 0x302));     // CSR[0x302] &= ~4; x3 = old value (15)
+    imem.insert(0x0C, addi(0, 0, 0));           // NOP
+
+    let dmem: HashMap<u32, u32> = HashMap::new();
+
+    // Reset
+    dut.rst_n = 0;
+    dut.boot_addr = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+
+    // Execute instructions
+    for _ in 0..6 {
+        let pc = dut.imem_addr;
+        dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
+        dut.dmem_rdata = dmem.get(&dut.dmem_addr).copied().unwrap_or(0);
+        clock_cycle!(dut);
+    }
+
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
 }

@@ -20,7 +20,11 @@ module decoder (
     output logic        mem_write,
     output logic        mem_to_reg,
     output logic        branch,
-    output logic        jump
+    output logic        jump,
+    output logic        is_ecall,     // ECALL instruction
+    output logic        is_ebreak,    // EBREAK instruction
+    output logic        is_fence,     // FENCE instruction
+    output logic        is_csr        // CSR instruction
 );
 
     // Extract fields from instruction
@@ -57,6 +61,8 @@ module decoder (
     localparam logic [6:0] OP_AUIPC  = 7'b0010111;  // AUIPC
     localparam logic [6:0] OP_JAL    = 7'b1101111;  // JAL
     localparam logic [6:0] OP_JALR   = 7'b1100111;  // JALR
+    localparam logic [6:0] OP_FENCE  = 7'b0001111;  // FENCE
+    localparam logic [6:0] OP_SYSTEM = 7'b1110011;  // SYSTEM (ECALL, EBREAK, CSR*)
 
     // ALU operations (must match alu.sv)
     localparam logic [3:0] ALU_ADD  = 4'b0000;
@@ -80,6 +86,10 @@ module decoder (
         mem_to_reg = 1'b0;
         branch = 1'b0;
         jump = 1'b0;
+        is_ecall = 1'b0;
+        is_ebreak = 1'b0;
+        is_fence = 1'b0;
+        is_csr = 1'b0;
 
         case (opcode)
             OP_IMM: begin
@@ -163,6 +173,27 @@ module decoder (
                 jump = 1'b1;
                 alu_src = 1'b1;
                 reg_write = 1'b1;
+            end
+
+            OP_FENCE: begin
+                // FENCE - Memory ordering (NOP for single-cycle CPU)
+                is_fence = 1'b1;
+            end
+
+            OP_SYSTEM: begin
+                // SYSTEM instructions: ECALL, EBREAK, CSR*
+                if (funct3 == 3'b000) begin
+                    // ECALL or EBREAK (distinguished by imm[0])
+                    if (imm_i[0] == 1'b0) begin
+                        is_ecall = 1'b1;
+                    end else begin
+                        is_ebreak = 1'b1;
+                    end
+                end else begin
+                    // CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
+                    is_csr = 1'b1;
+                    reg_write = 1'b1;  // CSR instructions write to rd
+                end
             end
 
             default: begin
