@@ -96,7 +96,7 @@ module top (
     // Program Counter and instruction fetch
     // Note: imem_addr is now driven by ifetch module
     
-    // Instruction fetch unit - simplified, returns raw memory data
+    // Instruction fetch unit - handles 16/32-bit instruction fetching
     ifetch u_ifetch (
         .clk(clk),
         .rst_n(rst_n),
@@ -108,60 +108,9 @@ module top (
         .imem_size(imem_size)
     );
     
-    // Instruction assembly logic - handles both compressed and standard instructions
-    // with buffering for half-word aligned PC
-    logic [15:0] prev_upper_half;  // Buffered upper 16 bits from previous word
-    logic        prev_valid;       // Buffer is valid
-    logic [15:0] current_half;
-    logic [31:0] assembled_instruction;
-    
-    // Buffer the upper 16 bits of each word fetch for use when PC becomes half-word aligned
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            prev_upper_half <= 16'h0000;
-            prev_valid <= 1'b0;
-        end else begin
-            // Always buffer the upper 16 bits
-            prev_upper_half <= fetched_instruction[31:16];
-            prev_valid <= 1'b1;
-        end
-    end
-    
-    // Select the correct 16-bit half based on PC alignment
-    always_comb begin
-        if (!pc[1]) begin
-            // PC is word-aligned: use lower 16 bits
-            current_half = fetched_instruction[15:0];
-        end else begin
-            // PC is half-word aligned: use buffered upper 16 bits from previous fetch
-            current_half = prev_valid ? prev_upper_half : fetched_instruction[31:16];
-        end
-    end
-    
-    // Check if current half is a compressed instruction
-    logic is_current_compressed;
-    assign is_current_compressed = (current_half[1:0] != 2'b11);
-    
-    // Assemble full instruction based on type and alignment
-    always_comb begin
-        if (is_current_compressed) begin
-            // 16-bit compressed instruction - zero-extend
-            assembled_instruction = {16'h0000, current_half};
-        end else begin
-            // 32-bit standard instruction
-            if (!pc[1]) begin
-                // PC is word-aligned: both halves are in fetched_instruction
-                assembled_instruction = fetched_instruction;
-            end else begin
-                // PC is half-word aligned: lower half is buffered, upper half is in current fetch
-                assembled_instruction = {fetched_instruction[15:0], current_half};
-            end
-        end
-    end
-    
     // Decompressor - expands compressed instructions to standard 32-bit format
     decompress u_decompress (
-        .insn_16(assembled_instruction[15:0]),
+        .insn_16(fetched_instruction[15:0]),
         .insn_32(decompressed_insn),
         .is_compressed(is_compressed),
         .is_valid(decompress_valid)
@@ -172,7 +121,7 @@ module top (
     // This prevents execution of undefined behavior while avoiding CPU halt
     assign instruction = is_compressed ? 
                          (decompress_valid ? decompressed_insn : 32'h00000013) : 
-                         assembled_instruction;
+                         fetched_instruction;
     
     // PC increment: 2 for compressed, 4 for standard
     assign pc_increment = is_compressed ? 32'd2 : 32'd4;
