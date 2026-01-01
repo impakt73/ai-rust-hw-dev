@@ -429,10 +429,10 @@ dmem_we     ────────┐ ┌────────────�
 
 ### Required Testbench Changes
 
-**Multi-Cycle Test Loop (Proposed - Option 1: Minimal Changes):**
+**Multi-Cycle Test Loop (Recommended Approach):**
 ```rust
-// Run for N cycles (not N instructions)
-for _ in 0..(N * 5) {  // Assume max 5 cycles per instruction
+// Execute one clock cycle at a time, independent of instruction timing
+loop {
     // Instruction memory interface
     let pc = dut.imem_addr;
     let instruction = imem.get(&pc).copied().unwrap_or(0);
@@ -451,18 +451,25 @@ for _ in 0..(N * 5) {  // Assume max 5 cycles per instruction
     
     clock_cycle!(dut);
     
-    // Exit early if halted
+    // Exit when halted or max cycles reached
     if dut.halted == 1 {
         break;
+    }
+    
+    // Safety limit to prevent infinite loops
+    cycle_count += 1;
+    if cycle_count >= max_cycles {
+        panic!("Test exceeded maximum cycle count");
     }
 }
 ```
 
 **Changes Summary:**
-- Increase loop count to accommodate multi-cycle execution (multiply by 5)
-- **No structural changes** to memory handling
+- Execute one cycle at a time without assumptions about instruction timing
+- Memory interface logic remains unchanged and works correctly cycle-by-cycle
+- Tests specify maximum cycle budget instead of instruction count
 - Early exit on `halted` signal
-- This is the **recommended approach** for minimal changes
+- Safety limit prevents infinite loops in case of CPU bugs
 
 ### Debug Signal Additions
 
@@ -486,24 +493,25 @@ assign debug_instr_complete = (state == WRITEBACK ||
 
 ### Test Migration Strategy
 
-**Phase 1: Run existing tests with increased cycle counts**
-- Modify all tests to run 5x more cycles
-- Verify tests still pass (PC progression may differ)
+**Phase 1: Update test loop structure**
+- Replace instruction-count-based loops with cycle-based loops
+- Set appropriate maximum cycle budgets for each test
+- Verify memory interface continues to work correctly
 
-**Phase 2: Add state awareness**
-- Expose `debug_state` signal
-- Modify tests to detect instruction completion
-- Adjust assertions based on multi-cycle timing
+**Phase 2: Add state awareness (optional)**
+- Expose `debug_state` signal for debugging
+- Can be used to verify state transitions during development
+- Not required for basic functionality
 
 **Phase 3: Update test expectations**
-- Update cycle count expectations in tests
-- Add tests for state transitions
+- Adjust cycle count expectations based on actual execution
+- Add tests for state transitions (if debug signals added)
 - Verify intermediate register values
 
 **Estimated Test Change Scope:**
 - **`alu_test.rs`:** No changes (ALU remains combinational, tests are self-contained)
 - **`regfile_test.rs`:** Minor changes (adjust write timing)
-- **`cpu_test.rs`:** Moderate changes (increase cycle counts, adjust PC progression checks)
+- **`cpu_test.rs`:** Moderate changes (update loop structure, set cycle budgets)
 
 ---
 
