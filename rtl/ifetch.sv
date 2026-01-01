@@ -29,32 +29,31 @@ module ifetch (
     logic        buffer_valid;      // Buffer contains valid data
     logic [15:0] lower_half;        // Current lower 16 bits to examine
     logic [15:0] upper_half;        // Current upper 16 bits
-    logic        is_32bit;          // Current instruction is 32-bit (not compressed)
     
     // Memory address calculation
-    // CRITICAL: When PC[1]==1 AND instruction is 32-bit, need to fetch from PC+4 for upper half
-    // However, we don't know if it's 32-bit until we examine the buffered data
-    // So we always fetch from word containing PC first, then handle assembly
-    assign imem_addr = {pc[31:2], 2'b00};
+    // CRITICAL: When PC[1]==1, we're at a half-word boundary
+    // If the buffered instruction is 32-bit, we need the NEXT word for upper 16 bits
+    // Otherwise, fetch from word containing PC
+    // This creates a combinational path: pc -> is_32bit (via buffered_half) -> imem_addr
+    assign imem_addr = (pc[1] && buffer_valid && (buffered_half[1:0] == 2'b11)) ? 
+                       {pc[31:2], 2'b00} + 32'd4 : 
+                       {pc[31:2], 2'b00};
     
     // Extract halves from current memory fetch
     assign lower_half = imem_data[15:0];
     assign upper_half = imem_data[31:16];
     
-    // Detect if current instruction is 32-bit
+    // Detect if current instruction is 32-bit and set is_compressed flag
     // Compressed instructions have bits [1:0] != 2'b11
     always_comb begin
         if (!pc[1]) begin
             // PC is word-aligned: check lower half of current fetch
-            is_32bit = (lower_half[1:0] == 2'b11);
+            is_compressed = (lower_half[1:0] != 2'b11);
         end else begin
             // PC is half-word aligned: check buffered half from previous fetch
-            is_32bit = buffer_valid && (buffered_half[1:0] == 2'b11);
+            is_compressed = !(buffer_valid && (buffered_half[1:0] == 2'b11));
         end
     end
-    
-    // Set compressed flag (output)
-    assign is_compressed = !is_32bit;
     
     // Main fetch logic
     always_ff @(posedge clk or negedge rst_n) begin
@@ -75,7 +74,7 @@ module ifetch (
             if (!pc[1]) begin
                 // ===== PC is WORD-ALIGNED (PC[1] == 0) =====
                 // Fetch from word containing PC
-                if (is_32bit) begin
+                if (lower_half[1:0] == 2'b11) begin
                     // 32-bit instruction starting at word boundary
                     // Both halves are in current fetch: lower_half is bits [15:0], upper_half is bits [31:16]
                     instruction <= imem_data;
@@ -91,7 +90,7 @@ module ifetch (
                 // ===== PC is HALF-WORD ALIGNED (PC[1] == 1) =====
                 // Need to use buffered data from previous fetch
                 if (buffer_valid) begin
-                    if (is_32bit) begin
+                    if (buffered_half[1:0] == 2'b11) begin
                         // 32-bit instruction starting at half-word boundary
                         // CRITICAL CASE: Instruction spans two memory words
                         // Lower 16 bits: buffered_half (from previous fetch at PC-2)
