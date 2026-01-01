@@ -73,15 +73,25 @@ impl Dram {
     }
 
     /// Read a 32-bit word from DRAM (little-endian)
-    /// The address is aligned to a word boundary before reading
+    /// No alignment is performed - reads from the exact address specified
     pub fn read_word(&self, addr: u32) -> u32 {
-        // Align address to word boundary
-        let aligned_addr = addr & !3;
-        let b0 = *self.data.get(&aligned_addr).unwrap_or(&0) as u32;
-        let b1 = *self.data.get(&aligned_addr.wrapping_add(1)).unwrap_or(&0) as u32;
-        let b2 = *self.data.get(&aligned_addr.wrapping_add(2)).unwrap_or(&0) as u32;
-        let b3 = *self.data.get(&aligned_addr.wrapping_add(3)).unwrap_or(&0) as u32;
+        let b0 = *self.data.get(&addr).unwrap_or(&0) as u32;
+        let b1 = *self.data.get(&addr.wrapping_add(1)).unwrap_or(&0) as u32;
+        let b2 = *self.data.get(&addr.wrapping_add(2)).unwrap_or(&0) as u32;
+        let b3 = *self.data.get(&addr.wrapping_add(3)).unwrap_or(&0) as u32;
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    /// Read a single byte from DRAM
+    pub fn read_byte(&self, addr: u32) -> u8 {
+        *self.data.get(&addr).unwrap_or(&0)
+    }
+
+    /// Read a 16-bit halfword from DRAM (little-endian)
+    pub fn read_halfword(&self, addr: u32) -> u16 {
+        let b0 = *self.data.get(&addr).unwrap_or(&0) as u16;
+        let b1 = *self.data.get(&addr.wrapping_add(1)).unwrap_or(&0) as u16;
+        b0 | (b1 << 8)
     }
 
     /// Write a 32-bit word to DRAM (little-endian)
@@ -95,34 +105,16 @@ impl Dram {
             .insert(addr.wrapping_add(3), ((data >> 24) & 0xFF) as u8);
     }
 
-    /// Write a 32-bit word to DRAM with byte enables (little-endian)
-    /// Only writes bytes where the corresponding bit in byte_enable is set
-    /// The address is the unaligned address; we align it and use byte_enable to select bytes
-    pub fn write_word_with_be(&mut self, addr: u32, data: u32, byte_enable: u8) {
-        // Align address to word boundary
-        let aligned_addr = addr & !3;
+    /// Write a single byte to DRAM
+    pub fn write_byte(&mut self, addr: u32, data: u8) {
+        self.data.insert(addr, data);
+    }
 
-        // The RTL replicates bytes for SB and halfwords for SH across all positions.
-        // For SB: all 4 bytes contain the same value
-        // For SH: bytes 0-1 contain the halfword, bytes 2-3 contain the same halfword
-        // For SW: each byte is different
-        //
-        // Extract bytes from their respective positions in the data word
-        if byte_enable & 0b0001 != 0 {
-            self.data.insert(aligned_addr, (data & 0xFF) as u8);
-        }
-        if byte_enable & 0b0010 != 0 {
-            self.data
-                .insert(aligned_addr.wrapping_add(1), ((data >> 8) & 0xFF) as u8);
-        }
-        if byte_enable & 0b0100 != 0 {
-            self.data
-                .insert(aligned_addr.wrapping_add(2), ((data >> 16) & 0xFF) as u8);
-        }
-        if byte_enable & 0b1000 != 0 {
-            self.data
-                .insert(aligned_addr.wrapping_add(3), ((data >> 24) & 0xFF) as u8);
-        }
+    /// Write a 16-bit halfword to DRAM (little-endian)
+    pub fn write_halfword(&mut self, addr: u32, data: u16) {
+        self.data.insert(addr, (data & 0xFF) as u8);
+        self.data
+            .insert(addr.wrapping_add(1), ((data >> 8) & 0xFF) as u8);
     }
 }
 
