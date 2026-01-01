@@ -152,17 +152,29 @@ where
         self.cpu.clk = 0;
         self.cpu.eval();
         if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(0); // Initial state before first clock
+            vcd.dump(0); // Capture initial state with reset asserted, clk=0
         }
 
+        // First clock edge during reset
         self.cpu.clk = 1;
         self.cpu.eval();
-        // Don't dump here - let the first step() call dump at cycle 0
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(1); // Capture state after rising edge during reset
+        }
 
-        // Release reset
-        self.cpu.rst_n = 1;
+        // Second clock cycle during reset (falling edge)
         self.cpu.clk = 0;
         self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(2); // Capture state after falling edge during reset
+        }
+
+        // Release reset (still at clk=0)
+        self.cpu.rst_n = 1;
+        self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(3); // Capture state with reset released
+        }
 
         log::info!(
             "CPU reset complete with entry point: 0x{:08x}",
@@ -263,9 +275,10 @@ where
         // Increment cycle count before dumping to VCD
         self.cycle_count += 1;
 
-        // Dump VCD if enabled (after clock edge, with incremented cycle count)
+        // Dump VCD if enabled (after clock edge, with proper timestamp)
+        // Reset sequence uses timestamps 0-3, so execution cycles start at 4
         if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.cycle_count);
+            vcd.dump(self.cycle_count + 3);
         }
 
         // Process FIFO TX data
