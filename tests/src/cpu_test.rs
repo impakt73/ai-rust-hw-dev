@@ -22,23 +22,30 @@ macro_rules! clock_cycle {
     };
 }
 
-/// Helper structure to encapsulate common CPU test setup and execution logic
-struct CpuTestHarness<'a> {
-    _runtime: riscv_core::VerilatorRuntime,
-    pub dut: Top<'a>,
+/// Helper structure to encapsulate common CPU test state
+struct CpuTestHarness {
     pub imem: HashMap<u32, u32>,
     pub dmem: HashMap<u32, u32>,
 }
 
-impl<'a> CpuTestHarness<'a> {
-    /// Create a new test harness with initialized CPU and reset sequence
+impl CpuTestHarness {
+    /// Create a new test harness with empty memory
     fn new() -> Self {
-        let runtime = create_runtime();
-        // Safety: We need to use unsafe to extend the lifetime properly
-        // The runtime is stored in the struct and will live as long as the struct
-        let mut dut = unsafe {
-            std::mem::transmute::<Top<'_>, Top<'a>>(runtime.create_model_simple::<Top>().unwrap())
-        };
+        Self {
+            imem: HashMap::new(),
+            dmem: HashMap::new(),
+        }
+    }
+
+    /// Initialize and reset a CPU, returning the DUT
+    /// The runtime is leaked to provide a 'static lifetime for the DUT
+    /// This is acceptable in test code where the process exits after each test
+    fn create_cpu() -> Top<'static> {
+        let runtime = Box::new(create_runtime());
+        // Leak the runtime to get a 'static reference
+        // This is acceptable in test code - the memory will be reclaimed when the process exits
+        let runtime_ref: &'static riscv_core::VerilatorRuntime = Box::leak(runtime);
+        let mut dut = runtime_ref.create_model_simple::<Top>().unwrap();
 
         // Perform reset sequence
         dut.rst_n = 0;
@@ -48,12 +55,7 @@ impl<'a> CpuTestHarness<'a> {
         dut.rst_n = 1;
         dut.eval();
 
-        Self {
-            _runtime: runtime,
-            dut,
-            imem: HashMap::new(),
-            dmem: HashMap::new(),
-        }
+        dut
     }
 
     /// Load a program into instruction memory
@@ -64,63 +66,65 @@ impl<'a> CpuTestHarness<'a> {
     }
 
     /// Execute a specified number of CPU cycles with automatic memory handling
-    fn run_cycles(&mut self, num_cycles: usize) {
+    fn run_cycles(&mut self, dut: &mut Top, num_cycles: usize) {
         for _ in 0..num_cycles {
-            self.step_cycle();
+            self.step_cycle(dut);
         }
     }
 
     /// Execute a single CPU cycle with memory handling
-    fn step_cycle(&mut self) {
+    fn step_cycle(&mut self, dut: &mut Top) {
         // Fetch instruction
-        let pc = self.dut.imem_addr;
+        let pc = dut.imem_addr;
         let instruction = self.imem.get(&pc).copied().unwrap_or(0);
-        self.dut.imem_data = instruction;
+        dut.imem_data = instruction;
 
-        // Handle data memory reads (word-aligned for byte/halfword operations)
-        let dmem_addr_pre = self.dut.dmem_addr & !0x3;
-        self.dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+        // Handle data memory reads
+        // For byte/halfword loads, the RTL expects the full word containing the byte/halfword
+        // and will extract the appropriate bits based on dmem_size
+        let dmem_addr_pre = dut.dmem_addr & !0x3;
+        dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
-        self.dut.eval();
+        dut.eval();
 
         // Handle data memory writes
-        self.handle_memory_write();
+        self.handle_memory_write(dut);
 
         // Clock cycle
-        clock_cycle!(self.dut);
+        clock_cycle!(dut);
     }
 
     /// Handle memory writes based on dmem_size (byte, halfword, or word)
-    fn handle_memory_write(&mut self) {
-        if self.dut.dmem_we == 0 {
+    fn handle_memory_write(&mut self, dut: &mut Top) {
+        if dut.dmem_we == 0 {
             return;
         }
 
-        let dmem_addr = self.dut.dmem_addr;
+        let dmem_addr = dut.dmem_addr;
         let word_addr = dmem_addr & !0x3;
         let byte_offset = (dmem_addr & 0x3) as usize;
         let halfword_offset = ((dmem_addr & 0x2) >> 1) as usize;
         let current_word = self.dmem.get(&word_addr).copied().unwrap_or(0);
         let mut word_bytes = current_word.to_le_bytes();
 
-        let dmem_size = self.dut.dmem_size;
+        let dmem_size = dut.dmem_size;
 
         match dmem_size {
             0b00 => {
                 // SB - Store Byte
-                let byte_val = (self.dut.dmem_wdata & 0xFF) as u8;
+                let byte_val = (dut.dmem_wdata & 0xFF) as u8;
                 word_bytes[byte_offset] = byte_val;
             }
             0b01 => {
                 // SH - Store Halfword
-                let halfword_val = (self.dut.dmem_wdata & 0xFFFF) as u16;
+                let halfword_val = (dut.dmem_wdata & 0xFFFF) as u16;
                 let hw_bytes = halfword_val.to_le_bytes();
                 word_bytes[halfword_offset * 2] = hw_bytes[0];
                 word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
             }
             _ => {
                 // SW - Store Word
-                word_bytes = self.dut.dmem_wdata.to_le_bytes();
+                word_bytes = dut.dmem_wdata.to_le_bytes();
             }
         }
 
@@ -129,65 +133,80 @@ impl<'a> CpuTestHarness<'a> {
     }
 
     /// Execute cycles and track PC history
-    fn run_cycles_with_pc_trace(&mut self, num_cycles: usize) -> Vec<u32> {
+    fn run_cycles_with_pc_trace(&mut self, dut: &mut Top, num_cycles: usize) -> Vec<u32> {
         let mut pc_history = Vec::new();
         for _ in 0..num_cycles {
-            pc_history.push(self.dut.imem_addr);
-            self.step_cycle();
+            pc_history.push(dut.imem_addr);
+            self.step_cycle(dut);
         }
         pc_history
     }
 
     /// Execute cycles and capture debug_rd_data at specific PCs
-    fn run_cycles_capture_rd_data(&mut self, num_cycles: usize, pcs: &[u32]) -> HashMap<u32, u32> {
+    fn run_cycles_capture_rd_data(
+        &mut self,
+        dut: &mut Top,
+        num_cycles: usize,
+        pcs: &[u32],
+    ) -> HashMap<u32, u32> {
         let mut rd_data_map = HashMap::new();
         for _ in 0..num_cycles {
+            let pc = dut.imem_addr;
+
+            // Need to manually handle the cycle to capture rd_data at the right time
             // Fetch instruction
-            let pc = self.dut.imem_addr;
             let instruction = self.imem.get(&pc).copied().unwrap_or(0);
-            self.dut.imem_data = instruction;
+            dut.imem_data = instruction;
 
-            // Handle data memory reads (word-aligned for byte/halfword operations)
-            let dmem_addr_pre = self.dut.dmem_addr & !0x3;
-            self.dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+            // Handle data memory reads
+            let dmem_addr_pre = dut.dmem_addr & !0x3;
+            dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
-            self.dut.eval();
+            dut.eval();
 
             // Capture debug_rd_data AFTER eval, BEFORE clock
+            // This is why we can't use step_cycle() - we need to capture between eval and clock
             if pcs.contains(&pc) {
-                rd_data_map.insert(pc, self.dut.debug_rd_data);
+                rd_data_map.insert(pc, dut.debug_rd_data);
             }
 
             // Handle data memory writes
-            self.handle_memory_write();
+            self.handle_memory_write(dut);
 
             // Clock cycle
-            clock_cycle!(self.dut);
+            clock_cycle!(dut);
         }
         rd_data_map
     }
 
     /// Run until tohost write is detected or max_cycles is reached
-    fn run_until_tohost_write(&mut self, tohost_addr: u32, max_cycles: usize) -> Option<u32> {
+    fn run_until_tohost_write(
+        &mut self,
+        dut: &mut Top,
+        tohost_addr: u32,
+        max_cycles: usize,
+    ) -> Option<u32> {
         for _ in 0..max_cycles {
-            let pc = self.dut.imem_addr;
+            // Need to manually handle the cycle to check for tohost write before memory handling
+            let pc = dut.imem_addr;
             let instruction = self.imem.get(&pc).copied().unwrap_or(0);
-            self.dut.imem_data = instruction;
+            dut.imem_data = instruction;
 
-            let dmem_addr_pre = self.dut.dmem_addr;
-            self.dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
+            let dmem_addr_pre = dut.dmem_addr & !0x3;
+            dut.dmem_rdata = self.dmem.get(&dmem_addr_pre).copied().unwrap_or(0);
 
-            self.dut.eval();
+            dut.eval();
 
-            // Check for tohost write before handling memory
-            if self.dut.dmem_we != 0 && self.dut.dmem_addr == tohost_addr {
-                let tohost_value = self.dut.dmem_wdata;
-                self.dmem.insert(self.dut.dmem_addr, tohost_value);
+            // Check for tohost write BEFORE normal memory write handling
+            // This is why we can't use step_cycle() - we need to intercept the tohost write
+            if dut.dmem_we != 0 && dut.dmem_addr == tohost_addr {
+                let tohost_value = dut.dmem_wdata;
+                self.dmem.insert(dut.dmem_addr, tohost_value);
                 return Some(tohost_value);
             }
 
-            self.handle_memory_write();
-            clock_cycle!(self.dut);
+            self.handle_memory_write(dut);
+            clock_cycle!(dut);
         }
         None
     }
@@ -195,6 +214,7 @@ impl<'a> CpuTestHarness<'a> {
 
 #[test]
 fn test_cpu_basic_execution() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Simple arithmetic operations
@@ -209,7 +229,7 @@ fn test_cpu_basic_execution() {
     ]);
 
     // Run for several cycles
-    harness.run_cycles(10);
+    harness.run_cycles(&mut dut, 10);
 
     // Note: In a single-cycle implementation, we can't directly read register values
     // We would need to add debug ports or trace signals to verify register contents
@@ -219,6 +239,7 @@ fn test_cpu_basic_execution() {
 
 #[test]
 fn test_cpu_three_instructions() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Execute exactly 3 instructions as required
@@ -233,7 +254,7 @@ fn test_cpu_three_instructions() {
     ]);
 
     // Execute and track PC progression
-    let pc_history = harness.run_cycles_with_pc_trace(5);
+    let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 5);
 
     // Verify that PC progressed through the expected addresses
     assert_eq!(pc_history[0], 0x00, "First instruction at PC=0x00");
@@ -245,6 +266,7 @@ fn test_cpu_three_instructions() {
 
 #[test]
 fn test_cpu_lui_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test LUI instruction
@@ -257,13 +279,14 @@ fn test_cpu_lui_instruction() {
     ]);
 
     // Execute for a few cycles
-    harness.run_cycles(4);
+    harness.run_cycles(&mut dut, 4);
 
     println!("Successfully executed LUI instruction");
 }
 
 #[test]
 fn test_cpu_logic_operations() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test logic operations
@@ -282,13 +305,14 @@ fn test_cpu_logic_operations() {
     ]);
 
     // Execute for several cycles
-    harness.run_cycles(8);
+    harness.run_cycles(&mut dut, 8);
 
     println!("Successfully executed logic operations: AND, OR, XOR");
 }
 
 #[test]
 fn test_cpu_branch_beq_bne() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test BEQ and BNE instructions
@@ -313,7 +337,7 @@ fn test_cpu_branch_beq_bne() {
     ]);
 
     // Execute and track PC progression
-    let pc_history = harness.run_cycles_with_pc_trace(10);
+    let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
     // Verify branch behavior - should skip instructions at 0x0C and 0x18
     assert!(pc_history.contains(&0x00), "Should execute at 0x00");
@@ -330,6 +354,7 @@ fn test_cpu_branch_beq_bne() {
 
 #[test]
 fn test_cpu_branch_blt_bge() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test BLT and BGE instructions
@@ -352,7 +377,7 @@ fn test_cpu_branch_blt_bge() {
     ]);
 
     // Execute and track PC progression
-    let pc_history = harness.run_cycles_with_pc_trace(10);
+    let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
     // Verify branch behavior
     assert!(!pc_history.contains(&0x0C), "Should skip 0x0C due to BLT");
@@ -363,6 +388,7 @@ fn test_cpu_branch_blt_bge() {
 
 #[test]
 fn test_cpu_branch_bltu_bgeu() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test BLTU and BGEU instructions (unsigned comparison)
@@ -385,7 +411,7 @@ fn test_cpu_branch_bltu_bgeu() {
     ]);
 
     // Execute and track PC progression
-    let pc_history = harness.run_cycles_with_pc_trace(10);
+    let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
     // Verify branch behavior
     assert!(!pc_history.contains(&0x0C), "Should skip 0x0C due to BLTU");
@@ -396,6 +422,7 @@ fn test_cpu_branch_bltu_bgeu() {
 
 #[test]
 fn test_cpu_load_store() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test load and store instructions
@@ -418,7 +445,7 @@ fn test_cpu_load_store() {
     ]);
 
     // Execute and handle memory operations
-    harness.run_cycles(10);
+    harness.run_cycles(&mut dut, 10);
 
     // Verify memory operations
     assert_eq!(
@@ -437,6 +464,7 @@ fn test_cpu_load_store() {
 
 #[test]
 fn test_cpu_auipc() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test AUIPC instruction
@@ -449,13 +477,14 @@ fn test_cpu_auipc() {
     ]);
 
     // Execute for a few cycles
-    harness.run_cycles(5);
+    harness.run_cycles(&mut dut, 5);
 
     println!("Successfully executed AUIPC instruction");
 }
 
 #[test]
 fn test_cpu_tohost_halt() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // TOHOST address for halt signal
@@ -479,7 +508,7 @@ fn test_cpu_tohost_halt() {
     ]);
 
     // Execute and watch for tohost write
-    let tohost_value = harness.run_until_tohost_write(TOHOST_ADDR, 20);
+    let tohost_value = harness.run_until_tohost_write(&mut dut, TOHOST_ADDR, 20);
 
     // Verify that tohost write was detected
     assert!(
@@ -503,6 +532,7 @@ fn test_cpu_tohost_halt() {
 
 #[test]
 fn test_cpu_load_byte() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test LB (load byte signed) and LBU (load byte unsigned)
@@ -526,7 +556,7 @@ fn test_cpu_load_byte() {
     ]);
 
     // Execute and handle memory operations, capturing rd_data at specific PCs
-    let rd_data = harness.run_cycles_capture_rd_data(12, &[0x0C, 0x10, 0x14, 0x18]);
+    let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 12, &[0x0C, 0x10, 0x14, 0x18]);
 
     // Verify memory operations
     assert_eq!(
@@ -562,6 +592,7 @@ fn test_cpu_load_byte() {
 
 #[test]
 fn test_cpu_load_halfword() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test LH (load halfword signed) and LHU (load halfword unsigned)
@@ -584,7 +615,7 @@ fn test_cpu_load_halfword() {
     ]);
 
     // Execute and handle memory operations
-    let rd_data = harness.run_cycles_capture_rd_data(12, &[0x0C, 0x10, 0x14, 0x18]);
+    let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 12, &[0x0C, 0x10, 0x14, 0x18]);
 
     // Verify memory operations
     assert_eq!(
@@ -620,6 +651,7 @@ fn test_cpu_load_halfword() {
 
 #[test]
 fn test_cpu_store_byte() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test SB (store byte)
@@ -649,7 +681,7 @@ fn test_cpu_store_byte() {
     ]);
 
     // Execute and handle memory operations
-    harness.run_cycles(15);
+    harness.run_cycles(&mut dut, 15);
 
     // Verify memory operations - bytes stored in little-endian order
     assert_eq!(
@@ -663,6 +695,7 @@ fn test_cpu_store_byte() {
 
 #[test]
 fn test_cpu_store_halfword() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test SH (store halfword)
@@ -683,7 +716,7 @@ fn test_cpu_store_halfword() {
     ]);
 
     // Execute and handle memory operations
-    harness.run_cycles(12);
+    harness.run_cycles(&mut dut, 12);
 
     // Verify memory operations - halfwords stored in little-endian order
     assert_eq!(
@@ -697,6 +730,7 @@ fn test_cpu_store_halfword() {
 
 #[test]
 fn test_cpu_byte_halfword_mixed() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Program: Test mixed byte/halfword operations with positive and negative values
@@ -723,7 +757,7 @@ fn test_cpu_byte_halfword_mixed() {
     ]);
 
     // Execute and handle memory operations
-    let rd_data = harness.run_cycles_capture_rd_data(15, &[0x0C, 0x10, 0x1C, 0x20]);
+    let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 15, &[0x0C, 0x10, 0x1C, 0x20]);
 
     // Verify load operations
     assert_eq!(
@@ -752,6 +786,7 @@ fn test_cpu_byte_halfword_mixed() {
 
 #[test]
 fn test_cpu_fence_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
@@ -762,19 +797,17 @@ fn test_cpu_fence_instruction() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(5);
+    harness.run_cycles(&mut dut, 5);
 
     // Verify FENCE didn't affect execution
     // After 3 cycles (addi, fence, addi), x1 should be 10 and x2 should be 15
     // We can't directly check register values, but execution should proceed normally
-    assert_eq!(
-        harness.dut.halted, 0,
-        "CPU should not be halted after FENCE"
-    );
+    assert_eq!(dut.halted, 0, "CPU should not be halted after FENCE");
 }
 
 #[test]
 fn test_cpu_ecall_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
@@ -784,24 +817,25 @@ fn test_cpu_ecall_instruction() {
     ]);
 
     // Execute first instruction
-    harness.step_cycle();
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted yet");
+    harness.step_cycle(&mut dut);
+    assert_eq!(dut.halted, 0, "CPU should not be halted yet");
 
     // Execute ECALL
-    harness.step_cycle();
-    assert_eq!(harness.dut.halted, 1, "CPU should be halted after ECALL");
+    harness.step_cycle(&mut dut);
+    assert_eq!(dut.halted, 1, "CPU should be halted after ECALL");
 
     // PC should stop advancing
-    let halted_pc = harness.dut.imem_addr;
-    harness.step_cycle();
+    let halted_pc = dut.imem_addr;
+    harness.step_cycle(&mut dut);
     assert_eq!(
-        harness.dut.imem_addr, halted_pc,
+        dut.imem_addr, halted_pc,
         "PC should not advance when halted"
     );
 }
 
 #[test]
 fn test_cpu_ebreak_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
@@ -811,24 +845,25 @@ fn test_cpu_ebreak_instruction() {
     ]);
 
     // Execute first instruction
-    harness.step_cycle();
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted yet");
+    harness.step_cycle(&mut dut);
+    assert_eq!(dut.halted, 0, "CPU should not be halted yet");
 
     // Execute EBREAK
-    harness.step_cycle();
-    assert_eq!(harness.dut.halted, 1, "CPU should be halted after EBREAK");
+    harness.step_cycle(&mut dut);
+    assert_eq!(dut.halted, 1, "CPU should be halted after EBREAK");
 
     // PC should stop advancing
-    let halted_pc = harness.dut.imem_addr;
-    harness.step_cycle();
+    let halted_pc = dut.imem_addr;
+    harness.step_cycle(&mut dut);
     assert_eq!(
-        harness.dut.imem_addr, halted_pc,
+        dut.imem_addr, halted_pc,
         "PC should not advance when halted"
     );
 }
 
 #[test]
 fn test_cpu_csr_read_write() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test CSRRW (CSR Read/Write)
@@ -845,9 +880,9 @@ fn test_cpu_csr_read_write() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(12);
+    harness.run_cycles(&mut dut, 12);
 
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted");
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
 
     // Verify CSR operations
     assert_eq!(
@@ -869,6 +904,7 @@ fn test_cpu_csr_read_write() {
 
 #[test]
 fn test_cpu_csr_set_clear() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test CSRRS (CSR Read and Set) and CSRRC (CSR Read and Clear)
@@ -887,9 +923,9 @@ fn test_cpu_csr_set_clear() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(15);
+    harness.run_cycles(&mut dut, 15);
 
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted");
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
 
     // Verify CSR operations
     assert_eq!(
@@ -911,6 +947,7 @@ fn test_cpu_csr_set_clear() {
 
 #[test]
 fn test_cpu_csr_immediate() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
@@ -927,9 +964,9 @@ fn test_cpu_csr_immediate() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(12);
+    harness.run_cycles(&mut dut, 12);
 
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted");
+    assert_eq!(dut.halted, 0, "CPU should not be halted");
 
     // Verify CSR operations
     assert_eq!(
@@ -960,6 +997,7 @@ fn test_cpu_csr_immediate() {
 
 #[test]
 fn test_cpu_mul_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test MUL instruction
@@ -972,7 +1010,7 @@ fn test_cpu_mul_instruction() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(6);
+    harness.run_cycles(&mut dut, 6);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
@@ -983,6 +1021,7 @@ fn test_cpu_mul_instruction() {
 
 #[test]
 fn test_cpu_mulh_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test MULH instruction (signed × signed, upper 32 bits)
@@ -996,7 +1035,7 @@ fn test_cpu_mulh_instruction() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(6);
+    harness.run_cycles(&mut dut, 6);
 
     // 0x00010000 × 0x00010000 = 0x0000000100000000
     // Upper 32 bits = 0x00000001
@@ -1009,6 +1048,7 @@ fn test_cpu_mulh_instruction() {
 
 #[test]
 fn test_cpu_div_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test DIV instruction
@@ -1021,7 +1061,7 @@ fn test_cpu_div_instruction() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(6);
+    harness.run_cycles(&mut dut, 6);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
@@ -1032,6 +1072,7 @@ fn test_cpu_div_instruction() {
 
 #[test]
 fn test_cpu_div_by_zero() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test division by zero
@@ -1044,7 +1085,7 @@ fn test_cpu_div_by_zero() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(6);
+    harness.run_cycles(&mut dut, 6);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
@@ -1055,6 +1096,7 @@ fn test_cpu_div_by_zero() {
 
 #[test]
 fn test_cpu_rem_instruction() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test REM instruction
@@ -1067,7 +1109,7 @@ fn test_cpu_rem_instruction() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(6);
+    harness.run_cycles(&mut dut, 6);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
@@ -1078,6 +1120,7 @@ fn test_cpu_rem_instruction() {
 
 #[test]
 fn test_cpu_divu_remu_unsigned() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Test DIVU and REMU with large unsigned values
@@ -1092,7 +1135,7 @@ fn test_cpu_divu_remu_unsigned() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(8);
+    harness.run_cycles(&mut dut, 8);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
@@ -1108,6 +1151,7 @@ fn test_cpu_divu_remu_unsigned() {
 
 #[test]
 fn test_cpu_m_extension_program() {
+    let mut dut = CpuTestHarness::create_cpu();
     let mut harness = CpuTestHarness::new();
 
     // Complex program using multiple M extension instructions
@@ -1130,7 +1174,7 @@ fn test_cpu_m_extension_program() {
     ]);
 
     // Execute instructions
-    harness.run_cycles(15);
+    harness.run_cycles(&mut dut, 15);
 
     assert_eq!(
         harness.dmem.get(&0x100).copied().unwrap_or(0xDEADBEEF),
