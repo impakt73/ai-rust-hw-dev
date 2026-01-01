@@ -116,29 +116,6 @@ impl Dram {
         self.data
             .insert(addr.wrapping_add(1), ((data >> 8) & 0xFF) as u8);
     }
-
-    /// Write a 32-bit word to DRAM with byte enables (little-endian)
-    /// Only writes bytes where the corresponding bit in byte_enable is set
-    /// This is primarily used for memory-mapped I/O that needs byte-level control
-    pub fn write_word_with_be(&mut self, addr: u32, data: u32, byte_enable: u8) {
-        // Write to the exact address specified (no alignment)
-        // Extract bytes from their respective positions in the data word
-        if byte_enable & 0b0001 != 0 {
-            self.data.insert(addr, (data & 0xFF) as u8);
-        }
-        if byte_enable & 0b0010 != 0 {
-            self.data
-                .insert(addr.wrapping_add(1), ((data >> 8) & 0xFF) as u8);
-        }
-        if byte_enable & 0b0100 != 0 {
-            self.data
-                .insert(addr.wrapping_add(2), ((data >> 16) & 0xFF) as u8);
-        }
-        if byte_enable & 0b1000 != 0 {
-            self.data
-                .insert(addr.wrapping_add(3), ((data >> 24) & 0xFF) as u8);
-        }
-    }
 }
 
 impl Default for Dram {

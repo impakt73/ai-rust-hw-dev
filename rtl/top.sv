@@ -16,8 +16,7 @@ module top (
     input  logic [31:0] dmem_rdata,
     output logic        dmem_we,
     output logic        dmem_re,    // Memory read enable
-    output logic [2:0]  dmem_funct3, // Memory operation type (from instruction funct3)
-    output logic [3:0]  dmem_be,    // Byte enable (for MMIO word operations only)
+    output logic [1:0]  dmem_size,  // Memory operation size: 00=byte, 01=halfword, 10=word
     
     // System control signals
     output logic        halted,       // CPU halted (ECALL/EBREAK)
@@ -201,22 +200,12 @@ module top (
     assign dmem_wdata = rs2_data;  // Pass data directly - no formatting needed
     assign dmem_we = mem_write;
     assign dmem_re = mem_read;
-    assign dmem_funct3 = funct3;  // Pass funct3 to indicate operation type
     
-    // Byte enable generation for MMIO word writes only
-    // For regular memory operations, the simulator uses dmem_funct3 to determine size
-    // For MMIO (FIFO), we still need byte enables for word writes
-    logic [3:0] byte_enable;
-    always_comb begin
-        if (mem_write && funct3 == 3'b010) begin
-            // SW - Store Word to MMIO needs all bytes enabled
-            byte_enable = 4'b1111;
-        end else begin
-            // For non-word writes or non-MMIO, byte enables aren't used
-            byte_enable = 4'b0000;
-        end
-    end
-    assign dmem_be = byte_enable;
+    // Encode memory operation size from funct3
+    // funct3[1:0] distinguishes byte (00), halfword (01), word (10)
+    // For loads: LB=000, LH=001, LW=010, LBU=100, LHU=101
+    // For stores: SB=000, SH=001, SW=010
+    assign dmem_size = funct3[1:0];
     
     // Load data sign/zero extension based on funct3
     // The simulator will return the exact byte/halfword requested

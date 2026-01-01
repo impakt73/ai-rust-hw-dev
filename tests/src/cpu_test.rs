@@ -1318,7 +1318,7 @@ fn test_cpu_byte_halfword_mixed() {
 
         dut.eval();
 
-        // Handle data memory writes - generic approach using funct3
+        // Handle data memory writes - generic approach using dmem_size
         let dmem_addr = dut.dmem_addr;
         if dut.dmem_we != 0 {
             let word_addr = dmem_addr & !0x3;
@@ -1328,24 +1328,24 @@ fn test_cpu_byte_halfword_mixed() {
             let mut word_bytes = current_word.to_le_bytes();
 
             // With the simplified RTL, dmem_wdata contains the original register value
-            // and dmem_funct3 indicates the operation type
-            let funct3 = dut.dmem_funct3;
+            // and dmem_size indicates the operation type
+            let dmem_size = dut.dmem_size;
 
-            match funct3 {
-                0b000 => {
-                    // SB - Store Byte (funct3 = 000)
+            match dmem_size {
+                0b00 => {
+                    // SB - Store Byte (size = 00)
                     let byte_val = (dut.dmem_wdata & 0xFF) as u8;
                     word_bytes[byte_offset] = byte_val;
                 }
-                0b001 => {
-                    // SH - Store Halfword (funct3 = 001)
+                0b01 => {
+                    // SH - Store Halfword (size = 01)
                     let halfword_val = (dut.dmem_wdata & 0xFFFF) as u16;
                     let hw_bytes = halfword_val.to_le_bytes();
                     word_bytes[halfword_offset * 2] = hw_bytes[0];
                     word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
                 }
                 _ => {
-                    // SW - Store Word (funct3 = 010)
+                    // SW - Store Word (size = 10)
                     word_bytes = dut.dmem_wdata.to_le_bytes();
                 }
             }

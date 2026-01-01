@@ -142,20 +142,20 @@ where
 
         // Data Memory Read
         let dmem_addr = self.cpu.dmem_addr;
-        let dmem_funct3 = self.cpu.dmem_funct3;
+        let dmem_size = self.cpu.dmem_size;
         let rdata = if self.cpu.dmem_re != 0 {
-            // Route based on funct3 to select operation size
-            match dmem_funct3 {
-                0b000 | 0b100 => {
-                    // LB/LBU - Load Byte
+            // Route based on size to select operation
+            match dmem_size {
+                0b00 => {
+                    // Byte operation
                     self.bus.read_byte(dmem_addr) as u32
                 }
-                0b001 | 0b101 => {
-                    // LH/LHU - Load Halfword
+                0b01 => {
+                    // Halfword operation
                     self.bus.read_halfword(dmem_addr) as u32
                 }
                 _ => {
-                    // LW - Load Word (default)
+                    // Word operation (default)
                     self.bus.read_word(dmem_addr)
                 }
             }
@@ -172,29 +172,19 @@ where
         if self.cpu.dmem_we != 0 {
             let wdata = self.cpu.dmem_wdata;
 
-            // Check for MMIO address (FIFO)
-            const FIFO_BASE: u32 = 0x4000_0000;
-            const FIFO_END: u32 = 0x4000_0008;
-
-            if (FIFO_BASE..FIFO_END).contains(&dmem_addr) {
-                // MMIO write - use byte enables for word operations
-                let byte_enable = self.cpu.dmem_be;
-                self.bus.write_word_with_be(dmem_addr, wdata, byte_enable);
-            } else {
-                // Regular memory write - route based on funct3
-                match dmem_funct3 {
-                    0b000 => {
-                        // SB - Store Byte
-                        self.bus.write_byte(dmem_addr, wdata as u8);
-                    }
-                    0b001 => {
-                        // SH - Store Halfword
-                        self.bus.write_halfword(dmem_addr, wdata as u16);
-                    }
-                    _ => {
-                        // SW - Store Word (default)
-                        self.bus.write_word(dmem_addr, wdata);
-                    }
+            // Route based on size to select operation
+            match dmem_size {
+                0b00 => {
+                    // SB - Store Byte
+                    self.bus.write_byte(dmem_addr, wdata as u8);
+                }
+                0b01 => {
+                    // SH - Store Halfword
+                    self.bus.write_halfword(dmem_addr, wdata as u16);
+                }
+                _ => {
+                    // SW - Store Word (default)
+                    self.bus.write_word(dmem_addr, wdata);
                 }
             }
 
