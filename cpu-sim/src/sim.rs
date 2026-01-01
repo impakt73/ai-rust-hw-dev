@@ -21,6 +21,7 @@ where
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
+    print_debug_packets: bool,
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
 }
@@ -50,9 +51,15 @@ where
             cycle_count: 0,
             entry_point,
             print_inst_trace,
+            print_debug_packets: true, // Enable by default
             fifo_callback,
             trace_callback,
         })
+    }
+
+    /// Enable or disable automatic printing of DebugPacket messages
+    pub fn set_print_debug_packets(&mut self, enable: bool) {
+        self.print_debug_packets = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -181,10 +188,28 @@ where
         self.cpu.eval();
 
         // Process FIFO TX data
-        while let Some(word) = self.bus.fifo.tx.pop_front() {
-            if let Some(ref mut callback) = self.fifo_callback {
+        // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
+        if let Some(ref mut callback) = self.fifo_callback {
+            // Callback provided - drain FIFO and invoke callback for each word
+            while let Some(word) = self.bus.fifo.tx.pop_front() {
                 callback(word);
             }
+        } else if self.print_debug_packets {
+            // No callback but auto-printing enabled - parse and print DebugPackets
+            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
+                // Format the message with level prefix
+                let level_str = match debug_pkt.level {
+                    DebugLevel::Trace => "[TRACE]",
+                    DebugLevel::Debug => "[DEBUG]",
+                    DebugLevel::Info => "[INFO]",
+                    DebugLevel::Warning => "[WARN]",
+                    DebugLevel::Error => "[ERROR]",
+                };
+                println!("{} {}", level_str, debug_pkt.message);
+            }
+        } else {
+            // No callback and no auto-printing - drain FIFO to prevent accumulation
+            while self.bus.fifo.tx.pop_front().is_some() {}
         }
 
         // Call trace callback if provided
