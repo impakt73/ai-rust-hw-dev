@@ -34,6 +34,18 @@ impl SystemBus {
         }
     }
 
+    /// Read a single byte from the bus
+    /// Routes to DRAM only (FIFO is word-based)
+    pub fn read_byte(&mut self, addr: u32) -> u8 {
+        self.dram.read_byte(addr)
+    }
+
+    /// Read a 16-bit halfword from the bus
+    /// Routes to DRAM only (FIFO is word-based)
+    pub fn read_halfword(&mut self, addr: u32) -> u16 {
+        self.dram.read_halfword(addr)
+    }
+
     /// Write a 32-bit word to the bus
     /// Routes to FIFO or DRAM based on address
     pub fn write_word(&mut self, addr: u32, data: u32) {
@@ -47,6 +59,18 @@ impl SystemBus {
             // Default: DRAM
             _ => self.dram.write_word(addr, data),
         }
+    }
+
+    /// Write a single byte to the bus
+    /// Routes to DRAM only (FIFO is word-based)
+    pub fn write_byte(&mut self, addr: u32, data: u8) {
+        self.dram.write_byte(addr, data);
+    }
+
+    /// Write a 16-bit halfword to the bus
+    /// Routes to DRAM only (FIFO is word-based)
+    pub fn write_halfword(&mut self, addr: u32, data: u16) {
+        self.dram.write_halfword(addr, data);
     }
 
     /// Write to the bus with byte enables

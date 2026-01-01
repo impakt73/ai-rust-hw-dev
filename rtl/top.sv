@@ -16,7 +16,8 @@ module top (
     input  logic [31:0] dmem_rdata,
     output logic        dmem_we,
     output logic        dmem_re,    // Memory read enable
-    output logic [3:0]  dmem_be,    // Byte enable (one bit per byte)
+    output logic [2:0]  dmem_funct3, // Memory operation type (from instruction funct3)
+    output logic [3:0]  dmem_be,    // Byte enable (for MMIO word operations only)
     
     // System control signals
     output logic        halted,       // CPU halted (ECALL/EBREAK)
@@ -197,82 +198,43 @@ module top (
     
     // Data memory interface
     assign dmem_addr = alu_result;
+    assign dmem_wdata = rs2_data;  // Pass data directly - no formatting needed
     assign dmem_we = mem_write;
     assign dmem_re = mem_read;
+    assign dmem_funct3 = funct3;  // Pass funct3 to indicate operation type
     
-    // Store data formatting based on funct3 (byte/halfword/word)
-    logic [31:0] formatted_store_data;
-    always_comb begin
-        case (funct3)
-            3'b000: begin // SB - Store Byte
-                // Replicate byte to all positions - byte enable mask selects which to write
-                formatted_store_data = {rs2_data[7:0], rs2_data[7:0], rs2_data[7:0], rs2_data[7:0]};
-            end
-            3'b001: begin // SH - Store Halfword
-                // Replicate halfword to both positions - byte enable mask selects which to write
-                formatted_store_data = {rs2_data[15:0], rs2_data[15:0]};
-            end
-            default: formatted_store_data = rs2_data; // SW - Store Word
-        endcase
-    end
-    assign dmem_wdata = formatted_store_data;
-    
-    // Byte enable generation based on funct3 (byte/halfword/word) and address alignment
+    // Byte enable generation for MMIO word writes only
+    // For regular memory operations, the simulator uses dmem_funct3 to determine size
+    // For MMIO (FIFO), we still need byte enables for word writes
     logic [3:0] byte_enable;
     always_comb begin
-        case (funct3)
-            3'b000: begin // SB - Store Byte
-                // Enable only the byte at the target address
-                case (alu_result[1:0])
-                    2'b00: byte_enable = 4'b0001;  // Byte 0
-                    2'b01: byte_enable = 4'b0010;  // Byte 1
-                    2'b10: byte_enable = 4'b0100;  // Byte 2
-                    2'b11: byte_enable = 4'b1000;  // Byte 3
-                endcase
-            end
-            3'b001: begin // SH - Store Halfword
-                // Enable the two bytes at the target address
-                case (alu_result[1])
-                    1'b0: byte_enable = 4'b0011;  // Bytes 0-1
-                    1'b1: byte_enable = 4'b1100;  // Bytes 2-3
-                endcase
-            end
-            default: byte_enable = 4'b1111; // SW - Store Word (all bytes)
-        endcase
+        if (mem_write && funct3 == 3'b010) begin
+            // SW - Store Word to MMIO needs all bytes enabled
+            byte_enable = 4'b1111;
+        end else begin
+            // For non-word writes or non-MMIO, byte enables aren't used
+            byte_enable = 4'b0000;
+        end
     end
     assign dmem_be = byte_enable;
     
-    // Load data formatting based on funct3 (byte/halfword/word)
+    // Load data sign/zero extension based on funct3
+    // The simulator will return the exact byte/halfword requested
+    // We only need to perform sign/zero extension here
     logic [31:0] formatted_load_data;
     always_comb begin
         case (funct3)
             3'b000: begin // LB - Load Byte (sign-extended)
-                case (alu_result[1:0])
-                    2'b00: formatted_load_data = {{24{dmem_rdata[7]}}, dmem_rdata[7:0]};
-                    2'b01: formatted_load_data = {{24{dmem_rdata[15]}}, dmem_rdata[15:8]};
-                    2'b10: formatted_load_data = {{24{dmem_rdata[23]}}, dmem_rdata[23:16]};
-                    2'b11: formatted_load_data = {{24{dmem_rdata[31]}}, dmem_rdata[31:24]};
-                endcase
+                formatted_load_data = {{24{dmem_rdata[7]}}, dmem_rdata[7:0]};
             end
             3'b001: begin // LH - Load Halfword (sign-extended)
-                case (alu_result[1])
-                    1'b0: formatted_load_data = {{16{dmem_rdata[15]}}, dmem_rdata[15:0]};
-                    1'b1: formatted_load_data = {{16{dmem_rdata[31]}}, dmem_rdata[31:16]};
-                endcase
+                formatted_load_data = {{16{dmem_rdata[15]}}, dmem_rdata[15:0]};
             end
             3'b100: begin // LBU - Load Byte Unsigned (zero-extended)
-                case (alu_result[1:0])
-                    2'b00: formatted_load_data = {24'b0, dmem_rdata[7:0]};
-                    2'b01: formatted_load_data = {24'b0, dmem_rdata[15:8]};
-                    2'b10: formatted_load_data = {24'b0, dmem_rdata[23:16]};
-                    2'b11: formatted_load_data = {24'b0, dmem_rdata[31:24]};
-                endcase
+                formatted_load_data = {24'b0, dmem_rdata[7:0]};
             end
             3'b101: begin // LHU - Load Halfword Unsigned (zero-extended)
-                case (alu_result[1])
-                    1'b0: formatted_load_data = {16'b0, dmem_rdata[15:0]};
-                    1'b1: formatted_load_data = {16'b0, dmem_rdata[31:16]};
-                endcase
+                formatted_load_data = {16'b0, dmem_rdata[15:0]};
             end
             default: formatted_load_data = dmem_rdata; // LW - Load Word
         endcase

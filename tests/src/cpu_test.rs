@@ -1139,8 +1139,9 @@ fn test_cpu_store_byte() {
             let byte_offset = (dmem_addr & 0x3) as usize;
             let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
 
-            // Extract the byte being written based on alignment
-            let byte_val = ((dut.dmem_wdata >> (byte_offset * 8)) & 0xFF) as u8;
+            // With the simplified RTL, dmem_wdata contains the original register value
+            // For SB, the byte to write is always in the low 8 bits
+            let byte_val = (dut.dmem_wdata & 0xFF) as u8;
 
             // Create mask and update word
             let mut word_bytes = current_word.to_le_bytes();
@@ -1224,8 +1225,9 @@ fn test_cpu_store_halfword() {
             let halfword_offset = ((dmem_addr & 0x2) >> 1) as usize;
             let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
 
-            // Extract the halfword being written based on alignment
-            let halfword_val = ((dut.dmem_wdata >> (halfword_offset * 16)) & 0xFFFF) as u16;
+            // With the simplified RTL, dmem_wdata contains the original register value
+            // For SH, the halfword to write is always in the low 16 bits
+            let halfword_val = (dut.dmem_wdata & 0xFFFF) as u16;
 
             // Create mask and update word
             let mut word_bytes = current_word.to_le_bytes();
@@ -1316,7 +1318,7 @@ fn test_cpu_byte_halfword_mixed() {
 
         dut.eval();
 
-        // Handle data memory writes - generic approach based on write data format
+        // Handle data memory writes - generic approach using funct3
         let dmem_addr = dut.dmem_addr;
         if dut.dmem_we != 0 {
             let word_addr = dmem_addr & !0x3;
@@ -1325,31 +1327,27 @@ fn test_cpu_byte_halfword_mixed() {
             let current_word = dmem.get(&word_addr).copied().unwrap_or(0);
             let mut word_bytes = current_word.to_le_bytes();
 
-            // Determine store type by examining write data pattern
-            // Byte store: data positioned at specific byte location
-            // Halfword store: data positioned at specific halfword location
-            let non_zero_bytes = [
-                (dut.dmem_wdata & 0x000000FF) != 0,
-                (dut.dmem_wdata & 0x0000FF00) != 0,
-                (dut.dmem_wdata & 0x00FF0000) != 0,
-                (dut.dmem_wdata & 0xFF000000) != 0,
-            ];
+            // With the simplified RTL, dmem_wdata contains the original register value
+            // and dmem_funct3 indicates the operation type
+            let funct3 = dut.dmem_funct3;
 
-            let non_zero_count = non_zero_bytes.iter().filter(|&&b| b).count();
-
-            if non_zero_count <= 1 {
-                // Byte store - single byte is non-zero
-                let byte_val = ((dut.dmem_wdata >> (byte_offset * 8)) & 0xFF) as u8;
-                word_bytes[byte_offset] = byte_val;
-            } else if non_zero_count == 2 {
-                // Halfword store - two consecutive bytes are non-zero
-                let halfword_val = ((dut.dmem_wdata >> (halfword_offset * 16)) & 0xFFFF) as u16;
-                let hw_bytes = halfword_val.to_le_bytes();
-                word_bytes[halfword_offset * 2] = hw_bytes[0];
-                word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
-            } else {
-                // Word store
-                word_bytes = dut.dmem_wdata.to_le_bytes();
+            match funct3 {
+                0b000 => {
+                    // SB - Store Byte (funct3 = 000)
+                    let byte_val = (dut.dmem_wdata & 0xFF) as u8;
+                    word_bytes[byte_offset] = byte_val;
+                }
+                0b001 => {
+                    // SH - Store Halfword (funct3 = 001)
+                    let halfword_val = (dut.dmem_wdata & 0xFFFF) as u16;
+                    let hw_bytes = halfword_val.to_le_bytes();
+                    word_bytes[halfword_offset * 2] = hw_bytes[0];
+                    word_bytes[halfword_offset * 2 + 1] = hw_bytes[1];
+                }
+                _ => {
+                    // SW - Store Word (funct3 = 010)
+                    word_bytes = dut.dmem_wdata.to_le_bytes();
+                }
             }
 
             let new_word = u32::from_le_bytes(word_bytes);
