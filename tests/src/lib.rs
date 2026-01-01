@@ -12,3 +12,6 @@ mod cpu_test;
 
 #[cfg(test)]
 mod decompress_test;
+
+#[cfg(test)]
+mod ifetch_test;
