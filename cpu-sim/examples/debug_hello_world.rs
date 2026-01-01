@@ -42,6 +42,7 @@ fn main() {
         Some(fifo_callback),
         Some(test_string),
         Some(trace_callback),
+        None,         // No VCD
     );
     
     match result {
