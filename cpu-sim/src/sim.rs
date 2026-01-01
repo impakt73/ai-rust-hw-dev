@@ -182,144 +182,136 @@ where
         );
     }
 
-    /// Execute a single simulation step (one cycle)
+    /// Execute a single simulation step (one instruction, multi-cycle)
     /// Returns Some(tohost_value) if halt detected, None otherwise
     pub fn step(&mut self) -> Option<u32> {
-        // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+        const MAX_CYCLES_PER_INSTR: u64 = 100;
 
-        // Instruction Fetch
-        let pc = self.cpu.imem_addr;
-        let instruction = self.bus.read_word(pc);
-        self.cpu.imem_data = instruction;
-
-        // First evaluation: Decode instruction and compute addresses
-        self.cpu.eval();
-
-        // Data Memory Read
-        let dmem_addr = self.cpu.dmem_addr;
-        let dmem_size = self.cpu.dmem_size;
-        let rdata = if self.cpu.dmem_re != 0 {
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // Byte operation
-                    self.bus.read_byte(dmem_addr) as u32
-                }
-                0b01 => {
-                    // Halfword operation
-                    self.bus.read_halfword(dmem_addr) as u32
-                }
-                _ => {
-                    // Word operation (default)
-                    self.bus.read_word(dmem_addr)
-                }
-            }
-        } else {
-            0
-        };
-        self.cpu.dmem_rdata = rdata;
-
-        // Second evaluation: Propagate loaded data
-        self.cpu.eval();
-
-        // Data Memory Write
+        let mut cycles_this_instr = 0;
         let mut halt_value = None;
-        if self.cpu.dmem_we != 0 {
-            let wdata = self.cpu.dmem_wdata;
 
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // SB - Store Byte
-                    self.bus.write_byte(dmem_addr, wdata as u8);
-                }
-                0b01 => {
-                    // SH - Store Halfword
-                    self.bus.write_halfword(dmem_addr, wdata as u16);
-                }
-                _ => {
-                    // SW - Store Word (default)
-                    self.bus.write_word(dmem_addr, wdata);
-                }
-            }
-
-            // Check for halt signal
-            if dmem_addr == TOHOST_ADDR {
-                halt_value = Some(wdata);
-            }
-        }
-
-        // Sample debug signals BEFORE clock tick
-        let trace = if self.print_inst_trace || self.trace_callback.is_some() {
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
-            Some(InstructionTrace::from_instruction(
-                pc,
-                instruction,
-                rs1_value,
-                rs2_value,
-                rd_value,
-            ))
-        } else {
-            None
-        };
-
-        // Clock tick
-        self.cpu.clk = 0;
-        self.cpu.eval();
-        self.cpu.clk = 1;
-        self.cpu.eval();
-
-        // Increment cycle count before dumping to VCD
-        self.cycle_count += 1;
-
-        // Dump VCD if enabled (after clock edge, with proper timestamp)
-        // Reset sequence uses timestamps 0-3, so execution cycles start at 4
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.cycle_count + 3);
-        }
-
-        // Process FIFO TX data
-        // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
-        if let Some(ref mut callback) = self.fifo_callback {
-            // Callback provided - drain FIFO and invoke callback for each word
-            while let Some(word) = self.bus.fifo.tx.pop_front() {
-                callback(word);
-            }
-        } else if self.print_debug_packets {
-            // No callback but auto-printing enabled - parse and print DebugPackets
-            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
-                // Format the message with level prefix
-                let level_str = match debug_pkt.level {
-                    DebugLevel::Trace => "[TRACE]",
-                    DebugLevel::Debug => "[DEBUG]",
-                    DebugLevel::Info => "[INFO]",
-                    DebugLevel::Warning => "[WARN]",
-                    DebugLevel::Error => "[ERROR]",
-                };
-                println!("{} {}", level_str, debug_pkt.message);
-            }
-        } else {
-            // No callback and no auto-printing - drain FIFO to prevent accumulation
-            while self.bus.fifo.tx.pop_front().is_some() {}
-        }
-
-        // Call trace callback if provided
-        if let Some(ref mut callback) = self.trace_callback {
-            if let Some(ref trace_data) = trace {
-                callback(trace_data);
-            }
-        }
-
-        // Debug logging
-        if self.print_inst_trace {
-            if let Some(ref trace_data) = trace {
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, trace_data
+        loop {
+            cycles_this_instr += 1;
+            if cycles_this_instr > MAX_CYCLES_PER_INSTR {
+                log::error!(
+                    "Instruction taking too long (>{} cycles); breaking",
+                    MAX_CYCLES_PER_INSTR
                 );
+                break;
+            }
+
+            // Instruction Fetch
+            let pc = self.cpu.imem_addr;
+            let instruction = self.bus.read_word(pc);
+            self.cpu.imem_data = instruction;
+
+            // First evaluation: combinational logic
+            self.cpu.eval();
+
+            // Data Memory Read (every cycle if asserted)
+            if self.cpu.dmem_re != 0 {
+                let dmem_addr = self.cpu.dmem_addr;
+                let dmem_size = self.cpu.dmem_size;
+                let rdata = match dmem_size {
+                    0b00 => self.bus.read_byte(dmem_addr) as u32,
+                    0b01 => self.bus.read_halfword(dmem_addr) as u32,
+                    _ => self.bus.read_word(dmem_addr),
+                };
+                self.cpu.dmem_rdata = rdata;
+                self.cpu.eval();
+            }
+
+            // Data Memory Write (every cycle if asserted)
+            if self.cpu.dmem_we != 0 {
+                let dmem_addr = self.cpu.dmem_addr;
+                let dmem_size = self.cpu.dmem_size;
+                let wdata = self.cpu.dmem_wdata;
+
+                match dmem_size {
+                    0b00 => self.bus.write_byte(dmem_addr, wdata as u8),
+                    0b01 => self.bus.write_halfword(dmem_addr, wdata as u16),
+                    _ => self.bus.write_word(dmem_addr, wdata),
+                }
+
+                if dmem_addr == TOHOST_ADDR {
+                    halt_value = Some(wdata);
+                }
+            }
+
+            // Sample debug signals BEFORE clock tick
+            let trace = if self.print_inst_trace || self.trace_callback.is_some() {
+                let rs1_value = self.cpu.debug_rs1_data;
+                let rs2_value = self.cpu.debug_rs2_data;
+                let rd_value = self.cpu.debug_rd_data;
+                Some(InstructionTrace::from_instruction(
+                    pc,
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
+                ))
+            } else {
+                None
+            };
+
+            let instr_done = self.cpu.instr_complete != 0 || self.cpu.halted != 0;
+
+            // Clock tick
+            self.cpu.clk = 0;
+            self.cpu.eval();
+            self.cpu.clk = 1;
+            self.cpu.eval();
+
+            // Increment cycle count before dumping to VCD
+            self.cycle_count += 1;
+
+            // Dump VCD if enabled (after clock edge, with proper timestamp)
+            // Reset sequence uses timestamps 0-3, so execution cycles start at 4
+            if let Some(ref mut vcd) = self.vcd {
+                vcd.dump(self.cycle_count + 3);
+            }
+
+            // Process FIFO TX data
+            if let Some(ref mut callback) = self.fifo_callback {
+                while let Some(word) = self.bus.fifo.tx.pop_front() {
+                    callback(word);
+                }
+            } else if self.print_debug_packets {
+                while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
+                    let level_str = match debug_pkt.level {
+                        DebugLevel::Trace => "[TRACE]",
+                        DebugLevel::Debug => "[DEBUG]",
+                        DebugLevel::Info => "[INFO]",
+                        DebugLevel::Warning => "[WARN]",
+                        DebugLevel::Error => "[ERROR]",
+                    };
+                    println!("{} {}", level_str, debug_pkt.message);
+                }
+            } else {
+                while self.bus.fifo.tx.pop_front().is_some() {}
+            }
+
+            // Call trace callback if provided
+            if let Some(ref mut callback) = self.trace_callback {
+                if let Some(ref trace_data) = trace {
+                    callback(trace_data);
+                }
+            }
+
+            // Debug logging
+            if self.print_inst_trace {
+                if let Some(ref trace_data) = trace {
+                    println!(
+                        "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
+                        self.cycle_count, pc, pc, instruction, trace_data
+                    );
+                }
+            }
+
+            // Exit when instruction completes or CPU halts
+            if instr_done || self.cpu.instr_complete != 0 || self.cpu.halted != 0 {
+                break;
             }
         }
 
