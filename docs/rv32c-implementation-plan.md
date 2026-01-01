@@ -759,7 +759,7 @@ fn test_cpu_compressed_addi() {
 }
 ```
 
-**Test Coverage (40+ tests):**
+**Test Coverage (55 tests):**
 
 1. **Transition sequence tests (10 tests - HIGHEST PRIORITY):**
    - Test 1: C→U at word boundary (Scenario 2)
@@ -774,18 +774,15 @@ fn test_cpu_compressed_addi() {
    - Test 10: Misaligned branch target handling
 
 2. **Basic compressed instructions (10 tests):**
-2. **Basic compressed instructions (10 tests):**
    - C.ADDI, C.LI, C.LUI
    - C.ADD, C.SUB, C.MV
    - C.ANDI, C.SRLI, C.SLLI
 
 3. **Memory operations (8 tests):**
-3. **Memory operations (8 tests):**
    - C.LW, C.SW (base + offset)
    - C.LWSP, C.SWSP (stack operations)
    - Various offsets and alignments
 
-4. **Control flow (10 tests):**
 4. **Control flow (10 tests):**
    - C.J, C.JAL (unconditional jumps)
    - C.JR, C.JALR (register jumps)
@@ -800,7 +797,6 @@ fn test_cpu_compressed_addi() {
    - **PC alignment transitions (critical)**
    - **Alternating C/U patterns**
 
-6. **Stack operations (5 tests):**
 6. **Stack operations (5 tests):**
    - C.ADDI4SPN, C.ADDI16SP
    - Stack push/pop sequences
