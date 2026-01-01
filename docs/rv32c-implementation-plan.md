@@ -6,18 +6,35 @@ This document provides a comprehensive technical plan for adding **RV32C (Compre
 
 This plan is specifically optimized for implementation by AI coding agents and includes detailed RTL modifications, comprehensive testing strategies, and step-by-step implementation phases.
 
+**Version 2.0 Updates (Based on PR #40 Learnings):**
+
+This revision incorporates critical learnings from PR #40, which implemented RV32C but encountered a subtle instruction assembly bug:
+- **Primary Learning:** Instruction fetch buffer management when PC is half-word aligned is the most error-prone aspect
+- **Specific Bug:** Bytes were selected from wrong addresses when assembling 32-bit instructions at half-word PC boundaries
+- **Detection Method:** VCD waveform debugging was essential - unit tests passed but real programs failed
+- **Key Insight:** Must prefetch from PC+4 when PC[1]==1 to get correct upper 16 bits of spanning instructions
+- **New Focus:** Comprehensive transition scenario testing and byte-level verification with VCD analysis
+
+**Enhanced Coverage:**
+- Detailed transition scenarios between compressed/uncompressed instructions
+- Specific buffer management requirements with PR #40 bug examples
+- VCD debugging workflows based on actual bug investigation
+- Critical test cases that expose buffer management issues
+
 ## Table of Contents
 
 1. [Overview of RV32C Extension](#overview-of-rv32c-extension)
-2. [Current Architecture Analysis](#current-architecture-analysis)
-3. [High-Level Design Strategy](#high-level-design-strategy)
-4. [RTL Modifications Required](#rtl-modifications-required)
-5. [Instruction Decompression Logic](#instruction-decompression-logic)
-6. [Testing Strategy](#testing-strategy)
-7. [Implementation Phases](#implementation-phases)
-8. [Validation Criteria](#validation-criteria)
-9. [Risk Assessment](#risk-assessment)
-10. [Appendices](#appendices)
+2. [New Features and Debug Tools](#new-features-and-debug-tools)
+3. [Critical Transition Scenarios](#critical-transition-scenarios)
+4. [Current Architecture Analysis](#current-architecture-analysis)
+5. [High-Level Design Strategy](#high-level-design-strategy)
+6. [RTL Modifications Required](#rtl-modifications-required)
+7. [Instruction Decompression Logic](#instruction-decompression-logic)
+8. [Testing Strategy](#testing-strategy)
+9. [Implementation Phases](#implementation-phases)
+10. [Validation Criteria](#validation-criteria)
+11. [Risk Assessment](#risk-assessment)
+12. [Appendices](#appendices)
 
 ---
 
@@ -744,37 +761,60 @@ fn test_cpu_compressed_addi() {
 
 **Test Coverage (40+ tests):**
 
-1. **Basic compressed instructions (10 tests):**
+1. **Transition sequence tests (10 tests - HIGHEST PRIORITY):**
+   - Test 1: C→U at word boundary (Scenario 2)
+   - Test 2: U→C transition (Scenario 3)
+   - Test 3: Branch to half-word address (Scenario 5)
+   - Test 4: JAL to half-word address (Scenario 5)
+   - Test 5: Mixed sequence across multiple words
+   - Test 6: Buffering after jump (buffer invalidation)
+   - Test 7: 32-bit at end of memory region
+   - Test 8: Rapid transitions (stress test)
+   - Test 9: All zeros illegal instruction detection
+   - Test 10: Misaligned branch target handling
+
+2. **Basic compressed instructions (10 tests):**
+2. **Basic compressed instructions (10 tests):**
    - C.ADDI, C.LI, C.LUI
    - C.ADD, C.SUB, C.MV
    - C.ANDI, C.SRLI, C.SLLI
 
-2. **Memory operations (8 tests):**
+3. **Memory operations (8 tests):**
+3. **Memory operations (8 tests):**
    - C.LW, C.SW (base + offset)
    - C.LWSP, C.SWSP (stack operations)
    - Various offsets and alignments
 
-3. **Control flow (10 tests):**
+4. **Control flow (10 tests):**
+4. **Control flow (10 tests):**
    - C.J, C.JAL (unconditional jumps)
    - C.JR, C.JALR (register jumps)
    - C.BEQZ, C.BNEZ (conditional branches)
    - Mixed compressed/standard jumps
+   - **Jumps to half-word aligned addresses**
+   - **Branches to half-word aligned addresses**
 
-4. **Mixed instruction sequences (10 tests):**
+5. **Mixed instruction sequences (5 tests):**
    - Compressed followed by standard
    - Standard followed by compressed
-   - PC alignment transitions
+   - **PC alignment transitions (critical)**
+   - **Alternating C/U patterns**
 
-5. **Stack operations (5 tests):**
+6. **Stack operations (5 tests):**
+6. **Stack operations (5 tests):**
    - C.ADDI4SPN, C.ADDI16SP
    - Stack push/pop sequences
 
-6. **Edge cases (5 tests):**
+7. **Edge cases (7 tests):**
    - Illegal instruction handling
    - PC at odd alignments (error)
    - Compressed instruction at end of memory
+   - **Buffer invalidation on jumps**
+   - **32-bit instruction spanning memory boundaries**
 
 ### Level 4: Program-Level Tests
+
+**Critical:** The transition tests defined in the "Critical Transition Scenarios" section must be implemented as dedicated test cases. These are the highest-priority tests as they address the most error-prone aspects of RV32C implementation.
 
 **Assembly Test Program (`test_programs/c_extension_test.s`):**
 
@@ -857,6 +897,9 @@ cargo test --package cpu_verifier -- ifetch_test
 # Run CPU integration tests with compressed instructions
 cargo test --package cpu_verifier -- cpu_test::test_cpu_compressed
 
+# Run transition-specific tests (CRITICAL)
+cargo test --package cpu_verifier -- cpu_test::test_cpu_transition
+
 # Run all tests
 cargo test --verbose
 
@@ -868,7 +911,38 @@ riscv64-unknown-elf-ld -T linker.ld -m elf32lriscv -o c_test.elf c_test.o
 # Build Rust test program with compressed instructions
 cd rust-test-program
 cargo build --release --target riscv32imc-unknown-none-elf
+
+# Run with VCD debugging for transition analysis (RECOMMENDED)
+cargo run --package cpu-sim -- test_programs/c_test.elf --vcd c_test_trace.vcd --verbose
+
+# View waveforms to debug transitions
+gtkwave c_test_trace.vcd
+# Key signals to monitor:
+# - pc (watch for +2/+4 increments and alignment)
+# - is_compressed (track instruction type transitions)
+# - buffered_half (observe buffer state)
+# - buffer_valid (verify buffer invalidation on jumps)
+# - imem_addr, imem_data (memory fetch patterns)
 ```
+
+**VCD Debugging Workflow for Transitions:**
+
+1. **Identify problematic test:** Run tests, note which transition test fails
+2. **Generate VCD:** Run test program with `--vcd` flag
+3. **Open in GTKWave:** `gtkwave trace.vcd`
+4. **Add critical signals:**
+   - Clock and reset
+   - PC value
+   - `is_compressed` flag
+   - Fetch buffer state (`buffered_half`, `buffer_valid`)
+   - Memory interface (`imem_addr`, `imem_data`)
+   - Decompressor signals
+5. **Analyze transition:** Step through cycles around transition point
+6. **Check for:**
+   - PC increment correct (+2 or +4)?
+   - Buffer state valid/invalid at right times?
+   - Instruction assembly correct for 32-bit at half-word boundary?
+   - Buffer invalidation on jump/branch?
 
 ---
 
@@ -919,9 +993,12 @@ cargo build --release --target riscv32imc-unknown-none-elf
 1. **Create instruction fetch module (`rtl/ifetch.sv`):**
    - [ ] Define module interface
    - [ ] Implement word-aligned address calculation
-   - [ ] Implement instruction buffering logic
+   - [ ] Implement instruction buffering logic with buffer_valid flag
    - [ ] Handle PC at word and half-word boundaries
-   - [ ] Add state machine for multi-cycle fetch if needed
+   - [ ] **Implement buffer invalidation on jumps/branches (pc_valid signal)**
+   - [ ] **Handle 32-bit instruction assembly at half-word boundaries**
+   - [ ] Add assertions for PC alignment (PC[0] must be 0)
+   - [ ] Add state machine for buffer management
 
 2. **Create instruction fetch test harness:**
    - [ ] Add `ifetch_test.rs` to tests/src/
@@ -934,6 +1011,9 @@ cargo build --release --target riscv32imc-unknown-none-elf
    - [ ] Test sequential instruction fetching
    - [ ] Test boundary crossing scenarios
    - [ ] Test buffering correctness
+   - [ ] **Test buffer invalidation on jump/branch**
+   - [ ] **Test 32-bit instruction fetch at half-word boundary**
+   - [ ] **Test transitions between all PC alignments**
 
 4. **Lint and verify:**
    ```bash
@@ -942,11 +1022,12 @@ cargo build --release --target riscv32imc-unknown-none-elf
    ```
 
 **Validation:**
-- All instruction fetch tests pass (20+ test cases)
+- All instruction fetch tests pass (25+ test cases, up from 20+)
 - No Verilator lint warnings
 - Correct instruction delivery at all alignments
+- **Buffer management works correctly for all transition scenarios**
 
-**Estimated Time:** 2-3 days
+**Estimated Time:** 3-4 days (increased from 2-3 due to transition complexity)
 
 ### Phase 3: CPU Integration (Days 8-12)
 
@@ -987,30 +1068,47 @@ cargo build --release --target riscv32imc-unknown-none-elf
 
 1. **Add CPU-level compressed instruction tests:**
    - [ ] Create helper functions for compressed instruction encoding
+   - [ ] **PRIORITY: Implement all 10 transition tests from Critical Testing section**
    - [ ] Test basic compressed instructions (C.ADDI, C.LI, etc.)
    - [ ] Test memory operations (C.LW, C.SW, C.LWSP, C.SWSP)
    - [ ] Test control flow (C.J, C.JAL, C.JR, C.JALR)
    - [ ] Test branches (C.BEQZ, C.BNEZ)
    - [ ] Test mixed compressed/standard instruction sequences
-   - [ ] Test PC alignment handling
+   - [ ] Test PC alignment handling during transitions
    - [ ] Test edge cases and illegal instructions
+   - [ ] Test buffer invalidation on jumps/branches
 
 2. **Run CPU tests:**
    ```bash
    cargo test --package cpu_verifier -- cpu_test
+   cargo test --package cpu_verifier -- cpu_test::test_cpu_transition
    ```
 
-3. **Debug and fix issues:**
+3. **Debug with VCD when tests fail:**
+   ```bash
+   # Generate VCD for failing test scenario
+   cargo run --package cpu-sim -- test_elf.elf --vcd debug.vcd
+   gtkwave debug.vcd
+   ```
+   - [ ] Use VCD to debug transition failures
+   - [ ] Verify PC increment behavior in waveforms
+   - [ ] Check buffer state during transitions
+   - [ ] Validate instruction assembly for 32-bit at half-word boundaries
+
+4. **Debug and fix issues:**
    - [ ] Investigate test failures
-   - [ ] Fix RTL bugs
-   - [ ] Re-run tests
+   - [ ] Fix RTL bugs (especially in ifetch and PC logic)
+   - [ ] Re-run tests after each fix
+   - [ ] Use VCD dumps to verify fixes
 
 **Validation:**
-- All new CPU tests pass (40+ new test cases)
-- Total test count increases to 120+ tests
+- All new CPU tests pass (50+ new test cases, including 10 critical transition tests)
+- Total test count increases to 130+ tests
 - Mixed compressed/standard code executes correctly
+- **All 6 transition scenarios work correctly**
+- VCD dumps show correct behavior during transitions
 
-**Estimated Time:** 4-5 days
+**Estimated Time:** 5-6 days (increased from 4-5 due to transition complexity)
 
 ### Phase 5: Assembly and Rust Program Tests (Days 18-20)
 
@@ -1129,6 +1227,9 @@ cargo build --release --target riscv32imc-unknown-none-elf
 - [ ] Correct instruction fetch at half-word alignment
 - [ ] Buffering works across word boundaries
 - [ ] Sequential fetching works correctly
+- [ ] **Buffer invalidates correctly on jumps/branches**
+- [ ] **32-bit instruction assembly works at half-word boundaries**
+- [ ] **All 6 transition scenarios fetch correctly**
 
 **CPU Integration Level:**
 - [ ] Compressed instructions execute correctly
@@ -1136,6 +1237,12 @@ cargo build --release --target riscv32imc-unknown-none-elf
 - [ ] Mixed compressed/standard sequences work
 - [ ] Branch/jump targets handle 2-byte alignment
 - [ ] All RV32IM instructions still work (no regression)
+- [ ] **All 10 critical transition tests pass**
+- [ ] **C→U transition works (Scenario 2)**
+- [ ] **U→C transition works (Scenario 3)**
+- [ ] **Branches to half-word addresses work (Scenario 5)**
+- [ ] **Buffer invalidation on jumps prevents stale data usage**
+- [ ] **VCD dumps show correct PC and buffer behavior**
 
 **System Level:**
 - [ ] Assembly programs with compressed instructions execute
@@ -1152,10 +1259,12 @@ cargo build --release --target riscv32imc-unknown-none-elf
 - [ ] No compiler warnings
 
 **Testing:**
-- [ ] Test count increases to 120+ (84 existing + 40+ new)
+- [ ] Test count increases to 130+ (84 existing + 50+ new including transition tests)
 - [ ] All new tests pass
 - [ ] All existing tests pass (no regressions)
 - [ ] Code coverage includes all compressed instructions
+- [ ] **All 10 transition scenario tests pass**
+- [ ] **VCD debugging used to validate complex transitions**
 
 **Documentation:**
 - [ ] README.md updated with RV32IMC support
@@ -1185,18 +1294,47 @@ cargo build --release --target riscv32imc-unknown-none-elf
 
 ### High-Risk Areas
 
-#### 1. PC Management Complexity
+#### 1. Instruction Transitions (Compressed ↔ Uncompressed)
+
+**Risk:** Incorrect handling of transitions between 16-bit and 32-bit instructions, especially when 32-bit instructions start at half-word boundaries.
+
+**Specific Failure Modes:**
+- **Scenario 2 (C→U):** Failing to assemble complete 32-bit instruction when it spans two memory words
+- **Buffer state corruption:** Using stale buffered data after jumps/branches
+- **PC misalignment:** Generating odd PC values (PC[0] == 1) during transitions
+- **Incomplete fetches:** Not fetching enough data to complete 32-bit instruction at half-word boundary
+
+**Mitigation:**
+- Implement comprehensive transition test suite (Tests 1-10 in Critical Testing section)
+- Use VCD waveform dumps to visualize buffer state and PC transitions
+- Add assertions in RTL to catch misaligned PC values
+- Test all 6 transition scenario categories explicitly
+- Verify buffer invalidation logic on every jump/branch
+- Add buffer state monitoring in testbench
+
+**Impact:** Critical (Causes wrong instruction execution, hangs, crashes)  
+**Likelihood:** High (Most complex aspect of RV32C)
+
+#### 2. PC Management Complexity
 
 **Risk:** Incorrect PC increment logic for compressed vs. standard instructions, especially at boundaries.
 
+**Enhanced Risk Details:**
+- PC must handle both +2 and +4 increments correctly
+- Branch/jump targets must maintain 2-byte alignment
+- Transition from word-aligned to half-word-aligned PC must be seamless
+- Increment from half-word-aligned PC with 32-bit instruction (0x0002 → 0x0006)
+
 **Mitigation:**
-- Comprehensive testing of PC at all alignments
-- Test sequential execution across boundaries
-- Test mixed compressed/standard instruction sequences
-- Verify branch/jump target calculations
+- Comprehensive testing of PC at all alignments (word and half-word)
+- Test sequential execution across word boundaries
+- Test all transition scenarios with PC tracking
+- Verify branch/jump target calculations with 2-byte alignment
+- Add PC alignment checking assertions
+- Monitor PC value in VCD dumps during complex sequences
 
 **Impact:** High  
-**Likelihood:** Medium
+**Likelihood:** Medium (Well-understood but complex)
 
 #### 2. Instruction Buffering Logic
 
@@ -1395,7 +1533,161 @@ assign rd_full = {2'b01, rd_compressed};  // 01xxx = x8-x15
 - [RISC-V GNU Toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
 - [Rust RISC-V Target Documentation](https://doc.rust-lang.org/rustc/platform-support.html)
 
-### Appendix F: Implementation Checklist
+### Appendix F: VCD Debugging Guide for RV32C
+
+**Added in Version 2.0** - VCD waveform debugging is essential for RV32C implementation, especially for transition scenarios.
+
+#### Setting Up VCD Debugging
+
+```bash
+# Run simulation with VCD output
+cargo run --package cpu-sim -- program.elf --vcd trace.vcd --verbose
+
+# Open in GTKWave
+gtkwave trace.vcd
+```
+
+#### Critical Signals to Monitor
+
+**PC and Control Flow:**
+- `pc` - Program counter value
+  - Watch for: +2 increments (compressed) vs +4 (standard)
+  - Check for: Proper 2-byte alignment (PC[0] always 0)
+  - Look for: Transitions at 0x0002, 0x0006, 0x000A, etc.
+
+**Fetch Buffering:**
+- `buffered_half` - Upper 16 bits buffered from previous fetch
+- `buffer_valid` - Buffer contains valid data
+- `imem_addr` - Memory fetch address (always word-aligned)
+- `imem_data` - Full 32-bit word fetched from memory
+
+**Instruction Processing:**
+- `instruction_16` or `fetched_insn_16` - 16-bit instruction input to decompressor
+- `is_compressed` - Indicates compressed instruction
+- `instruction` or `insn_32` - Full instruction after decompression
+- `fetch_valid` or `decompress_valid` - Instruction valid signal
+
+**Transition Debugging:**
+- `pc_valid` - PC changed due to jump/branch (triggers buffer invalidation)
+- `need_upper_half` - Internal signal indicating cross-word fetch needed
+
+#### Debugging Workflow
+
+**Step 1: Identify Transition Failure**
+Run test, note which transition scenario fails:
+```bash
+cargo test --package cpu_verifier -- cpu_test::test_cpu_transition_c_to_u
+```
+
+**Step 2: Create Minimal Test Case**
+Build ELF with just the problematic sequence:
+```assembly
+0x0000: c.addi x10, x10, 1    # 16-bit
+0x0002: addi x10, x10, 1      # 32-bit spanning to 0x0005
+```
+
+**Step 3: Generate VCD**
+```bash
+cargo run --package cpu-sim -- test.elf --vcd debug.vcd --print-inst-trace
+```
+
+**Step 4: Analyze in GTKWave**
+1. Add signals in this order:
+   - `clk`, `rst_n`
+   - `pc`
+   - `imem_addr`, `imem_data`
+   - `buffered_half`, `buffer_valid`
+   - `is_compressed`
+   - `instruction` (final instruction)
+
+2. Find the transition point:
+   - Locate where PC changes from 0x0000 to 0x0002
+   - This is the C→U transition
+
+3. Check the fetch sequence:
+   - At PC=0x0000: `imem_addr` should be 0x0000
+   - `imem_data` contains both C.ADDI and lower 16 bits of ADDI
+   - After cycle: PC becomes 0x0002
+   
+4. Check the buffer state:
+   - After executing C.ADDI, `buffered_half` should contain bits [31:16] of fetch
+   - `buffer_valid` should be 1
+   
+5. Check 32-bit assembly:
+   - At PC=0x0002: Detect bits [1:0] of `buffered_half` == 2'b11
+   - Need to fetch next word at 0x0004 for upper 16 bits
+   - Assemble: {imem_data[15:0], buffered_half}
+   - Result should be complete ADDI instruction
+
+6. Verify PC increment:
+   - After ADDI: PC should jump from 0x0002 to 0x0006 (+4)
+
+**Step 5: Common Issues and Solutions**
+
+| Issue Observed in VCD | Likely Cause | Fix |
+|----------------------|--------------|-----|
+| PC increments by 2 when should be 4 | `is_compressed` incorrectly set to 1 for 32-bit instruction | Check detection logic: bits [1:0] == 2'b11 |
+| Wrong instruction executed at 0x0002 | 32-bit instruction not assembled correctly | Verify buffer contains correct data, check assembly logic |
+| Buffer has wrong value | Previous fetch didn't store upper half | Check buffering logic in ifetch |
+| Buffer used after jump | Buffer not invalidated on jump | Add `pc_valid` signal, clear `buffer_valid` on jumps |
+| PC becomes odd (0x0003) | PC increment calculation wrong | Force PC[0] = 0, check increment: +2 or +4 |
+
+#### Example VCD Analysis Session (Based on Real Bug from PR #40)
+
+**Actual Bug Scenario:** At PC=0x80000252, wrong instruction was being fetched.
+
+**Memory Contents (from hexdump):**
+```
+Address    Bytes       Instruction
+0x8000024e: a6 85      C.MV (compressed)
+0x80000250: 4a 86      C.SLLI (compressed) 
+0x80000252: 97 00 00 00  AUIPC x1, 0 (standard 32-bit)
+0x80000256: ...
+```
+
+**Expected Behavior at PC=0x80000252:**
+- Instruction should be: 0x00000097 (AUIPC)
+- Bytes: 97 00 00 00 from addresses 0x80000252, 0x80000253, 0x80000254, 0x80000255
+
+**Actual Buggy Behavior (VCD Analysis):**
+- Instruction fetched: 0x864a0097
+- Lower 16 bits (0x864a) came from address 0x80000250 (WRONG!)
+- Upper 16 bits (0x0000) came from address 0x80000254 (correct)
+
+**VCD Trace Showing Bug:**
+```
+Cycle  PC       imem_addr  imem_data  buffered_half  buffer_valid  fetched_insn
+67     80000250 80000250   864a85a6   xxxx           0             864a (correct)
+68     80000252 80000254   xxxxxxxx   864a           1             864a0097 (BUG!)
+                                      ^^^^
+                                      Wrong! Should be 0x0097 from current word
+```
+
+**Analysis:**
+- At cycle 67: PC=0x80000250, fetch word, buffer upper half (0x864a), use lower half
+- At cycle 68: PC=0x80000252 (half-word aligned)
+  - **Expected:** Use buffered 0x0097... wait, buffer has 0x864a!
+  - **Problem:** Buffer contains bytes from address 0x80000250, but we need bytes from 0x80000252
+  - **Root Cause:** When PC advances by 2 to half-word boundary, the buffered data is from the WRONG half of the wrong word
+
+**Correct Behavior (After Fix):**
+```
+Cycle  PC       imem_addr  imem_data  buffered_half  buffer_valid  fetched_insn
+67     80000250 80000250   864a85a6   xxxx           0             864a (C.SLLI)
+68     80000252 80000256   xxxxxxxx   0097           1             00000097
+                           ^^^^^^^^                   ^^^^
+                           Fetch from PC+4            Correct bytes from 0x80000252
+```
+
+**Key Insight from PR #40:** When PC is half-word aligned AND points to a 32-bit instruction:
+1. The lower 16 bits must come from the CURRENT word (not a stale buffer)
+2. To get those bits, must fetch from the word that contains PC
+3. **BUT** the upper 16 bits are in the NEXT word, so `imem_addr = PC + 4` when `PC[1]==1`
+4. This requires careful buffer management to track which bytes came from which fetch
+
+---
+
+### Appendix G: Implementation Checklist
 
 **AI Agent Quick Reference**
 
@@ -1449,14 +1741,459 @@ Use this checklist to track implementation progress:
 
 ---
 
+## New Features and Debug Tools
+
+### VCD Waveform Dumping (Critical for RV32C)
+
+The repository now includes VCD (Value Change Dump) waveform dumping support (added in PR #43), which proved **absolutely essential** for debugging RV32C implementation issues in PR #40.
+
+**Learnings from PR #40:**
+- VCD debugging successfully identified an instruction assembly bug that unit tests missed
+- The bug only manifested in complex programs with mixed compressed/uncompressed instruction sequences
+- Root cause: Incorrect byte selection when PC was half-word aligned
+- **Example bug:** At PC=0x80000252, bytes 0x864a were fetched from address 0x80000250 instead of 0x80000252
+- **Impact:** Programs would execute with corrupted instructions, causing wrong behavior or infinite loops
+
+**Usage:**
+```bash
+# Generate VCD waveform dump for debugging
+cargo run --package cpu-sim -- program.elf --vcd trace.vcd
+
+# View with GTKWave
+gtkwave trace.vcd
+```
+
+**Benefits for RV32C debugging:**
+- Visualize PC transitions between compressed and standard instructions
+- Observe instruction fetch buffering behavior at 2-byte boundaries
+- Debug alignment issues when PC is half-word aligned
+- Verify decompression logic timing
+- Trace signal changes during instruction boundary crossings
+- **Identify byte-level assembly errors** that don't show up in instruction-level testing
+
+**Key signals to monitor:**
+- `pc` - Program counter value (watch for +2 vs +4 increments)
+- `imem_addr` - Word-aligned fetch address
+- `imem_data` - 32-bit fetched data
+- Decompressor signals: `insn_16`, `insn_32`, `is_compressed`
+- Fetch buffer state signals
+- **`debug_fetched_insn`, `debug_executed_insn`** - Compare what was fetched vs what executed
+
+**Recommended:** Use VCD dumps extensively during Phase 4 (CPU integration tests) to validate transition behavior.
+
+**Debugging Tip from PR #40:**
+Create dedicated debugging tools like `debug_hello_world_vcd.rs` and `analyze_fifo_bug.rs` to generate VCD traces with specific scenarios and analyze them systematically.
+
+---
+
+## Critical Transition Scenarios
+
+### Understanding Compressed/Uncompressed Transitions
+
+One of the most challenging aspects of RV32C implementation is handling transitions between compressed (16-bit) and uncompressed (32-bit) instructions. These transitions create complex PC alignment and instruction fetch scenarios that must be handled correctly.
+
+### Transition Scenario Categories
+
+#### Scenario 1: Compressed → Compressed (Simple)
+```
+Address     Content                    PC Behavior
+0x0000:     [C.ADDI] (16-bit)         PC: 0x0000 → 0x0002
+0x0002:     [C.LI]   (16-bit)         PC: 0x0002 → 0x0004
+```
+- Both instructions in same 32-bit word
+- Straightforward buffering
+- PC stays word-aligned or half-word-aligned consistently
+
+#### Scenario 2: Compressed → Uncompressed (Critical)
+```
+Address     Content                    PC Behavior
+0x0000:     [C.ADDI] (16-bit)         PC: 0x0000 → 0x0002
+0x0002:     [ADDI    (32-bit)     ]   PC: 0x0002 → 0x0006
+```
+**Challenge:** After executing compressed instruction at 0x0000:
+1. PC advances to 0x0002 (half-word aligned)
+2. Need to fetch 32-bit instruction starting at 0x0002
+3. Lower 16 bits at 0x0002, upper 16 bits at 0x0004
+4. **Must fetch TWO memory words to assemble complete instruction**
+5. Memory interface only provides word-aligned access
+
+**Solution Requirements:**
+- Detect bits [1:0] == 2'b11 to identify 32-bit instruction
+- When PC[1] == 1 and instruction is 32-bit:
+  - Lower 16 bits come from buffered upper half of previous fetch
+  - Upper 16 bits come from lower half of new fetch at PC+2
+- Assemble complete 32-bit instruction before decompression
+
+#### Scenario 3: Uncompressed → Compressed (Critical)
+```
+Address     Content                    PC Behavior
+0x0000:     [ADDI    (32-bit)     ]   PC: 0x0000 → 0x0004
+0x0004:     [C.LI]   (16-bit)         PC: 0x0004 → 0x0006
+```
+**Challenge:** After 32-bit instruction:
+1. PC is word-aligned (0x0004)
+2. Fetch new 32-bit word from memory
+3. Check lower 16 bits for compression (bits [1:0])
+4. If compressed, buffer upper 16 bits for potential next use
+
+**Solution Requirements:**
+- Always fetch full 32-bit word even if only using 16 bits
+- Maintain buffer of unused upper 16 bits
+- Invalidate buffer appropriately on jumps/branches
+
+#### Scenario 4: Uncompressed → Uncompressed (Simple)
+```
+Address     Content                    PC Behavior
+0x0000:     [ADDI    (32-bit)     ]   PC: 0x0000 → 0x0004
+0x0004:     [ADD     (32-bit)     ]   PC: 0x0004 → 0x0008
+```
+- PC always word-aligned
+- Each fetch provides complete instruction
+- No buffering complexity
+
+#### Scenario 5: Branch/Jump to Half-Word Address
+```
+From:       0x0004  [ANY INSTRUCTION]
+To:         0x0002  [C.ADDI] (16-bit)
+```
+**Challenge:**
+- Branch target may be half-word aligned (odd word offset)
+- Must correctly fetch from middle of word
+- Cannot assume branches always land on word boundaries
+
+**Solution Requirements:**
+- PC can hold any 2-byte aligned address (PC[0] must be 0)
+- When PC[1] == 1, fetch from buffered upper half
+- If buffer invalid (after jump), fetch new word and use upper half
+- Set PC[1:0] == 2'b10 is ILLEGAL (must trap)
+
+#### Scenario 6: Compressed at Word Boundary Crossing
+```
+Address     Content                    PC Behavior
+0x0002:     [C.J     (16-bit)     ]   PC: 0x0002 → 0x0002 + offset
+```
+- Compressed instruction spans from 0x0002 to 0x0003
+- Entirely in upper 16 bits of word at 0x0000
+- Jump offset must maintain 2-byte alignment
+- Simpler than scenario 2 (no cross-word assembly needed)
+
+### Enhanced Instruction Fetch Unit Design
+
+**CRITICAL LEARNING FROM PR #40:** The instruction fetch unit's buffer management is the most error-prone component of RV32C implementation. PR #40 identified a critical bug where bytes were selected from the wrong address when PC was half-word aligned.
+
+**Specific Bug from PR #40:**
+- **Symptom:** At PC=0x80000252 (half-word aligned), ifetch outputted instruction 0x864a0097 instead of 0x00000097
+- **Root Cause:** Bytes 0x864a were incorrectly selected from address 0x80000250 instead of 0x80000252
+- **Memory Layout:**
+  ```
+  0x80000250: 4a 86 (compressed: 0x864a)
+  0x80000252: 97 00 00 00 (standard: 0x00000097)
+  ```
+- **What Should Happen:** When PC=0x80000252, fetch 0x97 and 0x00 from current word, then 0x00 and 0x00 from next word
+- **What Actually Happened:** Stale buffered bytes 0x864a were used instead of fresh 0x0097
+
+**Architectural Insight:** The ifetch module must carefully track which buffered data corresponds to which address, especially when:
+1. PC is half-word aligned
+2. A 32-bit instruction needs to be assembled
+3. The buffer contains data from a previous fetch
+
+The instruction fetch unit must handle all transition scenarios. Here's an enhanced design incorporating PR #40 learnings:
+
+```systemverilog
+module ifetch (
+    input  logic        clk,
+    input  logic        rst_n,
+    input  logic [31:0] pc,              // Current PC (must be 2-byte aligned)
+    input  logic [31:0] imem_data,       // 32-bit word from memory
+    input  logic        pc_valid,        // PC changed due to branch/jump
+    output logic [31:0] imem_addr,       // Word-aligned address for memory
+    output logic [31:0] instruction,     // Complete instruction (16 or 32-bit)
+    output logic        is_compressed,   // 1 if instruction is compressed
+    output logic        fetch_valid,     // Instruction is valid
+    output logic        need_upper_half  // Internal: need to fetch upper 16 bits
+);
+    logic [15:0] buffered_half;   // Buffered upper 16 bits from previous fetch
+    logic        buffer_valid;     // Buffer contains valid data
+    logic [15:0] lower_half;       // Current lower 16 bits
+    logic [15:0] upper_half;       // Current upper 16 bits
+    logic        is_32bit;         // Current instruction is 32-bit
+    
+    // CRITICAL FIX FROM PR #40: When PC is half-word aligned, must prefetch from PC+4
+    // to get upper 16 bits of 32-bit instructions that span word boundaries
+    assign imem_addr = pc[1] ? ({pc[31:2], 2'b00} + 32'd4) : {pc[31:2], 2'b00};
+    
+    // Extract halves from fetched word
+    assign lower_half = imem_data[15:0];
+    assign upper_half = imem_data[31:16];
+    
+    // Detect 32-bit instruction (bits [1:0] == 2'b11)
+    always_comb begin
+        if (!pc[1]) begin
+            // PC is word-aligned: check lower half
+            is_32bit = (lower_half[1:0] == 2'b11);
+        end else begin
+            // PC is half-word aligned: check buffered half
+            is_32bit = buffer_valid && (buffered_half[1:0] == 2'b11);
+        end
+    end
+    
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            buffered_half <= 16'h0;
+            buffer_valid <= 1'b0;
+            fetch_valid <= 1'b0;
+        end else begin
+            // CRITICAL: Invalidate buffer on jumps/branches to prevent stale data usage
+            if (pc_valid) begin
+                buffer_valid <= 1'b0;
+            end
+            
+            if (!pc[1]) begin
+                // PC is word-aligned
+                if (is_32bit) begin
+                    // 32-bit instruction starting at word boundary
+                    instruction <= imem_data;
+                    is_compressed <= 1'b0;
+                    fetch_valid <= 1'b1;
+                    // Buffer not updated (whole word used)
+                    buffer_valid <= 1'b0;
+                end else begin
+                    // 16-bit instruction at word boundary
+                    instruction <= {16'h0, lower_half};
+                    is_compressed <= 1'b1;
+                    fetch_valid <= 1'b1;
+                    // Buffer upper half for potential next instruction
+                    // CRITICAL: This buffer will be used if next PC is half-word aligned
+                    buffered_half <= upper_half;
+                    buffer_valid <= 1'b1;
+                end
+            end else begin
+                // PC is half-word aligned (PC[1] == 1)
+                // CRITICAL SECTION FROM PR #40: This is where byte selection errors occur
+                if (buffer_valid) begin
+                    if (is_32bit) begin
+                        // 32-bit instruction starting at half-word boundary
+                        // CRITICAL: Lower 16 bits from BUFFER (previous fetch)
+                        //           Upper 16 bits from NEW fetch (imem_data from PC+4)
+                        // PR #40 BUG WAS HERE: Using wrong data for lower 16 bits
+                        instruction <= {lower_half, buffered_half};
+                        is_compressed <= 1'b0;
+                        fetch_valid <= 1'b1;
+                        // Update buffer with upper half (might be needed next)
+                        buffered_half <= upper_half;
+                        buffer_valid <= 1'b1;
+                    end else begin
+                        // 16-bit instruction at half-word boundary
+                        instruction <= {16'h0, buffered_half};
+                        is_compressed <= 1'b1;
+                        fetch_valid <= 1'b1;
+                        // Buffer becomes invalid, but immediately refresh
+                        buffered_half <= lower_half;
+                        buffer_valid <= 1'b1;
+                    end
+                end else begin
+                    // Buffer invalid (after jump to half-word address)
+                    // Must fetch and use upper half
+                    instruction <= {16'h0, upper_half};
+                    is_compressed <= (upper_half[1:0] != 2'b11);
+                    fetch_valid <= 1'b1;
+                    // No valid buffer yet (would need next fetch)
+                    buffer_valid <= 1'b0;
+                end
+            end
+        end
+    end
+    
+    // Signal when we need to fetch next word for 32-bit assembly
+    assign need_upper_half = pc[1] && is_32bit && !buffer_valid;
+endmodule
+```
+
+**PR #40 Key Takeaways for Buffer Management:**
+
+1. **Address Prefetching:** When PC[1]==1, `imem_addr` MUST point to PC+4, not PC, to get the correct upper 16 bits
+2. **Buffer Validity Tracking:** Must invalidate buffer on jumps to prevent using stale data from wrong address
+3. **Byte Selection Verification:** Always verify in VCD that the bytes being assembled come from the correct memory addresses
+4. **Test with Real Programs:** Unit tests passed in PR #40, but real programs exposed the bug - always test with compiled ELF binaries
+
+### Enhanced PC Management
+
+PC management must account for all transition scenarios:
+
+```systemverilog
+// In top.sv
+logic [31:0] pc_increment;
+logic [31:0] next_pc;
+
+// Calculate PC increment based on instruction size
+assign pc_increment = is_compressed ? 32'd2 : 32'd4;
+
+always_comb begin
+    if (jump) begin
+        // Jump target (JAL/JALR)
+        // Must ensure 2-byte alignment
+        next_pc = {jump_target[31:1], 1'b0};  // Force alignment
+    end else if (take_branch) begin
+        // Branch target
+        // Must ensure 2-byte alignment
+        next_pc = {(pc + imm_b)[31:1], 1'b0};  // Force alignment
+    end else begin
+        // Sequential execution
+        next_pc = pc + pc_increment;
+    end
+    
+    // CRITICAL: Verify PC alignment
+    // PC[0] must always be 0 (2-byte aligned)
+    if (next_pc[0]) begin
+        // Misaligned PC - should raise exception
+        // For now, force alignment
+        next_pc = {next_pc[31:1], 1'b0};
+    end
+end
+
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        pc <= boot_addr;
+    end else begin
+        pc <= next_pc;
+    end
+end
+```
+
+### Critical Testing Requirements for Transitions
+
+The testing strategy must include comprehensive transition scenarios:
+
+#### Test Category: Transition Sequences
+
+1. **Test: C→U Transition at Word Boundary**
+   ```
+   0x0000: C.ADDI x10, x10, 1    // 16-bit
+   0x0002: ADDI x10, x10, 1      // 32-bit (spans 0x0002-0x0005)
+   0x0006: C.ADDI x10, x10, 1    // 16-bit
+   ```
+   Verify: Correct execution of all three instructions, PC values correct
+
+2. **Test: U→C Transition**
+   ```
+   0x0000: ADDI x10, x10, 1      // 32-bit
+   0x0004: C.ADDI x10, x10, 1    // 16-bit
+   0x0006: C.ADDI x10, x10, 1    // 16-bit
+   ```
+   Verify: Buffering works, both compressed instructions execute
+
+3. **Test: Branch to Half-Word Address**
+   ```
+   0x0000: C.BEQZ x10, target    // Branch to 0x0002
+   0x0002: [target] C.LI x11, 5  // 16-bit at half-word boundary
+   ```
+   Verify: Branch lands correctly, instruction at 0x0002 executes
+
+4. **Test: JAL to Half-Word Address**
+   ```
+   0x0000: C.JAL offset          // Jump to half-word aligned address
+   [offset]: C.LI x10, 10       // 16-bit instruction
+   ```
+   Verify: Jump succeeds, return address correct, target executes
+
+5. **Test: Mixed Sequence Across Multiple Words**
+   ```
+   0x0000: C.LI x10, 1           // 16-bit
+   0x0002: ADDI x10, x10, 2      // 32-bit (spans to 0x0005)
+   0x0006: C.ADDI x10, x10, 3    // 16-bit
+   0x0008: ADDI x10, x10, 4      // 32-bit
+   0x000C: C.LI x10, 5           // 16-bit
+   ```
+   Verify: All instructions execute correctly in sequence
+
+6. **Test: Buffering After Jump**
+   ```
+   0x0000: C.JAL target          // Jump invalidates buffer
+   0x0002: [unused]
+   0x0004: [target] C.LI x10, 1  // Must fetch fresh, buffer invalid
+   ```
+   Verify: Fetch doesn't use stale buffered data
+
+7. **Test: 32-bit at End of Memory Region**
+   ```
+   0x00FE: C.LI x10, 1           // 16-bit
+   0x0100: ADDI x10, x10, 1      // 32-bit (spans to 0x0103)
+   ```
+   Verify: Boundary crossing works, no fetch errors
+
+8. **Test: Rapid Transitions**
+   ```
+   0x0000: C.LI    // 16-bit
+   0x0002: ADDI    // 32-bit
+   0x0006: C.ADDI  // 16-bit
+   0x0008: ADDI    // 32-bit
+   0x000C: C.LI    // 16-bit
+   0x000E: ADDI    // 32-bit
+   ```
+   Verify: No buffering state machine errors
+
+#### Test Category: Edge Cases
+
+9. **Test: All Zeros (Illegal)**
+   ```
+   0x0000: 0x0000                // Illegal compressed instruction
+   ```
+   Verify: Illegal instruction detected
+
+10. **Test: Misaligned Branch Target**
+    ```
+    Branch to PC[0] == 1         // Odd address (illegal)
+    ```
+    Verify: Exception raised or PC forced to alignment
+
+### Memory Interface Considerations
+
+The memory interface must support efficient fetching for all scenarios:
+
+**Current Interface:**
+```systemverilog
+output logic [31:0] imem_addr,    // Word-aligned address
+input  logic [31:0] imem_data,    // Full 32-bit word
+```
+
+**Fetch Patterns:**
+
+| PC Value | imem_addr | Data Used | Buffer Action |
+|----------|-----------|-----------|---------------|
+| 0x0000 | 0x0000 | [15:0] or [31:0] | Buffer [31:16] |
+| 0x0002 | 0x0000 | buffered or need new | Depends on buffer state |
+| 0x0004 | 0x0004 | [15:0] or [31:0] | Buffer [31:16] |
+| 0x0006 | 0x0004 | buffered or need new | Depends on buffer state |
+
+**Key Insight:** Memory is always accessed at word boundaries, but instruction extraction depends on PC[1] and buffer state.
+
+### Decompressor Interaction with Fetch
+
+The decompressor must receive complete instructions:
+
+**For compressed instructions:**
+- Input: 16-bit instruction
+- Output: Expanded 32-bit equivalent
+- Simple pass-through of instruction bits
+
+**For standard instructions:**
+- Input: Full 32-bit instruction (assembled by fetch unit)
+- Output: Same 32-bit instruction (pass-through)
+- No decompression needed
+
+**Critical:** The fetch unit must completely assemble 32-bit instructions before passing to decompressor. The decompressor should NOT be responsible for instruction assembly.
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-31 | GitHub Copilot | Initial comprehensive plan |
+| 2.0 | 2026-01-01 | GitHub Copilot | Added critical transition scenarios, VCD debugging info, enhanced fetch unit design, comprehensive transition testing requirements |
 
 ---
 
-**Document Status:** ✅ **Ready for Implementation**
+**Document Status:** ✅ **Ready for Implementation - Enhanced with Transition Focus**
 
-This plan provides a complete roadmap for adding RV32C compressed instruction support to the RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies, and estimated timelines. The plan is optimized for AI coding agent implementation with comprehensive technical details and step-by-step guidance.
+This plan provides a complete roadmap for adding RV32C compressed instruction support to the RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies, and estimated timelines. **Version 2.0 adds critical focus on transition handling between compressed and uncompressed instructions, which are the most error-prone scenarios in RV32C implementation.** The plan is optimized for AI coding agent implementation with comprehensive technical details and step-by-step guidance.
