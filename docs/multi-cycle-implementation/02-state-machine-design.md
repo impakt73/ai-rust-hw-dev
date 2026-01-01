@@ -21,9 +21,8 @@ typedef enum logic [3:0] {
     S_MEM_WRITE  = 4'b0110,  // Memory write (store)
     S_WRITEBACK  = 4'b0111,  // Register write-back
     S_BRANCH     = 4'b1000,  // Branch resolution
-    S_JUMP       = 4'b1001,  // Jump execution
-    S_CSR        = 4'b1010,  // CSR operation
-    S_HALT       = 4'b1011   // ECALL/EBREAK halt
+    S_CSR        = 4'b1001,  // CSR operation
+    S_HALT       = 4'b1010   // ECALL/EBREAK halt
 } state_t;
 ```
 

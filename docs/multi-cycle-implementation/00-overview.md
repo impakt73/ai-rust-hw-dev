@@ -66,16 +66,16 @@ The current single-cycle design has several characteristics:
 | I-type Arithmetic | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
 | Load (LW, LH, LB) | 5 | FETCH → DECODE → MEM_ADDR → MEM_READ → WRITEBACK |
 | Store (SW, SH, SB) | 4 | FETCH → DECODE → MEM_ADDR → MEM_WRITE |
-| Branch | 3-4 | FETCH → DECODE → BRANCH [→ PC_UPDATE if taken] |
+| Branch | 3 | FETCH → DECODE → BRANCH |
 | Jump (JAL/JALR) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
 | Upper Immediate | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
 | M-Extension (MUL) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
-| M-Extension (DIV) | 4+ | May require additional cycles (see note) |
+| M-Extension (DIV) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
 | System (FENCE) | 2 | FETCH → DECODE |
 | System (ECALL/EBREAK) | 2 | FETCH → DECODE (halt) |
-| CSR Operations | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| CSR Operations | 4 | FETCH → DECODE → CSR → WRITEBACK |
 
-**Note on Division:** In hardware, division typically takes 32+ cycles using iterative algorithms. For this plan, we'll implement a simplified approach using SystemVerilog's `/` and `%` operators which synthesize to combinational logic (same as current implementation). For a more realistic multi-cycle division, additional phases would be needed.
+**Note on Division:** In real hardware, division typically uses iterative algorithms taking 32+ cycles. This plan uses SystemVerilog's `/` and `%` operators which synthesize to combinational logic, keeping division at 4 cycles (same as other ALU operations). A future enhancement could implement iterative division.
 
 ### State Diagram
 

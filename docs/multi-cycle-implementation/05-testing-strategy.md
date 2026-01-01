@@ -207,12 +207,24 @@ fn test_fsm_store_cycle_count() {
     dut.rst_n = 1;
     dut.eval();
     
-    // Execute first two instructions
+    // Execute first two instructions (ADDI x1 and ADDI x2)
     for _ in 0..2 {
         loop {
             let pc = dut.imem_addr;
             dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
             dut.eval();
+            
+            // Handle memory operations (for consistency with other loops)
+            if dut.dmem_re != 0 {
+                let addr = dut.dmem_addr;
+                dut.dmem_rdata = dmem.get(&addr).copied().unwrap_or(0);
+                dut.eval();
+            }
+            if dut.dmem_we != 0 {
+                let addr = dut.dmem_addr;
+                dmem.insert(addr, dut.dmem_wdata);
+            }
+            
             clock_cycle!(dut);
             if dut.instr_complete != 0 { break; }
         }
@@ -269,12 +281,19 @@ fn test_fsm_branch_cycle_count() {
     dut.rst_n = 1;
     dut.eval();
     
-    // Execute first two instructions
+    // Execute first two instructions (ADDI x1 and ADDI x2)
     for _ in 0..2 {
         loop {
             let pc = dut.imem_addr;
             dut.imem_data = imem.get(&pc).copied().unwrap_or(0);
             dut.eval();
+            
+            // Consistent memory handling
+            if dut.dmem_re != 0 {
+                dut.dmem_rdata = 0;
+                dut.eval();
+            }
+            
             clock_cycle!(dut);
             if dut.instr_complete != 0 { break; }
         }

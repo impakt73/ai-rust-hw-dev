@@ -80,7 +80,7 @@ Add the FSM state definitions and basic state register to `top.sv`.
 
 - [ ] **1.6** Verify RTL compiles:
   ```bash
-  verilator --lint-only rtl/top.sv rtl/alu.sv rtl/regfile.sv rtl/decoder.sv
+  verilator --lint-only rtl/*.sv
   ```
 
 ### Validation Criteria
