@@ -1632,51 +1632,50 @@ cargo run --package cpu-sim -- test.elf --vcd debug.vcd --print-inst-trace
 | Buffer used after jump | Buffer not invalidated on jump | Add `pc_valid` signal, clear `buffer_valid` on jumps |
 | PC becomes odd (0x0003) | PC increment calculation wrong | Force PC[0] = 0, check increment: +2 or +4 |
 
-#### Example VCD Analysis Session (Based on Real Bug from PR #40)
+#### Example VCD Analysis Session (Based on PR #40 Bug Pattern)
 
-**Actual Bug Scenario:** At PC=0x80000252, wrong instruction was being fetched.
+**Generic Bug Scenario:** Wrong instruction fetched when PC is half-word aligned.
 
-**Memory Contents (from hexdump):**
+**Memory Layout Pattern:**
 ```
-Address    Bytes       Instruction
-0x8000024e: a6 85      C.MV (compressed)
-0x80000250: 4a 86      C.SLLI (compressed) 
-0x80000252: 97 00 00 00  AUIPC x1, 0 (standard 32-bit)
-0x80000256: ...
+Address      Bytes           Instruction Type
+PC-2:        [compressed]    16-bit compressed instruction
+PC:          [compressed]    16-bit compressed instruction  
+PC+2:        [standard...]   32-bit standard instruction (spans to PC+5)
+PC+6:        ...
 ```
 
-**Expected Behavior at PC=0x80000252:**
-- Instruction should be: 0x00000097 (AUIPC)
-- Bytes: 97 00 00 00 from addresses 0x80000252, 0x80000253, 0x80000254, 0x80000255
+**Expected Behavior at half-word aligned PC:**
+- Lower 16 bits should come from the current word at PC
+- Upper 16 bits should come from the next word at PC+4
 
-**Actual Buggy Behavior (VCD Analysis):**
-- Instruction fetched: 0x864a0097
-- Lower 16 bits (0x864a) came from address 0x80000250 (WRONG!)
-- Upper 16 bits (0x0000) came from address 0x80000254 (correct)
+**Actual Buggy Behavior (VCD Analysis Pattern):**
+- Lower 16 bits came from previous word (WRONG!)
+- Upper 16 bits came from correct location
+- Result: Corrupted instruction with wrong lower half
 
-**VCD Trace Showing Bug:**
+**VCD Trace Pattern Showing Bug:**
 ```
-Cycle  PC       imem_addr  imem_data  buffered_half  buffer_valid  fetched_insn
-67     80000250 80000250   864a85a6   xxxx           0             864a (correct)
-68     80000252 80000254   xxxxxxxx   864a           1             864a0097 (BUG!)
-                                      ^^^^
-                                      Wrong! Should be 0x0097 from current word
+Cycle  PC      imem_addr  buffered_half  buffer_valid  Issue
+N      PC-2    PC-4       xxxx           0             Fetch compressed, buffer upper half
+N+1    PC      PC+4       [old_data]     1             BUG: Uses stale buffer instead of current word
+                          ^^^^^^^^^
+                          Wrong! Should fetch from word containing PC
 ```
 
 **Analysis:**
-- At cycle 67: PC=0x80000250, fetch word, buffer upper half (0x864a), use lower half
-- At cycle 68: PC=0x80000252 (half-word aligned)
-  - **Expected:** Use buffered 0x0097... wait, buffer has 0x864a!
-  - **Problem:** Buffer contains bytes from address 0x80000250, but we need bytes from 0x80000252
-  - **Root Cause:** When PC advances by 2 to half-word boundary, the buffered data is from the WRONG half of the wrong word
+- At cycle N: PC at word boundary, fetch word, buffer upper half for potential use
+- At cycle N+1: PC at half-word boundary after compressed instruction
+  - **Problem:** Buffer contains bytes from PREVIOUS word, not current word
+  - **Root Cause:** When PC advances by 2 to half-word boundary, buffered data is from wrong address
 
 **Correct Behavior (After Fix):**
 ```
-Cycle  PC       imem_addr  imem_data  buffered_half  buffer_valid  fetched_insn
-67     80000250 80000250   864a85a6   xxxx           0             864a (C.SLLI)
-68     80000252 80000256   xxxxxxxx   0097           1             00000097
-                           ^^^^^^^^                   ^^^^
-                           Fetch from PC+4            Correct bytes from 0x80000252
+Cycle  PC      imem_addr  buffered_half  buffer_valid  Result
+N      PC-2    PC-4       xxxx           0             Fetch compressed instruction
+N+1    PC      PC+4       [correct]      1             Correct: Prefetch from PC+4 for upper bits
+                          ^^^^^^^^
+                          Fetch from PC+4 to get upper 16 bits of spanning instruction
 ```
 
 **Key Insight from PR #40:** When PC is half-word aligned AND points to a 32-bit instruction:
@@ -1751,7 +1750,7 @@ The repository now includes VCD (Value Change Dump) waveform dumping support (ad
 - VCD debugging successfully identified an instruction assembly bug that unit tests missed
 - The bug only manifested in complex programs with mixed compressed/uncompressed instruction sequences
 - Root cause: Incorrect byte selection when PC was half-word aligned
-- **Example bug:** At PC=0x80000252, bytes 0x864a were fetched from address 0x80000250 instead of 0x80000252
+- **Bug pattern:** Lower 16 bits were fetched from wrong address (previous word instead of current word)
 - **Impact:** Programs would execute with corrupted instructions, causing wrong behavior or infinite loops
 
 **Usage:**
@@ -1881,16 +1880,16 @@ Address     Content                    PC Behavior
 
 **CRITICAL LEARNING FROM PR #40:** The instruction fetch unit's buffer management is the most error-prone component of RV32C implementation. PR #40 identified a critical bug where bytes were selected from the wrong address when PC was half-word aligned.
 
-**Specific Bug from PR #40:**
-- **Symptom:** At PC=0x80000252 (half-word aligned), ifetch outputted instruction 0x864a0097 instead of 0x00000097
-- **Root Cause:** Bytes 0x864a were incorrectly selected from address 0x80000250 instead of 0x80000252
-- **Memory Layout:**
+**Bug Pattern from PR #40:**
+- **Symptom:** When PC is half-word aligned, ifetch outputted corrupted instruction
+- **Root Cause:** Lower 16 bits were incorrectly selected from previous word instead of current word
+- **Memory Layout Pattern:**
   ```
-  0x80000250: 4a 86 (compressed: 0x864a)
-  0x80000252: 97 00 00 00 (standard: 0x00000097)
+  PC-2: [compressed instruction]
+  PC:   [32-bit standard instruction spanning to PC+3]
   ```
-- **What Should Happen:** When PC=0x80000252, fetch 0x97 and 0x00 from current word, then 0x00 and 0x00 from next word
-- **What Actually Happened:** Stale buffered bytes 0x864a were used instead of fresh 0x0097
+- **What Should Happen:** Fetch lower 16 bits from word containing PC, upper 16 bits from PC+4
+- **What Actually Happened:** Stale buffered bytes from previous word were used for lower 16 bits
 
 **Architectural Insight:** The ifetch module must carefully track which buffered data corresponds to which address, especially when:
 1. PC is half-word aligned
