@@ -137,6 +137,9 @@ where
         self.cpu.eval();
 
         // Instruction Fetch
+        // Note: We always read a full word from memory because we need to inspect
+        // the lower 2 bits of the instruction to determine if it's compressed.
+        // The imem_size output from the CPU is for debugging/tracking only.
         let pc_addr = self.cpu.imem_addr;
         let instruction_data = self.bus.read_word(pc_addr);
         self.cpu.imem_data = instruction_data;

@@ -9,6 +9,7 @@ module top (
     // Instruction memory interface (exposed to testbench)
     output logic [31:0] imem_addr,
     input  logic [31:0] imem_data,
+    output logic [1:0]  imem_size,  // Instruction fetch size: 01=halfword, 10=word
     
     // Data memory interface (exposed to testbench)
     output logic [31:0] dmem_addr,
@@ -103,7 +104,8 @@ module top (
         .imem_data(imem_data),
         .imem_addr(imem_addr),
         .instruction(fetched_instruction),
-        .valid(fetch_valid)
+        .valid(fetch_valid),
+        .imem_size(imem_size)
     );
     
     // Decompressor - expands compressed instructions to standard 32-bit format

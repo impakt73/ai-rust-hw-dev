@@ -9,7 +9,8 @@ module ifetch (
     input  logic [31:0] imem_data,       // 32-bit word from memory
     output logic [31:0] imem_addr,       // Word-aligned address for memory
     output logic [31:0] instruction,     // Full 32-bit instruction output
-    output logic        valid            // Instruction is valid
+    output logic        valid,           // Instruction is valid
+    output logic [1:0]  imem_size        // Memory read size: 01=halfword, 10=word
 );
 
     // Buffer for upper 16 bits when PC is word-aligned
@@ -45,17 +46,20 @@ module ifetch (
             // 16-bit compressed instruction
             instruction = {16'h0000, current_half};
             valid = 1'b1;
+            imem_size = 2'b01;  // Halfword read
         end else begin
             // 32-bit standard instruction
             if (!pc[1]) begin
                 // PC is word-aligned: both halves are in imem_data
                 instruction = imem_data;
                 valid = 1'b1;
+                imem_size = 2'b10;  // Word read
             end else begin
                 // PC is half-word aligned: lower half is buffered (or from upper of current word),
                 // upper half is in imem_data lower bits (from next word)
                 instruction = {imem_data[15:0], current_half};
                 valid = 1'b1;
+                imem_size = 2'b10;  // Word read (need both halves)
             end
         end
     end
