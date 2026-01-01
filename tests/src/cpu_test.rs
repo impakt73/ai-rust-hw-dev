@@ -1,8 +1,8 @@
 #[allow(unused_imports)]
 use riscv_core::instruction::{
-    self, add, addi, auipc, beq, bge, bgeu, blt, bltu, bne, csrrc, csrrs, csrrw, csrrwi, csrrsi,
-    csrrci, div, divu, ebreak, ecall, fence, jal, jalr, lb, lbu, lh, lhu, lui, lw, mul, mulh,
-    mulhsu, mulhu, rem, remu, sb, sh, sub, sw, and as and_inst, or as or_inst, xor as xor_inst,
+    add, addi, and as and_inst, auipc, beq, bge, bgeu, blt, bltu, bne, csrrc, csrrci, csrrs,
+    csrrsi, csrrw, csrrwi, div, divu, ebreak, ecall, fence, jal, jalr, lb, lbu, lh, lhu, lui, lw,
+    mul, mulh, mulhsu, mulhu, or as or_inst, rem, remu, sb, sh, sub, sw, xor as xor_inst,
 };
 use riscv_core::{create_cpu_runtime, Top};
 use std::collections::HashMap;

@@ -272,7 +272,7 @@ pub fn sb(rs1: u32, rs2: u32, imm: i32) -> u32 {
 /// FENCE: Fence Memory and I/O
 pub fn fence() -> u32 {
     // FENCE: opcode=0001111, rd=0, funct3=0, rs1=0, fm=0, pred=0b1111, succ=0b1111
-    0b0000_1111_1111_00000_000_00000_0001111
+    0b0000_1111_1111_0000_0000_0000_0000_1111
 }
 
 // System Instructions
