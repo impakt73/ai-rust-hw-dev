@@ -37,9 +37,7 @@ impl<'a> CpuTestHarness<'a> {
         // Safety: We need to use unsafe to extend the lifetime properly
         // The runtime is stored in the struct and will live as long as the struct
         let mut dut = unsafe {
-            std::mem::transmute::<Top<'_>, Top<'a>>(
-                runtime.create_model_simple::<Top>().unwrap()
-            )
+            std::mem::transmute::<Top<'_>, Top<'a>>(runtime.create_model_simple::<Top>().unwrap())
         };
 
         // Perform reset sequence
@@ -423,8 +421,16 @@ fn test_cpu_load_store() {
     harness.run_cycles(10);
 
     // Verify memory operations
-    assert_eq!(harness.dmem.get(&100), Some(&42), "Memory[100] should contain 42");
-    assert_eq!(harness.dmem.get(&108), Some(&42), "Memory[108] should contain 42");
+    assert_eq!(
+        harness.dmem.get(&100),
+        Some(&42),
+        "Memory[100] should contain 42"
+    );
+    assert_eq!(
+        harness.dmem.get(&108),
+        Some(&42),
+        "Memory[108] should contain 42"
+    );
 
     println!("Successfully executed load and store instructions");
 }
@@ -481,7 +487,11 @@ fn test_cpu_tohost_halt() {
         "Expected write to tohost address (0x{:08X}) to be detected",
         TOHOST_ADDR
     );
-    assert_eq!(tohost_value.unwrap(), 1, "Expected tohost value to be 1 (exit code)");
+    assert_eq!(
+        tohost_value.unwrap(),
+        1,
+        "Expected tohost value to be 1 (exit code)"
+    );
     assert_eq!(
         harness.dmem.get(&TOHOST_ADDR),
         Some(&1),
@@ -745,10 +755,10 @@ fn test_cpu_fence_instruction() {
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
-        (0x00, addi(1, 0, 10)),    // x1 = 10
-        (0x04, fence()),           // FENCE (should be NOP for single-cycle CPU)
-        (0x08, addi(2, 1, 5)),     // x2 = x1 + 5 = 15
-        (0x0C, addi(0, 0, 0)),     // NOP
+        (0x00, addi(1, 0, 10)), // x1 = 10
+        (0x04, fence()),        // FENCE (should be NOP for single-cycle CPU)
+        (0x08, addi(2, 1, 5)),  // x2 = x1 + 5 = 15
+        (0x0C, addi(0, 0, 0)),  // NOP
     ]);
 
     // Execute instructions
@@ -757,7 +767,10 @@ fn test_cpu_fence_instruction() {
     // Verify FENCE didn't affect execution
     // After 3 cycles (addi, fence, addi), x1 should be 10 and x2 should be 15
     // We can't directly check register values, but execution should proceed normally
-    assert_eq!(harness.dut.halted, 0, "CPU should not be halted after FENCE");
+    assert_eq!(
+        harness.dut.halted, 0,
+        "CPU should not be halted after FENCE"
+    );
 }
 
 #[test]
@@ -765,9 +778,9 @@ fn test_cpu_ecall_instruction() {
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
-        (0x00, addi(1, 0, 42)),    // x1 = 42
-        (0x04, ecall()),           // ECALL - should halt CPU
-        (0x08, addi(2, 0, 99)),    // Should not execute
+        (0x00, addi(1, 0, 42)), // x1 = 42
+        (0x04, ecall()),        // ECALL - should halt CPU
+        (0x08, addi(2, 0, 99)), // Should not execute
     ]);
 
     // Execute first instruction
@@ -792,9 +805,9 @@ fn test_cpu_ebreak_instruction() {
     let mut harness = CpuTestHarness::new();
 
     harness.load_program(&[
-        (0x00, addi(1, 0, 100)),   // x1 = 100
-        (0x04, ebreak()),          // EBREAK - should halt CPU
-        (0x08, addi(2, 0, 200)),   // Should not execute
+        (0x00, addi(1, 0, 100)), // x1 = 100
+        (0x04, ebreak()),        // EBREAK - should halt CPU
+        (0x08, addi(2, 0, 200)), // Should not execute
     ]);
 
     // Execute first instruction
@@ -821,14 +834,14 @@ fn test_cpu_csr_read_write() {
     // Test CSRRW (CSR Read/Write)
     // CSR address 0x300 (mstatus in real RISC-V, but we treat it as generic)
     harness.load_program(&[
-        (0x00, addi(1, 0, 100)),       // x1 = 100
-        (0x04, csrrw(2, 1, 0x300)),    // x2 = CSR[0x300] (old value, should be 0); CSR[0x300] = x1 (100)
-        (0x08, sw(0, 2, 0x100)),       // Store x2 to memory[0x100] to verify it's 0
-        (0x0C, csrrw(3, 0, 0x300)),    // x3 = CSR[0x300] (should be 100); CSR[0x300] = 0
-        (0x10, sw(0, 3, 0x104)),       // Store x3 to memory[0x104] to verify it's 100
-        (0x14, csrrw(4, 0, 0x300)),    // x4 = CSR[0x300] (should be 0); CSR[0x300] = 0
-        (0x18, sw(0, 4, 0x108)),       // Store x4 to memory[0x108] to verify it's 0
-        (0x1C, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 100)),    // x1 = 100
+        (0x04, csrrw(2, 1, 0x300)), // x2 = CSR[0x300] (old value, should be 0); CSR[0x300] = x1 (100)
+        (0x08, sw(0, 2, 0x100)),    // Store x2 to memory[0x100] to verify it's 0
+        (0x0C, csrrw(3, 0, 0x300)), // x3 = CSR[0x300] (should be 100); CSR[0x300] = 0
+        (0x10, sw(0, 3, 0x104)),    // Store x3 to memory[0x104] to verify it's 100
+        (0x14, csrrw(4, 0, 0x300)), // x4 = CSR[0x300] (should be 0); CSR[0x300] = 0
+        (0x18, sw(0, 4, 0x108)),    // Store x4 to memory[0x108] to verify it's 0
+        (0x1C, addi(0, 0, 0)),      // NOP
     ]);
 
     // Execute instructions
@@ -860,17 +873,17 @@ fn test_cpu_csr_set_clear() {
 
     // Test CSRRS (CSR Read and Set) and CSRRC (CSR Read and Clear)
     harness.load_program(&[
-        (0x00, addi(1, 0, 0b1010)),    // x1 = 0b1010
-        (0x04, csrrw(0, 1, 0x301)),    // CSR[0x301] = 0b1010 (write initial value)
-        (0x08, addi(2, 0, 0b0101)),    // x2 = 0b0101
-        (0x0C, csrrs(3, 2, 0x301)),    // x3 = CSR[0x301] (0b1010); CSR[0x301] |= x2 (becomes 0b1111)
-        (0x10, sw(0, 3, 0x100)),       // Store x3 to verify it read 0b1010
-        (0x14, addi(4, 0, 0b1000)),    // x4 = 0b1000
-        (0x18, csrrc(5, 4, 0x301)),    // x5 = CSR[0x301] (0b1111); CSR[0x301] &= ~x4 (becomes 0b0111)
-        (0x1C, sw(0, 5, 0x104)),       // Store x5 to verify it read 0b1111
-        (0x20, csrrw(6, 0, 0x301)),    // x6 = CSR[0x301] (final value, should be 0b0111)
-        (0x24, sw(0, 6, 0x108)),       // Store x6 to verify final CSR value
-        (0x28, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 0b1010)), // x1 = 0b1010
+        (0x04, csrrw(0, 1, 0x301)), // CSR[0x301] = 0b1010 (write initial value)
+        (0x08, addi(2, 0, 0b0101)), // x2 = 0b0101
+        (0x0C, csrrs(3, 2, 0x301)), // x3 = CSR[0x301] (0b1010); CSR[0x301] |= x2 (becomes 0b1111)
+        (0x10, sw(0, 3, 0x100)),    // Store x3 to verify it read 0b1010
+        (0x14, addi(4, 0, 0b1000)), // x4 = 0b1000
+        (0x18, csrrc(5, 4, 0x301)), // x5 = CSR[0x301] (0b1111); CSR[0x301] &= ~x4 (becomes 0b0111)
+        (0x1C, sw(0, 5, 0x104)),    // Store x5 to verify it read 0b1111
+        (0x20, csrrw(6, 0, 0x301)), // x6 = CSR[0x301] (final value, should be 0b0111)
+        (0x24, sw(0, 6, 0x108)),    // Store x6 to verify final CSR value
+        (0x28, addi(0, 0, 0)),      // NOP
     ]);
 
     // Execute instructions
@@ -902,15 +915,15 @@ fn test_cpu_csr_immediate() {
 
     // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
     harness.load_program(&[
-        (0x00, csrrwi(1, 15, 0x302)),  // CSR[0x302] = 15; x1 = old value (0)
-        (0x04, sw(0, 1, 0x100)),       // Store x1 to verify it's 0
-        (0x08, csrrsi(2, 8, 0x302)),   // CSR[0x302] |= 8 (15 | 8 = 15); x2 = old value (15)
-        (0x0C, sw(0, 2, 0x104)),       // Store x2 to verify it's 15
-        (0x10, csrrci(3, 4, 0x302)),   // CSR[0x302] &= ~4 (15 & ~4 = 11); x3 = old value (15)
-        (0x14, sw(0, 3, 0x108)),       // Store x3 to verify it's 15
-        (0x18, csrrw(4, 0, 0x302)),    // x4 = CSR[0x302] (final value, should be 11)
-        (0x1C, sw(0, 4, 0x10C)),       // Store x4 to verify final CSR value
-        (0x20, addi(0, 0, 0)),         // NOP
+        (0x00, csrrwi(1, 15, 0x302)), // CSR[0x302] = 15; x1 = old value (0)
+        (0x04, sw(0, 1, 0x100)),      // Store x1 to verify it's 0
+        (0x08, csrrsi(2, 8, 0x302)),  // CSR[0x302] |= 8 (15 | 8 = 15); x2 = old value (15)
+        (0x0C, sw(0, 2, 0x104)),      // Store x2 to verify it's 15
+        (0x10, csrrci(3, 4, 0x302)),  // CSR[0x302] &= ~4 (15 & ~4 = 11); x3 = old value (15)
+        (0x14, sw(0, 3, 0x108)),      // Store x3 to verify it's 15
+        (0x18, csrrw(4, 0, 0x302)),   // x4 = CSR[0x302] (final value, should be 11)
+        (0x1C, sw(0, 4, 0x10C)),      // Store x4 to verify final CSR value
+        (0x20, addi(0, 0, 0)),        // NOP
     ]);
 
     // Execute instructions
@@ -951,11 +964,11 @@ fn test_cpu_mul_instruction() {
 
     // Test MUL instruction
     harness.load_program(&[
-        (0x00, addi(1, 0, 10)),        // x1 = 10
-        (0x04, addi(2, 0, 20)),        // x2 = 20
-        (0x08, mul(3, 1, 2)),          // x3 = x1 × x2 = 200
-        (0x0C, sw(0, 3, 0x100)),       // Store result
-        (0x10, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 10)),  // x1 = 10
+        (0x04, addi(2, 0, 20)),  // x2 = 20
+        (0x08, mul(3, 1, 2)),    // x3 = x1 × x2 = 200
+        (0x0C, sw(0, 3, 0x100)), // Store result
+        (0x10, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -975,11 +988,11 @@ fn test_cpu_mulh_instruction() {
     // Test MULH instruction (signed × signed, upper 32 bits)
     // Load large values that will produce non-zero upper 32 bits
     harness.load_program(&[
-        (0x00, lui(1, 0x10000)),       // x1 = 0x00010000
-        (0x04, lui(2, 0x10000)),       // x2 = 0x00010000
-        (0x08, mulh(3, 1, 2)),         // x3 = upper 32 bits of x1 × x2
-        (0x0C, sw(0, 3, 0x100)),       // Store result
-        (0x10, addi(0, 0, 0)),         // NOP
+        (0x00, lui(1, 0x10000)), // x1 = 0x00010000
+        (0x04, lui(2, 0x10000)), // x2 = 0x00010000
+        (0x08, mulh(3, 1, 2)),   // x3 = upper 32 bits of x1 × x2
+        (0x0C, sw(0, 3, 0x100)), // Store result
+        (0x10, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -1000,11 +1013,11 @@ fn test_cpu_div_instruction() {
 
     // Test DIV instruction
     harness.load_program(&[
-        (0x00, addi(1, 0, 100)),       // x1 = 100
-        (0x04, addi(2, 0, 7)),         // x2 = 7
-        (0x08, div(3, 1, 2)),          // x3 = x1 ÷ x2 = 14
-        (0x0C, sw(0, 3, 0x100)),       // Store quotient
-        (0x10, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 100)), // x1 = 100
+        (0x04, addi(2, 0, 7)),   // x2 = 7
+        (0x08, div(3, 1, 2)),    // x3 = x1 ÷ x2 = 14
+        (0x0C, sw(0, 3, 0x100)), // Store quotient
+        (0x10, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -1023,11 +1036,11 @@ fn test_cpu_div_by_zero() {
 
     // Test division by zero
     harness.load_program(&[
-        (0x00, addi(1, 0, 100)),       // x1 = 100
-        (0x04, addi(2, 0, 0)),         // x2 = 0
-        (0x08, div(3, 1, 2)),          // x3 = x1 ÷ 0 = 0xFFFFFFFF
-        (0x0C, sw(0, 3, 0x100)),       // Store result
-        (0x10, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 100)), // x1 = 100
+        (0x04, addi(2, 0, 0)),   // x2 = 0
+        (0x08, div(3, 1, 2)),    // x3 = x1 ÷ 0 = 0xFFFFFFFF
+        (0x0C, sw(0, 3, 0x100)), // Store result
+        (0x10, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -1046,11 +1059,11 @@ fn test_cpu_rem_instruction() {
 
     // Test REM instruction
     harness.load_program(&[
-        (0x00, addi(1, 0, 100)),       // x1 = 100
-        (0x04, addi(2, 0, 7)),         // x2 = 7
-        (0x08, rem(3, 1, 2)),          // x3 = x1 % x2 = 2
-        (0x0C, sw(0, 3, 0x100)),       // Store remainder
-        (0x10, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 100)), // x1 = 100
+        (0x04, addi(2, 0, 7)),   // x2 = 7
+        (0x08, rem(3, 1, 2)),    // x3 = x1 % x2 = 2
+        (0x0C, sw(0, 3, 0x100)), // Store remainder
+        (0x10, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -1069,13 +1082,13 @@ fn test_cpu_divu_remu_unsigned() {
 
     // Test DIVU and REMU with large unsigned values
     harness.load_program(&[
-        (0x00, addi(1, 0, -1)),        // x1 = 0xFFFFFFFF (max u32)
-        (0x04, addi(2, 0, 2)),         // x2 = 2
-        (0x08, divu(3, 1, 2)),         // x3 = 0xFFFFFFFF ÷ 2 = 0x7FFFFFFF
-        (0x0C, remu(4, 1, 2)),         // x4 = 0xFFFFFFFF % 2 = 1
-        (0x10, sw(0, 3, 0x100)),       // Store quotient
-        (0x14, sw(0, 4, 0x104)),       // Store remainder
-        (0x18, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, -1)),  // x1 = 0xFFFFFFFF (max u32)
+        (0x04, addi(2, 0, 2)),   // x2 = 2
+        (0x08, divu(3, 1, 2)),   // x3 = 0xFFFFFFFF ÷ 2 = 0x7FFFFFFF
+        (0x0C, remu(4, 1, 2)),   // x4 = 0xFFFFFFFF % 2 = 1
+        (0x10, sw(0, 3, 0x100)), // Store quotient
+        (0x14, sw(0, 4, 0x104)), // Store remainder
+        (0x18, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
@@ -1103,17 +1116,17 @@ fn test_cpu_m_extension_program() {
     // result = (12 × 5) ÷ 3 + (17 % 5) = 60 ÷ 3 + 2 = 20 + 2 = 22
 
     harness.load_program(&[
-        (0x00, addi(1, 0, 12)),        // x1 = a = 12
-        (0x04, addi(2, 0, 5)),         // x2 = b = 5
-        (0x08, addi(3, 0, 3)),         // x3 = c = 3
-        (0x0C, addi(4, 0, 17)),        // x4 = d = 17
-        (0x10, addi(5, 0, 5)),         // x5 = e = 5
-        (0x14, mul(6, 1, 2)),          // x6 = a × b = 60
-        (0x18, div(7, 6, 3)),          // x7 = (a × b) ÷ c = 20
-        (0x1C, rem(8, 4, 5)),          // x8 = d % e = 2
-        (0x20, add(9, 7, 8)),          // x9 = x7 + x8 = 22
-        (0x24, sw(0, 9, 0x100)),       // Store final result
-        (0x28, addi(0, 0, 0)),         // NOP
+        (0x00, addi(1, 0, 12)),  // x1 = a = 12
+        (0x04, addi(2, 0, 5)),   // x2 = b = 5
+        (0x08, addi(3, 0, 3)),   // x3 = c = 3
+        (0x0C, addi(4, 0, 17)),  // x4 = d = 17
+        (0x10, addi(5, 0, 5)),   // x5 = e = 5
+        (0x14, mul(6, 1, 2)),    // x6 = a × b = 60
+        (0x18, div(7, 6, 3)),    // x7 = (a × b) ÷ c = 20
+        (0x1C, rem(8, 4, 5)),    // x8 = d % e = 2
+        (0x20, add(9, 7, 8)),    // x9 = x7 + x8 = 22
+        (0x24, sw(0, 9, 0x100)), // Store final result
+        (0x28, addi(0, 0, 0)),   // NOP
     ]);
 
     // Execute instructions
