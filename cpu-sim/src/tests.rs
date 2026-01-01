@@ -714,4 +714,146 @@ fn test_packet_protocol_end_to_end() {
     println!("========================================\n");
 }
 
+#[test]
+fn test_println_macro() {
+    init_test_logger();
 
+    println!("\n========================================");
+    println!("PRINTLN MACRO TEST");
+    println!("========================================");
+    println!("Testing rvprintln! macro functionality...\n");
+
+    let elf_path = test_program_path("println_test.elf");
+
+    // Initialize DRAM and load ELF
+    let mut dram = crate::dram::Dram::new();
+    let entry_point = dram
+        .load_elf(&elf_path)
+        .expect("Failed to load println_test.elf");
+
+    // Create system bus with DRAM and FIFO
+    let bus = crate::bus::SystemBus::new(dram);
+
+    // Create a callback to collect FIFO data from CPU
+    let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fifo_data_clone = fifo_data.clone();
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
+    };
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut sim = crate::sim::Simulator::new(
+        &runtime,
+        bus,
+        entry_point,
+        false, // Disable instruction trace
+        Some(fifo_callback),
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+    )
+    .expect("Failed to create simulator");
+
+    // Reset the CPU before starting
+    sim.reset();
+
+    println!("Running CPU program...\n");
+
+    // Run until halt
+    let result = sim.run(15000).expect("Simulation should succeed");
+
+    // Check FIFO data
+    let fifo_words = fifo_data.lock().unwrap();
+    println!("FIFO TX words received: {} words", fifo_words.len());
+
+    // Convert words to VecDeque for packet parsing
+    let mut fifo_tx = std::collections::VecDeque::new();
+    for &word in fifo_words.iter() {
+        fifo_tx.push_back(word);
+    }
+
+    // Expected messages from the test program
+    let expected_messages = vec![
+        ("Hello from RISC-V CPU!\n", riscv_protocol::DebugLevel::Info),
+        ("The answer is 42\n", riscv_protocol::DebugLevel::Info),
+        ("Testing println macro\n", riscv_protocol::DebugLevel::Info),
+    ];
+
+    // Try to receive and validate DebugPackets
+    let mut packet_count = 0;
+    for (expected_msg, expected_level) in expected_messages.iter() {
+        match crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
+            Ok(Some(debug_pkt)) => {
+                packet_count += 1;
+
+                // Validate packet level
+                assert_eq!(
+                    debug_pkt.level, *expected_level,
+                    "Packet {} should have level {:?}",
+                    packet_count, expected_level
+                );
+
+                // Validate packet message
+                assert_eq!(
+                    debug_pkt.message, *expected_msg,
+                    "Packet {} should have message '{}'",
+                    packet_count, expected_msg
+                );
+
+                // Validate packet header magic
+                assert_eq!(
+                    debug_pkt.header.magic, 0x52565043,
+                    "Packet {} should have correct magic number",
+                    packet_count
+                );
+
+                // Validate packet type
+                assert_eq!(
+                    debug_pkt.header.packet_type,
+                    riscv_protocol::PacketType::Debug,
+                    "Packet {} should be a Debug packet",
+                    packet_count
+                );
+
+                // Print for visibility
+                let level_str = match debug_pkt.level {
+                    riscv_protocol::DebugLevel::Trace => "[TRACE]",
+                    riscv_protocol::DebugLevel::Debug => "[DEBUG]",
+                    riscv_protocol::DebugLevel::Info => "[INFO]",
+                    riscv_protocol::DebugLevel::Warning => "[WARN]",
+                    riscv_protocol::DebugLevel::Error => "[ERROR]",
+                };
+                print!("{} {}", level_str, debug_pkt.message);
+            }
+            Ok(None) => {
+                panic!("Expected packet {} but received None", packet_count + 1);
+            }
+            Err(e) => {
+                panic!("Failed to deserialize packet {}: {}", packet_count + 1, e);
+            }
+        }
+    }
+
+    println!("\nReceived and validated {} DebugPacket(s)", packet_count);
+
+    // Verify successful completion
+    assert_eq!(
+        result.tohost_value,
+        Some(42),
+        "Program should complete with success code 42"
+    );
+
+    assert_eq!(
+        packet_count, 3,
+        "Should have received exactly 3 DebugPackets"
+    );
+
+    println!("\n========================================");
+    println!("PRINTLN MACRO TEST COMPLETE ✓");
+    println!("========================================");
+    println!("✓ rvprintln! messages received and validated");
+    println!(
+        "✓ Program completed successfully in {} cycles",
+        result.cycles
+    );
+    println!("========================================\n");
+}

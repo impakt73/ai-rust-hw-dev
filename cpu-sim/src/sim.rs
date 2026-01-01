@@ -21,6 +21,7 @@ where
     cycle_count: u64,
     entry_point: u32,
     print_inst_trace: bool,
+    print_debug_packets: bool,
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
 }
@@ -50,9 +51,15 @@ where
             cycle_count: 0,
             entry_point,
             print_inst_trace,
+            print_debug_packets: true, // Enable by default
             fifo_callback,
             trace_callback,
         })
+    }
+
+    /// Enable or disable automatic printing of DebugPacket messages
+    pub fn set_print_debug_packets(&mut self, enable: bool) {
+        self.print_debug_packets = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -139,8 +146,23 @@ where
 
         // Data Memory Read
         let dmem_addr = self.cpu.dmem_addr;
+        let dmem_size = self.cpu.dmem_size;
         let rdata = if self.cpu.dmem_re != 0 {
-            self.bus.read_word(dmem_addr)
+            // Route based on size to select operation
+            match dmem_size {
+                0b00 => {
+                    // Byte operation
+                    self.bus.read_byte(dmem_addr) as u32
+                }
+                0b01 => {
+                    // Halfword operation
+                    self.bus.read_halfword(dmem_addr) as u32
+                }
+                _ => {
+                    // Word operation (default)
+                    self.bus.read_word(dmem_addr)
+                }
+            }
         } else {
             0
         };
@@ -153,8 +175,22 @@ where
         let mut halt_value = None;
         if self.cpu.dmem_we != 0 {
             let wdata = self.cpu.dmem_wdata;
-            let byte_enable = self.cpu.dmem_be;
-            self.bus.write_word_with_be(dmem_addr, wdata, byte_enable);
+
+            // Route based on size to select operation
+            match dmem_size {
+                0b00 => {
+                    // SB - Store Byte
+                    self.bus.write_byte(dmem_addr, wdata as u8);
+                }
+                0b01 => {
+                    // SH - Store Halfword
+                    self.bus.write_halfword(dmem_addr, wdata as u16);
+                }
+                _ => {
+                    // SW - Store Word (default)
+                    self.bus.write_word(dmem_addr, wdata);
+                }
+            }
 
             // Check for halt signal
             if dmem_addr == TOHOST_ADDR {
@@ -188,10 +224,28 @@ where
         self.cpu.eval();
 
         // Process FIFO TX data
-        while let Some(word) = self.bus.fifo.tx.pop_front() {
-            if let Some(ref mut callback) = self.fifo_callback {
+        // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
+        if let Some(ref mut callback) = self.fifo_callback {
+            // Callback provided - drain FIFO and invoke callback for each word
+            while let Some(word) = self.bus.fifo.tx.pop_front() {
                 callback(word);
             }
+        } else if self.print_debug_packets {
+            // No callback but auto-printing enabled - parse and print DebugPackets
+            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
+                // Format the message with level prefix
+                let level_str = match debug_pkt.level {
+                    DebugLevel::Trace => "[TRACE]",
+                    DebugLevel::Debug => "[DEBUG]",
+                    DebugLevel::Info => "[INFO]",
+                    DebugLevel::Warning => "[WARN]",
+                    DebugLevel::Error => "[ERROR]",
+                };
+                println!("{} {}", level_str, debug_pkt.message);
+            }
+        } else {
+            // No callback and no auto-printing - drain FIFO to prevent accumulation
+            while self.bus.fifo.tx.pop_front().is_some() {}
         }
 
         // Call trace callback if provided

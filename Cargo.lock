@@ -669,6 +669,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "riscv_macros"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "riscv_protocol",
+ "serde",
+]
+
+[[package]]
 name = "riscv_protocol"
 version = "0.1.0"
 dependencies = [
