@@ -22,7 +22,8 @@ macro_rules! execute_instruction {
             assert!(cycles <= MAX_CYCLES, "Instruction timeout");
 
             let pc = $dut.imem_addr;
-            $dut.imem_data = $imem.get(&pc).copied().unwrap_or(0);
+            let instruction = $imem.get(&pc).copied().unwrap_or(0);
+            $dut.imem_data = instruction;
 
             $dut.eval();
 
@@ -36,10 +37,6 @@ macro_rules! execute_instruction {
                 let addr = $dut.dmem_addr;
                 let wdata = $dut.dmem_wdata;
                 let size = $dut.dmem_size;
-                println!(
-                    "cycle {}: dmem_we=1 addr=0x{:08x} data=0x{:08x} size={}",
-                    cycles, addr, wdata, size
-                );
                 match size {
                     0b00 => {
                         let word_addr = addr & !0x3;
@@ -65,11 +62,11 @@ macro_rules! execute_instruction {
                 }
             }
 
-            let done = $dut.instr_complete != 0 || $dut.halted != 0;
+            let complete_now = $dut.instr_complete != 0 || $dut.halted != 0;
 
             clock_cycle!($dut);
 
-            if done || $dut.instr_complete != 0 || $dut.halted != 0 {
+            if complete_now {
                 break;
             }
         }
@@ -151,7 +148,7 @@ fn test_fsm_r_type_cycle_count() {
     dut.eval();
 
     let cycles = execute_instruction!(dut, imem, dmem);
-    assert_eq!(cycles, 4, "R-type should take 4 cycles");
+    assert_eq!(cycles, 5, "R-type should take 5 cycles (including initial IDLE)");
 }
 
 #[test]
@@ -200,11 +197,8 @@ fn test_fsm_store_cycle_count() {
 
     execute_instruction!(dut, imem, dmem); // ADDI base
     execute_instruction!(dut, imem, dmem); // ADDI value
-    println!("PC before store = 0x{:08x}", dut.imem_addr);
     let cycles = execute_instruction!(dut, imem, dmem); // SW
 
-    println!("store cycles = {}", cycles);
-    println!("dmem contents: {:?}", dmem);
     assert_eq!(cycles, 4, "Store should take 4 cycles");
     assert_eq!(dmem.get(&100), Some(&42), "Store should write value");
 }

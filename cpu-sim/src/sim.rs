@@ -309,8 +309,16 @@ where
                 }
             }
 
-            // Exit when instruction completes or CPU halts
+            // Exit when instruction completes or CPU halts; tick once more so state/PC advance
             if instr_done || self.cpu.instr_complete != 0 || self.cpu.halted != 0 {
+                self.cpu.clk = 0;
+                self.cpu.eval();
+                self.cpu.clk = 1;
+                self.cpu.eval();
+                self.cycle_count += 1;
+                if let Some(ref mut vcd) = self.vcd {
+                    vcd.dump(self.cycle_count + 3);
+                }
                 break;
             }
         }
