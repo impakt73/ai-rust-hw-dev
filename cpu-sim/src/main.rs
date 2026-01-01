@@ -18,6 +18,10 @@ struct Args {
     /// Print instruction trace (prints every instruction executed)
     #[arg(long)]
     print_inst_trace: bool,
+
+    /// Enable VCD waveform dumping and specify output file path
+    #[arg(long)]
+    vcd: Option<String>,
 }
 
 fn main() {
@@ -31,7 +35,14 @@ fn main() {
     log::info!("Loading ELF: {}", args.elf.display());
 
     // Run simulation using the library
-    match cpu_sim::run_elf(&args.elf, args.max_cycles, args.print_inst_trace) {
+    let result = if let Some(vcd_path) = &args.vcd {
+        log::info!("VCD dumping enabled: {}", vcd_path);
+        cpu_sim::run_elf_with_vcd(&args.elf, args.max_cycles, args.print_inst_trace, vcd_path)
+    } else {
+        cpu_sim::run_elf(&args.elf, args.max_cycles, args.print_inst_trace)
+    };
+
+    match result {
         Ok(result) => {
             if let Some(tohost_value) = result.tohost_value {
                 println!(
@@ -42,6 +53,10 @@ fn main() {
                 println!("✓ Simulation completed in {} cycles", result.cycles);
             }
             log::info!("Program finished successfully");
+
+            if let Some(vcd_path) = &args.vcd {
+                println!("✓ VCD waveform written to: {}", vcd_path);
+            }
         }
         Err(e) => {
             eprintln!("✗ Simulation error: {}", e);

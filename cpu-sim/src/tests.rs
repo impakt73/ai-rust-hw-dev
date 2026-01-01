@@ -857,3 +857,120 @@ fn test_println_macro() {
     );
     println!("========================================\n");
 }
+
+#[test]
+fn test_vcd_generation() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("VCD WAVEFORM GENERATION TEST");
+    println!("========================================");
+    println!("Testing VCD file creation and basic validation...\n");
+
+    let elf_path = test_program_path("simple_test.elf");
+
+    // Create a temporary VCD file path in the target directory
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let vcd_path = manifest_dir.join("../target/test_vcd_output.vcd");
+    let vcd_path_str = vcd_path.to_str().expect("VCD path should be valid UTF-8");
+
+    // Remove any existing VCD file from previous test runs
+    if vcd_path.exists() {
+        fs::remove_file(&vcd_path).expect("Should be able to remove old VCD file");
+    }
+
+    println!("Running simulation with VCD enabled...");
+    let result = run_elf_with_vcd(&elf_path, 500, false, vcd_path_str)
+        .expect("Simulation with VCD should succeed");
+
+    assert_tohost(&result, 0x2a, "VCD generation test");
+
+    // Verify VCD file was created
+    assert!(
+        vcd_path.exists(),
+        "VCD file should be created at {}",
+        vcd_path_str
+    );
+
+    // Read and validate VCD file contents
+    let vcd_contents = fs::read_to_string(&vcd_path).expect("Should be able to read VCD file");
+
+    println!(
+        "VCD file created: {} ({} bytes)",
+        vcd_path_str,
+        vcd_contents.len()
+    );
+
+    // Validate VCD file has proper header
+    assert!(
+        vcd_contents.contains("$version"),
+        "VCD file should contain version header"
+    );
+    assert!(
+        vcd_contents.contains("$timescale"),
+        "VCD file should contain timescale"
+    );
+    assert!(
+        vcd_contents.contains("$scope module"),
+        "VCD file should contain module scope"
+    );
+
+    // Validate essential CPU signals are present
+    let expected_signals = vec![
+        "clk",
+        "rst_n",
+        "boot_addr",
+        "imem_addr",
+        "imem_data",
+        "dmem_addr",
+        "dmem_wdata",
+        "dmem_rdata",
+        "dmem_we",
+        "dmem_re",
+    ];
+
+    for signal in &expected_signals {
+        assert!(
+            vcd_contents.contains(signal),
+            "VCD file should contain signal '{}'",
+            signal
+        );
+    }
+
+    // Validate timestamps are present
+    assert!(
+        vcd_contents.contains("#0"),
+        "VCD file should contain timestamp #0 (reset state)"
+    );
+    assert!(
+        vcd_contents.contains("#1"),
+        "VCD file should contain timestamp #1 (first cycle)"
+    );
+
+    // Count number of timestamps to verify multiple cycles were captured
+    let timestamp_count = vcd_contents.matches("\n#").count();
+    println!("VCD file contains {} timestamps", timestamp_count);
+    assert!(
+        timestamp_count >= result.cycles as usize,
+        "VCD should have at least {} timestamps for {} cycles",
+        result.cycles,
+        result.cycles
+    );
+
+    println!("✓ VCD file created successfully");
+    println!("✓ VCD file contains proper headers and structure");
+    println!("✓ All essential CPU signals are present");
+    println!(
+        "✓ Reset sequence and {} execution cycles captured",
+        result.cycles
+    );
+    println!("\n========================================");
+    println!("VCD GENERATION TEST COMPLETE ✓");
+    println!("========================================\n");
+
+    // Clean up test VCD file
+    fs::remove_file(&vcd_path).expect("Should be able to remove test VCD file");
+}
