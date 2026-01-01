@@ -45,6 +45,7 @@ where
         fifo_callback,
         fifo_rx_data,
         None::<fn(&InstructionTrace)>,
+        None, // No VCD
     )
 }
 
@@ -57,6 +58,7 @@ where
 /// * `fifo_callback` - Optional callback invoked when data is written to the FIFO (receives u32 words)
 /// * `fifo_rx_data` - Optional string to write to the FIFO RX queue before running
 /// * `trace_callback` - Optional callback invoked for each instruction executed (receives InstructionTrace)
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -68,6 +70,7 @@ pub fn run_elf_with_all_callbacks<F, T>(
     fifo_callback: Option<F>,
     fifo_rx_data: Option<&str>,
     trace_callback: Option<T>,
+    vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
     F: FnMut(u32),
@@ -88,14 +91,27 @@ where
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-    let mut sim = Simulator::new(
-        &runtime,
-        bus,
-        entry_point,
-        print_inst_trace,
-        fifo_callback,
-        trace_callback,
-    )?;
+
+    let mut sim = if let Some(vcd) = vcd_path {
+        Simulator::new_with_vcd(
+            &runtime,
+            bus,
+            entry_point,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+            vcd,
+        )?
+    } else {
+        Simulator::new(
+            &runtime,
+            bus,
+            entry_point,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+        )?
+    };
 
     // Write data to RX FIFO if provided
     if let Some(data) = fifo_rx_data {
@@ -155,6 +171,7 @@ where
         None::<fn(u32)>,
         None,
         trace_callback,
+        None, // No VCD
     )
 }
 
@@ -185,6 +202,7 @@ where
         fifo_callback,
         None,
         None::<fn(&InstructionTrace)>,
+        None, // No VCD
     )
 }
 
@@ -215,6 +233,49 @@ pub fn run_elf(
 ) -> Result<SimulationResult, String> {
     run_elf_with_callback(elf_path, max_cycles, print_inst_trace, None::<fn(u32)>)
 }
+
+/// Run an ELF file on the simulated CPU with VCD waveform dumping
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `print_inst_trace` - Whether to print instruction trace
+/// * `vcd_path` - Path to the VCD file to generate
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::run_elf_with_vcd;
+/// use std::path::Path;
+///
+/// let result = run_elf_with_vcd(
+///     Path::new("test.elf"),
+///     1000,
+///     false,
+///     "trace.vcd"
+/// )?;
+/// # Ok::<(), String>(())
+/// ```
+pub fn run_elf_with_vcd(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    vcd_path: &str,
+) -> Result<SimulationResult, String> {
+    run_elf_with_all_callbacks(
+        elf_path,
+        max_cycles,
+        print_inst_trace,
+        None::<fn(u32)>,
+        None,
+        None::<fn(&InstructionTrace)>,
+        Some(vcd_path),
+    )
+}
+
 // Disabled broken test module
 // #[cfg(test)]
 // mod test_minimal;

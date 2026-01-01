@@ -1,6 +1,6 @@
 use crate::bus::SystemBus;
 use riscv_core::trace::InstructionTrace;
-use riscv_core::Top;
+use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
 
 /// Result of a simulation run
@@ -24,6 +24,7 @@ where
     print_debug_packets: bool,
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
+    vcd: Option<Vcd<'a>>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -40,7 +41,7 @@ where
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
     ) -> Result<Self, String> {
-        // Create CPU model from the runtime
+        // Create CPU model from the runtime (without tracing by default)
         let cpu = runtime
             .create_model_simple::<Top>()
             .map_err(|e| format!("Failed to create CPU model: {}", e))?;
@@ -54,6 +55,44 @@ where
             print_debug_packets: true, // Enable by default
             fifo_callback,
             trace_callback,
+            vcd: None,
+        })
+    }
+
+    /// Create a new simulator with VCD tracing enabled
+    pub fn new_with_vcd(
+        runtime: &'a riscv_core::VerilatorRuntime,
+        bus: SystemBus,
+        entry_point: u32,
+        print_inst_trace: bool,
+        fifo_callback: Option<F>,
+        trace_callback: Option<T>,
+        vcd_path: &str,
+    ) -> Result<Self, String> {
+        // Create CPU model with tracing enabled
+        let config = VerilatedModelConfig {
+            enable_tracing: true,
+            ..Default::default()
+        };
+
+        let mut cpu = runtime
+            .create_model::<Top>(&config)
+            .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
+
+        // Open VCD file
+        let vcd = cpu.open_vcd(vcd_path);
+        log::info!("VCD tracing enabled, writing to: {}", vcd_path);
+
+        Ok(Simulator {
+            cpu,
+            bus,
+            cycle_count: 0,
+            entry_point,
+            print_inst_trace,
+            print_debug_packets: true,
+            fifo_callback,
+            trace_callback,
+            vcd: Some(vcd),
         })
     }
 
@@ -112,13 +151,30 @@ where
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
         self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(0); // Capture initial state with reset asserted, clk=0
+        }
+
+        // First clock edge during reset
         self.cpu.clk = 1;
         self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(1); // Capture state after rising edge during reset
+        }
 
-        // Release reset
-        self.cpu.rst_n = 1;
+        // Second clock cycle during reset (falling edge)
         self.cpu.clk = 0;
         self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(2); // Capture state after falling edge during reset
+        }
+
+        // Release reset (still at clk=0)
+        self.cpu.rst_n = 1;
+        self.cpu.eval();
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(3); // Capture state with reset released
+        }
 
         log::info!(
             "CPU reset complete with entry point: 0x{:08x}",
@@ -226,6 +282,15 @@ where
         self.cpu.clk = 1;
         self.cpu.eval();
 
+        // Increment cycle count before dumping to VCD
+        self.cycle_count += 1;
+
+        // Dump VCD if enabled (after clock edge, with proper timestamp)
+        // Reset sequence uses timestamps 0-3, so execution cycles start at 4
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(self.cycle_count + 3);
+        }
+
         // Process FIFO TX data
         // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
         if let Some(ref mut callback) = self.fifo_callback {
@@ -273,8 +338,6 @@ where
                 );
             }
         }
-
-        self.cycle_count += 1;
 
         halt_value
     }

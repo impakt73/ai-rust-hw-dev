@@ -7,6 +7,7 @@ A command-line RISC-V RV32I CPU simulator that runs ELF executables on the Veril
 - Loads RISC-V ELF executables
 - Simulates the single-cycle RV32I CPU with external memory
 - Supports the "tohost" mechanism for program termination (write to 0xFFFFFFF0)
+- **VCD waveform dumping** for signal-level debugging and analysis
 - **Instruction trace callback** for programmatic access to executed instructions
 - Configurable maximum cycle limit
 - Verbose logging for debugging
@@ -34,7 +35,60 @@ cargo build --package cpu-sim
 - `--max-cycles <N>`: Maximum number of cycles to simulate (default: 10000)
 - `--verbose`: Enable verbose debug logging
 - `--print-inst-trace`: Print each instruction as it executes (cycle-by-cycle trace)
+- `--vcd <PATH>`: Enable VCD waveform dumping to the specified file path
 - `--help`: Display help information
+
+## VCD Waveform Dumping
+
+The simulator can generate VCD (Value Change Dump) files for detailed signal-level analysis and debugging. VCD files can be viewed in waveform viewers like GTKWave or similar tools.
+
+### Usage
+
+```bash
+# Generate VCD waveform dump
+cargo run --package cpu-sim -- program.elf --vcd trace.vcd
+
+# With other options
+cargo run --package cpu-sim -- program.elf --vcd trace.vcd --max-cycles 50000 --verbose
+```
+
+### Viewing VCD Files
+
+After generating a VCD file, you can view it with GTKWave or other waveform viewers:
+
+```bash
+# Install GTKWave (Ubuntu/Debian)
+sudo apt-get install gtkwave
+
+# Open the waveform
+gtkwave trace.vcd
+```
+
+### Programmatic API
+
+You can also enable VCD dumping programmatically:
+
+```rust
+use cpu_sim::run_elf_with_vcd;
+use std::path::Path;
+
+let result = run_elf_with_vcd(
+    Path::new("program.elf"),
+    10000,          // max_cycles
+    false,          // print_inst_trace
+    "trace.vcd"     // vcd_path
+)?;
+
+println!("VCD waveform saved to trace.vcd");
+```
+
+The VCD file captures all CPU signals including:
+- Clock (`clk`) and reset (`rst_n`)
+- Program counter (`imem_addr`)
+- Instruction data (`imem_data`)
+- Data memory interface (`dmem_addr`, `dmem_wdata`, `dmem_rdata`, `dmem_we`, `dmem_re`)
+- Debug signals (`debug_rs1_data`, `debug_rs2_data`, `debug_rd_data`)
+- Internal CPU state (register file, ALU operations, etc.)
 
 ## Instruction Trace Callback
 
@@ -96,9 +150,10 @@ The `InstructionTrace` struct provides detailed information about each executed 
 ### Available API Functions
 
 - `run_elf(path, max_cycles, print_trace)` - Basic simulation (backward compatible)
+- `run_elf_with_vcd(path, max_cycles, print_trace, vcd_path)` - With VCD waveform dumping
 - `run_elf_with_trace_callback(path, max_cycles, print_trace, trace_callback)` - With instruction trace callback
 - `run_elf_with_callback(path, max_cycles, print_trace, fifo_callback)` - With FIFO callback
-- `run_elf_with_all_callbacks(...)` - With both FIFO and trace callbacks
+- `run_elf_with_all_callbacks(...)` - With FIFO, trace callbacks, and optional VCD
 
 ## Program Termination
 

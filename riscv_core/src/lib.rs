@@ -1,5 +1,6 @@
 // Re-export marlin for convenience
-pub use marlin::verilator::{VerilatorRuntime, VerilatorRuntimeOptions};
+pub use marlin::verilator::vcd::Vcd;
+pub use marlin::verilator::{VerilatedModelConfig, VerilatorRuntime, VerilatorRuntimeOptions};
 pub use marlin::verilog::prelude::*;
 
 // Disassembler module
