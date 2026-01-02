@@ -278,9 +278,6 @@ pub fn run_elf_with_vcd(
 /// Type alias for a simulator with static lifetime and no callbacks
 pub type StaticSimulator = Simulator<'static, fn(u32), fn(&InstructionTrace)>;
 
-/// Type alias for the result of creating a simulator from an ELF file
-pub type SimulatorWithRuntime = (StaticSimulator, Box<riscv_core::VerilatorRuntime>);
-
 /// Create a simulator from an ELF file for manual control and memory inspection
 ///
 /// This function provides lower-level access to the simulator, allowing you to:
@@ -292,20 +289,24 @@ pub type SimulatorWithRuntime = (StaticSimulator, Box<riscv_core::VerilatorRunti
 /// * `elf_path` - Path to the RISC-V ELF executable
 ///
 /// # Returns
-/// * `Ok((Simulator, VerilatorRuntime))` - Simulator instance and its runtime (must be kept alive)
+/// * `Ok(Simulator)` - Simulator instance with leaked runtime (lives for program duration)
 /// * `Err(String)` on error
+///
+/// # Note
+/// The runtime is intentionally leaked to satisfy the 'static lifetime requirement.
+/// This is acceptable for typical CLI usage where the simulator lives until program exit.
 ///
 /// # Examples
 /// ```no_run
 /// use cpu_sim::create_simulator_from_elf;
 /// use std::path::Path;
 ///
-/// let (mut sim, _runtime) = create_simulator_from_elf(Path::new("test.elf"))?;
+/// let mut sim = create_simulator_from_elf(Path::new("test.elf"))?;
 /// let result = sim.run(1000)?;
 /// let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
 /// # Ok::<(), String>(())
 /// ```
-pub fn create_simulator_from_elf(elf_path: &Path) -> Result<SimulatorWithRuntime, String> {
+pub fn create_simulator_from_elf(elf_path: &Path) -> Result<StaticSimulator, String> {
     // Initialize DRAM and load ELF
     let mut dram = Dram::new();
     let entry_point = dram
@@ -318,24 +319,27 @@ pub fn create_simulator_from_elf(elf_path: &Path) -> Result<SimulatorWithRuntime
     // Create system bus with DRAM and FIFO
     let bus = SystemBus::new(dram);
 
-    // Initialize CPU Simulator - box the runtime to ensure stable address
-    let mut runtime = Box::new(
+    // Initialize CPU Simulator - box the runtime to keep it heap-allocated
+    let runtime = Box::new(
         riscv_core::create_cpu_runtime()
             .map_err(|e| format!("Error creating CPU runtime: {}", e))?,
     );
 
-    // SAFETY: We're creating a 'static lifetime simulator by:
-    // 1. Boxing the runtime to get a stable address
-    // 2. Converting the box reference to a raw pointer, then to 'static ref
-    // 3. The simulator and runtime are returned together as a tuple
-    // 4. The caller MUST ensure the runtime outlives the simulator
-    //    by keeping both values alive (typically by binding them to variables)
-    let runtime_ref: &'static riscv_core::VerilatorRuntime =
-        unsafe { &*(runtime.as_mut() as *mut _) };
+    // SAFETY: We intentionally leak the runtime to get a true 'static reference.
+    // This is acceptable because:
+    // 1. create_simulator_from_elf is typically called once per simulation
+    // 2. The runtime is needed for the entire lifetime of the simulator
+    // 3. In CLI usage, both live until program exit anyway
+    // 4. This prevents the dangling reference issue from the previous unsafe approach
+    //
+    // Trade-off: Small memory leak (one runtime per simulation), but ensures safety.
+    // Alternative would be to have Simulator own the runtime, but marlin's design
+    // requires a borrowed reference with 'static lifetime.
+    let runtime_ref: &'static riscv_core::VerilatorRuntime = Box::leak(runtime);
 
     let sim = Simulator::new(runtime_ref, bus, entry_point, false, None, None)?;
 
-    Ok((sim, runtime))
+    Ok(sim)
 }
 
 // Disabled broken test module

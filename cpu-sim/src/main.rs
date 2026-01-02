@@ -45,6 +45,14 @@ fn main() {
     // Check if we need memory dump functionality
     let needs_memory_access = args.dump_memory.is_some() || args.dump_image.is_some();
 
+    // Detect conflicting options: VCD is not supported with memory dump operations
+    if needs_memory_access && args.vcd.is_some() {
+        eprintln!("✗ Error: --vcd cannot be used with --dump-memory or --dump-image");
+        eprintln!("  VCD waveform dumping is only supported when using standard simulation mode.");
+        eprintln!("  Either remove --vcd, or remove --dump-memory/--dump-image flags.");
+        std::process::exit(1);
+    }
+
     if needs_memory_access {
         // Run simulation with manual simulator control for memory access
         run_with_memory_access(&args);
@@ -87,7 +95,7 @@ fn run_standard(args: &Args) {
 
 fn run_with_memory_access(args: &Args) {
     // Create simulator
-    let (mut sim, _runtime) = match cpu_sim::create_simulator_from_elf(&args.elf) {
+    let mut sim = match cpu_sim::create_simulator_from_elf(&args.elf) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("✗ Failed to create simulator: {}", e);

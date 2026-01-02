@@ -439,7 +439,7 @@ where
     /// * `Ok(())` on success
     /// * `Err(String)` on error
     ///
-    /// # Safety
+    /// # Requirements
     /// The memory region must contain at least `width * height * 4` bytes of valid data.
     ///
     /// # Examples
@@ -473,15 +473,6 @@ where
 
         // Collect pixel data from memory
         let pixel_data: Vec<u8> = self.dump_memory_region(start_addr, total_bytes).collect();
-
-        // Verify we got the expected amount of data
-        if pixel_data.len() != total_bytes as usize {
-            return Err(format!(
-                "Expected {} bytes but got {} bytes",
-                total_bytes,
-                pixel_data.len()
-            ));
-        }
 
         // Create image buffer from raw RGBA8 data
         let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixel_data)

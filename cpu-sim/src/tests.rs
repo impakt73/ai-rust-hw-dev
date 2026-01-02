@@ -986,8 +986,7 @@ fn test_memory_dump() {
     let elf_path = test_program_path("test_memory_pattern.elf");
 
     // Create and run simulator
-    let (mut sim, _runtime) =
-        crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
+    let mut sim = crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
 
     let result = sim.run(10000).expect("Simulation should succeed");
     assert_tohost(&result, 42, "memory pattern test");
@@ -1038,6 +1037,9 @@ fn test_memory_dump() {
     let read_back = std::fs::read(dump_path).expect("Should read back memory dump");
     assert_eq!(read_back, memory_data, "Read-back data should match");
 
+    // Clean up test file
+    std::fs::remove_file(dump_path).expect("Should be able to remove test file");
+
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
     println!("========================================");
@@ -1054,8 +1056,7 @@ fn test_image_dump() {
     let elf_path = test_program_path("test_image_data.elf");
 
     // Create and run simulator
-    let (mut sim, _runtime) =
-        crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
+    let mut sim = crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
 
     let result = sim.run(10000).expect("Simulation should succeed");
     assert_tohost(&result, 42, "image data test");
@@ -1139,6 +1140,9 @@ fn test_image_dump() {
     assert_eq!(pixel[3], 255, "Pixel (0,3) alpha channel should be 255");
 
     println!("✓ Pixel data verified (red, green, blue, white gradients)");
+
+    // Clean up test file
+    std::fs::remove_file(image_path).expect("Should be able to remove test file");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");
