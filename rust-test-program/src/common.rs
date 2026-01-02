@@ -1,8 +1,10 @@
 // Common utilities for bare-metal test programs
 
+#![allow(dead_code)]
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
-use core::ptr::{addr_of_mut, write_volatile};
+use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Simple bump allocator for bare-metal environment.
@@ -55,4 +57,50 @@ pub fn write_tohost(value: u32) -> ! {
         write_volatile(TOHOST_ADDR as *mut u32, value);
     }
     loop {}
+}
+
+/// FIFO memory-mapped I/O addresses and constants
+pub const FIFO_BASE: u32 = 0x4000_0000;
+pub const FIFO_DATA: u32 = FIFO_BASE + 0x0;
+pub const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
+pub const RX_VALID: u32 = 1 << 0;
+
+/// Write a word to the FIFO
+#[inline(never)]
+pub fn fifo_write_word(word: u32) {
+    unsafe {
+        // TX is always ready in simulation, so just write
+        write_volatile(FIFO_DATA as *mut u32, word);
+    }
+}
+
+/// Read a word from the FIFO (without status check - just read and return)
+#[inline(never)]
+pub fn fifo_read_word_unchecked() -> u32 {
+    unsafe { read_volatile(FIFO_DATA as *const u32) }
+}
+
+/// Simple function to read a u32 from FIFO if available
+pub fn try_read_fifo_word() -> Option<u32> {
+    unsafe {
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & RX_VALID != 0 {
+            Some(read_volatile(FIFO_DATA as *const u32))
+        } else {
+            None
+        }
+    }
+}
+
+/// Read multiple words from FIFO (up to max_words)
+pub fn read_fifo_words(max_words: usize) -> usize {
+    let mut count = 0;
+    while count < max_words {
+        if try_read_fifo_word().is_some() {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
 }

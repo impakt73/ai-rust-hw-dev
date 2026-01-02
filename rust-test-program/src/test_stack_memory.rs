@@ -1,23 +1,14 @@
 #![no_std]
 #![no_main]
 
+mod common;
+
 use core::panic::PanicInfo;
-use core::ptr::write_volatile;
 use riscv_rt::entry;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
-}
-
-const FIFO_DATA: u32 = 0x4000_0000;
-const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-
-fn write_tohost(value: u32) -> ! {
-    unsafe {
-        write_volatile(TOHOST_ADDR as *mut u32, value);
-    }
-    loop {}
+fn panic(info: &PanicInfo) -> ! {
+    common::default_panic_handler(info)
 }
 
 #[entry]
@@ -39,37 +30,27 @@ fn main() -> ! {
     }
     
     // Write marker
-    unsafe {
-        write_volatile(FIFO_DATA as *mut u32, 0xAAAAAAAA);
-    }
+    common::fifo_write_word(0xAAAAAAAA);
     
     // Read and send to FIFO
     for i in 0..8 {
         let byte = stack_array[i];
-        unsafe {
-            write_volatile(FIFO_DATA as *mut u32, byte as u32);
-        }
+        common::fifo_write_word(byte as u32);
     }
     
     // Write marker
-    unsafe {
-        write_volatile(FIFO_DATA as *mut u32, 0xBBBBBBBB);
-    }
+    common::fifo_write_word(0xBBBBBBBB);
     
     // Test 2: Direct assignment
     let stack_array2: [u8; 8] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
     
     // Write marker
-    unsafe {
-        write_volatile(FIFO_DATA as *mut u32, 0xCCCCCCCC);
-    }
+    common::fifo_write_word(0xCCCCCCCC);
     
     // Read and send to FIFO
     for &byte in &stack_array2 {
-        unsafe {
-            write_volatile(FIFO_DATA as *mut u32, byte as u32);
-        }
+        common::fifo_write_word(byte as u32);
     }
     
-    write_tohost(42);
+    common::write_tohost(42);
 }
