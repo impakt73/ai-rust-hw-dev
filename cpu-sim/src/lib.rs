@@ -275,9 +275,6 @@ pub fn run_elf_with_vcd(
     )
 }
 
-/// Type alias for a simulator with static lifetime and no callbacks
-pub type StaticSimulator = Simulator<'static, fn(u32), fn(&InstructionTrace)>;
-
 /// Run an ELF file in a simulator and execute a callback with access to the simulator
 ///
 /// This function provides a safe way to access the simulator after running an ELF file.
