@@ -45,16 +45,8 @@ fn main() {
     // Check if we need memory dump functionality
     let needs_memory_access = args.dump_memory.is_some() || args.dump_image.is_some();
 
-    // Detect conflicting options: VCD is not supported with memory dump operations
-    if needs_memory_access && args.vcd.is_some() {
-        eprintln!("✗ Error: --vcd cannot be used with --dump-memory or --dump-image");
-        eprintln!("  VCD waveform dumping is only supported when using standard simulation mode.");
-        eprintln!("  Either remove --vcd, or remove --dump-memory/--dump-image flags.");
-        std::process::exit(1);
-    }
-
     if needs_memory_access {
-        // Run simulation with manual simulator control for memory access
+        // Run simulation with callback for memory access
         run_with_memory_access(&args);
     } else {
         // Run simulation using the library (original path)
@@ -95,80 +87,90 @@ fn run_standard(args: &Args) {
 
 fn run_with_memory_access(args: &Args) {
     // Run simulation with callback to access memory
-    let result = cpu_sim::run_elf_in_simulator(&args.elf, args.max_cycles, |sim, result| {
-        if let Some(tohost_value) = result.tohost_value {
-            println!(
-                "✓ Simulation completed in {} cycles (tohost value: 0x{:08x})",
-                result.cycles, tohost_value
-            );
-        } else {
-            println!("✓ Simulation completed in {} cycles", result.cycles);
-        }
-
-        // Handle memory dump
-        if let Some(params) = &args.dump_memory {
-            if params.len() != 3 {
-                eprintln!("✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>");
-                std::process::exit(1);
-            }
-
-            let addr = parse_address(&params[0]);
-            let size = parse_size(&params[1]);
-            let output = &params[2];
-
-            log::info!(
-                "Dumping memory: addr=0x{:08x}, size=0x{:x} bytes to {}",
-                addr,
-                size,
-                output
-            );
-
-            let bytes: Vec<u8> = sim.dump_memory_region(addr, size).collect();
-            if let Err(e) = std::fs::write(output, &bytes) {
-                eprintln!("✗ Failed to write memory dump: {}", e);
-                std::process::exit(1);
-            }
-
-            println!(
-                "✓ Memory dump written to: {} ({} bytes)",
-                output,
-                bytes.len()
-            );
-        }
-
-        // Handle image dump
-        if let Some(params) = &args.dump_image {
-            if params.len() != 4 {
-                eprintln!(
-                    "✗ Invalid --dump-image arguments. Expected: <addr> <width> <height> <output>"
+    let result = cpu_sim::run_elf_in_simulator(
+        &args.elf,
+        args.max_cycles,
+        |sim, result| {
+            if let Some(tohost_value) = result.tohost_value {
+                println!(
+                    "✓ Simulation completed in {} cycles (tohost value: 0x{:08x})",
+                    result.cycles, tohost_value
                 );
-                std::process::exit(1);
+            } else {
+                println!("✓ Simulation completed in {} cycles", result.cycles);
             }
 
-            let addr = parse_address(&params[0]);
-            let width = parse_size(&params[1]);
-            let height = parse_size(&params[2]);
-            let output = &params[3];
+            // Handle memory dump
+            if let Some(params) = &args.dump_memory {
+                if params.len() != 3 {
+                    eprintln!("✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>");
+                    std::process::exit(1);
+                }
 
-            log::info!(
-                "Dumping image: addr=0x{:08x}, size={}x{} to {}",
-                addr,
-                width,
-                height,
-                output
-            );
+                let addr = parse_address(&params[0]);
+                let size = parse_size(&params[1]);
+                let output = &params[2];
 
-            if let Err(e) = sim.dump_memory_region_as_image(addr, width, height, output) {
-                eprintln!("✗ Failed to dump image: {}", e);
-                std::process::exit(1);
+                log::info!(
+                    "Dumping memory: addr=0x{:08x}, size=0x{:x} bytes to {}",
+                    addr,
+                    size,
+                    output
+                );
+
+                let bytes: Vec<u8> = sim.dump_memory_region(addr, size).collect();
+                if let Err(e) = std::fs::write(output, &bytes) {
+                    eprintln!("✗ Failed to write memory dump: {}", e);
+                    std::process::exit(1);
+                }
+
+                println!(
+                    "✓ Memory dump written to: {} ({} bytes)",
+                    output,
+                    bytes.len()
+                );
             }
 
-            println!(
-                "✓ Image written to: {} ({}x{} RGBA8)",
-                output, width, height
-            );
-        }
-    });
+            // Handle image dump
+            if let Some(params) = &args.dump_image {
+                if params.len() != 4 {
+                    eprintln!(
+                        "✗ Invalid --dump-image arguments. Expected: <addr> <width> <height> <output>"
+                    );
+                    std::process::exit(1);
+                }
+
+                let addr = parse_address(&params[0]);
+                let width = parse_size(&params[1]);
+                let height = parse_size(&params[2]);
+                let output = &params[3];
+
+                log::info!(
+                    "Dumping image: addr=0x{:08x}, size={}x{} to {}",
+                    addr,
+                    width,
+                    height,
+                    output
+                );
+
+                if let Err(e) = sim.dump_memory_region_as_image(addr, width, height, output) {
+                    eprintln!("✗ Failed to dump image: {}", e);
+                    std::process::exit(1);
+                }
+
+                println!(
+                    "✓ Image written to: {} ({}x{} RGBA8)",
+                    output, width, height
+                );
+            }
+
+            // Print VCD path if enabled
+            if let Some(vcd_path) = &args.vcd {
+                println!("✓ VCD waveform written to: {}", vcd_path);
+            }
+        },
+        args.vcd.as_deref(),
+    );
 
     match result {
         Ok(_) => {

@@ -275,6 +275,66 @@ pub fn run_elf_with_vcd(
     )
 }
 
+/// Internal helper function that consolidates the common pattern for running an ELF
+/// with a callback that has access to the simulator after execution.
+///
+/// This eliminates the duplication between `run_elf_in_simulator` and `run_elf_in_simulator_mut`.
+fn run_elf_in_simulator_internal<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    fifo_rx_data: Option<&str>,
+    trace_callback: Option<fn(&InstructionTrace)>,
+    vcd_path: Option<&str>,
+    callback: F,
+) -> Result<SimulationResult, String>
+where
+    F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
+    // Initialize DRAM and load ELF
+    let mut dram = Dram::new();
+    let entry_point = dram
+        .load_elf(elf_path)
+        .map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = SystemBus::new(dram);
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = if let Some(vcd) = vcd_path {
+        Simulator::new_with_vcd(
+            &runtime,
+            bus,
+            entry_point,
+            print_inst_trace,
+            None,
+            trace_callback,
+            vcd,
+        )?
+    } else {
+        Simulator::new(&runtime, bus, entry_point, print_inst_trace, None, trace_callback)?
+    };
+
+    // Write data to RX FIFO if provided
+    if let Some(data) = fifo_rx_data {
+        sim.fifo_write_rx_string(data);
+    }
+
+    // Run simulation
+    let result = sim.run(max_cycles)?;
+
+    // Execute callback with mutable simulator and result
+    callback(&mut sim, &result);
+
+    Ok(result)
+}
+
 /// Run an ELF file in a simulator and execute a callback with access to the simulator
 ///
 /// This function provides a safe way to access the simulator after running an ELF file.
@@ -285,6 +345,7 @@ pub fn run_elf_with_vcd(
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `callback` - Function to execute with simulator access after the run completes
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -302,7 +363,8 @@ pub fn run_elf_with_vcd(
 ///         println!("Simulation completed in {} cycles", result.cycles);
 ///         let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
 ///         // Process bytes...
-///     }
+///     },
+///     None, // No VCD
 /// )?;
 /// # Ok::<(), String>(())
 /// ```
@@ -310,35 +372,20 @@ pub fn run_elf_in_simulator<F>(
     elf_path: &Path,
     max_cycles: u64,
     callback: F,
+    vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnOnce(&Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnOnce(&Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
 {
-    // Initialize DRAM and load ELF
-    let mut dram = Dram::new();
-    let entry_point = dram
-        .load_elf(elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Create system bus with DRAM and FIFO
-    let bus = SystemBus::new(dram);
-
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-
-    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
-
-    // Run simulation
-    let result = sim.run(max_cycles)?;
-
-    // Execute callback with simulator and result
-    callback(&sim, &result);
-
-    Ok(result)
+    run_elf_in_simulator_internal(
+        elf_path,
+        max_cycles,
+        false,
+        None,
+        None,
+        vcd_path,
+        |sim, result| callback(sim, result),
+    )
 }
 
 /// Run an ELF file in a simulator and execute a callback with mutable access to the simulator
@@ -350,6 +397,7 @@ where
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `callback` - Function to execute with mutable simulator access after the run completes
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -357,36 +405,13 @@ where
 pub fn run_elf_in_simulator_mut<F>(
     elf_path: &Path,
     max_cycles: u64,
-    mut callback: F,
+    callback: F,
+    vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnMut(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
 {
-    // Initialize DRAM and load ELF
-    let mut dram = Dram::new();
-    let entry_point = dram
-        .load_elf(elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Create system bus with DRAM and FIFO
-    let bus = SystemBus::new(dram);
-
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-
-    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
-
-    // Run simulation
-    let result = sim.run(max_cycles)?;
-
-    // Execute callback with simulator and result
-    callback(&mut sim, &result);
-
-    Ok(result)
+    run_elf_in_simulator_internal(elf_path, max_cycles, false, None, None, vcd_path, callback)
 }
 
 // Disabled broken test module
