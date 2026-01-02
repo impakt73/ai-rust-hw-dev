@@ -18,9 +18,10 @@ A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-b
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
 - ✅ **Single-cycle Execution**: All instructions complete in one clock cycle
-- ✅ **Verilator-based Verification**: 84 comprehensive tests using Rust + marlin framework (50 in cpu_verifier package)
-- ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables
+- ✅ **Verilator-based Verification**: 112 comprehensive tests using Rust + marlin framework (50 in cpu_verifier package)
+- ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
+- ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs
 
 ## Quick Start
 
@@ -46,17 +47,21 @@ cargo run --package cpu-sim -- test_programs/test.elf --verbose
 
 ## Project Structure
 
-- **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, top module)
+- **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, CSR file, top module)
 - **`tests/`** - Rust-based verification tests (cpu_verifier package)
-- **`cpu-sim/`** - Command-line CPU simulator for running ELF executables
+- **`cpu-sim/`** - Command-line CPU simulator for running ELF executables with VCD waveform dumping
 - **`riscv_core/`** - Shared Verilator bindings and utilities
+- **`riscv_protocol/`** - Debug packet protocol definitions
+- **`riscv_macros/`** - Formatted print macros for bare-metal RISC-V programs
 - **`test_programs/`** - Example RISC-V assembly and Rust test programs
+- **`rust-test-program/`** - Bare-metal Rust test programs (separate workspace)
 
 ## Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents
-- **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage and details
+- **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
 - **[test_programs/README.md](test_programs/README.md)** - Information about test programs
+- **[riscv_macros/README.md](riscv_macros/README.md)** - Formatted print macros for bare-metal programs
 
 ## License
 

@@ -10,6 +10,7 @@ This is a **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog wit
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
 - **Verification (Rust):** Test harness in `tests/` directory using marlin + Verilator
 - **Architecture:** Single-cycle design with exposed memory ports (no internal memory)
+- **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
 
 ## Critical Prerequisites
 
@@ -61,7 +62,7 @@ cargo clean
 
 ### Test Structure
 
-The project has 84 comprehensive tests across all packages:
+The project has 112 comprehensive tests across all packages:
 - **cpu_verifier package (50 tests):**
   - 16 ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
   - 6 Register file tests: Validate register behavior (including x0 immutability)
@@ -72,8 +73,11 @@ The project has 84 comprehensive tests across all packages:
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (34 tests):**
-  - Additional integration and utility tests
+- **Other packages (62 tests):**
+  - cpu-sim: 19 integration tests (ELF loading, execution, FIFO, VCD dumping, trace callbacks)
+  - riscv_core: 33 utility and tracing tests
+  - riscv_protocol: 6 packet serialization/deserialization tests
+  - riscv_macros: 4 macro functionality tests
 
 ### Verilator Build Process
 
@@ -112,9 +116,14 @@ All code should pass these checks before committing.
 .
 ├── Cargo.toml              # Workspace root
 ├── rtl/                    # SystemVerilog RTL
-│   ├── alu.sv             # Arithmetic Logic Unit
+│   ├── alu.sv             # Arithmetic Logic Unit (RV32I + M extension)
 │   ├── regfile.sv         # 32x32-bit register file
 │   ├── decoder.sv         # Instruction decoder
+│   ├── csr_file.sv        # Control and Status Registers (Zicsr)
+│   ├── branch_unit.sv     # Branch comparison logic
+│   ├── pc_control.sv      # Program counter control
+│   ├── mem_interface.sv   # Memory interface logic
+│   ├── writeback_mux.sv   # Writeback multiplexer
 │   └── top.sv             # Top-level CPU module
 ├── tests/                  # Rust verification
 │   ├── Cargo.toml         # Test package dependencies
@@ -124,6 +133,15 @@ All code should pass these checks before committing.
 │       ├── alu_test.rs    # ALU verification tests
 │       ├── regfile_test.rs # Register file tests
 │       └── cpu_test.rs    # CPU integration tests
+├── cpu-sim/               # CPU simulator
+│   └── src/
+│       ├── main.rs        # CLI entry point
+│       ├── sim.rs         # Simulator implementation
+│       └── tests.rs       # Integration tests
+├── riscv_core/            # Shared Verilator bindings
+├── riscv_protocol/        # Debug packet protocol
+├── riscv_macros/          # Print macros for bare-metal programs
+├── test_programs/         # Example test programs (ELF binaries)
 └── .github/
     └── workflows/
         └── ci.yml         # GitHub Actions CI/CD
@@ -136,8 +154,13 @@ All code should pass these checks before committing.
 ```
 top (CPU)
 ├── decoder (Instruction decoder)
-├── alu (ALU operations)
-└── regfile (Register file)
+├── alu (ALU operations - RV32I + M extension)
+├── regfile (Register file)
+├── csr_file (Control and Status Registers)
+├── branch_unit (Branch comparison)
+├── pc_control (Program counter logic)
+├── mem_interface (Memory interface logic)
+└── writeback_mux (Result selection)
 ```
 
 ### Key Design Decisions
@@ -145,8 +168,9 @@ top (CPU)
 1. **Single-cycle execution:** All instructions complete in one clock cycle
 2. **Exposed memory ports:** Instruction and data memory are external (managed by testbench)
 3. **Register x0 hardwired to zero:** Hardware enforcement (not just software convention)
-4. **Branch comparison in top module:** Direct comparison logic (not ALU-based)
-5. **Immediate selection:** Store instructions use `imm_s`, others use `imm_i`
+4. **Separate branch unit:** Dedicated branch comparison logic (not ALU-based)
+5. **CSR support:** Full Control and Status Register implementation (Zicsr extension)
+6. **FIFO-based debug:** MMIO FIFO at 0x40000000 for host communication with packet protocol
 
 ### Supported Instructions
 
@@ -228,7 +252,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 84 tests must pass (50 in cpu_verifier + 34 in other packages).
+   All 112 tests must pass (50 in cpu_verifier + 62 in other packages).
 
 2. **Verify code formatting:**
    ```bash
@@ -304,7 +328,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 84 tests must pass: 50 in cpu_verifier + 34 in other packages)
+2. ✅ **Tests:** `cargo test --verbose` (all 112 tests must pass: 50 in cpu_verifier + 62 in other packages)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
@@ -317,7 +341,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 84 total tests passed (50 in cpu_verifier + 34 in other packages)
+4. **Verify all tests pass:** Look for `test result: ok` with 112 total tests passed (50 in cpu_verifier + 62 in other packages)
 
 ### Signal Naming Conventions
 
@@ -393,5 +417,5 @@ For issues specific to this implementation, refer to:
 
 ---
 
-**Last Updated:** 2025-12-30
+**Last Updated:** 2026-01-02
 **Maintainer:** Automated by GitHub Copilot
