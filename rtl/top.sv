@@ -29,7 +29,6 @@ module top (
 
     // Internal signals
     logic [31:0] pc;
-    logic [31:0] next_pc;
     logic [31:0] instruction;
     
     // Decoder outputs
@@ -71,70 +70,48 @@ module top (
     // Branch/Jump logic
     logic        take_branch;
     
-    // CSR registers (4096 possible, but we only implement a few)
-    logic [31:0] csr_file [0:4095];
+    // CSR signals
     logic [11:0] csr_addr;
     logic [31:0] csr_rdata;
     
+    // Memory interface signals
+    logic [31:0] formatted_load_data;
+    
     assign csr_addr = imm_i[11:0];  // CSR address from immediate field
+    
     
     // Program Counter
     assign imem_addr = pc;
     assign instruction = imem_data;
     
-    // Halt control for ECALL/EBREAK
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            halted <= 1'b0;
-        end else if (is_ecall || is_ebreak) begin
-            halted <= 1'b1;
-        end
-    end
+    // PC Control Module
+    pc_control u_pc_control (
+        .clk(clk),
+        .rst_n(rst_n),
+        .boot_addr(boot_addr),
+        .branch(branch),
+        .take_branch(take_branch),
+        .jump(jump),
+        .is_ecall(is_ecall),
+        .is_ebreak(is_ebreak),
+        .opcode(opcode),
+        .rs1_data(rs1_data),
+        .imm_i(imm_i),
+        .imm_b(imm_b),
+        .imm_j(imm_j),
+        .pc(pc),
+        .halted(halted)
+    );
     
-    // PC update logic
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            pc <= boot_addr;
-        end else if (!halted && !is_ecall && !is_ebreak) begin
-            // Advance PC only when not halted and not executing ECALL/EBREAK
-            pc <= next_pc;
-        end
-        // If halted or executing ECALL/EBREAK, PC stays the same
-    end
-    
-    // Next PC calculation
-    always_comb begin
-        if (jump) begin
-            // JAL or JALR
-            if (opcode == 7'b1100111) begin
-                // JALR: PC = (rs1 + imm) & ~1
-                next_pc = (rs1_data + imm_i) & ~32'h1;
-            end else begin
-                // JAL: PC = PC + imm
-                next_pc = pc + imm_j;
-            end
-        end else if (branch && take_branch) begin
-            next_pc = pc + imm_b;
-        end else begin
-            next_pc = pc + 32'd4;  // Next sequential instruction
-        end
-    end
-    
-    // Branch decision logic
-    always_comb begin
-        take_branch = 1'b0;
-        if (branch) begin
-            case (funct3)
-                3'b000: take_branch = alu_zero;                              // BEQ
-                3'b001: take_branch = !alu_zero;                             // BNE
-                3'b100: take_branch = ($signed(rs1_data) <  $signed(rs2_data));  // BLT (signed)
-                3'b101: take_branch = ($signed(rs1_data) >= $signed(rs2_data));  // BGE (signed)
-                3'b110: take_branch = (rs1_data <  rs2_data);                // BLTU (unsigned)
-                3'b111: take_branch = (rs1_data >= rs2_data);                // BGEU (unsigned)
-                default: take_branch = 1'b0;
-            endcase
-        end
-    end
+    // Branch Decision Unit
+    branch_unit u_branch_unit (
+        .branch(branch),
+        .funct3(funct3),
+        .rs1_data(rs1_data),
+        .rs2_data(rs2_data),
+        .alu_zero(alu_zero),
+        .take_branch(take_branch)
+    );
     
     // Decoder instantiation
     decoder u_decoder (
@@ -182,10 +159,6 @@ module top (
                     ? ((opcode == 7'b0100011) ? imm_s : imm_i)
                     : rs2_data;
     
-    // Special handling for LUI
-    logic [31:0] lui_result;
-    assign lui_result = imm_u;
-    
     // ALU instantiation
     alu u_alu (
         .a(alu_a),
@@ -195,87 +168,47 @@ module top (
         .zero(alu_zero)
     );
     
-    // Data memory interface
-    assign dmem_addr = alu_result;
-    assign dmem_wdata = rs2_data;  // Pass data directly - no formatting needed
-    assign dmem_we = mem_write;
-    assign dmem_re = mem_read;
+    // Memory Interface Module
+    mem_interface u_mem_interface (
+        .funct3(funct3),
+        .mem_write(mem_write),
+        .mem_read(mem_read),
+        .alu_result(alu_result),
+        .rs2_data(rs2_data),
+        .dmem_rdata(dmem_rdata),
+        .dmem_addr(dmem_addr),
+        .dmem_wdata(dmem_wdata),
+        .dmem_we(dmem_we),
+        .dmem_re(dmem_re),
+        .dmem_size(dmem_size),
+        .formatted_load_data(formatted_load_data)
+    );
     
-    // Encode memory operation size from funct3
-    // funct3[1:0] distinguishes byte (00), halfword (01), word (10)
-    // For loads: LB=000, LH=001, LW=010, LBU=100, LHU=101
-    // For stores: SB=000, SH=001, SW=010
-    assign dmem_size = funct3[1:0];
+    // CSR File Module
+    csr_file u_csr_file (
+        .clk(clk),
+        .rst_n(rst_n),
+        .is_csr(is_csr),
+        .funct3(funct3),
+        .rs1(rs1),
+        .csr_addr(csr_addr),
+        .rs1_data(rs1_data),
+        .csr_rdata(csr_rdata)
+    );
     
-    // Load data sign/zero extension based on funct3
-    // The simulator will return the exact byte/halfword requested
-    // We only need to perform sign/zero extension here
-    logic [31:0] formatted_load_data;
-    always_comb begin
-        case (funct3)
-            3'b000: begin // LB - Load Byte (sign-extended)
-                formatted_load_data = {{24{dmem_rdata[7]}}, dmem_rdata[7:0]};
-            end
-            3'b001: begin // LH - Load Halfword (sign-extended)
-                formatted_load_data = {{16{dmem_rdata[15]}}, dmem_rdata[15:0]};
-            end
-            3'b100: begin // LBU - Load Byte Unsigned (zero-extended)
-                formatted_load_data = {24'b0, dmem_rdata[7:0]};
-            end
-            3'b101: begin // LHU - Load Halfword Unsigned (zero-extended)
-                formatted_load_data = {16'b0, dmem_rdata[15:0]};
-            end
-            default: formatted_load_data = dmem_rdata; // LW - Load Word
-        endcase
-    end
-    
-    // CSR register file
-    // Read CSR value
-    assign csr_rdata = csr_file[csr_addr];
-    
-    // CSR write logic
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // Initialize all CSRs to 0
-            for (int i = 0; i < 4096; i++) begin
-                csr_file[i] = 32'h0;  // Use blocking assignment for initialization
-            end
-        end else if (is_csr) begin
-            // CSR write operations
-            case (funct3)
-                3'b001: csr_file[csr_addr] <= rs1_data;                                     // CSRRW
-                3'b010: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | rs1_data;        // CSRRS (no write when rs1 == x0)
-                3'b011: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~rs1_data;       // CSRRC (no write when rs1 == x0)
-                3'b101: csr_file[csr_addr] <= {27'b0, rs1};                                 // CSRRWI
-                3'b110: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata | {27'b0, rs1};    // CSRRSI (no write when zimm[4:0] == 0)
-                3'b111: if (rs1 != 5'b0) csr_file[csr_addr] <= csr_rdata & ~{27'b0, rs1};   // CSRRCI (no write when zimm[4:0] == 0)
-                default: ; // Do nothing
-            endcase
-        end
-    end
-    
-    // Write-back data selection
-    always_comb begin
-        if (opcode == 7'b0110111) begin
-            // LUI - Load Upper Immediate
-            rd_data = lui_result;
-        end else if (opcode == 7'b0010111) begin
-            // AUIPC - Add Upper Immediate to PC
-            rd_data = pc + imm_u;
-        end else if (jump) begin
-            // JAL/JALR - Store return address (PC + 4)
-            rd_data = pc + 32'd4;
-        end else if (is_csr) begin
-            // CSR instruction - Return old CSR value
-            rd_data = csr_rdata;
-        end else if (mem_to_reg) begin
-            // Load instruction - Use formatted memory data
-            rd_data = formatted_load_data;
-        end else begin
-            // ALU result
-            rd_data = alu_result;
-        end
-    end
+    // Writeback Multiplexer Module
+    writeback_mux u_writeback_mux (
+        .opcode(opcode),
+        .jump(jump),
+        .is_csr(is_csr),
+        .mem_to_reg(mem_to_reg),
+        .pc(pc),
+        .imm_u(imm_u),
+        .alu_result(alu_result),
+        .csr_rdata(csr_rdata),
+        .formatted_load_data(formatted_load_data),
+        .rd_data(rd_data)
+    );
     
     // Debug outputs
     assign debug_rs1_data = rs1_data;

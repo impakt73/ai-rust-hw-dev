@@ -56,7 +56,17 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["top.sv", "alu.sv", "regfile.sv", "decoder.sv"])
+    create_runtime(&[
+        "top.sv",
+        "alu.sv",
+        "regfile.sv",
+        "decoder.sv",
+        "pc_control.sv",
+        "branch_unit.sv",
+        "csr_file.sv",
+        "mem_interface.sv",
+        "writeback_mux.sv",
+    ])
 }
 
 // Helper function to create a runtime for the ALU
