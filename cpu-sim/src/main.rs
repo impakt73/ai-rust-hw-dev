@@ -103,7 +103,9 @@ fn run_with_memory_access(args: &Args) {
             // Handle memory dump
             if let Some(params) = &args.dump_memory {
                 if params.len() != 3 {
-                    eprintln!("✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>");
+                    eprintln!(
+                        "✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>"
+                    );
                     std::process::exit(1);
                 }
 

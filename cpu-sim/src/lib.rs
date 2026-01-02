@@ -318,7 +318,14 @@ where
             vcd,
         )?
     } else {
-        Simulator::new(&runtime, bus, entry_point, print_inst_trace, None, trace_callback)?
+        Simulator::new(
+            &runtime,
+            bus,
+            entry_point,
+            print_inst_trace,
+            None,
+            trace_callback,
+        )?
     };
 
     // Write data to RX FIFO if provided

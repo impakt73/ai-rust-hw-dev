@@ -1076,13 +1076,8 @@ fn test_image_dump() {
             const IMAGE_HEIGHT: u32 = 4;
 
             let image_path = "/tmp/test_image.png";
-            sim.dump_memory_region_as_image(
-                TEST_IMAGE_BASE,
-                IMAGE_WIDTH,
-                IMAGE_HEIGHT,
-                image_path,
-            )
-            .expect("Should dump image successfully");
+            sim.dump_memory_region_as_image(TEST_IMAGE_BASE, IMAGE_WIDTH, IMAGE_HEIGHT, image_path)
+                .expect("Should dump image successfully");
 
             println!("✓ Image dumped to: {}", image_path);
 
