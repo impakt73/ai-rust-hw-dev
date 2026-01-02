@@ -985,60 +985,62 @@ fn test_memory_dump() {
 
     let elf_path = test_program_path("test_memory_pattern.elf");
 
-    // Create and run simulator
-    let mut sim = crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
+    // Run simulation and access memory in callback
+    let result = crate::run_elf_in_simulator(&elf_path, 10000, |sim, result| {
+        assert_tohost(result, 42, "memory pattern test");
+        println!("✓ Program executed successfully");
 
-    let result = sim.run(10000).expect("Simulation should succeed");
-    assert_tohost(&result, 42, "memory pattern test");
+        // Dump memory region where test pattern was written
+        const TEST_MEMORY_BASE: u32 = 0x8000_1000;
+        const TEST_PATTERN_SIZE: u32 = 256;
 
-    println!("✓ Program executed successfully");
+        let memory_data: Vec<u8> = sim
+            .dump_memory_region(TEST_MEMORY_BASE, TEST_PATTERN_SIZE)
+            .collect();
 
-    // Dump memory region where test pattern was written
-    const TEST_MEMORY_BASE: u32 = 0x8000_1000;
-    const TEST_PATTERN_SIZE: u32 = 256;
-
-    let memory_data: Vec<u8> = sim
-        .dump_memory_region(TEST_MEMORY_BASE, TEST_PATTERN_SIZE)
-        .collect();
-
-    // Verify we got the expected amount of data
-    assert_eq!(
-        memory_data.len(),
-        TEST_PATTERN_SIZE as usize,
-        "Should dump exactly {} bytes",
-        TEST_PATTERN_SIZE
-    );
-
-    // Verify magic bytes at the start (0xDE, 0xAD, 0xBE, 0xEF)
-    assert_eq!(memory_data[0], 0xDE, "First magic byte should be 0xDE");
-    assert_eq!(memory_data[1], 0xAD, "Second magic byte should be 0xAD");
-    assert_eq!(memory_data[2], 0xBE, "Third magic byte should be 0xBE");
-    assert_eq!(memory_data[3], 0xEF, "Fourth magic byte should be 0xEF");
-
-    println!("✓ Magic bytes verified: 0xDEADBEEF");
-
-    // Verify the pattern for a few more bytes (offset modulo 256)
-    for i in 4..20 {
+        // Verify we got the expected amount of data
         assert_eq!(
-            memory_data[i], i as u8,
-            "Byte at offset {} should match pattern",
-            i
+            memory_data.len(),
+            TEST_PATTERN_SIZE as usize,
+            "Should dump exactly {} bytes",
+            TEST_PATTERN_SIZE
         );
-    }
 
-    println!("✓ Memory pattern verified");
+        // Verify magic bytes at the start (0xDE, 0xAD, 0xBE, 0xEF)
+        assert_eq!(memory_data[0], 0xDE, "First magic byte should be 0xDE");
+        assert_eq!(memory_data[1], 0xAD, "Second magic byte should be 0xAD");
+        assert_eq!(memory_data[2], 0xBE, "Third magic byte should be 0xBE");
+        assert_eq!(memory_data[3], 0xEF, "Fourth magic byte should be 0xEF");
 
-    // Test writing the memory dump to a file
-    let dump_path = "/tmp/test_memory_dump.bin";
-    std::fs::write(dump_path, &memory_data).expect("Should write memory dump to file");
-    println!("✓ Memory dump written to: {}", dump_path);
+        println!("✓ Magic bytes verified: 0xDEADBEEF");
 
-    // Verify file was written correctly
-    let read_back = std::fs::read(dump_path).expect("Should read back memory dump");
-    assert_eq!(read_back, memory_data, "Read-back data should match");
+        // Verify the pattern for a few more bytes (offset modulo 256)
+        for i in 4..20 {
+            assert_eq!(
+                memory_data[i], i as u8,
+                "Byte at offset {} should match pattern",
+                i
+            );
+        }
 
-    // Clean up test file
-    std::fs::remove_file(dump_path).expect("Should be able to remove test file");
+        println!("✓ Memory pattern verified");
+
+        // Test writing the memory dump to a file
+        let dump_path = "/tmp/test_memory_dump.bin";
+        std::fs::write(dump_path, &memory_data).expect("Should write memory dump to file");
+        println!("✓ Memory dump written to: {}", dump_path);
+
+        // Verify file was written correctly
+        let read_back = std::fs::read(dump_path).expect("Should read back memory dump");
+        assert_eq!(read_back, memory_data, "Read-back data should match");
+
+        // Clean up test file
+        std::fs::remove_file(dump_path).expect("Should be able to remove test file");
+    })
+    .expect("Simulation should succeed");
+
+    // Verify result outside callback
+    assert_eq!(result.cycles, 1365, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
@@ -1055,94 +1057,96 @@ fn test_image_dump() {
 
     let elf_path = test_program_path("test_image_data.elf");
 
-    // Create and run simulator
-    let mut sim = crate::create_simulator_from_elf(&elf_path).expect("Failed to create simulator");
+    // Run simulation and access memory in callback
+    let result = crate::run_elf_in_simulator(&elf_path, 10000, |sim, result| {
+        assert_tohost(result, 42, "image data test");
+        println!("✓ Program executed successfully");
 
-    let result = sim.run(10000).expect("Simulation should succeed");
-    assert_tohost(&result, 42, "image data test");
+        // Dump memory region as an image
+        const TEST_IMAGE_BASE: u32 = 0x8000_2000;
+        const IMAGE_WIDTH: u32 = 4;
+        const IMAGE_HEIGHT: u32 = 4;
 
-    println!("✓ Program executed successfully");
+        let image_path = "/tmp/test_image.png";
+        sim.dump_memory_region_as_image(TEST_IMAGE_BASE, IMAGE_WIDTH, IMAGE_HEIGHT, image_path)
+            .expect("Should dump image successfully");
 
-    // Dump memory region as an image
-    const TEST_IMAGE_BASE: u32 = 0x8000_2000;
-    const IMAGE_WIDTH: u32 = 4;
-    const IMAGE_HEIGHT: u32 = 4;
+        println!("✓ Image dumped to: {}", image_path);
 
-    let image_path = "/tmp/test_image.png";
-    sim.dump_memory_region_as_image(TEST_IMAGE_BASE, IMAGE_WIDTH, IMAGE_HEIGHT, image_path)
-        .expect("Should dump image successfully");
+        // Verify the image file was created
+        assert!(
+            std::path::Path::new(image_path).exists(),
+            "Image file should exist"
+        );
 
-    println!("✓ Image dumped to: {}", image_path);
+        // Verify the image can be loaded and has correct dimensions
+        use image::GenericImageView;
+        let img = image::open(image_path).expect("Should load dumped image");
+        assert_eq!(img.width(), IMAGE_WIDTH, "Image width should match");
+        assert_eq!(img.height(), IMAGE_HEIGHT, "Image height should match");
 
-    // Verify the image file was created
-    assert!(
-        std::path::Path::new(image_path).exists(),
-        "Image file should exist"
-    );
+        println!(
+            "✓ Image dimensions verified: {}x{}",
+            img.width(),
+            img.height()
+        );
 
-    // Verify the image can be loaded and has correct dimensions
-    use image::GenericImageView;
-    let img = image::open(image_path).expect("Should load dumped image");
-    assert_eq!(img.width(), IMAGE_WIDTH, "Image width should match");
-    assert_eq!(img.height(), IMAGE_HEIGHT, "Image height should match");
+        // Verify some pixel values to ensure data integrity
+        // Row 0, Pixel 0: Red (255, 0, 0, 255)
+        let pixel = img.get_pixel(0, 0);
+        assert_eq!(
+            pixel[0], 255,
+            "Pixel (0,0) red channel should be 255 (bright red)"
+        );
+        assert_eq!(pixel[1], 0, "Pixel (0,0) green channel should be 0");
+        assert_eq!(pixel[2], 0, "Pixel (0,0) blue channel should be 0");
+        assert_eq!(pixel[3], 255, "Pixel (0,0) alpha channel should be 255");
 
-    println!(
-        "✓ Image dimensions verified: {}x{}",
-        img.width(),
-        img.height()
-    );
+        // Row 1, Pixel 0: Green (0, 255, 0, 255)
+        let pixel = img.get_pixel(0, 1);
+        assert_eq!(pixel[0], 0, "Pixel (0,1) red channel should be 0");
+        assert_eq!(
+            pixel[1], 255,
+            "Pixel (0,1) green channel should be 255 (bright green)"
+        );
+        assert_eq!(pixel[2], 0, "Pixel (0,1) blue channel should be 0");
+        assert_eq!(pixel[3], 255, "Pixel (0,1) alpha channel should be 255");
 
-    // Verify some pixel values to ensure data integrity
-    // Row 0, Pixel 0: Red (255, 0, 0, 255)
-    let pixel = img.get_pixel(0, 0);
-    assert_eq!(
-        pixel[0], 255,
-        "Pixel (0,0) red channel should be 255 (bright red)"
-    );
-    assert_eq!(pixel[1], 0, "Pixel (0,0) green channel should be 0");
-    assert_eq!(pixel[2], 0, "Pixel (0,0) blue channel should be 0");
-    assert_eq!(pixel[3], 255, "Pixel (0,0) alpha channel should be 255");
+        // Row 2, Pixel 0: Blue (0, 0, 255, 255)
+        let pixel = img.get_pixel(0, 2);
+        assert_eq!(pixel[0], 0, "Pixel (0,2) red channel should be 0");
+        assert_eq!(pixel[1], 0, "Pixel (0,2) green channel should be 0");
+        assert_eq!(
+            pixel[2], 255,
+            "Pixel (0,2) blue channel should be 255 (bright blue)"
+        );
+        assert_eq!(pixel[3], 255, "Pixel (0,2) alpha channel should be 255");
 
-    // Row 1, Pixel 0: Green (0, 255, 0, 255)
-    let pixel = img.get_pixel(0, 1);
-    assert_eq!(pixel[0], 0, "Pixel (0,1) red channel should be 0");
-    assert_eq!(
-        pixel[1], 255,
-        "Pixel (0,1) green channel should be 255 (bright green)"
-    );
-    assert_eq!(pixel[2], 0, "Pixel (0,1) blue channel should be 0");
-    assert_eq!(pixel[3], 255, "Pixel (0,1) alpha channel should be 255");
+        // Row 3, Pixel 0: White (255, 255, 255, 255)
+        let pixel = img.get_pixel(0, 3);
+        assert_eq!(
+            pixel[0], 255,
+            "Pixel (0,3) red channel should be 255 (white)"
+        );
+        assert_eq!(
+            pixel[1], 255,
+            "Pixel (0,3) green channel should be 255 (white)"
+        );
+        assert_eq!(
+            pixel[2], 255,
+            "Pixel (0,3) blue channel should be 255 (white)"
+        );
+        assert_eq!(pixel[3], 255, "Pixel (0,3) alpha channel should be 255");
 
-    // Row 2, Pixel 0: Blue (0, 0, 255, 255)
-    let pixel = img.get_pixel(0, 2);
-    assert_eq!(pixel[0], 0, "Pixel (0,2) red channel should be 0");
-    assert_eq!(pixel[1], 0, "Pixel (0,2) green channel should be 0");
-    assert_eq!(
-        pixel[2], 255,
-        "Pixel (0,2) blue channel should be 255 (bright blue)"
-    );
-    assert_eq!(pixel[3], 255, "Pixel (0,2) alpha channel should be 255");
+        println!("✓ Pixel data verified (red, green, blue, white gradients)");
 
-    // Row 3, Pixel 0: White (255, 255, 255, 255)
-    let pixel = img.get_pixel(0, 3);
-    assert_eq!(
-        pixel[0], 255,
-        "Pixel (0,3) red channel should be 255 (white)"
-    );
-    assert_eq!(
-        pixel[1], 255,
-        "Pixel (0,3) green channel should be 255 (white)"
-    );
-    assert_eq!(
-        pixel[2], 255,
-        "Pixel (0,3) blue channel should be 255 (white)"
-    );
-    assert_eq!(pixel[3], 255, "Pixel (0,3) alpha channel should be 255");
+        // Clean up test file
+        std::fs::remove_file(image_path).expect("Should be able to remove test file");
+    })
+    .expect("Simulation should succeed");
 
-    println!("✓ Pixel data verified (red, green, blue, white gradients)");
-
-    // Clean up test file
-    std::fs::remove_file(image_path).expect("Should be able to remove test file");
+    // Verify result outside callback
+    assert_eq!(result.cycles, 363, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");

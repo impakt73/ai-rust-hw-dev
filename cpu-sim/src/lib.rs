@@ -278,35 +278,45 @@ pub fn run_elf_with_vcd(
 /// Type alias for a simulator with static lifetime and no callbacks
 pub type StaticSimulator = Simulator<'static, fn(u32), fn(&InstructionTrace)>;
 
-/// Create a simulator from an ELF file for manual control and memory inspection
+/// Run an ELF file in a simulator and execute a callback with access to the simulator
 ///
-/// This function provides lower-level access to the simulator, allowing you to:
-/// - Run the simulation step-by-step
-/// - Inspect memory after execution
-/// - Dump memory regions or images
+/// This function provides a safe way to access the simulator after running an ELF file.
+/// The callback is executed with a reference to the simulator, ensuring proper lifetime
+/// management without memory leaks.
 ///
 /// # Arguments
 /// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `callback` - Function to execute with simulator access after the run completes
 ///
 /// # Returns
-/// * `Ok(Simulator)` - Simulator instance with leaked runtime (lives for program duration)
+/// * `Ok(SimulationResult)` on success
 /// * `Err(String)` on error
-///
-/// # Note
-/// The runtime is intentionally leaked to satisfy the 'static lifetime requirement.
-/// This is acceptable for typical CLI usage where the simulator lives until program exit.
 ///
 /// # Examples
 /// ```no_run
-/// use cpu_sim::create_simulator_from_elf;
+/// use cpu_sim::run_elf_in_simulator;
 /// use std::path::Path;
 ///
-/// let mut sim = create_simulator_from_elf(Path::new("test.elf"))?;
-/// let result = sim.run(1000)?;
-/// let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
+/// run_elf_in_simulator(
+///     Path::new("test.elf"),
+///     1000,
+///     |sim, result| {
+///         println!("Simulation completed in {} cycles", result.cycles);
+///         let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
+///         // Process bytes...
+///     }
+/// )?;
 /// # Ok::<(), String>(())
 /// ```
-pub fn create_simulator_from_elf(elf_path: &Path) -> Result<StaticSimulator, String> {
+pub fn run_elf_in_simulator<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    callback: F,
+) -> Result<SimulationResult, String>
+where
+    F: FnOnce(&Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
     // Initialize DRAM and load ELF
     let mut dram = Dram::new();
     let entry_point = dram
@@ -319,27 +329,67 @@ pub fn create_simulator_from_elf(elf_path: &Path) -> Result<StaticSimulator, Str
     // Create system bus with DRAM and FIFO
     let bus = SystemBus::new(dram);
 
-    // Initialize CPU Simulator - box the runtime to keep it heap-allocated
-    let runtime = Box::new(
-        riscv_core::create_cpu_runtime()
-            .map_err(|e| format!("Error creating CPU runtime: {}", e))?,
-    );
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
-    // SAFETY: We intentionally leak the runtime to get a true 'static reference.
-    // This is acceptable because:
-    // 1. create_simulator_from_elf is typically called once per simulation
-    // 2. The runtime is needed for the entire lifetime of the simulator
-    // 3. In CLI usage, both live until program exit anyway
-    // 4. This prevents the dangling reference issue from the previous unsafe approach
-    //
-    // Trade-off: Small memory leak (one runtime per simulation), but ensures safety.
-    // Alternative would be to have Simulator own the runtime, but marlin's design
-    // requires a borrowed reference with 'static lifetime.
-    let runtime_ref: &'static riscv_core::VerilatorRuntime = Box::leak(runtime);
+    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
 
-    let sim = Simulator::new(runtime_ref, bus, entry_point, false, None, None)?;
+    // Run simulation
+    let result = sim.run(max_cycles)?;
 
-    Ok(sim)
+    // Execute callback with simulator and result
+    callback(&sim, &result);
+
+    Ok(result)
+}
+
+/// Run an ELF file in a simulator and execute a callback with mutable access to the simulator
+///
+/// This variant allows the callback to have mutable access to the simulator.
+/// Useful for operations that might need to modify simulator state.
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `callback` - Function to execute with mutable simulator access after the run completes
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+pub fn run_elf_in_simulator_mut<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    mut callback: F,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(&mut Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
+    // Initialize DRAM and load ELF
+    let mut dram = Dram::new();
+    let entry_point = dram
+        .load_elf(elf_path)
+        .map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = SystemBus::new(dram);
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
+
+    // Run simulation
+    let result = sim.run(max_cycles)?;
+
+    // Execute callback with simulator and result
+    callback(&mut sim, &result);
+
+    Ok(result)
 }
 
 // Disabled broken test module
