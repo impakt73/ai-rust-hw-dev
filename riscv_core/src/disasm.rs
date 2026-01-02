@@ -80,6 +80,8 @@ pub fn disassemble_with_all_values(
                 rd, rd_value, imm, rs1, rs1_value
             )
         }
+        0b0001111 => disassemble_fence(instruction),
+        0b1110011 => disassemble_system(instruction, rd, funct3, rs1, rs1_value, rd_value),
         _ => format!("unknown opcode 0x{:02x}", opcode),
     }
 }
@@ -98,6 +100,7 @@ fn disassemble_r_type(
     rd_value: u32,
 ) -> String {
     let mnemonic = match (funct3, funct7) {
+        // RV32I base instructions
         (0b000, 0b0000000) => "add",
         (0b000, 0b0100000) => "sub",
         (0b001, 0b0000000) => "sll",
@@ -108,6 +111,15 @@ fn disassemble_r_type(
         (0b101, 0b0100000) => "sra",
         (0b110, 0b0000000) => "or",
         (0b111, 0b0000000) => "and",
+        // M extension instructions (funct7 = 0000001)
+        (0b000, 0b0000001) => "mul",
+        (0b001, 0b0000001) => "mulh",
+        (0b010, 0b0000001) => "mulhsu",
+        (0b011, 0b0000001) => "mulhu",
+        (0b100, 0b0000001) => "div",
+        (0b101, 0b0000001) => "divu",
+        (0b110, 0b0000001) => "rem",
+        (0b111, 0b0000001) => "remu",
         _ => return format!("unknown R-type f3={} f7={}", funct3, funct7),
     };
     format!(
@@ -232,6 +244,60 @@ fn disassemble_branch(
     )
 }
 
+/// Disassemble FENCE instruction
+fn disassemble_fence(_instruction: u32) -> String {
+    // FENCE instruction - for now just return the basic mnemonic
+    // Could decode pred/succ fields if needed
+    "fence".to_string()
+}
+
+/// Disassemble SYSTEM instructions (ECALL, EBREAK, CSR)
+fn disassemble_system(
+    instruction: u32,
+    rd: u8,
+    funct3: u8,
+    rs1: u8,
+    rs1_value: u32,
+    rd_value: u32,
+) -> String {
+    if funct3 == 0b000 {
+        // ECALL or EBREAK (distinguished by imm[0])
+        let imm = get_imm_i(instruction);
+        if imm & 0x1 == 0 {
+            "ecall".to_string()
+        } else {
+            "ebreak".to_string()
+        }
+    } else {
+        // CSR instructions
+        let csr = (instruction >> 20) & 0xFFF;
+        let zimm = rs1; // For immediate CSR instructions, rs1 field holds zimm
+
+        let mnemonic = match funct3 {
+            0b001 => "csrrw",
+            0b010 => "csrrs",
+            0b011 => "csrrc",
+            0b101 => "csrrwi",
+            0b110 => "csrrsi",
+            0b111 => "csrrci",
+            _ => return format!("unknown SYSTEM f3={}", funct3),
+        };
+
+        // CSR immediate instructions use zimm instead of rs1
+        if funct3 & 0b100 != 0 {
+            format!(
+                "{} x{}=0x{:x}, 0x{:x}, {}",
+                mnemonic, rd, rd_value, csr, zimm
+            )
+        } else {
+            format!(
+                "{} x{}=0x{:x}, 0x{:x}, x{}=0x{:x}",
+                mnemonic, rd, rd_value, csr, rs1, rs1_value
+            )
+        }
+    }
+}
+
 /// Extract I-type immediate (sign-extended)
 fn get_imm_i(instruction: u32) -> u32 {
     let imm = (instruction >> 20) & 0xFFF;
@@ -335,5 +401,74 @@ mod tests {
         // jal x1, 0x100
         let instruction = 0x100000EF;
         assert_eq!(disassemble(instruction), "jal x1=0x0, 256");
+    }
+
+    #[test]
+    fn test_disassemble_ecall() {
+        // ecall
+        let instruction = 0x00000073;
+        assert_eq!(disassemble(instruction), "ecall");
+    }
+
+    #[test]
+    fn test_disassemble_ebreak() {
+        // ebreak
+        let instruction = 0x00100073;
+        assert_eq!(disassemble(instruction), "ebreak");
+    }
+
+    #[test]
+    fn test_disassemble_fence() {
+        // fence
+        let instruction = 0x0000000F;
+        assert_eq!(disassemble(instruction), "fence");
+    }
+
+    #[test]
+    fn test_disassemble_csrrw() {
+        // csrrw x1, 0x300, x2
+        let instruction = 0x300110F3;
+        let result = disassemble(instruction);
+        assert!(result.contains("csrrw"));
+        assert!(result.contains("x1"));
+        assert!(result.contains("0x300"));
+    }
+
+    #[test]
+    fn test_disassemble_csrrs() {
+        // csrrs x1, 0x300, x2
+        let instruction = 0x300120F3;
+        let result = disassemble(instruction);
+        assert!(result.contains("csrrs"));
+    }
+
+    #[test]
+    fn test_disassemble_csrrwi() {
+        // csrrwi x1, 0x300, 5
+        let instruction = 0x3002D0F3;
+        let result = disassemble(instruction);
+        assert!(result.contains("csrrwi"));
+        assert!(result.contains("0x300"));
+    }
+
+    #[test]
+    fn test_disassemble_mul() {
+        // mul x1, x2, x3
+        let instruction = 0x023100B3;
+        assert_eq!(disassemble(instruction), "mul x1=0x0, x2=0x0, x3=0x0");
+    }
+
+    #[test]
+    fn test_disassemble_div() {
+        // div x1, x2, x3
+        let instruction = 0x023140B3;
+        assert_eq!(disassemble(instruction), "div x1=0x0, x2=0x0, x3=0x0");
+    }
+
+    #[test]
+    fn test_disassemble_rem() {
+        // rem x1, x2, x3
+        let instruction = 0x023160B3;
+        assert_eq!(disassemble(instruction), "rem x1=0x0, x2=0x0, x3=0x0");
     }
 }

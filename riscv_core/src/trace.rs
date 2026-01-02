@@ -57,6 +57,29 @@ pub enum InstructionType {
     Jal,
     Jalr,
 
+    // System instructions
+    Ecall,
+    Ebreak,
+    Fence,
+
+    // CSR instructions
+    Csrrw,
+    Csrrs,
+    Csrrc,
+    Csrrwi,
+    Csrrsi,
+    Csrrci,
+
+    // M extension (multiply/divide)
+    Mul,
+    Mulh,
+    Mulhsu,
+    Mulhu,
+    Div,
+    Divu,
+    Rem,
+    Remu,
+
     // Unknown instruction
     Unknown,
 }
@@ -109,6 +132,7 @@ impl InstructionTrace {
             0b0110011 => {
                 // R-type
                 let inst_type = match (funct3, funct7) {
+                    // RV32I base instructions
                     (0b000, 0b0000000) => InstructionType::Add,
                     (0b000, 0b0100000) => InstructionType::Sub,
                     (0b001, 0b0000000) => InstructionType::Sll,
@@ -119,6 +143,15 @@ impl InstructionTrace {
                     (0b101, 0b0100000) => InstructionType::Sra,
                     (0b110, 0b0000000) => InstructionType::Or,
                     (0b111, 0b0000000) => InstructionType::And,
+                    // M extension instructions (funct7 = 0000001)
+                    (0b000, 0b0000001) => InstructionType::Mul,
+                    (0b001, 0b0000001) => InstructionType::Mulh,
+                    (0b010, 0b0000001) => InstructionType::Mulhsu,
+                    (0b011, 0b0000001) => InstructionType::Mulhu,
+                    (0b100, 0b0000001) => InstructionType::Div,
+                    (0b101, 0b0000001) => InstructionType::Divu,
+                    (0b110, 0b0000001) => InstructionType::Rem,
+                    (0b111, 0b0000001) => InstructionType::Remu,
                     _ => InstructionType::Unknown,
                 };
                 InstructionTrace {
@@ -327,6 +360,78 @@ impl InstructionTrace {
                     immediate: Some(imm),
                 }
             }
+            0b0001111 => {
+                // FENCE
+                InstructionTrace {
+                    pc,
+                    instruction,
+                    inst_type: InstructionType::Fence,
+                    rd: None,
+                    rs1: None,
+                    rs2: None,
+                    immediate: None,
+                }
+            }
+            0b1110011 => {
+                // SYSTEM instructions: ECALL, EBREAK, CSR*
+                if funct3 == 0b000 {
+                    // ECALL or EBREAK (distinguished by imm[0])
+                    let imm = get_imm_i(instruction);
+                    let inst_type = if imm & 0x1 == 0 {
+                        InstructionType::Ecall
+                    } else {
+                        InstructionType::Ebreak
+                    };
+                    InstructionTrace {
+                        pc,
+                        instruction,
+                        inst_type,
+                        rd: None,
+                        rs1: None,
+                        rs2: None,
+                        immediate: None,
+                    }
+                } else {
+                    // CSR instructions
+                    let csr = ((instruction >> 20) & 0xFFF) as i32;
+                    let inst_type = match funct3 {
+                        0b001 => InstructionType::Csrrw,
+                        0b010 => InstructionType::Csrrs,
+                        0b011 => InstructionType::Csrrc,
+                        0b101 => InstructionType::Csrrwi,
+                        0b110 => InstructionType::Csrrsi,
+                        0b111 => InstructionType::Csrrci,
+                        _ => InstructionType::Unknown,
+                    };
+
+                    // For immediate CSR instructions, rs1 field holds zimm
+                    let rs1_op = if funct3 & 0b100 != 0 {
+                        // CSR immediate instructions use zimm (in rs1 field position)
+                        Some(RegisterOperand {
+                            reg: rs1_num,
+                            value: rs1_num as u32,
+                        })
+                    } else {
+                        Some(RegisterOperand {
+                            reg: rs1_num,
+                            value: rs1_value,
+                        })
+                    };
+
+                    InstructionTrace {
+                        pc,
+                        instruction,
+                        inst_type,
+                        rd: Some(RegisterOperand {
+                            reg: rd_num,
+                            value: rd_value,
+                        }),
+                        rs1: rs1_op,
+                        rs2: None,
+                        immediate: Some(csr),
+                    }
+                }
+            }
             _ => InstructionTrace {
                 pc,
                 instruction,
@@ -513,5 +618,107 @@ mod tests {
         assert!(display.contains("x1"));
         assert!(display.contains("x2"));
         assert!(display.contains("x3"));
+    }
+
+    #[test]
+    fn test_trace_ecall() {
+        // ecall
+        let instruction = 0x00000073;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 0, 0, 0);
+        assert_eq!(trace.inst_type, InstructionType::Ecall);
+        assert!(trace.rd.is_none());
+        assert!(trace.rs1.is_none());
+        assert!(trace.rs2.is_none());
+    }
+
+    #[test]
+    fn test_trace_ebreak() {
+        // ebreak
+        let instruction = 0x00100073;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 0, 0, 0);
+        assert_eq!(trace.inst_type, InstructionType::Ebreak);
+    }
+
+    #[test]
+    fn test_trace_fence() {
+        // fence
+        let instruction = 0x0000000F;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 0, 0, 0);
+        assert_eq!(trace.inst_type, InstructionType::Fence);
+    }
+
+    #[test]
+    fn test_trace_csrrw() {
+        // csrrw x1, 0x300, x2
+        let instruction = 0x300110F3;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 10, 0, 20);
+        assert_eq!(trace.inst_type, InstructionType::Csrrw);
+        assert_eq!(trace.immediate, Some(0x300));
+        assert!(matches!(
+            trace.rd,
+            Some(RegisterOperand { reg: 1, value: 20 })
+        ));
+        assert!(matches!(
+            trace.rs1,
+            Some(RegisterOperand { reg: 2, value: 10 })
+        ));
+    }
+
+    #[test]
+    fn test_trace_csrrwi() {
+        // csrrwi x1, 0x300, 5
+        let instruction = 0x3002D0F3;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 0, 0, 100);
+        assert_eq!(trace.inst_type, InstructionType::Csrrwi);
+        assert_eq!(trace.immediate, Some(0x300));
+        // For immediate CSR instructions, rs1 field holds zimm value
+        assert!(matches!(
+            trace.rs1,
+            Some(RegisterOperand { reg: 5, value: 5 })
+        ));
+    }
+
+    #[test]
+    fn test_trace_mul() {
+        // mul x1, x2, x3 with values: x2=10, x3=5, result=50
+        let instruction = 0x023100B3;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 10, 5, 50);
+        assert_eq!(trace.inst_type, InstructionType::Mul);
+        assert!(matches!(
+            trace.rd,
+            Some(RegisterOperand { reg: 1, value: 50 })
+        ));
+        assert!(matches!(
+            trace.rs1,
+            Some(RegisterOperand { reg: 2, value: 10 })
+        ));
+        assert!(matches!(
+            trace.rs2,
+            Some(RegisterOperand { reg: 3, value: 5 })
+        ));
+    }
+
+    #[test]
+    fn test_trace_div() {
+        // div x1, x2, x3 with values: x2=20, x3=5, result=4
+        let instruction = 0x023140B3;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 20, 5, 4);
+        assert_eq!(trace.inst_type, InstructionType::Div);
+        assert!(matches!(
+            trace.rd,
+            Some(RegisterOperand { reg: 1, value: 4 })
+        ));
+    }
+
+    #[test]
+    fn test_trace_rem() {
+        // rem x1, x2, x3 with values: x2=23, x3=5, result=3
+        let instruction = 0x023160B3;
+        let trace = InstructionTrace::from_instruction(0x1000, instruction, 23, 5, 3);
+        assert_eq!(trace.inst_type, InstructionType::Rem);
+        assert!(matches!(
+            trace.rd,
+            Some(RegisterOperand { reg: 1, value: 3 })
+        ));
     }
 }
