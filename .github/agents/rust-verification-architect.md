@@ -98,7 +98,12 @@ impl CsrFile {
 "We need to wrap the FFI call in an `unsafe` block but expose a safe interface. We will ensure the pointer to the core model is not null."
 
 ```rust
-use std::ffi::c_void;
+use std::ptr::NonNull;
+
+#[derive(Debug)]
+pub enum SimulationError {
+    AllocationFailed,
+}
 
 #[repr(C)]
 struct VCore {
@@ -113,26 +118,35 @@ extern "C" {
 }
 
 pub struct Simulation {
-    core: *mut VCore,
+    core: NonNull<VCore>,
     cycle_count: u64,
 }
 
+// SAFETY: The Verilator model is not thread-safe, so we do not implement Send/Sync.
+// Users must ensure single-threaded access or use external synchronization.
+
 impl Simulation {
-    pub fn new() -> Self {
-        let core = unsafe { vcore_new() };
-        assert!(!core.is_null(), "Failed to allocate Verilator model");
-        Self { core, cycle_count: 0 }
+    pub fn new() -> Result<Self, SimulationError> {
+        let core = unsafe {
+            // SAFETY: Calling FFI function that allocates a Verilator model.
+            // We check for null immediately after to ensure validity.
+            vcore_new()
+        };
+        let core = NonNull::new(core).ok_or(SimulationError::AllocationFailed)?;
+        Ok(Self { core, cycle_count: 0 })
     }
 
     pub fn step(&mut self) {
         unsafe {
+            // SAFETY: self.core is guaranteed to be valid and non-null by construction.
+            // The Verilator model remains valid until drop() is called.
             // Rising edge
-            vcore_clk(self.core, 1);
-            vcore_eval(self.core);
+            vcore_clk(self.core.as_ptr(), 1);
+            vcore_eval(self.core.as_ptr());
             
             // Falling edge
-            vcore_clk(self.core, 0);
-            vcore_eval(self.core);
+            vcore_clk(self.core.as_ptr(), 0);
+            vcore_eval(self.core.as_ptr());
         }
         self.cycle_count += 1;
     }
@@ -140,7 +154,11 @@ impl Simulation {
 
 impl Drop for Simulation {
     fn drop(&mut self) {
-        unsafe { vcore_delete(self.core) };
+        unsafe {
+            // SAFETY: self.core is guaranteed valid and owned exclusively by this struct.
+            // This is the final use of the pointer before the struct is destroyed.
+            vcore_delete(self.core.as_ptr());
+        }
     }
 }
 ```
