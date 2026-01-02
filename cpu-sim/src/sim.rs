@@ -2,6 +2,7 @@ use crate::bus::SystemBus;
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
+use std::path::Path;
 
 /// Result of a simulation run
 #[derive(Debug)]
@@ -396,5 +397,104 @@ where
     /// Try to receive an Assert packet from the simulated CPU
     pub fn try_receive_assert_packet(&mut self) -> Result<Option<AssertPacket>, String> {
         crate::packet_transport::receive_assert_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Dump a region of memory as a byte iterator
+    ///
+    /// Returns an iterator over bytes in the specified memory region.
+    /// This allows efficient access without allocating a new buffer.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region
+    /// * `size` - Number of bytes to dump
+    ///
+    /// # Returns
+    /// An iterator yielding bytes from the memory region
+    ///
+    /// # Examples
+    /// ```ignore
+    /// # use cpu_sim::*;
+    /// # let mut sim = todo!();
+    /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
+    /// ```
+    pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
+        (0..size).map(move |offset| {
+            let addr = start_addr.wrapping_add(offset);
+            self.bus.dram.read_byte(addr)
+        })
+    }
+
+    /// Dump a region of memory as an RGBA8 image
+    ///
+    /// Interprets the memory region as RGBA8 pixel data (4 bytes per pixel)
+    /// and saves it as an image file. The format is determined by the file extension.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region containing image data
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `output_path` - Path to the output image file (format determined by extension)
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` on error
+    ///
+    /// # Safety
+    /// The memory region must contain at least `width * height * 4` bytes of valid data.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// # use cpu_sim::*;
+    /// # let mut sim = todo!();
+    /// sim.dump_memory_region_as_image(
+    ///     0x8000_0000,
+    ///     640,
+    ///     480,
+    ///     "output.png"
+    /// )?;
+    /// # Ok::<(), String>(())
+    /// ```
+    pub fn dump_memory_region_as_image(
+        &self,
+        start_addr: u32,
+        width: u32,
+        height: u32,
+        output_path: &str,
+    ) -> Result<(), String> {
+        use image::{ImageBuffer, Rgba};
+
+        // Calculate total bytes needed
+        let pixel_count = width
+            .checked_mul(height)
+            .ok_or_else(|| "Image dimensions overflow".to_string())?;
+        let total_bytes = pixel_count
+            .checked_mul(4)
+            .ok_or_else(|| "Image size overflow".to_string())?;
+
+        // Collect pixel data from memory
+        let pixel_data: Vec<u8> = self.dump_memory_region(start_addr, total_bytes).collect();
+
+        // Verify we got the expected amount of data
+        if pixel_data.len() != total_bytes as usize {
+            return Err(format!(
+                "Expected {} bytes but got {} bytes",
+                total_bytes,
+                pixel_data.len()
+            ));
+        }
+
+        // Create image buffer from raw RGBA8 data
+        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixel_data)
+            .ok_or_else(|| {
+                "Failed to create image buffer from pixel data (size mismatch)".to_string()
+            })?;
+
+        // Save the image
+        img_buffer
+            .save(Path::new(output_path))
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+
+        log::info!("Image saved: {} ({}x{} RGBA8)", output_path, width, height);
+        Ok(())
     }
 }

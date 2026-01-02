@@ -9,11 +9,10 @@ pub mod sim;
 mod tests;
 
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::SimulationResult;
+pub use sim::{SimulationResult, Simulator};
 
 use bus::SystemBus;
 use dram::Dram;
-use sim::Simulator;
 use std::path::Path;
 
 /// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
@@ -274,6 +273,69 @@ pub fn run_elf_with_vcd(
         None::<fn(&InstructionTrace)>,
         Some(vcd_path),
     )
+}
+
+/// Type alias for a simulator with static lifetime and no callbacks
+pub type StaticSimulator = Simulator<'static, fn(u32), fn(&InstructionTrace)>;
+
+/// Type alias for the result of creating a simulator from an ELF file
+pub type SimulatorWithRuntime = (StaticSimulator, Box<riscv_core::VerilatorRuntime>);
+
+/// Create a simulator from an ELF file for manual control and memory inspection
+///
+/// This function provides lower-level access to the simulator, allowing you to:
+/// - Run the simulation step-by-step
+/// - Inspect memory after execution
+/// - Dump memory regions or images
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+///
+/// # Returns
+/// * `Ok((Simulator, VerilatorRuntime))` - Simulator instance and its runtime (must be kept alive)
+/// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::create_simulator_from_elf;
+/// use std::path::Path;
+///
+/// let (mut sim, _runtime) = create_simulator_from_elf(Path::new("test.elf"))?;
+/// let result = sim.run(1000)?;
+/// let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
+/// # Ok::<(), String>(())
+/// ```
+pub fn create_simulator_from_elf(elf_path: &Path) -> Result<SimulatorWithRuntime, String> {
+    // Initialize DRAM and load ELF
+    let mut dram = Dram::new();
+    let entry_point = dram
+        .load_elf(elf_path)
+        .map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = SystemBus::new(dram);
+
+    // Initialize CPU Simulator - box the runtime to ensure stable address
+    let mut runtime = Box::new(
+        riscv_core::create_cpu_runtime()
+            .map_err(|e| format!("Error creating CPU runtime: {}", e))?,
+    );
+
+    // SAFETY: We're creating a 'static lifetime simulator by:
+    // 1. Boxing the runtime to get a stable address
+    // 2. Converting the box reference to a raw pointer, then to 'static ref
+    // 3. The simulator and runtime are returned together as a tuple
+    // 4. The caller MUST ensure the runtime outlives the simulator
+    //    by keeping both values alive (typically by binding them to variables)
+    let runtime_ref: &'static riscv_core::VerilatorRuntime =
+        unsafe { &*(runtime.as_mut() as *mut _) };
+
+    let sim = Simulator::new(runtime_ref, bus, entry_point, false, None, None)?;
+
+    Ok((sim, runtime))
 }
 
 // Disabled broken test module

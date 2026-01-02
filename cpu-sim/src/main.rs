@@ -22,6 +22,14 @@ struct Args {
     /// Enable VCD waveform dumping and specify output file path
     #[arg(long)]
     vcd: Option<String>,
+
+    /// Dump memory region after execution: --dump-memory <addr> <size> <output_file>
+    #[arg(long, num_args = 3, value_names = ["ADDR", "SIZE", "OUTPUT"])]
+    dump_memory: Option<Vec<String>>,
+
+    /// Dump memory region as RGBA8 image: --dump-image <addr> <width> <height> <output_file>
+    #[arg(long, num_args = 4, value_names = ["ADDR", "WIDTH", "HEIGHT", "OUTPUT"])]
+    dump_image: Option<Vec<String>>,
 }
 
 fn main() {
@@ -34,7 +42,19 @@ fn main() {
     log::info!("RISC-V CPU Simulator");
     log::info!("Loading ELF: {}", args.elf.display());
 
-    // Run simulation using the library
+    // Check if we need memory dump functionality
+    let needs_memory_access = args.dump_memory.is_some() || args.dump_image.is_some();
+
+    if needs_memory_access {
+        // Run simulation with manual simulator control for memory access
+        run_with_memory_access(&args);
+    } else {
+        // Run simulation using the library (original path)
+        run_standard(&args);
+    }
+}
+
+fn run_standard(args: &Args) {
     let result = if let Some(vcd_path) = &args.vcd {
         log::info!("VCD dumping enabled: {}", vcd_path);
         cpu_sim::run_elf_with_vcd(&args.elf, args.max_cycles, args.print_inst_trace, vcd_path)
@@ -62,5 +82,128 @@ fn main() {
             eprintln!("✗ Simulation error: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+fn run_with_memory_access(args: &Args) {
+    // Create simulator
+    let (mut sim, _runtime) = match cpu_sim::create_simulator_from_elf(&args.elf) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("✗ Failed to create simulator: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Run simulation
+    let result = match sim.run(args.max_cycles) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("✗ Simulation error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if let Some(tohost_value) = result.tohost_value {
+        println!(
+            "✓ Simulation completed in {} cycles (tohost value: 0x{:08x})",
+            result.cycles, tohost_value
+        );
+    } else {
+        println!("✓ Simulation completed in {} cycles", result.cycles);
+    }
+
+    // Handle memory dump
+    if let Some(params) = &args.dump_memory {
+        if params.len() != 3 {
+            eprintln!("✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>");
+            std::process::exit(1);
+        }
+
+        let addr = parse_address(&params[0]);
+        let size = parse_size(&params[1]);
+        let output = &params[2];
+
+        log::info!(
+            "Dumping memory: addr=0x{:08x}, size=0x{:x} bytes to {}",
+            addr,
+            size,
+            output
+        );
+
+        let bytes: Vec<u8> = sim.dump_memory_region(addr, size).collect();
+        if let Err(e) = std::fs::write(output, &bytes) {
+            eprintln!("✗ Failed to write memory dump: {}", e);
+            std::process::exit(1);
+        }
+
+        println!(
+            "✓ Memory dump written to: {} ({} bytes)",
+            output,
+            bytes.len()
+        );
+    }
+
+    // Handle image dump
+    if let Some(params) = &args.dump_image {
+        if params.len() != 4 {
+            eprintln!(
+                "✗ Invalid --dump-image arguments. Expected: <addr> <width> <height> <output>"
+            );
+            std::process::exit(1);
+        }
+
+        let addr = parse_address(&params[0]);
+        let width = parse_size(&params[1]);
+        let height = parse_size(&params[2]);
+        let output = &params[3];
+
+        log::info!(
+            "Dumping image: addr=0x{:08x}, size={}x{} to {}",
+            addr,
+            width,
+            height,
+            output
+        );
+
+        if let Err(e) = sim.dump_memory_region_as_image(addr, width, height, output) {
+            eprintln!("✗ Failed to dump image: {}", e);
+            std::process::exit(1);
+        }
+
+        println!(
+            "✓ Image written to: {} ({}x{} RGBA8)",
+            output, width, height
+        );
+    }
+}
+
+/// Parse an address from a string (supports hex with 0x prefix or decimal)
+fn parse_address(s: &str) -> u32 {
+    if let Some(hex_str) = s.strip_prefix("0x") {
+        u32::from_str_radix(hex_str, 16).unwrap_or_else(|_| {
+            eprintln!("✗ Invalid hex address: {}", s);
+            std::process::exit(1);
+        })
+    } else {
+        s.parse::<u32>().unwrap_or_else(|_| {
+            eprintln!("✗ Invalid address: {}", s);
+            std::process::exit(1);
+        })
+    }
+}
+
+/// Parse a size value from a string (supports hex with 0x prefix or decimal)
+fn parse_size(s: &str) -> u32 {
+    if let Some(hex_str) = s.strip_prefix("0x") {
+        u32::from_str_radix(hex_str, 16).unwrap_or_else(|_| {
+            eprintln!("✗ Invalid hex size: {}", s);
+            std::process::exit(1);
+        })
+    } else {
+        s.parse::<u32>().unwrap_or_else(|_| {
+            eprintln!("✗ Invalid size: {}", s);
+            std::process::exit(1);
+        })
     }
 }
