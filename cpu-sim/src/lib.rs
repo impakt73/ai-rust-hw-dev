@@ -9,11 +9,10 @@ pub mod sim;
 mod tests;
 
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::SimulationResult;
+pub use sim::{SimulationResult, Simulator};
 
 use bus::SystemBus;
 use dram::Dram;
-use sim::Simulator;
 use std::path::Path;
 
 /// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
@@ -274,6 +273,120 @@ pub fn run_elf_with_vcd(
         None::<fn(&InstructionTrace)>,
         Some(vcd_path),
     )
+}
+
+/// Run an ELF file in a simulator and execute a callback with access to the simulator
+///
+/// This function provides a safe way to access the simulator after running an ELF file.
+/// The callback is executed with a reference to the simulator, ensuring proper lifetime
+/// management without memory leaks.
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `callback` - Function to execute with simulator access after the run completes
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::run_elf_in_simulator;
+/// use std::path::Path;
+///
+/// run_elf_in_simulator(
+///     Path::new("test.elf"),
+///     1000,
+///     |sim, result| {
+///         println!("Simulation completed in {} cycles", result.cycles);
+///         let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
+///         // Process bytes...
+///     }
+/// )?;
+/// # Ok::<(), String>(())
+/// ```
+pub fn run_elf_in_simulator<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    callback: F,
+) -> Result<SimulationResult, String>
+where
+    F: FnOnce(&Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
+    // Initialize DRAM and load ELF
+    let mut dram = Dram::new();
+    let entry_point = dram
+        .load_elf(elf_path)
+        .map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = SystemBus::new(dram);
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
+
+    // Run simulation
+    let result = sim.run(max_cycles)?;
+
+    // Execute callback with simulator and result
+    callback(&sim, &result);
+
+    Ok(result)
+}
+
+/// Run an ELF file in a simulator and execute a callback with mutable access to the simulator
+///
+/// This variant allows the callback to have mutable access to the simulator.
+/// Useful for operations that might need to modify simulator state.
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `callback` - Function to execute with mutable simulator access after the run completes
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+pub fn run_elf_in_simulator_mut<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    mut callback: F,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(&mut Simulator<fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
+    // Initialize DRAM and load ELF
+    let mut dram = Dram::new();
+    let entry_point = dram
+        .load_elf(elf_path)
+        .map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Create system bus with DRAM and FIFO
+    let bus = SystemBus::new(dram);
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = Simulator::new(&runtime, bus, entry_point, false, None, None)?;
+
+    // Run simulation
+    let result = sim.run(max_cycles)?;
+
+    // Execute callback with simulator and result
+    callback(&mut sim, &result);
+
+    Ok(result)
 }
 
 // Disabled broken test module

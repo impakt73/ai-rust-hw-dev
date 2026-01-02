@@ -97,3 +97,13 @@ test = false
 name = "test_one_println"
 path = "src/test_one_println.rs"
 test = false
+
+[[bin]]
+name = "test_memory_pattern"
+path = "src/test_memory_pattern.rs"
+test = false
+
+[[bin]]
+name = "test_image_data"
+path = "src/test_image_data.rs"
+test = false
