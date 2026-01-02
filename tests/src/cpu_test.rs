@@ -151,7 +151,7 @@ impl CpuTestHarness {
     }
 
     fn step_cycle(&mut self, dut: &mut Top) {
-        self.step_cycle_with_callbacks(dut, None::<fn(u32, u32, u32)>, None::<fn(u32)>);
+        self.step_cycle_with_callbacks(dut, None::<fn(u32, u32)>, None::<fn(u32)>);
     }
 
     /// Execute a single CPU cycle with memory handling
@@ -162,7 +162,7 @@ impl CpuTestHarness {
         mut debug_rd_callback: Option<F>,
         mut tohost_callback: Option<E>,
     ) where
-        F: FnMut(u32, u32, u32),
+        F: FnMut(u32, u32),
         E: FnMut(u32),
     {
         // Fetch instruction (assemble 4 bytes from imem)
@@ -182,7 +182,7 @@ impl CpuTestHarness {
 
         // Invoke optional callback with (pc, debug_rd_data, dmem_rdata) AFTER second eval and BEFORE writes/clock
         if let Some(cb) = debug_rd_callback.as_mut() {
-            cb(pc, dut.debug_rd_data, dut.dmem_rdata);
+            cb(pc, dut.debug_rd_data);
         }
 
         // Handle data memory writes
@@ -264,12 +264,8 @@ impl CpuTestHarness {
         for _ in 0..num_cycles {
             self.step_cycle_with_callbacks(
                 dut,
-                Some(|pc, debug_rd_data, dmem_rdata| {
+                Some(|pc, debug_rd_data| {
                     if pcs.contains(&pc) {
-                        println!(
-                            "Capturing rd_data at PC=0x{:08x}: 0x{:08x} [MEM: 0x{:08x}]",
-                            pc, debug_rd_data, dmem_rdata
-                        );
                         rd_data_map.insert(pc, debug_rd_data);
                     }
                 }),
@@ -285,7 +281,7 @@ impl CpuTestHarness {
         for _ in 0..max_cycles {
             self.step_cycle_with_callbacks(
                 dut,
-                None::<fn(u32, u32, u32)>,
+                None::<fn(u32, u32)>,
                 Some(|value: u32| {
                     tohost_value = Some(value);
                 }),
