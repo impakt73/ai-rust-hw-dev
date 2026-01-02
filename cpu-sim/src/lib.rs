@@ -395,6 +395,42 @@ where
     )
 }
 
+/// Run an ELF file in a simulator with full configuration options
+///
+/// This is the most flexible simulator execution function, supporting all options
+/// including instruction trace printing, VCD dumping, and callback access.
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `print_inst_trace` - Whether to print instruction trace to console
+/// * `callback` - Function to execute with simulator access after the run completes
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+pub fn run_elf_in_simulator_with_options<F>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    callback: F,
+    vcd_path: Option<&str>,
+) -> Result<SimulationResult, String>
+where
+    F: for<'a> FnOnce(&Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+{
+    run_elf_in_simulator_internal(
+        elf_path,
+        max_cycles,
+        print_inst_trace,
+        None,
+        None,
+        vcd_path,
+        |sim, result| callback(sim, result),
+    )
+}
+
 /// Run an ELF file in a simulator and execute a callback with mutable access to the simulator
 ///
 /// This variant allows the callback to have mutable access to the simulator.
