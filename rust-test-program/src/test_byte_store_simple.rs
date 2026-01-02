@@ -1,23 +1,14 @@
 #![no_std]
 #![no_main]
 
+mod common;
+
 use core::panic::PanicInfo;
-use core::ptr::write_volatile;
 use riscv_rt::entry;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
-}
-
-const FIFO_DATA: u32 = 0x4000_0000;
-const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-
-fn write_tohost(value: u32) -> ! {
-    unsafe {
-        write_volatile(TOHOST_ADDR as *mut u32, value);
-    }
-    loop {}
+fn panic(info: &PanicInfo) -> ! {
+    common::default_panic_handler(info)
 }
 
 // Static buffer for testing
@@ -39,17 +30,17 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0x88u8);
         
         // Write marker
-        write_volatile(FIFO_DATA as *mut u32, 0xAAAAAAAA);
+        common::fifo_write_word(0xAAAAAAAA);
         
         // Read back and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            write_volatile(FIFO_DATA as *mut u32, byte as u32);
+            common::fifo_write_word(byte as u32);
         }
         
         // Write marker
-        write_volatile(FIFO_DATA as *mut u32, 0xBBBBBBBB);
+        common::fifo_write_word(0xBBBBBBBB);
     }
     
-    write_tohost(42);
+    common::write_tohost(42);
 }
