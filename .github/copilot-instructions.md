@@ -32,7 +32,8 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 
 - **RTL:** SystemVerilog (in `rtl/` directory)
 - **Verification:** Rust with marlin + Verilator (in `tests/` directory)
-- **Build System:** Cargo workspace with 3 members: cpu-sim, riscv_core, tests
+- **Build System:** Cargo workspace with 5 members: cpu-sim, riscv_core, tests, riscv_protocol, riscv_macros
+- **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
 
 ## Coding Conventions
 
@@ -50,7 +51,7 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 
 ## Testing Requirements
 
-- All 28 tests must pass before marking PR ready for review
+- All 112 tests must pass before marking PR ready for review
 - Run `cargo test --verbose` to verify
 - After RTL changes, run `cargo clean` to clear Verilator cache
 - Use `cargo test -- --nocapture` to see test output during debugging
@@ -78,10 +79,11 @@ Before marking a PR as ready for review, verify:
 **For comprehensive information, always refer to [AGENTS.md](../AGENTS.md) which includes:**
 - Project architecture and design decisions
 - Complete build and test procedures
-- RTL module hierarchy and supported instructions
+- RTL module hierarchy and supported instructions (RV32IM + Zicsr)
 - Common issues and solutions
 - Testing best practices and conventions
 - CI/CD pipeline details
 - Debugging tips and performance notes
+- Debug infrastructure (FIFO packet protocol, print macros)
 
 **Always consult AGENTS.md for project-specific conventions, dependencies, and workflows.**
