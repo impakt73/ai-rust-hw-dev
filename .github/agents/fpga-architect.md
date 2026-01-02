@@ -1,7 +1,7 @@
 ---
 name: FPGA Architect
 description: Expert in SystemVerilog, embedded CPU design (RISC-V/MIPS), and FPGA timing closure.
-tools: []
+tools: ["*"]
 infer: true
 ---
 
