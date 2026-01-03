@@ -143,11 +143,24 @@ impl CpuTestHarness {
         self.dmem.insert(base + 3, bytes[3]);
     }
 
-    /// Execute a specified number of CPU cycles with automatic memory handling
+    /// Execute up to a specified number of instructions with automatic memory handling
+    /// Stops early if a tohost write is detected (program termination signal)
     fn run_cycles(&mut self, dut: &mut Top, num_cycles: usize) {
+        let mut tohost_detected = false;
         for _ in 0..num_cycles {
-            // No callback by default
-            self.step_cycle(dut);
+            // Stop if tohost write was detected in previous iteration
+            if tohost_detected {
+                break;
+            }
+            
+            // Execute instruction with tohost detection
+            self.step_cycle_with_callbacks(
+                dut,
+                None::<fn(u32, u32)>,
+                Some(|_value: u32| {
+                    tohost_detected = true;
+                }),
+            );
         }
     }
 
@@ -280,16 +293,28 @@ impl CpuTestHarness {
     }
 
     /// Execute cycles and track PC history
+    /// Stops early if a tohost write is detected
     fn run_cycles_with_pc_trace(&mut self, dut: &mut Top, num_cycles: usize) -> Vec<u32> {
         let mut pc_history = Vec::new();
+        let mut tohost_detected = false;
         for _ in 0..num_cycles {
+            if tohost_detected {
+                break;
+            }
             pc_history.push(dut.imem_addr);
-            self.step_cycle(dut);
+            self.step_cycle_with_callbacks(
+                dut,
+                None::<fn(u32, u32)>,
+                Some(|_value: u32| {
+                    tohost_detected = true;
+                }),
+            );
         }
         pc_history
     }
 
     /// Execute cycles and capture debug_rd_data at specific PCs
+    /// Stops early if a tohost write is detected
     fn run_cycles_capture_rd_data(
         &mut self,
         dut: &mut Top,
@@ -297,7 +322,11 @@ impl CpuTestHarness {
         pcs: &[u32],
     ) -> HashMap<u32, u32> {
         let mut rd_data_map = HashMap::new();
+        let mut tohost_detected = false;
         for _ in 0..num_cycles {
+            if tohost_detected {
+                break;
+            }
             self.step_cycle_with_callbacks(
                 dut,
                 Some(|pc, debug_rd_data| {
@@ -305,7 +334,9 @@ impl CpuTestHarness {
                         rd_data_map.insert(pc, debug_rd_data);
                     }
                 }),
-                None::<fn(u32)>,
+                Some(|_value: u32| {
+                    tohost_detected = true;
+                }),
             );
         }
         rd_data_map
@@ -334,14 +365,19 @@ fn test_cpu_basic_execution() {
         // 0x00: ADDI x1, x0, 5    ; x1 = 5
         // 0x04: ADDI x2, x0, 3    ; x2 = 3
         // 0x08: ADD  x3, x1, x2   ; x3 = x1 + x2 = 8
+        // 0x0C: ADDI x4, x0, -16  ; x4 = 0xFFFFFFF0 (tohost address)
+        // 0x10: ADDI x5, x0, 1    ; x5 = 1 (success code)
+        // 0x14: SW   x5, 0(x4)    ; Write to tohost
         harness.load_program(&[
             (0x00, addi(1, 0, 5)),
             (0x04, addi(2, 0, 3)),
             (0x08, add(3, 1, 2)),
-            (0x0C, addi(0, 0, 0)), // NOP to end
+            (0x0C, addi(4, 0, -16)),
+            (0x10, addi(5, 0, 1)),
+            (0x14, sw(4, 5, 0)),  // SW rs1=x4 (base), rs2=x5 (data), imm=0
         ]);
 
-        // Run for several cycles
+        // Run for several cycles (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 10);
 
         // Note: In a single-cycle implementation, we can't directly read register values
@@ -411,10 +447,12 @@ fn test_cpu_logic_operations() {
             (0x08, and_inst(3, 1, 2)),
             (0x0C, or_inst(4, 1, 2)),
             (0x10, xor_inst(5, 1, 2)),
-            (0x14, addi(0, 0, 0)), // NOP
+            (0x14, addi(6, 0, -16)),  // x6 = tohost address
+            (0x18, addi(7, 0, 1)),    // x7 = success code
+            (0x1C, sw(6, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute for several cycles
+        // Execute for several cycles (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 8);
 
         println!("Successfully executed logic operations: AND, OR, XOR");
@@ -442,10 +480,12 @@ fn test_cpu_branch_beq_bne() {
             (0x14, bne(1, 4, 8)),
             (0x18, addi(5, 0, 99)),
             (0x1C, addi(6, 0, 1)),
-            (0x20, addi(0, 0, 0)), // NOP
+            (0x20, addi(7, 0, -16)),  // x7 = tohost address
+            (0x24, addi(8, 0, 1)),    // x8 = success code
+            (0x28, sw(8, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and track PC progression
+        // Execute and track PC progression (will terminate early on tohost write)
         let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
         // Verify branch behavior - should skip instructions at 0x0C and 0x18
@@ -481,10 +521,12 @@ fn test_cpu_branch_blt_bge() {
             (0x10, bge(2, 1, 8)),
             (0x14, addi(4, 0, 99)),
             (0x18, addi(5, 0, 1)),
-            (0x1C, addi(0, 0, 0)), // NOP
+            (0x1C, addi(6, 0, -16)),  // x6 = tohost address
+            (0x20, addi(7, 0, 1)),    // x7 = success code
+            (0x24, sw(6, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and track PC progression
+        // Execute and track PC progression (will terminate early on tohost write)
         let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
         // Verify branch behavior
@@ -514,10 +556,12 @@ fn test_cpu_branch_bltu_bgeu() {
             (0x10, bgeu(1, 2, 8)),
             (0x14, addi(4, 0, 99)),
             (0x18, addi(5, 0, 1)),
-            (0x1C, addi(0, 0, 0)), // NOP
+            (0x1C, addi(6, 0, -16)),  // x6 = tohost address
+            (0x20, addi(7, 0, 1)),    // x7 = success code
+            (0x24, sw(6, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and track PC progression
+        // Execute and track PC progression (will terminate early on tohost write)
         let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
         // Verify branch behavior
@@ -547,10 +591,12 @@ fn test_cpu_load_store() {
             (0x10, addi(4, 0, 8)),
             (0x14, sw(1, 2, 8)),
             (0x18, lw(5, 1, 8)),
-            (0x1C, addi(0, 0, 0)), // NOP
+            (0x1C, addi(6, 0, -16)),  // x6 = tohost address
+            (0x20, addi(7, 0, 1)),    // x7 = success code
+            (0x24, sw(6, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and handle memory operations
+        // Execute and handle memory operations (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 10);
 
         // Verify memory operations
@@ -651,10 +697,12 @@ fn test_cpu_load_byte() {
             (0x10, lb(4, 1, 1)),
             (0x14, lbu(5, 1, 0)),
             (0x18, lbu(6, 1, 1)),
-            (0x1C, addi(0, 0, 0)), // NOP
+            (0x1C, addi(7, 0, -16)),  // x7 = tohost address
+            (0x20, addi(8, 0, 1)),    // x8 = success code
+            (0x24, sw(8, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and handle memory operations, capturing rd_data at specific PCs
+        // Execute and handle memory operations, capturing rd_data at specific PCs (will terminate early on tohost write)
         let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 12, &[0x0C, 0x10, 0x14, 0x18]);
         // Verify memory operations
         assert_eq!(
@@ -708,10 +756,12 @@ fn test_cpu_load_halfword() {
             (0x10, lh(4, 1, 2)),
             (0x14, lhu(5, 1, 0)),
             (0x18, lhu(6, 1, 2)),
-            (0x1C, addi(0, 0, 0)), // NOP
+            (0x1C, addi(7, 0, -16)),  // x7 = tohost address
+            (0x20, addi(8, 0, 1)),    // x8 = success code
+            (0x24, sw(8, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and handle memory operations
+        // Execute and handle memory operations (will terminate early on tohost write)
         let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 12, &[0x0C, 0x10, 0x14, 0x18]);
 
         // Verify memory operations
@@ -773,10 +823,12 @@ fn test_cpu_store_byte() {
             (0x1C, sb(1, 4, 2)),
             (0x20, sb(1, 5, 3)),
             (0x24, lw(6, 1, 0)),
-            (0x28, addi(0, 0, 0)), // NOP
+            (0x28, addi(7, 0, -16)),  // x7 = tohost address
+            (0x2C, addi(8, 0, 1)),    // x8 = success code
+            (0x30, sw(8, 7, 0)),      // Write to tohost
         ]);
 
-        // Execute and handle memory operations
+        // Execute and handle memory operations (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 15);
 
         // Verify memory operations - bytes stored in little-endian order
@@ -839,10 +891,12 @@ fn test_cpu_byte_halfword_mixed() {
             (0x18, sh(1, 5, 4)),
             (0x1C, lh(6, 1, 4)),
             (0x20, lhu(7, 1, 4)),
-            (0x24, addi(0, 0, 0)), // NOP
+            (0x24, addi(8, 0, -16)),  // x8 = tohost address
+            (0x28, addi(9, 0, 1)),    // x9 = success code
+            (0x2C, sw(9, 8, 0)),      // Write to tohost
         ]);
 
-        // Execute and handle memory operations
+        // Execute and handle memory operations (will terminate early on tohost write)
         let rd_data = harness.run_cycles_capture_rd_data(&mut dut, 15, &[0x0C, 0x10, 0x1C, 0x20]);
 
         // Verify load operations
@@ -999,10 +1053,12 @@ fn test_cpu_csr_set_clear() {
             (0x1C, sw(0, 5, 0x104)),    // Store x5 to verify it read 0b1111
             (0x20, csrrw(6, 0, 0x301)), // x6 = CSR[0x301] (final value, should be 0b0111)
             (0x24, sw(0, 6, 0x108)),    // Store x6 to verify final CSR value
-            (0x28, addi(0, 0, 0)),      // NOP
+            (0x28, addi(7, 0, -16)),    // x7 = tohost address
+            (0x2C, addi(8, 0, 1)),      // x8 = success code
+            (0x30, sw(8, 7, 0)),        // Write to tohost
         ]);
 
-        // Execute instructions
+        // Execute instructions (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 15);
 
         assert_eq!(dut.halted, 0, "CPU should not be halted");
@@ -1242,10 +1298,12 @@ fn test_cpu_m_extension_program() {
             (0x1C, rem(8, 4, 5)),    // x8 = d % e = 2
             (0x20, add(9, 7, 8)),    // x9 = x7 + x8 = 22
             (0x24, sw(0, 9, 0x100)), // Store final result
-            (0x28, addi(0, 0, 0)),   // NOP
+            (0x28, addi(10, 0, -16)), // x10 = tohost address
+            (0x2C, addi(11, 0, 1)),   // x11 = success code
+            (0x30, sw(11, 10, 0)),    // Write to tohost
         ]);
 
-        // Execute instructions
+        // Execute instructions (will terminate early on tohost write)
         harness.run_cycles(&mut dut, 15);
 
         assert_eq!(
