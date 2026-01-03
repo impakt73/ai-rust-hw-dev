@@ -550,3 +550,6 @@ mod test_simple_byte_store;
 
 #[cfg(test)]
 mod test_alloc_only;
+
+#[cfg(test)]
+mod test_programmatic_memory;
