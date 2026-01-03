@@ -12,7 +12,6 @@ pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, Simulator};
 
 use bus::SystemBus;
-use dram::Dram;
 use std::path::Path;
 
 /// Load an ELF file into a simulator's memory
@@ -36,7 +35,7 @@ use std::path::Path;
 /// use std::path::Path;
 ///
 /// let runtime = riscv_core::create_cpu_runtime()?;
-/// let bus = bus::SystemBus::new(dram::Dram::new());
+/// let bus = bus::SystemBus::new();
 /// let mut sim = Simulator::new(&runtime, bus, false, None, None)?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
@@ -162,9 +161,8 @@ where
     F: FnMut(u32),
     T: FnMut(&InstructionTrace),
 {
-    // Create empty DRAM and system bus
-    let dram = Dram::new();
-    let bus = SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
 
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()
@@ -375,9 +373,8 @@ fn run_elf_in_simulator_internal<F>(
 where
     F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
 {
-    // Create empty DRAM and system bus
-    let dram = Dram::new();
-    let bus = SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
 
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()

@@ -22,8 +22,7 @@ mod tests {
             fifo_data_clone.lock().unwrap().push(word);
         };
 
-        let dram = Dram::new();
-        let bus = SystemBus::new(dram);
+        let bus = SystemBus::new();
         let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
 
         let mut sim = Simulator::new(

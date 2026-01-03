@@ -14,9 +14,9 @@ pub struct SystemBus {
 
 impl SystemBus {
     /// Create a new system bus with initialized DRAM and FIFO
-    pub fn new(dram: Dram) -> Self {
+    pub fn new() -> Self {
         SystemBus {
-            dram,
+            dram: Dram::new(),
             fifo: Fifo::new(),
         }
     }
@@ -71,5 +71,11 @@ impl SystemBus {
     /// Routes to DRAM only (FIFO is word-based)
     pub fn write_halfword(&mut self, addr: u32, data: u16) {
         self.dram.write_halfword(addr, data);
+    }
+}
+
+impl Default for SystemBus {
+    fn default() -> Self {
+        Self::new()
     }
 }

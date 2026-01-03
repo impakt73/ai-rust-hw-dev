@@ -10,9 +10,8 @@ mod tests {
         println!("\n=== PROGRAMMATIC INSTRUCTION LOADING TEST ===");
         println!("Demonstrating the new decoupled simulator API");
 
-        // Create empty DRAM and system bus
-        let dram = dram::Dram::new();
-        let bus = bus::SystemBus::new(dram);
+        // Create system bus with internal DRAM
+        let bus = bus::SystemBus::new();
 
         // Initialize CPU Simulator without an ELF file
         let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
@@ -110,9 +109,8 @@ mod tests {
 
         println!("\n=== MEMORY REGION WRITE TEST ===");
 
-        // Create simulator
-        let dram = dram::Dram::new();
-        let bus = bus::SystemBus::new(dram);
+        // Create simulator with system bus
+        let bus = bus::SystemBus::new();
         let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
         let mut sim = sim::Simulator::new(
             &runtime,
