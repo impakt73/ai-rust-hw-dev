@@ -110,7 +110,7 @@ where
 
 /// Internal unified function for running ELF files with all possible options
 ///
-/// This is the core implementation that all public run_elf_* functions delegate to.
+/// This delegates to run_elf_in_simulator_internal with a no-op callback.
 fn run_elf_internal<F, T>(
     elf_path: &Path,
     max_cycles: u64,
@@ -124,46 +124,18 @@ where
     F: FnMut(u32),
     T: FnMut(&InstructionTrace),
 {
-    // Create system bus with internal DRAM
-    let bus = SystemBus::new();
-
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-
-    let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            print_inst_trace,
-            fifo_callback,
-            trace_callback,
-            vcd,
-        )?
-    } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            print_inst_trace,
-            fifo_callback,
-            trace_callback,
-        )?
-    };
-
-    // Load ELF into simulator memory
-    let entry_point =
-        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Write data to RX FIFO if provided
-    if let Some(data) = fifo_rx_data {
-        sim.fifo_write_rx_string(data);
-    }
-
-    // Run simulation with entry point as boot PC
-    sim.run(entry_point, max_cycles)
+    run_elf_in_simulator_internal(
+        elf_path,
+        max_cycles,
+        print_inst_trace,
+        fifo_callback,
+        fifo_rx_data,
+        trace_callback,
+        vcd_path,
+        |_sim, _result| {
+            // No-op callback - just run the simulation without post-processing
+        },
+    )
 }
 
 /// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
@@ -332,17 +304,23 @@ pub fn run_elf_with_vcd(
 
 /// Internal helper function that consolidates the common pattern for running an ELF
 /// with a callback that has access to the simulator after execution.
-fn run_elf_in_simulator_internal<F>(
+///
+/// This is the single place in the file where we set up and run a simulator.
+#[allow(clippy::too_many_arguments)]
+fn run_elf_in_simulator_internal<F, T, C>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
+    fifo_callback: Option<F>,
     fifo_rx_data: Option<&str>,
-    trace_callback: Option<fn(&InstructionTrace)>,
+    trace_callback: Option<T>,
     vcd_path: Option<&str>,
-    callback: F,
+    callback: C,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+    F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
+    C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
 {
     // Create system bus with internal DRAM
     let bus = SystemBus::new();
@@ -352,9 +330,9 @@ where
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
     let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(&runtime, bus, print_inst_trace, None, trace_callback, vcd)?
+        Simulator::new_with_vcd(&runtime, bus, print_inst_trace, fifo_callback, trace_callback, vcd)?
     } else {
-        Simulator::new(&runtime, bus, print_inst_trace, None, trace_callback)?
+        Simulator::new(&runtime, bus, print_inst_trace, fifo_callback, trace_callback)?
     };
 
     // Load ELF into simulator memory
@@ -424,8 +402,9 @@ where
         elf_path,
         max_cycles,
         false,
+        None::<fn(u32)>,
         None,
-        None,
+        None::<fn(&InstructionTrace)>,
         vcd_path,
         |sim, result| callback(sim, result),
     )
@@ -460,8 +439,9 @@ where
         elf_path,
         max_cycles,
         print_inst_trace,
+        None::<fn(u32)>,
         None,
-        None,
+        None::<fn(&InstructionTrace)>,
         vcd_path,
         |sim, result| callback(sim, result),
     )
