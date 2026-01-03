@@ -398,11 +398,13 @@ fn test_cpu_three_instructions() {
             (0x00, addi(1, 0, 10)),
             (0x04, add(2, 1, 1)),
             (0x08, sub(3, 2, 1)),
-            (0x0C, addi(0, 0, 0)), // NOP
+            (0x0C, addi(4, 0, -16)), // x4 = tohost address
+            (0x10, addi(5, 0, 1)),   // x5 = success code
+            (0x14, sw(4, 5, 0)),     // Write to tohost
         ]);
 
-        // Execute and track PC progression
-        let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 5);
+        // Execute and track PC progression (will terminate early on tohost write)
+        let pc_history = harness.run_cycles_with_pc_trace(&mut dut, 10);
 
         // Verify that PC progressed through the expected addresses
         assert_eq!(pc_history[0], 0x00, "First instruction at PC=0x00");
@@ -932,15 +934,15 @@ fn test_cpu_fence_instruction() {
             (0x00, addi(1, 0, 10)), // x1 = 10
             (0x04, fence()),        // FENCE (should be NOP for single-cycle CPU)
             (0x08, addi(2, 1, 5)),  // x2 = x1 + 5 = 15
-            (0x0C, addi(0, 0, 0)),  // NOP
+            (0x0C, addi(3, 0, -16)), // x3 = tohost address
+            (0x10, addi(4, 0, 1)),   // x4 = success code
+            (0x14, sw(3, 4, 0)),     // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 5);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 10);
 
         // Verify FENCE didn't affect execution
-        // After 3 cycles (addi, fence, addi), x1 should be 10 and x2 should be 15
-        // We can't directly check register values, but execution should proceed normally
         assert_eq!(dut.halted, 0, "CPU should not be halted after FENCE");
     });
 }
@@ -1095,11 +1097,13 @@ fn test_cpu_csr_immediate() {
             (0x14, sw(0, 3, 0x108)),      // Store x3 to verify it's 15
             (0x18, csrrw(4, 0, 0x302)),   // x4 = CSR[0x302] (final value, should be 11)
             (0x1C, sw(0, 4, 0x10C)),      // Store x4 to verify final CSR value
-            (0x20, addi(0, 0, 0)),        // NOP
+            (0x20, addi(5, 0, -16)),      // x5 = tohost address
+            (0x24, addi(6, 0, 1)),        // x6 = success code
+            (0x28, sw(5, 6, 0)),          // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 12);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 15);
 
         assert_eq!(dut.halted, 0, "CPU should not be halted");
 
@@ -1140,11 +1144,13 @@ fn test_cpu_mul_instruction() {
             (0x04, addi(2, 0, 20)),  // x2 = 20
             (0x08, mul(3, 1, 2)),    // x3 = x1 × x2 = 200
             (0x0C, sw(0, 3, 0x100)), // Store result
-            (0x10, addi(0, 0, 0)),   // NOP
+            (0x10, addi(4, 0, -16)), // x4 = tohost address
+            (0x14, addi(5, 0, 1)),   // x5 = success code
+            (0x18, sw(4, 5, 0)),     // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 6);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 10);
 
         assert_eq!(
             harness.read_word_from_dmem(0x100),
@@ -1164,11 +1170,13 @@ fn test_cpu_mulh_instruction() {
             (0x04, lui(2, 0x10000)), // x2 = 0x00010000
             (0x08, mulh(3, 1, 2)),   // x3 = upper 32 bits of x1 × x2
             (0x0C, sw(0, 3, 0x100)), // Store result
-            (0x10, addi(0, 0, 0)),   // NOP
+            (0x10, addi(4, 0, -16)), // x4 = tohost address
+            (0x14, addi(5, 0, 1)),   // x5 = success code
+            (0x18, sw(4, 5, 0)),     // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 6);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 10);
 
         // 0x00010000 × 0x00010000 = 0x0000000100000000
         // Upper 32 bits = 0x00000001
@@ -1189,11 +1197,13 @@ fn test_cpu_div_instruction() {
             (0x04, addi(2, 0, 7)),   // x2 = 7
             (0x08, div(3, 1, 2)),    // x3 = x1 ÷ x2 = 14
             (0x0C, sw(0, 3, 0x100)), // Store quotient
-            (0x10, addi(0, 0, 0)),   // NOP
+            (0x10, addi(4, 0, -16)), // x4 = tohost address
+            (0x14, addi(5, 0, 1)),   // x5 = success code
+            (0x18, sw(4, 5, 0)),     // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 6);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 10);
 
         assert_eq!(
             harness.read_word_from_dmem(0x100),
