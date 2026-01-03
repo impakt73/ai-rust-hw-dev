@@ -20,7 +20,6 @@ where
     cpu: Top<'a>,
     pub bus: SystemBus,
     cycle_count: u64,
-    entry_point: u32,
     print_inst_trace: bool,
     print_debug_packets: bool,
     fifo_callback: Option<F>,
@@ -33,11 +32,10 @@ where
     F: FnMut(u32),
     T: FnMut(&InstructionTrace),
 {
-    /// Create a new simulator with the given bus, runtime, entry point, and optional callbacks
+    /// Create a new simulator with the given bus, runtime, and optional callbacks
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
-        entry_point: u32,
         print_inst_trace: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
@@ -51,7 +49,6 @@ where
             cpu,
             bus,
             cycle_count: 0,
-            entry_point,
             print_inst_trace,
             print_debug_packets: true, // Enable by default
             fifo_callback,
@@ -64,7 +61,6 @@ where
     pub fn new_with_vcd(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
-        entry_point: u32,
         print_inst_trace: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
@@ -88,7 +84,6 @@ where
             cpu,
             bus,
             cycle_count: 0,
-            entry_point,
             print_inst_trace,
             print_debug_packets: true,
             fifo_callback,
@@ -138,15 +133,18 @@ where
     }
 
     /// Reset the CPU
-    /// The boot address is set to the entry point while reset is asserted so that
+    /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
     /// when reset is released.
-    pub fn reset(&mut self) {
+    ///
+    /// # Arguments
+    /// * `boot_pc` - The program counter value to start execution from
+    pub fn reset(&mut self, boot_pc: u32) {
         // Set the boot address BEFORE asserting and during reset
         // This is critical because the PC register uses an asynchronous reset that
         // loads boot_addr whenever rst_n is low; boot_addr must be stable while
         // reset is asserted so the PC will hold this value after reset is released.
-        self.cpu.boot_addr = self.entry_point;
+        self.cpu.boot_addr = boot_pc;
 
         // Drive reset low
         self.cpu.rst_n = 0;
@@ -177,10 +175,7 @@ where
             vcd.dump(3); // Capture state with reset released
         }
 
-        log::info!(
-            "CPU reset complete with entry point: 0x{:08x}",
-            self.entry_point
-        );
+        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
     }
 
     /// Execute a single simulation step (one cycle)
@@ -329,8 +324,12 @@ where
 
     /// Run the simulation for up to max_cycles
     /// Returns Ok(SimulationResult) on normal completion or Err on error
-    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
-        self.reset();
+    ///
+    /// # Arguments
+    /// * `boot_pc` - The program counter value to start execution from
+    /// * `max_cycles` - Maximum number of cycles to run
+    pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
+        self.reset(boot_pc);
 
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
@@ -397,6 +396,30 @@ where
     /// Try to receive an Assert packet from the simulated CPU
     pub fn try_receive_assert_packet(&mut self) -> Result<Option<AssertPacket>, String> {
         crate::packet_transport::receive_assert_packet(&mut self.bus.fifo.tx)
+    }
+
+    /// Write a region of memory from a byte slice
+    ///
+    /// Writes bytes from the provided slice into the memory region starting at `start_addr`.
+    /// This allows external code to populate the simulator's memory with arbitrary data,
+    /// such as programmatically generated instructions or test data.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region to write
+    /// * `data` - Byte slice containing the data to write
+    ///
+    /// # Examples
+    /// ```ignore
+    /// # use cpu_sim::*;
+    /// # let mut sim = todo!();
+    /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
+    /// sim.write_memory_region(0x8000_0000, &instructions);
+    /// ```
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
+        for (offset, &byte) in data.iter().enumerate() {
+            let addr = start_addr.wrapping_add(offset as u32);
+            self.bus.dram.write_byte(addr, byte);
+        }
     }
 
     /// Dump a region of memory as a byte iterator

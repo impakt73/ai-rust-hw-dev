@@ -459,16 +459,8 @@ fn test_packet_protocol_end_to_end() {
 
     let elf_path = test_program_path("packet_test.elf");
 
-    // Initialize DRAM and load ELF
-    let mut dram = crate::dram::Dram::new();
-    let entry_point = dram
-        .load_elf(&elf_path)
-        .expect("Failed to load packet_test.elf");
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Create system bus with DRAM and FIFO
+    // Create empty DRAM and system bus
+    let dram = crate::dram::Dram::new();
     let bus = crate::bus::SystemBus::new(dram);
 
     // Create a callback to collect FIFO data from CPU
@@ -483,15 +475,20 @@ fn test_packet_protocol_end_to_end() {
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
-        entry_point,
         false, // Disable instruction trace
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
     .expect("Failed to create simulator");
 
+    // Load ELF into simulator memory
+    let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load packet_test.elf");
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
     // Reset the CPU before starting
-    sim.reset();
+    sim.reset(entry_point);
 
     println!("Running CPU program and exchanging packets...\n");
 
@@ -725,13 +722,8 @@ fn test_println_macro() {
 
     let elf_path = test_program_path("println_test.elf");
 
-    // Initialize DRAM and load ELF
-    let mut dram = crate::dram::Dram::new();
-    let entry_point = dram
-        .load_elf(&elf_path)
-        .expect("Failed to load println_test.elf");
-
-    // Create system bus with DRAM and FIFO
+    // Create empty DRAM and system bus
+    let dram = crate::dram::Dram::new();
     let bus = crate::bus::SystemBus::new(dram);
 
     // Create a callback to collect FIFO data from CPU
@@ -746,20 +738,25 @@ fn test_println_macro() {
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
-        entry_point,
         false, // Disable instruction trace
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
     .expect("Failed to create simulator");
 
+    // Load ELF into simulator memory
+    let entry_point =
+        crate::load_elf(&mut sim, &elf_path).expect("Failed to load println_test.elf");
+
     // Reset the CPU before starting
-    sim.reset();
+    sim.reset(entry_point);
 
     println!("Running CPU program...\n");
 
     // Run until halt
-    let result = sim.run(15000).expect("Simulation should succeed");
+    let result = sim
+        .run(entry_point, 15000)
+        .expect("Simulation should succeed");
 
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();

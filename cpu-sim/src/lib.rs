@@ -15,6 +15,93 @@ use bus::SystemBus;
 use dram::Dram;
 use std::path::Path;
 
+/// Load an ELF file into a simulator's memory
+///
+/// This function reads an ELF file and loads its LOAD segments into the simulator's
+/// memory using the write_memory_region function. This allows loading programs
+/// after simulator initialization rather than requiring the ELF to be loaded into
+/// DRAM before creating the simulator.
+///
+/// # Arguments
+/// * `sim` - Mutable reference to the simulator to load the ELF into
+/// * `path` - Path to the ELF file to load
+///
+/// # Returns
+/// * `Ok(u32)` - The entry point address from the ELF file
+/// * `Err(Box<dyn std::error::Error>)` - An error if loading fails
+///
+/// # Examples
+/// ```ignore
+/// use cpu_sim::*;
+/// use std::path::Path;
+///
+/// let runtime = riscv_core::create_cpu_runtime()?;
+/// let bus = bus::SystemBus::new(dram::Dram::new());
+/// let mut sim = Simulator::new(&runtime, bus, false, None, None)?;
+/// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
+/// let result = sim.run(entry_point, 1000)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn load_elf<F, T>(
+    sim: &mut Simulator<F, T>,
+    path: &Path,
+) -> Result<u32, Box<dyn std::error::Error>>
+where
+    F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
+{
+    let file_data = std::fs::read(path)?;
+    let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)?;
+
+    let mut entry_point = 0;
+
+    // Get the entry point
+    if let Ok(header) = elf_file.ehdr.e_entry.try_into() {
+        entry_point = header;
+    }
+
+    // Load program headers (segments)
+    if let Some(phdrs) = elf_file.segments() {
+        for phdr in phdrs.iter() {
+            // Only load LOAD segments
+            if phdr.p_type == elf::abi::PT_LOAD {
+                let vaddr = phdr.p_vaddr as u32;
+                let file_size = phdr.p_filesz as usize;
+                let offset = phdr.p_offset as usize;
+
+                if file_size > 0 {
+                    // Validate that the segment lies within the file data to avoid panics
+                    let end = match offset.checked_add(file_size) {
+                        Some(end) if end <= file_data.len() => end,
+                        _ => {
+                            return Err(Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "ELF segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
+                                    offset,
+                                    file_size,
+                                    file_data.len()
+                                ),
+                            )));
+                        }
+                    };
+
+                    let segment_data = &file_data[offset..end];
+                    sim.write_memory_region(vaddr, segment_data);
+                    log::info!(
+                        "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
+                        vaddr,
+                        file_size
+                    );
+                }
+            }
+        }
+    }
+
+    log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);
+    Ok(entry_point)
+}
+
 /// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
 ///
 /// # Arguments
@@ -75,16 +162,8 @@ where
     F: FnMut(u32),
     T: FnMut(&InstructionTrace),
 {
-    // Initialize DRAM and load ELF
-    let mut dram = Dram::new();
-    let entry_point = dram
-        .load_elf(elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Create system bus with DRAM and FIFO
+    // Create empty DRAM and system bus
+    let dram = Dram::new();
     let bus = SystemBus::new(dram);
 
     // Initialize CPU Simulator
@@ -95,7 +174,6 @@ where
         Simulator::new_with_vcd(
             &runtime,
             bus,
-            entry_point,
             print_inst_trace,
             fifo_callback,
             trace_callback,
@@ -105,20 +183,26 @@ where
         Simulator::new(
             &runtime,
             bus,
-            entry_point,
             print_inst_trace,
             fifo_callback,
             trace_callback,
         )?
     };
 
+    // Load ELF into simulator memory
+    let entry_point =
+        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
     // Write data to RX FIFO if provided
     if let Some(data) = fifo_rx_data {
         sim.fifo_write_rx_string(data);
     }
 
-    // Run simulation
-    sim.run(max_cycles)
+    // Run simulation with entry point as boot PC
+    sim.run(entry_point, max_cycles)
 }
 
 /// Run an ELF file on the simulated CPU with an optional trace callback
@@ -291,16 +375,8 @@ fn run_elf_in_simulator_internal<F>(
 where
     F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
 {
-    // Initialize DRAM and load ELF
-    let mut dram = Dram::new();
-    let entry_point = dram
-        .load_elf(elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Create system bus with DRAM and FIFO
+    // Create empty DRAM and system bus
+    let dram = Dram::new();
     let bus = SystemBus::new(dram);
 
     // Initialize CPU Simulator
@@ -308,33 +384,25 @@ where
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
     let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            entry_point,
-            print_inst_trace,
-            None,
-            trace_callback,
-            vcd,
-        )?
+        Simulator::new_with_vcd(&runtime, bus, print_inst_trace, None, trace_callback, vcd)?
     } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            entry_point,
-            print_inst_trace,
-            None,
-            trace_callback,
-        )?
+        Simulator::new(&runtime, bus, print_inst_trace, None, trace_callback)?
     };
+
+    // Load ELF into simulator memory
+    let entry_point =
+        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
 
     // Write data to RX FIFO if provided
     if let Some(data) = fifo_rx_data {
         sim.fifo_write_rx_string(data);
     }
 
-    // Run simulation
-    let result = sim.run(max_cycles)?;
+    // Run simulation with entry point as boot PC
+    let result = sim.run(entry_point, max_cycles)?;
 
     // Execute callback with mutable simulator and result
     callback(&mut sim, &result);
@@ -469,3 +537,6 @@ mod test_simple_byte_store;
 
 #[cfg(test)]
 mod test_alloc_only;
+
+#[cfg(test)]
+mod test_programmatic_memory;

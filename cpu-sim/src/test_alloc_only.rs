@@ -22,22 +22,21 @@ mod tests {
             fifo_data_clone.lock().unwrap().push(word);
         };
 
-        let mut dram = Dram::new();
-        let entry_point = dram.load_elf(&elf_path).expect("Failed to load ELF");
+        let dram = Dram::new();
         let bus = SystemBus::new(dram);
         let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
 
         let mut sim = Simulator::new(
             &runtime,
             bus,
-            entry_point,
             false,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
         .expect("Failed to create simulator");
 
-        sim.reset();
+        let entry_point = load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
+        sim.reset(entry_point);
 
         let mut result = None;
         for _ in 0..10000 {
