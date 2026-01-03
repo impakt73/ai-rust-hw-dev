@@ -330,9 +330,22 @@ where
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
     let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(&runtime, bus, print_inst_trace, fifo_callback, trace_callback, vcd)?
+        Simulator::new_with_vcd(
+            &runtime,
+            bus,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+            vcd,
+        )?
     } else {
-        Simulator::new(&runtime, bus, print_inst_trace, fifo_callback, trace_callback)?
+        Simulator::new(
+            &runtime,
+            bus,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+        )?
     };
 
     // Load ELF into simulator memory
