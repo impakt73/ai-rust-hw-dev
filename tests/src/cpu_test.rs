@@ -148,11 +148,6 @@ impl CpuTestHarness {
     fn run_cycles(&mut self, dut: &mut Top, num_cycles: usize) {
         let mut tohost_detected = false;
         for _ in 0..num_cycles {
-            // Stop if tohost write was detected in previous iteration
-            if tohost_detected {
-                break;
-            }
-            
             // Execute instruction with tohost detection
             self.step_cycle_with_callbacks(
                 dut,
@@ -161,6 +156,11 @@ impl CpuTestHarness {
                     tohost_detected = true;
                 }),
             );
+            
+            // Stop immediately if tohost write was detected
+            if tohost_detected {
+                break;
+            }
         }
     }
 
@@ -222,10 +222,16 @@ impl CpuTestHarness {
             
             // Handle data memory writes
             if dut.dmem_req != 0 && dut.dmem_we != 0 {
+                if cycles < 50 {  // Only print first 50 cycles to avoid spam
+                    eprintln!("Cycle {}, PC=0x{:08x}: Memory write to 0x{:08x} = 0x{:08x}", 
+                             cycles, dut.imem_addr, dut.dmem_addr, dut.dmem_wdata);
+                }
                 self.handle_memory_write(dut);
                 
                 if let Some(cb) = tohost_callback.as_mut() {
                     if dut.dmem_addr == TOHOST_ADDR {
+                        eprintln!("DEBUG: Tohost write detected! addr=0x{:08x}, data=0x{:08x}", 
+                                 dut.dmem_addr, dut.dmem_wdata);
                         let tohost_value = dut.dmem_wdata;
                         cb(tohost_value);
                     }
@@ -238,11 +244,20 @@ impl CpuTestHarness {
             // Safety check
             cycles += 1;
             if cycles >= MAX_CYCLES_PER_INSTR {
+                eprintln!("DEBUG: Instruction exceeded {} cycles", MAX_CYCLES_PER_INSTR);
+                eprintln!("  PC: 0x{:08x}", dut.imem_addr);
+                eprintln!("  imem_req: {}, imem_ready: {}", dut.imem_req, dut.imem_ready);
+                eprintln!("  dmem_req: {}, dmem_ready: {}", dut.dmem_req, dut.dmem_ready);
+                eprintln!("  instr_complete: {}", dut.instr_complete);
+                eprintln!("  halted: {}", dut.halted);
                 panic!("Instruction exceeded maximum cycles (possible illegal instruction or infinite loop)");
             }
             
             // Check if instruction complete (AFTER clock edge)
             if dut.instr_complete != 0 {
+                if cycles < 50 {
+                    eprintln!("Instruction complete at cycle {}, PC was 0x{:08x}", cycles, dut.imem_addr);
+                }
                 break;
             }
         }
@@ -298,9 +313,6 @@ impl CpuTestHarness {
         let mut pc_history = Vec::new();
         let mut tohost_detected = false;
         for _ in 0..num_cycles {
-            if tohost_detected {
-                break;
-            }
             pc_history.push(dut.imem_addr);
             self.step_cycle_with_callbacks(
                 dut,
@@ -309,6 +321,11 @@ impl CpuTestHarness {
                     tohost_detected = true;
                 }),
             );
+            
+            // Stop immediately if tohost write was detected
+            if tohost_detected {
+                break;
+            }
         }
         pc_history
     }
@@ -324,9 +341,6 @@ impl CpuTestHarness {
         let mut rd_data_map = HashMap::new();
         let mut tohost_detected = false;
         for _ in 0..num_cycles {
-            if tohost_detected {
-                break;
-            }
             self.step_cycle_with_callbacks(
                 dut,
                 Some(|pc, debug_rd_data| {
@@ -338,6 +352,11 @@ impl CpuTestHarness {
                     tohost_detected = true;
                 }),
             );
+            
+            // Stop immediately if tohost write was detected
+            if tohost_detected {
+                break;
+            }
         }
         rd_data_map
     }
