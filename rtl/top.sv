@@ -318,7 +318,7 @@ module top (
                             next_state = S_FETCH;
                     end
                     
-                    default: next_state = S_FETCH;
+                    default: next_state = S_HALT;  // Unknown instruction - halt for debug
                 endcase
             end
             
@@ -504,8 +504,8 @@ module top (
     regfile u_regfile (
         .clk(clk),
         .we(reg_write_en & reg_write_reg),  // Gated by FSM
-        .rs1_addr(rs1_reg),
-        .rs2_addr(rs2_reg),
+        .rs1_addr(rs1),  // Use combinational decoder output for reads
+        .rs2_addr(rs2),  // Use combinational decoder output for reads
         .rd_addr(rd_reg),
         .rd_data(rd_data),
         .rs1_data(rs1_data),
