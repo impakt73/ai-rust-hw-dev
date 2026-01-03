@@ -190,8 +190,8 @@ where
     };
 
     // Load ELF into simulator memory
-    let entry_point = load_elf(&mut sim, elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
+    let entry_point =
+        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
 
     log::info!("ELF loaded successfully");
     log::info!("Entry point: 0x{:08x}", entry_point);
@@ -384,27 +384,14 @@ where
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
     let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            print_inst_trace,
-            None,
-            trace_callback,
-            vcd,
-        )?
+        Simulator::new_with_vcd(&runtime, bus, print_inst_trace, None, trace_callback, vcd)?
     } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            print_inst_trace,
-            None,
-            trace_callback,
-        )?
+        Simulator::new(&runtime, bus, print_inst_trace, None, trace_callback)?
     };
 
     // Load ELF into simulator memory
-    let entry_point = load_elf(&mut sim, elf_path)
-        .map_err(|e| format!("Error loading ELF: {}", e))?;
+    let entry_point =
+        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
 
     log::info!("ELF loaded successfully");
     log::info!("Entry point: 0x{:08x}", entry_point);

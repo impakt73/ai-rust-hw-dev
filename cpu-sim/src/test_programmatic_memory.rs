@@ -52,8 +52,7 @@ mod tests {
 
         let program: Vec<u8> = vec![
             // addi x10, x0, 42 (0x02a00513 in little-endian)
-            0x13, 0x05, 0xa0, 0x02,
-            // sw x10, -16(x0) (0xfea02823 in little-endian)  
+            0x13, 0x05, 0xa0, 0x02, // sw x10, -16(x0) (0xfea02823 in little-endian)
             0x23, 0x28, 0xa0, 0xfe,
         ];
 
@@ -61,7 +60,10 @@ mod tests {
         const START_ADDR: u32 = 0x8000_0000;
         sim.write_memory_region(START_ADDR, &program);
 
-        println!("✓ Programmatic instructions written to memory at 0x{:08x}", START_ADDR);
+        println!(
+            "✓ Programmatic instructions written to memory at 0x{:08x}",
+            START_ADDR
+        );
         println!("  Program size: {} bytes", program.len());
         println!("  Instruction 1: addi x10, x0, 42");
         println!("  Instruction 2: sw x10, -16(x0) ; store to tohost");
@@ -72,7 +74,11 @@ mod tests {
 
         println!("\n=== RESULTS ===");
         println!("✓ Simulation completed in {} cycles", result.cycles);
-        println!("✓ Tohost value: 0x{:08x} ({})", result.tohost_value.unwrap_or(0), result.tohost_value.unwrap_or(0));
+        println!(
+            "✓ Tohost value: 0x{:08x} ({})",
+            result.tohost_value.unwrap_or(0),
+            result.tohost_value.unwrap_or(0)
+        );
 
         // Verify the program executed correctly
         assert_eq!(
@@ -122,8 +128,13 @@ mod tests {
         let test_data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
         sim.write_memory_region(test_addr, &test_data);
 
-        let read_back: Vec<u8> = sim.dump_memory_region(test_addr, test_data.len() as u32).collect();
-        assert_eq!(read_back, test_data, "Written data should match read-back data");
+        let read_back: Vec<u8> = sim
+            .dump_memory_region(test_addr, test_data.len() as u32)
+            .collect();
+        assert_eq!(
+            read_back, test_data,
+            "Written data should match read-back data"
+        );
         println!("✓ Pattern write/read test passed");
 
         // Test 2: Write at different addresses
@@ -133,14 +144,26 @@ mod tests {
         let read1: Vec<u8> = sim.dump_memory_region(0x8000_2000, 2).collect();
         let read2: Vec<u8> = sim.dump_memory_region(0x8000_3000, 2).collect();
 
-        assert_eq!(read1, vec![0xAA, 0xBB], "First region should be independent");
-        assert_eq!(read2, vec![0xCC, 0xDD], "Second region should be independent");
+        assert_eq!(
+            read1,
+            vec![0xAA, 0xBB],
+            "First region should be independent"
+        );
+        assert_eq!(
+            read2,
+            vec![0xCC, 0xDD],
+            "Second region should be independent"
+        );
         println!("✓ Multiple region write test passed");
 
         // Test 3: Overwrite test
         sim.write_memory_region(test_addr, &[0xFF; 8]);
         let overwritten: Vec<u8> = sim.dump_memory_region(test_addr, 8).collect();
-        assert_eq!(overwritten, vec![0xFF; 8], "Overwrite should replace previous data");
+        assert_eq!(
+            overwritten,
+            vec![0xFF; 8],
+            "Overwrite should replace previous data"
+        );
         println!("✓ Overwrite test passed");
 
         println!("\n========================================");

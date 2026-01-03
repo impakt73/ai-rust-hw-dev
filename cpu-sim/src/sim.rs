@@ -175,10 +175,7 @@ where
             vcd.dump(3); // Capture state with reset released
         }
 
-        log::info!(
-            "CPU reset complete with boot PC: 0x{:08x}",
-            boot_pc
-        );
+        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
     }
 
     /// Execute a single simulation step (one cycle)

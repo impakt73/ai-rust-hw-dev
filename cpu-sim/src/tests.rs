@@ -482,8 +482,7 @@ fn test_packet_protocol_end_to_end() {
     .expect("Failed to create simulator");
 
     // Load ELF into simulator memory
-    let entry_point = crate::load_elf(&mut sim, &elf_path)
-        .expect("Failed to load packet_test.elf");
+    let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load packet_test.elf");
 
     log::info!("ELF loaded successfully");
     log::info!("Entry point: 0x{:08x}", entry_point);
@@ -746,8 +745,8 @@ fn test_println_macro() {
     .expect("Failed to create simulator");
 
     // Load ELF into simulator memory
-    let entry_point = crate::load_elf(&mut sim, &elf_path)
-        .expect("Failed to load println_test.elf");
+    let entry_point =
+        crate::load_elf(&mut sim, &elf_path).expect("Failed to load println_test.elf");
 
     // Reset the CPU before starting
     sim.reset(entry_point);
@@ -755,7 +754,9 @@ fn test_println_macro() {
     println!("Running CPU program...\n");
 
     // Run until halt
-    let result = sim.run(entry_point, 15000).expect("Simulation should succeed");
+    let result = sim
+        .run(entry_point, 15000)
+        .expect("Simulation should succeed");
 
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();
