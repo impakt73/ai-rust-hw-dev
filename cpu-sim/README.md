@@ -150,11 +150,18 @@ The `InstructionTrace` struct provides detailed information about each executed 
 
 ### Available API Functions
 
-- `run_elf(path, max_cycles, print_trace)` - Basic simulation (backward compatible)
+The library provides several convenience functions for different use cases:
+
+- `run_elf(path, max_cycles, print_trace)` - Basic simulation
 - `run_elf_with_vcd(path, max_cycles, print_trace, vcd_path)` - With VCD waveform dumping
 - `run_elf_with_trace_callback(path, max_cycles, print_trace, trace_callback)` - With instruction trace callback
-- `run_elf_with_callback(path, max_cycles, print_trace, fifo_callback)` - With FIFO callback
-- `run_elf_with_all_callbacks(...)` - With FIFO, trace callbacks, and optional VCD
+- `run_elf_with_fifo(path, max_cycles, print_trace, fifo_callback, fifo_rx_data)` - With FIFO callback and RX data
+
+For advanced use cases that need access to the simulator after execution:
+- `run_elf_in_simulator(path, max_cycles, callback, vcd_path)` - Access simulator via callback
+- `run_elf_in_simulator_with_options(path, max_cycles, print_trace, callback, vcd_path)` - Full options with simulator access
+
+All functions delegate to a unified internal implementation for consistency and maintainability.
 
 ## Program Termination
 
