@@ -1,7 +1,6 @@
 pub mod bus;
 pub mod dram;
 pub mod fifo;
-pub mod memory;
 pub mod packet_transport;
 pub mod sim;
 
