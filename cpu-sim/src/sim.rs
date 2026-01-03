@@ -409,11 +409,22 @@ where
     /// * `data` - Byte slice containing the data to write
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use cpu_sim::*;
-    /// # let mut sim = todo!();
+    /// # fn main() -> Result<(), String> {
+    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
+    /// # let bus = bus::SystemBus::new();
+    /// let mut sim = Simulator::new(
+    ///     &runtime,
+    ///     bus,
+    ///     false,
+    ///     None::<fn(u32)>,
+    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    /// )?;
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
     /// sim.write_memory_region(0x8000_0000, &instructions);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
         for (offset, &byte) in data.iter().enumerate() {
@@ -435,10 +446,21 @@ where
     /// An iterator yielding bytes from the memory region
     ///
     /// # Examples
-    /// ```ignore
+    /// ```
     /// # use cpu_sim::*;
-    /// # let mut sim = todo!();
+    /// # fn main() -> Result<(), String> {
+    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
+    /// # let bus = bus::SystemBus::new();
+    /// let sim = Simulator::new(
+    ///     &runtime,
+    ///     bus,
+    ///     false,
+    ///     None::<fn(u32)>,
+    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    /// )?;
     /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
         (0..size).map(move |offset| {
@@ -466,16 +488,26 @@ where
     /// The memory region must contain at least `width * height * 4` bytes of valid data.
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
     /// # use cpu_sim::*;
-    /// # let mut sim = todo!();
+    /// # fn main() -> Result<(), String> {
+    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
+    /// # let bus = bus::SystemBus::new();
+    /// let sim = Simulator::new(
+    ///     &runtime,
+    ///     bus,
+    ///     false,
+    ///     None::<fn(u32)>,
+    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    /// )?;
     /// sim.dump_memory_region_as_image(
     ///     0x8000_0000,
     ///     640,
     ///     480,
     ///     "output.png"
     /// )?;
-    /// # Ok::<(), String>(())
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn dump_memory_region_as_image(
         &self,

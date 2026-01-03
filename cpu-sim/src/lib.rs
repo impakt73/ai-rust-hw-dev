@@ -30,16 +30,24 @@ use std::path::Path;
 /// * `Err(Box<dyn std::error::Error>)` - An error if loading fails
 ///
 /// # Examples
-/// ```ignore
-/// use cpu_sim::*;
-/// use std::path::Path;
-///
+/// ```no_run
+/// # use cpu_sim::*;
+/// # use std::path::Path;
+/// #
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let runtime = riscv_core::create_cpu_runtime()?;
 /// let bus = bus::SystemBus::new();
-/// let mut sim = Simulator::new(&runtime, bus, false, None, None)?;
+/// let mut sim = Simulator::new(
+///     &runtime,
+///     bus,
+///     false,
+///     None::<fn(u32)>,
+///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+/// )?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok(())
+/// # }
 /// ```
 pub fn load_elf<F, T>(
     sim: &mut Simulator<F, T>,
@@ -524,7 +532,8 @@ where
 
 // Disabled broken test module
 // #[cfg(test)]
-// mod test_minimal;
+#[cfg(test)]
+mod test_minimal;
 
 #[cfg(test)]
 mod test_byte_enable;
