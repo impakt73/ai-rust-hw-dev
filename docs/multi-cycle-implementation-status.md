@@ -42,42 +42,44 @@ Typical instructions take **4-5 clock cycles** to complete:
 
 **Phase 8: Test Suite Fixes** (In Progress)
 - ✅ Added tohost-based termination logic to all `run_cycles*` methods
-- ✅ Updated 11 high-priority tests with tohost writes:
-  - test_cpu_basic_execution
-  - test_cpu_branch_beq_bne
-  - test_cpu_branch_blt_bge
-  - test_cpu_branch_bltu_bgeu
-  - test_cpu_load_store
-  - test_cpu_load_byte
-  - test_cpu_load_halfword
-  - test_cpu_logic_ops
-  - test_cpu_store_byte
-  - test_cpu_byte_halfword_mixed
-  - test_cpu_csr_set_clear
-  - test_cpu_m_extension_program
-- ⚠️ 28/50 tests still failing (need investigation)
+- ✅ Updated 12 high-priority tests with tohost writes
+- ⚠️ All tests currently failing due to FSM bug (pre-existing from Phase 6-7)
+- ⚠️ Issue: FSM appears to loop indefinitely, hitting MAX_CYCLES_PER_INSTR limit
 
-### Known Limitations 🔄
+**Root Cause Analysis:**
+- Tests were already failing in commit 4f88d48 (Phase 6-7)
+- FSM implementation in commit 877a29a (Phase 1) has a bug
+- All instructions exceed 100-cycle safety limit
+- Tohost termination logic is correct but cannot be tested until FSM is fixed
 
-1. **Test Suite**: 28 tests still failing - needs further investigation of multi-cycle behavior
-2. **Variable Latency Memory**: Currently implemented as zero-latency. Infrastructure in place for true variable latency.
+### Known Issues 🔄
+
+1. **FSM Infinite Loop**: The multi-cycle FSM has a critical bug causing all instructions to loop indefinitely
+   - Affects all test execution
+   - Pre-dates tohost termination changes
+   - Requires FSM state machine debugging
+
+2. **Test Suite**: Cannot verify tests until FSM is fixed
+
+3. **Variable Latency Memory**: Currently implemented as zero-latency. Infrastructure in place for true variable latency.
 
 ### Next Steps
 
-**To complete the implementation:**
+**CRITICAL: Fix FSM Bug** (Highest Priority)
+- Debug FSM state transitions in top.sv
+- Check `instr_complete` signal generation
+- Verify control signal timing
+- Test with simple instruction trace
 
-1. **Fix Remaining Test Failures** (High Priority)
-   - Debug why 28 tests are still failing
-   - May need to add tohost writes to remaining tests
-   - Verify multi-cycle FSM behavior for all instruction types
+**Then: Complete Test Suite** (High Priority)
+- Verify tohost termination works after FSM fix
+- Add tohost writes to remaining tests
+- Ensure all 50 CPU tests pass
 
-2. **Enable Variable Latency** (Medium Priority)
-   - Implement MemoryController in simulator
-   - Add random latency counters (1-3 cycles imem, 1-5 cycles dmem)
-
-3. **Documentation** (Medium Priority)
-   - Update README.md with multi-cycle information
-   - Update AGENTS.md with new architecture details
+**Finally: Polish** (Medium Priority)
+- Enable variable latency memory
+- Update README.md and AGENTS.md
+- Performance testing
 
 ### Usage Notes
 
