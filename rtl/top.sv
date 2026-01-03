@@ -38,15 +38,16 @@ module top (
     typedef enum logic [3:0] {
         S_IDLE       = 4'b0000,  // After reset
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for imem_ready)
-        S_DECODE     = 4'b0010,  // Decode and read registers
-        S_EXECUTE    = 4'b0011,  // ALU operation
-        S_MEM_ADDR   = 4'b0100,  // Calculate memory address
-        S_MEM_READ   = 4'b0101,  // Load from memory (wait for dmem_ready)
-        S_MEM_WRITE  = 4'b0110,  // Store to memory (wait for dmem_ready)
-        S_WRITEBACK  = 4'b0111,  // Write result to register
-        S_BRANCH     = 4'b1000,  // Branch decision
-        S_CSR        = 4'b1001,  // CSR operation
-        S_HALT       = 4'b1010   // ECALL/EBREAK
+        S_FETCH_WAIT = 4'b0010,  // Wait one cycle for ir_reg to settle
+        S_DECODE     = 4'b0011,  // Decode and read registers
+        S_EXECUTE    = 4'b0100,  // ALU operation
+        S_MEM_ADDR   = 4'b0101,  // Calculate memory address
+        S_MEM_READ   = 4'b0110,  // Load from memory (wait for dmem_ready)
+        S_MEM_WRITE  = 4'b0111,  // Store to memory (wait for dmem_ready)
+        S_WRITEBACK  = 4'b1000,  // Write result to register
+        S_BRANCH     = 4'b1001,  // Branch decision
+        S_CSR        = 4'b1010,  // CSR operation
+        S_HALT       = 4'b1011   // ECALL/EBREAK
     } state_t;
 
     state_t current_state, next_state;
@@ -283,11 +284,17 @@ module top (
             end
             
             S_FETCH: begin
-                // Wait for instruction memory ready
+                // Wait for instruction memory ready; once ready, latch instruction
+                // this cycle and move to an intermediate state to allow ir_reg to settle
                 if (imem_ready)
-                    next_state = S_DECODE;
+                    next_state = S_FETCH_WAIT;
                 else
                     next_state = S_FETCH;
+            end
+            
+            S_FETCH_WAIT: begin
+                // One-cycle delay after latching instruction before decode
+                next_state = S_DECODE;
             end
             
             S_DECODE: begin
@@ -395,6 +402,11 @@ module top (
                     ir_write = 1'b1;
             end
             
+            S_FETCH_WAIT: begin
+                // Wait one cycle for ir_reg to settle after write
+                // All control signals remain at default (inactive)
+            end
+            
             S_DECODE: begin
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
@@ -441,6 +453,10 @@ module top (
             
             S_CSR: begin
                 // CSR operations: CSR read/modify happens here
+                // Treat CSR state as a writeback/complete stage for CSR instructions
+                reg_write_en   = 1'b1;  // write CSR result to rd
+                pc_write       = 1'b1;  // advance PC
+                instr_complete = 1'b1;  // signal instruction completion
             end
             
             S_HALT: begin
@@ -454,9 +470,6 @@ module top (
     end
     
     // ============================================================
-    // Module Instantiations
-    // ============================================================
-    
     // ============================================================
     // Module Instantiations
     // ============================================================

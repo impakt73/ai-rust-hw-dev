@@ -482,7 +482,7 @@ fn test_cpu_branch_beq_bne() {
             (0x1C, addi(6, 0, 1)),
             (0x20, addi(7, 0, -16)),  // x7 = tohost address
             (0x24, addi(8, 0, 1)),    // x8 = success code
-            (0x28, sw(8, 7, 0)),      // Write to tohost
+            (0x28, sw(7, 8, 0)),      // Write success code to tohost
         ]);
 
         // Execute and track PC progression (will terminate early on tohost write)
@@ -699,7 +699,7 @@ fn test_cpu_load_byte() {
             (0x18, lbu(6, 1, 1)),
             (0x1C, addi(7, 0, -16)),  // x7 = tohost address
             (0x20, addi(8, 0, 1)),    // x8 = success code
-            (0x24, sw(8, 7, 0)),      // Write to tohost
+            (0x24, sw(7, 8, 0)),      // Write success code to tohost
         ]);
 
         // Execute and handle memory operations, capturing rd_data at specific PCs (will terminate early on tohost write)
@@ -758,7 +758,7 @@ fn test_cpu_load_halfword() {
             (0x18, lhu(6, 1, 2)),
             (0x1C, addi(7, 0, -16)),  // x7 = tohost address
             (0x20, addi(8, 0, 1)),    // x8 = success code
-            (0x24, sw(8, 7, 0)),      // Write to tohost
+            (0x24, sw(7, 8, 0)),      // Write success code to tohost
         ]);
 
         // Execute and handle memory operations (will terminate early on tohost write)
@@ -825,7 +825,7 @@ fn test_cpu_store_byte() {
             (0x24, lw(6, 1, 0)),
             (0x28, addi(7, 0, -16)),  // x7 = tohost address
             (0x2C, addi(8, 0, 1)),    // x8 = success code
-            (0x30, sw(8, 7, 0)),      // Write to tohost
+            (0x30, sw(7, 8, 0)),      // Write success code to tohost
         ]);
 
         // Execute and handle memory operations (will terminate early on tohost write)
@@ -893,7 +893,7 @@ fn test_cpu_byte_halfword_mixed() {
             (0x20, lhu(7, 1, 4)),
             (0x24, addi(8, 0, -16)),  // x8 = tohost address
             (0x28, addi(9, 0, 1)),    // x9 = success code
-            (0x2C, sw(9, 8, 0)),      // Write to tohost
+            (0x2C, sw(8, 9, 0)),      // Write success code to tohost
         ]);
 
         // Execute and handle memory operations (will terminate early on tohost write)
@@ -1055,7 +1055,7 @@ fn test_cpu_csr_set_clear() {
             (0x24, sw(0, 6, 0x108)),    // Store x6 to verify final CSR value
             (0x28, addi(7, 0, -16)),    // x7 = tohost address
             (0x2C, addi(8, 0, 1)),      // x8 = success code
-            (0x30, sw(8, 7, 0)),        // Write to tohost
+            (0x30, sw(7, 8, 0)),        // Write success code to tohost address
         ]);
 
         // Execute instructions (will terminate early on tohost write)
@@ -1300,7 +1300,7 @@ fn test_cpu_m_extension_program() {
             (0x24, sw(0, 9, 0x100)), // Store final result
             (0x28, addi(10, 0, -16)), // x10 = tohost address
             (0x2C, addi(11, 0, 1)),   // x11 = success code
-            (0x30, sw(11, 10, 0)),    // Write to tohost
+            (0x30, sw(10, 11, 0)),    // Write to tohost
         ]);
 
         // Execute instructions (will terminate early on tohost write)

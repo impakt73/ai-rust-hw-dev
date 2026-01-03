@@ -246,17 +246,6 @@ where
             // Re-evaluate after setting memory signals
             self.cpu.eval();
             
-            // Check if instruction complete
-            if self.cpu.instr_complete != 0 {
-                break;
-            }
-            
-            // Safety check
-            cycles += 1;
-            if cycles >= MAX_CYCLES_PER_INSTR {
-                panic!("Instruction exceeded maximum cycles ({})", MAX_CYCLES_PER_INSTR);
-            }
-            
             // Clock edge
             self.cpu.clk = 0;
             self.cpu.eval();
@@ -271,18 +260,18 @@ where
             if let Some(ref mut vcd) = self.vcd {
                 vcd.dump(self.cycle_count + 3);
             }
+            
+            // Safety check
+            cycles += 1;
+            if cycles >= MAX_CYCLES_PER_INSTR {
+                panic!("Instruction exceeded maximum cycles ({})", MAX_CYCLES_PER_INSTR);
+            }
+            
+            // Check if instruction complete (AFTER clock edge)
+            if self.cpu.instr_complete != 0 {
+                break;
+            }
         }
-        
-        // Final clock edge to complete instruction
-        self.cpu.clk = 0;
-        self.cpu.eval();
-        self.cpu.clk = 1;
-        self.cpu.eval();
-        
-        // Increment cycle count
-        self.cycle_count += 1;
-        
-        // Dump VCD if enabled
         if let Some(ref mut vcd) = self.vcd {
             vcd.dump(self.cycle_count + 3);
         }
