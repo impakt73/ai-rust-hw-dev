@@ -1,7 +1,6 @@
 pub mod bus;
 pub mod dram;
 pub mod fifo;
-pub mod memory;
 pub mod packet_transport;
 pub mod sim;
 
@@ -12,7 +11,6 @@ pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, Simulator};
 
 use bus::SystemBus;
-use dram::Dram;
 use std::path::Path;
 
 /// Load an ELF file into a simulator's memory
@@ -31,16 +29,24 @@ use std::path::Path;
 /// * `Err(Box<dyn std::error::Error>)` - An error if loading fails
 ///
 /// # Examples
-/// ```ignore
-/// use cpu_sim::*;
-/// use std::path::Path;
-///
+/// ```no_run
+/// # use cpu_sim::*;
+/// # use std::path::Path;
+/// #
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let runtime = riscv_core::create_cpu_runtime()?;
-/// let bus = bus::SystemBus::new(dram::Dram::new());
-/// let mut sim = Simulator::new(&runtime, bus, false, None, None)?;
+/// let bus = bus::SystemBus::new();
+/// let mut sim = Simulator::new(
+///     &runtime,
+///     bus,
+///     false,
+///     None::<fn(u32)>,
+///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+/// )?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok(())
+/// # }
 /// ```
 pub fn load_elf<F, T>(
     sim: &mut Simulator<F, T>,
@@ -162,9 +168,8 @@ where
     F: FnMut(u32),
     T: FnMut(&InstructionTrace),
 {
-    // Create empty DRAM and system bus
-    let dram = Dram::new();
-    let bus = SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
 
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()
@@ -375,9 +380,8 @@ fn run_elf_in_simulator_internal<F>(
 where
     F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
 {
-    // Create empty DRAM and system bus
-    let dram = Dram::new();
-    let bus = SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
 
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime()
@@ -527,7 +531,8 @@ where
 
 // Disabled broken test module
 // #[cfg(test)]
-// mod test_minimal;
+#[cfg(test)]
+mod test_minimal;
 
 #[cfg(test)]
 mod test_byte_enable;

@@ -459,9 +459,8 @@ fn test_packet_protocol_end_to_end() {
 
     let elf_path = test_program_path("packet_test.elf");
 
-    // Create empty DRAM and system bus
-    let dram = crate::dram::Dram::new();
-    let bus = crate::bus::SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = crate::bus::SystemBus::new();
 
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -722,9 +721,8 @@ fn test_println_macro() {
 
     let elf_path = test_program_path("println_test.elf");
 
-    // Create empty DRAM and system bus
-    let dram = crate::dram::Dram::new();
-    let bus = crate::bus::SystemBus::new(dram);
+    // Create system bus with internal DRAM
+    let bus = crate::bus::SystemBus::new();
 
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
