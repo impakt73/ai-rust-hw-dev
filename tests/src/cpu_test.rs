@@ -58,6 +58,7 @@ impl CpuTestHarness {
 
         // Perform reset sequence
         dut.rst_n = 0;
+        dut.boot_addr = 0x0;  // Set boot address
         dut.clk = 0;
         dut.eval();
         clock_cycle!(dut);
@@ -154,8 +155,8 @@ impl CpuTestHarness {
         self.step_cycle_with_callbacks(dut, None::<fn(u32, u32)>, None::<fn(u32)>);
     }
 
-    /// Execute a single CPU cycle with memory handling
-    /// Optional `callback` (if provided) is called with `debug_rd_data` after the second `dut.eval()` and before the clock cycle.
+    /// Execute a single instruction (multi-cycle)
+    /// Loops until instr_complete signal is asserted
     fn step_cycle_with_callbacks<F, E>(
         &mut self,
         dut: &mut Top,
@@ -165,38 +166,73 @@ impl CpuTestHarness {
         F: FnMut(u32, u32),
         E: FnMut(u32),
     {
-        // Fetch instruction (assemble 4 bytes from imem)
-        let pc = dut.imem_addr;
-        let b0 = *self.imem.get(&pc).unwrap_or(&0) as u32;
-        let b1 = *self.imem.get(&(pc + 1)).unwrap_or(&0) as u32;
-        let b2 = *self.imem.get(&(pc + 2)).unwrap_or(&0) as u32;
-        let b3 = *self.imem.get(&(pc + 3)).unwrap_or(&0) as u32;
-        let instruction = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-        dut.imem_data = instruction;
-
-        dut.eval();
-
-        self.handle_memory_read(dut);
-
-        dut.eval();
-
-        // Invoke optional callback with (pc, debug_rd_data, dmem_rdata) AFTER second eval and BEFORE writes/clock
-        if let Some(cb) = debug_rd_callback.as_mut() {
-            cb(pc, dut.debug_rd_data);
-        }
-
-        // Handle data memory writes
-        self.handle_memory_write(dut);
-
-        if let Some(cb) = tohost_callback.as_mut() {
-            if dut.dmem_we != 0 && dut.dmem_addr == TOHOST_ADDR {
-                let tohost_value = dut.dmem_wdata;
-                cb(tohost_value);
+        const MAX_CYCLES_PER_INSTR: usize = 100;  // Safety limit
+        let mut cycles = 0;
+        
+        // Multi-cycle execution loop
+        loop {
+            // Evaluate combinational logic
+            dut.eval();
+            
+            // Handle instruction memory (zero-latency)
+            if dut.imem_req != 0 {
+                let pc = dut.imem_addr;
+                let b0 = *self.imem.get(&pc).unwrap_or(&0) as u32;
+                let b1 = *self.imem.get(&(pc + 1)).unwrap_or(&0) as u32;
+                let b2 = *self.imem.get(&(pc + 2)).unwrap_or(&0) as u32;
+                let b3 = *self.imem.get(&(pc + 3)).unwrap_or(&0) as u32;
+                let instruction = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+                dut.imem_data = instruction;
+                dut.imem_ready = 1;
+            } else {
+                dut.imem_ready = 0;
+            }
+            
+            // Handle data memory (zero-latency)
+            if dut.dmem_req != 0 {
+                if dut.dmem_re != 0 {
+                    self.handle_memory_read(dut);
+                }
+                dut.dmem_ready = 1;
+            } else {
+                dut.dmem_ready = 0;
+            }
+            
+            // Re-evaluate after setting memory signals
+            dut.eval();
+            
+            // Invoke optional callback with (pc, debug_rd_data) AFTER eval
+            if let Some(cb) = debug_rd_callback.as_mut() {
+                let pc = dut.imem_addr;
+                cb(pc, dut.debug_rd_data);
+            }
+            
+            // Handle data memory writes
+            if dut.dmem_req != 0 && dut.dmem_we != 0 {
+                self.handle_memory_write(dut);
+                
+                if let Some(cb) = tohost_callback.as_mut() {
+                    if dut.dmem_addr == TOHOST_ADDR {
+                        let tohost_value = dut.dmem_wdata;
+                        cb(tohost_value);
+                    }
+                }
+            }
+            
+            // Clock cycle
+            clock_cycle!(dut);
+            
+            // Safety check
+            cycles += 1;
+            if cycles >= MAX_CYCLES_PER_INSTR {
+                panic!("Instruction exceeded maximum cycles (possible illegal instruction or infinite loop)");
+            }
+            
+            // Check if instruction complete (AFTER clock edge)
+            if dut.instr_complete != 0 {
+                break;
             }
         }
-
-        // Clock cycle
-        clock_cycle!(dut);
     }
 
     fn handle_memory_read(&mut self, dut: &mut Top) {

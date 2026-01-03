@@ -178,105 +178,115 @@ where
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
     }
 
-    /// Execute a single simulation step (one cycle)
+    /// Execute a single simulation step (one instruction - may take multiple cycles)
     /// Returns Some(tohost_value) if halt detected, None otherwise
     pub fn step(&mut self) -> Option<u32> {
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-
-        // Instruction Fetch
-        let pc = self.cpu.imem_addr;
-        let instruction = self.bus.read_word(pc);
-        self.cpu.imem_data = instruction;
-
-        // First evaluation: Decode instruction and compute addresses
-        self.cpu.eval();
-
-        // Data Memory Read
-        let dmem_addr = self.cpu.dmem_addr;
-        let dmem_size = self.cpu.dmem_size;
-        let rdata = if self.cpu.dmem_re != 0 {
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // Byte operation
-                    self.bus.read_byte(dmem_addr) as u32
-                }
-                0b01 => {
-                    // Halfword operation
-                    self.bus.read_halfword(dmem_addr) as u32
-                }
-                _ => {
-                    // Word operation (default)
-                    self.bus.read_word(dmem_addr)
-                }
-            }
-        } else {
-            0
-        };
-        self.cpu.dmem_rdata = rdata;
-
-        // Second evaluation: Propagate loaded data
-        self.cpu.eval();
-
-        // Data Memory Write
+        const MAX_CYCLES_PER_INSTR: u32 = 100;  // Safety limit for variable latency
+        
+        let mut cycles = 0;
         let mut halt_value = None;
-        if self.cpu.dmem_we != 0 {
-            let wdata = self.cpu.dmem_wdata;
-
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // SB - Store Byte
-                    self.bus.write_byte(dmem_addr, wdata as u8);
-                }
-                0b01 => {
-                    // SH - Store Halfword
-                    self.bus.write_halfword(dmem_addr, wdata as u16);
-                }
-                _ => {
-                    // SW - Store Word (default)
-                    self.bus.write_word(dmem_addr, wdata);
-                }
+        
+        // Multi-cycle execution loop - continue until instruction completes
+        loop {
+            // Evaluate combinational logic
+            self.cpu.eval();
+            
+            // Handle instruction memory with zero-latency (for now)
+            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
+            // Variable latency can be added by implementing a counter-based delay.
+            if self.cpu.imem_req != 0 {
+                let addr = self.cpu.imem_addr;
+                let data = self.bus.read_word(addr);
+                self.cpu.imem_data = data;
+                self.cpu.imem_ready = 1;  // Always ready (zero latency)
+            } else {
+                self.cpu.imem_ready = 0;
             }
-
-            // Check for halt signal
-            if dmem_addr == TOHOST_ADDR {
-                halt_value = Some(wdata);
+            
+            // Handle data memory with zero-latency (for now)
+            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
+            // Variable latency can be added by implementing a counter-based delay.
+            if self.cpu.dmem_req != 0 {
+                let addr = self.cpu.dmem_addr;
+                let size = self.cpu.dmem_size;
+                
+                if self.cpu.dmem_we != 0 {
+                    // Data Memory Write
+                    let wdata = self.cpu.dmem_wdata;
+                    match size {
+                        0b00 => self.bus.write_byte(addr, wdata as u8),
+                        0b01 => self.bus.write_halfword(addr, wdata as u16),
+                        _ => self.bus.write_word(addr, wdata),
+                    }
+                    
+                    // Check for halt signal
+                    if addr == TOHOST_ADDR {
+                        halt_value = Some(wdata);
+                    }
+                    
+                    self.cpu.dmem_ready = 1;  // Always ready (zero latency)
+                } else if self.cpu.dmem_re != 0 {
+                    // Data Memory Read
+                    let rdata = match size {
+                        0b00 => self.bus.read_byte(addr) as u32,
+                        0b01 => self.bus.read_halfword(addr) as u32,
+                        _ => self.bus.read_word(addr),
+                    };
+                    self.cpu.dmem_rdata = rdata;
+                    self.cpu.dmem_ready = 1;  // Always ready (zero latency)
+                } else {
+                    self.cpu.dmem_ready = 0;
+                }
+            } else {
+                self.cpu.dmem_ready = 0;
+            }
+            
+            // Re-evaluate after setting memory signals
+            self.cpu.eval();
+            
+            // Check if instruction complete
+            if self.cpu.instr_complete != 0 {
+                break;
+            }
+            
+            // Safety check
+            cycles += 1;
+            if cycles >= MAX_CYCLES_PER_INSTR {
+                panic!("Instruction exceeded maximum cycles ({})", MAX_CYCLES_PER_INSTR);
+            }
+            
+            // Clock edge
+            self.cpu.clk = 0;
+            self.cpu.eval();
+            self.cpu.clk = 1;
+            self.cpu.eval();
+            
+            // Increment cycle count
+            self.cycle_count += 1;
+            
+            // Dump VCD if enabled (after clock edge, with proper timestamp)
+            // Reset sequence uses timestamps 0-3, so execution cycles start at 4
+            if let Some(ref mut vcd) = self.vcd {
+                vcd.dump(self.cycle_count + 3);
             }
         }
-
-        // Sample debug signals BEFORE clock tick
-        let trace = if self.print_inst_trace || self.trace_callback.is_some() {
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
-            Some(InstructionTrace::from_instruction(
-                pc,
-                instruction,
-                rs1_value,
-                rs2_value,
-                rd_value,
-            ))
-        } else {
-            None
-        };
-
-        // Clock tick
+        
+        // Final clock edge to complete instruction
         self.cpu.clk = 0;
         self.cpu.eval();
         self.cpu.clk = 1;
         self.cpu.eval();
-
-        // Increment cycle count before dumping to VCD
+        
+        // Increment cycle count
         self.cycle_count += 1;
-
-        // Dump VCD if enabled (after clock edge, with proper timestamp)
-        // Reset sequence uses timestamps 0-3, so execution cycles start at 4
+        
+        // Dump VCD if enabled
         if let Some(ref mut vcd) = self.vcd {
             vcd.dump(self.cycle_count + 3);
         }
-
+        
         // Process FIFO TX data
         // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
         if let Some(ref mut callback) = self.fifo_callback {
@@ -301,22 +311,32 @@ where
             // No callback and no auto-printing - drain FIFO to prevent accumulation
             while self.bus.fifo.tx.pop_front().is_some() {}
         }
-
-        // Call trace callback if provided
-        if let Some(ref mut callback) = self.trace_callback {
-            if let Some(ref trace_data) = trace {
-                callback(trace_data);
-            }
-        }
-
-        // Debug logging
+        
+        // Trace printing (simplified - only at instruction completion)
         if self.print_inst_trace {
-            if let Some(ref trace_data) = trace {
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, trace_data
-                );
-            }
+            let pc = self.cpu.imem_addr;
+            let instruction = self.cpu.imem_data;
+            println!(
+                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
+                self.cycle_count, pc, instruction, cycles + 1
+            );
+        }
+        
+        // Call trace callback if provided (at instruction completion)
+        if let Some(ref mut callback) = self.trace_callback {
+            let pc = self.cpu.imem_addr;
+            let instruction = self.cpu.imem_data;
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+            let trace = InstructionTrace::from_instruction(
+                pc,
+                instruction,
+                rs1_value,
+                rs2_value,
+                rd_value,
+            );
+            callback(&trace);
         }
 
         halt_value

@@ -291,7 +291,9 @@ module top (
             end
             
             S_DECODE: begin
-                case (opcode_reg)
+                // Use combinational decoder outputs (opcode, not opcode_reg)
+                // because decode_reg_write captures them THIS cycle
+                case (opcode)
                     7'b0110011,  // R-type
                     7'b0010011,  // I-type arithmetic
                     7'b0110111,  // LUI
@@ -308,9 +310,9 @@ module top (
                         next_state = S_BRANCH;
                     
                     7'b1110011: begin  // SYSTEM
-                        if (is_ecall_reg || is_ebreak_reg)
+                        if (is_ecall || is_ebreak)
                             next_state = S_HALT;
-                        else if (is_csr_reg)
+                        else if (is_csr)
                             next_state = S_CSR;
                         else  // FENCE
                             next_state = S_FETCH;
@@ -398,7 +400,7 @@ module top (
                 b_reg_write = 1'b1;
                 decode_reg_write = 1'b1;
                 // FENCE completes here
-                if (is_fence_reg) begin
+                if (is_fence) begin
                     pc_write = 1'b1;
                     instr_complete = 1'b1;
                 end
