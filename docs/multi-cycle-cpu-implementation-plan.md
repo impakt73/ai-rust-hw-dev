@@ -59,7 +59,7 @@
 | `rtl/top.sv` | **MAJOR** | Add FSM, staging registers, multi-cycle control, memory handshaking |
 | `rtl/pc_control.sv` | **REMOVE** | Logic moved into top.sv FSM |
 | `rtl/mem_interface.sv` | **MAJOR** | Add ready/valid handshaking for variable-latency memory |
-| `rtl/writeback_mux.sv` | Minor | Selection driven by registered signals |
+| `rtl/writeback_mux.sv` | Minor | Drive mux select and writeback control from registered FSM signals (e.g., `wb_sel` → `wb_sel_reg`, `mem_to_reg` → `mem_to_reg_reg`, `csr_wen` → `csr_wen_reg`) instead of combinational decoder outputs |
 | `rtl/decoder.sv` | None | Unchanged, outputs captured in registers |
 | `rtl/alu.sv` | None | Unchanged, used in different cycles |
 | `rtl/regfile.sv` | None | Unchanged, write enable gated by FSM |
@@ -187,7 +187,7 @@ end
 | Jump (JAL/JALR) | 4 + mem | FETCH (wait) → DECODE → EXECUTE → WRITEBACK |
 | CSR | 4 + mem | FETCH (wait) → DECODE → CSR → WRITEBACK |
 | FENCE | 2 + mem | FETCH (wait) → DECODE |
-| ECALL/EBREAK | 2 + mem | FETCH (wait) → DECODE → HALT |
+| ECALL/EBREAK | 3 + mem | FETCH (wait) → DECODE → HALT |
 
 **"+ mem"** indicates waiting for memory ready signal (variable latency)
 
@@ -308,22 +308,42 @@ pub struct MemoryController {
 
 impl MemoryController {
     pub fn handle_imem_request(&mut self, addr: u32) -> bool {
-        // Simulate 1-3 cycle random latency
-        if self.imem_latency_counter > 0 {
+        // Simulate 1-3 cycle random latency per request
+        if self.imem_latency_counter == 0 {
+            // New request: choose a fresh random latency between 1 and 3 cycles
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            self.imem_latency_counter = rng.gen_range(1..=3);
+        }
+
+        if self.imem_latency_counter > 1 {
             self.imem_latency_counter -= 1;
             return false;  // Not ready yet
         }
-        // Ready now
+
+        // self.imem_latency_counter == 1: ready this cycle.
+        // Reset to 0 so the next request gets a new random latency.
+        self.imem_latency_counter = 0;
         true
     }
     
     pub fn handle_dmem_request(&mut self, addr: u32, is_write: bool) -> bool {
-        // Simulate 1-5 cycle random latency
-        if self.dmem_latency_counter > 0 {
+        // Simulate 1-5 cycle random latency per request
+        if self.dmem_latency_counter == 0 {
+            // New request: choose a fresh random latency between 1 and 5 cycles
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            self.dmem_latency_counter = rng.gen_range(1..=5);
+        }
+
+        if self.dmem_latency_counter > 1 {
             self.dmem_latency_counter -= 1;
             return false;  // Not ready yet
         }
-        // Ready now
+
+        // self.dmem_latency_counter == 1: ready this cycle.
+        // Reset to 0 so the next request gets a new random latency.
+        self.dmem_latency_counter = 0;
         true
     }
 }
@@ -514,7 +534,7 @@ always_comb begin
         end
         
         S_DECODE: begin
-            case (opcode)
+            case (opcode_reg)
                 7'b0110011,  // R-type
                 7'b0010011,  // I-type arithmetic
                 7'b0110111,  // LUI
@@ -531,9 +551,9 @@ always_comb begin
                     next_state = S_BRANCH;
                 
                 7'b1110011: begin  // SYSTEM
-                    if (is_ecall || is_ebreak)
+                    if (is_ecall_reg || is_ebreak_reg)
                         next_state = S_HALT;
-                    else if (is_csr)
+                    else if (is_csr_reg)
                         next_state = S_CSR;
                     else  // FENCE
                         next_state = S_FETCH;
@@ -624,7 +644,7 @@ always_comb begin
             b_reg_write = 1'b1;
             decode_reg_write = 1'b1;
             // FENCE completes here
-            if (is_fence) begin
+            if (is_fence_reg) begin
                 pc_write = 1'b1;
                 instr_complete = 1'b1;
             end
@@ -666,7 +686,12 @@ always_comb begin
         end
         
         S_CSR: begin
-            // CSR operations
+            // CSR operations: CSR read/modify happens here, prepare for writeback
+            // The CSR value is already available, will write to rd in WRITEBACK
+        end
+        
+        S_HALT: begin
+            // HALT state: all control signals remain inactive (default zeros) to fully quiesce the core
         end
         
         default: begin
@@ -692,6 +717,10 @@ always_comb begin
             next_pc_value = pc + imm_j_reg;
         else if (opcode_reg == 7'b1100111)  // JALR
             next_pc_value = (a_reg + imm_i_reg) & ~32'h1;
+        // Note: For JAL/JALR, the return address (PC+4) is computed by the ALU
+        // during S_EXECUTE and stored in alu_out_reg, which gets written to rd
+        // during S_WRITEBACK. The ALU should be configured to add PC+4 for these
+        // instructions via appropriate control signal settings.
     end
 end
 
@@ -724,13 +753,15 @@ module mem_interface (
     // ...
 );
     // Implementation handles req/ready protocol
-    // For simple memory, ready can just follow req
+    // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing only.
+    // In a real/production design, replace this with proper multi-cycle, variable-latency
+    // memory handling (e.g., wait states, internal buffering, and handshake logic).
     assign dmem_ready = dmem_req;
     
 endmodule
 ```
 
-### Phase 5: Remove pc_control.sv (1 day)
+### Phase 5: Remove pc_control.sv (0.5 days)
 
 1. Delete `rtl/pc_control.sv`
 2. Remove instantiation from `rtl/top.sv`
