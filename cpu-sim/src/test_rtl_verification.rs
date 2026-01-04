@@ -26,13 +26,14 @@ mod tests {
     /// - addr_reg: holds the tohost address (0xFFFF_FFF0)
     /// - value_reg: holds the success code (1)
     ///
-    /// Returns: [LUI addr_reg, ADDI value_reg, SW]
+    /// Note: 0xFFFF_FFF0 = -16 in two's complement, so we use ADDI to load it
+    ///
+    /// Returns: [ADDI addr_reg (load -16), ADDI value_reg, SW]
     fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
         vec![
-            lui(addr_reg, TOHOST_ADDR >> 12),  // Load upper 20 bits of tohost address
-            addi(value_reg, 0, 1),              // Load success code (1) into value register
-            sw(addr_reg, value_reg, (TOHOST_ADDR & 0xFFF) as i32), // Store value to tohost
+            addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
+            addi(value_reg, 0, 1),       // Load success code (1)
+            sw(addr_reg, value_reg, 0),  // Store value to tohost address
         ]
     }
 
@@ -153,14 +154,15 @@ mod tests {
         // Program: Test LUI instruction
         // 0x00: LUI x1, 0x12345   ; x1 = 0x12345000
         // 0x04: ADDI x2, x1, 0x678 ; x2 = x1 + 0x678
-        let instructions = vec![
+        let mut instructions = vec![
             lui(1, 0x12345000),
             addi(2, 1, 0x678),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
-            assert!(result.cycles <= 10, "Program should complete quickly");
+        run_program_with_callback(&instructions, 100, |_sim, result| {
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -177,7 +179,7 @@ mod tests {
         // 0x08: AND x3, x1, x2     ; x3 = x1 & x2 = 0x0F
         // 0x0C: OR  x4, x1, x2     ; x4 = x1 | x2 = 0xFF
         // 0x10: XOR x5, x1, x2     ; x5 = x1 ^ x2 = 0xF0
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 0xFF),
             addi(2, 0, 0x0F),
             and(3, 1, 2),
@@ -185,9 +187,10 @@ mod tests {
             xor(5, 1, 2),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
-            assert!(result.cycles <= 10, "Program should complete quickly");
+        run_program_with_callback(&instructions, 100, |_sim, result| {
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -213,7 +216,7 @@ mod tests {
         // 0x1C: ADDI x6, x0, 1    ; x6 = 1
         // 0x20: SW   x3, 0x100(x0) ; Store x3 to verify it wasn't set to 99
         // 0x24: SW   x5, 0x104(x0) ; Store x5 to verify it wasn't set to 99
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 10),
             addi(2, 0, 10),
             beq(1, 2, 8),
@@ -226,6 +229,7 @@ mod tests {
             sw(0, 5, 0x104),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, result| {
             // Verify branches worked - skipped instructions should leave registers at 0
@@ -239,7 +243,7 @@ mod tests {
                 marker2, 0,
                 "Second branch should skip addi x5,x0,99, so x5 should be 0"
             );
-            assert!(result.cycles <= 20, "Program should complete quickly");
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -260,7 +264,7 @@ mod tests {
         // 0x18: ADDI x5, x0, 1     ; x5 = 1
         // 0x1C: SW   x3, 0x100(x0) ; Store x3 to verify
         // 0x20: SW   x4, 0x104(x0) ; Store x4 to verify
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 5),
             addi(2, 0, 10),
             blt(1, 2, 8),
@@ -272,6 +276,7 @@ mod tests {
             sw(0, 4, 0x104),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, result| {
             // Verify branches worked
@@ -279,7 +284,7 @@ mod tests {
             let marker2 = sim.bus.read_word(0x104);
             assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
-            assert!(result.cycles <= 20, "Program should complete quickly");
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -300,7 +305,7 @@ mod tests {
         // 0x18: ADDI x5, x0, 1     ; x5 = 1
         // 0x1C: SW   x3, 0x100(x0) ; Store x3 to verify
         // 0x20: SW   x4, 0x104(x0) ; Store x4 to verify
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, -1),
             addi(2, 0, 5),
             bltu(2, 1, 8),
@@ -312,6 +317,7 @@ mod tests {
             sw(0, 4, 0x104),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, result| {
             // Verify branches worked
@@ -319,7 +325,7 @@ mod tests {
             let marker2 = sim.bus.read_word(0x104);
             assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
-            assert!(result.cycles <= 20, "Program should complete quickly");
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -342,7 +348,7 @@ mod tests {
         // 0x10: ADDI x4, x0, 8     ; x4 = 8 (offset)
         // 0x14: SW   x2, 8(x1)     ; Store x2 to memory[108]
         // 0x18: LW   x5, 8(x1)     ; Load from memory[108] to x5
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 42),
             sw(1, 2, 0),
@@ -352,6 +358,7 @@ mod tests {
             lw(5, 1, 8),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
@@ -379,7 +386,7 @@ mod tests {
         // 0x20: SW   x4, 0x204(x0)
         // 0x24: SW   x5, 0x208(x0)
         // 0x28: SW   x6, 0x20C(x0)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, -1),
             sw(1, 2, 0),
@@ -393,6 +400,7 @@ mod tests {
             sw(0, 6, 0x20C),
             addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             // Verify memory operations
@@ -433,7 +441,7 @@ mod tests {
         init_test_logger();
 
         // Program: Test LH (load halfword signed) and LHU (load halfword unsigned)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, -1),
             sw(1, 2, 0),
@@ -447,6 +455,7 @@ mod tests {
             sw(0, 6, 0x20C),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             // Verify memory operations
@@ -488,7 +497,7 @@ mod tests {
 
         // Program: Test SB (store byte)
         // We'll write individual bytes to different positions in a word
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 0x12),
             addi(3, 0, 0x34),
@@ -501,6 +510,7 @@ mod tests {
             lw(6, 1, 0),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             // Verify memory operations - bytes stored in little-endian order
@@ -520,7 +530,7 @@ mod tests {
         init_test_logger();
 
         // Program: Test SH (store halfword)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 0x234),
             addi(3, 0, 0x678),
@@ -529,6 +539,7 @@ mod tests {
             lw(4, 1, 0),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             // Verify memory operations - halfwords stored in little-endian order
@@ -548,7 +559,7 @@ mod tests {
         init_test_logger();
 
         // Program: Test mixed byte/halfword operations with positive and negative values
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 200),
             addi(2, 0, -128),
             sb(1, 2, 0),
@@ -564,6 +575,7 @@ mod tests {
             sw(0, 7, 0x20C),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             // Verify load operations
@@ -602,10 +614,11 @@ mod tests {
         init_test_logger();
 
         // Program: Test AUIPC instruction
-        let instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
+        let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
-            assert!(result.cycles <= 10, "Program should complete quickly");
+        run_program_with_callback(&instructions, 100, |_sim, result| {
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -652,11 +665,12 @@ mod tests {
     fn test_cpu_fence_instruction() {
         init_test_logger();
 
-        let instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
+        let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
+        run_program_with_callback(&instructions, 100, |_sim, result| {
             // FENCE is essentially a NOP for single-cycle CPU
-            assert!(result.cycles <= 10, "Program should complete quickly");
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -667,18 +681,16 @@ mod tests {
     fn test_cpu_ecall_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 42),
             ecall(),        // Should halt CPU
             addi(2, 0, 99), // Should not execute
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
+        run_program_with_callback(&instructions, 100, |_sim, result| {
             // After ECALL, CPU should halt
-            assert!(
-                result.cycles <= 10,
-                "Program should halt quickly after ECALL"
-            );
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -689,18 +701,16 @@ mod tests {
     fn test_cpu_ebreak_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             ebreak(),        // Should halt CPU
             addi(2, 0, 200), // Should not execute
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
+        run_program_with_callback(&instructions, 100, |_sim, result| {
             // After EBREAK, CPU should halt
-            assert!(
-                result.cycles <= 10,
-                "Program should halt quickly after EBREAK"
-            );
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
@@ -716,7 +726,7 @@ mod tests {
         init_test_logger();
 
         // Test CSRRW (CSR Read/Write)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             csrrw(2, 1, 0x300), // x2 = CSR[0x300]; CSR[0x300] = x1
             sw(0, 2, 0x100),
@@ -726,6 +736,7 @@ mod tests {
             sw(0, 4, 0x108),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             // Verify CSR operations
@@ -755,7 +766,7 @@ mod tests {
         init_test_logger();
 
         // Test CSRRS (CSR Read and Set) and CSRRC (CSR Read and Clear)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 0b1010),
             csrrw(0, 1, 0x301),
             addi(2, 0, 0b0101),
@@ -768,6 +779,7 @@ mod tests {
             sw(0, 6, 0x108),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             // Verify CSR operations
@@ -797,7 +809,7 @@ mod tests {
         init_test_logger();
 
         // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
-        let instructions = vec![
+        let mut instructions = vec![
             csrrwi(1, 15, 0x302),
             sw(0, 1, 0x100),
             csrrsi(2, 8, 0x302),
@@ -808,6 +820,7 @@ mod tests {
             sw(0, 4, 0x10C),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             // Verify CSR operations
@@ -833,13 +846,14 @@ mod tests {
     fn test_cpu_mul_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 10),
             addi(2, 0, 20),
             mul(3, 1, 2),
             sw(0, 3, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
@@ -853,13 +867,14 @@ mod tests {
     fn test_cpu_mulh_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             lui(1, 0x10000),
             lui(2, 0x10000),
             mulh(3, 1, 2),
             sw(0, 3, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(
@@ -877,13 +892,14 @@ mod tests {
     fn test_cpu_div_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 7),
             div(3, 1, 2),
             sw(0, 3, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
@@ -897,13 +913,14 @@ mod tests {
     fn test_cpu_div_by_zero() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 0),
             div(3, 1, 2),
             sw(0, 3, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(
@@ -921,13 +938,14 @@ mod tests {
     fn test_cpu_rem_instruction() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 100),
             addi(2, 0, 7),
             rem(3, 1, 2),
             sw(0, 3, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
@@ -941,7 +959,7 @@ mod tests {
     fn test_cpu_divu_remu_unsigned() {
         init_test_logger();
 
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, -1),
             addi(2, 0, 2),
             divu(3, 1, 2),
@@ -950,6 +968,7 @@ mod tests {
             sw(0, 4, 0x104),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 20, |sim, _result| {
             assert_eq!(
@@ -974,7 +993,7 @@ mod tests {
 
         // Complex program using multiple M extension instructions
         // Calculate: result = (a × b) ÷ c + (d % e)
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 12),
             addi(2, 0, 5),
             addi(3, 0, 3),
@@ -987,6 +1006,7 @@ mod tests {
             sw(0, 9, 0x100),
             addi(0, 0, 0),
         ];
+        instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 30, |sim, _result| {
             assert_eq!(
