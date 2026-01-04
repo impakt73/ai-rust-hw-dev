@@ -476,3 +476,6 @@ mod test_alloc_only;
 
 #[cfg(test)]
 mod test_programmatic_memory;
+
+#[cfg(test)]
+mod test_rtl_verification;
