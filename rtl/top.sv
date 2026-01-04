@@ -123,9 +123,6 @@ module top (
     logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
     logic        decode_reg_write;
     
-    // PC capture register (captured in DECODE state to preserve PC before it changes)
-    logic [31:0] pc_at_decode;
-    
     // Debug trace data registers (capture operand values at instruction completion)
     logic [31:0] trace_rs1_data_reg;
     logic [31:0] trace_rs2_data_reg;
@@ -261,14 +258,6 @@ module top (
     end
 
     
-    // PC Capture Register (capture PC in DECODE state before it can change)
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            pc_at_decode <= 32'h0;
-        else if (current_state == S_DECODE)
-            pc_at_decode <= pc;
-    end
-    
     // Completed Instruction Registers (captured at instruction completion, before next fetch)
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -279,8 +268,8 @@ module top (
             trace_rd_data_reg <= 32'h0;
         end else if (instr_complete) begin
             // Capture PC and instruction at completion
-            // Use pc_at_decode which was captured in DECODE state (before PC can change)
-            completed_pc_reg <= pc_at_decode;
+            // Use pc directly - it hasn't been updated yet on this clock edge
+            completed_pc_reg <= pc;
             completed_instr_reg <= ir_reg;
             // Capture operand/result values for trace
             // Note: a_reg/b_reg hold the operands used by this instruction

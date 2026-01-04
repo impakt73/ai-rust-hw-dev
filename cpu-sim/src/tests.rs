@@ -216,12 +216,10 @@ fn test_trace_callback() {
 
     // NOTE: Use run_elf_with_fsm_debug() instead of run_elf_with_trace_callback()
     // to enable detailed FSM state printing for debugging instruction trace issues
-    let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback))
-        .expect("Trace test simulation should succeed");
-    
-    // Uncomment this and comment out the above line to enable FSM state debugging:
     // let result = run_elf_with_fsm_debug(&elf_path, 500, false, Some(trace_callback))
     //     .expect("Trace test simulation should succeed");
+    let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback))
+        .expect("Trace test simulation should succeed");
 
     assert_tohost(&result, 0x2a, "trace test program");
 
