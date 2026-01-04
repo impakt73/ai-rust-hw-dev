@@ -17,6 +17,25 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
+    /// Generate tohost termination sequence
+    ///
+    /// Generates a sequence of instructions that write a success code to the tohost address.
+    /// This is required for multi-cycle CPU implementations to signal program completion.
+    ///
+    /// The sequence uses two registers:
+    /// - addr_reg: holds the tohost address (0xFFFF_FFF0)
+    /// - value_reg: holds the success code (1)
+    ///
+    /// Returns: [LUI addr_reg, ADDI value_reg, SW]
+    fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
+        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+        vec![
+            lui(addr_reg, TOHOST_ADDR >> 12),  // Load upper 20 bits of tohost address
+            addi(value_reg, 0, 1),              // Load success code (1) into value register
+            sw(addr_reg, value_reg, (TOHOST_ADDR & 0xFFF) as i32), // Store value to tohost
+        ]
+    }
+
     /// Helper to run programmatic instructions with a callback for verification
     ///
     /// This helper encapsulates the pattern of:
@@ -91,19 +110,15 @@ mod tests {
         // 0x00: ADDI x1, x0, 5    ; x1 = 5
         // 0x04: ADDI x2, x0, 3    ; x2 = 3
         // 0x08: ADD  x3, x1, x2   ; x3 = x1 + x2 = 8
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 5),
             addi(2, 0, 3),
             add(3, 1, 2),
-            addi(0, 0, 0), // NOP to end
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
-            // In a single-cycle implementation, we verify CPU runs without errors
-            assert!(
-                result.cycles <= 10,
-                "CPU should complete in reasonable cycles"
-            );
+        run_program_with_callback(&instructions, 100, |_sim, result| {
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
     }
@@ -116,19 +131,15 @@ mod tests {
         // 0x00: ADDI x1, x0, 10   ; x1 = 10
         // 0x04: ADD  x2, x1, x1   ; x2 = x1 + x1 = 20
         // 0x08: SUB  x3, x2, x1   ; x3 = x2 - x1 = 10
-        let instructions = vec![
+        let mut instructions = vec![
             addi(1, 0, 10),
             add(2, 1, 1),
             sub(3, 2, 1),
-            addi(0, 0, 0), // NOP
         ];
+        instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 10, |_sim, result| {
-            // Verify program executed (exact cycle count may vary but should be small)
-            assert!(
-                result.cycles >= 3 && result.cycles <= 10,
-                "Should execute at least 3 instructions"
-            );
+        run_program_with_callback(&instructions, 100, |_sim, result| {
+            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
         })
         .expect("Program should run");
 
