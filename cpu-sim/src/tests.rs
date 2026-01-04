@@ -237,10 +237,22 @@ fn test_trace_callback() {
     println!("========================================");
     println!("Total instructions traced: {}", captured_traces.len());
 
-    // DEBUG: Print ALL captured traces
+    // DEBUG: Print ALL captured traces with full details
     println!("\nDEBUG: All captured instruction traces:");
     for (i, trace) in captured_traces.iter().enumerate() {
         println!("  [{}] PC=0x{:08x}, Type={:?}", i, trace.pc, trace.inst_type);
+        if let Some(rd) = &trace.rd {
+            println!("      rd: x{} = 0x{:08x}", rd.reg, rd.value);
+        }
+        if let Some(rs1) = &trace.rs1 {
+            println!("      rs1: x{} = 0x{:08x}", rs1.reg, rs1.value);
+        }
+        if let Some(rs2) = &trace.rs2 {
+            println!("      rs2: x{} = 0x{:08x}", rs2.reg, rs2.value);
+        }
+        if let Some(imm) = &trace.immediate {
+            println!("      immediate: {}", imm);
+        }
     }
     println!();
 

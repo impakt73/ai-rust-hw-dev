@@ -363,7 +363,7 @@ where
             let rd_value = self.cpu.debug_rd_data;
             
             // DEBUG: Print trace info
-            // println!("TRACE: PC=0x{:08x}, Instr=0x{:08x}", pc, instruction);
+            println!("TRACE CAPTURE: PC=0x{:08x}, Instr=0x{:08x}, cycle={}", pc, instruction, self.cycle_count);
             
             // Skip bogus traces at PC=0 (from reset state)
             if pc != 0 {

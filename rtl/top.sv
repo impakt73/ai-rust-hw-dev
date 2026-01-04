@@ -117,15 +117,19 @@ module top (
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
     logic        mem_to_reg_reg, branch_reg, jump_reg;
     
-    // Debug trace registers (capture PC and instruction at start of execution)
-    logic [31:0] trace_pc_reg;
-    logic [31:0] trace_instr_reg;
-    
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
     logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
     logic        decode_reg_write;
+    
+    // PC capture register (captured in DECODE state to preserve PC before it changes)
+    logic [31:0] pc_at_decode;
+    
+    // Debug trace data registers (capture operand values at instruction completion)
+    logic [31:0] trace_rs1_data_reg;
+    logic [31:0] trace_rs2_data_reg;
+    logic [31:0] trace_rd_data_reg;
     
     // Control Signals
     logic        pc_write;
@@ -255,17 +259,14 @@ module top (
             is_csr_reg <= is_csr;
         end
     end
+
     
-    // Debug Trace Registers (capture PC and instruction in S_FETCH for tracing)
+    // PC Capture Register (capture PC in DECODE state before it can change)
     always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            trace_pc_reg <= 32'h0;
-            trace_instr_reg <= 32'h0;
-        end else if (ir_write) begin
-            // Capture PC and instruction when we fetch (PC is stable here)
-            trace_pc_reg <= pc;
-            trace_instr_reg <= imem_data;
-        end
+        if (!rst_n)
+            pc_at_decode <= 32'h0;
+        else if (current_state == S_DECODE)
+            pc_at_decode <= pc;
     end
     
     // Completed Instruction Registers (captured at instruction completion, before next fetch)
@@ -273,10 +274,20 @@ module top (
         if (!rst_n) begin
             completed_pc_reg <= 32'h0;
             completed_instr_reg <= 32'h0;
+            trace_rs1_data_reg <= 32'h0;
+            trace_rs2_data_reg <= 32'h0;
+            trace_rd_data_reg <= 32'h0;
         end else if (instr_complete) begin
-            // Capture trace registers at instruction completion (before they get overwritten)
-            completed_pc_reg <= trace_pc_reg;
-            completed_instr_reg <= trace_instr_reg;
+            // Capture PC and instruction at completion
+            // Use pc_at_decode which was captured in DECODE state (before PC can change)
+            completed_pc_reg <= pc_at_decode;
+            completed_instr_reg <= ir_reg;
+            // Capture operand/result values for trace
+            // Note: a_reg/b_reg hold the operands used by this instruction
+            // rd_data is the result being written to the register file
+            trace_rs1_data_reg <= a_reg;
+            trace_rs2_data_reg <= b_reg;
+            trace_rd_data_reg <= rd_data;
         end
     end
     
@@ -636,10 +647,10 @@ module top (
         .rd_data(rd_data)
     );
     
-    // Debug outputs (use registered operands)
-    assign debug_rs1_data = a_reg;
-    assign debug_rs2_data = b_reg;
-    assign debug_rd_data = rd_data;
+    // Debug outputs for trace callback (use captured values at instruction completion)
+    assign debug_rs1_data = trace_rs1_data_reg;
+    assign debug_rs2_data = trace_rs2_data_reg;
+    assign debug_rd_data = trace_rd_data_reg;
     
     // Debug outputs for instruction tracing (completed instruction)
     assign debug_pc = completed_pc_reg;
