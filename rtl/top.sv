@@ -115,6 +115,7 @@ module top (
     // Control Signals
     logic        pc_write;
     logic        reg_write_en;
+    logic        csr_rdata_write;  // Control signal to latch CSR read data
     
     // Register file signals
     logic [31:0] rs1_data;
@@ -133,11 +134,13 @@ module top (
     // CSR signals
     logic [11:0] csr_addr;
     logic [31:0] csr_rdata;
+    logic [31:0] csr_rdata_reg;  // Registered CSR read data (captured before write)
     
     // Memory interface signals
     logic [31:0] formatted_load_data;
     
-    assign csr_addr = imm_i_reg[11:0];  // CSR address from registered immediate field
+    // CSR address: use combinational imm_i in S_DECODE (for read), registered imm_i_reg in other states
+    assign csr_addr = (current_state == S_DECODE) ? imm_i[11:0] : imm_i_reg[11:0];
     
     // ============================================================
     // State Register (Flip-Flop Based FSM)
@@ -177,9 +180,11 @@ module top (
         if (!rst_n) begin
             alu_out_reg <= 32'h0;
             mdr <= 32'h0;
+            csr_rdata_reg <= 32'h0;
         end else begin
             if (alu_out_write) alu_out_reg <= alu_result;
             if (mdr_write) mdr <= formatted_load_data;
+            if (csr_rdata_write) csr_rdata_reg <= csr_rdata;
         end
     end
     
@@ -382,6 +387,7 @@ module top (
         b_reg_write = 1'b0;
         alu_out_write = 1'b0;
         mdr_write = 1'b0;
+        csr_rdata_write = 1'b0;
         pc_write = 1'b0;
         reg_write_en = 1'b0;
         decode_reg_write = 1'b0;
@@ -400,6 +406,9 @@ module top (
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
                 decode_reg_write = 1'b1;
+                // Capture CSR read data before write (for read-modify-write operations)
+                if (is_csr)
+                    csr_rdata_write = 1'b1;
                 // FENCE completes here
                 if (is_fence) begin
                     pc_write = 1'b1;
@@ -442,10 +451,8 @@ module top (
             
             S_CSR: begin
                 // CSR operations: CSR read/modify happens here
-                // Treat CSR state as a writeback/complete stage for CSR instructions
-                reg_write_en   = 1'b1;  // write CSR result to rd
-                pc_write       = 1'b1;  // advance PC
-                instr_complete = 1'b1;  // signal instruction completion
+                // CSR state transitions to WRITEBACK, which will complete the instruction
+                // Don't set instr_complete here - let WRITEBACK do it
             end
             
             S_HALT: begin
@@ -585,7 +592,7 @@ module top (
         .pc(pc),
         .imm_u(imm_u_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
-        .csr_rdata(csr_rdata),
+        .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)
         .formatted_load_data(mdr),  // Use MDR (memory data register)
         .rd_data(rd_data)
     );

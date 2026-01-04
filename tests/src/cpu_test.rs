@@ -1038,11 +1038,13 @@ fn test_cpu_csr_read_write() {
             (0x10, sw(0, 3, 0x104)),    // Store x3 to memory[0x104] to verify it's 100
             (0x14, csrrw(4, 0, 0x300)), // x4 = CSR[0x300] (should be 0); CSR[0x300] = 0
             (0x18, sw(0, 4, 0x108)),    // Store x4 to memory[0x108] to verify it's 0
-            (0x1C, addi(0, 0, 0)),      // NOP
+            (0x1C, addi(7, 0, -16)),    // x7 = tohost address
+            (0x20, addi(8, 0, 1)),      // x8 = success code
+            (0x24, sw(7, 8, 0)),        // Write to tohost
         ]);
 
-        // Execute instructions
-        harness.run_cycles(&mut dut, 12);
+        // Execute instructions (will terminate early on tohost write)
+        harness.run_cycles(&mut dut, 15);
 
         assert_eq!(dut.halted, 0, "CPU should not be halted");
 
