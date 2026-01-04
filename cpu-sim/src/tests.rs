@@ -60,6 +60,31 @@ fn fifo_data_to_string(data: &[u8]) -> String {
     String::from_utf8(trimmed_data.to_vec()).expect("FIFO data should be valid UTF-8")
 }
 
+/// Helper function to run ELF with FSM state printing enabled for debugging
+#[allow(dead_code)]
+fn run_elf_with_fsm_debug<T>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    trace_callback: Option<T>,
+) -> Result<SimulationResult, String>
+where
+    T: FnMut(&InstructionTrace),
+{
+    run_elf_in_simulator_with_trace(
+        elf_path,
+        max_cycles,
+        |sim| {
+            // Enable FSM state printing for detailed debugging
+            sim.set_print_fsm_state(true);
+        },
+        None, // No VCD
+        print_inst_trace,
+        None::<fn(u32)>,
+        trace_callback,
+    )
+}
+
 #[test]
 fn test_comprehensive_elf() {
     init_test_logger();
@@ -189,8 +214,14 @@ fn test_trace_callback() {
         traces_clone.lock().unwrap().push(trace.clone());
     };
 
+    // NOTE: Use run_elf_with_fsm_debug() instead of run_elf_with_trace_callback()
+    // to enable detailed FSM state printing for debugging instruction trace issues
     let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback))
         .expect("Trace test simulation should succeed");
+    
+    // Uncomment this and comment out the above line to enable FSM state debugging:
+    // let result = run_elf_with_fsm_debug(&elf_path, 500, false, Some(trace_callback))
+    //     .expect("Trace test simulation should succeed");
 
     assert_tohost(&result, 0x2a, "trace test program");
 

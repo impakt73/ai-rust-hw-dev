@@ -460,6 +460,79 @@ where
     )
 }
 
+/// Run an ELF file with trace callback and mutable simulator access
+/// 
+/// This function supports instruction trace callbacks and provides mutable
+/// simulator access before the run for configuration (e.g., enabling debug flags).
+///
+/// # Arguments
+/// * `elf_path` - Path to the RISC-V ELF executable
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `callback_before` - Function to configure simulator before running (e.g., enable debug flags)
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
+/// * `print_inst_trace` - Whether to print instruction trace to console
+/// * `fifo_callback` - Optional callback for FIFO TX data
+/// * `trace_callback` - Optional callback for instruction traces
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+pub fn run_elf_in_simulator_with_trace<F, T, C>(
+    elf_path: &Path,
+    max_cycles: u64,
+    callback_before: C,
+    vcd_path: Option<&str>,
+    print_inst_trace: bool,
+    fifo_callback: Option<F>,
+    trace_callback: Option<T>,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
+    C: for<'a> FnOnce(&mut Simulator<'a, F, T>),
+{
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = if let Some(vcd) = vcd_path {
+        Simulator::new_with_vcd(
+            &runtime,
+            bus,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+            vcd,
+        )?
+    } else {
+        Simulator::new(
+            &runtime,
+            bus,
+            print_inst_trace,
+            fifo_callback,
+            trace_callback,
+        )?
+    };
+
+    // Execute callback_before to configure simulator (e.g., enable debug flags)
+    callback_before(&mut sim);
+
+    // Load ELF into simulator memory
+    let entry_point =
+        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
+
+    log::info!("ELF loaded successfully");
+    log::info!("Entry point: 0x{:08x}", entry_point);
+
+    // Run simulation with entry point as boot PC
+    let result = sim.run(entry_point, max_cycles)?;
+
+    Ok(result)
+}
+
 // Disabled broken test module
 // #[cfg(test)]
 #[cfg(test)]
