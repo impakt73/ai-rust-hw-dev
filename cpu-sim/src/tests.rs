@@ -206,6 +206,13 @@ fn test_trace_callback() {
     println!("========================================");
     println!("Total instructions traced: {}", captured_traces.len());
 
+    // DEBUG: Print ALL captured traces
+    println!("\nDEBUG: All captured instruction traces:");
+    for (i, trace) in captured_traces.iter().enumerate() {
+        println!("  [{}] PC=0x{:08x}, Type={:?}", i, trace.pc, trace.inst_type);
+    }
+    println!();
+
     // Track which expected instructions we've found
     let mut found_addi_x1 = false;
     let mut found_addi_x2 = false;

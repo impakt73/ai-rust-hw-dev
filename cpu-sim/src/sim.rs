@@ -303,8 +303,8 @@ where
         
         // Trace printing (simplified - only at instruction completion)
         if self.print_inst_trace {
-            let pc = self.cpu.imem_addr;
-            let instruction = self.cpu.imem_data;
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
             println!(
                 "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
                 self.cycle_count, pc, instruction, cycles + 1
@@ -313,19 +313,26 @@ where
         
         // Call trace callback if provided (at instruction completion)
         if let Some(ref mut callback) = self.trace_callback {
-            let pc = self.cpu.imem_addr;
-            let instruction = self.cpu.imem_data;
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
             let rs1_value = self.cpu.debug_rs1_data;
             let rs2_value = self.cpu.debug_rs2_data;
             let rd_value = self.cpu.debug_rd_data;
-            let trace = InstructionTrace::from_instruction(
-                pc,
-                instruction,
-                rs1_value,
-                rs2_value,
-                rd_value,
-            );
-            callback(&trace);
+            
+            // DEBUG: Print trace info
+            // println!("TRACE: PC=0x{:08x}, Instr=0x{:08x}", pc, instruction);
+            
+            // Skip bogus traces at PC=0 (from reset state)
+            if pc != 0 {
+                let trace = InstructionTrace::from_instruction(
+                    pc,
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
+                );
+                callback(&trace);
+            }
         }
 
         halt_value
