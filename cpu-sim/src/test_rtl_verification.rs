@@ -79,90 +79,6 @@ mod tests {
         Ok(result)
     }
 
-    // TODO: The following helper functions should be replaced by direct use of
-    // run_program_with_callback in each test. This allows tests to perform
-    // memory reads inline within the callback, avoiding the need for separate
-    // helper functions and eliminating the Box::leak pattern.
-    
-    /// Helper to create a program from instruction sequence and run it
-    ///
-    /// DEPRECATED: Use run_program_with_callback instead to avoid Box::leak
-    #[allow(dead_code)]
-    fn run_program(
-        instructions: &[u32],
-        max_cycles: u64,
-    ) -> Result<(SimulationResult, Simulator<'static, fn(u32), fn(&riscv_core::trace::InstructionTrace)>), String> {
-        // Create system bus and simulator
-        let bus = bus::SystemBus::new();
-        let runtime = Box::leak(Box::new(
-            riscv_core::create_cpu_runtime()
-                .map_err(|e| format!("Failed to create runtime: {}", e))?,
-        ));
-
-        let mut sim = sim::Simulator::new(
-            runtime,
-            bus,
-            false, // Don't print instruction trace by default
-            None::<fn(u32)>,
-            None::<fn(&riscv_core::trace::InstructionTrace)>,
-        )?;
-
-        // Convert instructions to bytes (little-endian)
-        let mut program_bytes = Vec::new();
-        for &inst in instructions {
-            program_bytes.extend_from_slice(&inst.to_le_bytes());
-        }
-
-        // Write program to memory at standard RISC-V start address
-        const START_ADDR: u32 = 0x8000_0000;
-        sim.write_memory_region(START_ADDR, &program_bytes);
-
-        // Reset and run
-        sim.reset(START_ADDR);
-        let result = sim.run(START_ADDR, max_cycles)?;
-
-        Ok((result, sim))
-    }
-
-    /// Helper to run program and get memory word at specific address
-    ///
-    /// DEPRECATED: Use run_program_with_callback instead
-    #[allow(dead_code)]
-    fn run_program_read_word(
-        instructions: &[u32],
-        max_cycles: u64,
-        addr: u32,
-    ) -> Result<u32, String> {
-        let (_, mut sim) = run_program(instructions, max_cycles)?;
-        Ok(sim.bus.read_word(addr))
-    }
-
-    /// Helper to run program and get memory halfword at specific address
-    ///
-    /// DEPRECATED: Use run_program_with_callback instead
-    #[allow(dead_code)]
-    fn run_program_read_halfword(
-        instructions: &[u32],
-        max_cycles: u64,
-        addr: u32,
-    ) -> Result<u16, String> {
-        let (_, mut sim) = run_program(instructions, max_cycles)?;
-        Ok(sim.bus.read_halfword(addr))
-    }
-
-    /// Helper to run program and get memory byte at specific address
-    ///
-    /// DEPRECATED: Use run_program_with_callback instead
-    #[allow(dead_code)]
-    fn run_program_read_byte(
-        instructions: &[u32],
-        max_cycles: u64,
-        addr: u32,
-    ) -> Result<u8, String> {
-        let (_, mut sim) = run_program(instructions, max_cycles)?;
-        Ok(sim.bus.read_byte(addr))
-    }
-
     // ============================================================================
     // Basic Execution Tests
     // ============================================================================
@@ -207,13 +123,15 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            // Verify program executed (exact cycle count may vary but should be small)
+            assert!(
+                result.cycles >= 3 && result.cycles <= 10,
+                "Should execute at least 3 instructions"
+            );
+        })
+        .expect("Program should run");
 
-        // Verify program executed (exact cycle count may vary but should be small)
-        assert!(
-            result.cycles >= 3 && result.cycles <= 10,
-            "Should execute at least 3 instructions"
-        );
         println!("Successfully executed 3 instructions: ADDI, ADD, SUB");
     }
 
@@ -230,9 +148,11 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            assert!(result.cycles <= 10, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        assert!(result.cycles <= 10, "Program should complete quickly");
         println!("Successfully executed LUI instruction");
     }
 
@@ -255,9 +175,11 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            assert!(result.cycles <= 10, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        assert!(result.cycles <= 10, "Program should complete quickly");
         println!("Successfully executed logic operations: AND, OR, XOR");
     }
 
@@ -294,22 +216,22 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, mut sim) = run_program(&instructions, 20).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, result| {
+            // Verify branches worked - skipped instructions should leave registers at 0
+            let marker1 = sim.bus.read_word(0x100);
+            let marker2 = sim.bus.read_word(0x104);
+            assert_eq!(
+                marker1, 0,
+                "First branch should skip addi x3,x0,99, so x3 should be 0"
+            );
+            assert_eq!(
+                marker2, 0,
+                "Second branch should skip addi x5,x0,99, so x5 should be 0"
+            );
+            assert!(result.cycles <= 20, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        // Verify branches worked - skipped instructions should leave registers at 0
-        let marker1 = sim.bus.read_word(0x100);
-        let marker2 = sim.bus.read_word(0x104);
-
-        assert_eq!(
-            marker1, 0,
-            "First branch should skip addi x3,x0,99, so x3 should be 0"
-        );
-        assert_eq!(
-            marker2, 0,
-            "Second branch should skip addi x5,x0,99, so x5 should be 0"
-        );
-
-        assert!(result.cycles <= 20, "Program should complete quickly");
         println!("Successfully executed BEQ and BNE branches");
     }
 
@@ -340,16 +262,16 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, mut sim) = run_program(&instructions, 20).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, result| {
+            // Verify branches worked
+            let marker1 = sim.bus.read_word(0x100);
+            let marker2 = sim.bus.read_word(0x104);
+            assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
+            assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
+            assert!(result.cycles <= 20, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        // Verify branches worked
-        let marker1 = sim.bus.read_word(0x100);
-        let marker2 = sim.bus.read_word(0x104);
-
-        assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
-        assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
-
-        assert!(result.cycles <= 20, "Program should complete quickly");
         println!("Successfully executed BLT and BGE branches");
     }
 
@@ -380,16 +302,16 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (result, mut sim) = run_program(&instructions, 20).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, result| {
+            // Verify branches worked
+            let marker1 = sim.bus.read_word(0x100);
+            let marker2 = sim.bus.read_word(0x104);
+            assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
+            assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
+            assert!(result.cycles <= 20, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        // Verify branches worked
-        let marker1 = sim.bus.read_word(0x100);
-        let marker2 = sim.bus.read_word(0x104);
-
-        assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
-        assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
-
-        assert!(result.cycles <= 20, "Program should complete quickly");
         println!("Successfully executed BLTU and BGEU branches");
     }
 
@@ -420,11 +342,11 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let result = run_program_read_word(&instructions, 20, 100).expect("Program should run");
-        assert_eq!(result, 42, "Memory[100] should contain 42");
-
-        let result2 = run_program_read_word(&instructions, 20, 108).expect("Program should run");
-        assert_eq!(result2, 42, "Memory[108] should contain 42");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
+            assert_eq!(sim.bus.read_word(108), 42, "Memory[108] should contain 42");
+        })
+        .expect("Program should run");
 
         println!("Successfully executed load and store instructions");
     }
@@ -461,36 +383,36 @@ mod tests {
             addi(0, 0, 0), // NOP
         ];
 
-        let (_, mut sim) = run_program(&instructions, 30).expect("Program should run");
-
-        // Verify memory operations
-        assert_eq!(
-            sim.bus.read_word(100),
-            0xFFFFFFFF,
-            "Memory[100] should contain 0xFFFFFFFF"
-        );
-
-        // Verify load operations
-        assert_eq!(
-            sim.bus.read_word(0x200),
-            0xFFFFFFFF,
-            "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x204),
-            0xFFFFFFFF,
-            "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x208),
-            0x000000FF,
-            "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x20C),
-            0x000000FF,
-            "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
-        );
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            // Verify memory operations
+            assert_eq!(
+                sim.bus.read_word(100),
+                0xFFFFFFFF,
+                "Memory[100] should contain 0xFFFFFFFF"
+            );
+            // Verify load operations
+            assert_eq!(
+                sim.bus.read_word(0x200),
+                0xFFFFFFFF,
+                "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x204),
+                0xFFFFFFFF,
+                "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x208),
+                0x000000FF,
+                "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x20C),
+                0x000000FF,
+                "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed LB and LBU instructions");
     }
@@ -515,36 +437,36 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 30).expect("Program should run");
-
-        // Verify memory operations
-        assert_eq!(
-            sim.bus.read_word(100),
-            0xFFFFFFFF,
-            "Memory[100] should contain 0xFFFFFFFF"
-        );
-
-        // Verify load operations
-        assert_eq!(
-            sim.bus.read_word(0x200),
-            0xFFFFFFFF,
-            "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x204),
-            0xFFFFFFFF,
-            "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x208),
-            0x0000FFFF,
-            "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x20C),
-            0x0000FFFF,
-            "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-        );
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            // Verify memory operations
+            assert_eq!(
+                sim.bus.read_word(100),
+                0xFFFFFFFF,
+                "Memory[100] should contain 0xFFFFFFFF"
+            );
+            // Verify load operations
+            assert_eq!(
+                sim.bus.read_word(0x200),
+                0xFFFFFFFF,
+                "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x204),
+                0xFFFFFFFF,
+                "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x208),
+                0x0000FFFF,
+                "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x20C),
+                0x0000FFFF,
+                "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed LH and LHU instructions");
     }
@@ -569,10 +491,15 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 30, 100).expect("Program should run");
-
-        // Verify memory operations - bytes stored in little-endian order
-        assert_eq!(result, 0x78563412, "Memory should contain 0x78563412");
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            // Verify memory operations - bytes stored in little-endian order
+            assert_eq!(
+                sim.bus.read_word(100),
+                0x78563412,
+                "Memory should contain 0x78563412"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed SB instruction");
     }
@@ -592,10 +519,15 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 30, 100).expect("Program should run");
-
-        // Verify memory operations - halfwords stored in little-endian order
-        assert_eq!(result, 0x06780234, "Memory should contain 0x06780234");
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            // Verify memory operations - halfwords stored in little-endian order
+            assert_eq!(
+                sim.bus.read_word(100),
+                0x06780234,
+                "Memory should contain 0x06780234"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed SH instruction");
     }
@@ -622,29 +554,30 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 30).expect("Program should run");
-
-        // Verify load operations
-        assert_eq!(
-            sim.bus.read_word(0x200),
-            0xFFFFFF80,
-            "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x204),
-            0x00000080,
-            "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x208),
-            0xFFFFFFFF,
-            "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x20C),
-            0x0000FFFF,
-            "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-        );
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            // Verify load operations
+            assert_eq!(
+                sim.bus.read_word(0x200),
+                0xFFFFFF80,
+                "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x204),
+                0x00000080,
+                "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x208),
+                0xFFFFFFFF,
+                "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x20C),
+                0x0000FFFF,
+                "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed mixed byte/halfword operations");
     }
@@ -660,9 +593,11 @@ mod tests {
         // Program: Test AUIPC instruction
         let instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            assert!(result.cycles <= 10, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        assert!(result.cycles <= 10, "Program should complete quickly");
         println!("Successfully executed AUIPC instruction");
     }
 
@@ -684,19 +619,20 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (result, mut sim) = run_program(&instructions, 30).expect("Program should run");
-
-        // Verify that tohost write was detected
-        assert_eq!(
-            result.tohost_value,
-            Some(1),
-            "Expected tohost value to be 1 (exit code)"
-        );
-        assert_eq!(
-            sim.bus.read_word(TOHOST_ADDR),
-            1,
-            "TOHOST memory location should contain 1"
-        );
+        run_program_with_callback(&instructions, 30, |sim, result| {
+            // Verify that tohost write was detected
+            assert_eq!(
+                result.tohost_value,
+                Some(1),
+                "Expected tohost value to be 1 (exit code)"
+            );
+            assert_eq!(
+                sim.bus.read_word(TOHOST_ADDR),
+                1,
+                "TOHOST memory location should contain 1"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully tested tohost halt mechanism");
     }
@@ -707,10 +643,12 @@ mod tests {
 
         let instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            // FENCE is essentially a NOP for single-cycle CPU
+            assert!(result.cycles <= 10, "Program should complete quickly");
+        })
+        .expect("Program should run");
 
-        // FENCE is essentially a NOP for single-cycle CPU
-        assert!(result.cycles <= 10, "Program should complete quickly");
         println!("Successfully executed FENCE instruction");
     }
 
@@ -724,13 +662,15 @@ mod tests {
             addi(2, 0, 99), // Should not execute
         ];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            // After ECALL, CPU should halt
+            assert!(
+                result.cycles <= 10,
+                "Program should halt quickly after ECALL"
+            );
+        })
+        .expect("Program should run");
 
-        // After ECALL, CPU should halt
-        assert!(
-            result.cycles <= 10,
-            "Program should halt quickly after ECALL"
-        );
         println!("Successfully executed ECALL instruction");
     }
 
@@ -744,13 +684,15 @@ mod tests {
             addi(2, 0, 200), // Should not execute
         ];
 
-        let (result, _) = run_program(&instructions, 10).expect("Program should run");
+        run_program_with_callback(&instructions, 10, |_sim, result| {
+            // After EBREAK, CPU should halt
+            assert!(
+                result.cycles <= 10,
+                "Program should halt quickly after EBREAK"
+            );
+        })
+        .expect("Program should run");
 
-        // After EBREAK, CPU should halt
-        assert!(
-            result.cycles <= 10,
-            "Program should halt quickly after EBREAK"
-        );
         println!("Successfully executed EBREAK instruction");
     }
 
@@ -774,24 +716,25 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 20).expect("Program should run");
-
-        // Verify CSR operations
-        assert_eq!(
-            sim.bus.read_word(0x100),
-            0,
-            "First CSRRW should read 0 from uninitialized CSR"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x104),
-            100,
-            "Second CSRRW should read 100 from CSR"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x108),
-            0,
-            "Third CSRRW should read 0 from CSR"
-        );
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            // Verify CSR operations
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0,
+                "First CSRRW should read 0 from uninitialized CSR"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x104),
+                100,
+                "Second CSRRW should read 100 from CSR"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x108),
+                0,
+                "Third CSRRW should read 0 from CSR"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed CSR read/write operations");
     }
@@ -815,24 +758,25 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 20).expect("Program should run");
-
-        // Verify CSR operations
-        assert_eq!(
-            sim.bus.read_word(0x100),
-            0b1010,
-            "CSRRS should read old value 0b1010"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x104),
-            0b1111,
-            "CSRRC should read value 0b1111"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x108),
-            0b0111,
-            "Final CSR value should be 0b0111"
-        );
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            // Verify CSR operations
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0b1010,
+                "CSRRS should read old value 0b1010"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x104),
+                0b1111,
+                "CSRRC should read value 0b1111"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x108),
+                0b0111,
+                "Final CSR value should be 0b0111"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed CSR set/clear operations");
     }
@@ -854,17 +798,18 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 20).expect("Program should run");
-
-        // Verify CSR operations
-        assert_eq!(
-            sim.bus.read_word(0x100),
-            0,
-            "CSRRWI should read 0 from uninitialized CSR"
-        );
-        assert_eq!(sim.bus.read_word(0x104), 15, "CSRRSI should read 15");
-        assert_eq!(sim.bus.read_word(0x108), 15, "CSRRCI should read 15");
-        assert_eq!(sim.bus.read_word(0x10C), 11, "Final CSR value should be 11");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            // Verify CSR operations
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0,
+                "CSRRWI should read 0 from uninitialized CSR"
+            );
+            assert_eq!(sim.bus.read_word(0x104), 15, "CSRRSI should read 15");
+            assert_eq!(sim.bus.read_word(0x108), 15, "CSRRCI should read 15");
+            assert_eq!(sim.bus.read_word(0x10C), 11, "Final CSR value should be 11");
+        })
+        .expect("Program should run");
 
         println!("Successfully executed CSR immediate operations");
     }
@@ -885,9 +830,11 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 20, 0x100).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
+        })
+        .expect("Program should run");
 
-        assert_eq!(result, 200, "MUL: 10 × 20 should be 200");
         println!("Successfully executed MUL instruction");
     }
 
@@ -903,12 +850,15 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 20, 0x100).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0x00000001,
+                "MULH: upper 32 bits should be 0x00000001"
+            );
+        })
+        .expect("Program should run");
 
-        assert_eq!(
-            result, 0x00000001,
-            "MULH: upper 32 bits should be 0x00000001"
-        );
         println!("Successfully executed MULH instruction");
     }
 
@@ -924,9 +874,11 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 20, 0x100).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
+        })
+        .expect("Program should run");
 
-        assert_eq!(result, 14, "DIV: 100 ÷ 7 should be 14");
         println!("Successfully executed DIV instruction");
     }
 
@@ -942,9 +894,15 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 20, 0x100).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0xFFFFFFFF,
+                "DIV by zero should return 0xFFFFFFFF"
+            );
+        })
+        .expect("Program should run");
 
-        assert_eq!(result, 0xFFFFFFFF, "DIV by zero should return 0xFFFFFFFF");
         println!("Successfully executed DIV by zero");
     }
 
@@ -960,9 +918,11 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 20, 0x100).expect("Program should run");
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
+        })
+        .expect("Program should run");
 
-        assert_eq!(result, 2, "REM: 100 % 7 should be 2");
         println!("Successfully executed REM instruction");
     }
 
@@ -980,18 +940,19 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let (_, mut sim) = run_program(&instructions, 20).expect("Program should run");
-
-        assert_eq!(
-            sim.bus.read_word(0x100),
-            0x7FFFFFFF,
-            "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
-        );
-        assert_eq!(
-            sim.bus.read_word(0x104),
-            1,
-            "REMU: 0xFFFFFFFF % 2 should be 1"
-        );
+        run_program_with_callback(&instructions, 20, |sim, _result| {
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                0x7FFFFFFF,
+                "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
+            );
+            assert_eq!(
+                sim.bus.read_word(0x104),
+                1,
+                "REMU: 0xFFFFFFFF % 2 should be 1"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed DIVU and REMU instructions");
     }
@@ -1016,12 +977,14 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        let result = run_program_read_word(&instructions, 30, 0x100).expect("Program should run");
-
-        assert_eq!(
-            result, 22,
-            "Complex M extension program result should be 22"
-        );
+        run_program_with_callback(&instructions, 30, |sim, _result| {
+            assert_eq!(
+                sim.bus.read_word(0x100),
+                22,
+                "Complex M extension program result should be 22"
+            );
+        })
+        .expect("Program should run");
 
         println!("Successfully executed complex M extension program");
     }
