@@ -22,6 +22,7 @@ where
     cycle_count: u64,
     print_inst_trace: bool,
     print_debug_packets: bool,
+    print_fsm_state: bool,  // NEW: Print FSM state every cycle
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
@@ -51,6 +52,7 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true, // Enable by default
+            print_fsm_state: false,    // Disabled by default (verbose)
             fifo_callback,
             trace_callback,
             vcd: None,
@@ -86,6 +88,7 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true,
+            print_fsm_state: false,    // Disabled by default (verbose)
             fifo_callback,
             trace_callback,
             vcd: Some(vcd),
@@ -95,6 +98,11 @@ where
     /// Enable or disable automatic printing of DebugPacket messages
     pub fn set_print_debug_packets(&mut self, enable: bool) {
         self.print_debug_packets = enable;
+    }
+
+    /// Enable or disable FSM state printing every cycle (verbose debug mode)
+    pub fn set_print_fsm_state(&mut self, enable: bool) {
+        self.print_fsm_state = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -129,6 +137,24 @@ where
         // This ensures the reading side can detect the end of the string
         if bytes.len().is_multiple_of(4) {
             self.fifo_write_rx(0);
+        }
+    }
+
+    /// Helper function to decode FSM state value to human-readable string
+    fn fsm_state_name(state: u8) -> &'static str {
+        match state {
+            0 => "IDLE",
+            1 => "FETCH",
+            2 => "DECODE",
+            3 => "EXECUTE",
+            4 => "MEM_ADDR",
+            5 => "MEM_READ",
+            6 => "MEM_WRITE",
+            7 => "WRITEBACK",
+            8 => "BRANCH",
+            9 => "CSR",
+            10 => "HALT",
+            _ => "UNKNOWN",
         }
     }
 
@@ -245,6 +271,23 @@ where
             
             // Re-evaluate after setting memory signals
             self.cpu.eval();
+            
+            // Print FSM state if enabled (before clock edge)
+            if self.print_fsm_state {
+                let fsm_state = self.cpu.debug_fsm_state;
+                let state_name = Self::fsm_state_name(fsm_state);
+                println!(
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | dmem_req={} dmem_ready={} | instr_complete={}",
+                    self.cycle_count,
+                    state_name,
+                    self.cpu.imem_addr,
+                    self.cpu.imem_req,
+                    self.cpu.imem_ready,
+                    self.cpu.dmem_req,
+                    self.cpu.dmem_ready,
+                    self.cpu.instr_complete
+                );
+            }
             
             // Clock edge
             self.cpu.clk = 0;

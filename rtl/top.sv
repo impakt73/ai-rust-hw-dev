@@ -33,7 +33,10 @@ module top (
     
     // Debug outputs for instruction tracing (completed instruction)
     output logic [31:0] debug_pc,         // PC of completed instruction
-    output logic [31:0] debug_instruction // Instruction word of completed instruction
+    output logic [31:0] debug_instruction, // Instruction word of completed instruction
+    
+    // Debug output for FSM state visibility
+    output logic [3:0]  debug_fsm_state   // Current FSM state (for debugging)
 );
 
     // ============================================================
@@ -641,5 +644,8 @@ module top (
     // Debug outputs for instruction tracing (completed instruction)
     assign debug_pc = completed_pc_reg;
     assign debug_instruction = completed_instr_reg;
+    
+    // Debug output for FSM state
+    assign debug_fsm_state = current_state;
 
 endmodule
