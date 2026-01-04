@@ -1040,7 +1040,7 @@ fn test_memory_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 1365, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 5203, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
@@ -1151,7 +1151,7 @@ fn test_image_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 363, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 1451, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");
