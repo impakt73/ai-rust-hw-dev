@@ -314,9 +314,10 @@ module top (
                             next_state = S_HALT;
                         else if (is_csr)
                             next_state = S_CSR;
-                        else  // FENCE
-                            next_state = S_FETCH;
                     end
+
+                    7'b0001111:  // FENCE
+                        next_state = S_FETCH;
                     
                     default: next_state = S_HALT;  // Unknown instruction - halt for debug
                 endcase
@@ -366,7 +367,7 @@ module top (
             end
             
             default: begin
-                next_state = S_IDLE;
+                next_state = S_HALT;
             end
         endcase
     end
@@ -449,6 +450,7 @@ module top (
             
             S_HALT: begin
                 // HALT state: all control signals remain inactive
+                instr_complete = 1'b1;  // signal instruction completion
             end
             
             default: begin

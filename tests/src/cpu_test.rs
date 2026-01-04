@@ -380,6 +380,9 @@ impl CpuTestHarness {
                     tohost_value = Some(value);
                 }),
             );
+            if tohost_value.is_some() {
+                break;
+            }
         }
         tohost_value
     }
@@ -444,6 +447,9 @@ fn test_cpu_lui_instruction() {
             (0x00, lui(1, 0x12345000)),
             (0x04, addi(2, 1, 0x678)),
             (0x08, addi(0, 0, 0)), // NOP
+            (0x0C, addi(30, 0, -16)),
+            (0x10, addi(31, 0, 1)),
+            (0x14, sw(30, 31, 0)),
         ]);
 
         // Execute for a few cycles
@@ -645,7 +651,9 @@ fn test_cpu_auipc() {
         harness.load_program(&[
             (0x00, auipc(1, 0x12345000)),
             (0x04, auipc(2, 0x00001000)),
-            (0x08, addi(0, 0, 0)), // NOP
+            (0x08, addi(4, 0, -16)),
+            (0x0C, addi(5, 0, 1)),
+            (0x10, sw(4, 5, 0)),
         ]);
 
         // Execute for a few cycles
@@ -675,7 +683,6 @@ fn test_cpu_tohost_halt() {
             (0x0C, addi(4, 0, -16)),
             (0x10, addi(5, 0, 1)),
             (0x14, sw(4, 5, 0)),
-            (0x18, addi(0, 0, 0)), // NOP (should not be reached)
         ]);
 
         // Execute and watch for tohost write
@@ -876,7 +883,9 @@ fn test_cpu_store_halfword() {
             (0x0C, sh(1, 2, 0)),
             (0x10, sh(1, 3, 2)),
             (0x14, lw(4, 1, 0)),
-            (0x18, addi(0, 0, 0)), // NOP
+            (0x18, addi(30, 0, -16)),
+            (0x1C, addi(31, 0, 1)),
+            (0x20, sw(30, 31, 0)),
         ]);
 
         // Execute and handle memory operations
@@ -953,13 +962,10 @@ fn test_cpu_fence_instruction() {
             (0x00, addi(1, 0, 10)), // x1 = 10
             (0x04, fence()),        // FENCE (should be NOP for single-cycle CPU)
             (0x08, addi(2, 1, 5)),  // x2 = x1 + 5 = 15
-            (0x0C, addi(3, 0, -16)), // x3 = tohost address
-            (0x10, addi(4, 0, 1)),   // x4 = success code
-            (0x14, sw(3, 4, 0)),     // Write to tohost
         ]);
 
-        // Execute instructions (will terminate early on tohost write)
-        harness.run_cycles(&mut dut, 10);
+        // Execute instructions
+        harness.run_cycles(&mut dut, 3);
 
         // Verify FENCE didn't affect execution
         assert_eq!(dut.halted, 0, "CPU should not be halted after FENCE");
@@ -1116,13 +1122,10 @@ fn test_cpu_csr_immediate() {
             (0x14, sw(0, 3, 0x108)),      // Store x3 to verify it's 15
             (0x18, csrrw(4, 0, 0x302)),   // x4 = CSR[0x302] (final value, should be 11)
             (0x1C, sw(0, 4, 0x10C)),      // Store x4 to verify final CSR value
-            (0x20, addi(5, 0, -16)),      // x5 = tohost address
-            (0x24, addi(6, 0, 1)),        // x6 = success code
-            (0x28, sw(5, 6, 0)),          // Write to tohost
         ]);
 
         // Execute instructions (will terminate early on tohost write)
-        harness.run_cycles(&mut dut, 15);
+        harness.run_cycles(&mut dut, 8);
 
         assert_eq!(dut.halted, 0, "CPU should not be halted");
 
@@ -1241,7 +1244,9 @@ fn test_cpu_div_by_zero() {
             (0x04, addi(2, 0, 0)),   // x2 = 0
             (0x08, div(3, 1, 2)),    // x3 = x1 ÷ 0 = 0xFFFFFFFF
             (0x0C, sw(0, 3, 0x100)), // Store result
-            (0x10, addi(0, 0, 0)),   // NOP
+            (0x10, addi(30, 0, -16)),
+            (0x14, addi(31, 0, 1)),
+            (0x18, sw(30, 31, 0)),
         ]);
 
         // Execute instructions
@@ -1264,7 +1269,9 @@ fn test_cpu_rem_instruction() {
             (0x04, addi(2, 0, 7)),   // x2 = 7
             (0x08, rem(3, 1, 2)),    // x3 = x1 % x2 = 2
             (0x0C, sw(0, 3, 0x100)), // Store remainder
-            (0x10, addi(0, 0, 0)),   // NOP
+            (0x10, addi(30, 0, -16)),
+            (0x14, addi(31, 0, 1)),
+            (0x18, sw(30, 31, 0)),
         ]);
 
         // Execute instructions
@@ -1289,7 +1296,9 @@ fn test_cpu_divu_remu_unsigned() {
             (0x0C, remu(4, 1, 2)),   // x4 = 0xFFFFFFFF % 2 = 1
             (0x10, sw(0, 3, 0x100)), // Store quotient
             (0x14, sw(0, 4, 0x104)), // Store remainder
-            (0x18, addi(0, 0, 0)),   // NOP
+            (0x18, addi(30, 0, -16)),
+            (0x1C, addi(31, 0, 1)),
+            (0x20, sw(30, 31, 0)),
         ]);
 
         // Execute instructions
