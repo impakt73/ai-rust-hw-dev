@@ -231,7 +231,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, result| {
+        run_program_with_callback(&instructions, 200, |sim, result| {
             // Verify branches worked - skipped instructions should leave registers at 0
             let marker1 = sim.bus.read_word(0x100);
             let marker2 = sim.bus.read_word(0x104);
@@ -278,7 +278,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, result| {
+        run_program_with_callback(&instructions, 200, |sim, result| {
             // Verify branches worked
             let marker1 = sim.bus.read_word(0x100);
             let marker2 = sim.bus.read_word(0x104);
@@ -319,7 +319,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, result| {
+        run_program_with_callback(&instructions, 200, |sim, result| {
             // Verify branches worked
             let marker1 = sim.bus.read_word(0x100);
             let marker2 = sim.bus.read_word(0x104);
@@ -360,7 +360,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
             assert_eq!(sim.bus.read_word(108), 42, "Memory[108] should contain 42");
         })
@@ -402,7 +402,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify memory operations
             assert_eq!(
                 sim.bus.read_word(100),
@@ -457,7 +457,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify memory operations
             assert_eq!(
                 sim.bus.read_word(100),
@@ -512,7 +512,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify memory operations - bytes stored in little-endian order
             assert_eq!(
                 sim.bus.read_word(100),
@@ -541,7 +541,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify memory operations - halfwords stored in little-endian order
             assert_eq!(
                 sim.bus.read_word(100),
@@ -577,7 +577,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify load operations
             assert_eq!(
                 sim.bus.read_word(0x200),
@@ -643,7 +643,7 @@ mod tests {
             addi(0, 0, 0),
         ];
 
-        run_program_with_callback(&instructions, 30, |sim, result| {
+        run_program_with_callback(&instructions, 200, |sim, result| {
             // Verify that tohost write was detected
             assert_eq!(
                 result.tohost_value,
@@ -738,7 +738,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify CSR operations
             assert_eq!(
                 sim.bus.read_word(0x100),
@@ -781,7 +781,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify CSR operations
             assert_eq!(
                 sim.bus.read_word(0x100),
@@ -822,7 +822,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             // Verify CSR operations
             assert_eq!(
                 sim.bus.read_word(0x100),
@@ -855,7 +855,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
         })
         .expect("Program should run");
@@ -876,7 +876,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(
                 sim.bus.read_word(0x100),
                 0x00000001,
@@ -901,7 +901,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
         })
         .expect("Program should run");
@@ -922,7 +922,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(
                 sim.bus.read_word(0x100),
                 0xFFFFFFFF,
@@ -947,7 +947,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
         })
         .expect("Program should run");
@@ -970,7 +970,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 20, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(
                 sim.bus.read_word(0x100),
                 0x7FFFFFFF,
@@ -1008,7 +1008,7 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 30, |sim, _result| {
+        run_program_with_callback(&instructions, 200, |sim, _result| {
             assert_eq!(
                 sim.bus.read_word(0x100),
                 22,

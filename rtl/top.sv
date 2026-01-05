@@ -117,6 +117,9 @@ module top (
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
     logic        mem_to_reg_reg, branch_reg, jump_reg;
     
+    // PC for the current instruction (captured in DECODE)
+    logic [31:0] instr_pc_reg;
+    
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
@@ -230,6 +233,7 @@ module top (
             is_ebreak_reg <= 1'b0;
             is_fence_reg <= 1'b0;
             is_csr_reg <= 1'b0;
+            instr_pc_reg <= 32'h0;
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
             rd_reg <= rd;
@@ -254,6 +258,7 @@ module top (
             is_ebreak_reg <= is_ebreak;
             is_fence_reg <= is_fence;
             is_csr_reg <= is_csr;
+            instr_pc_reg <= pc;  // Capture PC of this instruction
         end
     end
 
@@ -290,10 +295,10 @@ module top (
         
         if (current_state == S_BRANCH) begin
             if (take_branch)
-                next_pc_value = pc + imm_b_reg;
+                next_pc_value = instr_pc_reg + imm_b_reg;  // Use instruction's PC for branch target
         end else if (current_state == S_WRITEBACK) begin
             if (opcode_reg == 7'b1101111)  // JAL
-                next_pc_value = pc + imm_j_reg;
+                next_pc_value = instr_pc_reg + imm_j_reg;  // Use instruction's PC for jump target
             else if (opcode_reg == 7'b1100111)  // JALR
                 next_pc_value = (a_reg + imm_i_reg) & ~32'h1;
         end
