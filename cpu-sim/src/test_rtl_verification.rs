@@ -157,7 +157,6 @@ mod tests {
         let mut instructions = vec![
             lui(1, 0x12345000),
             addi(2, 1, 0x678),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -185,7 +184,6 @@ mod tests {
             and(3, 1, 2),
             or(4, 1, 2),
             xor(5, 1, 2),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -227,7 +225,6 @@ mod tests {
             addi(6, 0, 1),
             sw(0, 3, 0x100),
             sw(0, 5, 0x104),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -274,7 +271,6 @@ mod tests {
             addi(5, 0, 1),
             sw(0, 3, 0x100),
             sw(0, 4, 0x104),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -315,7 +311,6 @@ mod tests {
             addi(5, 0, 1),
             sw(0, 3, 0x100),
             sw(0, 4, 0x104),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -356,7 +351,6 @@ mod tests {
             addi(4, 0, 8),
             sw(1, 2, 8),
             lw(5, 1, 8),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -398,7 +392,6 @@ mod tests {
             sw(0, 4, 0x204),
             sw(0, 5, 0x208),
             sw(0, 6, 0x20C),
-            addi(0, 0, 0), // NOP
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -453,7 +446,6 @@ mod tests {
             sw(0, 4, 0x204),
             sw(0, 5, 0x208),
             sw(0, 6, 0x20C),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -508,7 +500,6 @@ mod tests {
             sb(1, 4, 2),
             sb(1, 5, 3),
             lw(6, 1, 0),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -537,7 +528,6 @@ mod tests {
             sh(1, 2, 0),
             sh(1, 3, 2),
             lw(4, 1, 0),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -573,7 +563,6 @@ mod tests {
             sw(0, 4, 0x204),
             sw(0, 6, 0x208),
             sw(0, 7, 0x20C),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -640,7 +629,6 @@ mod tests {
             addi(4, 0, -16), // x4 = 0xFFFFFFF0 (tohost address)
             addi(5, 0, 1),   // x5 = 1 (exit code)
             sw(4, 5, 0),     // Store x5 to tohost address
-            addi(0, 0, 0),
         ];
 
         run_program_with_callback(&instructions, 200, |sim, result| {
@@ -734,7 +722,6 @@ mod tests {
             sw(0, 3, 0x104),
             csrrw(4, 0, 0x300),
             sw(0, 4, 0x108),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -777,7 +764,6 @@ mod tests {
             sw(0, 5, 0x104),
             csrrw(6, 0, 0x301),
             sw(0, 6, 0x108),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -818,7 +804,6 @@ mod tests {
             sw(0, 3, 0x108),
             csrrw(4, 0, 0x302),
             sw(0, 4, 0x10C),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -851,7 +836,6 @@ mod tests {
             addi(2, 0, 20),
             mul(3, 1, 2),
             sw(0, 3, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -872,7 +856,6 @@ mod tests {
             lui(2, 0x10000),
             mulh(3, 1, 2),
             sw(0, 3, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -897,7 +880,6 @@ mod tests {
             addi(2, 0, 7),
             div(3, 1, 2),
             sw(0, 3, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -918,7 +900,6 @@ mod tests {
             addi(2, 0, 0),
             div(3, 1, 2),
             sw(0, 3, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -943,7 +924,6 @@ mod tests {
             addi(2, 0, 7),
             rem(3, 1, 2),
             sw(0, 3, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -966,7 +946,6 @@ mod tests {
             remu(4, 1, 2),
             sw(0, 3, 0x100),
             sw(0, 4, 0x104),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -1004,7 +983,6 @@ mod tests {
             rem(8, 4, 5),
             add(9, 7, 8),
             sw(0, 9, 0x100),
-            addi(0, 0, 0),
         ];
         instructions.extend(tohost_termination(7, 8));
 

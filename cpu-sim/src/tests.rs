@@ -804,6 +804,11 @@ fn test_println_macro() {
         .run(entry_point, 15000)
         .expect("Simulation should succeed");
 
+    // Debug: print result details
+    println!("Result tohost: {:?}", result.tohost_value);
+    println!("Result cycles: {}", result.cycles);
+    println!();
+
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();
     println!("FIFO TX words received: {} words", fifo_words.len());
