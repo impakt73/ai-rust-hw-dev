@@ -683,10 +683,10 @@ mod tests {
 
         let mut instructions = vec![
             addi(1, 0, 42),
-            ecall(),        // Should halt CPU
-            addi(2, 0, 99), // Should not execute
         ];
         instructions.extend(tohost_termination(7, 8));
+        instructions.push(ecall());        // Should halt CPU after tohost write
+        instructions.push(addi(2, 0, 99)); // Should not execute
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
             // After ECALL, CPU should halt
@@ -703,10 +703,10 @@ mod tests {
 
         let mut instructions = vec![
             addi(1, 0, 100),
-            ebreak(),        // Should halt CPU
-            addi(2, 0, 200), // Should not execute
         ];
         instructions.extend(tohost_termination(7, 8));
+        instructions.push(ebreak());        // Should halt CPU after tohost write
+        instructions.push(addi(2, 0, 200)); // Should not execute
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
             // After EBREAK, CPU should halt
