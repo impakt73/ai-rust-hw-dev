@@ -51,35 +51,50 @@ pub struct VcdAnalysis {
 }
 
 impl VcdAnalysis {
-    /// Build the hierarchical signal name from scope stack and var
-    fn build_signal_name(scope_stack: &[String], var_name: &str) -> String {
-        if scope_stack.is_empty() {
-            var_name.to_string()
-        } else {
-            format!("{}.{}", scope_stack.join("."), var_name)
-        }
-    }
-
     /// Extract all signals from the header
     fn extract_signals_from_header(
         header: &vcd::Header,
     ) -> (HashMap<vcd::IdCode, String>, HashMap<String, vcd::IdCode>) {
         let mut id_to_name = HashMap::new();
         let mut name_to_id = HashMap::new();
-        let mut scope_stack = Vec::new();
 
-        for item in &header.items {
-            match item {
-                vcd::ScopeItem::Scope(scope) => {
-                    scope_stack.push(scope.identifier.clone());
-                }
-                vcd::ScopeItem::Var(var) => {
-                    let full_name = Self::build_signal_name(&scope_stack, &var.reference);
-                    id_to_name.insert(var.code, full_name.clone());
-                    name_to_id.insert(full_name, var.code);
+        // Recursively traverse the scope hierarchy
+        fn traverse_scope_items(
+            items: &[vcd::ScopeItem],
+            scope_stack: &mut Vec<String>,
+            id_to_name: &mut HashMap<vcd::IdCode, String>,
+            name_to_id: &mut HashMap<String, vcd::IdCode>,
+        ) {
+            for item in items {
+                match item {
+                    vcd::ScopeItem::Scope(scope) => {
+                        // Enter this scope
+                        scope_stack.push(scope.identifier.clone());
+                        // Recursively process children
+                        traverse_scope_items(&scope.children, scope_stack, id_to_name, name_to_id);
+                        // Exit this scope
+                        scope_stack.pop();
+                    }
+                    vcd::ScopeItem::Var(var) => {
+                        let full_name = if scope_stack.is_empty() {
+                            var.reference.clone()
+                        } else {
+                            format!("{}.{}", scope_stack.join("."), var.reference)
+                        };
+                        id_to_name.insert(var.code, full_name.clone());
+                        name_to_id.insert(full_name, var.code);
+                    }
                 }
             }
         }
+
+        let mut scope_stack = Vec::new();
+        traverse_scope_items(
+            &header.items,
+            &mut scope_stack,
+            &mut id_to_name,
+            &mut name_to_id,
+        );
 
         (id_to_name, name_to_id)
     }
@@ -108,7 +123,13 @@ impl VcdAnalysis {
         current_value
     }
 
-    /// Get all changes for a signal between start_time and end_time (inclusive)
+    /// Get all changes for a signal between start_time and end_time (inclusive).
+    ///
+    /// Returns a vector of (timestamp, value) tuples for all times when the signal
+    /// changed within the specified range. If no changes occur in the range but the
+    /// signal had a value before start_time, that value is returned with the actual
+    /// timestamp when it was last set (not start_time), to accurately reflect when
+    /// the value was established.
     pub fn get_signal_changes(
         &self,
         signal_id: vcd::IdCode,
@@ -116,14 +137,14 @@ impl VcdAnalysis {
         end_time: u64,
     ) -> Vec<(u64, VcdValue)> {
         let mut changes = Vec::new();
-        let mut last_value: Option<VcdValue> = None;
+        let mut last_value: Option<(u64, VcdValue)> = None;
 
         for (timestamp, change_list) in &self.time_changes {
             // Track value up to start_time
             if *timestamp < start_time {
                 for (id, value) in change_list {
                     if *id == signal_id {
-                        last_value = Some(value.clone());
+                        last_value = Some((*timestamp, value.clone()));
                     }
                 }
                 continue;
@@ -138,15 +159,16 @@ impl VcdAnalysis {
             for (id, value) in change_list {
                 if *id == signal_id {
                     changes.push((*timestamp, value.clone()));
-                    last_value = Some(value.clone());
+                    last_value = Some((*timestamp, value.clone()));
                 }
             }
         }
 
         // If we found a value before start_time but no changes in range, include it
+        // with the actual timestamp when it was set
         if changes.is_empty() {
-            if let Some(value) = last_value {
-                changes.push((start_time, value));
+            if let Some((timestamp, value)) = last_value {
+                changes.push((timestamp, value));
             }
         }
 

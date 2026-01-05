@@ -4,7 +4,12 @@ use tokio::sync::RwLock;
 
 use crate::domain::VcdAnalysis;
 
-/// Application state containing cached VCD analyses
+/// Application state containing an in-memory cache of VCD analyses.
+///
+/// Note: This is a simple unbounded `HashMap` protected by an `RwLock`,
+/// not an LRU cache. Entries are never evicted automatically, so callers
+/// must ensure the cache does not grow without bound in long-running
+/// processes.
 #[derive(Clone, Debug)]
 pub struct AppState {
     /// Cache of parsed VCD files, keyed by file path
