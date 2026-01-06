@@ -9,9 +9,14 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Simple bump allocator for bare-metal environment.
 ///
-/// This allocator uses a static 8KB heap and AtomicUsize with Ordering::Relaxed,
-/// which is safe for this single-threaded bare-metal environment where only one
-/// CPU core is active.
+/// This allocator uses a static 8KB heap placed in the .uninit section to avoid
+/// startup zero-initialization and AtomicUsize with Ordering::Relaxed, which is
+/// safe for this single-threaded bare-metal environment where only one CPU core
+/// is active.
+///
+/// Using the .uninit section eliminates the costly zero-initialization loop in
+/// the riscv-rt startup code, significantly reducing cycle count for programs
+/// using heap allocation.
 ///
 /// For multi-threaded usage, this would need:
 /// 1. Ordering::SeqCst or Ordering::AcqRel for atomic operations
@@ -21,6 +26,13 @@ pub struct SimpleAllocator;
 
 unsafe impl GlobalAlloc for SimpleAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: Using .uninit section to avoid zero-initialization on startup.
+        // The .uninit section is explicitly NOT zeroed by riscv-rt's startup code,
+        // unlike .bss which is always zeroed. This significantly reduces startup cycles.
+        // The allocated memory is uninitialized, which is fine because:
+        // 1. Callers of alloc() must initialize the memory before use
+        // 2. This is standard behavior for allocators (malloc doesn't zero either)
+        #[link_section = ".uninit"]
         static mut HEAP: [u8; 8192] = [0; 8192];
         static OFFSET: AtomicUsize = AtomicUsize::new(0);
 
@@ -32,6 +44,9 @@ unsafe impl GlobalAlloc for SimpleAllocator {
         if aligned_offset + size > 8192 {
             core::ptr::null_mut()
         } else {
+            // SAFETY: We're computing a pointer within the static HEAP allocation.
+            // The pointer arithmetic is valid as long as aligned_offset + size <= 8192,
+            // which we've already checked above.
             let ptr = addr_of_mut!(HEAP).cast::<u8>().add(aligned_offset);
             OFFSET.store(aligned_offset + size, Ordering::Relaxed);
             ptr
