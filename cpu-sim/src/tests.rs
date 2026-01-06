@@ -779,14 +779,27 @@ fn test_println_macro() {
         fifo_data_clone.lock().unwrap().push(word);
     };
 
+    // Create trace callback to debug where CPU hangs
+    let instr_count = std::sync::Arc::new(std::sync::Mutex::new(0));
+    let instr_count_clone = instr_count.clone();
+    let trace_callback = move |trace: &riscv_core::trace::InstructionTrace| {
+        let mut count = instr_count_clone.lock().unwrap();
+        *count += 1;
+        if *count <= 100 {
+            println!("Trace #{}: PC=0x{:08x} instr=0x{:08x}", count, trace.pc, trace.instruction);
+        } else if *count == 101 {
+            println!("... (suppressing further trace output)");
+        }
+    };
+
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
-        false, // Disable instruction trace
+        true, // Enable instruction trace
         Some(fifo_callback),
-        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        Some(trace_callback),
     )
     .expect("Failed to create simulator");
 
@@ -803,6 +816,8 @@ fn test_println_macro() {
     let result = sim
         .run(entry_point, 15000)
         .expect("Simulation should succeed");
+    
+    println!("\nTotal instructions traced: {}", *instr_count.lock().unwrap());
 
     // Debug: print result details
     println!("Result tohost: {:?}", result.tohost_value);
