@@ -782,14 +782,20 @@ fn test_println_macro() {
     // Create trace callback to debug where CPU hangs
     let instr_count = std::sync::Arc::new(std::sync::Mutex::new(0));
     let instr_count_clone = instr_count.clone();
+    let last_pc = std::sync::Arc::new(std::sync::Mutex::new(0u32));
+    let last_pc_clone = last_pc.clone();
     let trace_callback = move |trace: &riscv_core::trace::InstructionTrace| {
         let mut count = instr_count_clone.lock().unwrap();
+        let mut prev_pc = last_pc_clone.lock().unwrap();
         *count += 1;
         if *count <= 100 {
-            println!("Trace #{}: PC=0x{:08x} instr=0x{:08x}", count, trace.pc, trace.instruction);
+            let pc_delta = if *prev_pc == 0 { 0 } else { (trace.pc as i64) - (*prev_pc as i64) };
+            println!("Trace #{}: PC=0x{:08x} (delta={:+}) instr=0x{:08x}", 
+                count, trace.pc, pc_delta, trace.instruction);
         } else if *count == 101 {
             println!("... (suppressing further trace output)");
         }
+        *prev_pc = trace.pc;
     };
 
     // Initialize CPU Simulator
