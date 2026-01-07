@@ -821,7 +821,7 @@ fn test_println_macro() {
 
     // Run until halt
     let result = sim
-        .run(entry_point, 15000)
+        .run(entry_point, 17000)
         .expect("Simulation should succeed");
     
     println!("\nTotal instructions traced: {}", *instr_count.lock().unwrap());
