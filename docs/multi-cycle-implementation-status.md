@@ -32,11 +32,11 @@ The multi-cycle RISC-V CPU has been **successfully implemented** with the follow
 
 ### Instruction Cycle Counts
 
-Typical instructions take **4-5 clock cycles** to complete:
-- ADDI, ADD, SUB: 4 cycles (IDLE → FETCH → DECODE → EXECUTE → WRITEBACK)
-- Load: 5 cycles (includes MEM_ADDR and MEM_READ states)
-- Store: 4 cycles (includes MEM_ADDR and MEM_WRITE states)
-- Branch: 3 cycles (IDLE → FETCH → DECODE → BRANCH)
+Typical instructions take **4-5 clock cycles** to complete (excluding time spent in the IDLE state):
+- ADDI, ADD, SUB: 4 cycles (FETCH → DECODE → EXECUTE → WRITEBACK)
+- Load: 5 cycles (FETCH → DECODE → MEM_ADDR → MEM_READ → WRITEBACK)
+- Store: 4 cycles (FETCH → DECODE → MEM_ADDR → MEM_WRITE)
+- Branch: 3 cycles (FETCH → DECODE → BRANCH)
 
 ### Recent Progress 🚀
 

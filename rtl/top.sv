@@ -594,12 +594,13 @@ module top (
         if (current_state == S_EXECUTE) begin
             case (opcode_reg)
                 7'b0010111: begin // AUIPC
-                    alu_a = pc;
+                    // Use the PC captured for this instruction at decode time
+                    alu_a = instr_pc_reg;
                     alu_b = imm_u_reg;
                 end
                 7'b1101111, 7'b1100111: begin // JAL, JALR
-                    // Compute PC+4 for return address
-                    alu_a = pc;
+                    // Compute PC+4 for return address using the instruction PC captured at decode
+                    alu_a = instr_pc_reg;
                     alu_b = 32'd4;
                 end
                 default: begin
@@ -652,7 +653,7 @@ module top (
         .jump(jump_reg),
         .is_csr(is_csr_reg),
         .mem_to_reg(mem_to_reg_reg),
-        .pc(pc),
+        .pc(instr_pc_reg),
         .imm_u(imm_u_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
         .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)

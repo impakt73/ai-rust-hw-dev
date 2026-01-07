@@ -347,9 +347,6 @@ where
                 break;
             }
         }
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.cycle_count + 3);
-        }
 
         // Process FIFO TX data
         // Strategy: drain FIFO via callback, or parse packets for printing, or just drain

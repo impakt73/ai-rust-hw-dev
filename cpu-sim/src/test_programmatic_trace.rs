@@ -1,4 +1,3 @@
-use super::*;
 use riscv_core::trace::{InstructionTrace, InstructionType};
 use std::sync::{Arc, Mutex};
 
