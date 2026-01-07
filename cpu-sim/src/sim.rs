@@ -31,10 +31,13 @@ where
     cycle_count: u64,
     print_inst_trace: bool,
     print_debug_packets: bool,
-    print_fsm_state: bool,  // NEW: Print FSM state every cycle
+    print_fsm_state: bool, // NEW: Print FSM state every cycle
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
+    // For duplicate trace detection (prevents repeated halted instruction traces)
+    last_trace_pc: Option<u32>,
+    last_trace_instr: Option<u32>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -65,6 +68,8 @@ where
             fifo_callback,
             trace_callback,
             vcd: None,
+            last_trace_pc: None,
+            last_trace_instr: None,
         })
     }
 
@@ -97,10 +102,12 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true,
-            print_fsm_state: false,    // Disabled by default (verbose)
+            print_fsm_state: false, // Disabled by default (verbose)
             fifo_callback,
             trace_callback,
             vcd: Some(vcd),
+            last_trace_pc: None,
+            last_trace_instr: None,
         })
     }
 
@@ -167,6 +174,15 @@ where
         }
     }
 
+    /// Check if trace is a duplicate (same PC and instruction as last trace)
+    /// Used to prevent repeated halted instruction traces
+    fn is_duplicate_trace(&self, pc: u32, instruction: u32) -> bool {
+        matches!(
+            (self.last_trace_pc, self.last_trace_instr),
+            (Some(last_pc), Some(last_instr)) if last_pc == pc && last_instr == instruction
+        )
+    }
+
     /// Reset the CPU
     /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
@@ -221,16 +237,16 @@ where
         let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-        const MAX_CYCLES_PER_INSTR: u32 = 100;  // Safety limit for variable latency
-        
+        const MAX_CYCLES_PER_INSTR: u32 = 100; // Safety limit for variable latency
+
         let mut cycles = 0;
         let mut halt_value = None;
-        
+
         // Multi-cycle execution loop - continue until instruction completes
         loop {
             // Evaluate combinational logic
             self.cpu.eval();
-            
+
             // Handle instruction memory with zero-latency (for now)
             // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
             // Variable latency can be added by implementing a counter-based delay.
@@ -238,18 +254,18 @@ where
                 let addr = self.cpu.imem_addr;
                 let data = self.bus.read_word(addr);
                 self.cpu.imem_data = data;
-                self.cpu.imem_ready = 1;  // Always ready (zero latency)
+                self.cpu.imem_ready = 1; // Always ready (zero latency)
             } else {
                 self.cpu.imem_ready = 0;
             }
-            
+
             // Handle data memory with zero-latency (for now)
             // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
             // Variable latency can be added by implementing a counter-based delay.
             if self.cpu.dmem_req != 0 {
                 let addr = self.cpu.dmem_addr;
                 let size = self.cpu.dmem_size;
-                
+
                 if self.cpu.dmem_we != 0 {
                     // Data Memory Write
                     let wdata = self.cpu.dmem_wdata;
@@ -258,13 +274,13 @@ where
                         0b01 => self.bus.write_halfword(addr, wdata as u16),
                         _ => self.bus.write_word(addr, wdata),
                     }
-                    
+
                     // Check for halt signal
                     if addr == TOHOST_ADDR {
                         halt_value = Some(wdata);
                     }
-                    
-                    self.cpu.dmem_ready = 1;  // Always ready (zero latency)
+
+                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
                 } else if self.cpu.dmem_re != 0 {
                     // Data Memory Read
                     let rdata = match size {
@@ -273,17 +289,17 @@ where
                         _ => self.bus.read_word(addr),
                     };
                     self.cpu.dmem_rdata = rdata;
-                    self.cpu.dmem_ready = 1;  // Always ready (zero latency)
+                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
                 } else {
                     self.cpu.dmem_ready = 0;
                 }
             } else {
                 self.cpu.dmem_ready = 0;
             }
-            
+
             // Re-evaluate after setting memory signals
             self.cpu.eval();
-            
+
             // Print FSM state if enabled (before clock edge)
             if self.print_fsm_state {
                 let fsm_state = self.cpu.debug_fsm_state;
@@ -300,29 +316,33 @@ where
                     self.cpu.instr_complete
                 );
             }
-            
+
             // Clock edge
             self.cpu.clk = 0;
             self.cpu.eval();
             self.cpu.clk = 1;
             self.cpu.eval();
-            
+
             // Increment cycle count
             self.cycle_count += 1;
-            
+
             // Dump VCD if enabled (after clock edge, with proper timestamp)
             // Reset sequence uses timestamps 0-3, so execution cycles start at 4
             if let Some(ref mut vcd) = self.vcd {
                 vcd.dump(self.cycle_count + 3);
             }
-            
+
             // Safety check
             cycles += 1;
             if cycles >= MAX_CYCLES_PER_INSTR {
-                panic!("Instruction exceeded maximum cycles ({})", MAX_CYCLES_PER_INSTR);
+                panic!(
+                    "Instruction exceeded maximum cycles ({})",
+                    MAX_CYCLES_PER_INSTR
+                );
             }
-            
+
             // Check if instruction complete (AFTER clock edge)
+            // With delayed instr_complete, values have already settled by the time we see the signal
             if self.cpu.instr_complete != 0 {
                 break;
             }
@@ -330,7 +350,7 @@ where
         if let Some(ref mut vcd) = self.vcd {
             vcd.dump(self.cycle_count + 3);
         }
-        
+
         // Process FIFO TX data
         // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
         if let Some(ref mut callback) = self.fifo_callback {
@@ -355,31 +375,34 @@ where
             // No callback and no auto-printing - drain FIFO to prevent accumulation
             while self.bus.fifo.tx.pop_front().is_some() {}
         }
-        
+
         // Trace printing (simplified - only at instruction completion)
         if self.print_inst_trace {
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             println!(
                 "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
-                self.cycle_count, pc, instruction, cycles + 1
+                self.cycle_count,
+                pc,
+                instruction,
+                cycles + 1
             );
         }
-        
+
         // Call trace callback if provided (at instruction completion)
-        if let Some(ref mut callback) = self.trace_callback {
+        // Skip if this is a duplicate trace (same PC and instruction as last trace)
+        if self.trace_callback.is_some() {
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             let rs1_value = self.cpu.debug_rs1_data;
             let rs2_value = self.cpu.debug_rs2_data;
             let rd_value = self.cpu.debug_rd_data;
-            
-            // DEBUG: Print trace info (disabled - enable for debugging)
-            // println!("TRACE CAPTURE: PC=0x{:08x}, Instr=0x{:08x}, cycle={}, cycles_in_step={}", 
-            //          pc, instruction, self.cycle_count, cycles);
-            
-            // Skip bogus traces at PC=0 (from reset state)
-            if pc != 0 {
+
+            // Check for duplicate before borrowing callback
+            let is_duplicate = self.is_duplicate_trace(pc, instruction);
+
+            // Skip bogus traces at PC=0 (from reset state) and duplicate halted traces
+            if pc != 0 && !is_duplicate {
                 let trace = InstructionTrace::from_instruction(
                     pc,
                     instruction,
@@ -387,7 +410,13 @@ where
                     rs2_value,
                     rd_value,
                 );
-                callback(&trace);
+                if let Some(ref mut callback) = self.trace_callback {
+                    callback(&trace);
+                }
+
+                // Update last trace for duplicate detection
+                self.last_trace_pc = Some(pc);
+                self.last_trace_instr = Some(instruction);
             }
         }
 

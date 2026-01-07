@@ -32,8 +32,8 @@ mod tests {
     fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
         vec![
             addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
-            addi(value_reg, 0, 1),       // Load success code (1)
-            sw(addr_reg, value_reg, 0),  // Store value to tohost address
+            addi(value_reg, 0, 1),      // Load success code (1)
+            sw(addr_reg, value_reg, 0), // Store value to tohost address
         ]
     }
 
@@ -111,15 +111,14 @@ mod tests {
         // 0x00: ADDI x1, x0, 5    ; x1 = 5
         // 0x04: ADDI x2, x0, 3    ; x2 = 3
         // 0x08: ADD  x3, x1, x2   ; x3 = x1 + x2 = 8
-        let mut instructions = vec![
-            addi(1, 0, 5),
-            addi(2, 0, 3),
-            add(3, 1, 2),
-        ];
+        let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
         instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
     }
@@ -132,15 +131,14 @@ mod tests {
         // 0x00: ADDI x1, x0, 10   ; x1 = 10
         // 0x04: ADD  x2, x1, x1   ; x2 = x1 + x1 = 20
         // 0x08: SUB  x3, x2, x1   ; x3 = x2 - x1 = 10
-        let mut instructions = vec![
-            addi(1, 0, 10),
-            add(2, 1, 1),
-            sub(3, 2, 1),
-        ];
+        let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
         instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -154,14 +152,14 @@ mod tests {
         // Program: Test LUI instruction
         // 0x00: LUI x1, 0x12345   ; x1 = 0x12345000
         // 0x04: ADDI x2, x1, 0x678 ; x2 = x1 + 0x678
-        let mut instructions = vec![
-            lui(1, 0x12345000),
-            addi(2, 1, 0x678),
-        ];
+        let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
         instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -188,7 +186,10 @@ mod tests {
         instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -240,7 +241,10 @@ mod tests {
                 marker2, 0,
                 "Second branch should skip addi x5,x0,99, so x5 should be 0"
             );
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -280,7 +284,10 @@ mod tests {
             let marker2 = sim.bus.read_word(0x104);
             assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -320,7 +327,10 @@ mod tests {
             let marker2 = sim.bus.read_word(0x104);
             assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -607,7 +617,10 @@ mod tests {
         instructions.extend(tohost_termination(7, 8));
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -658,7 +671,10 @@ mod tests {
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
             // FENCE is essentially a NOP for single-cycle CPU
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -669,16 +685,17 @@ mod tests {
     fn test_cpu_ecall_instruction() {
         init_test_logger();
 
-        let mut instructions = vec![
-            addi(1, 0, 42),
-        ];
+        let mut instructions = vec![addi(1, 0, 42)];
         instructions.extend(tohost_termination(7, 8));
-        instructions.push(ecall());        // Should halt CPU after tohost write
+        instructions.push(ecall()); // Should halt CPU after tohost write
         instructions.push(addi(2, 0, 99)); // Should not execute
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
             // After ECALL, CPU should halt
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 
@@ -689,16 +706,17 @@ mod tests {
     fn test_cpu_ebreak_instruction() {
         init_test_logger();
 
-        let mut instructions = vec![
-            addi(1, 0, 100),
-        ];
+        let mut instructions = vec![addi(1, 0, 100)];
         instructions.extend(tohost_termination(7, 8));
-        instructions.push(ebreak());        // Should halt CPU after tohost write
+        instructions.push(ebreak()); // Should halt CPU after tohost write
         instructions.push(addi(2, 0, 200)); // Should not execute
 
         run_program_with_callback(&instructions, 100, |_sim, result| {
             // After EBREAK, CPU should halt
-            assert!(result.tohost_value == Some(1), "Program should terminate with tohost=1");
+            assert!(
+                result.tohost_value == Some(1),
+                "Program should terminate with tohost=1"
+            );
         })
         .expect("Program should run");
 

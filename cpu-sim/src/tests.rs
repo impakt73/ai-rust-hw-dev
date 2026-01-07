@@ -238,7 +238,10 @@ fn test_trace_callback() {
     // DEBUG: Print ALL captured traces with full details
     println!("\nDEBUG: All captured instruction traces:");
     for (i, trace) in captured_traces.iter().enumerate() {
-        println!("  [{}] PC=0x{:08x}, Type={:?}", i, trace.pc, trace.inst_type);
+        println!(
+            "  [{}] PC=0x{:08x}, Type={:?}",
+            i, trace.pc, trace.inst_type
+        );
         if let Some(rd) = &trace.rd {
             println!("      rd: x{} = 0x{:08x}", rd.reg, rd.value);
         }
@@ -790,9 +793,15 @@ fn test_println_macro() {
         let mut prev_pc = last_pc_clone.lock().unwrap();
         *count += 1;
         if *count <= 100 {
-            let pc_delta = if *prev_pc == 0 { 0 } else { (trace.pc as i64) - (*prev_pc as i64) };
-            println!("Trace #{}: PC=0x{:08x} (delta={:+}) instr=0x{:08x}", 
-                count, trace.pc, pc_delta, trace.instruction);
+            let pc_delta = if *prev_pc == 0 {
+                0
+            } else {
+                (trace.pc as i64) - (*prev_pc as i64)
+            };
+            println!(
+                "Trace #{}: PC=0x{:08x} (delta={:+}) instr=0x{:08x}",
+                count, trace.pc, pc_delta, trace.instruction
+            );
         } else if *count == 101 {
             println!("... (suppressing further trace output)");
         }
@@ -823,8 +832,11 @@ fn test_println_macro() {
     let result = sim
         .run(entry_point, 17000)
         .expect("Simulation should succeed");
-    
-    println!("\nTotal instructions traced: {}", *instr_count.lock().unwrap());
+
+    println!(
+        "\nTotal instructions traced: {}",
+        *instr_count.lock().unwrap()
+    );
 
     // Debug: print result details
     println!("Result tohost: {:?}", result.tohost_value);
@@ -1115,7 +1127,7 @@ fn test_memory_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 5203, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 5200, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
@@ -1226,7 +1238,7 @@ fn test_image_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 1451, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 1448, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");

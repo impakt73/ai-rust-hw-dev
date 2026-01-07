@@ -7,6 +7,30 @@ pub mod sim;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod test_programmatic_trace;
+
+#[cfg(test)]
+mod test_pc_debug;
+
+#[cfg(test)]
+mod test_exact_sequence;
+
+#[cfg(test)]
+mod test_lui_combinations;
+
+#[cfg(test)]
+mod test_progressive_sequence;
+
+#[cfg(test)]
+mod test_lui_sw_combination;
+
+#[cfg(test)]
+mod test_lui_memory_ops;
+
+#[cfg(test)]
+mod test_minimal_debug_test;
+
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
@@ -461,7 +485,7 @@ where
 }
 
 /// Run an ELF file with trace callback and mutable simulator access
-/// 
+///
 /// This function supports instruction trace callbacks and provides mutable
 /// simulator access before the run for configuration (e.g., enabling debug flags).
 ///

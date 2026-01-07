@@ -64,6 +64,9 @@ module top (
     logic [31:0] pc;
     logic [31:0] instruction;
     
+    // Internal instruction complete signal (immediate)
+    logic instr_complete_internal;
+    
     // Decoder outputs (combinational - will be captured in registers)
     logic [6:0]  opcode;
     logic [4:0]  rd;
@@ -263,7 +266,19 @@ module top (
     end
 
     
-    // Completed Instruction Registers (captured at instruction completion, before next fetch)
+    // Completed Instruction Registers (captured at instruction completion)
+    // Capture when current_state is in a completion state AND we're about to leave it
+    // Delayed instr_complete signal for proper trace timing
+    // Capture happens on cycle N when instr_complete_internal goes high
+    // Output port sees delayed version on cycle N+1 after values have settled
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            instr_complete <= 1'b0;
+        else
+            instr_complete <= instr_complete_internal;
+    end
+    
+    // Capture completed instruction info when instruction finishes
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             completed_pc_reg <= 32'h0;
@@ -271,14 +286,9 @@ module top (
             trace_rs1_data_reg <= 32'h0;
             trace_rs2_data_reg <= 32'h0;
             trace_rd_data_reg <= 32'h0;
-        end else if (instr_complete) begin
-            // Capture PC and instruction at completion
-            // Use pc directly - it hasn't been updated yet on this clock edge
-            completed_pc_reg <= pc;
+        end else if (instr_complete_internal) begin
+            completed_pc_reg <= instr_pc_reg;
             completed_instr_reg <= ir_reg;
-            // Capture operand/result values for trace
-            // Note: a_reg/b_reg hold the operands used by this instruction
-            // rd_data is the result being written to the register file
             trace_rs1_data_reg <= a_reg;
             trace_rs2_data_reg <= b_reg;
             trace_rd_data_reg <= rd_data;
@@ -437,7 +447,7 @@ module top (
         decode_reg_write = 1'b0;
         imem_req = 1'b0;
         dmem_req = 1'b0;
-        instr_complete = 1'b0;
+        instr_complete_internal = 1'b0;
         
         case (current_state)
             S_FETCH: begin
@@ -456,7 +466,7 @@ module top (
                 // FENCE completes here
                 if (is_fence) begin
                     pc_write = 1'b1;
-                    instr_complete = 1'b1;
+                    instr_complete_internal = 1'b1;
                 end
             end
             
@@ -478,19 +488,19 @@ module top (
                 dmem_req = 1'b1;
                 if (dmem_ready) begin
                     pc_write = 1'b1;
-                    instr_complete = 1'b1;
+                    instr_complete_internal = 1'b1;
                 end
             end
             
             S_WRITEBACK: begin
                 reg_write_en = 1'b1;
                 pc_write = 1'b1;
-                instr_complete = 1'b1;
+                instr_complete_internal = 1'b1;
             end
             
             S_BRANCH: begin
                 pc_write = 1'b1;
-                instr_complete = 1'b1;
+                instr_complete_internal = 1'b1;
             end
             
             S_CSR: begin
@@ -501,13 +511,22 @@ module top (
             
             S_HALT: begin
                 // HALT state: all control signals remain inactive
-                instr_complete = 1'b1;  // signal instruction completion
+                // Note: instr_complete_internal should NOT be asserted here
+                // It's already asserted when transitioning TO halt (see below)
             end
             
             default: begin
                 // All inactive
             end
         endcase
+        
+        // Special case: assert instr_complete_internal when entering HALT from another state
+        // This must be done AFTER the case statement to avoid being overridden
+        // Special case: HALT state stays complete once entered
+        // This ensures delayed instr_complete signal stays high for the Rust code to see
+        if (current_state == S_HALT) begin
+            instr_complete_internal = 1'b1;
+        end
     end
     
     // ============================================================
