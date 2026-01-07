@@ -39,7 +39,8 @@ mod tests {
 
         let mut result = None;
         for _ in 0..10000 {
-            if let Some(tohost) = sim.step() {
+            let step_result = sim.step();
+            if let Some(tohost) = step_result.tohost_value {
                 result = Some(tohost);
                 break;
             }
@@ -125,7 +126,8 @@ mod tests {
 
         let mut result = None;
         for _ in 0..10000 {
-            if let Some(tohost) = sim.step() {
+            let step_result = sim.step();
+            if let Some(tohost) = step_result.tohost_value {
                 result = Some(tohost);
                 break;
             }
