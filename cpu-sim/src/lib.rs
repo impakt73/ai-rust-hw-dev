@@ -306,7 +306,7 @@ pub fn run_elf_with_vcd(
 /// Internal helper function that consolidates the common pattern for running an ELF
 /// with a callback that has access to the simulator after execution.
 ///
-/// This is the single place in the file where we set up and run a simulator.
+/// This delegates to the unified run_program function.
 #[allow(clippy::too_many_arguments)]
 fn run_elf_in_simulator_internal<F, T, C>(
     elf_path: &Path,
@@ -323,53 +323,30 @@ where
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
 {
-    // Create system bus with internal DRAM
-    let bus = SystemBus::new();
+    run_program(
+        max_cycles,
+        print_inst_trace,
+        false, // Don't print FSM state
+        fifo_callback,
+        trace_callback,
+        vcd_path,
+        |sim| {
+            // Load ELF into simulator memory
+            let entry_point =
+                load_elf(sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
 
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+            log::info!("ELF loaded successfully");
+            log::info!("Entry point: 0x{:08x}", entry_point);
 
-    let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            print_inst_trace,
-            false, // Don't print FSM state
-            fifo_callback,
-            trace_callback,
-            vcd,
-        )?
-    } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            print_inst_trace,
-            false, // Don't print FSM state
-            fifo_callback,
-            trace_callback,
-        )?
-    };
+            // Write data to RX FIFO if provided
+            if let Some(data) = fifo_rx_data {
+                sim.fifo_write_rx_string(data);
+            }
 
-    // Load ELF into simulator memory
-    let entry_point =
-        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Write data to RX FIFO if provided
-    if let Some(data) = fifo_rx_data {
-        sim.fifo_write_rx_string(data);
-    }
-
-    // Run simulation with entry point as boot PC
-    let result = sim.run(entry_point, max_cycles)?;
-
-    // Execute callback with mutable simulator and result
-    callback(&mut sim, &result);
-
-    Ok(result)
+            Ok(entry_point)
+        },
+        callback,
+    )
 }
 
 /// Run an ELF file in a simulator and execute a callback with access to the simulator
@@ -468,6 +445,8 @@ where
 /// This function supports instruction trace callbacks and provides mutable
 /// simulator access before the run for configuration (e.g., enabling debug flags).
 ///
+/// This delegates to the unified run_program function.
+///
 /// # Arguments
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
@@ -494,48 +473,30 @@ where
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>),
 {
-    // Create system bus with internal DRAM
-    let bus = SystemBus::new();
+    run_program(
+        max_cycles,
+        print_inst_trace,
+        false, // Don't print FSM state
+        fifo_callback,
+        trace_callback,
+        vcd_path,
+        |sim| {
+            // Execute callback_before to configure simulator (e.g., enable debug flags)
+            callback_before(sim);
 
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+            // Load ELF into simulator memory
+            let entry_point =
+                load_elf(sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
 
-    let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            print_inst_trace,
-            false, // Don't print FSM state
-            fifo_callback,
-            trace_callback,
-            vcd,
-        )?
-    } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            print_inst_trace,
-            false, // Don't print FSM state
-            fifo_callback,
-            trace_callback,
-        )?
-    };
+            log::info!("ELF loaded successfully");
+            log::info!("Entry point: 0x{:08x}", entry_point);
 
-    // Execute callback_before to configure simulator (e.g., enable debug flags)
-    callback_before(&mut sim);
-
-    // Load ELF into simulator memory
-    let entry_point =
-        load_elf(&mut sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Run simulation with entry point as boot PC
-    let result = sim.run(entry_point, max_cycles)?;
-
-    Ok(result)
+            Ok(entry_point)
+        },
+        |_sim, _result| {
+            // No post-execution callback needed for this function
+        },
+    )
 }
 
 /// Unified program execution function that supports both ELF and programmatic instruction loading

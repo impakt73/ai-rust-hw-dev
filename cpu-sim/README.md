@@ -191,7 +191,7 @@ For testing RTL implementations with programmatically generated instruction sequ
 use riscv_core::instruction::*;
 
 // Generate test instructions
-let instructions = vec![
+let instructions = [
     addi(1, 0, 10),   // x1 = 10
     addi(2, 0, 20),   // x2 = 20
     add(3, 1, 2),     // x3 = x1 + x2 = 30
