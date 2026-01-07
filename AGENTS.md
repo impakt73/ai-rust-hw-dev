@@ -62,7 +62,7 @@ cargo clean
 
 ### Test Structure
 
-The project has 112 comprehensive tests across all packages:
+The project has 115+ comprehensive tests across all packages:
 - **cpu_verifier package (50 tests):**
   - 16 ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
   - 6 Register file tests: Validate register behavior (including x0 immutability)
@@ -73,11 +73,22 @@ The project has 112 comprehensive tests across all packages:
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (62 tests):**
-  - cpu-sim: 19 integration tests (ELF loading, execution, FIFO, VCD dumping, trace callbacks)
+- **Other packages (65+ tests):**
+  - cpu-sim: 22+ integration tests including:
+    - ELF loading and execution
+    - FIFO communication and packet protocol
+    - VCD waveform dumping validation
+    - Instruction trace callbacks with comprehensive validation
+    - Programmatic instruction sequence testing with trace verification
+    - Combined trace + VCD testing
   - riscv_core: 33 utility and tracing tests
   - riscv_protocol: 6 packet serialization/deserialization tests
   - riscv_macros: 4 macro functionality tests
+
+**New Validation Tests:**
+- `test_comprehensive_trace_validation`: Validates instruction trace accuracy for 12+ instructions with full operand checking (PC, register values, immediates)
+- `test_trace_with_branches`: Ensures branch instructions skip correct sequences in trace output
+- `test_trace_and_vcd_together`: Demonstrates VCD + instruction trace working simultaneously
 
 ### Verilator Build Process
 

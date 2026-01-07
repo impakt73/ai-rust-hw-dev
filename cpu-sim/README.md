@@ -163,6 +163,73 @@ For advanced use cases that need access to the simulator after execution:
 
 All functions delegate to a unified internal implementation for consistency and maintainability.
 
+## Programmatic Testing with cpu-sim
+
+For testing RTL implementations with programmatically generated instruction sequences, the `test_rtl_verification` module provides helper functions that simplify trace collection and VCD generation.
+
+### Basic Programmatic Test
+
+```rust
+use riscv_core::instruction::*;
+
+// Generate test instructions
+let instructions = vec![
+    addi(1, 0, 10),   // x1 = 10
+    addi(2, 0, 20),   // x2 = 20
+    add(3, 1, 2),     // x3 = x1 + x2 = 30
+];
+
+// Run and verify
+run_program_with_callback(&instructions, 100, |sim, result| {
+    assert_eq!(result.tohost_value, Some(1));
+}).expect("Test should pass");
+```
+
+### Enabling Trace and VCD in Tests
+
+Use `RunOptions` to enable instruction tracing and VCD dumping:
+
+```rust
+let options = RunOptions {
+    print_inst_trace: true,    // Print traces to console
+    print_fsm_state: false,     // Don't print FSM states
+    vcd_path: Some("/tmp/test.vcd"), // Generate VCD file
+};
+
+run_program_with_options(&instructions, 100, options, |sim, result| {
+    // Verify results
+}).expect("Test should pass");
+```
+
+### Programmatic Trace Validation
+
+Collect and validate instruction traces programmatically:
+
+```rust
+let mut traces = Vec::new();
+
+run_program_with_trace(&instructions, 100, |trace| {
+    traces.push(trace.clone());
+}, |sim, result| {
+    // Verify we got expected number of traces
+    assert_eq!(traces.len(), 12);
+    
+    // Validate first instruction
+    assert_eq!(traces[0].inst_type, InstructionType::Addi);
+    assert_eq!(traces[0].pc, 0x8000_0000);
+    assert_eq!(traces[0].rd.unwrap().value, 10);
+}).expect("Test should pass");
+```
+
+### Comprehensive Validation Example
+
+See `test_comprehensive_trace_validation` in `test_rtl_verification.rs` for a complete example that validates:
+- PC values match expected sequence
+- Instruction types decode correctly
+- Register values are computed correctly
+- Immediate values are extracted properly
+- Control flow (branches) executes correctly
+
 ## Program Termination
 
 Programs can signal completion by writing to the special "tohost" address `0xFFFFFFF0`. The simulator will detect this write and terminate successfully.
