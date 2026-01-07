@@ -180,10 +180,7 @@ mod tests {
     ) -> Result<SimulationResult, String>
     where
         T: FnMut(&riscv_core::trace::InstructionTrace),
-        F: for<'a> FnOnce(
-            &mut Simulator<'a, fn(u32), T>,
-            &SimulationResult,
-        ),
+        F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), T>, &SimulationResult),
     {
         // Create system bus and simulator
         let bus = bus::SystemBus::new();
@@ -1154,9 +1151,9 @@ mod tests {
         struct ExpectedInstruction {
             inst_type: riscv_core::trace::InstructionType,
             pc: u32,
-            rd: Option<(u8, u32)>,       // (register number, expected value)
-            rs1: Option<(u8, u32)>,      // (register number, expected value)
-            rs2: Option<(u8, u32)>,      // (register number, expected value)
+            rd: Option<(u8, u32)>,  // (register number, expected value)
+            rs1: Option<(u8, u32)>, // (register number, expected value)
+            rs2: Option<(u8, u32)>, // (register number, expected value)
             immediate: Option<i32>,
         }
 
@@ -1330,11 +1327,7 @@ mod tests {
 
             // Validate rd
             if let Some((exp_reg, exp_val)) = expected.rd {
-                assert!(
-                    trace.rd.is_some(),
-                    "Trace {} should have rd operand",
-                    i
-                );
+                assert!(trace.rd.is_some(), "Trace {} should have rd operand", i);
                 let rd = trace.rd.as_ref().unwrap();
                 assert_eq!(
                     rd.reg, exp_reg,
@@ -1350,11 +1343,7 @@ mod tests {
 
             // Validate rs1
             if let Some((exp_reg, exp_val)) = expected.rs1 {
-                assert!(
-                    trace.rs1.is_some(),
-                    "Trace {} should have rs1 operand",
-                    i
-                );
+                assert!(trace.rs1.is_some(), "Trace {} should have rs1 operand", i);
                 let rs1 = trace.rs1.as_ref().unwrap();
                 assert_eq!(
                     rs1.reg, exp_reg,
@@ -1370,11 +1359,7 @@ mod tests {
 
             // Validate rs2
             if let Some((exp_reg, exp_val)) = expected.rs2 {
-                assert!(
-                    trace.rs2.is_some(),
-                    "Trace {} should have rs2 operand",
-                    i
-                );
+                assert!(trace.rs2.is_some(), "Trace {} should have rs2 operand", i);
                 let rs2 = trace.rs2.as_ref().unwrap();
                 assert_eq!(
                     rs2.reg, exp_reg,
@@ -1427,14 +1412,14 @@ mod tests {
 
         let base_addr: u32 = 0x8000_0000;
         let mut instructions = vec![
-            addi(1, 0, 10),      // 0x00: x1 = 10
-            addi(2, 0, 20),      // 0x04: x2 = 20
-            beq(1, 1, 8),        // 0x08: branch to 0x10 (taken - skip next)
-            addi(3, 0, 99),      // 0x0C: SKIPPED
-            addi(4, 0, 5),       // 0x10: x4 = 5
-            bne(1, 2, 8),        // 0x14: branch to 0x1C (taken - skip next)
-            addi(5, 0, 99),      // 0x18: SKIPPED
-            addi(6, 0, 1),       // 0x1C: x6 = 1
+            addi(1, 0, 10), // 0x00: x1 = 10
+            addi(2, 0, 20), // 0x04: x2 = 20
+            beq(1, 1, 8),   // 0x08: branch to 0x10 (taken - skip next)
+            addi(3, 0, 99), // 0x0C: SKIPPED
+            addi(4, 0, 5),  // 0x10: x4 = 5
+            bne(1, 2, 8),   // 0x14: branch to 0x1C (taken - skip next)
+            addi(5, 0, 99), // 0x18: SKIPPED
+            addi(6, 0, 1),  // 0x1C: x6 = 1
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -1455,10 +1440,7 @@ mod tests {
         println!("Captured {} traces", captured_traces.len());
         println!("\nTrace sequence:");
         for (i, trace) in captured_traces.iter().enumerate() {
-            println!(
-                "  [{}] PC=0x{:08x} {:?}",
-                i, trace.pc, trace.inst_type
-            );
+            println!("  [{}] PC=0x{:08x} {:?}", i, trace.pc, trace.inst_type);
         }
 
         // Verify branch behavior - skipped instructions should not appear in trace
@@ -1520,11 +1502,7 @@ mod tests {
         let vcd_path = "/tmp/test_trace_vcd.vcd";
 
         // Simple test program
-        let mut instructions = vec![
-            addi(1, 0, 42),
-            addi(2, 1, 8),
-            add(3, 1, 2),
-        ];
+        let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
         instructions.extend(tohost_termination(7, 8));
 
         let options = RunOptions {
@@ -1547,13 +1525,22 @@ mod tests {
         );
 
         // Read VCD file
-        let vcd_contents = std::fs::read_to_string(vcd_path)
-            .expect("Should be able to read VCD file");
+        let vcd_contents =
+            std::fs::read_to_string(vcd_path).expect("Should be able to read VCD file");
 
         // Validate VCD contains essential signals
-        assert!(vcd_contents.contains("clk"), "VCD should contain clk signal");
-        assert!(vcd_contents.contains("rst_n"), "VCD should contain rst_n signal");
-        assert!(vcd_contents.contains("imem_addr"), "VCD should contain imem_addr");
+        assert!(
+            vcd_contents.contains("clk"),
+            "VCD should contain clk signal"
+        );
+        assert!(
+            vcd_contents.contains("rst_n"),
+            "VCD should contain rst_n signal"
+        );
+        assert!(
+            vcd_contents.contains("imem_addr"),
+            "VCD should contain imem_addr"
+        );
         assert!(vcd_contents.contains("#0"), "VCD should have timestamps");
 
         // Clean up
