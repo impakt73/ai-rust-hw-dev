@@ -40,6 +40,7 @@ use std::path::Path;
 ///     &runtime,
 ///     bus,
 ///     false,
+///     false,
 ///     None::<fn(u32)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
 /// )?;

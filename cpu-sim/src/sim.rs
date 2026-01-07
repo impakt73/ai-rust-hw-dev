@@ -526,6 +526,7 @@ where
     ///     &runtime,
     ///     bus,
     ///     false,
+    ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     /// )?;
@@ -562,6 +563,7 @@ where
     /// let sim = Simulator::new(
     ///     &runtime,
     ///     bus,
+    ///     false,
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -604,6 +606,7 @@ where
     /// let sim = Simulator::new(
     ///     &runtime,
     ///     bus,
+    ///     false,
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
