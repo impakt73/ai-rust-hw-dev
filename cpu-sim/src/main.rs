@@ -90,13 +90,19 @@ fn run_simulation(args: &Args) {
 }
 
 fn print_simulation_result(result: &cpu_sim::SimulationResult) {
+    // Convert microseconds to milliseconds as a float with 2 decimal places
+    let elapsed_ms = result.elapsed_cpu_time_us as f64 / 1000.0;
+
     if let Some(tohost_value) = result.tohost_value {
         println!(
-            "✓ Simulation completed in {} cycles (tohost value: 0x{:08x})",
-            result.cycles, tohost_value
+            "✓ Simulation completed in {} cycles (tohost value: 0x{:08x}), CPU time: {:.2} ms",
+            result.cycles, tohost_value, elapsed_ms
         );
     } else {
-        println!("✓ Simulation completed in {} cycles", result.cycles);
+        println!(
+            "✓ Simulation completed in {} cycles, CPU time: {:.2} ms",
+            result.cycles, elapsed_ms
+        );
     }
 }
 

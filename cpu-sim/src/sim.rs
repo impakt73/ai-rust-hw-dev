@@ -3,12 +3,21 @@ use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
 use std::path::Path;
+use std::time::Instant;
+
+/// Result of a single simulation step
+#[derive(Debug)]
+pub struct SimulationStepResult {
+    pub tohost_value: Option<u32>,
+    pub elapsed_cpu_time_us: u64,
+}
 
 /// Result of a simulation run
 #[derive(Debug)]
 pub struct SimulationResult {
     pub cycles: u64,
     pub tohost_value: Option<u32>,
+    pub elapsed_cpu_time_us: u64,
 }
 
 /// RISC-V CPU Simulator
@@ -179,8 +188,11 @@ where
     }
 
     /// Execute a single simulation step (one cycle)
-    /// Returns Some(tohost_value) if halt detected, None otherwise
-    pub fn step(&mut self) -> Option<u32> {
+    /// Returns SimulationStepResult containing:
+    /// - tohost_value: Some(value) if halt detected, None otherwise
+    /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
+    pub fn step(&mut self) -> SimulationStepResult {
+        let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
@@ -319,7 +331,11 @@ where
             }
         }
 
-        halt_value
+        let elapsed_us = start_time.elapsed().as_micros() as u64;
+        SimulationStepResult {
+            tohost_value: halt_value,
+            elapsed_cpu_time_us: elapsed_us,
+        }
     }
 
     /// Run the simulation for up to max_cycles
@@ -335,9 +351,14 @@ where
 
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
+        let mut total_elapsed_us: u64 = 0;
+
         while self.cycle_count < max_cycles {
             // Execute one step and check for halt
-            if let Some(tohost_value) = self.step() {
+            let step_result = self.step();
+            total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
+
+            if let Some(tohost_value) = step_result.tohost_value {
                 log::info!(
                     "Halt signal detected at tohost (0x{:08x}), value=0x{:08x}",
                     TOHOST_ADDR,
@@ -346,6 +367,7 @@ where
                 return Ok(SimulationResult {
                     cycles: self.cycle_count,
                     tohost_value: Some(tohost_value),
+                    elapsed_cpu_time_us: total_elapsed_us,
                 });
             }
 
@@ -365,6 +387,7 @@ where
         Ok(SimulationResult {
             cycles: self.cycle_count,
             tohost_value: None,
+            elapsed_cpu_time_us: total_elapsed_us,
         })
     }
 
