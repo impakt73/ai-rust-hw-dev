@@ -12,7 +12,8 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-// Test direct access to static mut array
+// Test direct access to static mut array using .uninit section to avoid BSS zero-initialization
+#[link_section = ".uninit"]
 static mut HEAP: [u8; 8192] = [0; 8192];
 
 #[entry]
@@ -40,19 +41,21 @@ fn main() -> ! {
         }
     }
     
-    // Test 2: Write to HEAP using index notation
+    // Test 2: Write to HEAP using pointer arithmetic
     unsafe {
-        HEAP[10] = 0xAAu8;
-        HEAP[11] = 0xBBu8;
-        HEAP[12] = 0xCCu8;
-        HEAP[13] = 0xDDu8;
+        let ptr = addr_of_mut!(HEAP).cast::<u8>();
+        core::ptr::write(ptr.add(10), 0xAAu8);
+        core::ptr::write(ptr.add(11), 0xBBu8);
+        core::ptr::write(ptr.add(12), 0xCCu8);
+        core::ptr::write(ptr.add(13), 0xDDu8);
         
         // Write marker
         common::fifo_write_word(0xBBBBBBBB);
         
-        // Read back
+        // Read back using pointer arithmetic
         for i in 10..14 {
-            common::fifo_write_word(HEAP[i] as u32);
+            let byte = core::ptr::read(ptr.add(i));
+            common::fifo_write_word(byte as u32);
         }
     }
     
