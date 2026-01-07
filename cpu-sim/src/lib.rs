@@ -538,6 +538,127 @@ where
     Ok(result)
 }
 
+/// Unified program execution function that supports both ELF and programmatic instruction loading
+///
+/// This is the single entry point for running programs on the simulator. It uses a pre-execution
+/// callback to handle different loading strategies (ELF vs instruction array) and returns the
+/// entry point for simulation.
+///
+/// # Arguments
+/// * `max_cycles` - Maximum number of cycles to run
+/// * `print_inst_trace` - Whether to print instruction trace to console
+/// * `print_fsm_state` - Whether to print FSM state transitions
+/// * `fifo_callback` - Optional callback for FIFO TX data
+/// * `trace_callback` - Optional callback for instruction traces
+/// * `vcd_path` - Optional path to VCD file for waveform dumping
+/// * `prep_callback` - Pre-execution callback that loads the program and returns entry point
+/// * `post_callback` - Post-execution callback with access to simulator and result
+///
+/// # Returns
+/// * `Ok(SimulationResult)` on success
+/// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::run_program;
+/// use std::path::Path;
+///
+/// // Example 1: Load ELF file
+/// run_program(
+///     1000,
+///     false,
+///     false,
+///     None::<fn(u32)>,
+///     None::<fn(&cpu_sim::InstructionTrace)>,
+///     None,
+///     |sim| {
+///         let entry = cpu_sim::load_elf(sim, Path::new("test.elf"))?;
+///         Ok(entry)
+///     },
+///     |_sim, _result| {}
+/// )?;
+///
+/// // Example 2: Load instruction array
+/// run_program(
+///     1000,
+///     false,
+///     false,
+///     None::<fn(u32)>,
+///     None::<fn(&cpu_sim::InstructionTrace)>,
+///     None,
+///     |sim| {
+///         let instructions = vec![0x00000093]; // addi x1, x0, 0
+///         let start_addr = 0x8000_0000;
+///         let bytes: Vec<u8> = instructions.iter()
+///             .flat_map(|i| i.to_le_bytes())
+///             .collect();
+///         sim.write_memory_region(start_addr, &bytes);
+///         Ok(start_addr)
+///     },
+///     |_sim, _result| {}
+/// )?;
+/// # Ok::<(), String>(())
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub fn run_program<F, T, P, C>(
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    fifo_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    prep_callback: P,
+    post_callback: C,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
+    P: for<'a> FnOnce(&mut Simulator<'a, F, T>) -> Result<u32, String>,
+    C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
+{
+    // Create system bus with internal DRAM
+    let bus = SystemBus::new();
+
+    // Initialize CPU Simulator
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    let mut sim = if let Some(vcd) = vcd_path {
+        Simulator::new_with_vcd(
+            &runtime,
+            bus,
+            print_inst_trace,
+            print_fsm_state,
+            fifo_callback,
+            trace_callback,
+            vcd,
+        )?
+    } else {
+        Simulator::new(
+            &runtime,
+            bus,
+            print_inst_trace,
+            print_fsm_state,
+            fifo_callback,
+            trace_callback,
+        )?
+    };
+
+    // Execute pre-execution callback to load program and get entry point
+    let entry_point = prep_callback(&mut sim)?;
+
+    log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
+
+    // Run simulation with entry point as boot PC
+    sim.reset(entry_point);
+    let result = sim.run(entry_point, max_cycles)?;
+
+    // Execute post-execution callback with mutable simulator and result
+    post_callback(&mut sim, &result);
+
+    Ok(result)
+}
+
 // Disabled broken test module
 // #[cfg(test)]
 #[cfg(test)]

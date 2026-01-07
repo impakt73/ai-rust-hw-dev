@@ -37,27 +37,10 @@ mod tests {
         ]
     }
 
-    /// Options for running programmatic instruction tests
-    #[derive(Default)]
-    struct RunOptions<'a> {
-        /// Print instruction trace to console
-        print_inst_trace: bool,
-        /// Print FSM state transitions
-        print_fsm_state: bool,
-        /// Optional VCD file path for waveform dumping
-        vcd_path: Option<&'a str>,
-    }
-
     /// Helper to run programmatic instructions with a callback for verification
     ///
-    /// This helper encapsulates the pattern of:
-    /// 1. Creating a simulator with proper lifetime management
-    /// 2. Writing programmatic instructions to memory
-    /// 3. Running the simulation
-    /// 4. Executing a callback with access to the simulator and result
-    ///
-    /// This uses a callback-based approach similar to run_elf_in_simulator_internal
-    /// to avoid lifetime issues and memory leaks (no Box::leak).
+    /// This helper uses the unified run_program API from lib.rs to execute
+    /// programmatically generated instruction sequences.
     ///
     /// # Example
     /// ```
@@ -77,32 +60,39 @@ mod tests {
             &SimulationResult,
         ),
     {
-        run_program_with_options(instructions, max_cycles, RunOptions::default(), callback)
+        const START_ADDR: u32 = 0x8000_0000;
+
+        // Convert instructions to bytes once before closure
+        let program_bytes: Vec<u8> = instructions
+            .iter()
+            .flat_map(|inst| inst.to_le_bytes())
+            .collect();
+
+        run_program(
+            max_cycles,
+            false, // Don't print instruction trace by default
+            false, // Don't print FSM state
+            None::<fn(u32)>,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            None, // No VCD
+            |sim| {
+                // Load programmatic instructions into memory
+                sim.write_memory_region(START_ADDR, &program_bytes);
+                Ok(START_ADDR)
+            },
+            callback,
+        )
     }
 
-    /// Helper to run programmatic instructions with full options and a callback
+    /// Helper to run programmatic instructions with options for trace/VCD
     ///
-    /// Extended version of `run_program_with_callback` that supports:
-    /// - Instruction trace printing
-    /// - FSM state printing
-    /// - VCD waveform dumping
-    /// - Trace callbacks for programmatic validation
-    ///
-    /// # Example
-    /// ```
-    /// let options = RunOptions {
-    ///     print_inst_trace: true,
-    ///     vcd_path: Some("/tmp/test.vcd"),
-    ///     ..Default::default()
-    /// };
-    /// run_program_with_options(&instructions, 100, options, |sim, result| {
-    ///     assert_eq!(result.cycles, 10);
-    /// }).expect("Simulation should succeed");
-    /// ```
+    /// This version supports enabling instruction trace printing and VCD dumping
+    /// through simple boolean/optional parameters.
     fn run_program_with_options<F>(
         instructions: &[u32],
         max_cycles: u64,
-        options: RunOptions,
+        print_inst_trace: bool,
+        vcd_path: Option<&str>,
         callback: F,
     ) -> Result<SimulationResult, String>
     where
@@ -111,67 +101,32 @@ mod tests {
             &SimulationResult,
         ),
     {
-        // Create system bus and simulator
-        let bus = bus::SystemBus::new();
-        let runtime = riscv_core::create_cpu_runtime()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
-
-        let mut sim = if let Some(vcd_path) = options.vcd_path {
-            sim::Simulator::new_with_vcd(
-                &runtime,
-                bus,
-                options.print_inst_trace,
-                options.print_fsm_state,
-                None::<fn(u32)>,
-                None::<fn(&riscv_core::trace::InstructionTrace)>,
-                vcd_path,
-            )?
-        } else {
-            sim::Simulator::new(
-                &runtime,
-                bus,
-                options.print_inst_trace,
-                options.print_fsm_state,
-                None::<fn(u32)>,
-                None::<fn(&riscv_core::trace::InstructionTrace)>,
-            )?
-        };
-
-        // Convert instructions to bytes (little-endian)
-        let mut program_bytes = Vec::new();
-        for &inst in instructions {
-            program_bytes.extend_from_slice(&inst.to_le_bytes());
-        }
-
-        // Write program to memory at standard RISC-V start address
         const START_ADDR: u32 = 0x8000_0000;
-        sim.write_memory_region(START_ADDR, &program_bytes);
 
-        // Reset and run
-        sim.reset(START_ADDR);
-        let result = sim.run(START_ADDR, max_cycles)?;
+        let program_bytes: Vec<u8> = instructions
+            .iter()
+            .flat_map(|inst| inst.to_le_bytes())
+            .collect();
 
-        // Execute callback with simulator and result
-        callback(&mut sim, &result);
-
-        Ok(result)
+        run_program(
+            max_cycles,
+            print_inst_trace,
+            false, // Don't print FSM state
+            None::<fn(u32)>,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            vcd_path,
+            |sim| {
+                sim.write_memory_region(START_ADDR, &program_bytes);
+                Ok(START_ADDR)
+            },
+            callback,
+        )
     }
 
     /// Helper to run programmatic instructions with a trace callback
     ///
     /// This version allows collecting instruction traces programmatically
-    /// for validation in tests. The trace callback is invoked for each
-    /// instruction executed.
-    ///
-    /// # Example
-    /// ```
-    /// let mut traces = Vec::new();
-    /// run_program_with_trace(&instructions, 100, |trace| {
-    ///     traces.push(trace.clone());
-    /// }, |sim, result| {
-    ///     assert_eq!(traces.len(), 10);
-    /// }).expect("Simulation should succeed");
-    /// ```
+    /// for validation in tests.
     fn run_program_with_trace<T, F>(
         instructions: &[u32],
         max_cycles: u64,
@@ -182,38 +137,26 @@ mod tests {
         T: FnMut(&riscv_core::trace::InstructionTrace),
         F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), T>, &SimulationResult),
     {
-        // Create system bus and simulator
-        let bus = bus::SystemBus::new();
-        let runtime = riscv_core::create_cpu_runtime()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+        const START_ADDR: u32 = 0x8000_0000;
 
-        let mut sim = sim::Simulator::new(
-            &runtime,
-            bus,
-            false, // Don't print instruction trace by default
+        let program_bytes: Vec<u8> = instructions
+            .iter()
+            .flat_map(|inst| inst.to_le_bytes())
+            .collect();
+
+        run_program(
+            max_cycles,
+            false, // Don't print instruction trace
             false, // Don't print FSM state
             None::<fn(u32)>,
             Some(trace_callback),
-        )?;
-
-        // Convert instructions to bytes (little-endian)
-        let mut program_bytes = Vec::new();
-        for &inst in instructions {
-            program_bytes.extend_from_slice(&inst.to_le_bytes());
-        }
-
-        // Write program to memory at standard RISC-V start address
-        const START_ADDR: u32 = 0x8000_0000;
-        sim.write_memory_region(START_ADDR, &program_bytes);
-
-        // Reset and run
-        sim.reset(START_ADDR);
-        let result = sim.run(START_ADDR, max_cycles)?;
-
-        // Execute callback with simulator and result
-        post_callback(&mut sim, &result);
-
-        Ok(result)
+            None, // No VCD
+            |sim| {
+                sim.write_memory_region(START_ADDR, &program_bytes);
+                Ok(START_ADDR)
+            },
+            post_callback,
+        )
     }
 
     // ============================================================================
@@ -1505,15 +1448,8 @@ mod tests {
         let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
         instructions.extend(tohost_termination(7, 8));
 
-        let options = RunOptions {
-            print_inst_trace: false,
-            print_fsm_state: false,
-            vcd_path: Some(vcd_path),
-        };
-
-        // Note: We need to use a different approach since RunOptions doesn't support trace callbacks
-        // This test demonstrates the API limitation and motivates future enhancement
-        run_program_with_options(&instructions, 100, options, |_sim, result| {
+        // Run with VCD enabled
+        run_program_with_options(&instructions, 100, false, Some(vcd_path), |_sim, result| {
             assert_eq!(result.tohost_value, Some(1));
         })
         .expect("Simulation should succeed");
@@ -1553,7 +1489,7 @@ mod tests {
         println!("✓ COMBINED TRACE + VCD TEST PASSED");
         println!("========================================");
         println!("  - VCD waveform dumping works");
-        println!("  - RunOptions API enables easy config");
+        println!("  - Trace options enable easy config");
         println!("  - Both features can be used together");
         println!("========================================\n");
     }
