@@ -609,7 +609,8 @@ fn test_packet_protocol_end_to_end() {
     println!("\nStep 6: Running CPU until halt...");
     let mut final_tohost = None;
     for cycle in 0..50000 {
-        if let Some(tohost) = sim.step() {
+        let step_result = sim.step();
+        if let Some(tohost) = step_result.tohost_value {
             println!(
                 "  ✓ CPU halted at cycle {} with tohost=0x{:08x}",
                 cycle, tohost

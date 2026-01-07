@@ -8,7 +8,7 @@ pub mod sim;
 mod tests;
 
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, Simulator};
+pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
 use bus::SystemBus;
 use std::path::Path;
