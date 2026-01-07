@@ -31,9 +31,13 @@ where
     cycle_count: u64,
     print_inst_trace: bool,
     print_debug_packets: bool,
+    print_fsm_state: bool, // NEW: Print FSM state every cycle
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
+    // For duplicate trace detection (prevents repeated halted instruction traces)
+    last_trace_pc: Option<u32>,
+    last_trace_instr: Option<u32>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -46,6 +50,7 @@ where
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         print_inst_trace: bool,
+        print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
     ) -> Result<Self, String> {
@@ -60,9 +65,12 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true, // Enable by default
+            print_fsm_state,
             fifo_callback,
             trace_callback,
             vcd: None,
+            last_trace_pc: None,
+            last_trace_instr: None,
         })
     }
 
@@ -71,6 +79,7 @@ where
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         print_inst_trace: bool,
+        print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: &str,
@@ -95,9 +104,12 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true,
+            print_fsm_state,
             fifo_callback,
             trace_callback,
             vcd: Some(vcd),
+            last_trace_pc: None,
+            last_trace_instr: None,
         })
     }
 
@@ -139,6 +151,33 @@ where
         if bytes.len().is_multiple_of(4) {
             self.fifo_write_rx(0);
         }
+    }
+
+    /// Helper function to decode FSM state value to human-readable string
+    fn fsm_state_name(state: u8) -> &'static str {
+        match state {
+            0 => "IDLE",
+            1 => "FETCH",
+            2 => "DECODE",
+            3 => "EXECUTE",
+            4 => "MEM_ADDR",
+            5 => "MEM_READ",
+            6 => "MEM_WRITE",
+            7 => "WRITEBACK",
+            8 => "BRANCH",
+            9 => "CSR",
+            10 => "HALT",
+            _ => "UNKNOWN",
+        }
+    }
+
+    /// Check if trace is a duplicate (same PC and instruction as last trace)
+    /// Used to prevent repeated halted instruction traces
+    fn is_duplicate_trace(&self, pc: u32, instruction: u32) -> bool {
+        matches!(
+            (self.last_trace_pc, self.last_trace_instr),
+            (Some(last_pc), Some(last_instr)) if last_pc == pc && last_instr == instruction
+        )
     }
 
     /// Reset the CPU
@@ -187,7 +226,7 @@ where
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
     }
 
-    /// Execute a single simulation step (one cycle)
+    /// Execute a single simulation step (one instruction - may take multiple cycles)
     /// Returns SimulationStepResult containing:
     /// - tohost_value: Some(value) if halt detected, None otherwise
     /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
@@ -195,98 +234,115 @@ where
         let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+        const MAX_CYCLES_PER_INSTR: u32 = 100; // Safety limit for variable latency
 
-        // Instruction Fetch
-        let pc = self.cpu.imem_addr;
-        let instruction = self.bus.read_word(pc);
-        self.cpu.imem_data = instruction;
-
-        // First evaluation: Decode instruction and compute addresses
-        self.cpu.eval();
-
-        // Data Memory Read
-        let dmem_addr = self.cpu.dmem_addr;
-        let dmem_size = self.cpu.dmem_size;
-        let rdata = if self.cpu.dmem_re != 0 {
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // Byte operation
-                    self.bus.read_byte(dmem_addr) as u32
-                }
-                0b01 => {
-                    // Halfword operation
-                    self.bus.read_halfword(dmem_addr) as u32
-                }
-                _ => {
-                    // Word operation (default)
-                    self.bus.read_word(dmem_addr)
-                }
-            }
-        } else {
-            0
-        };
-        self.cpu.dmem_rdata = rdata;
-
-        // Second evaluation: Propagate loaded data
-        self.cpu.eval();
-
-        // Data Memory Write
+        let mut cycles = 0;
         let mut halt_value = None;
-        if self.cpu.dmem_we != 0 {
-            let wdata = self.cpu.dmem_wdata;
 
-            // Route based on size to select operation
-            match dmem_size {
-                0b00 => {
-                    // SB - Store Byte
-                    self.bus.write_byte(dmem_addr, wdata as u8);
-                }
-                0b01 => {
-                    // SH - Store Halfword
-                    self.bus.write_halfword(dmem_addr, wdata as u16);
-                }
-                _ => {
-                    // SW - Store Word (default)
-                    self.bus.write_word(dmem_addr, wdata);
-                }
+        // Multi-cycle execution loop - continue until instruction completes
+        loop {
+            // Evaluate combinational logic
+            self.cpu.eval();
+
+            // Handle instruction memory with zero-latency (for now)
+            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
+            // Variable latency can be added by implementing a counter-based delay.
+            if self.cpu.imem_req != 0 {
+                let addr = self.cpu.imem_addr;
+                let data = self.bus.read_word(addr);
+                self.cpu.imem_data = data;
+                self.cpu.imem_ready = 1; // Always ready (zero latency)
+            } else {
+                self.cpu.imem_ready = 0;
             }
 
-            // Check for halt signal
-            if dmem_addr == TOHOST_ADDR {
-                halt_value = Some(wdata);
+            // Handle data memory with zero-latency (for now)
+            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
+            // Variable latency can be added by implementing a counter-based delay.
+            if self.cpu.dmem_req != 0 {
+                let addr = self.cpu.dmem_addr;
+                let size = self.cpu.dmem_size;
+
+                if self.cpu.dmem_we != 0 {
+                    // Data Memory Write
+                    let wdata = self.cpu.dmem_wdata;
+                    match size {
+                        0b00 => self.bus.write_byte(addr, wdata as u8),
+                        0b01 => self.bus.write_halfword(addr, wdata as u16),
+                        _ => self.bus.write_word(addr, wdata),
+                    }
+
+                    // Check for halt signal
+                    if addr == TOHOST_ADDR {
+                        halt_value = Some(wdata);
+                    }
+
+                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                } else if self.cpu.dmem_re != 0 {
+                    // Data Memory Read
+                    let rdata = match size {
+                        0b00 => self.bus.read_byte(addr) as u32,
+                        0b01 => self.bus.read_halfword(addr) as u32,
+                        _ => self.bus.read_word(addr),
+                    };
+                    self.cpu.dmem_rdata = rdata;
+                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                } else {
+                    self.cpu.dmem_ready = 0;
+                }
+            } else {
+                self.cpu.dmem_ready = 0;
             }
-        }
 
-        // Sample debug signals BEFORE clock tick
-        let trace = if self.print_inst_trace || self.trace_callback.is_some() {
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
-            Some(InstructionTrace::from_instruction(
-                pc,
-                instruction,
-                rs1_value,
-                rs2_value,
-                rd_value,
-            ))
-        } else {
-            None
-        };
+            // Re-evaluate after setting memory signals
+            self.cpu.eval();
 
-        // Clock tick
-        self.cpu.clk = 0;
-        self.cpu.eval();
-        self.cpu.clk = 1;
-        self.cpu.eval();
+            // Print FSM state if enabled (before clock edge)
+            if self.print_fsm_state {
+                let fsm_state = self.cpu.debug_fsm_state;
+                let state_name = Self::fsm_state_name(fsm_state);
+                println!(
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | dmem_req={} dmem_ready={} | instr_complete={}",
+                    self.cycle_count,
+                    state_name,
+                    self.cpu.imem_addr,
+                    self.cpu.imem_req,
+                    self.cpu.imem_ready,
+                    self.cpu.dmem_req,
+                    self.cpu.dmem_ready,
+                    self.cpu.instr_complete
+                );
+            }
 
-        // Increment cycle count before dumping to VCD
-        self.cycle_count += 1;
+            // Clock edge
+            self.cpu.clk = 0;
+            self.cpu.eval();
+            self.cpu.clk = 1;
+            self.cpu.eval();
 
-        // Dump VCD if enabled (after clock edge, with proper timestamp)
-        // Reset sequence uses timestamps 0-3, so execution cycles start at 4
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.cycle_count + 3);
+            // Increment cycle count
+            self.cycle_count += 1;
+
+            // Dump VCD if enabled (after clock edge, with proper timestamp)
+            // Reset sequence uses timestamps 0-3, so execution cycles start at 4
+            if let Some(ref mut vcd) = self.vcd {
+                vcd.dump(self.cycle_count + 3);
+            }
+
+            // Safety check
+            cycles += 1;
+            if cycles >= MAX_CYCLES_PER_INSTR {
+                panic!(
+                    "Instruction exceeded maximum cycles ({})",
+                    MAX_CYCLES_PER_INSTR
+                );
+            }
+
+            // Check if instruction complete (AFTER clock edge)
+            // With delayed instr_complete, values have already settled by the time we see the signal
+            if self.cpu.instr_complete != 0 {
+                break;
+            }
         }
 
         // Process FIFO TX data
@@ -314,20 +370,47 @@ where
             while self.bus.fifo.tx.pop_front().is_some() {}
         }
 
-        // Call trace callback if provided
-        if let Some(ref mut callback) = self.trace_callback {
-            if let Some(ref trace_data) = trace {
-                callback(trace_data);
-            }
+        // Trace printing (simplified - only at instruction completion)
+        if self.print_inst_trace {
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
+            println!(
+                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
+                self.cycle_count,
+                pc,
+                instruction,
+                cycles + 1
+            );
         }
 
-        // Debug logging
-        if self.print_inst_trace {
-            if let Some(ref trace_data) = trace {
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | Addr: 0x{:08x} | Instr: 0x{:08x} | {}",
-                    self.cycle_count, pc, pc, instruction, trace_data
+        // Call trace callback if provided (at instruction completion)
+        // Skip if this is a duplicate trace (same PC and instruction as last trace)
+        if self.trace_callback.is_some() {
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+
+            // Check for duplicate before borrowing callback
+            let is_duplicate = self.is_duplicate_trace(pc, instruction);
+
+            // Skip bogus traces at PC=0 (from reset state) and duplicate halted traces
+            if pc != 0 && !is_duplicate {
+                let trace = InstructionTrace::from_instruction(
+                    pc,
+                    instruction,
+                    rs1_value,
+                    rs2_value,
+                    rd_value,
                 );
+                if let Some(ref mut callback) = self.trace_callback {
+                    callback(&trace);
+                }
+
+                // Update last trace for duplicate detection
+                self.last_trace_pc = Some(pc);
+                self.last_trace_instr = Some(instruction);
             }
         }
 
@@ -441,6 +524,7 @@ where
     ///     &runtime,
     ///     bus,
     ///     false,
+    ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     /// )?;
@@ -477,6 +561,7 @@ where
     /// let sim = Simulator::new(
     ///     &runtime,
     ///     bus,
+    ///     false,
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -519,6 +604,7 @@ where
     /// let sim = Simulator::new(
     ///     &runtime,
     ///     bus,
+    ///     false,
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,

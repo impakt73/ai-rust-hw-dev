@@ -19,6 +19,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -116,6 +117,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )

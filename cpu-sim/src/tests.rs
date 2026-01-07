@@ -60,6 +60,8 @@ fn fifo_data_to_string(data: &[u8]) -> String {
     String::from_utf8(trimmed_data.to_vec()).expect("FIFO data should be valid UTF-8")
 }
 
+/// Helper function to run ELF with FSM state printing enabled for debugging
+#[allow(dead_code)]
 #[test]
 fn test_comprehensive_elf() {
     init_test_logger();
@@ -189,6 +191,10 @@ fn test_trace_callback() {
         traces_clone.lock().unwrap().push(trace.clone());
     };
 
+    // NOTE: Use run_elf_with_fsm_debug() instead of run_elf_with_trace_callback()
+    // to enable detailed FSM state printing for debugging instruction trace issues
+    // let result = run_elf_with_fsm_debug(&elf_path, 500, false, Some(trace_callback))
+    //     .expect("Trace test simulation should succeed");
     let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback))
         .expect("Trace test simulation should succeed");
 
@@ -205,6 +211,28 @@ fn test_trace_callback() {
     println!("TRACE CALLBACK TEST RESULTS");
     println!("========================================");
     println!("Total instructions traced: {}", captured_traces.len());
+
+    // DEBUG: Print ALL captured traces with full details
+    println!("\nDEBUG: All captured instruction traces:");
+    for (i, trace) in captured_traces.iter().enumerate() {
+        println!(
+            "  [{}] PC=0x{:08x}, Type={:?}",
+            i, trace.pc, trace.inst_type
+        );
+        if let Some(rd) = &trace.rd {
+            println!("      rd: x{} = 0x{:08x}", rd.reg, rd.value);
+        }
+        if let Some(rs1) = &trace.rs1 {
+            println!("      rs1: x{} = 0x{:08x}", rs1.reg, rs1.value);
+        }
+        if let Some(rs2) = &trace.rs2 {
+            println!("      rs2: x{} = 0x{:08x}", rs2.reg, rs2.value);
+        }
+        if let Some(imm) = &trace.immediate {
+            println!("      immediate: {}", imm);
+        }
+    }
+    println!();
 
     // Track which expected instructions we've found
     let mut found_addi_x1 = false;
@@ -475,6 +503,7 @@ fn test_packet_protocol_end_to_end() {
         &runtime,
         bus,
         false, // Disable instruction trace
+        false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
@@ -737,7 +766,8 @@ fn test_println_macro() {
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
-        false, // Disable instruction trace
+        true,  // Enable instruction trace
+        false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
@@ -754,7 +784,7 @@ fn test_println_macro() {
 
     // Run until halt
     let result = sim
-        .run(entry_point, 15000)
+        .run(entry_point, 17000)
         .expect("Simulation should succeed");
 
     // Check FIFO data
@@ -768,7 +798,7 @@ fn test_println_macro() {
     }
 
     // Expected messages from the test program
-    let expected_messages = vec![
+    let expected_messages = [
         ("Hello from RISC-V CPU!\n", riscv_protocol::DebugLevel::Info),
         ("The answer is 42\n", riscv_protocol::DebugLevel::Info),
         ("Testing println macro\n", riscv_protocol::DebugLevel::Info),
@@ -1014,6 +1044,7 @@ fn test_memory_dump() {
             println!("✓ Magic bytes verified: 0xDEADBEEF");
 
             // Verify the pattern for a few more bytes (offset modulo 256)
+            #[allow(clippy::needless_range_loop)]
             for i in 4..20 {
                 assert_eq!(
                     memory_data[i], i as u8,
@@ -1041,7 +1072,7 @@ fn test_memory_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 1365, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 5200, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
@@ -1152,7 +1183,7 @@ fn test_image_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 363, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 1448, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");

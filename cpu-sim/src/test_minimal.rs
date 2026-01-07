@@ -30,6 +30,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -80,6 +81,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -162,6 +164,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -239,6 +242,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -272,7 +276,7 @@ mod tests {
         }
 
         // Check if the bytes match
-        let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let expected = [0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
         let mut all_match = true;
         for i in 0..expected.len() {
             let received = words[i + 1] as u8;
@@ -311,6 +315,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -380,6 +385,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -417,7 +423,7 @@ mod tests {
                     println!("  Byte {}: 0x{:02x}", i - a_pos - 1, words[i] as u8);
                 }
 
-                let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+                let expected = [0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
                 let mut all_match = true;
                 for (idx, exp) in expected.iter().enumerate() {
                     let actual = words[a_pos + 1 + idx] as u8;
@@ -442,7 +448,7 @@ mod tests {
                 println!("  Byte {}: 0x{:02x}", i - c_pos - 1, words[i] as u8);
             }
 
-            let expected = vec![0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+            let expected = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
             let mut all_match = true;
             for (idx, exp) in expected.iter().enumerate() {
                 let actual = words[c_pos + 1 + idx] as u8;
@@ -479,6 +485,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -515,7 +522,7 @@ mod tests {
                     println!("  Byte {}: 0x{:02x}", i - a_pos - 1, words[i] as u8);
                 }
 
-                let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+                let expected = [0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
                 let mut all_match = true;
                 for (idx, exp) in expected.iter().enumerate() {
                     let actual = words[a_pos + 1 + idx] as u8;
@@ -542,7 +549,7 @@ mod tests {
                 println!("  Byte {}: 0x{:02x}", i - b_pos - 1, words[i] as u8);
             }
 
-            let expected = vec![0xAAu8, 0xBB, 0xCC, 0xDD];
+            let expected = [0xAAu8, 0xBB, 0xCC, 0xDD];
             let mut all_match = true;
             for (idx, exp) in expected.iter().enumerate() {
                 let actual = words[b_pos + 1 + idx] as u8;
