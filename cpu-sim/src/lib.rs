@@ -572,7 +572,8 @@ where
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     |sim| {
-///         let entry = cpu_sim::load_elf(sim, Path::new("test.elf"))?;
+///         let entry = cpu_sim::load_elf(sim, Path::new("test.elf"))
+///             .map_err(|e| e.to_string())?;
 ///         Ok(entry)
 ///     },
 ///     |_sim, _result| {}
@@ -587,7 +588,7 @@ where
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     |sim| {
-///         let instructions = vec![0x00000093]; // addi x1, x0, 0
+///         let instructions = vec![0x00000093u32]; // addi x1, x0, 0
 ///         let start_addr = 0x8000_0000;
 ///         let bytes: Vec<u8> = instructions.iter()
 ///             .flat_map(|i| i.to_le_bytes())

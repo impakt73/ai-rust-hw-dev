@@ -161,7 +161,25 @@ For advanced use cases that need access to the simulator after execution:
 - `run_elf_in_simulator(path, max_cycles, callback, vcd_path)` - Access simulator via callback
 - `run_elf_in_simulator_with_options(path, max_cycles, print_trace, callback, vcd_path)` - Full options with simulator access
 
-All functions delegate to a unified internal implementation for consistency and maintainability.
+### Unified Execution API
+
+The `run_program` function provides a unified interface for all simulator execution:
+
+```rust
+pub fn run_program<F, T, P, C>(
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    fifo_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    prep_callback: P,      // Load program, return entry point
+    post_callback: C,      // Access simulator after execution
+) -> Result<SimulationResult, String>
+```
+
+This single function handles both ELF and programmatic instruction loading through the `prep_callback`. All other API functions delegate to this for consistency.
+
 
 ## Programmatic Testing with cpu-sim
 
@@ -187,16 +205,21 @@ run_program_with_callback(&instructions, 100, |sim, result| {
 
 ### Enabling Trace and VCD in Tests
 
-Use `RunOptions` to enable instruction tracing and VCD dumping:
+Use `run_program_with_options` to enable instruction tracing and VCD dumping:
 
 ```rust
-let options = RunOptions {
-    print_inst_trace: true,    // Print traces to console
-    print_fsm_state: false,     // Don't print FSM states
-    vcd_path: Some("/tmp/test.vcd"), // Generate VCD file
-};
+// Enable instruction trace printing
+run_program_with_options(&instructions, 100, true, None, |sim, result| {
+    // Verify results
+}).expect("Test should pass");
 
-run_program_with_options(&instructions, 100, options, |sim, result| {
+// Enable VCD waveform dumping
+run_program_with_options(&instructions, 100, false, Some("/tmp/test.vcd"), |sim, result| {
+    // Verify results
+}).expect("Test should pass");
+
+// Enable both trace and VCD
+run_program_with_options(&instructions, 100, true, Some("/tmp/test.vcd"), |sim, result| {
     // Verify results
 }).expect("Test should pass");
 ```
