@@ -50,6 +50,7 @@ where
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         print_inst_trace: bool,
+        print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
     ) -> Result<Self, String> {
@@ -64,7 +65,7 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true, // Enable by default
-            print_fsm_state: false,    // Disabled by default (verbose)
+            print_fsm_state,
             fifo_callback,
             trace_callback,
             vcd: None,
@@ -78,6 +79,7 @@ where
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
         print_inst_trace: bool,
+        print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: &str,
@@ -102,7 +104,7 @@ where
             cycle_count: 0,
             print_inst_trace,
             print_debug_packets: true,
-            print_fsm_state: false, // Disabled by default (verbose)
+            print_fsm_state,
             fifo_callback,
             trace_callback,
             vcd: Some(vcd),
@@ -116,10 +118,7 @@ where
         self.print_debug_packets = enable;
     }
 
-    /// Enable or disable FSM state printing every cycle (verbose debug mode)
-    pub fn set_print_fsm_state(&mut self, enable: bool) {
-        self.print_fsm_state = enable;
-    }
+
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
     /// This allows the host to send data to the simulated program

@@ -62,28 +62,6 @@ fn fifo_data_to_string(data: &[u8]) -> String {
 
 /// Helper function to run ELF with FSM state printing enabled for debugging
 #[allow(dead_code)]
-fn run_elf_with_fsm_debug<T>(
-    elf_path: &Path,
-    max_cycles: u64,
-    print_inst_trace: bool,
-    trace_callback: Option<T>,
-) -> Result<SimulationResult, String>
-where
-    T: FnMut(&InstructionTrace),
-{
-    run_elf_in_simulator_with_trace(
-        elf_path,
-        max_cycles,
-        |sim| {
-            // Enable FSM state printing for detailed debugging
-            sim.set_print_fsm_state(true);
-        },
-        None, // No VCD
-        print_inst_trace,
-        None::<fn(u32)>,
-        trace_callback,
-    )
-}
 
 #[test]
 fn test_comprehensive_elf() {
@@ -526,6 +504,7 @@ fn test_packet_protocol_end_to_end() {
         &runtime,
         bus,
         false, // Disable instruction trace
+        false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
@@ -783,39 +762,15 @@ fn test_println_macro() {
         fifo_data_clone.lock().unwrap().push(word);
     };
 
-    // Create trace callback to debug where CPU hangs
-    let instr_count = std::sync::Arc::new(std::sync::Mutex::new(0));
-    let instr_count_clone = instr_count.clone();
-    let last_pc = std::sync::Arc::new(std::sync::Mutex::new(0u32));
-    let last_pc_clone = last_pc.clone();
-    let trace_callback = move |trace: &riscv_core::trace::InstructionTrace| {
-        let mut count = instr_count_clone.lock().unwrap();
-        let mut prev_pc = last_pc_clone.lock().unwrap();
-        *count += 1;
-        if *count <= 100 {
-            let pc_delta = if *prev_pc == 0 {
-                0
-            } else {
-                (trace.pc as i64) - (*prev_pc as i64)
-            };
-            println!(
-                "Trace #{}: PC=0x{:08x} (delta={:+}) instr=0x{:08x}",
-                count, trace.pc, pc_delta, trace.instruction
-            );
-        } else if *count == 101 {
-            println!("... (suppressing further trace output)");
-        }
-        *prev_pc = trace.pc;
-    };
-
     // Initialize CPU Simulator
     let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
         true, // Enable instruction trace
+        false, // Don't print FSM state
         Some(fifo_callback),
-        Some(trace_callback),
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
     )
     .expect("Failed to create simulator");
 
@@ -832,16 +787,6 @@ fn test_println_macro() {
     let result = sim
         .run(entry_point, 17000)
         .expect("Simulation should succeed");
-
-    println!(
-        "\nTotal instructions traced: {}",
-        *instr_count.lock().unwrap()
-    );
-
-    // Debug: print result details
-    println!("Result tohost: {:?}", result.tohost_value);
-    println!("Result cycles: {}", result.cycles);
-    println!();
 
     // Check FIFO data
     let fifo_words = fifo_data.lock().unwrap();

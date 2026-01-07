@@ -30,6 +30,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -80,6 +81,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -162,6 +164,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -239,6 +242,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -311,6 +315,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -380,6 +385,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )
@@ -479,6 +485,7 @@ mod tests {
             &runtime,
             bus,
             false,
+            false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )

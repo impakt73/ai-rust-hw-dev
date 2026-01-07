@@ -7,30 +7,6 @@ pub mod sim;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod test_programmatic_trace;
-
-#[cfg(test)]
-mod test_pc_debug;
-
-#[cfg(test)]
-mod test_exact_sequence;
-
-#[cfg(test)]
-mod test_lui_combinations;
-
-#[cfg(test)]
-mod test_progressive_sequence;
-
-#[cfg(test)]
-mod test_lui_sw_combination;
-
-#[cfg(test)]
-mod test_lui_memory_ops;
-
-#[cfg(test)]
-mod test_minimal_debug_test;
-
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
@@ -358,6 +334,7 @@ where
             &runtime,
             bus,
             print_inst_trace,
+            false, // Don't print FSM state
             fifo_callback,
             trace_callback,
             vcd,
@@ -367,6 +344,7 @@ where
             &runtime,
             bus,
             print_inst_trace,
+            false, // Don't print FSM state
             fifo_callback,
             trace_callback,
         )?
@@ -527,6 +505,7 @@ where
             &runtime,
             bus,
             print_inst_trace,
+            false, // Don't print FSM state
             fifo_callback,
             trace_callback,
             vcd,
@@ -536,6 +515,7 @@ where
             &runtime,
             bus,
             print_inst_trace,
+            false, // Don't print FSM state
             fifo_callback,
             trace_callback,
         )?

@@ -75,6 +75,7 @@ mod tests {
             &runtime,
             bus,
             false, // Don't print instruction trace by default
+            false, // Don't print FSM state
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
         )?;
