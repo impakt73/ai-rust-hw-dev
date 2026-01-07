@@ -174,7 +174,8 @@ fn test_regfile_all_registers() {
     dut.eval();
 
     // Write random values to all registers (except x0)
-    let mut expected_values = vec![0u32; 32];
+    let mut expected_values = [0u32; 32];
+    #[allow(clippy::needless_range_loop)]
     for i in 1..32 {
         let value: u32 = rng.gen();
         expected_values[i] = value;
@@ -190,6 +191,7 @@ fn test_regfile_all_registers() {
     dut.eval();
 
     // Verify all registers
+    #[allow(clippy::needless_range_loop)]
     for i in 0..32 {
         dut.rs1_addr = i as u8;
         dut.eval();

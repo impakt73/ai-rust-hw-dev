@@ -118,8 +118,6 @@ where
         self.print_debug_packets = enable;
     }
 
-
-
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
     /// This allows the host to send data to the simulated program
     pub fn fifo_write_rx(&mut self, word: u32) {

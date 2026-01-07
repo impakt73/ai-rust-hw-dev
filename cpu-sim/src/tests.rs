@@ -62,7 +62,6 @@ fn fifo_data_to_string(data: &[u8]) -> String {
 
 /// Helper function to run ELF with FSM state printing enabled for debugging
 #[allow(dead_code)]
-
 #[test]
 fn test_comprehensive_elf() {
     init_test_logger();
@@ -767,7 +766,7 @@ fn test_println_macro() {
     let mut sim = crate::sim::Simulator::new(
         &runtime,
         bus,
-        true, // Enable instruction trace
+        true,  // Enable instruction trace
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -799,7 +798,7 @@ fn test_println_macro() {
     }
 
     // Expected messages from the test program
-    let expected_messages = vec![
+    let expected_messages = [
         ("Hello from RISC-V CPU!\n", riscv_protocol::DebugLevel::Info),
         ("The answer is 42\n", riscv_protocol::DebugLevel::Info),
         ("Testing println macro\n", riscv_protocol::DebugLevel::Info),
@@ -1045,6 +1044,7 @@ fn test_memory_dump() {
             println!("✓ Magic bytes verified: 0xDEADBEEF");
 
             // Verify the pattern for a few more bytes (offset modulo 256)
+            #[allow(clippy::needless_range_loop)]
             for i in 4..20 {
                 assert_eq!(
                     memory_data[i], i as u8,

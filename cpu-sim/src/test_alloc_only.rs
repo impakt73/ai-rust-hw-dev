@@ -60,7 +60,7 @@ mod tests {
         if let (Some(a_pos), Some(_b_pos)) = (marker_a, marker_b) {
             println!("\nBytes between markers (expected [12, 34, 56, 78, 9a, bc, de, f0]):");
 
-            let expected = vec![0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+            let expected = [0x12u8, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
             let mut all_match = true;
 
             for (i, &exp) in expected.iter().enumerate() {
