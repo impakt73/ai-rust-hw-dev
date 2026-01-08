@@ -198,7 +198,7 @@ let instructions = [
 ];
 
 // Run and verify
-run_program_with_callback(&instructions, 100, |sim, result| {
+run_program_with_options(&instructions, 100, false, None, None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
     assert_eq!(result.tohost_value, Some(1));
 }).expect("Test should pass");
 ```
@@ -209,17 +209,17 @@ Use `run_program_with_options` to enable instruction tracing and VCD dumping:
 
 ```rust
 // Enable instruction trace printing
-run_program_with_options(&instructions, 100, true, None, |sim, result| {
+run_program_with_options(&instructions, 100, true, None, None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
     // Verify results
 }).expect("Test should pass");
 
 // Enable VCD waveform dumping
-run_program_with_options(&instructions, 100, false, Some("/tmp/test.vcd"), |sim, result| {
+run_program_with_options(&instructions, 100, false, Some("/tmp/test.vcd"), None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
     // Verify results
 }).expect("Test should pass");
 
 // Enable both trace and VCD
-run_program_with_options(&instructions, 100, true, Some("/tmp/test.vcd"), |sim, result| {
+run_program_with_options(&instructions, 100, true, Some("/tmp/test.vcd"), None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
     // Verify results
 }).expect("Test should pass");
 ```
@@ -231,17 +231,24 @@ Collect and validate instruction traces programmatically:
 ```rust
 let mut traces = Vec::new();
 
-run_program_with_trace(&instructions, 100, |trace| {
-    traces.push(trace.clone());
-}, |sim, result| {
-    // Verify we got expected number of traces
-    assert_eq!(traces.len(), 12);
-    
-    // Validate first instruction
-    assert_eq!(traces[0].inst_type, InstructionType::Addi);
-    assert_eq!(traces[0].pc, 0x8000_0000);
-    assert_eq!(traces[0].rd.unwrap().value, 10);
-}).expect("Test should pass");
+run_program_with_options(
+    &instructions,
+    100,
+    false,
+    None,
+    Some(|trace: &riscv_core::trace::InstructionTrace| {
+        traces.push(trace.clone());
+    }),
+    |sim, result| {
+        // Verify we got expected number of traces
+        assert_eq!(traces.len(), 12);
+        
+        // Validate first instruction
+        assert_eq!(traces[0].inst_type, InstructionType::Addi);
+        assert_eq!(traces[0].pc, 0x8000_0000);
+        assert_eq!(traces[0].rd.unwrap().value, 10);
+    }
+).expect("Test should pass");
 ```
 
 ### Comprehensive Validation Example
