@@ -1,5 +1,5 @@
 // Division Unit Module
-// Hardware-synthesizable division using Non-Restoring Algorithm
+// Hardware-synthesizable division using Restoring Algorithm
 // Implements 32-bit signed and unsigned division and remainder
 
 module div_unit (
@@ -55,6 +55,10 @@ module div_unit (
     logic [31:0] final_quotient;
     logic [31:0] final_remainder;
     
+    // Temporary variables for division iteration
+    logic [63:0] P_shifted;
+    logic [63:0] P_test;
+    
     // ============================================================
     // State Register
     // ============================================================
@@ -107,6 +111,25 @@ module div_unit (
     end
     
     // ============================================================
+    // Combinational logic for absolute value conversion
+    // ============================================================
+    always_comb begin
+        // Default values
+        abs_dividend = dividend;
+        abs_divisor = divisor;
+        
+        // Compute absolute values in INIT state for signed operations
+        if (state == DIV_INIT && is_signed && divisor != 32'd0) begin
+            abs_dividend = dividend[31] ? (~dividend + 32'd1) : dividend;
+            abs_divisor  = divisor[31]  ? (~divisor  + 32'd1) : divisor;
+        end
+        
+        // Compute shifted and test values for division iteration
+        P_shifted = P << 1;
+        P_test = P_shifted - D;
+    end
+    
+    // ============================================================
     // Datapath Registers
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
@@ -129,20 +152,16 @@ module div_unit (
                                 (divisor == 32'hFFFFFFFF);
                     
                     if (divisor != 32'd0) begin
-                        // Handle sign conversion for signed division
+                        // Handle sign tracking for signed division
                         if (is_signed) begin
                             dividend_neg <= dividend[31];
                             divisor_neg <= divisor[31];
-                            abs_dividend = dividend[31] ? (~dividend + 32'd1) : dividend;
-                            abs_divisor  = divisor[31]  ? (~divisor  + 32'd1) : divisor;
                         end else begin
                             dividend_neg <= 1'b0;
                             divisor_neg <= 1'b0;
-                            abs_dividend = dividend;
-                            abs_divisor  = divisor;
                         end
                         
-                        // Initialize division registers
+                        // Initialize division registers (abs values computed combinationally)
                         P <= {32'h0, abs_dividend};  // {remainder, dividend}
                         D <= {abs_divisor, 32'h0};   // Divisor in upper 32 bits
                         Q <= 32'h0;
@@ -151,15 +170,8 @@ module div_unit (
                 end
                 
                 DIV_ITER: begin
-                    // Restoring division iteration (simpler algorithm)
-                    logic [63:0] P_shifted;
-                    logic [63:0] P_test;
-                    
-                    // Shift P left by 1
-                    P_shifted = P << 1;
-                    
-                    // Try subtracting divisor
-                    P_test = P_shifted - D;
+                    // Restoring division iteration
+                    // P_shifted and P_test are computed combinationally above
                     
                     if (!P_test[63]) begin
                         // Result is non-negative: keep subtraction, set quotient bit
