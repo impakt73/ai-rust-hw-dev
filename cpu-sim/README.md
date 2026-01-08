@@ -277,6 +277,47 @@ The simulator uses a sparse byte-addressable memory model (HashMap-based).
 
 **Important:** The CPU's PC resets to address `0x00000000`. The ELF entry point is currently **ignored** - execution always starts at address 0. Programs should be linked to start at address 0, or include a trampoline at address 0 that jumps to the actual entry point.
 
+### Variable Memory Latency
+
+The simulator supports configurable memory latency to test the CPU's ability to handle multi-cycle memory operations. By default, memory operations complete in zero cycles (immediately), but you can configure a fixed latency to verify that the CPU correctly waits for the `imem_ready` and `dmem_ready` signals.
+
+#### Using Variable Latency
+
+```rust
+use cpu_sim::{Simulator, bus::SystemBus};
+
+let runtime = riscv_core::create_cpu_runtime()?;
+let bus = SystemBus::new();
+
+// Configure memory latency at initialization (3 cycle latency)
+let mut sim = Simulator::new(
+    &runtime,
+    bus,
+    false,  // print_inst_trace
+    false,  // print_fsm_state
+    None::<fn(u32)>,
+    None::<fn(&riscv_core::trace::InstructionTrace)>,
+    3,      // mem_latency_cycles
+)?;
+
+// Load and run your program
+let entry_point = cpu_sim::load_elf(&mut sim, Path::new("program.elf"))?;
+let result = sim.run(entry_point, 10000)?;
+```
+
+#### How It Works
+
+- **Zero Latency (default)**: Pass `0` for `mem_latency_cycles` - memory operations complete immediately (backward compatible)
+- **Fixed Latency (configurable)**: Pass N for `mem_latency_cycles` - each memory request (instruction fetch or data access) takes exactly N cycles to complete
+- **Counter-based Implementation**: The simulator uses internal delay counters that increment each cycle until the configured latency is reached, then asserts the `ready` signal
+
+This feature helps verify that:
+- The CPU's FSM correctly waits for memory ready signals
+- Multi-cycle memory operations don't break instruction execution
+- The CPU can handle realistic memory latencies without timing issues
+
+See `cpu-sim/src/test_memory_latency.rs` for comprehensive examples and test cases.
+
 ## Architecture
 
 The simulator connects to the Verilated RTL model from `riscv_core`:

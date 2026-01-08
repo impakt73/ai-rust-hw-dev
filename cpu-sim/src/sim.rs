@@ -38,6 +38,10 @@ where
     // For duplicate trace detection (prevents repeated halted instruction traces)
     last_trace_pc: Option<u32>,
     last_trace_instr: Option<u32>,
+    // Memory latency simulation
+    mem_latency_cycles: u32, // Number of cycles to delay memory operations
+    imem_delay_counter: u32, // Current delay counter for instruction memory
+    dmem_delay_counter: u32, // Current delay counter for data memory
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -53,11 +57,14 @@ where
         print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
+        mem_latency_cycles: u32,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime (without tracing by default)
         let cpu = runtime
             .create_model_simple::<Top>()
             .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+
+        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
         Ok(Simulator {
             cpu,
@@ -71,10 +78,14 @@ where
             vcd: None,
             last_trace_pc: None,
             last_trace_instr: None,
+            mem_latency_cycles,
+            imem_delay_counter: 0,
+            dmem_delay_counter: 0,
         })
     }
 
     /// Create a new simulator with VCD tracing enabled
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_vcd(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
@@ -83,6 +94,7 @@ where
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: &str,
+        mem_latency_cycles: u32,
     ) -> Result<Self, String> {
         // Create CPU model with tracing enabled
         let config = VerilatedModelConfig {
@@ -97,6 +109,7 @@ where
         // Open VCD file
         let vcd = cpu.open_vcd(vcd_path);
         log::info!("VCD tracing enabled, writing to: {}", vcd_path);
+        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
         Ok(Simulator {
             cpu,
@@ -110,6 +123,9 @@ where
             vcd: Some(vcd),
             last_trace_pc: None,
             last_trace_instr: None,
+            mem_latency_cycles,
+            imem_delay_counter: 0,
+            dmem_delay_counter: 0,
         })
     }
 
@@ -244,54 +260,74 @@ where
             // Evaluate combinational logic
             self.cpu.eval();
 
-            // Handle instruction memory with zero-latency (for now)
-            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
-            // Variable latency can be added by implementing a counter-based delay.
+            // Handle instruction memory with variable latency
             if self.cpu.imem_req != 0 {
-                let addr = self.cpu.imem_addr;
-                let data = self.bus.read_word(addr);
-                self.cpu.imem_data = data;
-                self.cpu.imem_ready = 1; // Always ready (zero latency)
+                // Implement delay counter for variable latency
+                if self.imem_delay_counter < self.mem_latency_cycles {
+                    self.imem_delay_counter += 1;
+                    self.cpu.imem_ready = 0; // Not ready yet
+                } else {
+                    // Only perform the read when delay is satisfied
+                    let addr = self.cpu.imem_addr;
+                    let data = self.bus.read_word(addr);
+                    self.cpu.imem_data = data;
+                    self.cpu.imem_ready = 1; // Ready after delay
+                }
             } else {
                 self.cpu.imem_ready = 0;
+                self.imem_delay_counter = 0; // Reset counter when no request
             }
 
-            // Handle data memory with zero-latency (for now)
-            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
-            // Variable latency can be added by implementing a counter-based delay.
+            // Handle data memory with variable latency
             if self.cpu.dmem_req != 0 {
-                let addr = self.cpu.dmem_addr;
-                let size = self.cpu.dmem_size;
-
                 if self.cpu.dmem_we != 0 {
                     // Data Memory Write
-                    let wdata = self.cpu.dmem_wdata;
-                    match size {
-                        0b00 => self.bus.write_byte(addr, wdata as u8),
-                        0b01 => self.bus.write_halfword(addr, wdata as u16),
-                        _ => self.bus.write_word(addr, wdata),
-                    }
+                    // Implement delay counter for variable latency
+                    if self.dmem_delay_counter < self.mem_latency_cycles {
+                        self.dmem_delay_counter += 1;
+                        self.cpu.dmem_ready = 0; // Not ready yet
+                    } else {
+                        // Only perform the write when delay is satisfied
+                        let addr = self.cpu.dmem_addr;
+                        let size = self.cpu.dmem_size;
+                        let wdata = self.cpu.dmem_wdata;
+                        match size {
+                            0b00 => self.bus.write_byte(addr, wdata as u8),
+                            0b01 => self.bus.write_halfword(addr, wdata as u16),
+                            _ => self.bus.write_word(addr, wdata),
+                        }
 
-                    // Check for halt signal
-                    if addr == TOHOST_ADDR {
-                        halt_value = Some(wdata);
-                    }
+                        // Check for halt signal
+                        if addr == TOHOST_ADDR {
+                            halt_value = Some(wdata);
+                        }
 
-                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                        self.cpu.dmem_ready = 1; // Ready after delay
+                    }
                 } else if self.cpu.dmem_re != 0 {
                     // Data Memory Read
-                    let rdata = match size {
-                        0b00 => self.bus.read_byte(addr) as u32,
-                        0b01 => self.bus.read_halfword(addr) as u32,
-                        _ => self.bus.read_word(addr),
-                    };
-                    self.cpu.dmem_rdata = rdata;
-                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                    // Implement delay counter for variable latency
+                    if self.dmem_delay_counter < self.mem_latency_cycles {
+                        self.dmem_delay_counter += 1;
+                        self.cpu.dmem_ready = 0; // Not ready yet
+                    } else {
+                        // Only perform the read when delay is satisfied
+                        let addr = self.cpu.dmem_addr;
+                        let size = self.cpu.dmem_size;
+                        let rdata = match size {
+                            0b00 => self.bus.read_byte(addr) as u32,
+                            0b01 => self.bus.read_halfword(addr) as u32,
+                            _ => self.bus.read_word(addr),
+                        };
+                        self.cpu.dmem_rdata = rdata;
+                        self.cpu.dmem_ready = 1; // Ready after delay
+                    }
                 } else {
                     self.cpu.dmem_ready = 0;
                 }
             } else {
                 self.cpu.dmem_ready = 0;
+                self.dmem_delay_counter = 0; // Reset counter when no request
             }
 
             // Re-evaluate after setting memory signals
@@ -527,6 +563,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
     /// sim.write_memory_region(0x8000_0000, &instructions);
@@ -565,6 +602,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     /// # Ok(())
@@ -608,6 +646,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// sim.dump_memory_region_as_image(
     ///     0x8000_0000,

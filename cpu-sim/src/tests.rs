@@ -506,6 +506,7 @@ fn test_packet_protocol_end_to_end() {
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
+        0, // Zero latency
     )
     .expect("Failed to create simulator");
 
@@ -770,6 +771,7 @@ fn test_println_macro() {
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
+        0, // Zero latency
     )
     .expect("Failed to create simulator");
 

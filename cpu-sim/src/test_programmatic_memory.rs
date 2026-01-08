@@ -22,6 +22,7 @@ mod tests {
             false, // Don't print FSM state,
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
+            0, // Zero latency
         )
         .expect("Failed to create simulator");
 
@@ -120,6 +121,7 @@ mod tests {
             false, // Don't print FSM state,
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
+            0, // Zero latency
         )
         .expect("Failed to create simulator");
 

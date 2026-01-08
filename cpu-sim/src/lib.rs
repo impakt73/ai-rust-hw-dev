@@ -43,6 +43,7 @@ use std::path::Path;
 ///     false,
 ///     None::<fn(u32)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+///     0, // Zero latency
 /// )?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
@@ -133,6 +134,7 @@ where
         fifo_rx_data,
         trace_callback,
         vcd_path,
+        0, // Zero latency for backward compatibility
         |_sim, _result| {
             // No-op callback - just run the simulation without post-processing
         },
@@ -316,6 +318,7 @@ fn run_elf_in_simulator_internal<F, T, C>(
     fifo_rx_data: Option<&str>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
     callback: C,
 ) -> Result<SimulationResult, String>
 where
@@ -330,6 +333,7 @@ where
         fifo_callback,
         trace_callback,
         vcd_path,
+        mem_latency_cycles,
         |sim| {
             // Load ELF into simulator memory
             let entry_point =
@@ -399,6 +403,7 @@ where
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
+        0, // Zero latency for backward compatibility
         |sim, result| callback(sim, result),
     )
 }
@@ -436,6 +441,7 @@ where
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
+        0, // Zero latency for backward compatibility
         |sim, result| callback(sim, result),
     )
 }
@@ -480,6 +486,7 @@ where
         fifo_callback,
         trace_callback,
         vcd_path,
+        0, // Zero latency for backward compatibility
         |sim| {
             // Execute callback_before to configure simulator (e.g., enable debug flags)
             callback_before(sim);
@@ -532,6 +539,7 @@ where
 ///     None::<fn(u32)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
+///     0, // Zero latency
 ///     |sim| {
 ///         let entry = cpu_sim::load_elf(sim, Path::new("test.elf"))
 ///             .map_err(|e| e.to_string())?;
@@ -548,6 +556,7 @@ where
 ///     None::<fn(u32)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
+///     0, // Zero latency
 ///     |sim| {
 ///         let instructions = vec![0x00000093u32]; // addi x1, x0, 0
 ///         let start_addr = 0x8000_0000;
@@ -569,6 +578,7 @@ pub fn run_program<F, T, P, C>(
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
     prep_callback: P,
     post_callback: C,
 ) -> Result<SimulationResult, String>
@@ -594,6 +604,7 @@ where
             fifo_callback,
             trace_callback,
             vcd,
+            mem_latency_cycles,
         )?
     } else {
         Simulator::new(
@@ -603,6 +614,7 @@ where
             print_fsm_state,
             fifo_callback,
             trace_callback,
+            mem_latency_cycles,
         )?
     };
 
@@ -640,3 +652,6 @@ mod test_programmatic_memory;
 
 #[cfg(test)]
 mod test_rtl_verification;
+
+#[cfg(test)]
+mod test_memory_latency;

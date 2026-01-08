@@ -71,6 +71,7 @@ mod tests {
             None::<fn(u32)>,
             trace_callback,
             vcd_path,
+            0, // Zero latency for RTL verification tests
             |sim| {
                 sim.write_memory_region(START_ADDR, &program_bytes);
                 Ok(START_ADDR)
@@ -1521,7 +1522,7 @@ mod tests {
 
         // Should contain the executed instructions
         assert!(
-            pcs.contains(&(base_addr + 0x00)),
+            pcs.contains(&base_addr),
             "Trace should contain ADDI x1 at 0x00"
         );
         assert!(
