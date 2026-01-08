@@ -284,15 +284,15 @@ where
 
             // Handle instruction memory with variable latency
             if self.cpu.imem_req != 0 {
-                let addr = self.cpu.imem_addr;
-                let data = self.bus.read_word(addr);
-                self.cpu.imem_data = data;
-
                 // Implement delay counter for variable latency
                 if self.imem_delay_counter < self.mem_latency_cycles {
                     self.imem_delay_counter += 1;
                     self.cpu.imem_ready = 0; // Not ready yet
                 } else {
+                    // Only perform the read when delay is satisfied
+                    let addr = self.cpu.imem_addr;
+                    let data = self.bus.read_word(addr);
+                    self.cpu.imem_data = data;
                     self.cpu.imem_ready = 1; // Ready after delay
                 }
             } else {
@@ -302,44 +302,46 @@ where
 
             // Handle data memory with variable latency
             if self.cpu.dmem_req != 0 {
-                let addr = self.cpu.dmem_addr;
-                let size = self.cpu.dmem_size;
-
                 if self.cpu.dmem_we != 0 {
                     // Data Memory Write
-                    let wdata = self.cpu.dmem_wdata;
-                    match size {
-                        0b00 => self.bus.write_byte(addr, wdata as u8),
-                        0b01 => self.bus.write_halfword(addr, wdata as u16),
-                        _ => self.bus.write_word(addr, wdata),
-                    }
-
-                    // Check for halt signal
-                    if addr == TOHOST_ADDR {
-                        halt_value = Some(wdata);
-                    }
-
                     // Implement delay counter for variable latency
                     if self.dmem_delay_counter < self.mem_latency_cycles {
                         self.dmem_delay_counter += 1;
                         self.cpu.dmem_ready = 0; // Not ready yet
                     } else {
+                        // Only perform the write when delay is satisfied
+                        let addr = self.cpu.dmem_addr;
+                        let size = self.cpu.dmem_size;
+                        let wdata = self.cpu.dmem_wdata;
+                        match size {
+                            0b00 => self.bus.write_byte(addr, wdata as u8),
+                            0b01 => self.bus.write_halfword(addr, wdata as u16),
+                            _ => self.bus.write_word(addr, wdata),
+                        }
+
+                        // Check for halt signal
+                        if addr == TOHOST_ADDR {
+                            halt_value = Some(wdata);
+                        }
+
                         self.cpu.dmem_ready = 1; // Ready after delay
                     }
                 } else if self.cpu.dmem_re != 0 {
                     // Data Memory Read
-                    let rdata = match size {
-                        0b00 => self.bus.read_byte(addr) as u32,
-                        0b01 => self.bus.read_halfword(addr) as u32,
-                        _ => self.bus.read_word(addr),
-                    };
-                    self.cpu.dmem_rdata = rdata;
-
                     // Implement delay counter for variable latency
                     if self.dmem_delay_counter < self.mem_latency_cycles {
                         self.dmem_delay_counter += 1;
                         self.cpu.dmem_ready = 0; // Not ready yet
                     } else {
+                        // Only perform the read when delay is satisfied
+                        let addr = self.cpu.dmem_addr;
+                        let size = self.cpu.dmem_size;
+                        let rdata = match size {
+                            0b00 => self.bus.read_byte(addr) as u32,
+                            0b01 => self.bus.read_halfword(addr) as u32,
+                            _ => self.bus.read_word(addr),
+                        };
+                        self.cpu.dmem_rdata = rdata;
                         self.cpu.dmem_ready = 1; // Ready after delay
                     }
                 } else {
