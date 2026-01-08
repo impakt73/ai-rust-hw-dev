@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) server that provides tools for analyzing Value C
 
 ## Features
 
-The server exposes **seven** tools for efficient VCD analysis:
+The server exposes **six** tools for efficient VCD analysis:
 
 ### Core Tools
 

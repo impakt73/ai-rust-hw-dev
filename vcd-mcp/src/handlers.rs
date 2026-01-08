@@ -187,6 +187,15 @@ pub async fn handle_get_signal_summary(
             .unwrap_or(u64::MAX)
     });
 
+    // Validate that end_time >= start_time
+    if end_time < args.start_time {
+        return Err(anyhow!(
+            "end_time ({}) must be greater than or equal to start_time ({})",
+            end_time,
+            args.start_time
+        ));
+    }
+
     let mut summaries = serde_json::Map::new();
     let mut missing_signals = Vec::new();
 
@@ -265,6 +274,15 @@ pub async fn handle_count_edges(
             .unwrap_or(u64::MAX)
     });
 
+    // Validate that end_time >= start_time
+    if end_time < args.start_time {
+        return Err(anyhow!(
+            "end_time ({}) must be greater than or equal to start_time ({})",
+            end_time,
+            args.start_time
+        ));
+    }
+
     let count = analysis.count_signal_edges(
         *signal_id,
         edge_type,
@@ -321,7 +339,7 @@ pub async fn handle_get_values(state: AppState, args: GetValuesArgs) -> Result<s
             // Get all changes in range
             let mut changes = analysis.get_signal_changes(signal_id, args.start_time, end_time);
 
-            // If only_changes is true, filter out the initial value (if it's before start_time)
+            // If only_changes is true, filter out values from before start_time (keep only actual changes within the query range)
             if args.only_changes {
                 changes.retain(|(timestamp, _)| *timestamp >= args.start_time);
             }
