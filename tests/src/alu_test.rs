@@ -23,6 +23,53 @@ const ALU_DIVU: u32 = 0b01111;
 const ALU_REM: u32 = 0b10000;
 const ALU_REMU: u32 = 0b10001;
 
+// Clock cycle macro for ALU tests
+macro_rules! clock_cycle {
+    ($dut:expr) => {
+        $dut.clk = 0;
+        $dut.eval();
+        $dut.clk = 1;
+        $dut.eval();
+        $dut.clk = 0;
+        $dut.eval();
+    };
+}
+
+// Helper function for multi-cycle ALU operations (division)
+// Sets up inputs, pulses alu_start, and waits for alu_ready
+fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
+    // Set inputs
+    dut.a = a;
+    dut.b = b;
+    dut.alu_op = alu_op;
+
+    // Reset state
+    dut.rst_n = 0;
+    dut.alu_start = 0;
+    clock_cycle!(dut);
+
+    // Release reset
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+
+    // Pulse alu_start for one cycle
+    dut.alu_start = 1;
+    clock_cycle!(dut);
+    dut.alu_start = 0;
+
+    // Wait for alu_ready (max 100 cycles for safety)
+    for _ in 0..100 {
+        dut.eval();
+        if dut.alu_ready == 1 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Final eval to get result
+    dut.eval();
+}
+
 fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
     match alu_op {
         ALU_ADD => a.wrapping_add(b),
@@ -63,10 +110,7 @@ fn test_alu_add() {
         let b: u32 = rng.gen();
         let expected = a.wrapping_add(b);
 
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_ADD as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_ADD as u8);
 
         assert_eq!(
             dut.result, expected,
@@ -91,10 +135,7 @@ fn test_alu_sub() {
         let b: u32 = rng.gen();
         let expected = a.wrapping_sub(b);
 
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_SUB as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_SUB as u8);
 
         assert_eq!(
             dut.result, expected,
@@ -116,20 +157,15 @@ fn test_alu_logic_ops() {
         let b: u32 = rng.gen();
 
         // Test AND
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_AND as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_AND as u8);
         assert_eq!(dut.result, a & b, "AND failed");
 
         // Test OR
-        dut.alu_op = ALU_OR as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_OR as u8);
         assert_eq!(dut.result, a | b, "OR failed");
 
         // Test XOR
-        dut.alu_op = ALU_XOR as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_XOR as u8);
         assert_eq!(dut.result, a ^ b, "XOR failed");
     }
 }
@@ -146,20 +182,15 @@ fn test_alu_shift_ops() {
         let b: u32 = rng.gen_range(0..32);
 
         // Test SLL (Shift Left Logical)
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_SLL as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_SLL as u8);
         assert_eq!(dut.result, a << b, "SLL failed");
 
         // Test SRL (Shift Right Logical)
-        dut.alu_op = ALU_SRL as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_SRL as u8);
         assert_eq!(dut.result, a >> b, "SRL failed");
 
         // Test SRA (Shift Right Arithmetic)
-        dut.alu_op = ALU_SRA as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_SRA as u8);
         let expected_sra = ((a as i32) >> b) as u32;
         assert_eq!(dut.result, expected_sra, "SRA failed");
     }
@@ -181,10 +212,7 @@ fn test_alu_compare_ops() {
     ];
 
     for (a, b, expected) in test_cases_slt {
-        dut.a = a as u32;
-        dut.b = b as u32;
-        dut.alu_op = ALU_SLT as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a as u32, b as u32, ALU_SLT as u8);
         assert_eq!(
             dut.result, expected,
             "SLT failed: {} < {} should be {}",
@@ -201,10 +229,7 @@ fn test_alu_compare_ops() {
     ];
 
     for (a, b, expected) in test_cases_sltu {
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_SLTU as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_SLTU as u8);
         assert_eq!(
             dut.result, expected,
             "SLTU failed: {} < {} should be {}",
@@ -220,26 +245,17 @@ fn test_alu_zero_flag() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test zero flag with ADD resulting in 0
-    dut.a = 0;
-    dut.b = 0;
-    dut.alu_op = ALU_ADD as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0, 0, ALU_ADD as u8);
     assert_eq!(dut.result, 0);
     assert_eq!(dut.zero, 1, "Zero flag should be set");
 
     // Test zero flag with non-zero result
-    dut.a = 5;
-    dut.b = 3;
-    dut.alu_op = ALU_ADD as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 5, 3, ALU_ADD as u8);
     assert_eq!(dut.result, 8);
     assert_eq!(dut.zero, 0, "Zero flag should not be set");
 
     // Test zero flag with SUB resulting in 0
-    dut.a = 100;
-    dut.b = 100;
-    dut.alu_op = ALU_SUB as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 100, 100, ALU_SUB as u8);
     assert_eq!(dut.result, 0);
     assert_eq!(dut.zero, 1, "Zero flag should be set");
 }
@@ -258,10 +274,7 @@ fn test_alu_all_operations() {
 
         let expected = calculate_expected(a, b, alu_op);
 
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = alu_op as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, alu_op as u8);
 
         assert_eq!(
             dut.result, expected,
@@ -287,10 +300,7 @@ fn test_alu_mul() {
         let b: u32 = rng.gen();
         let expected = a.wrapping_mul(b);
 
-        dut.a = a;
-        dut.b = b;
-        dut.alu_op = ALU_MUL as u8;
-        dut.eval();
+        execute_alu_operation(&mut dut, a, b, ALU_MUL as u8);
 
         assert_eq!(
             dut.result, expected,
@@ -300,16 +310,10 @@ fn test_alu_mul() {
     }
 
     // Test edge cases
-    dut.a = 0;
-    dut.b = 0xFFFFFFFF;
-    dut.alu_op = ALU_MUL as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0, 0xFFFFFFFF, ALU_MUL as u8);
     assert_eq!(dut.result, 0, "0 × anything = 0");
 
-    dut.a = 1;
-    dut.b = 0xFFFFFFFF;
-    dut.alu_op = ALU_MUL as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 1, 0xFFFFFFFF, ALU_MUL as u8);
     assert_eq!(dut.result, 0xFFFFFFFF, "1 × x = x");
 }
 
@@ -320,35 +324,23 @@ fn test_alu_mulh() {
 
     // Test signed × signed, upper 32 bits
     // Positive × Positive
-    dut.a = 0x00010000; // 65536
-    dut.b = 0x00010000; // 65536
-    dut.alu_op = ALU_MULH as u8;
-    dut.eval();
-    // 65536 × 65536 = 4294967296 = 0x0000000100000000
+    execute_alu_operation(&mut dut, 0x00010000, 0x00010000, ALU_MULH as u8); // 65536 × 65536
+                                                                             // 65536 × 65536 = 4294967296 = 0x0000000100000000
     assert_eq!(dut.result, 0x00000001, "MULH: 65536 × 65536 upper = 1");
 
     // Test with larger values
-    dut.a = 0x7FFFFFFF; // max positive i32
-    dut.b = 2;
-    dut.alu_op = ALU_MULH as u8;
-    dut.eval();
-    // 2147483647 × 2 = 4294967294 (as i64), upper 32 = 0
+    execute_alu_operation(&mut dut, 0x7FFFFFFF, 2, ALU_MULH as u8); // max positive i32 × 2
+                                                                    // 2147483647 × 2 = 4294967294 (as i64), upper 32 = 0
     assert_eq!(dut.result, 0, "MULH: max_positive × 2 upper = 0");
 
     // Negative × Negative = Positive
-    dut.a = 0xFFFFFFFF; // -1
-    dut.b = 0xFFFFFFFF; // -1
-    dut.alu_op = ALU_MULH as u8;
-    dut.eval();
-    // -1 × -1 = 1, upper 32 bits = 0
+    execute_alu_operation(&mut dut, 0xFFFFFFFF, 0xFFFFFFFF, ALU_MULH as u8); // -1 × -1
+                                                                             // -1 × -1 = 1, upper 32 bits = 0
     assert_eq!(dut.result, 0, "MULH: -1 × -1 upper = 0");
 
     // Positive × Negative
-    dut.a = 0x7FFFFFFF; // max positive
-    dut.b = 0xFFFFFFFF; // -1
-    dut.alu_op = ALU_MULH as u8;
-    dut.eval();
-    // 2147483647 × -1 = -2147483647, as i64 = 0xFFFFFFFF80000001, upper = 0xFFFFFFFF
+    execute_alu_operation(&mut dut, 0x7FFFFFFF, 0xFFFFFFFF, ALU_MULH as u8); // max positive × -1
+                                                                             // 2147483647 × -1 = -2147483647, as i64 = 0xFFFFFFFF80000001, upper = 0xFFFFFFFF
     assert_eq!(dut.result, 0xFFFFFFFF, "MULH: positive × negative");
 }
 
@@ -359,21 +351,15 @@ fn test_alu_mulhsu() {
 
     // Test signed × unsigned, upper 32 bits
     // Negative signed × positive unsigned
-    dut.a = 0xFFFFFFFF; // -1 (signed)
-    dut.b = 0x00000002; // 2 (unsigned)
-    dut.alu_op = ALU_MULHSU as u8;
-    dut.eval();
-    // -1 (sign-extended to 64-bit: 0xFFFFFFFFFFFFFFFF) × 2 (zero-extended: 0x0000000000000002)
-    // = 0xFFFFFFFFFFFFFFFE (which is -2 in signed 64-bit)
-    // Upper 32 bits: 0xFFFFFFFF
+    execute_alu_operation(&mut dut, 0xFFFFFFFF, 0x00000002, ALU_MULHSU as u8); // -1 × 2
+                                                                               // -1 (sign-extended to 64-bit: 0xFFFFFFFFFFFFFFFF) × 2 (zero-extended: 0x0000000000000002)
+                                                                               // = 0xFFFFFFFFFFFFFFFE (which is -2 in signed 64-bit)
+                                                                               // Upper 32 bits: 0xFFFFFFFF
     assert_eq!(dut.result, 0xFFFFFFFF, "MULHSU: -1 × 2 upper");
 
     // Positive signed × large unsigned
-    dut.a = 0x00000002; // 2 (signed)
-    dut.b = 0xFFFFFFFF; // large unsigned
-    dut.alu_op = ALU_MULHSU as u8;
-    dut.eval();
-    // 2 × 4294967295 = 8589934590, upper = 1
+    execute_alu_operation(&mut dut, 0x00000002, 0xFFFFFFFF, ALU_MULHSU as u8); // 2 × max_unsigned
+                                                                               // 2 × 4294967295 = 8589934590, upper = 1
     assert_eq!(dut.result, 1, "MULHSU: 2 × max_unsigned upper");
 }
 
@@ -383,25 +369,16 @@ fn test_alu_mulhu() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test unsigned × unsigned, upper 32 bits
-    dut.a = 0xFFFFFFFF;
-    dut.b = 0xFFFFFFFF;
-    dut.alu_op = ALU_MULHU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0xFFFFFFFF, 0xFFFFFFFF, ALU_MULHU as u8);
     // 4294967295 × 4294967295 = 18446744065119617025
     // = 0xFFFFFFFE00000001, upper = 0xFFFFFFFE
     assert_eq!(dut.result, 0xFFFFFFFE, "MULHU: max × max upper");
 
-    dut.a = 0x00010000;
-    dut.b = 0x00010000;
-    dut.alu_op = ALU_MULHU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0x00010000, 0x00010000, ALU_MULHU as u8);
     // 65536 × 65536 = 4294967296 = 0x100000000, upper = 1
     assert_eq!(dut.result, 1, "MULHU: 65536 × 65536 upper = 1");
 
-    dut.a = 0x80000000;
-    dut.b = 2;
-    dut.alu_op = ALU_MULHU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0x80000000, 2, ALU_MULHU as u8);
     // 2147483648 × 2 = 4294967296, upper = 1
     assert_eq!(dut.result, 1, "MULHU: 2^31 × 2 upper");
 }
@@ -416,45 +393,27 @@ fn test_alu_div() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal signed division
-    dut.a = 20;
-    dut.b = 3;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, 3, ALU_DIV as u8);
     assert_eq!(dut.result, 6, "DIV: 20 ÷ 3 = 6");
 
     // Negative dividend
-    dut.a = (-20i32) as u32;
-    dut.b = 3;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, (-20i32) as u32, 3, ALU_DIV as u8);
     assert_eq!(dut.result, (-6i32) as u32, "DIV: -20 ÷ 3 = -6");
 
     // Negative divisor
-    dut.a = 20;
-    dut.b = (-3i32) as u32;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, (-3i32) as u32, ALU_DIV as u8);
     assert_eq!(dut.result, (-6i32) as u32, "DIV: 20 ÷ -3 = -6");
 
     // Both negative
-    dut.a = (-20i32) as u32;
-    dut.b = (-3i32) as u32;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, (-20i32) as u32, (-3i32) as u32, ALU_DIV as u8);
     assert_eq!(dut.result, 6, "DIV: -20 ÷ -3 = 6");
 
     // Division by zero - should return all 1's
-    dut.a = 100;
-    dut.b = 0;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 100, 0, ALU_DIV as u8);
     assert_eq!(dut.result, 0xFFFFFFFF, "DIV: division by zero = 0xFFFFFFFF");
 
     // Overflow case: -2^31 ÷ -1 = -2^31
-    dut.a = 0x80000000;
-    dut.b = 0xFFFFFFFF;
-    dut.alu_op = ALU_DIV as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0x80000000, 0xFFFFFFFF, ALU_DIV as u8);
     assert_eq!(dut.result, 0x80000000, "DIV: overflow case -2^31 ÷ -1");
 }
 
@@ -464,24 +423,15 @@ fn test_alu_divu() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal unsigned division
-    dut.a = 20;
-    dut.b = 3;
-    dut.alu_op = ALU_DIVU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, 3, ALU_DIVU as u8);
     assert_eq!(dut.result, 6, "DIVU: 20 ÷ 3 = 6");
 
     // Large unsigned values
-    dut.a = 0xFFFFFFFF;
-    dut.b = 2;
-    dut.alu_op = ALU_DIVU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0xFFFFFFFF, 2, ALU_DIVU as u8);
     assert_eq!(dut.result, 0x7FFFFFFF, "DIVU: max_u32 ÷ 2");
 
     // Division by zero
-    dut.a = 100;
-    dut.b = 0;
-    dut.alu_op = ALU_DIVU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 100, 0, ALU_DIVU as u8);
     assert_eq!(
         dut.result, 0xFFFFFFFF,
         "DIVU: division by zero = 0xFFFFFFFF"
@@ -498,45 +448,27 @@ fn test_alu_rem() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal signed remainder
-    dut.a = 20;
-    dut.b = 3;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, 3, ALU_REM as u8);
     assert_eq!(dut.result, 2, "REM: 20 % 3 = 2");
 
     // Negative dividend
-    dut.a = (-20i32) as u32;
-    dut.b = 3;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, (-20i32) as u32, 3, ALU_REM as u8);
     assert_eq!(dut.result, (-2i32) as u32, "REM: -20 % 3 = -2");
 
     // Negative divisor
-    dut.a = 20;
-    dut.b = (-3i32) as u32;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, (-3i32) as u32, ALU_REM as u8);
     assert_eq!(dut.result, 2, "REM: 20 % -3 = 2");
 
     // Both negative
-    dut.a = (-20i32) as u32;
-    dut.b = (-3i32) as u32;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, (-20i32) as u32, (-3i32) as u32, ALU_REM as u8);
     assert_eq!(dut.result, (-2i32) as u32, "REM: -20 % -3 = -2");
 
     // Modulo by zero - should return dividend
-    dut.a = 100;
-    dut.b = 0;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 100, 0, ALU_REM as u8);
     assert_eq!(dut.result, 100, "REM: modulo by zero = dividend");
 
     // Overflow case: -2^31 % -1 = 0
-    dut.a = 0x80000000;
-    dut.b = 0xFFFFFFFF;
-    dut.alu_op = ALU_REM as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0x80000000, 0xFFFFFFFF, ALU_REM as u8);
     assert_eq!(dut.result, 0, "REM: overflow case -2^31 % -1 = 0");
 }
 
@@ -546,24 +478,15 @@ fn test_alu_remu() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal unsigned remainder
-    dut.a = 20;
-    dut.b = 3;
-    dut.alu_op = ALU_REMU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 20, 3, ALU_REMU as u8);
     assert_eq!(dut.result, 2, "REMU: 20 % 3 = 2");
 
     // Large unsigned values
-    dut.a = 0xFFFFFFFF;
-    dut.b = 10;
-    dut.alu_op = ALU_REMU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 0xFFFFFFFF, 10, ALU_REMU as u8);
     assert_eq!(dut.result, 5, "REMU: max_u32 % 10 = 5");
 
     // Modulo by zero - should return dividend
-    dut.a = 100;
-    dut.b = 0;
-    dut.alu_op = ALU_REMU as u8;
-    dut.eval();
+    execute_alu_operation(&mut dut, 100, 0, ALU_REMU as u8);
     assert_eq!(dut.result, 100, "REMU: modulo by zero = dividend");
 }
 
@@ -582,30 +505,25 @@ fn test_alu_m_extension_edge_cases() {
     ];
 
     for &op in &m_ops {
-        dut.a = 0;
-        dut.b = 12345;
-        dut.alu_op = op as u8;
-        dut.eval();
-
         match op {
             ALU_MUL | ALU_MULH | ALU_MULHSU | ALU_MULHU => {
+                // Multiplication: combinational, use eval
+                dut.a = 0;
+                dut.b = 12345;
+                dut.alu_op = op as u8;
+                dut.eval();
                 assert_eq!(
                     dut.result, 0,
                     "M-ext op {} with zero operand should be 0",
                     op
                 );
             }
-            ALU_DIV | ALU_DIVU => {
+            ALU_DIV | ALU_DIVU | ALU_REM | ALU_REMU => {
+                // Division/Remainder: multi-cycle, use helper
+                execute_alu_operation(&mut dut, 0, 12345, op as u8);
                 assert_eq!(
                     dut.result, 0,
-                    "M-ext div op {} with zero dividend should be 0",
-                    op
-                );
-            }
-            ALU_REM | ALU_REMU => {
-                assert_eq!(
-                    dut.result, 0,
-                    "M-ext rem op {} with zero dividend should be 0",
+                    "M-ext div/rem op {} with zero dividend should be 0",
                     op
                 );
             }
@@ -615,15 +533,22 @@ fn test_alu_m_extension_edge_cases() {
 
     // Test all M operations with one
     for &op in &m_ops {
-        dut.a = 0x12345678;
-        dut.b = 1;
-        dut.alu_op = op as u8;
-        dut.eval();
-
         match op {
-            ALU_MUL => assert_eq!(dut.result, 0x12345678, "x × 1 = x"),
-            ALU_DIV | ALU_DIVU => assert_eq!(dut.result, 0x12345678, "x ÷ 1 = x"),
-            ALU_REM | ALU_REMU => assert_eq!(dut.result, 0, "x % 1 = 0"),
+            ALU_MUL => {
+                dut.a = 0x12345678;
+                dut.b = 1;
+                dut.alu_op = op as u8;
+                dut.eval();
+                assert_eq!(dut.result, 0x12345678, "x × 1 = x");
+            }
+            ALU_DIV | ALU_DIVU => {
+                execute_alu_operation(&mut dut, 0x12345678, 1, op as u8);
+                assert_eq!(dut.result, 0x12345678, "x ÷ 1 = x");
+            }
+            ALU_REM | ALU_REMU => {
+                execute_alu_operation(&mut dut, 0x12345678, 1, op as u8);
+                assert_eq!(dut.result, 0, "x % 1 = 0");
+            }
             _ => {}
         }
     }

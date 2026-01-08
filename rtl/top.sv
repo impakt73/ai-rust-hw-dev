@@ -149,6 +149,9 @@ module top (
     logic [31:0] alu_b;
     logic [31:0] alu_result;
     logic        alu_zero;
+    logic        alu_start;       // NEW: Start ALU operation
+    logic        alu_ready;       // NEW: ALU operation complete
+    logic        alu_start_sent;  // NEW: Track if start pulse has been sent
     
     // Branch/Jump logic
     logic        take_branch;
@@ -295,6 +298,16 @@ module top (
         end
     end
     
+    // Track if ALU start pulse has been sent (for multi-cycle operations)
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            alu_start_sent <= 1'b0;
+        else if (current_state != S_EXECUTE)
+            alu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
+        else if (alu_start)
+            alu_start_sent <= 1'b1;  // Mark as sent after pulsing
+    end
+    
     // ============================================================
     // Program Counter with Multi-Cycle Control
     // ============================================================
@@ -383,7 +396,11 @@ module top (
             end
             
             S_EXECUTE: begin
-                next_state = S_WRITEBACK;
+                // Wait for ALU ready signal before proceeding
+                if (alu_ready)
+                    next_state = S_WRITEBACK;
+                else
+                    next_state = S_EXECUTE;  // Wait for multi-cycle division
             end
             
             S_MEM_ADDR: begin
@@ -448,6 +465,7 @@ module top (
         imem_req = 1'b0;
         dmem_req = 1'b0;
         instr_complete_internal = 1'b0;
+        alu_start = 1'b0;  // NEW: Default ALU start to inactive
         
         case (current_state)
             S_FETCH: begin
@@ -471,7 +489,13 @@ module top (
             end
             
             S_EXECUTE: begin
-                alu_out_write = 1'b1;
+                // Pulse alu_start only on first cycle in S_EXECUTE
+                alu_start = !alu_start_sent;
+                
+                if (alu_ready) begin
+                    alu_out_write = 1'b1;
+                end
+                // No else needed - stays in S_EXECUTE until alu_ready (handled by next_state logic)
             end
             
             S_MEM_ADDR: begin
@@ -612,11 +636,15 @@ module top (
     
     // ALU instantiation (uses registered control signals)
     alu u_alu (
+        .clk(clk),              // NEW: Clock for division unit
+        .rst_n(rst_n),          // NEW: Reset for division unit
         .a(alu_a),
         .b(alu_b),
         .alu_op(alu_op_reg),
+        .alu_start(alu_start),  // NEW: Start operation pulse
         .result(alu_result),
-        .zero(alu_zero)
+        .zero(alu_zero),
+        .alu_ready(alu_ready)   // NEW: Operation complete
     );
     
     // Memory Interface Module (uses registered control signals)

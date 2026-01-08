@@ -59,6 +59,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
     create_runtime(&[
         "top.sv",
         "alu.sv",
+        "div_unit.sv",
         "regfile.sv",
         "decoder.sv",
         "pc_control.sv",
@@ -71,7 +72,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["alu.sv"])
+    create_runtime(&["alu.sv", "div_unit.sv"])
 }
 
 // Helper function to create a runtime for the RegFile
