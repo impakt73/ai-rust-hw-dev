@@ -39,9 +39,9 @@ where
     last_trace_pc: Option<u32>,
     last_trace_instr: Option<u32>,
     // Memory latency simulation
-    mem_latency_cycles: u32,      // Number of cycles to delay memory operations
-    imem_delay_counter: u32,      // Current delay counter for instruction memory
-    dmem_delay_counter: u32,      // Current delay counter for data memory
+    mem_latency_cycles: u32, // Number of cycles to delay memory operations
+    imem_delay_counter: u32, // Current delay counter for instruction memory
+    dmem_delay_counter: u32, // Current delay counter for data memory
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -75,7 +75,7 @@ where
             vcd: None,
             last_trace_pc: None,
             last_trace_instr: None,
-            mem_latency_cycles: 0,    // Zero latency by default
+            mem_latency_cycles: 0, // Zero latency by default
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
         })
@@ -117,7 +117,7 @@ where
             vcd: Some(vcd),
             last_trace_pc: None,
             last_trace_instr: None,
-            mem_latency_cycles: 0,    // Zero latency by default
+            mem_latency_cycles: 0, // Zero latency by default
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
         })
@@ -287,7 +287,7 @@ where
                 let addr = self.cpu.imem_addr;
                 let data = self.bus.read_word(addr);
                 self.cpu.imem_data = data;
-                
+
                 // Implement delay counter for variable latency
                 if self.imem_delay_counter < self.mem_latency_cycles {
                     self.imem_delay_counter += 1;
@@ -334,7 +334,7 @@ where
                         _ => self.bus.read_word(addr),
                     };
                     self.cpu.dmem_rdata = rdata;
-                    
+
                     // Implement delay counter for variable latency
                     if self.dmem_delay_counter < self.mem_latency_cycles {
                         self.dmem_delay_counter += 1;
