@@ -86,12 +86,13 @@ module div_unit (
             
             DIV_ITER: begin
                 if (iter_count == 6'd31)  // After 32 iterations (0-31)
-                    next_state = DIV_CORRECT;
+                    next_state = DIV_DONE;  // Skip CORRECT for restoring algorithm
                 else
                     next_state = DIV_ITER;
             end
             
             DIV_CORRECT: begin
+                // Not needed for restoring division, but keep state for compatibility
                 next_state = DIV_DONE;
             end
             
@@ -150,18 +151,23 @@ module div_unit (
                 end
                 
                 DIV_ITER: begin
-                    // Non-restoring division iteration
+                    // Restoring division iteration (simpler algorithm)
                     logic [63:0] P_shifted;
+                    logic [63:0] P_test;
                     
-                    P_shifted = P << 1;  // Shift left by 1
+                    // Shift P left by 1
+                    P_shifted = P << 1;
                     
-                    if (!P_shifted[63]) begin
-                        // Positive: subtract divisor, set quotient bit
-                        P <= P_shifted - D;
+                    // Try subtracting divisor
+                    P_test = P_shifted - D;
+                    
+                    if (!P_test[63]) begin
+                        // Result is non-negative: keep subtraction, set quotient bit
+                        P <= P_test;
                         Q <= {Q[30:0], 1'b1};
                     end else begin
-                        // Negative: add divisor, clear quotient bit
-                        P <= P_shifted + D;
+                        // Result is negative: restore (don't subtract), clear quotient bit
+                        P <= P_shifted;
                         Q <= {Q[30:0], 1'b0};
                     end
                     
@@ -169,11 +175,8 @@ module div_unit (
                 end
                 
                 DIV_CORRECT: begin
-                    // Final non-restoring correction: if P is negative, add back D and decrement Q
-                    if (P[63]) begin
-                        P <= P + D;
-                        Q <= Q - 32'd1;
-                    end
+                    // Not needed for restoring division algorithm
+                    // All corrections are done during iterations
                 end
                 
                 default: begin
