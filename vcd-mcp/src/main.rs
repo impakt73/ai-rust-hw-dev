@@ -8,7 +8,10 @@ use rmcp::{
     transport::stdio, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 use state::AppState;
-use tools::{GetValuesArgs, InspectHeaderArgs, ListSignalsArgs};
+use tools::{
+    CountEdgesArgs, GetFileInfoArgs, GetSignalSummaryArgs, GetValuesArgs, InspectHeaderArgs,
+    ListSignalsArgs,
+};
 
 #[derive(Debug, Clone)]
 pub struct VcdMcpServer {
@@ -73,6 +76,57 @@ impl VcdMcpServer {
         Parameters(args): Parameters<GetValuesArgs>,
     ) -> Result<String, McpError> {
         match handlers::handle_get_values(self.state.clone(), args).await {
+            Ok(result) => {
+                let text =
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string());
+                Ok(text)
+            }
+            Err(e) => Err(McpError::internal_error(format!("Error: {}", e), None)),
+        }
+    }
+
+    #[tool(
+        description = "Get file metadata including timescale, time range, signal count, and file size. Useful for understanding the scope before querying."
+    )]
+    async fn get_file_info(
+        &self,
+        Parameters(args): Parameters<GetFileInfoArgs>,
+    ) -> Result<String, McpError> {
+        match handlers::handle_get_file_info(self.state.clone(), args).await {
+            Ok(result) => {
+                let text =
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string());
+                Ok(text)
+            }
+            Err(e) => Err(McpError::internal_error(format!("Error: {}", e), None)),
+        }
+    }
+
+    #[tool(
+        description = "Get summary statistics for signals including change count, first/last change time, bit width, and last value. Efficient for exploratory analysis."
+    )]
+    async fn get_signal_summary(
+        &self,
+        Parameters(args): Parameters<GetSignalSummaryArgs>,
+    ) -> Result<String, McpError> {
+        match handlers::handle_get_signal_summary(self.state.clone(), args).await {
+            Ok(result) => {
+                let text =
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string());
+                Ok(text)
+            }
+            Err(e) => Err(McpError::internal_error(format!("Error: {}", e), None)),
+        }
+    }
+
+    #[tool(
+        description = "Count rising, falling, or both edges for a signal. Supports scalar signals and individual bits of vector signals. Essential for clock cycle counting."
+    )]
+    async fn count_signal_edges(
+        &self,
+        Parameters(args): Parameters<CountEdgesArgs>,
+    ) -> Result<String, McpError> {
+        match handlers::handle_count_edges(self.state.clone(), args).await {
             Ok(result) => {
                 let text =
                     serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string());
