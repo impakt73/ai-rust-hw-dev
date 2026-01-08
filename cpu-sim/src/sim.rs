@@ -85,6 +85,7 @@ where
     }
 
     /// Create a new simulator with VCD tracing enabled
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_vcd(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
