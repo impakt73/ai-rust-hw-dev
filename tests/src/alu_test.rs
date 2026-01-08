@@ -42,21 +42,21 @@ fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
     dut.a = a;
     dut.b = b;
     dut.alu_op = alu_op;
-    
+
     // Reset state
     dut.rst_n = 0;
     dut.alu_start = 0;
     clock_cycle!(dut);
-    
+
     // Release reset
     dut.rst_n = 1;
     clock_cycle!(dut);
-    
+
     // Pulse alu_start for one cycle
     dut.alu_start = 1;
     clock_cycle!(dut);
     dut.alu_start = 0;
-    
+
     // Wait for alu_ready (max 100 cycles for safety)
     for _ in 0..100 {
         dut.eval();
@@ -65,7 +65,7 @@ fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
         }
         clock_cycle!(dut);
     }
-    
+
     // Final eval to get result
     dut.eval();
 }
