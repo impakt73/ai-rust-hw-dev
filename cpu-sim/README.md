@@ -288,6 +288,8 @@ use cpu_sim::{Simulator, bus::SystemBus};
 
 let runtime = riscv_core::create_cpu_runtime()?;
 let bus = SystemBus::new();
+
+// Configure memory latency at initialization (3 cycle latency)
 let mut sim = Simulator::new(
     &runtime,
     bus,
@@ -295,10 +297,8 @@ let mut sim = Simulator::new(
     false,  // print_fsm_state
     None::<fn(u32)>,
     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    3,      // mem_latency_cycles
 )?;
-
-// Set memory latency to 3 cycles
-sim.set_memory_latency(3);
 
 // Load and run your program
 let entry_point = cpu_sim::load_elf(&mut sim, Path::new("program.elf"))?;
@@ -307,8 +307,8 @@ let result = sim.run(entry_point, 10000)?;
 
 #### How It Works
 
-- **Zero Latency (default)**: Memory operations complete immediately (backward compatible)
-- **Fixed Latency (configurable)**: Each memory request (instruction fetch or data access) takes exactly N cycles to complete
+- **Zero Latency (default)**: Pass `0` for `mem_latency_cycles` - memory operations complete immediately (backward compatible)
+- **Fixed Latency (configurable)**: Pass N for `mem_latency_cycles` - each memory request (instruction fetch or data access) takes exactly N cycles to complete
 - **Counter-based Implementation**: The simulator uses internal delay counters that increment each cycle until the configured latency is reached, then asserts the `ready` signal
 
 This feature helps verify that:

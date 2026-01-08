@@ -71,6 +71,7 @@ mod tests {
             None::<fn(u32)>,
             trace_callback,
             vcd_path,
+            0, // Zero latency for RTL verification tests
             |sim| {
                 sim.write_memory_region(START_ADDR, &program_bytes);
                 Ok(START_ADDR)

@@ -57,11 +57,14 @@ where
         print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
+        mem_latency_cycles: u32,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime (without tracing by default)
         let cpu = runtime
             .create_model_simple::<Top>()
             .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+
+        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
         Ok(Simulator {
             cpu,
@@ -75,7 +78,7 @@ where
             vcd: None,
             last_trace_pc: None,
             last_trace_instr: None,
-            mem_latency_cycles: 0, // Zero latency by default
+            mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
         })
@@ -90,6 +93,7 @@ where
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: &str,
+        mem_latency_cycles: u32,
     ) -> Result<Self, String> {
         // Create CPU model with tracing enabled
         let config = VerilatedModelConfig {
@@ -104,6 +108,7 @@ where
         // Open VCD file
         let vcd = cpu.open_vcd(vcd_path);
         log::info!("VCD tracing enabled, writing to: {}", vcd_path);
+        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
         Ok(Simulator {
             cpu,
@@ -117,7 +122,7 @@ where
             vcd: Some(vcd),
             last_trace_pc: None,
             last_trace_instr: None,
-            mem_latency_cycles: 0, // Zero latency by default
+            mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
         })
@@ -126,34 +131,6 @@ where
     /// Enable or disable automatic printing of DebugPacket messages
     pub fn set_print_debug_packets(&mut self, enable: bool) {
         self.print_debug_packets = enable;
-    }
-
-    /// Set the memory latency in cycles
-    ///
-    /// # Arguments
-    /// * `cycles` - Number of cycles to delay memory operations (0 for zero latency)
-    ///
-    /// # Example
-    /// ```
-    /// # use cpu_sim::*;
-    /// # fn main() -> Result<(), String> {
-    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
-    /// # let bus = bus::SystemBus::new();
-    /// let mut sim = Simulator::new(
-    ///     &runtime,
-    ///     bus,
-    ///     false,
-    ///     false,
-    ///     None::<fn(u32)>,
-    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
-    /// )?;
-    /// sim.set_memory_latency(3); // 3 cycle latency
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn set_memory_latency(&mut self, cycles: u32) {
-        self.mem_latency_cycles = cycles;
-        log::info!("Memory latency set to {} cycles", cycles);
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -585,6 +562,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
     /// sim.write_memory_region(0x8000_0000, &instructions);
@@ -623,6 +601,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     /// # Ok(())
@@ -666,6 +645,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     0, // Zero latency
     /// )?;
     /// sim.dump_memory_region_as_image(
     ///     0x8000_0000,
