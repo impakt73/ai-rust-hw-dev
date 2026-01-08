@@ -38,6 +38,10 @@ where
     // For duplicate trace detection (prevents repeated halted instruction traces)
     last_trace_pc: Option<u32>,
     last_trace_instr: Option<u32>,
+    // Memory latency simulation
+    mem_latency_cycles: u32,      // Number of cycles to delay memory operations
+    imem_delay_counter: u32,      // Current delay counter for instruction memory
+    dmem_delay_counter: u32,      // Current delay counter for data memory
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -71,6 +75,9 @@ where
             vcd: None,
             last_trace_pc: None,
             last_trace_instr: None,
+            mem_latency_cycles: 0,    // Zero latency by default
+            imem_delay_counter: 0,
+            dmem_delay_counter: 0,
         })
     }
 
@@ -110,12 +117,43 @@ where
             vcd: Some(vcd),
             last_trace_pc: None,
             last_trace_instr: None,
+            mem_latency_cycles: 0,    // Zero latency by default
+            imem_delay_counter: 0,
+            dmem_delay_counter: 0,
         })
     }
 
     /// Enable or disable automatic printing of DebugPacket messages
     pub fn set_print_debug_packets(&mut self, enable: bool) {
         self.print_debug_packets = enable;
+    }
+
+    /// Set the memory latency in cycles
+    ///
+    /// # Arguments
+    /// * `cycles` - Number of cycles to delay memory operations (0 for zero latency)
+    ///
+    /// # Example
+    /// ```
+    /// # use cpu_sim::*;
+    /// # fn main() -> Result<(), String> {
+    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
+    /// # let bus = bus::SystemBus::new();
+    /// let mut sim = Simulator::new(
+    ///     &runtime,
+    ///     bus,
+    ///     false,
+    ///     false,
+    ///     None::<fn(u32)>,
+    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    /// )?;
+    /// sim.set_memory_latency(3); // 3 cycle latency
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_memory_latency(&mut self, cycles: u32) {
+        self.mem_latency_cycles = cycles;
+        log::info!("Memory latency set to {} cycles", cycles);
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -244,21 +282,25 @@ where
             // Evaluate combinational logic
             self.cpu.eval();
 
-            // Handle instruction memory with zero-latency (for now)
-            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
-            // Variable latency can be added by implementing a counter-based delay.
+            // Handle instruction memory with variable latency
             if self.cpu.imem_req != 0 {
                 let addr = self.cpu.imem_addr;
                 let data = self.bus.read_word(addr);
                 self.cpu.imem_data = data;
-                self.cpu.imem_ready = 1; // Always ready (zero latency)
+                
+                // Implement delay counter for variable latency
+                if self.imem_delay_counter < self.mem_latency_cycles {
+                    self.imem_delay_counter += 1;
+                    self.cpu.imem_ready = 0; // Not ready yet
+                } else {
+                    self.cpu.imem_ready = 1; // Ready after delay
+                }
             } else {
                 self.cpu.imem_ready = 0;
+                self.imem_delay_counter = 0; // Reset counter when no request
             }
 
-            // Handle data memory with zero-latency (for now)
-            // NOTE: This is a simplified, zero-latency placeholder for bring-up/testing.
-            // Variable latency can be added by implementing a counter-based delay.
+            // Handle data memory with variable latency
             if self.cpu.dmem_req != 0 {
                 let addr = self.cpu.dmem_addr;
                 let size = self.cpu.dmem_size;
@@ -277,7 +319,13 @@ where
                         halt_value = Some(wdata);
                     }
 
-                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                    // Implement delay counter for variable latency
+                    if self.dmem_delay_counter < self.mem_latency_cycles {
+                        self.dmem_delay_counter += 1;
+                        self.cpu.dmem_ready = 0; // Not ready yet
+                    } else {
+                        self.cpu.dmem_ready = 1; // Ready after delay
+                    }
                 } else if self.cpu.dmem_re != 0 {
                     // Data Memory Read
                     let rdata = match size {
@@ -286,12 +334,20 @@ where
                         _ => self.bus.read_word(addr),
                     };
                     self.cpu.dmem_rdata = rdata;
-                    self.cpu.dmem_ready = 1; // Always ready (zero latency)
+                    
+                    // Implement delay counter for variable latency
+                    if self.dmem_delay_counter < self.mem_latency_cycles {
+                        self.dmem_delay_counter += 1;
+                        self.cpu.dmem_ready = 0; // Not ready yet
+                    } else {
+                        self.cpu.dmem_ready = 1; // Ready after delay
+                    }
                 } else {
                     self.cpu.dmem_ready = 0;
                 }
             } else {
                 self.cpu.dmem_ready = 0;
+                self.dmem_delay_counter = 0; // Reset counter when no request
             }
 
             // Re-evaluate after setting memory signals

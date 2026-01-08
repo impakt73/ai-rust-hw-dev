@@ -640,3 +640,6 @@ mod test_programmatic_memory;
 
 #[cfg(test)]
 mod test_rtl_verification;
+
+#[cfg(test)]
+mod test_memory_latency;
