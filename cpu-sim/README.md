@@ -161,7 +161,104 @@ For advanced use cases that need access to the simulator after execution:
 - `run_elf_in_simulator(path, max_cycles, callback, vcd_path)` - Access simulator via callback
 - `run_elf_in_simulator_with_options(path, max_cycles, print_trace, callback, vcd_path)` - Full options with simulator access
 
-All functions delegate to a unified internal implementation for consistency and maintainability.
+### Unified Execution API
+
+The `run_program` function provides a unified interface for all simulator execution:
+
+```rust
+pub fn run_program<F, T, P, C>(
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    fifo_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    prep_callback: P,      // Load program, return entry point
+    post_callback: C,      // Access simulator after execution
+) -> Result<SimulationResult, String>
+```
+
+This single function handles both ELF and programmatic instruction loading through the `prep_callback`. All other API functions delegate to this for consistency.
+
+
+## Programmatic Testing with cpu-sim
+
+For testing RTL implementations with programmatically generated instruction sequences, the `test_rtl_verification` module provides helper functions that simplify trace collection and VCD generation.
+
+### Basic Programmatic Test
+
+```rust
+use riscv_core::instruction::*;
+
+// Generate test instructions
+let instructions = [
+    addi(1, 0, 10),   // x1 = 10
+    addi(2, 0, 20),   // x2 = 20
+    add(3, 1, 2),     // x3 = x1 + x2 = 30
+];
+
+// Run and verify
+run_program_with_options(&instructions, 100, false, None, None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
+    assert_eq!(result.tohost_value, Some(1));
+}).expect("Test should pass");
+```
+
+### Enabling Trace and VCD in Tests
+
+Use `run_program_with_options` to enable instruction tracing and VCD dumping:
+
+```rust
+// Enable instruction trace printing
+run_program_with_options(&instructions, 100, true, None, None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
+    // Verify results
+}).expect("Test should pass");
+
+// Enable VCD waveform dumping
+run_program_with_options(&instructions, 100, false, Some("/tmp/test.vcd"), None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
+    // Verify results
+}).expect("Test should pass");
+
+// Enable both trace and VCD
+run_program_with_options(&instructions, 100, true, Some("/tmp/test.vcd"), None::<fn(&riscv_core::trace::InstructionTrace)>, |sim, result| {
+    // Verify results
+}).expect("Test should pass");
+```
+
+### Programmatic Trace Validation
+
+Collect and validate instruction traces programmatically:
+
+```rust
+let mut traces = Vec::new();
+
+run_program_with_options(
+    &instructions,
+    100,
+    false,
+    None,
+    Some(|trace: &riscv_core::trace::InstructionTrace| {
+        traces.push(trace.clone());
+    }),
+    |sim, result| {
+        // Verify we got expected number of traces
+        assert_eq!(traces.len(), 12);
+        
+        // Validate first instruction
+        assert_eq!(traces[0].inst_type, InstructionType::Addi);
+        assert_eq!(traces[0].pc, 0x8000_0000);
+        assert_eq!(traces[0].rd.unwrap().value, 10);
+    }
+).expect("Test should pass");
+```
+
+### Comprehensive Validation Example
+
+See `test_comprehensive_trace_validation` in `test_rtl_verification.rs` for a complete example that validates:
+- PC values match expected sequence
+- Instruction types decode correctly
+- Register values are computed correctly
+- Immediate values are extracted properly
+- Control flow (branches) executes correctly
 
 ## Program Termination
 

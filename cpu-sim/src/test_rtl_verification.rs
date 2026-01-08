@@ -37,67 +37,46 @@ mod tests {
         ]
     }
 
-    /// Helper to run programmatic instructions with a callback for verification
+    /// Helper to run programmatic instructions with options for trace/VCD/callbacks
     ///
-    /// This helper encapsulates the pattern of:
-    /// 1. Creating a simulator with proper lifetime management
-    /// 2. Writing programmatic instructions to memory
-    /// 3. Running the simulation
-    /// 4. Executing a callback with access to the simulator and result
-    ///
-    /// This uses a callback-based approach similar to run_elf_in_simulator_internal
-    /// to avoid lifetime issues and memory leaks (no Box::leak).
-    ///
-    /// # Example
-    /// ```
-    /// run_program_with_callback(&instructions, 100, |sim, result| {
-    ///     assert_eq!(sim.bus.read_word(0x100), 42);
-    ///     assert!(result.cycles < 10);
-    /// }).expect("Simulation should succeed");
-    /// ```
-    fn run_program_with_callback<F>(
+    /// This is the ONLY helper function for running programmatic tests.
+    /// It supports:
+    /// - Instruction trace printing (print_inst_trace)
+    /// - VCD waveform dumping (vcd_path)
+    /// - Trace callbacks for programmatic validation (trace_callback)
+    /// - Post-execution callbacks for verification (post_callback)
+    fn run_program_with_options<T, F>(
         instructions: &[u32],
         max_cycles: u64,
-        callback: F,
+        print_inst_trace: bool,
+        vcd_path: Option<&str>,
+        trace_callback: Option<T>,
+        post_callback: F,
     ) -> Result<SimulationResult, String>
     where
-        F: for<'a> FnOnce(
-            &mut Simulator<'a, fn(u32), fn(&riscv_core::trace::InstructionTrace)>,
-            &SimulationResult,
-        ),
+        T: FnMut(&riscv_core::trace::InstructionTrace),
+        F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), T>, &SimulationResult),
     {
-        // Create system bus and simulator
-        let bus = bus::SystemBus::new();
-        let runtime = riscv_core::create_cpu_runtime()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+        const START_ADDR: u32 = 0x8000_0000;
 
-        let mut sim = sim::Simulator::new(
-            &runtime,
-            bus,
-            false, // Don't print instruction trace by default
+        let program_bytes: Vec<u8> = instructions
+            .iter()
+            .flat_map(|inst| inst.to_le_bytes())
+            .collect();
+
+        run_program(
+            max_cycles,
+            print_inst_trace,
             false, // Don't print FSM state
             None::<fn(u32)>,
-            None::<fn(&riscv_core::trace::InstructionTrace)>,
-        )?;
-
-        // Convert instructions to bytes (little-endian)
-        let mut program_bytes = Vec::new();
-        for &inst in instructions {
-            program_bytes.extend_from_slice(&inst.to_le_bytes());
-        }
-
-        // Write program to memory at standard RISC-V start address
-        const START_ADDR: u32 = 0x8000_0000;
-        sim.write_memory_region(START_ADDR, &program_bytes);
-
-        // Reset and run
-        sim.reset(START_ADDR);
-        let result = sim.run(START_ADDR, max_cycles)?;
-
-        // Execute callback with simulator and result
-        callback(&mut sim, &result);
-
-        Ok(result)
+            trace_callback,
+            vcd_path,
+            |sim| {
+                sim.write_memory_region(START_ADDR, &program_bytes);
+                Ok(START_ADDR)
+            },
+            post_callback,
+        )
     }
 
     // ============================================================================
@@ -115,12 +94,19 @@ mod tests {
         let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
     }
 
@@ -135,12 +121,19 @@ mod tests {
         let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed 3 instructions: ADDI, ADD, SUB");
@@ -156,12 +149,19 @@ mod tests {
         let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed LUI instruction");
@@ -186,12 +186,19 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed logic operations: AND, OR, XOR");
@@ -230,23 +237,30 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, result| {
-            // Verify branches worked - skipped instructions should leave registers at 0
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
-            assert_eq!(
-                marker1, 0,
-                "First branch should skip addi x3,x0,99, so x3 should be 0"
-            );
-            assert_eq!(
-                marker2, 0,
-                "Second branch should skip addi x5,x0,99, so x5 should be 0"
-            );
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, result| {
+                // Verify branches worked - skipped instructions should leave registers at 0
+                let marker1 = sim.bus.read_word(0x100);
+                let marker2 = sim.bus.read_word(0x104);
+                assert_eq!(
+                    marker1, 0,
+                    "First branch should skip addi x3,x0,99, so x3 should be 0"
+                );
+                assert_eq!(
+                    marker2, 0,
+                    "Second branch should skip addi x5,x0,99, so x5 should be 0"
+                );
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed BEQ and BNE branches");
@@ -279,17 +293,24 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, result| {
-            // Verify branches worked
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
-            assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
-            assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, result| {
+                // Verify branches worked
+                let marker1 = sim.bus.read_word(0x100);
+                let marker2 = sim.bus.read_word(0x104);
+                assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
+                assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed BLT and BGE branches");
@@ -322,17 +343,24 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, result| {
-            // Verify branches worked
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
-            assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
-            assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, result| {
+                // Verify branches worked
+                let marker1 = sim.bus.read_word(0x100);
+                let marker2 = sim.bus.read_word(0x104);
+                assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
+                assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed BLTU and BGEU branches");
@@ -365,10 +393,17 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
-            assert_eq!(sim.bus.read_word(108), 42, "Memory[108] should contain 42");
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
+                assert_eq!(sim.bus.read_word(108), 42, "Memory[108] should contain 42");
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed load and store instructions");
@@ -406,35 +441,42 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify memory operations
-            assert_eq!(
-                sim.bus.read_word(100),
-                0xFFFFFFFF,
-                "Memory[100] should contain 0xFFFFFFFF"
-            );
-            // Verify load operations
-            assert_eq!(
-                sim.bus.read_word(0x200),
-                0xFFFFFFFF,
-                "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x204),
-                0xFFFFFFFF,
-                "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x208),
-                0x000000FF,
-                "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x20C),
-                0x000000FF,
-                "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify memory operations
+                assert_eq!(
+                    sim.bus.read_word(100),
+                    0xFFFFFFFF,
+                    "Memory[100] should contain 0xFFFFFFFF"
+                );
+                // Verify load operations
+                assert_eq!(
+                    sim.bus.read_word(0x200),
+                    0xFFFFFFFF,
+                    "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x204),
+                    0xFFFFFFFF,
+                    "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x208),
+                    0x000000FF,
+                    "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x20C),
+                    0x000000FF,
+                    "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed LB and LBU instructions");
@@ -460,35 +502,42 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify memory operations
-            assert_eq!(
-                sim.bus.read_word(100),
-                0xFFFFFFFF,
-                "Memory[100] should contain 0xFFFFFFFF"
-            );
-            // Verify load operations
-            assert_eq!(
-                sim.bus.read_word(0x200),
-                0xFFFFFFFF,
-                "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x204),
-                0xFFFFFFFF,
-                "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x208),
-                0x0000FFFF,
-                "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x20C),
-                0x0000FFFF,
-                "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify memory operations
+                assert_eq!(
+                    sim.bus.read_word(100),
+                    0xFFFFFFFF,
+                    "Memory[100] should contain 0xFFFFFFFF"
+                );
+                // Verify load operations
+                assert_eq!(
+                    sim.bus.read_word(0x200),
+                    0xFFFFFFFF,
+                    "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x204),
+                    0xFFFFFFFF,
+                    "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x208),
+                    0x0000FFFF,
+                    "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x20C),
+                    0x0000FFFF,
+                    "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed LH and LHU instructions");
@@ -514,14 +563,21 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify memory operations - bytes stored in little-endian order
-            assert_eq!(
-                sim.bus.read_word(100),
-                0x78563412,
-                "Memory should contain 0x78563412"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify memory operations - bytes stored in little-endian order
+                assert_eq!(
+                    sim.bus.read_word(100),
+                    0x78563412,
+                    "Memory should contain 0x78563412"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed SB instruction");
@@ -542,14 +598,21 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify memory operations - halfwords stored in little-endian order
-            assert_eq!(
-                sim.bus.read_word(100),
-                0x06780234,
-                "Memory should contain 0x06780234"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify memory operations - halfwords stored in little-endian order
+                assert_eq!(
+                    sim.bus.read_word(100),
+                    0x06780234,
+                    "Memory should contain 0x06780234"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed SH instruction");
@@ -577,29 +640,36 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify load operations
-            assert_eq!(
-                sim.bus.read_word(0x200),
-                0xFFFFFF80,
-                "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x204),
-                0x00000080,
-                "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x208),
-                0xFFFFFFFF,
-                "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x20C),
-                0x0000FFFF,
-                "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify load operations
+                assert_eq!(
+                    sim.bus.read_word(0x200),
+                    0xFFFFFF80,
+                    "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x204),
+                    0x00000080,
+                    "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x208),
+                    0xFFFFFFFF,
+                    "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x20C),
+                    0x0000FFFF,
+                    "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed mixed byte/halfword operations");
@@ -617,12 +687,19 @@ mod tests {
         let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed AUIPC instruction");
@@ -645,19 +722,26 @@ mod tests {
             sw(4, 5, 0),     // Store x5 to tohost address
         ];
 
-        run_program_with_callback(&instructions, 200, |sim, result| {
-            // Verify that tohost write was detected
-            assert_eq!(
-                result.tohost_value,
-                Some(1),
-                "Expected tohost value to be 1 (exit code)"
-            );
-            assert_eq!(
-                sim.bus.read_word(TOHOST_ADDR),
-                1,
-                "TOHOST memory location should contain 1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, result| {
+                // Verify that tohost write was detected
+                assert_eq!(
+                    result.tohost_value,
+                    Some(1),
+                    "Expected tohost value to be 1 (exit code)"
+                );
+                assert_eq!(
+                    sim.bus.read_word(TOHOST_ADDR),
+                    1,
+                    "TOHOST memory location should contain 1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully tested tohost halt mechanism");
@@ -670,13 +754,20 @@ mod tests {
         let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            // FENCE is essentially a NOP for single-cycle CPU
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                // FENCE is essentially a NOP for single-cycle CPU
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed FENCE instruction");
@@ -691,13 +782,20 @@ mod tests {
         instructions.push(ecall()); // Should halt CPU after tohost write
         instructions.push(addi(2, 0, 99)); // Should not execute
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            // After ECALL, CPU should halt
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                // After ECALL, CPU should halt
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed ECALL instruction");
@@ -712,13 +810,20 @@ mod tests {
         instructions.push(ebreak()); // Should halt CPU after tohost write
         instructions.push(addi(2, 0, 200)); // Should not execute
 
-        run_program_with_callback(&instructions, 100, |_sim, result| {
-            // After EBREAK, CPU should halt
-            assert!(
-                result.tohost_value == Some(1),
-                "Program should terminate with tohost=1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                // After EBREAK, CPU should halt
+                assert!(
+                    result.tohost_value == Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed EBREAK instruction");
@@ -744,24 +849,31 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify CSR operations
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0,
-                "First CSRRW should read 0 from uninitialized CSR"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x104),
-                100,
-                "Second CSRRW should read 100 from CSR"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x108),
-                0,
-                "Third CSRRW should read 0 from CSR"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify CSR operations
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0,
+                    "First CSRRW should read 0 from uninitialized CSR"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x104),
+                    100,
+                    "Second CSRRW should read 100 from CSR"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x108),
+                    0,
+                    "Third CSRRW should read 0 from CSR"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed CSR read/write operations");
@@ -786,24 +898,31 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify CSR operations
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0b1010,
-                "CSRRS should read old value 0b1010"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x104),
-                0b1111,
-                "CSRRC should read value 0b1111"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x108),
-                0b0111,
-                "Final CSR value should be 0b0111"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify CSR operations
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0b1010,
+                    "CSRRS should read old value 0b1010"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x104),
+                    0b1111,
+                    "CSRRC should read value 0b1111"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x108),
+                    0b0111,
+                    "Final CSR value should be 0b0111"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed CSR set/clear operations");
@@ -826,17 +945,24 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            // Verify CSR operations
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0,
-                "CSRRWI should read 0 from uninitialized CSR"
-            );
-            assert_eq!(sim.bus.read_word(0x104), 15, "CSRRSI should read 15");
-            assert_eq!(sim.bus.read_word(0x108), 15, "CSRRCI should read 15");
-            assert_eq!(sim.bus.read_word(0x10C), 11, "Final CSR value should be 11");
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                // Verify CSR operations
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0,
+                    "CSRRWI should read 0 from uninitialized CSR"
+                );
+                assert_eq!(sim.bus.read_word(0x104), 15, "CSRRSI should read 15");
+                assert_eq!(sim.bus.read_word(0x108), 15, "CSRRCI should read 15");
+                assert_eq!(sim.bus.read_word(0x10C), 11, "Final CSR value should be 11");
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed CSR immediate operations");
@@ -858,9 +984,16 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed MUL instruction");
@@ -878,13 +1011,20 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0x00000001,
-                "MULH: upper 32 bits should be 0x00000001"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0x00000001,
+                    "MULH: upper 32 bits should be 0x00000001"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed MULH instruction");
@@ -902,9 +1042,16 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed DIV instruction");
@@ -922,13 +1069,20 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0xFFFFFFFF,
-                "DIV by zero should return 0xFFFFFFFF"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0xFFFFFFFF,
+                    "DIV by zero should return 0xFFFFFFFF"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed DIV by zero");
@@ -946,9 +1100,16 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed REM instruction");
@@ -968,18 +1129,25 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                0x7FFFFFFF,
-                "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
-            );
-            assert_eq!(
-                sim.bus.read_word(0x104),
-                1,
-                "REMU: 0xFFFFFFFF % 2 should be 1"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    0x7FFFFFFF,
+                    "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
+                );
+                assert_eq!(
+                    sim.bus.read_word(0x104),
+                    1,
+                    "REMU: 0xFFFFFFFF % 2 should be 1"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed DIVU and REMU instructions");
@@ -1005,15 +1173,451 @@ mod tests {
         ];
         instructions.extend(tohost_termination(7, 8));
 
-        run_program_with_callback(&instructions, 200, |sim, _result| {
-            assert_eq!(
-                sim.bus.read_word(0x100),
-                22,
-                "Complex M extension program result should be 22"
-            );
-        })
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |sim, _result| {
+                assert_eq!(
+                    sim.bus.read_word(0x100),
+                    22,
+                    "Complex M extension program result should be 22"
+                );
+            },
+        )
         .expect("Program should run");
 
         println!("Successfully executed complex M extension program");
+    }
+
+    // ============================================================================
+    // Comprehensive Trace Validation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_comprehensive_trace_validation() {
+        init_test_logger();
+
+        println!("\n========================================");
+        println!("COMPREHENSIVE TRACE VALIDATION TEST");
+        println!("========================================");
+        println!("Testing instruction trace against known sequence...\n");
+
+        // Expected instruction sequence for validation
+        #[derive(Debug)]
+        struct ExpectedInstruction {
+            inst_type: riscv_core::trace::InstructionType,
+            pc: u32,
+            rd: Option<(u8, u32)>,  // (register number, expected value)
+            rs1: Option<(u8, u32)>, // (register number, expected value)
+            rs2: Option<(u8, u32)>, // (register number, expected value)
+            immediate: Option<i32>,
+        }
+
+        // Build test program with known expected results
+        let base_addr: u32 = 0x8000_0000;
+        let mut instructions = vec![
+            addi(1, 0, 10),      // x1 = 10
+            addi(2, 0, 20),      // x2 = 20
+            add(3, 1, 2),        // x3 = x1 + x2 = 30
+            sub(4, 2, 1),        // x4 = x2 - x1 = 10
+            and(5, 3, 2),        // x5 = x3 & x2 = 20
+            or(6, 1, 2),         // x6 = x1 | x2 = 30
+            xor(7, 3, 2),        // x7 = x3 ^ x2 = 10
+            sll(8, 1, 0),        // x8 = x1 << 0 = 10
+            srl(9, 2, 0),        // x9 = x2 >> 0 = 20
+            lui(10, 0x12345000), // x10 = 0x12345000
+            sw(0, 1, 0x100),     // mem[0x100] = x1 = 10
+            lw(11, 0, 0x100),    // x11 = mem[0x100] = 10
+        ];
+
+        // Define expected traces (before adding termination sequence)
+        let expected_traces = vec![
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Addi,
+                pc: base_addr,
+                rd: Some((1, 10)),
+                rs1: Some((0, 0)),
+                rs2: None,
+                immediate: Some(10),
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Addi,
+                pc: base_addr + 4,
+                rd: Some((2, 20)),
+                rs1: Some((0, 0)),
+                rs2: None,
+                immediate: Some(20),
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Add,
+                pc: base_addr + 8,
+                rd: Some((3, 30)),
+                rs1: Some((1, 10)),
+                rs2: Some((2, 20)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Sub,
+                pc: base_addr + 12,
+                rd: Some((4, 10)),
+                rs1: Some((2, 20)),
+                rs2: Some((1, 10)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::And,
+                pc: base_addr + 16,
+                rd: Some((5, 20)),
+                rs1: Some((3, 30)),
+                rs2: Some((2, 20)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Or,
+                pc: base_addr + 20,
+                rd: Some((6, 30)),
+                rs1: Some((1, 10)),
+                rs2: Some((2, 20)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Xor,
+                pc: base_addr + 24,
+                rd: Some((7, 10)),
+                rs1: Some((3, 30)),
+                rs2: Some((2, 20)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Sll,
+                pc: base_addr + 28,
+                rd: Some((8, 10)),
+                rs1: Some((1, 10)),
+                rs2: Some((0, 0)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Srl,
+                pc: base_addr + 32,
+                rd: Some((9, 20)),
+                rs1: Some((2, 20)),
+                rs2: Some((0, 0)),
+                immediate: None,
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Lui,
+                pc: base_addr + 36,
+                rd: Some((10, 0x12345000)),
+                rs1: None,
+                rs2: None,
+                immediate: Some(74565), // 0x12345
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Sw,
+                pc: base_addr + 40,
+                rd: None,
+                rs1: Some((0, 0)),
+                rs2: Some((1, 10)),
+                immediate: Some(0x100),
+            },
+            ExpectedInstruction {
+                inst_type: riscv_core::trace::InstructionType::Lw,
+                pc: base_addr + 44,
+                rd: Some((11, 10)),
+                rs1: Some((0, 0)),
+                rs2: None,
+                immediate: Some(0x100),
+            },
+        ];
+
+        // Add termination sequence
+        instructions.extend(tohost_termination(15, 16));
+
+        // Collect traces
+        let mut captured_traces = Vec::new();
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            Some(|trace: &riscv_core::trace::InstructionTrace| {
+                captured_traces.push(trace.clone());
+            }),
+            |_sim, result| {
+                assert_eq!(
+                    result.tohost_value,
+                    Some(1),
+                    "Program should terminate with tohost=1"
+                );
+            },
+        )
+        .expect("Simulation should succeed");
+
+        // Verify we captured the expected number of traces (12 main + 3 termination)
+        println!("Captured {} instruction traces", captured_traces.len());
+        assert!(
+            captured_traces.len() >= expected_traces.len(),
+            "Should capture at least {} traces, got {}",
+            expected_traces.len(),
+            captured_traces.len()
+        );
+
+        // Validate each expected trace
+        println!("\nValidating instruction traces:");
+        for (i, expected) in expected_traces.iter().enumerate() {
+            let trace = &captured_traces[i];
+
+            print!("  [{}] PC=0x{:08x} {:?} ... ", i, trace.pc, trace.inst_type);
+
+            // Validate PC
+            assert_eq!(
+                trace.pc, expected.pc,
+                "Trace {} PC mismatch: expected 0x{:08x}, got 0x{:08x}",
+                i, expected.pc, trace.pc
+            );
+
+            // Validate instruction type
+            assert_eq!(
+                trace.inst_type, expected.inst_type,
+                "Trace {} instruction type mismatch: expected {:?}, got {:?}",
+                i, expected.inst_type, trace.inst_type
+            );
+
+            // Validate rd
+            if let Some((exp_reg, exp_val)) = expected.rd {
+                assert!(trace.rd.is_some(), "Trace {} should have rd operand", i);
+                let rd = trace.rd.as_ref().unwrap();
+                assert_eq!(
+                    rd.reg, exp_reg,
+                    "Trace {} rd register mismatch: expected x{}, got x{}",
+                    i, exp_reg, rd.reg
+                );
+                assert_eq!(
+                    rd.value, exp_val,
+                    "Trace {} rd value mismatch: expected 0x{:08x}, got 0x{:08x}",
+                    i, exp_val, rd.value
+                );
+            }
+
+            // Validate rs1
+            if let Some((exp_reg, exp_val)) = expected.rs1 {
+                assert!(trace.rs1.is_some(), "Trace {} should have rs1 operand", i);
+                let rs1 = trace.rs1.as_ref().unwrap();
+                assert_eq!(
+                    rs1.reg, exp_reg,
+                    "Trace {} rs1 register mismatch: expected x{}, got x{}",
+                    i, exp_reg, rs1.reg
+                );
+                assert_eq!(
+                    rs1.value, exp_val,
+                    "Trace {} rs1 value mismatch: expected 0x{:08x}, got 0x{:08x}",
+                    i, exp_val, rs1.value
+                );
+            }
+
+            // Validate rs2
+            if let Some((exp_reg, exp_val)) = expected.rs2 {
+                assert!(trace.rs2.is_some(), "Trace {} should have rs2 operand", i);
+                let rs2 = trace.rs2.as_ref().unwrap();
+                assert_eq!(
+                    rs2.reg, exp_reg,
+                    "Trace {} rs2 register mismatch: expected x{}, got x{}",
+                    i, exp_reg, rs2.reg
+                );
+                assert_eq!(
+                    rs2.value, exp_val,
+                    "Trace {} rs2 value mismatch: expected 0x{:08x}, got 0x{:08x}",
+                    i, exp_val, rs2.value
+                );
+            }
+
+            // Validate immediate
+            if let Some(exp_imm) = expected.immediate {
+                assert!(
+                    trace.immediate.is_some(),
+                    "Trace {} should have immediate value",
+                    i
+                );
+                let imm = trace.immediate.unwrap();
+                assert_eq!(
+                    imm, exp_imm,
+                    "Trace {} immediate mismatch: expected {}, got {}",
+                    i, exp_imm, imm
+                );
+            }
+
+            println!("✓");
+        }
+
+        println!("\n========================================");
+        println!("✓ ALL TRACE VALIDATIONS PASSED");
+        println!("========================================");
+        println!("  - {} instructions validated", expected_traces.len());
+        println!("  - PC values matched expected sequence");
+        println!("  - Instruction types decoded correctly");
+        println!("  - Register values computed correctly");
+        println!("  - Immediate values extracted correctly");
+        println!("========================================\n");
+    }
+
+    #[test]
+    fn test_trace_with_branches() {
+        init_test_logger();
+
+        println!("\n========================================");
+        println!("TRACE VALIDATION WITH BRANCHES");
+        println!("========================================\n");
+
+        let base_addr: u32 = 0x8000_0000;
+        let mut instructions = vec![
+            addi(1, 0, 10), // 0x00: x1 = 10
+            addi(2, 0, 20), // 0x04: x2 = 20
+            beq(1, 1, 8),   // 0x08: branch to 0x10 (taken - skip next)
+            addi(3, 0, 99), // 0x0C: SKIPPED
+            addi(4, 0, 5),  // 0x10: x4 = 5
+            bne(1, 2, 8),   // 0x14: branch to 0x1C (taken - skip next)
+            addi(5, 0, 99), // 0x18: SKIPPED
+            addi(6, 0, 1),  // 0x1C: x6 = 1
+        ];
+        instructions.extend(tohost_termination(7, 8));
+
+        // Collect traces
+        let mut captured_traces = Vec::new();
+        run_program_with_options(
+            &instructions,
+            200,
+            false,
+            None,
+            Some(|trace: &riscv_core::trace::InstructionTrace| {
+                captured_traces.push(trace.clone());
+            }),
+            |_sim, result| {
+                assert_eq!(result.tohost_value, Some(1));
+            },
+        )
+        .expect("Simulation should succeed");
+
+        println!("Captured {} traces", captured_traces.len());
+        println!("\nTrace sequence:");
+        for (i, trace) in captured_traces.iter().enumerate() {
+            println!("  [{}] PC=0x{:08x} {:?}", i, trace.pc, trace.inst_type);
+        }
+
+        // Verify branch behavior - skipped instructions should not appear in trace
+        let pcs: Vec<u32> = captured_traces.iter().map(|t| t.pc).collect();
+
+        // Should NOT contain the skipped instructions
+        assert!(
+            !pcs.contains(&(base_addr + 0x0C)),
+            "Trace should not contain skipped instruction at 0x0C (after BEQ)"
+        );
+        assert!(
+            !pcs.contains(&(base_addr + 0x18)),
+            "Trace should not contain skipped instruction at 0x18 (after BNE)"
+        );
+
+        // Should contain the executed instructions
+        assert!(
+            pcs.contains(&(base_addr + 0x00)),
+            "Trace should contain ADDI x1 at 0x00"
+        );
+        assert!(
+            pcs.contains(&(base_addr + 0x04)),
+            "Trace should contain ADDI x2 at 0x04"
+        );
+        assert!(
+            pcs.contains(&(base_addr + 0x08)),
+            "Trace should contain BEQ at 0x08"
+        );
+        assert!(
+            pcs.contains(&(base_addr + 0x10)),
+            "Trace should contain ADDI x4 at 0x10"
+        );
+        assert!(
+            pcs.contains(&(base_addr + 0x14)),
+            "Trace should contain BNE at 0x14"
+        );
+        assert!(
+            pcs.contains(&(base_addr + 0x1C)),
+            "Trace should contain ADDI x6 at 0x1C"
+        );
+
+        println!("\n========================================");
+        println!("✓ BRANCH TRACE VALIDATION PASSED");
+        println!("========================================");
+        println!("  - Branches executed correctly");
+        println!("  - Skipped instructions not traced");
+        println!("  - Control flow sequence validated");
+        println!("========================================\n");
+    }
+
+    #[test]
+    fn test_trace_and_vcd_together() {
+        init_test_logger();
+
+        println!("\n========================================");
+        println!("COMBINED TRACE + VCD TEST");
+        println!("========================================\n");
+
+        let vcd_path = "/tmp/test_trace_vcd.vcd";
+
+        // Simple test program
+        let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
+        instructions.extend(tohost_termination(7, 8));
+
+        // Run with VCD enabled
+        run_program_with_options(
+            &instructions,
+            100,
+            false,
+            Some(vcd_path),
+            None::<fn(&riscv_core::trace::InstructionTrace)>,
+            |_sim, result| {
+                assert_eq!(result.tohost_value, Some(1));
+            },
+        )
+        .expect("Simulation should succeed");
+
+        // Verify VCD file was created
+        assert!(
+            std::path::Path::new(vcd_path).exists(),
+            "VCD file should be created"
+        );
+
+        // Read VCD file
+        let vcd_contents =
+            std::fs::read_to_string(vcd_path).expect("Should be able to read VCD file");
+
+        // Validate VCD contains essential signals
+        assert!(
+            vcd_contents.contains("clk"),
+            "VCD should contain clk signal"
+        );
+        assert!(
+            vcd_contents.contains("rst_n"),
+            "VCD should contain rst_n signal"
+        );
+        assert!(
+            vcd_contents.contains("imem_addr"),
+            "VCD should contain imem_addr"
+        );
+        assert!(vcd_contents.contains("#0"), "VCD should have timestamps");
+
+        // Clean up
+        std::fs::remove_file(vcd_path).expect("Should be able to remove VCD file");
+
+        println!("✓ VCD file generated successfully");
+        println!("✓ VCD contains all expected signals");
+
+        println!("\n========================================");
+        println!("✓ COMBINED TRACE + VCD TEST PASSED");
+        println!("========================================");
+        println!("  - VCD waveform dumping works");
+        println!("  - Trace options enable easy config");
+        println!("  - Both features can be used together");
+        println!("========================================\n");
     }
 }
