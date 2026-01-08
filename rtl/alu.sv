@@ -1,12 +1,17 @@
 // ALU Module - Arithmetic Logic Unit
 // Implements RISC-V RV32I ALU operations
+// Multi-cycle support for division operations
 
 module alu (
+    input  logic        clk,          // Clock for division unit
+    input  logic        rst_n,        // Reset for division unit
     input  logic [31:0] a,
     input  logic [31:0] b,
     input  logic [4:0]  alu_op,
+    input  logic        alu_start,    // Start operation (pulse)
     output logic [31:0] result,
-    output logic        zero
+    output logic        zero,
+    output logic        alu_ready     // Operation complete
 );
 
     // ALU Operation Encodings (RV32I)
@@ -31,6 +36,65 @@ module alu (
     localparam logic [4:0] ALU_REM    = 5'b10000;  // Remainder (signed)
     localparam logic [4:0] ALU_REMU   = 5'b10001;  // Remainder (unsigned)
 
+    // Division unit signals
+    logic        div_start;
+    logic        div_is_signed;
+    logic        div_rem_sel;
+    logic [31:0] div_result;
+    logic        div_ready;
+    
+    // Instantiate division unit
+    div_unit u_div (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(div_start),
+        .is_signed(div_is_signed),
+        .rem_sel(div_rem_sel),
+        .dividend(a),
+        .divisor(b),
+        .result(div_result),
+        .ready(div_ready)
+    );
+    
+    // Detect division operations
+    logic is_div_op;
+    assign is_div_op = (alu_op == ALU_DIV)  || 
+                       (alu_op == ALU_DIVU) || 
+                       (alu_op == ALU_REM)  || 
+                       (alu_op == ALU_REMU);
+    
+    // Start division when requested
+    assign div_start = alu_start && is_div_op;
+    
+    // Configure division unit based on operation
+    always_comb begin
+        case (alu_op)
+            ALU_DIV: begin
+                div_is_signed = 1'b1;
+                div_rem_sel = 1'b0;  // Quotient
+            end
+            ALU_DIVU: begin
+                div_is_signed = 1'b0;
+                div_rem_sel = 1'b0;  // Quotient
+            end
+            ALU_REM: begin
+                div_is_signed = 1'b1;
+                div_rem_sel = 1'b1;  // Remainder
+            end
+            ALU_REMU: begin
+                div_is_signed = 1'b0;
+                div_rem_sel = 1'b1;  // Remainder
+            end
+            default: begin
+                div_is_signed = 1'b0;
+                div_rem_sel = 1'b0;
+            end
+        endcase
+    end
+    
+    // ALU ready signal: immediate for non-div ops, waits for div_ready for division
+    assign alu_ready = is_div_op ? div_ready : 1'b1;
+    
     // Multiplication intermediate results (64-bit)
     logic [63:0] mul_result;
     logic signed [63:0] mulhsu_a_ext;
@@ -78,44 +142,12 @@ module alu (
                 result = mul_result[63:32];  // Upper 32 bits (unsigned×unsigned)
             end
             
-            // M Extension - Division operations
-            ALU_DIV: begin
-                // Signed division with special cases
-                if (b == 32'd0) begin
-                    result = 32'hFFFFFFFF;  // Division by zero
-                end else if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
-                    result = 32'h80000000;  // Overflow case: -2^31 ÷ -1 = -2^31
-                end else begin
-                    result = $signed(a) / $signed(b);
-                end
-            end
-            ALU_DIVU: begin
-                // Unsigned division
-                if (b == 32'd0) begin
-                    result = 32'hFFFFFFFF;  // Division by zero
-                end else begin
-                    result = $unsigned(a) / $unsigned(b);
-                end
-            end
-            
-            // M Extension - Remainder operations
-            ALU_REM: begin
-                // Signed remainder
-                if (b == 32'd0) begin
-                    result = a;  // Division by zero: return dividend
-                end else if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
-                    result = 32'd0;  // Overflow case: -2^31 % -1 = 0
-                end else begin
-                    result = $signed(a) % $signed(b);
-                end
-            end
+            // M Extension - Division operations (multi-cycle via division unit)
+            ALU_DIV,
+            ALU_DIVU,
+            ALU_REM,
             ALU_REMU: begin
-                // Unsigned remainder
-                if (b == 32'd0) begin
-                    result = a;  // Division by zero: return dividend
-                end else begin
-                    result = $unsigned(a) % $unsigned(b);
-                end
+                result = div_result;  // Comes from division unit
             end
             
             default:  result = 32'd0;
