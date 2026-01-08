@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use vcd::{Parser, Command, Value};
+use vcd::{Command, Parser, Value};
 
 #[derive(Debug)]
 pub struct VcdStatistics {
@@ -26,13 +26,6 @@ pub fn analyze_vcd(vcd_path: &str) -> Result<VcdStatistics, String> {
         .parse_header()
         .map_err(|e| format!("Failed to parse VCD header: {}", e))?;
 
-    // Find signal IDs we care about
-    let clk_id;
-    let dmem_we_id;
-    let dmem_re_id;
-    let instr_complete_id;
-    let debug_pc_id;
-
     // Extract signal IDs from header
     fn find_signals(items: &[vcd::ScopeItem]) -> HashMap<String, vcd::IdCode> {
         let mut signals = HashMap::new();
@@ -51,12 +44,12 @@ pub fn analyze_vcd(vcd_path: &str) -> Result<VcdStatistics, String> {
     }
 
     let signals = find_signals(&header.items);
-    
-    clk_id = signals.get("clk").copied();
-    dmem_we_id = signals.get("dmem_we").copied();
-    dmem_re_id = signals.get("dmem_re").copied();
-    instr_complete_id = signals.get("instr_complete").copied();
-    debug_pc_id = signals.get("debug_pc").copied();
+
+    let clk_id = signals.get("clk").copied();
+    let dmem_we_id = signals.get("dmem_we").copied();
+    let dmem_re_id = signals.get("dmem_re").copied();
+    let instr_complete_id = signals.get("instr_complete").copied();
+    let debug_pc_id = signals.get("debug_pc").copied();
 
     // Track statistics
     let mut clock_transitions = 0u64;
@@ -142,7 +135,7 @@ fn vector_to_u32(values: &[Value]) -> Option<u32> {
     for (i, val) in values.iter().rev().enumerate() {
         match val {
             Value::V1 => result |= 1 << i,
-            Value::V0 => {},
+            Value::V0 => {}
             _ => return None, // Unknown or high-Z
         }
     }
