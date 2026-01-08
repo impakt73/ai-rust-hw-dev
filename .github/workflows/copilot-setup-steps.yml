@@ -41,6 +41,9 @@ jobs:
       - name: Install RISC-V Rust Target
         run: rustup target add riscv32im-unknown-none-elf
       
+      - name: Install vcd-mcp crate
+        run: cargo install --path vcd-mcp
+      
       - name: Cache Cargo dependencies and build artifacts
         uses: actions/cache@v4
         with:
@@ -60,6 +63,7 @@ jobs:
           cargo --version
           rustup target list --installed | grep riscv32im-unknown-none-elf
           riscv64-unknown-elf-gcc --version
+          vcd-mcp --version || echo "vcd-mcp installed"
 
       - name: Summary of installed tools
         run: |
@@ -69,6 +73,7 @@ jobs:
           echo "Cargo: $(cargo --version)"
           echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32im-unknown-none-elf)"
           echo "RISC-V GCC: $(riscv64-unknown-elf-gcc --version | head -1)"
+          echo "vcd-mcp: Installed from local path"
           echo ""
           echo "Common commands:"
           echo "  cargo test                                   - Run all tests"
