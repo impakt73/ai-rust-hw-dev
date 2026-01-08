@@ -35,6 +35,55 @@ impl VcdValue {
             VcdValue::String(s) => s.clone(),
         }
     }
+
+    /// Get the bit width of the value
+    pub fn bit_width(&self) -> usize {
+        match self {
+            VcdValue::Scalar(_) => 1,
+            VcdValue::Vector(v) => v.len(),
+            VcdValue::Real(_) => 64,  // Standard double precision
+            VcdValue::String(_) => 0, // String has no well-defined bit width
+        }
+    }
+
+    /// Check if this is a scalar '1' (logic high)
+    #[allow(dead_code)]
+    pub fn is_scalar_high(&self) -> bool {
+        matches!(self, VcdValue::Scalar(vcd::Value::V1))
+    }
+
+    /// Check if this is a scalar '0' (logic low)
+    #[allow(dead_code)]
+    pub fn is_scalar_low(&self) -> bool {
+        matches!(self, VcdValue::Scalar(vcd::Value::V0))
+    }
+
+    /// Get a specific bit from the value (for vectors, 0 = LSB)
+    pub fn get_bit(&self, index: usize) -> Option<bool> {
+        match self {
+            VcdValue::Scalar(v) => {
+                if index == 0 {
+                    match v {
+                        vcd::Value::V0 => Some(false),
+                        vcd::Value::V1 => Some(true),
+                        _ => None, // X or Z
+                    }
+                } else {
+                    None
+                }
+            }
+            VcdValue::Vector(v) => {
+                // VCD vectors are MSB-first, so reverse indexing
+                let actual_index = v.len().checked_sub(1 + index)?;
+                match v.get(actual_index)? {
+                    vcd::Value::V0 => Some(false),
+                    vcd::Value::V1 => Some(true),
+                    _ => None, // X or Z
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Represents a parsed VCD file with queryable data
@@ -175,6 +224,193 @@ impl VcdAnalysis {
 
         changes
     }
+
+    /// Get file metadata including time range and signal count
+    pub fn get_file_metadata(&self) -> FileMetadata {
+        let (first_time, last_time) = if self.time_changes.is_empty() {
+            (0, 0)
+        } else {
+            let first = self.time_changes.first().map(|(t, _)| *t).unwrap_or(0);
+            let last = self.time_changes.last().map(|(t, _)| *t).unwrap_or(0);
+            (first, last)
+        };
+
+        FileMetadata {
+            timescale: self
+                .header
+                .timescale
+                .map(|ts| format!("{} {:?}", ts.0, ts.1)),
+            first_time,
+            last_time,
+            signal_count: self.id_to_name.len(),
+        }
+    }
+
+    /// Get summary statistics for a signal over a time range
+    pub fn get_signal_summary(
+        &self,
+        signal_id: vcd::IdCode,
+        start_time: u64,
+        end_time: u64,
+    ) -> Option<SignalSummary> {
+        let mut change_count = 0;
+        let mut first_change_time: Option<u64> = None;
+        let mut last_change_time: Option<u64> = None;
+        let mut last_value: Option<VcdValue> = None;
+        let mut bit_width: Option<usize> = None;
+
+        for (timestamp, change_list) in &self.time_changes {
+            // Skip timestamps before start
+            if *timestamp < start_time {
+                for (id, value) in change_list {
+                    if *id == signal_id {
+                        last_value = Some(value.clone());
+                        if bit_width.is_none() {
+                            bit_width = Some(value.bit_width());
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Stop after end
+            if *timestamp > end_time {
+                break;
+            }
+
+            // Count changes in range
+            for (id, value) in change_list {
+                if *id == signal_id {
+                    change_count += 1;
+                    if first_change_time.is_none() {
+                        first_change_time = Some(*timestamp);
+                    }
+                    last_change_time = Some(*timestamp);
+                    last_value = Some(value.clone());
+                    if bit_width.is_none() {
+                        bit_width = Some(value.bit_width());
+                    }
+                }
+            }
+        }
+
+        // If we have a value (either from before start or within range), return summary
+        if last_value.is_some() || bit_width.is_some() {
+            Some(SignalSummary {
+                change_count,
+                first_change_time,
+                last_change_time,
+                last_value,
+                bit_width: bit_width.unwrap_or(0),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Count edges for a scalar signal or a specific bit of a vector signal
+    ///
+    /// # Arguments
+    /// * `signal_id` - The signal to analyze
+    /// * `edge_type` - Type of edge to count (Rising, Falling, or Both)
+    /// * `bit_index` - For vector signals, which bit to analyze (0 = LSB). None for scalar signals.
+    /// * `start_time` - Start of time range
+    /// * `end_time` - End of time range
+    pub fn count_signal_edges(
+        &self,
+        signal_id: vcd::IdCode,
+        edge_type: EdgeType,
+        bit_index: Option<usize>,
+        start_time: u64,
+        end_time: u64,
+    ) -> u64 {
+        let mut count = 0;
+        let mut last_bit_value: Option<bool> = None;
+
+        for (timestamp, change_list) in &self.time_changes {
+            // Track value before start_time
+            if *timestamp < start_time {
+                for (id, value) in change_list {
+                    if *id == signal_id {
+                        last_bit_value = if let Some(idx) = bit_index {
+                            value.get_bit(idx)
+                        } else {
+                            // For scalar signals, use bit 0
+                            value.get_bit(0)
+                        };
+                    }
+                }
+                continue;
+            }
+
+            // Stop after end_time
+            if *timestamp > end_time {
+                break;
+            }
+
+            // Check for edges in range
+            for (id, value) in change_list {
+                if *id == signal_id {
+                    let current_bit = if let Some(idx) = bit_index {
+                        value.get_bit(idx)
+                    } else {
+                        value.get_bit(0)
+                    };
+
+                    if let (Some(last), Some(current)) = (last_bit_value, current_bit) {
+                        match edge_type {
+                            EdgeType::Rising => {
+                                if !last && current {
+                                    count += 1;
+                                }
+                            }
+                            EdgeType::Falling => {
+                                if last && !current {
+                                    count += 1;
+                                }
+                            }
+                            EdgeType::Both => {
+                                if last != current {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    last_bit_value = current_bit;
+                }
+            }
+        }
+
+        count
+    }
+}
+
+/// File metadata
+#[derive(Debug, Clone)]
+pub struct FileMetadata {
+    pub timescale: Option<String>,
+    pub first_time: u64,
+    pub last_time: u64,
+    pub signal_count: usize,
+}
+
+/// Summary statistics for a signal
+#[derive(Debug, Clone)]
+pub struct SignalSummary {
+    pub change_count: u64,
+    pub first_change_time: Option<u64>,
+    pub last_change_time: Option<u64>,
+    pub last_value: Option<VcdValue>,
+    pub bit_width: usize,
+}
+
+/// Type of edge to count
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeType {
+    Rising,
+    Falling,
+    Both,
 }
 
 /// Parse a VCD file and return a queryable analysis structure
