@@ -71,7 +71,7 @@ impl VcdAnalysis {
                         // Enter this scope
                         scope_stack.push(scope.identifier.clone());
                         // Recursively process children
-                        traverse_scope_items(&scope.children, scope_stack, id_to_name, name_to_id);
+                        traverse_scope_items(&scope.items, scope_stack, id_to_name, name_to_id);
                         // Exit this scope
                         scope_stack.pop();
                     }
@@ -84,6 +84,7 @@ impl VcdAnalysis {
                         id_to_name.insert(var.code, full_name.clone());
                         name_to_id.insert(full_name, var.code);
                     }
+                    _ => {} // Handle other variants that may be added in future versions
                 }
             }
         }
@@ -213,7 +214,7 @@ pub fn parse_vcd(path: &str) -> Result<VcdAnalysis, VcdError> {
                 current_changes.push((id, VcdValue::Scalar(value)));
             }
             vcd::Command::ChangeVector(id, value) => {
-                current_changes.push((id, VcdValue::Vector(value)));
+                current_changes.push((id, VcdValue::Vector(value.iter().collect())));
             }
             vcd::Command::ChangeReal(id, value) => {
                 current_changes.push((id, VcdValue::Real(value)));
