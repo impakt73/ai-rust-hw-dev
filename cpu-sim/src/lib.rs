@@ -3,6 +3,7 @@ pub mod dram;
 pub mod fifo;
 pub mod packet_transport;
 pub mod sim;
+pub mod vcd_analyzer;
 
 #[cfg(test)]
 mod tests;

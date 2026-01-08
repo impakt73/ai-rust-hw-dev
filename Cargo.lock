@@ -392,6 +392,7 @@ dependencies = [
  "riscv_core",
  "riscv_protocol",
  "serde",
+ "vcd",
 ]
 
 [[package]]
