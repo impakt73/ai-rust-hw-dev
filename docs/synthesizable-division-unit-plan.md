@@ -10,7 +10,7 @@
 - Integrate with existing multi-cycle CPU FSM in `top.sv` using the same handshaking pattern as memory operations
 - Maintain full compatibility with existing tests (no test changes required - tests already validate division/remainder behavior)
 
-**Impact:** Division and remainder operations will take 33-35 cycles (start + 32 iterations + done) instead of combinational logic. All other ALU operations remain single-cycle. FPGA synthesis becomes possible.
+**Impact:** Division and remainder operations will take 33-36 cycles (start + 32 iterations + done) instead of combinational logic. All other ALU operations remain single-cycle. FPGA synthesis becomes possible.
 
 ---
 
@@ -164,10 +164,10 @@ Initialization:
 Iteration (32 times):
   1. Shift P left by 1: P = P << 1
   
-  2. If P >= 0:           // Partial remainder is positive
+  2. If !P[63]:           // Partial remainder is positive (sign bit is 0)
        P = P - D
        Q = (Q << 1) | 1
-     Else:                // Partial remainder is negative
+     Else:                // Partial remainder is negative (sign bit is 1)
        P = P + D
        Q = Q << 1
   
@@ -285,12 +285,12 @@ module alu (
 5. **Top.sv waits in S_EXECUTE** until `alu_ready` is high, then proceeds to S_WRITEBACK
 
 **For non-division operations:**
-- `alu_ready` is immediately high (combinational result available in same cycle)
+- `alu_ready` is driven combinationally high in the same cycle as `alu_start` (non-division results are already combinational)
 - No waiting required
 
 ### Integration with Existing FSM
 
-The existing multi-cycle CPU FSM in `top.sv` already supports variable-latency operations via the memory handshaking protocol. We will use **the same pattern** for ALU operations:
+The existing CPU control FSM in `top.sv` already supports variable-latency operations via the memory handshaking protocol. We will use **the same pattern** for ALU operations:
 
 **Current Memory Operation Pattern:**
 ```systemverilog
@@ -401,7 +401,7 @@ always_comb begin
         end
         
         DIV_ITER: begin
-            if (iter_count == 6'd32)
+            if (iter_count == 6'd31)  // After 32 iterations (0-31)
                 next_state = DIV_CORRECT;
             else
                 next_state = DIV_ITER;
@@ -496,23 +496,12 @@ always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         // Reset handled in INIT
     end else if (state == DIV_CORRECT) begin
-        // If final P is negative, correction needed
+        // Final non-restoring correction: if P is negative, add back D and decrement Q
         if (P[63]) begin
             P <= P + D;
             Q <= Q - 32'd1;
         end
-        
-        // Apply sign corrections for signed division
-        if (is_signed) begin
-            quotient_neg <= dividend_neg ^ divisor_neg;
-            remainder_neg <= dividend_neg;
-            
-            if (quotient_neg)
-                Q <= ~Q + 32'd1;  // Negate quotient
-            
-            if (remainder_neg)
-                P <= ~P + 64'd1;  // Negate remainder
-        end
+        // Note: Signed division sign correction is handled in the combinational output logic.
     end
 end
 ```
@@ -697,7 +686,8 @@ endmodule
 2. Instantiated `div_unit` module
 3. Removed combinational division logic (`/`, `%` operators)
 4. Added multiplexing to select division unit output for DIV/DIVU/REM/REMU
-5. `alu_ready` is high immediately for all ops except division (which waits for `div_ready`)
+5. `alu_ready` is high immediately for all non-division ops; for DIV/DIVU/REM/REMU the ALU waits for `div_ready` from the multi-cycle division unit.
+6. Division edge cases (division by zero and signed overflow) are detected inside the division FSM (DIV_INIT → DIV_DONE), so these cases take at least 3 cycles (IDLE → INIT → DONE) instead of the previous 1-cycle combinational handling. This latency is acceptable for the current design; matching the old 1-cycle behavior would require reintroducing early combinational edge-case detection in the ALU.
 
 ---
 
@@ -719,6 +709,17 @@ end
 ```systemverilog
 // Control signal declarations (add these to top.sv)
 logic alu_start;
+logic alu_start_sent;  // Track if start pulse has been sent
+
+// Register to track if we've sent the start pulse
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n)
+        alu_start_sent <= 1'b0;
+    else if (current_state != S_EXECUTE)
+        alu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
+    else if (alu_start)
+        alu_start_sent <= 1'b1;  // Mark as sent after pulsing
+end
 
 // In FSM output logic:
 always_comb begin
@@ -729,7 +730,8 @@ always_comb begin
         // ... other states ...
         
         S_EXECUTE: begin
-            alu_start = 1'b1;  // Start ALU operation
+            // Pulse alu_start only on first cycle in S_EXECUTE
+            alu_start = !alu_start_sent;
             
             if (alu_ready) begin
                 alu_out_write = 1'b1;
@@ -745,7 +747,9 @@ end
 ```
 
 **Explanation:**
-- On first cycle in S_EXECUTE, `alu_start` pulses high for 1 cycle
+- On first cycle in S_EXECUTE, `alu_start` pulses high for 1 cycle (when `alu_start_sent` is 0)
+- The `alu_start_sent` flag prevents re-assertion while waiting in S_EXECUTE
+- When FSM leaves S_EXECUTE, `alu_start_sent` is reset for the next instruction
 - For combinational ops (ADD, SUB, MUL, etc.), `alu_ready` is immediately high → proceeds to S_WRITEBACK
 - For division ops, `alu_ready` is low → FSM stays in S_EXECUTE until division completes
 - When division finishes, `alu_ready` goes high → captures result and proceeds to S_WRITEBACK
@@ -788,6 +792,7 @@ Add to `rtl/top.sv`:
 // ALU control signals
 logic alu_start;
 logic alu_ready;
+logic alu_start_sent;  // Track if start pulse has been sent this instruction
 ```
 
 ---
@@ -906,8 +911,9 @@ module div_unit (
             end
             
             DIV_DONE: begin
-                if (!start)
-                    next_state = DIV_IDLE;
+                // Unconditionally return to IDLE; ignore 'start' after DIV_IDLE
+                // to avoid deadlock when 'start' is held high across S_EXECUTE.
+                next_state = DIV_IDLE;
             end
             
             default: next_state = DIV_IDLE;
@@ -1068,7 +1074,7 @@ alu_ready: _____________________________________________________________________
 div_state:     IDLE       INIT       ITER       ITER       ... (32 total)  CORRECT    DONE      IDLE
 result:    ─────────────────────────────────────────────────────────────────────────────<VALID>─────
 
-Total: 35 cycles in S_EXECUTE (1 cycle start + 1 cycle init + 32 iterations + 1 correction + hold in DONE until S_WRITEBACK)
+Total: 36 cycles from alu_start to alu_ready (1 cycle IDLE→INIT + 1 INIT + 32 ITER + 1 CORRECT + 1 DONE; 35 of these cycles occur while the CPU FSM is in S_EXECUTE and the final DONE cycle overlaps S_WBACK)
 ```
 
 ### Complete Instruction Timing
@@ -1091,11 +1097,11 @@ Cycle 2:    S_DECODE
 Cycle 3:    S_EXECUTE (start division, alu_ready=0)
 Cycle 4:    S_EXECUTE (division in progress)
 ...
-Cycle 37:   S_EXECUTE (division complete, alu_ready=1)
-Cycle 38:   S_WRITEBACK
-Cycle 39:   S_FETCH (next instruction)
+Cycle 38:   S_EXECUTE (division complete, alu_ready=1)
+Cycle 39:   S_WRITEBACK
+Cycle 40:   S_FETCH (next instruction)
 
-Total: 37 cycles minimum (+ memory latency)
+Total: 38 cycles minimum (+ memory latency)
 ```
 
 ---
@@ -1323,7 +1329,7 @@ fn test_division_cycle_count() {
    - Verify handshaking signals
 
 **Validation:**
-- All 112+ existing tests pass
+- All 110+ existing tests pass
 - No regressions
 - Division cycle count in expected range (32-36 cycles)
 
@@ -1342,10 +1348,13 @@ fn test_division_cycle_count() {
    - Document state transitions
    - Clarify sign handling
 
-3. [ ] Update documentation
-   - Update `AGENTS.md` with multi-cycle ALU info
-   - Update `README.md` if needed
-   - Add comments to this plan document
+3. [ ] Finalize documentation
+   - Confirm `AGENTS.md` already documents the multi-cycle ALU division unit (apply only minor wording tweaks here if necessary)
+   - Update `AGENTS.md` to:
+     - Replace any description of the core as "single-cycle" with "multi-cycle FSM CPU with variable-latency memory and ALU operations"
+     - Document that DIV/REM are implemented by a multi-cycle division unit using ready/valid handshaking, integrated with the existing CPU FSM in `top.sv`
+   - Verify `README.md` is up to date (adjust only if clarifications are needed)
+   - Add any final comments to this plan document
 
 **Validation:**
 - All code quality checks pass
@@ -1395,7 +1404,7 @@ fn test_division_cycle_count() {
 |------------------|------------|-----------|
 | R-type ADD | 4 + mem | FETCH + DECODE + EXECUTE(1) + WRITEBACK |
 | R-type MUL | 4 + mem | FETCH + DECODE + EXECUTE(1) + WRITEBACK |
-| R-type DIV | 37 + mem | FETCH + DECODE + EXECUTE(33) + WRITEBACK |
+| R-type DIV | 38 + mem | FETCH + DECODE + EXECUTE(35) + WRITEBACK |
 | Load | 5 + 2×mem | FETCH + DECODE + MEM_ADDR + MEM_READ + WRITEBACK |
 | Store | 4 + 2×mem | FETCH + DECODE + MEM_ADDR + MEM_WRITE |
 
@@ -1410,14 +1419,14 @@ fn test_division_cycle_count() {
 
 **Worst Case (All Divisions):**
 - Before: 4 cycles/instruction (broken - not synthesizable)
-- After: 37 cycles/instruction
-- **Impact: 9.25× slower** (but now synthesizable!)
+- After: 38 cycles/instruction
+- **Impact: 9.5× slower** (but now synthesizable!)
 
-**Realistic Workload (Estimate: 95% non-div, 5% div):**
-- Average cycles = 0.95 × 4 + 0.05 × 37 = 3.8 + 1.85 = 5.65 cycles/instruction
-- **Impact: ~41% slower overall** (acceptable for synthesizability)
+**Realistic Workload (Example: 99% non-div, 1% div):**
+- Average cycles = 0.99 × 4 + 0.01 × 38 = 3.96 + 0.38 = 4.34 cycles/instruction
+- **Impact: ~8–10% slower overall** (acceptable for synthesizability)
 
-**Note:** These are rough estimates. Actual impact depends on workload. Division is typically rare in embedded code.
+**Note:** These are rough estimates based on an example 1% division rate. Actual impact depends on workload; division is typically rare in embedded code, but workloads with more division will see proportionally higher slowdown.
 
 ### Area Impact
 
@@ -1425,14 +1434,15 @@ fn test_division_cycle_count() {
 
 | Component | LUTs | FFs | Notes |
 |-----------|------|-----|-------|
-| Division Unit | ~800 | ~200 | State machine + 64-bit datapath |
+| Division Unit | ~400–600 | ~200 | State machine + 64-bit datapath |
 | ALU (before) | ~500 | 0 | Combinational only |
 | ALU (after) | ~500 | 0 | Combinational part unchanged |
-| **Total Increase** | **+800** | **+200** | ~16% of small FPGA |
+| **Total Increase** | **+400–600** | **+200** | ~8–12% of small FPGA |
 
 **Notes:**
 - Estimates based on typical Xilinx Artix-7 or Intel Cyclone V synthesis
 - Actual area depends on synthesis tool optimizations
+- LUT range for division unit is based on a 64-bit datapath, 5-state FSM, 6-bit counter, sign logic, and edge-case handling
 - Most FPGAs have 50k-200k LUTs, so this is a small fraction
 
 ---
