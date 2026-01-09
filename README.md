@@ -54,7 +54,7 @@ The CPU uses a **multi-cycle non-pipelined design** with an 11-state finite stat
 - **Variable-latency memory**: Ready/valid handshaking supports realistic memory delays
 - **Resource sharing**: ALU and other resources are reused across different instruction phases
 
-This design enables higher clock frequencies and more realistic hardware implementation compared to single-cycle architectures.
+This design enables higher clock frequencies and more realistic hardware implementation compared to single-cycle architectures. The shorter critical path (one operation per cycle instead of an entire instruction) improves timing closure for FPGA synthesis and reduces the maximum clock period.
 
 ## Project Structure
 
