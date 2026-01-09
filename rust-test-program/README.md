@@ -1,6 +1,6 @@
 # Rust Bare Metal Test Program
 
-This is a bare metal RISC-V test program written in Rust for the `riscv32imc-unknown-none-elf` target.
+This is a bare metal RISC-V test program written in Rust for the `riscv32im-unknown-none-elf` target.
 
 ## Purpose
 
@@ -19,17 +19,17 @@ To rebuild the program:
 
 ```bash
 cd rust-test-program
-cargo build --release --target riscv32imc-unknown-none-elf --bin rust_test
+cargo build --release --target riscv32im-unknown-none-elf --bin rust_test
 ```
 
 The resulting ELF file will be at:
 ```
-target/riscv32imc-unknown-none-elf/release/rust_test
+target/riscv32im-unknown-none-elf/release/rust_test
 ```
 
 After building, copy it to the test_programs directory:
 ```bash
-cp target/riscv32imc-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
+cp target/riscv32im-unknown-none-elf/release/rust_test ../test_programs/rust_test.elf
 ```
 
 ## Testing
@@ -43,30 +43,36 @@ cargo test --package cpu-sim test_rust_bare_metal_elf
 
 ## Implementation Details
 
-- **Target**: `riscv32imc-unknown-none-elf` (32-bit RISC-V with integer, multiply/divide, and compressed instructions)
+- **Target**: `riscv32im-unknown-none-elf` (32-bit RISC-V with integer and multiply/divide extensions)
 - **Runtime**: Uses `riscv_rt` crate which provides proper stack pointer initialization and startup code
 - **Linker Scripts**: Uses `memory.x` (memory layout) and `link.x` (from riscv_rt) for linking
-- **Exit Mechanism**: Writes to tohost address (0xFFFFFFF0) with value 42 on success
+- **Exit Mechanism**: Writes to tohost address (0xFFFFFFF0) with value 42 on success, or 0xDEAD on panic
 - **Test Coverage**: Arithmetic, logical, shifts, comparisons, memory I/O, loops, arrays, and function calls
 
 ## Configuration
 
-- `.cargo/config.toml`: Specifies the target (`riscv32imc-unknown-none-elf`)
+- `.cargo/config.toml`: Specifies the target (`riscv32im-unknown-none-elf`)
 - `memory.x`: Memory layout defining RAM location and regions for riscv_rt
 - `build.rs`: Configures linker to use both `memory.x` and `link.x` (from riscv_rt)
 - `Cargo.toml`: Configures the binaries with `test = false` and includes `riscv-rt = "0.17.0"` dependency
 
-## Note on RV32IMC Target
+## Notes
 
-The target is configured as `riscv32imc-unknown-none-elf` which includes support for compressed instructions (C extension). However, the current prebuilt ELF binaries in `test_programs/` were built with `riscv32im-unknown-none-elf` to maintain compatibility with existing tests.
+### Panic Handler
 
-When rebuilding programs with the RV32IMC target, the Rust compiler may generate compressed instructions in the standard library and runtime code. The CPU implementation fully supports compressed instructions (all 27 RV32C instructions are implemented and tested), but some test programs may encounter issues with specific runtime library interactions.
+The panic handler in `common.rs` writes a special value (0xDEAD) to tohost when a panic occurs. This allows the simulator to detect panics and report them properly instead of timing out in an infinite loop. Programs that complete successfully write 0x2A (42) to tohost.
 
-To rebuild without compressed instructions while keeping the RV32IMC target:
+### Target Architecture
+
+This crate uses the `riscv32im-unknown-none-elf` target (without the C extension for compressed instructions). While the CPU implementation fully supports compressed instructions (RV32C), the test programs are built without them to avoid potential issues with runtime library code when using compressed instructions.
+
+If you need to build with compressed instructions enabled, you can use:
 ```bash
-CARGO_BUILD_RUSTFLAGS="-C target-feature=-c" cargo build --release
+cargo build --release --target riscv32imc-unknown-none-elf
 ```
 
-## Note
+However, note that some test programs may encounter panics when built with compressed instructions due to interactions with the runtime library.
+
+### Workspace Isolation
 
 This crate is **not** part of the main workspace to avoid build complexity. The prebuilt ELF binaries are included in `test_programs/` and used by the cpu-sim tests.
