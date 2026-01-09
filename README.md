@@ -46,6 +46,16 @@ cargo test
 cargo run --package cpu-sim -- test_programs/test.elf --verbose
 ```
 
+## Architecture
+
+The CPU uses a **multi-cycle non-pipelined design** with an 11-state finite state machine (FSM):
+- **Multi-cycle**: Instructions take 3-5+ base clock cycles (plus memory latency) instead of completing in a single cycle
+- **Non-pipelined**: One instruction executes at a time through the state machine
+- **Variable-latency memory**: Ready/valid handshaking supports realistic memory delays
+- **Resource sharing**: ALU and other resources are reused across different instruction phases
+
+This design enables higher clock frequencies and more realistic hardware implementation compared to single-cycle architectures.
+
 ## Project Structure
 
 - **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, CSR file, top module)
@@ -59,10 +69,11 @@ cargo run --package cpu-sim -- test_programs/test.elf --verbose
 
 ## Documentation
 
-- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents
+- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
 - **[test_programs/README.md](test_programs/README.md)** - Information about test programs
 - **[riscv_macros/README.md](riscv_macros/README.md)** - Formatted print macros for bare-metal programs
+- **[docs/multi-cycle-implementation/](docs/multi-cycle-implementation/)** - Historical: Multi-cycle architecture implementation plan (completed)
 
 ## License
 
