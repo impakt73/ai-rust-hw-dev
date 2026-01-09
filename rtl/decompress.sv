@@ -114,7 +114,7 @@ module decompress (
         logic [8:0] imm_b;
         logic [5:0] nzimm_addi;
         logic [9:0] nzimm_addi16sp;
-        logic [17:0] nzimm_lui;
+        logic [5:0] nzimm_lui;  // 6-bit immediate for C.LUI
         logic [4:0] shamt;
         
         rd_rs1 = insn_16[11:7];  // Full 5-bit rd/rs1 for some instructions
@@ -161,14 +161,15 @@ module decompress (
                         insn_32 = {{22{nzimm_addi16sp[9]}}, nzimm_addi16sp, 5'd2, 3'b000, 5'd2, 7'b0010011};
                     end
                 end else begin
-                    // C.LUI
+                    // C.LUI: Extract 6-bit immediate and construct 20-bit immediate for LUI
                     nzimm_lui = {insn_16[12], insn_16[6:2]};
                     
-                    if (rd_rs1 == 5'b0 || nzimm_lui == 18'b0) begin
+                    if (rd_rs1 == 5'b0 || nzimm_lui == 6'b0) begin
                         is_valid = 1'b0;
                     end else begin
-                        // LUI rd, nzimm
-                        insn_32 = {{14{nzimm_lui[17]}}, nzimm_lui, rd_rs1, 7'b0110111};
+                        // LUI rd, {sign_extend(nzimm_lui), 12'b0}
+                        // Create 20-bit immediate: sign-extend 6-bit nzimm_lui to 20 bits
+                        insn_32 = {{{14{nzimm_lui[5]}}, nzimm_lui}, rd_rs1, 7'b0110111};
                     end
                 end
             end

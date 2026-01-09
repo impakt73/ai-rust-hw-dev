@@ -486,9 +486,10 @@ pub fn c_li(rd: u32, imm: i32) -> u16 {
 /// C.ADDI16SP: addi x2, x2, nzimm (multiple of 16)
 pub fn c_addi16sp(nzimm: u32) -> u16 {
     // Allow zero encoding (illegal) for tests; caller may pass zero intentionally
+    // 6-bit field after removing 4 LSBs: max value is 63 * 16 = 1008
     assert!(
-        nzimm.is_multiple_of(16) && nzimm <= 1020,
-        "nzimm must be multiple of 16 and <=1020"
+        nzimm.is_multiple_of(16) && nzimm <= 1008,
+        "nzimm must be multiple of 16 and <=1008"
     );
     let nz = nzimm >> 4; // remove low 4 zeros
     let mut insn: u16 = 0;
