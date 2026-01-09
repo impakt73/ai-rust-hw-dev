@@ -169,8 +169,8 @@ Most Rust test programs are built from source in the `rust-test-program` directo
 
 ```bash
 cd rust-test-program
-cargo build --release --target riscv32i-unknown-none-elf --bin <program_name>
-cp target/riscv32i-unknown-none-elf/release/<program_name> ../test_programs/<program_name>.elf
+cargo build --release --target riscv32imc-unknown-none-elf --bin <program_name>
+cp target/riscv32imc-unknown-none-elf/release/<program_name> ../test_programs/<program_name>.elf
 ```
 
 See `rust-test-program/README.md` for details on the build environment and configuration.

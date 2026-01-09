@@ -1,10 +1,10 @@
 # ai-rust-hw-dev
 
-A **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
+A **multi-cycle non-pipelined RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
 
 ## Features
 
-- ✅ **Complete RV32IM Instruction Set (RV32I + M Extension + Zicsr)**: All 54 instructions including:
+- ✅ **Complete RV32IMC Instruction Set (RV32I + M Extension + C Extension + Zicsr)**: All 81 instructions including:
   - **RV32I Base (40 instructions):**
     - Arithmetic, logic, and shift operations
     - Load/store with byte, halfword, and word access (LB, LH, LW, LBU, LHU, SB, SH, SW)
@@ -15,11 +15,15 @@ A **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilo
   - **M Extension (8 instructions):**
     - Integer multiplication: MUL, MULH, MULHSU, MULHU
     - Integer division and remainder: DIV, DIVU, REM, REMU
+  - **C Extension (27 instructions):**
+    - 16-bit compressed instructions for improved code density (25-30% size reduction)
+    - Includes compressed arithmetic, loads/stores, branches, and jumps
+    - Seamlessly mixed with standard 32-bit instructions
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
 - ✅ **Multi-cycle Non-pipelined Architecture**: FSM-based design with 11 states for efficient resource sharing
 - ✅ **Variable-latency Memory Support**: Ready/valid handshaking for realistic memory operations
-- ✅ **Verilator-based Verification**: 146 comprehensive tests using Rust + marlin framework
+- ✅ **Verilator-based Verification**: 196 comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping and configurable memory latency
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 - ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs

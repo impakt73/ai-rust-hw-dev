@@ -24,6 +24,10 @@ pub struct Alu;
 #[verilog(src = "../rtl/regfile.sv", name = "regfile")]
 pub struct RegFile;
 
+// Define Decompress module
+#[verilog(src = "../rtl/decompress.sv", name = "decompress")]
+pub struct Decompress;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -58,6 +62,7 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "top.sv",
+        "decompress.sv", // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
         "regfile.sv",
@@ -78,4 +83,9 @@ pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 // Helper function to create a runtime for the RegFile
 pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["regfile.sv"])
+}
+
+// Helper function to create a runtime for the Decompressor
+pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["decompress.sv"])
 }

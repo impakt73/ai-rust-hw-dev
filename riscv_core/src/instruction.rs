@@ -366,6 +366,378 @@ pub fn remu(rd: u32, rs1: u32, rs2: u32) -> u32 {
     encode_r_type(0b0110011, rd, 0b111, rs1, rs2, 0b0000001)
 }
 
+// ============================================================================
+// Compressed (RV32C) Instruction Encoders
+// These helpers construct 16-bit compressed instructions used by tests.
+// Implementations mirror the decompressor bit mappings in `rtl/decompress.sv`.
+
+/// C.ADDI4SPN: addi rd', x2, nzuimm
+pub fn c_addi4spn(rd: u32, rs1: u32, nzuimm: u32) -> u16 {
+    // Allow encoding of zero/illegal nzuimm for tests; caller may pass illegal values intentionally
+    assert!(rs1 == 2, "C.ADDI4SPN uses sp (x2)");
+    assert!((8..=15).contains(&rd), "rd must be x8-x15");
+    assert!(
+        nzuimm.is_multiple_of(4) && nzuimm <= 1020,
+        "nzuimm must be multiple of 4 and <=1020"
+    );
+
+    let n = nzuimm;
+    let mut insn: u16 = 0;
+    insn |= (((n >> 6) & 0xF) as u16) << 7; // insn[10:7]
+    insn |= (((n >> 4) & 0x3) as u16) << 11; // insn[12:11]
+    insn |= (((n >> 3) & 0x1) as u16) << 5; // insn[5]
+    insn |= (((n >> 2) & 0x1) as u16) << 6; // insn[6]
+    insn |= (((rd - 8) & 0x7) as u16) << 2; // insn[4:2]=rd'
+                                            // funct3 = 000 (bits 15:13), opcode = 00 (bits 1:0)
+    insn
+}
+
+/// C.LW: lw rd', offset(rs1') where rd', rs1' are x8-x15
+pub fn c_lw(rd: u32, rs1: u32, offset: u32) -> u16 {
+    assert!(
+        (8..=15).contains(&rd) && (8..=15).contains(&rs1),
+        "rd/rs1 must be x8-x15"
+    );
+    assert!(
+        offset.is_multiple_of(4) && offset <= 124,
+        "offset must be multiple of 4 and <=124"
+    );
+
+    let u = offset >> 2; // uimm bits
+    let mut insn: u16 = 0;
+    insn |= (((u >> 4) & 0x1) as u16) << 6; // insn[6] = uimm[4]
+    insn |= (((u >> 3) & 0x1) as u16) << 5; // insn[5] = uimm[3]
+    insn |= ((u & 0x7) as u16) << 10; // insn[12:10] = uimm[2:0]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
+    insn |= (((rd - 8) & 0x7) as u16) << 2; // insn[4:2] = rd'
+    insn |= (0b010u16) << 13; // funct3 = 010
+    insn
+}
+
+/// C.SW: sw rs2', offset(rs1') where rs* are x8-x15
+pub fn c_sw(rs1: u32, rs2: u32, offset: u32) -> u16 {
+    assert!(
+        (8..=15).contains(&rs1) && (8..=15).contains(&rs2),
+        "rs1/rs2 must be x8-x15"
+    );
+    assert!(
+        offset.is_multiple_of(4) && offset <= 124,
+        "offset must be multiple of 4 and <=124"
+    );
+
+    let u = offset >> 2;
+    let mut insn: u16 = 0;
+    insn |= (((u >> 4) & 0x1) as u16) << 6; // insn[6]
+    insn |= (((u >> 3) & 0x1) as u16) << 5; // insn[5]
+    insn |= ((u & 0x7) as u16) << 10; // insn[12:10]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
+    insn |= (((rs2 - 8) & 0x7) as u16) << 2; // insn[4:2] = rs2'
+    insn |= (0b110u16) << 13; // funct3 = 110
+    insn
+}
+
+/// C.NOP (ADDI x0, x0, 0)
+pub fn c_nop() -> u16 {
+    0b0000_0000_0000_0001u16
+}
+
+/// C.ADDI: addi rd, rd, imm (rd in [0..31])
+pub fn c_addi(rd: u32, imm: i32) -> u16 {
+    let imm6 = imm & 0x3F; // 6-bit immediate
+    let mut insn: u16 = 0;
+    insn |= (((imm6 >> 5) & 0x1) as u16) << 12; // insn[12]
+    insn |= ((imm6 & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= ((rd & 0x1F) as u16) << 7; // insn[11:7] = rd
+    insn |= (0b000u16) << 13; // funct3 = 000
+    insn |= 0b01u16; // opcode 01
+    insn
+}
+
+/// C.JAL: jal x1, offset (signed, multiple of 2)
+pub fn c_jal(offset: i32) -> u16 {
+    // offset is signed 12-bit (multiple of 2). Map raw offset bits per spec.
+    let imm_u = (offset as u32) & 0xFFF; // 12 bits (offset includes low 1'b0)
+    let mut insn: u16 = 0;
+    insn |= (((imm_u >> 11) & 0x1) as u16) << 12; // insn[12] = offset[11]
+    insn |= (((imm_u >> 10) & 0x1) as u16) << 8; // insn[8] = offset[10]
+    insn |= (((imm_u >> 8) & 0x3) as u16) << 9; // insn[10:9] = offset[9:8]
+    insn |= (((imm_u >> 7) & 0x1) as u16) << 6; // insn[6] = offset[7]
+    insn |= (((imm_u >> 6) & 0x1) as u16) << 7; // insn[7] = offset[6]
+    insn |= (((imm_u >> 5) & 0x1) as u16) << 2; // insn[2] = offset[5]
+    insn |= (((imm_u >> 4) & 0x1) as u16) << 11; // insn[11] = offset[4]
+    insn |= (((imm_u >> 1) & 0x7) as u16) << 3; // insn[5:3] = offset[3:1]
+    insn |= 0b01u16; // opcode
+    insn |= (0b001u16) << 13; // funct3 = 001
+    insn
+}
+
+/// C.LI: addi rd, x0, imm (6-bit signed)
+pub fn c_li(rd: u32, imm: i32) -> u16 {
+    let imm6 = imm & 0x3F;
+    let mut insn: u16 = 0;
+    insn |= (((imm6 >> 5) & 0x1) as u16) << 12; // insn[12]
+    insn |= ((imm6 & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= ((rd & 0x1F) as u16) << 7; // insn[11:7]
+    insn |= 0b01u16; // opcode
+    insn |= (0b010u16) << 13; // funct3 = 010
+    insn
+}
+
+/// C.ADDI16SP: addi x2, x2, nzimm (multiple of 16)
+pub fn c_addi16sp(nzimm: u32) -> u16 {
+    // Allow zero encoding (illegal) for tests; caller may pass zero intentionally
+    // 6-bit field after removing 4 LSBs: max value is 63 * 16 = 1008
+    assert!(
+        nzimm.is_multiple_of(16) && nzimm <= 1008,
+        "nzimm must be multiple of 16 and <=1008"
+    );
+    let nz = nzimm >> 4; // remove low 4 zeros
+    let mut insn: u16 = 0;
+    insn |= (((nz >> 5) & 0x1) as u16) << 12; // insn[12]
+    insn |= (((nz >> 3) & 0x3) as u16) << 3; // insn[4:3]
+    insn |= (((nz >> 2) & 0x1) as u16) << 5; // insn[5]
+    insn |= (((nz >> 1) & 0x1) as u16) << 2; // insn[2]
+    insn |= ((nz & 0x1) as u16) << 6; // insn[6]
+    insn |= (2u16 & 0x1F) << 7; // rd_rs1 == 2
+    insn |= 0b01u16; // opcode
+    insn |= (0b011u16) << 13; // funct3 = 011
+    insn
+}
+
+/// C.LUI: LUI rd, nzimm (compressed immediate field passed as small integer)
+pub fn c_lui(rd: u32, nzimm_field: u32) -> u16 {
+    // nzimm_field encodes {insn[12], insn[6:2]} (6 bits)
+    assert!(nzimm_field <= 0x3F, "nzimm_field must fit in 6 bits");
+    let mut insn: u16 = 0;
+    insn |= (((nzimm_field >> 5) & 0x1) as u16) << 12; // insn[12]
+    insn |= ((nzimm_field & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= ((rd & 0x1F) as u16) << 7; // insn[11:7]
+    insn |= 0b01u16; // opcode
+    insn |= (0b011u16) << 13; // funct3 = 011
+    insn
+}
+
+/// C.SRLI: srli rd', rd', shamt (rd' encoded in rs1_full)
+pub fn c_srli(rd: u32, shamt: u32) -> u16 {
+    assert!((8..=15).contains(&rd));
+    assert!(shamt != 0 && shamt <= 31);
+    let mut insn: u16 = 0;
+    insn |= ((shamt & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= (((rd - 8) & 0x7) as u16) << 7; // insn[11:7]
+    insn |= (0b100u16) << 13; // funct3 = 100
+    insn |= (0b00u16) << 10; // funct2 = 00 at [11:10]
+    insn |= 0b01u16; // opcode
+    insn
+}
+
+/// C.SRAI: srai rd', rd', shamt
+pub fn c_srai(rd: u32, shamt: u32) -> u16 {
+    assert!((8..=15).contains(&rd));
+    assert!(shamt != 0 && shamt <= 31);
+    let mut insn: u16 = 0;
+    insn |= ((shamt & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= (((rd - 8) & 0x7) as u16) << 7; // insn[11:7]
+    insn |= (0b100u16) << 13; // funct3 = 100
+    insn |= (0b01u16) << 10; // funct2 = 01
+    insn |= 0b01u16; // opcode
+    insn
+}
+
+/// C.ANDI: andi rd', rd', imm
+pub fn c_andi(rd: u32, imm: i32) -> u16 {
+    assert!((8..=15).contains(&rd));
+    let imm6 = imm & 0x3F;
+    let mut insn: u16 = 0;
+    insn |= (((imm6 >> 5) & 0x1) as u16) << 12; // insn[12]
+    insn |= ((imm6 & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= (((rd - 8) & 0x7) as u16) << 7; // insn[11:7]
+    insn |= (0b100u16) << 13; // funct3 = 100
+    insn |= (0b10u16) << 10; // funct2 = 10
+    insn |= 0b01u16; // opcode
+    insn
+}
+
+/// C.SUB / C.XOR / C.OR / C.AND family (funct2_ca selects which)
+pub fn c_sub(rd: u32, rs2: u32) -> u16 {
+    c_rtype_family(rd, rs2, 0)
+}
+pub fn c_xor(rd: u32, rs2: u32) -> u16 {
+    c_rtype_family(rd, rs2, 1)
+}
+pub fn c_or(rd: u32, rs2: u32) -> u16 {
+    c_rtype_family(rd, rs2, 2)
+}
+pub fn c_and(rd: u32, rs2: u32) -> u16 {
+    c_rtype_family(rd, rs2, 3)
+}
+
+fn c_rtype_family(rd: u32, rs2: u32, funct2_ca: u32) -> u16 {
+    assert!((8..=15).contains(&rd) && (8..=15).contains(&rs2));
+    let mut insn: u16 = 0;
+    insn |= (((rs2 - 8) & 0x7) as u16) << 2; // rs2 in insn[4:2] or rs2_full in  (use compressed rs2 in 4:2)
+    insn |= (((rd - 8) & 0x7) as u16) << 7; // rd in insn[11:7]
+    insn |= (0b100u16) << 13; // funct3
+    insn |= (0b11u16) << 10; // funct2 = 11 for this group
+                             // set funct2_ca in bits[6:5]
+    insn |= (funct2_ca as u16 & 0x3) << 5;
+    insn |= 0b01u16; // opcode
+    insn
+}
+
+/// C.J: jal x0, offset
+pub fn c_j(offset: i32) -> u16 {
+    // same bit layout as C.JAL but funct3 = 101; use raw offset bits per spec
+    let imm_u = (offset as u32) & 0xFFF;
+    let mut insn: u16 = 0;
+    insn |= (((imm_u >> 11) & 0x1) as u16) << 12;
+    insn |= (((imm_u >> 10) & 0x1) as u16) << 8;
+    insn |= (((imm_u >> 8) & 0x3) as u16) << 9;
+    insn |= (((imm_u >> 7) & 0x1) as u16) << 6;
+    insn |= (((imm_u >> 6) & 0x1) as u16) << 7;
+    insn |= (((imm_u >> 5) & 0x1) as u16) << 2;
+    insn |= (((imm_u >> 4) & 0x1) as u16) << 11;
+    insn |= (((imm_u >> 1) & 0x7) as u16) << 3;
+    insn |= 0b01u16;
+    insn |= (0b101u16) << 13; // funct3 = 101
+    insn
+}
+
+/// C.BEQZ: beq rs1', x0, offset
+pub fn c_beqz(rs1: u32, offset: i32) -> u16 {
+    assert!((8..=15).contains(&rs1));
+    let imm_u = (offset as u32) & 0x1FF; // 9 bits (offset includes low 1'b0)
+    let mut insn: u16 = 0;
+    // mapping per decompressor: imm_b = {insn[12], insn[6:5], insn[2], insn[11:10], insn[4:3], 1'b0}
+    insn |= (((imm_u >> 8) & 0x1) as u16) << 12; // insn[12] = offset[8]
+    insn |= (((imm_u >> 7) & 0x1) as u16) << 6; // insn[6] = offset[7]
+    insn |= (((imm_u >> 6) & 0x1) as u16) << 5; // insn[5] = offset[6]
+    insn |= (((imm_u >> 5) & 0x1) as u16) << 2; // insn[2] = offset[5]
+    insn |= (((imm_u >> 3) & 0x3) as u16) << 10; // insn[11:10] = offset[4:3]
+    insn |= (((imm_u >> 1) & 0x3) as u16) << 3; // insn[4:3] = offset[2:1]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // rs1'
+    insn |= 0b01u16;
+    insn |= (0b110u16) << 13; // funct3 = 110
+    insn
+}
+
+/// C.BNEZ: bne rs1', x0, offset
+pub fn c_bnez(rs1: u32, offset: i32) -> u16 {
+    assert!((8..=15).contains(&rs1));
+    let imm_u = (offset as u32) & 0x1FF; // 9 bits
+    let mut insn: u16 = 0;
+    // mapping per decompressor: imm_b = {insn[12], insn[6:5], insn[2], insn[11:10], insn[4:3], 1'b0}
+    insn |= (((imm_u >> 8) & 0x1) as u16) << 12; // insn[12]
+    insn |= (((imm_u >> 7) & 0x1) as u16) << 6; // insn[6]
+    insn |= (((imm_u >> 6) & 0x1) as u16) << 5; // insn[5]
+    insn |= (((imm_u >> 5) & 0x1) as u16) << 2; // insn[2]
+    insn |= (((imm_u >> 3) & 0x3) as u16) << 10; // insn[11:10]
+    insn |= (((imm_u >> 1) & 0x3) as u16) << 3; // insn[4:3]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // rs1'
+    insn |= 0b01u16;
+    insn |= (0b111u16) << 13; // funct3 = 111
+    insn
+}
+
+/// Quadrant 2 encoders
+/// C.SLLI: slli rd, rd, shamt
+pub fn c_slli(rd: u32, shamt: u32) -> u16 {
+    // Allow illegal encodings (e.g., shamt=0) for test coverage
+    assert!(rd < 32);
+    assert!(shamt <= 63);
+    let mut insn: u16 = 0;
+    insn |= ((shamt & 0x1F) as u16) << 2; // insn[6:2]
+    insn |= ((rd & 0x1F) as u16) << 7; // insn[11:7]
+    insn |= 0b10u16; // opcode = 10
+    insn |= (0b000u16) << 13; // funct3 = 000
+    insn
+}
+
+/// C.LWSP: lw rd, offset(x2) (rd != 0)
+pub fn c_lwsp(rd: u32, offset: u32) -> u16 {
+    // Allow rd==0 (illegal) for tests; offset must be multiple of 4
+    assert!(offset.is_multiple_of(4) && offset <= 255);
+    let u = offset >> 2; // uimm bits
+                         // mapping per decompressor: uimm_lwsp = {insn[3:2], insn[12], insn[6:4], 2'b00}
+                         // Reverse mapping from offset -> scattered fields:
+                         // insn[6:4] = u[3:1], insn[12] = u[4], insn[3:2] = u[6:5]
+    let mut insn: u16 = 0;
+    insn |= ((u & 0x7) as u16) << 4; // insn[6:4] = u[3:1]
+    insn |= (((u >> 3) & 0x1) as u16) << 12; // insn[12] = u[4]
+    insn |= (((u >> 4) & 0x3) as u16) << 2; // insn[3:2] = u[6:5]
+    insn |= ((rd & 0x1F) as u16) << 7; // rd
+    insn |= 0b10u16; // opcode
+    insn |= (0b010u16) << 13; // funct3 = 010
+    insn
+}
+
+/// C.JR: jalr x0, 0(rs1)
+pub fn c_jr(rs1: u32) -> u16 {
+    // Allow rs1==0 (illegal) for tests
+    assert!(rs1 < 32);
+    let mut insn: u16 = 0;
+    insn |= ((rs1 & 0x1F) as u16) << 7; // rd_rs1 in [11:7]
+    insn |= 0b10u16; // opcode
+    insn |= (0b100u16) << 13; // funct3 = 100
+                              // ensure rs2 == 0 -> bits [6:2] = 0
+    insn
+}
+
+/// C.MV: add rd, x0, rs2
+pub fn c_mv(rd: u32, rs2: u32) -> u16 {
+    // Allow illegal rd==0 case for tests
+    let mut insn: u16 = 0;
+    insn |= ((rs2 & 0x1F) as u16) << 2; // rs2 in [6:2]
+    insn |= ((rd & 0x1F) as u16) << 7; // rd
+    insn |= 0b10u16; // opcode
+    insn |= (0b100u16) << 13; // funct3 = 100, insn[12]=0 indicates MV
+    insn
+}
+
+/// C.EBREAK
+pub fn c_ebreak() -> u16 {
+    0b1001_0000_0000_0010u16
+}
+
+/// C.JALR: jalr x1, 0(rs1)
+pub fn c_jalr(rs1: u32) -> u16 {
+    assert!(rs1 != 0);
+    let mut insn: u16 = 0;
+    insn |= ((rs1 & 0x1F) as u16) << 7; // rd_rs1
+    insn |= 0b10u16; // opcode
+    insn |= (0b100u16) << 13; // funct3 = 100
+                              // set insn[12] = 1 to select JALR/EBREAK group with insn[12]=1
+    insn |= 1u16 << 12;
+    insn
+}
+
+/// C.ADD: add rd, rd, rs2
+pub fn c_add(rd: u32, rs2: u32) -> u16 {
+    assert!(rd != 0 && rs2 != 0);
+    let mut insn: u16 = 0;
+    insn |= ((rs2 & 0x1F) as u16) << 2;
+    insn |= ((rd & 0x1F) as u16) << 7;
+    insn |= 0b10u16;
+    insn |= (0b100u16) << 13;
+    insn |= 1u16 << 12; // indicate add path
+    insn
+}
+
+/// C.SWSP: sw rs2, offset(x2)
+pub fn c_swsp(rs2: u32, offset: u32) -> u16 {
+    assert!(offset.is_multiple_of(4) && offset <= 1020);
+    let u = offset >> 2; // uimm bits
+                         // mapping: uimm_swsp = {insn[8:7], insn[12:9], 2'b00}
+    let mut insn: u16 = 0;
+    // insn[8:7] <- u[7:6]
+    insn |= (((u >> 4) & 0x3) as u16) << 7; // insn[8:7]
+                                            // insn[12:9] <- u[5:2]
+    insn |= ((u & 0xF) as u16) << 9; // insn[12:9]
+    insn |= ((rs2 & 0x1F) as u16) << 2; // rs2
+    insn |= 0b10u16;
+    insn |= (0b110u16) << 13; // funct3 = 110
+    insn
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

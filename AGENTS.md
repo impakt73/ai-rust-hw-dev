@@ -4,7 +4,7 @@ This document provides essential information for AI coding agents working on thi
 
 ## Project Overview
 
-This is a **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **multi-cycle non-pipelined RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
@@ -12,6 +12,7 @@ This is a **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in Syst
 - **Architecture:** Multi-cycle non-pipelined design with 11-state FSM and variable-latency memory support
 - **Memory Interface:** Ready/valid handshaking for instruction and data memory operations
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
+- **Instruction Set:** RV32IMC_Zicsr (81 instructions: 40 base + 8 multiply/divide + 27 compressed + 6 CSR)
 
 ## Critical Prerequisites
 
@@ -63,10 +64,11 @@ cargo clean
 
 ### Test Structure
 
-The project has 146 comprehensive tests across all packages:
-- **tests package (63 tests):**
+The project has 196 comprehensive tests across all packages:
+- **tests package (104 tests):**
   - ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
   - Register file tests: Validate register behavior (including x0 immutability)
+  - Decompressor tests (41 tests): Validate all 27 RV32C compressed instructions
   - CPU integration tests: Validate complete instruction execution including:
     - Arithmetic, logic, and memory operations
     - Branches and jumps
@@ -74,8 +76,8 @@ The project has 146 comprehensive tests across all packages:
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (83 tests):**
-  - cpu-sim: 22 integration tests including:
+- **Other packages (92 tests):**
+  - cpu-sim: 72 integration tests including:
     - ELF loading and execution
     - FIFO communication and packet protocol
     - VCD waveform dumping validation
@@ -83,10 +85,10 @@ The project has 146 comprehensive tests across all packages:
     - Programmatic instruction sequence testing with trace verification
     - Combined trace + VCD testing
     - Variable memory latency testing
+    - RV32C compressed instruction tests (9 tests): Basic instructions and critical transition scenarios (C→C, C→U, U→C, U→U, mixed)
   - riscv_core: 33 utility and tracing tests
   - riscv_protocol: 6 packet serialization/deserialization tests
   - riscv_macros: 13 macro functionality tests
-  - cpu-sim test modules: 9 additional integration tests
 
 **New Validation Tests:**
 - `test_comprehensive_trace_validation`: Validates instruction trace accuracy for 12+ instructions with full operand checking (PC, register values, immediates)
@@ -133,12 +135,13 @@ All code should pass these checks before committing.
 │   ├── alu.sv             # Arithmetic Logic Unit (RV32I + M extension)
 │   ├── regfile.sv         # 32x32-bit register file
 │   ├── decoder.sv         # Instruction decoder
+│   ├── decompress.sv      # RV32C instruction decompressor
 │   ├── csr_file.sv        # Control and Status Registers (Zicsr)
 │   ├── branch_unit.sv     # Branch comparison logic
 │   ├── pc_control.sv      # Program counter control
 │   ├── mem_interface.sv   # Memory interface logic
 │   ├── writeback_mux.sv   # Writeback multiplexer
-│   └── top.sv             # Top-level CPU module
+│   └── top.sv             # Top-level CPU module (with RV32C fetch buffer)
 ├── tests/                  # Rust verification
 │   ├── Cargo.toml         # Test package dependencies
 │   ├── build.rs           # Build script (watches RTL changes)
@@ -146,11 +149,13 @@ All code should pass these checks before committing.
 │       ├── lib.rs         # Test module declarations
 │       ├── alu_test.rs    # ALU verification tests
 │       ├── regfile_test.rs # Register file tests
+│       ├── decompress_test.rs # RV32C decompressor tests (41 tests)
 │       └── cpu_test.rs    # CPU integration tests
 ├── cpu-sim/               # CPU simulator
 │   └── src/
 │       ├── main.rs        # CLI entry point
 │       ├── sim.rs         # Simulator implementation
+│       ├── test_rv32c_basic.rs # RV32C integration tests (9 tests)
 │       └── tests.rs       # Integration tests
 ├── riscv_core/            # Shared Verilator bindings
 ├── riscv_protocol/        # Debug packet protocol
@@ -167,6 +172,7 @@ All code should pass these checks before committing.
 
 ```
 top (CPU)
+├── decompress (RV32C instruction decompressor - combinational)
 ├── decoder (Instruction decoder)
 ├── alu (ALU operations - RV32I + M extension)
 ├── regfile (Register file)
@@ -191,9 +197,9 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32IM Instruction Set (54 instructions):**
+**Complete RV32IMC Instruction Set (81 instructions):**
 
-**RV32I Base:**
+**RV32I Base (40 instructions):**
 - **Arithmetic:** ADD, ADDI, SUB
 - **Logic:** AND, ANDI, OR, ORI, XOR, XORI
 - **Shifts:** SLL, SLLI, SRL, SRLI, SRA, SRAI
@@ -205,12 +211,18 @@ top (CPU)
 - **Memory Ordering:** FENCE
 - **System:** ECALL, EBREAK
 
-**M Extension (Integer Multiplication and Division):**
+**M Extension - Integer Multiplication and Division (8 instructions):**
 - **Multiplication:** MUL, MULH, MULHSU, MULHU
 - **Division:** DIV, DIVU
 - **Remainder:** REM, REMU
 
-**Zicsr Extension:**
+**C Extension - Compressed Instructions (27 instructions):**
+- **Quadrant 0:** C.ADDI4SPN, C.LW, C.SW
+- **Quadrant 1:** C.NOP, C.ADDI, C.JAL, C.LI, C.ADDI16SP, C.LUI, C.SRLI, C.SRAI, C.ANDI, C.SUB, C.XOR, C.OR, C.AND, C.J, C.BEQZ, C.BNEZ
+- **Quadrant 2:** C.SLLI, C.LWSP, C.JR, C.MV, C.EBREAK, C.JALR, C.ADD, C.SWSP
+- **Benefits:** 16-bit encoding (vs 32-bit standard), 25-30% code size reduction, seamless mixing with standard instructions
+
+**Zicsr Extension (6 instructions):**
 - **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
 
 ## Common Issues and Solutions
