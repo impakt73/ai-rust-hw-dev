@@ -377,7 +377,7 @@ pub fn c_addi4spn(rd: u32, rs1: u32, nzuimm: u32) -> u16 {
     assert!(rs1 == 2, "C.ADDI4SPN uses sp (x2)");
     assert!((8..=15).contains(&rd), "rd must be x8-x15");
     assert!(
-        nzuimm % 4 == 0 && nzuimm <= 1020,
+        nzuimm.is_multiple_of(4) && nzuimm <= 1020,
         "nzuimm must be multiple of 4 and <=1020"
     );
 
@@ -399,7 +399,7 @@ pub fn c_lw(rd: u32, rs1: u32, offset: u32) -> u16 {
         "rd/rs1 must be x8-x15"
     );
     assert!(
-        offset % 4 == 0 && offset <= 124,
+        offset.is_multiple_of(4) && offset <= 124,
         "offset must be multiple of 4 and <=124"
     );
 
@@ -421,7 +421,7 @@ pub fn c_sw(rs1: u32, rs2: u32, offset: u32) -> u16 {
         "rs1/rs2 must be x8-x15"
     );
     assert!(
-        offset % 4 == 0 && offset <= 124,
+        offset.is_multiple_of(4) && offset <= 124,
         "offset must be multiple of 4 and <=124"
     );
 
@@ -487,7 +487,7 @@ pub fn c_li(rd: u32, imm: i32) -> u16 {
 pub fn c_addi16sp(nzimm: u32) -> u16 {
     // Allow zero encoding (illegal) for tests; caller may pass zero intentionally
     assert!(
-        nzimm % 16 == 0 && nzimm <= 1020,
+        nzimm.is_multiple_of(16) && nzimm <= 1020,
         "nzimm must be multiple of 16 and <=1020"
     );
     let nz = nzimm >> 4; // remove low 4 zeros
@@ -654,7 +654,7 @@ pub fn c_slli(rd: u32, shamt: u32) -> u16 {
 /// C.LWSP: lw rd, offset(x2) (rd != 0)
 pub fn c_lwsp(rd: u32, offset: u32) -> u16 {
     // Allow rd==0 (illegal) for tests; offset must be multiple of 4
-    assert!(offset % 4 == 0 && offset <= 255);
+    assert!(offset.is_multiple_of(4) && offset <= 255);
     let u = offset >> 2; // uimm bits
                          // mapping per decompressor: uimm_lwsp = {insn[3:2], insn[12], insn[6:4], 2'b00}
                          // Reverse mapping from offset -> scattered fields:
@@ -723,7 +723,7 @@ pub fn c_add(rd: u32, rs2: u32) -> u16 {
 
 /// C.SWSP: sw rs2, offset(x2)
 pub fn c_swsp(rs2: u32, offset: u32) -> u16 {
-    assert!(offset % 4 == 0 && offset <= 1020);
+    assert!(offset.is_multiple_of(4) && offset <= 1020);
     let u = offset >> 2; // uimm bits
                          // mapping: uimm_swsp = {insn[8:7], insn[12:9], 2'b00}
     let mut insn: u16 = 0;
