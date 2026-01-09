@@ -1162,23 +1162,24 @@ gtkwave trace.vcd
 
 ## Implementation Phases
 
-### Phase 1: Instruction Decompressor (Days 1-4)
+### Phase 1: Instruction Decompressor (Days 1-3)
 
 **Tasks:**
 
 1. **Create decompressor module (`rtl/decompress.sv`):**
-   - [ ] Define module interface (inputs/outputs)
+   - [ ] Define module interface (pure combinational, no clock)
    - [ ] Implement quadrant detection logic (bits [1:0])
    - [ ] Implement Quadrant 0 decompression (C.ADDI4SPN, C.LW, C.SW)
    - [ ] Implement Quadrant 1 decompression (16 instructions)
    - [ ] Implement Quadrant 2 decompression (8 instructions)
    - [ ] Add illegal instruction detection
-   - [ ] Implement immediate encoding/decoding
+   - [ ] Implement immediate encoding/decoding logic
+   - [ ] Ensure minimal critical path for combinational timing
 
 2. **Create decompressor test harness:**
-   - [ ] Add `decompress_test.rs` to tests/src/
+   - [ ] Add `decompress_test.rs` to `tests/src/`
    - [ ] Update `lib.rs` with module declaration
-   - [ ] Create Verilator runtime binding for decompressor
+   - [ ] Create marlin/Verilator runtime binding for decompressor
    - [ ] Add helper functions for encoding compressed instructions
 
 3. **Write comprehensive unit tests:**
@@ -1186,168 +1187,310 @@ gtkwave trace.vcd
    - [ ] Test illegal instruction detection
    - [ ] Test edge cases (max/min immediates)
    - [ ] Verify immediate encoding correctness
+   - [ ] Test pass-through of 32-bit instruction markers
 
 4. **Lint and verify:**
    ```bash
    verilator --lint-only rtl/decompress.sv
-   cargo test --package cpu_verifier -- decompress_test
+   cargo test --package tests -- decompress_test
    ```
 
 **Validation:**
 - All decompressor tests pass (60+ test cases)
 - No Verilator lint warnings
 - Correct decompression for all instruction types
+- Combinational logic verified (no latches)
 
-**Estimated Time:** 3-4 days
+**Estimated Time:** 2-3 days (simpler without separate fetch module)
 
-### Phase 2: Instruction Fetch Unit (Days 5-7)
+### Phase 2: Top Module Integration (Days 4-8)
 
 **Tasks:**
 
-1. **Create instruction fetch module (`rtl/ifetch.sv`):**
-   - [ ] Define module interface
-   - [ ] Implement word-aligned address calculation
-   - [ ] Implement instruction buffering logic with buffer_valid flag
+1. **Add fetch buffer logic to `top.sv`:**
+   - [ ] Add fetch buffer state registers (buffered_half, buffer_valid)
+   - [ ] Implement instruction assembly logic (combinational)
+   - [ ] Add buffer state machine integrated with S_FETCH
    - [ ] Handle PC at word and half-word boundaries
-   - [ ] **Implement buffer invalidation on jumps/branches (pc_valid signal)**
-   - [ ] **Handle 32-bit instruction assembly at half-word boundaries**
+   - [ ] Implement buffer invalidation on jumps/branches
+   - [ ] Handle 32-bit instruction assembly at half-word boundaries
    - [ ] Add assertions for PC alignment (PC[0] must be 0)
-   - [ ] Add state machine for buffer management
 
-2. **Create instruction fetch test harness:**
-   - [ ] Add `ifetch_test.rs` to tests/src/
-   - [ ] Update `lib.rs` with module declaration
-   - [ ] Create Verilator runtime binding for ifetch
+2. **Integrate decompressor:**
+   - [ ] Instantiate decompress module in `top.sv`
+   - [ ] Connect assembled instruction to decompressor input
+   - [ ] Route decompressed output to IR register
+   - [ ] Add instruction width tracking signal
 
-3. **Write instruction fetch tests:**
-   - [ ] Test word-aligned PC fetching
-   - [ ] Test half-word-aligned PC fetching
-   - [ ] Test sequential instruction fetching
-   - [ ] Test boundary crossing scenarios
-   - [ ] Test buffering correctness
-   - [ ] **Test buffer invalidation on jump/branch**
-   - [ ] **Test 32-bit instruction fetch at half-word boundary**
-   - [ ] **Test transitions between all PC alignments**
+3. **Update PC logic:**
+   - [ ] Modify PC increment calculation (2 vs 4 bytes)
+   - [ ] Update PC logic in WRITEBACK state
+   - [ ] Update PC logic in BRANCH state
+   - [ ] Update PC logic in MEM_WRITE state (for stores)
+   - [ ] Update PC logic in DECODE state (for FENCE)
+   - [ ] Ensure 2-byte alignment on branch/jump targets
+   - [ ] Add PC increment register to track current instruction width
 
-4. **Lint and verify:**
-   ```bash
-   verilator --lint-only rtl/ifetch.sv
-   cargo test --package cpu_verifier -- ifetch_test
-   ```
+4. **FSM integration:**
+   - [ ] Verify S_FETCH state handles variable-width instructions
+   - [ ] Ensure ir_write signal captures decompressed instruction
+   - [ ] Verify buffer state persists across all FSM states
+   - [ ] Test buffer invalidation timing with pc_write signal
 
-**Validation:**
-- All instruction fetch tests pass (25+ test cases, up from 20+)
-- No Verilator lint warnings
-- Correct instruction delivery at all alignments
-- **Buffer management works correctly for all transition scenarios**
-
-**Estimated Time:** 3-4 days (increased from 2-3 due to transition complexity)
-
-### Phase 3: CPU Integration (Days 8-12)
-
-**Tasks:**
-
-1. **Modify top module (`rtl/top.sv`):**
-   - [ ] Add ifetch module instantiation
-   - [ ] Add decompress module instantiation
-   - [ ] Connect modules to existing datapath
-   - [ ] Update PC increment logic (2 vs. 4 bytes)
-   - [ ] Handle 32-bit instruction assembly for unaligned PC
-   - [ ] Update branch/jump target calculation for 2-byte alignment
-
-2. **Update decoder if needed (`rtl/decoder.sv`):**
-   - [ ] Verify decoder handles all decompressed instructions
-   - [ ] No changes should be needed (decompressed = standard instructions)
-
-3. **Test integration:**
-   - [ ] Run existing CPU tests (regression testing)
-   - [ ] Verify RV32IM instructions still work
-   - [ ] Verify PC management works correctly
-
-4. **Lint complete system:**
+5. **Lint and verify:**
    ```bash
    verilator --lint-only rtl/*.sv
+   cargo build  # Verify compilation
    ```
 
 **Validation:**
-- All existing 84 tests still pass (no regression)
-- New modules integrate cleanly
-- System lints without errors
+- RTL compiles without errors
+- No Verilator lint warnings
+- All modifications contained in top.sv and decompress.sv
+- No changes to other RTL modules
+
+**Estimated Time:** 4-5 days (complex FSM integration)
+
+### Phase 3: Regression Testing (Days 9-10)
+
+**Tasks:**
+
+1. **Run existing tests:**
+   ```bash
+   cargo clean  # Clear Verilator cache
+   cargo test --verbose
+   ```
+
+2. **Verify no regressions:**
+   - [ ] All 146 existing tests must pass
+   - [ ] ALU tests pass (arithmetic, logic, shifts, M-extension)
+   - [ ] Register file tests pass
+   - [ ] CPU simulator tests pass
+   - [ ] Multi-cycle execution works correctly
+   - [ ] Memory latency handling unchanged
+
+3. **Debug any regressions:**
+   - [ ] Use VCD dumps to identify issues
+   - [ ] Check FSM state transitions
+   - [ ] Verify PC updates still work for standard instructions
+   - [ ] Ensure IR register captures correct instructions
+
+4. **Verify RV32IM compatibility:**
+   - [ ] Run existing test programs
+   - [ ] Verify no impact on performance (cycle counts)
+   - [ ] Check that 32-bit-only programs work unchanged
+
+**Validation:**
+- All 146 existing tests pass
+- No regressions in functionality
+- RV32IM programs execute identically
+
+**Estimated Time:** 1-2 days
+
+### Phase 4: Decompressor and Fetch Buffer Tests (Days 11-15)
+
+**Tasks:**
+
+1. **Create CPU-level integration tests:**
+   - [ ] Add test helper functions in `cpu-sim/src/test_rv32c_basic.rs`
+   - [ ] Implement compressed instruction encoding helpers
+   - [ ] Create memory layout helpers for test scenarios
+
+2. **Test basic compressed instructions:**
+   - [ ] C.LI, C.ADDI, C.LUI execution
+   - [ ] C.MV, C.ADD, C.SUB execution
+   - [ ] C.ANDI, C.SLLI, C.SRLI, C.SRAI execution
+   - [ ] Verify register writes and PC increments
+   - [ ] Check multi-cycle execution timing
+
+3. **Test memory operations:**
+   - [ ] C.LW, C.SW with various offsets
+   - [ ] C.LWSP, C.SWSP stack operations
+   - [ ] Memory latency with compressed instructions
+   - [ ] Verify address calculations in MEM_ADDR state
+
+4. **Test control flow:**
+   - [ ] C.J, C.JAL jumps
+   - [ ] C.JR, C.JALR register jumps
+   - [ ] C.BEQZ, C.BNEZ branches
+   - [ ] Verify BRANCH state behavior
+   - [ ] Check WRITEBACK state for jumps
+
+5. **Test transition scenarios (CRITICAL):**
+   - [ ] C→C: Sequential compressed instructions
+   - [ ] C→U: Compressed to uncompressed (word boundary)
+   - [ ] U→C: Uncompressed to compressed
+   - [ ] U→U: Sequential uncompressed (regression)
+   - [ ] Branch to half-word address
+   - [ ] JAL to half-word address
+   - [ ] Buffer invalidation on jumps
+   - [ ] Mixed sequences across multiple words
+
+6. **Run tests:**
+   ```bash
+   cargo test --package cpu-sim -- test_rv32c_basic
+   cargo test --package cpu-sim -- test_rv32c_transitions
+   ```
+
+**Validation:**
+- All basic compressed instruction tests pass (10+ tests)
+- All memory operation tests pass (8+ tests)
+- All control flow tests pass (10+ tests)
+- All transition tests pass (10+ tests, CRITICAL)
+- Total: 40+ new integration tests
 
 **Estimated Time:** 4-5 days
 
-### Phase 4: CPU Compressed Instruction Tests (Days 13-17)
+### Phase 5: VCD Debugging and Validation (Days 16-18)
 
 **Tasks:**
 
-1. **Add CPU-level compressed instruction tests:**
-   - [ ] Create helper functions for compressed instruction encoding
-   - [ ] **PRIORITY: Implement all 10 transition tests from Critical Testing section**
-   - [ ] Test basic compressed instructions (C.ADDI, C.LI, etc.)
-   - [ ] Test memory operations (C.LW, C.SW, C.LWSP, C.SWSP)
-   - [ ] Test control flow (C.J, C.JAL, C.JR, C.JALR)
-   - [ ] Test branches (C.BEQZ, C.BNEZ)
-   - [ ] Test mixed compressed/standard instruction sequences
-   - [ ] Test PC alignment handling during transitions
-   - [ ] Test edge cases and illegal instructions
-   - [ ] Test buffer invalidation on jumps/branches
+1. **Create VCD-enabled tests:**
+   - [ ] Implement `test_rv32c_vcd.rs` with VCD generation
+   - [ ] Test complex transition scenarios with VCD
+   - [ ] Generate waveforms for critical test cases
 
-2. **Run CPU tests:**
+2. **VCD analysis:**
+   - [ ] Verify PC increments (+2 vs +4) in waveforms
+   - [ ] Check fetch buffer state transitions
+   - [ ] Validate FSM state sequences
+   - [ ] Verify instruction assembly timing
+   - [ ] Check buffer invalidation on jumps
+   - [ ] Analyze memory interface timing
+
+3. **Debug workflow validation:**
    ```bash
-   cargo test --package cpu_verifier -- cpu_test
-   cargo test --package cpu_verifier -- cpu_test::test_cpu_transition
+   cargo run --package cpu-sim -- test.elf --vcd trace.vcd --verbose
+   gtkwave trace.vcd
    ```
 
-3. **Debug with VCD when tests fail:**
-   ```bash
-   # Generate VCD for failing test scenario
-   cargo run --package cpu-sim -- test_elf.elf --vcd debug.vcd
-   gtkwave debug.vcd
-   ```
-   - [ ] Use VCD to debug transition failures
-   - [ ] Verify PC increment behavior in waveforms
-   - [ ] Check buffer state during transitions
-   - [ ] Validate instruction assembly for 32-bit at half-word boundaries
-
-4. **Debug and fix issues:**
-   - [ ] Investigate test failures
-   - [ ] Fix RTL bugs (especially in ifetch and PC logic)
-   - [ ] Re-run tests after each fix
-   - [ ] Use VCD dumps to verify fixes
+4. **Document key signals for debugging:**
+   - [ ] Document critical signals to monitor
+   - [ ] Create VCD debugging guide
+   - [ ] Add troubleshooting tips
 
 **Validation:**
-- All new CPU tests pass (50+ new test cases, including 10 critical transition tests)
-- Total test count increases to 130+ tests
-- Mixed compressed/standard code executes correctly
-- **All 6 transition scenarios work correctly**
-- VCD dumps show correct behavior during transitions
+- VCD traces show correct behavior
+- All FSM transitions valid
+- PC increments correct in all scenarios
+- Buffer management correct
 
-**Estimated Time:** 5-6 days (increased from 4-5 due to transition complexity)
+**Estimated Time:** 2-3 days
 
-### Phase 5: Assembly and Rust Program Tests (Days 18-20)
+### Phase 6: Program-Level Testing (Days 19-21)
 
 **Tasks:**
 
 1. **Create assembly test program:**
    - [ ] Write `test_programs/c_extension_test.s`
    - [ ] Include all major compressed instruction types
-   - [ ] Test control flow and branches
+   - [ ] Test control flow with compressed branches/jumps
+   - [ ] Mix compressed and standard instructions
    - [ ] Build with `-march=rv32imc`
 
 2. **Create Rust test program:**
-   - [ ] Update `rust-test-program` target to `riscv32imc`
-   - [ ] Write test program using operations that generate compressed instructions
-   - [ ] Build and verify binary contains compressed instructions
-
-3. **Update build configurations:**
    - [ ] Update `rust-test-program/.cargo/config.toml`
-   - [ ] Change target: `riscv32i` → `riscv32imc`
-   - [ ] Update assembly build commands in `test_programs/README.md`
-   - [ ] Update CI/CD to install `riscv32imc-unknown-none-elf` target
+   - [ ] Change target: `riscv32im-unknown-none-elf` → `riscv32imc-unknown-none-elf`
+   - [ ] Write test program using C-friendly patterns
+   - [ ] Verify compiler generates compressed instructions
 
-4. **Run program-level tests:**
+3. **Run program tests:**
    ```bash
    cargo run --package cpu-sim -- test_programs/c_test.elf --verbose
+   cargo run --package cpu-sim -- rust-test-program/target/riscv32imc-unknown-none-elf/release/main --verbose
+   ```
+
+4. **Validate execution:**
+   - [ ] Verify programs execute correctly
+   - [ ] Check compressed instruction usage in traces
+   - [ ] Validate PC progression through mixed code
+   - [ ] Ensure halt behavior works
+
+**Validation:**
+- Assembly programs execute correctly
+- Rust programs execute correctly
+- Compressed instructions observed in execution
+- No hangs or incorrect behavior
+
+**Estimated Time:** 2-3 days
+
+### Phase 7: Documentation and CI Updates (Days 22-23)
+
+**Tasks:**
+
+1. **Update documentation:**
+   - [ ] Update `README.md` to advertise RV32IMC support
+   - [ ] Update `AGENTS.md` with:
+     - New instruction count (54 + 27 = 81 total)
+     - New test count (estimated 190+ tests)
+     - RV32C implementation notes
+     - FSM integration details
+   - [ ] Update `test_programs/README.md` with C extension examples
+   - [ ] Update `cpu-sim/README.md` with RV32IMC notes
+
+2. **Update build configurations:**
+   - [ ] Update `.github/workflows/ci.yml` if needed
+   - [ ] Add RV32IMC target installation to CI
+   - [ ] Update any build scripts
+
+3. **Final validation:**
+   ```bash
+   cargo fmt -- --check
+   cargo clippy -- -D warnings
+   cargo build --verbose
+   cargo test --verbose
+   verilator --lint-only rtl/*.sv
+   ```
+
+4. **Create PR description:**
+   - [ ] Summary of changes
+   - [ ] List of new instructions supported
+   - [ ] Test coverage summary
+   - [ ] Architecture modifications
+   - [ ] FSM integration approach
+
+**Validation:**
+- All 190+ tests pass (146 existing + 40+ new)
+- All CI checks pass
+- Documentation is complete and accurate
+- No formatting or lint errors
+
+**Estimated Time:** 1-2 days
+
+### Phase 8: Code Review and Refinement (Days 24-26)
+
+**Tasks:**
+
+1. **Request code review:**
+   - [ ] Submit PR for review
+   - [ ] Address review comments
+   - [ ] Refine implementation based on feedback
+
+2. **Performance analysis:**
+   - [ ] Measure test execution time
+   - [ ] Verify no performance regression
+   - [ ] Check critical path impact (if synthesis available)
+
+3. **Final testing:**
+   - [ ] Run complete test suite multiple times
+   - [ ] Verify reproducibility
+   - [ ] Test on CI environment
+   - [ ] Run VCD dumps on complex programs
+
+**Validation:**
+- Code review approved
+- All tests pass consistently
+- No regressions in existing functionality
+- Performance acceptable
+
+**Estimated Time:** 2-3 days
+
+---
+
+**Total Estimated Time:** 23-26 days
+
+**Critical Path:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 6 → Phase 7 → Phase 8  
+**Parallel Opportunities:** Phase 5 (VCD) can overlap with Phase 4 debugging
    ```
 
 **Validation:**
@@ -1434,35 +1577,51 @@ gtkwave trace.vcd
 - [ ] All 27 compressed instructions decompress correctly
 - [ ] Illegal instructions detected and flagged
 - [ ] Immediate encoding/decoding is correct
-- [ ] Pass-through of 32-bit instructions works
+- [ ] Pass-through of 32-bit instruction markers works
+- [ ] Combinational logic verified (no latches)
 
-**Instruction Fetch Level:**
-- [ ] Correct instruction fetch at word alignment
-- [ ] Correct instruction fetch at half-word alignment
+**Fetch Buffer Integration Level:**
+- [ ] Correct instruction fetch at word alignment (PC[1]=0)
+- [ ] Correct instruction fetch at half-word alignment (PC[1]=1)
 - [ ] Buffering works across word boundaries
-- [ ] Sequential fetching works correctly
-- [ ] **Buffer invalidates correctly on jumps/branches**
-- [ ] **32-bit instruction assembly works at half-word boundaries**
-- [ ] **All 6 transition scenarios fetch correctly**
+- [ ] Sequential fetching works correctly through FSM states
+- [ ] Buffer state persists across FSM transitions (S_FETCH → S_DECODE → ...)
+- [ ] Buffer invalidates correctly on jumps/branches (PC discontinuity)
+- [ ] 32-bit instruction assembly works at half-word boundaries
+- [ ] All transition scenarios work with multi-cycle timing
 
 **CPU Integration Level:**
-- [ ] Compressed instructions execute correctly
-- [ ] PC increments by 2 for compressed, 4 for standard
+- [ ] Compressed instructions execute correctly in multi-cycle FSM
+- [ ] PC increments by 2 for compressed, 4 for standard in WRITEBACK/BRANCH states
 - [ ] Mixed compressed/standard sequences work
 - [ ] Branch/jump targets handle 2-byte alignment
-- [ ] All RV32IM instructions still work (no regression)
-- [ ] **All 10 critical transition tests pass**
-- [ ] **C→U transition works (Scenario 2)**
-- [ ] **U→C transition works (Scenario 3)**
-- [ ] **Branches to half-word addresses work (Scenario 5)**
-- [ ] **Buffer invalidation on jumps prevents stale data usage**
-- [ ] **VCD dumps show correct PC and buffer behavior**
+- [ ] All 146 existing RV32IM tests still pass (no regression)
+- [ ] FSM states transition correctly with variable-width instructions
+- [ ] S_FETCH state handles instruction assembly correctly
+- [ ] IR register captures decompressed instructions
+- [ ] All critical transition tests pass:
+  - C→C: Sequential compressed instructions
+  - C→U: Compressed to uncompressed transition
+  - U→C: Uncompressed to compressed transition
+  - U→U: Sequential uncompressed (regression)
+  - Branch to half-word address
+  - JAL to half-word address
+  - Buffer state across FSM cycles
+  - Buffer invalidation on control flow changes
+
+**Multi-Cycle Timing Validation:**
+- [ ] Instruction fetch completes correctly with imem_ready handshake
+- [ ] Variable memory latency works with compressed instructions
+- [ ] instr_complete signal asserts correctly for both 16/32-bit instructions
+- [ ] Staging registers (A, B, ALU_OUT, MDR) work with decompressed instructions
+- [ ] FSM state sequences correct for all instruction types
 
 **System Level:**
 - [ ] Assembly programs with compressed instructions execute
 - [ ] Rust programs compiled for RV32IMC execute
 - [ ] CPU simulator runs compressed ELF files
-- [ ] Correct halt behavior
+- [ ] Correct halt behavior (ECALL/EBREAK)
+- [ ] VCD dumps generated correctly for debugging
 
 ### Quality Validation
 
@@ -1471,18 +1630,23 @@ gtkwave trace.vcd
 - [ ] `cargo clippy -- -D warnings` passes
 - [ ] `verilator --lint-only rtl/*.sv` passes
 - [ ] No compiler warnings
+- [ ] No synthesis warnings (if applicable)
 
 **Testing:**
-- [ ] Test count increases to 130+ (84 existing + 50+ new including transition tests)
+- [ ] Test count increases to 190+ (146 existing + 40+ new)
 - [ ] All new tests pass
 - [ ] All existing tests pass (no regressions)
 - [ ] Code coverage includes all compressed instructions
-- [ ] **All 10 transition scenario tests pass**
-- [ ] **VCD debugging used to validate complex transitions**
+- [ ] Transition scenario tests validate critical edge cases
+- [ ] VCD debugging used to validate complex transitions
+- [ ] Multi-cycle execution timing verified in tests
 
 **Documentation:**
 - [ ] README.md updated with RV32IMC support
-- [ ] AGENTS.md updated with new instructions and test count
+- [ ] AGENTS.md updated with:
+  - New instruction count (54 + 27 = 81 total)
+  - New test count (190+ tests)
+  - RV32C multi-cycle integration notes
 - [ ] Implementation plan complete (this document)
 - [ ] Test programs documented with examples
 - [ ] Build configuration changes documented
@@ -1492,13 +1656,13 @@ gtkwave trace.vcd
 **Automated Checks:**
 - [ ] GitHub Actions CI passes all jobs
 - [ ] Build job completes successfully
-- [ ] Test job runs all 120+ tests successfully
+- [ ] Test job runs all 190+ tests successfully
 - [ ] Format check passes
 - [ ] Clippy check passes
 
 **Manual Review:**
 - [ ] Code review completed
-- [ ] Architecture changes approved
+- [ ] Multi-cycle FSM integration approach approved
 - [ ] Test coverage deemed sufficient
 - [ ] Documentation reviewed
 
@@ -1508,125 +1672,133 @@ gtkwave trace.vcd
 
 ### High-Risk Areas
 
-#### 1. Instruction Transitions (Compressed ↔ Uncompressed)
+#### 1. FSM Integration Complexity
+
+**Risk:** Incorrect integration of fetch buffer logic with multi-cycle FSM can cause subtle bugs.
+
+**Specific Failure Modes:**
+- Buffer state not preserved across FSM transitions (S_FETCH → S_DECODE → ...)
+- Incorrect buffer invalidation timing (invalidate too early/late)
+- Race conditions between pc_write and buffer state updates
+- IR register capturing instruction before decompression completes
+
+**Mitigation:**
+- Carefully design buffer state machine to work with FSM
+- Add explicit buffer invalidation logic on pc_write for jumps/branches
+- Use VCD dumps to verify timing across FSM states
+- Test buffer state persistence through complete instruction cycles
+- Add assertions for buffer validity conditions
+
+**Impact:** Critical (Causes incorrect instruction execution)  
+**Likelihood:** High (Most complex aspect of multi-cycle integration)
+
+#### 2. Instruction Transitions (Compressed ↔ Uncompressed)
 
 **Risk:** Incorrect handling of transitions between 16-bit and 32-bit instructions, especially when 32-bit instructions start at half-word boundaries.
 
 **Specific Failure Modes:**
-- **Scenario 2 (C→U):** Failing to assemble complete 32-bit instruction when it spans two memory words
-- **Buffer state corruption:** Using stale buffered data after jumps/branches
-- **PC misalignment:** Generating odd PC values (PC[0] == 1) during transitions
-- **Incomplete fetches:** Not fetching enough data to complete 32-bit instruction at half-word boundary
+- Incorrect 32-bit instruction assembly when PC[1]=1
+- Wrong PC increment after compressed vs uncompressed instruction
+- Buffer contains stale data after jump to half-word address
+- Instruction width signal not synchronized with PC updates
 
 **Mitigation:**
-- Implement comprehensive transition test suite (Tests 1-10 in Critical Testing section)
-- Use VCD waveform dumps to visualize buffer state and PC transitions
-- Add assertions in RTL to catch misaligned PC values
-- Test all 6 transition scenario categories explicitly
-- Verify buffer invalidation logic on every jump/branch
-- Add buffer state monitoring in testbench
+- Comprehensive transition test suite (10+ dedicated tests)
+- VCD waveform analysis for all transition scenarios
+- Test all PC alignment cases (word and half-word)
+- Verify PC increment happens in correct FSM states
+- Monitor instruction width signal throughout FSM cycles
 
-**Impact:** Critical (Causes wrong instruction execution, hangs, crashes)  
-**Likelihood:** High (Most complex aspect of RV32C)
+**Impact:** Critical (Causes wrong instruction execution)  
+**Likelihood:** High (Inherently complex with multi-cycle timing)
 
-#### 2. PC Management Complexity
+#### 3. PC Management in Multi-Cycle FSM
 
-**Risk:** Incorrect PC increment logic for compressed vs. standard instructions, especially at boundaries.
+**Risk:** PC updates occur in multiple FSM states (WRITEBACK, BRANCH, MEM_WRITE, DECODE), increasing complexity.
 
-**Enhanced Risk Details:**
-- PC must handle both +2 and +4 increments correctly
-- Branch/jump targets must maintain 2-byte alignment
-- Transition from word-aligned to half-word-aligned PC must be seamless
-- Increment from half-word-aligned PC with 32-bit instruction (0x0002 → 0x0006)
+**Specific Failure Modes:**
+- Instruction width signal not available when PC is updated
+- PC incremented at wrong time in FSM sequence
+- Branch target calculations don't account for 2-byte alignment
+- Jump to half-word address doesn't invalidate buffer
 
 **Mitigation:**
-- Comprehensive testing of PC at all alignments (word and half-word)
-- Test sequential execution across word boundaries
-- Test all transition scenarios with PC tracking
-- Verify branch/jump target calculations with 2-byte alignment
-- Add PC alignment checking assertions
-- Monitor PC value in VCD dumps during complex sequences
+- Track instruction width throughout instruction execution
+- Test PC updates in all FSM states that modify PC
+- Verify 2-byte alignment enforcement
+- Test buffer invalidation on all PC discontinuities
+- Use VCD to trace PC updates across FSM states
 
 **Impact:** High  
-**Likelihood:** Medium (Well-understood but complex)
+**Likelihood:** Medium (Well-defined but multiple update points)
 
-#### 2. Instruction Buffering Logic
+### Medium-Risk Areas
 
-**Risk:** Incorrect buffering when fetching 16-bit instructions across 32-bit word boundaries.
+#### 4. Combinational Decompression Critical Path
+
+**Risk:** Decompressor combinational logic adds to critical path, potentially reducing max clock frequency.
 
 **Mitigation:**
-- Dedicated instruction fetch unit tests
-- Test all PC alignment scenarios
-- Verify buffer state across multiple cycles
-- Test boundary crossing explicitly
+- Keep decompressor logic simple and optimized
+- Consider pipeline stage if timing issues arise (adds FSM state)
+- Monitor synthesis reports for timing
+- Test at target clock frequency if available
+
+**Impact:** Medium (Affects performance, not correctness)  
+**Likelihood:** Low (Decompressor is relatively simple logic)
+
+#### 5. Backward Compatibility
+
+**Risk:** Changes to top.sv break existing RV32IM functionality.
+
+**Mitigation:**
+- Run all 146 existing tests after each modification
+- Keep changes localized to fetch buffer and PC increment logic
+- Test with RV32IM-only programs (no compressed instructions)
+- Verify FSM state sequences unchanged for standard instructions
 
 **Impact:** High  
-**Likelihood:** Medium
+**Likelihood:** Low (Changes are mostly additive)
 
-#### 3. Decompression Correctness
+#### 6. Memory Interface Timing
+
+**Risk:** Fetch buffer logic doesn't properly handle variable memory latency.
+
+**Mitigation:**
+- Test with various memory latency configurations (0, 3, 10 cycles)
+- Verify imem_ready handshake works correctly
+- Ensure buffer state updates only when imem_ready asserts
+- Test instruction assembly across delayed memory responses
+
+**Impact:** Medium  
+**Likelihood:** Low (Ready/valid handshaking already proven)
+
+### Low-Risk Areas
+
+#### 7. Decompression Correctness
 
 **Risk:** Incorrect decompression of compressed instructions, especially immediate encoding.
 
 **Mitigation:**
-- Comprehensive unit tests for all 27 instructions with multiple test cases each
+- Comprehensive unit tests for all 27 instructions
 - Cross-reference with RISC-V specification
 - Test all immediate value ranges
-- Verify against reference decompressor
+- Verify against reference decompressor if available
 
 **Impact:** High  
-**Likelihood:** Low
+**Likelihood:** Very Low (Purely combinational, easily testable)
 
-### Medium-Risk Areas
-
-#### 4. Backward Compatibility
-
-**Risk:** Changes break existing RV32IM functionality.
-
-**Mitigation:**
-- Run all 84 existing tests after each change
-- Keep existing datapath unchanged
-- Decompression adds new functionality without modifying old
-
-**Impact:** High  
-**Likelihood:** Low
-
-#### 5. Timing/Critical Path
-
-**Risk:** New decompression logic increases critical path delay.
-
-**Mitigation:**
-- Keep decompressor combinational logic simple
-- Consider pipeline stage if timing issues arise
-- Monitor synthesis reports
-
-**Impact:** Medium  
-**Likelihood:** Low
-
-#### 6. Build Configuration Drift
-
-**Risk:** Different test programs use different targets (RV32IM vs. RV32IMC).
-
-**Mitigation:**
-- Update all build scripts consistently
-- Document target changes clearly
-- Verify all programs build with same target
-
-**Impact:** Medium  
-**Likelihood:** Low
-
-### Low-Risk Areas
-
-#### 7. Tool Support
+#### 8. Tool Support
 
 **Risk:** Assembler/compiler doesn't support RV32C properly.
 
 **Mitigation:**
 - Use well-tested GNU RISC-V toolchain
-- Verify compressed instruction generation
+- Verify compressed instruction generation in objdump
 - Test with multiple toolchain versions
 
 **Impact:** Low  
-**Likelihood:** Very Low
+**Likelihood:** Very Low (RV32C is widely supported)
 
 ---
 
@@ -2402,11 +2574,12 @@ The decompressor must receive complete instructions:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2025-12-31 | GitHub Copilot | Initial comprehensive plan |
-| 2.0 | 2026-01-01 | GitHub Copilot | Added critical transition scenarios, VCD debugging info, enhanced fetch unit design, comprehensive transition testing requirements |
+| 1.0 | 2025-12-31 | GitHub Copilot | Initial comprehensive plan (assumed single-cycle architecture) |
+| 2.0 | 2026-01-01 | GitHub Copilot | Added transition scenarios and VCD debugging (still assumed single-cycle) |
+| 3.0 | 2026-01-09 | GitHub Copilot | **Complete rewrite for multi-cycle architecture:** Updated all sections to reflect current 11-state FSM-based CPU, integrated fetch buffer into top.sv, aligned testing with marlin/Verilator framework, updated for cpu-sim package structure |
 
 ---
 
-**Document Status:** ✅ **Ready for Implementation - Enhanced with Transition Focus**
+**Document Status:** ✅ **Ready for Implementation - Multi-Cycle Architecture Aligned**
 
-This plan provides a complete roadmap for adding RV32C compressed instruction support to the RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies, and estimated timelines. **Version 2.0 adds critical focus on transition handling between compressed and uncompressed instructions, which are the most error-prone scenarios in RV32C implementation.** The plan is optimized for AI coding agent implementation with comprehensive technical details and step-by-step guidance.
+This plan provides a complete roadmap for adding RV32C compressed instruction support to the multi-cycle non-pipelined RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies optimized for the marlin/Verilator framework, and estimated timelines. **Version 3.0 is fully aligned with the current multi-cycle FSM architecture, realistic about FSM integration complexity, and accounts for the existing test infrastructure and CPU simulator.**
