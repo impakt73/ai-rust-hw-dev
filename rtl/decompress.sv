@@ -7,7 +7,8 @@
 /* verilator lint_off WIDTHEXPAND */
 
 module decompress (
-    input  logic [15:0] insn_16,        // 16-bit instruction input
+    input  logic [15:0] insn_16,        // 16-bit instruction input (lower half for detection)
+    input  logic [31:0] insn_32_in,     // Full 32-bit input (for non-compressed passthrough)
     output logic [31:0] insn_32,        // 32-bit expanded instruction
     output logic        is_compressed,  // 1 if input was compressed
     output logic        is_valid        // 1 if valid instruction
@@ -45,9 +46,8 @@ module decompress (
         insn_32 = 32'h00000013;  // Default: NOP (ADDI x0, x0, 0)
         
         if (!is_compressed) begin
-            // 32-bit instruction marker: pass through lower 16 bits
-            // Upper 16 bits will be assembled by fetch unit
-            insn_32 = {16'h0, insn_16};
+            // 32-bit instruction: pass through the full 32-bit input
+            insn_32 = insn_32_in;
         end else begin
             // Compressed instruction: decompress based on quadrant
             case (quadrant)

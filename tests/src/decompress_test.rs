@@ -17,6 +17,13 @@ fn test_decompress(
         .expect("Failed to create model");
 
     dut.insn_16 = insn_16;
+    // For compressed instructions, upper 16 bits don't matter
+    // For non-compressed (32-bit marker), pass the expected value
+    dut.insn_32_in = if should_be_compressed {
+        insn_16 as u32
+    } else {
+        expected_insn_32
+    };
     dut.eval();
 
     assert_eq!(
@@ -408,6 +415,6 @@ fn test_quadrant_0_reserved() {
 #[test]
 fn test_quadrant_2_reserved() {
     // Reserved encodings in quadrant 2 should be invalid
-    let insn_16: u16 = 0b001_0_00000_00000_10; // funct3=001 is reserved in quadrant 2
+    let insn_16: u16 = 0b0010_0000_0000_0010; // funct3=001 is reserved in quadrant 2
     test_decompress(insn_16, 0, true, false);
 }
