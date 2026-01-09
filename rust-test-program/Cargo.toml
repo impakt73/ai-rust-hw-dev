@@ -107,3 +107,8 @@ test = false
 name = "test_image_data"
 path = "src/test_image_data.rs"
 test = false
+
+[[bin]]
+name = "test_panic"
+path = "src/test_panic.rs"
+test = false
