@@ -245,8 +245,9 @@ module decompress (
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
                 // BEQ rs1', x0, offset
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[4:1], 5'b0, rs1_full, 3'b000, 
-                           imm_b[7:5], imm_b[0], 7'b1100011};
+                // Place fields per B-type: imm[12], imm[10:5], rs2, rs1, funct3, imm[4:1], imm[11], opcode
+                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b000,
+                           imm_b[4:1], imm_b[0], 7'b1100011};
             end
             
             3'b111: begin  // C.BNEZ
@@ -255,8 +256,8 @@ module decompress (
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
                 // BNE rs1', x0, offset
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[4:1], 5'b0, rs1_full, 3'b001, 
-                           imm_b[7:5], imm_b[0], 7'b1100011};
+                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b001,
+                           imm_b[4:1], imm_b[0], 7'b1100011};
             end
         endcase
     endtask
