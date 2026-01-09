@@ -655,3 +655,6 @@ mod test_rtl_verification;
 
 #[cfg(test)]
 mod test_memory_latency;
+
+#[cfg(test)]
+mod test_rv32c_basic;
