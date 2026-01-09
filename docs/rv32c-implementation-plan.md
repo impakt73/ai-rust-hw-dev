@@ -23,6 +23,7 @@ This revision has been completely rewritten to align with the current **multi-cy
 
 **Previous Version Notes (Version 2.0):**
 - Version 2.0 incorporated learnings from a hypothetical PR #40 about instruction assembly bugs
+- Throughout this document (including appendices), any reference to "PR #40" refers to this hypothetical planning scenario; there is no corresponding pull request in the repository history
 - Those learnings remain valid but are now contextualized for multi-cycle operation
 - VCD debugging remains critical but now through cpu-sim's integrated VCD support
 
@@ -285,7 +286,7 @@ To add RV32C support, we need to modify:
    - Pass through standard 32-bit instructions unchanged
    - Combinational logic to avoid adding FSM states
 
-3. **PC Update Logic** (modify `pc_control.sv` or `top.sv`)
+3. **PC Update Logic** (modify `top.sv`)
    - Increment PC by 2 or 4 based on instruction width
    - Handle branch/jump targets at 2-byte alignment
    - Maintain 2-byte alignment requirement (PC[0] must be 0)
@@ -1491,16 +1492,8 @@ gtkwave trace.vcd
 
 **Critical Path:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 6 → Phase 7 → Phase 8  
 **Parallel Opportunities:** Phase 5 (VCD) can overlap with Phase 4 debugging
-   ```
 
-**Validation:**
-- Assembly programs execute correctly
-- Rust programs execute correctly
-- Compressed instructions observed in execution trace
-
-**Estimated Time:** 2-3 days
-
-### Phase 6: Documentation and CI Updates (Days 21-22)
+---
 
 **Tasks:**
 
@@ -1885,21 +1878,24 @@ assign rd_full = {2'b01, rd_compressed};  // 01xxx = x8-x15
 
 ### Appendix D: Estimated Timeline
 
-**Total Estimated Time:** 22-25 days
+**Total Estimated Time:** 23-26 days (Version 3.0 - Multi-Cycle Architecture)
 
 | Phase | Duration | Dependencies |
 |-------|----------|--------------|
-| Phase 1: Decompressor | 3-4 days | None |
-| Phase 2: Instruction Fetch | 2-3 days | Phase 1 complete (parallel) |
-| Phase 3: CPU Integration | 4-5 days | Phases 1 & 2 complete |
-| Phase 4: CPU Tests | 4-5 days | Phase 3 complete |
-| Phase 5: Program Tests | 2-3 days | Phase 4 complete |
-| Phase 6: Documentation | 1-2 days | Phase 5 complete |
-| Phase 7: Review & Refinement | 2-3 days | Phase 6 complete |
+| Phase 1: Decompressor | 2-3 days | None |
+| Phase 2: Top Module Integration | 4-5 days | Phase 1 complete |
+| Phase 3: Regression Testing | 1-2 days | Phase 2 complete |
+| Phase 4: Integration Tests | 4-5 days | Phase 3 complete |
+| Phase 5: VCD Debugging | 2-3 days | Phase 4 complete (can overlap) |
+| Phase 6: Program Tests | 2-3 days | Phase 4 complete |
+| Phase 7: Documentation | 1-2 days | Phase 6 complete |
+| Phase 8: Review & Refinement | 2-3 days | Phase 7 complete |
 
-**Critical Path:** Phase 1 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7
+**Critical Path:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 6 → Phase 7 → Phase 8
 
-**Parallel Activities:** Phase 2 can run concurrently with Phase 1
+**Parallel Activities:** Phase 5 (VCD debugging) can overlap with Phase 4 debugging
+
+**Note:** This timeline reflects the Version 3.0 multi-cycle architecture approach where fetch buffer logic is integrated directly into top.sv rather than a separate ifetch.sv module.
 
 ### Appendix E: Resources
 
@@ -1922,6 +1918,8 @@ assign rd_full = {2'b01, rd_compressed};  // 01xxx = x8-x15
 ### Appendix F: VCD Debugging Guide for RV32C
 
 **Added in Version 2.0** - VCD waveform debugging is essential for RV32C implementation, especially for transition scenarios.
+
+**Note:** References to "PR #40" in this appendix are from a hypothetical planning scenario in Version 2.0; there is no actual PR #40 in the repository history. The scenarios and debugging patterns described here are based on anticipated implementation challenges.
 
 #### Setting Up VCD Debugging
 
@@ -2074,55 +2072,62 @@ N+1    PC      PC+4       [correct]      1             Correct: Prefetch from PC
 
 ### Appendix G: Implementation Checklist
 
-**AI Agent Quick Reference**
+**AI Agent Quick Reference - Version 3.0 (Multi-Cycle Architecture)**
 
 Use this checklist to track implementation progress:
 
-**Phase 1: Decompressor**
-- [ ] Create `rtl/decompress.sv`
+**Phase 1: Decompressor (Days 1-3)**
+- [ ] Create `rtl/decompress.sv` (pure combinational)
 - [ ] Implement all quadrant decoders
 - [ ] Add illegal instruction detection
 - [ ] Create `tests/src/decompress_test.rs`
 - [ ] Write 60+ unit tests
 - [ ] Verify all tests pass
 
-**Phase 2: Instruction Fetch**
-- [ ] Create `rtl/ifetch.sv`
-- [ ] Implement buffering logic
-- [ ] Create `tests/src/ifetch_test.rs`
-- [ ] Write 20+ fetch tests
-- [ ] Verify all tests pass
+**Phase 2: Top Module Integration (Days 4-8)**
+- [ ] Add fetch buffer state machine to `rtl/top.sv`
+- [ ] Add instruction assembly logic to `rtl/top.sv`
+- [ ] Instantiate decompressor in `rtl/top.sv`
+- [ ] Update PC increment logic (2 or 4 bytes)
+- [ ] Integrate with FSM states
+- [ ] Verify RTL compiles without errors
 
-**Phase 3: CPU Integration**
-- [ ] Modify `rtl/top.sv`
-- [ ] Add module instantiations
-- [ ] Update PC logic
-- [ ] Run regression tests (84 existing tests)
+**Phase 3: Regression Testing (Days 9-10)**
+- [ ] Run all 146 existing tests
 - [ ] Verify no regressions
+- [ ] Debug any FSM integration issues
 
-**Phase 4: CPU Tests**
-- [ ] Add compressed instruction helpers to `cpu_test.rs`
+**Phase 4: Integration Tests (Days 11-15)**
+- [ ] Create `cpu-sim/src/test_rv32c_basic.rs`
 - [ ] Write 40+ CPU-level tests
-- [ ] Test mixed instruction sequences
+- [ ] Test transition scenarios (C→C, C→U, U→C, U→U)
+- [ ] Test buffer invalidation on jumps
 - [ ] Verify all tests pass
 
-**Phase 5: Program Tests**
+**Phase 5: VCD Debugging (Days 16-18)**
+- [ ] Create VCD-enabled tests
+- [ ] Generate waveforms for critical scenarios
+- [ ] Validate FSM state transitions in VCD
+
+**Phase 6: Program Tests (Days 19-21)**
 - [ ] Create `test_programs/c_extension_test.s`
-- [ ] Update Rust test program target
+- [ ] Update Rust test program target to `riscv32imc`
 - [ ] Build and run programs
 - [ ] Verify correct execution
 
-**Phase 6: Documentation**
+**Phase 7: Documentation (Days 22-23)**
 - [ ] Update `README.md`
 - [ ] Update `AGENTS.md`
 - [ ] Update build documentation
 - [ ] Update CI workflows
 
-**Phase 7: Final Validation**
-- [ ] Run all 120+ tests
+**Phase 8: Final Validation (Days 24-26)**
+- [ ] Run all 190+ tests
 - [ ] Pass all CI checks
 - [ ] Complete code review
 - [ ] Merge to main
+
+**Note:** Version 3.0 integrates fetch buffer directly into top.sv FSM rather than creating a separate ifetch.sv module.
 
 ---
 
@@ -2130,14 +2135,15 @@ Use this checklist to track implementation progress:
 
 ### VCD Waveform Dumping (Critical for RV32C)
 
-The repository now includes VCD (Value Change Dump) waveform dumping support (added in PR #43), which proved **absolutely essential** for debugging RV32C implementation issues in PR #40.
+The repository includes VCD (Value Change Dump) waveform dumping support through the cpu-sim package, which is essential for debugging RV32C implementation issues.
 
-**Learnings from PR #40:**
-- VCD debugging successfully identified an instruction assembly bug that unit tests missed
-- The bug only manifested in complex programs with mixed compressed/uncompressed instruction sequences
-- Root cause: Incorrect byte selection when PC was half-word aligned
-- **Bug pattern:** Lower 16 bits were fetched from wrong address (previous word instead of current word)
-- **Impact:** Programs would execute with corrupted instructions, causing wrong behavior or infinite loops
+**Hypothetical Learnings (from Version 2.0 planning scenario "PR #40"):**
+- **Note:** PR #40 is a hypothetical scenario used for planning purposes in Version 2.0 of this document
+- VCD debugging can identify instruction assembly bugs that unit tests miss
+- Bugs may only manifest in complex programs with mixed compressed/uncompressed instruction sequences
+- Root cause example: Incorrect byte selection when PC is half-word aligned
+- **Bug pattern:** Lower 16 bits fetched from wrong address (previous word instead of current word)
+- **Impact:** Programs could execute with corrupted instructions, causing wrong behavior or infinite loops
 
 **Usage:**
 ```bash
@@ -2582,4 +2588,4 @@ The decompressor must receive complete instructions:
 
 **Document Status:** ✅ **Ready for Implementation - Multi-Cycle Architecture Aligned**
 
-This plan provides a complete roadmap for adding RV32C compressed instruction support to the multi-cycle non-pipelined RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies optimized for the marlin/Verilator framework, and estimated timelines. **Version 3.0 is fully aligned with the current multi-cycle FSM architecture, realistic about FSM integration complexity, and accounts for the existing test infrastructure and CPU simulator.**
+This plan provides a complete roadmap for adding RV32C compressed instruction support to the multi-cycle non-pipelined RV32IM CPU. All phases are clearly defined with specific tasks, validation criteria, detailed testing strategies optimized for the marlin/Verilator framework, and estimated timelines. **Version 3.0 is fully aligned with the current multi-cycle FSM architecture** (main implementation sections and all appendices updated), **realistic about FSM integration complexity, and accounts for the existing test infrastructure and CPU simulator.**
