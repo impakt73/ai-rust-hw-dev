@@ -5,11 +5,12 @@ A command-line RISC-V RV32IM CPU simulator that runs ELF executables on the Veri
 ## Features
 
 - Loads RISC-V ELF executables
-- Simulates the single-cycle RV32IM CPU (RV32I + M extension + Zicsr) with external memory
+- Simulates the multi-cycle non-pipelined RV32IM CPU (RV32I + M extension + Zicsr) with external memory
 - Supports the "tohost" mechanism for program termination (write to 0xFFFFFFF0)
 - **VCD waveform dumping** for signal-level debugging and analysis
 - **Instruction trace callback** for programmatic access to executed instructions
 - **FIFO-based debug packet protocol** for communication with bare-metal programs
+- **Configurable memory latency** to test multi-cycle memory operations
 - Configurable maximum cycle limit
 - Verbose logging for debugging
 
@@ -341,4 +342,4 @@ RUST_LOG=debug ./target/debug/cpu-sim program.elf
 - Supports RV32IM instruction set (RV32I base + M extension + Zicsr) as implemented in the RTL
 - No system calls or I/O beyond the tohost mechanism and FIFO debug protocol
 - Memory is initialized only from the ELF LOAD segments
-- Single-cycle execution model (no pipelining)
+- Multi-cycle non-pipelined execution model (no pipelining)

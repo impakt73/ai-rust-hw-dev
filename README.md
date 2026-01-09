@@ -1,6 +1,6 @@
 # ai-rust-hw-dev
 
-A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
+A **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
 
 ## Features
 
@@ -17,9 +17,10 @@ A **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-b
     - Integer division and remainder: DIV, DIVU, REM, REMU
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
-- ✅ **Single-cycle Execution**: All instructions complete in one clock cycle
-- ✅ **Verilator-based Verification**: 112 comprehensive tests using Rust + marlin framework (50 in cpu_verifier package)
-- ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping
+- ✅ **Multi-cycle Non-pipelined Architecture**: FSM-based design with 11 states for efficient resource sharing
+- ✅ **Variable-latency Memory Support**: Ready/valid handshaking for realistic memory operations
+- ✅ **Verilator-based Verification**: 146 comprehensive tests using Rust + marlin framework
+- ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping and configurable memory latency
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 - ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs
 
@@ -45,6 +46,16 @@ cargo test
 cargo run --package cpu-sim -- test_programs/test.elf --verbose
 ```
 
+## Architecture
+
+The CPU uses a **multi-cycle non-pipelined design** with an 11-state finite state machine (FSM):
+- **Multi-cycle**: Instructions take 3-5+ base clock cycles (plus memory latency) instead of completing in a single cycle
+- **Non-pipelined**: One instruction executes at a time through the state machine
+- **Variable-latency memory**: Ready/valid handshaking supports realistic memory delays
+- **Resource sharing**: ALU and other resources are reused across different instruction phases
+
+This design enables higher clock frequencies and more realistic hardware implementation compared to single-cycle architectures. The shorter critical path (one operation per cycle instead of an entire instruction) improves timing closure for FPGA synthesis and reduces the maximum clock period.
+
 ## Project Structure
 
 - **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, CSR file, top module)
@@ -58,10 +69,11 @@ cargo run --package cpu-sim -- test_programs/test.elf --verbose
 
 ## Documentation
 
-- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents
+- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
 - **[test_programs/README.md](test_programs/README.md)** - Information about test programs
 - **[riscv_macros/README.md](riscv_macros/README.md)** - Formatted print macros for bare-metal programs
+- **[docs/multi-cycle-implementation/](docs/multi-cycle-implementation/)** - Historical: Multi-cycle architecture implementation plan (completed)
 
 ## License
 

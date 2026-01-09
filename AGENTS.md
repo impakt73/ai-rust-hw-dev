@@ -4,12 +4,13 @@ This document provides essential information for AI coding agents working on thi
 
 ## Project Overview
 
-This is a **single-cycle RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
 - **Verification (Rust):** Test harness in `tests/` directory using marlin + Verilator
-- **Architecture:** Single-cycle design with exposed memory ports (no internal memory)
+- **Architecture:** Multi-cycle non-pipelined design with 11-state FSM and variable-latency memory support
+- **Memory Interface:** Ready/valid handshaking for instruction and data memory operations
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
 
 ## Critical Prerequisites
@@ -62,28 +63,30 @@ cargo clean
 
 ### Test Structure
 
-The project has 115+ comprehensive tests across all packages:
-- **cpu_verifier package (50 tests):**
-  - 16 ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
-  - 6 Register file tests: Validate register behavior (including x0 immutability)
-  - 28 CPU integration tests: Validate complete instruction execution including:
+The project has 146 comprehensive tests across all packages:
+- **tests package (63 tests):**
+  - ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+  - Register file tests: Validate register behavior (including x0 immutability)
+  - CPU integration tests: Validate complete instruction execution including:
     - Arithmetic, logic, and memory operations
     - Branches and jumps
     - Byte/halfword operations
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (65+ tests):**
-  - cpu-sim: 22+ integration tests including:
+- **Other packages (83 tests):**
+  - cpu-sim: 22 integration tests including:
     - ELF loading and execution
     - FIFO communication and packet protocol
     - VCD waveform dumping validation
     - Instruction trace callbacks with comprehensive validation
     - Programmatic instruction sequence testing with trace verification
     - Combined trace + VCD testing
+    - Variable memory latency testing
   - riscv_core: 33 utility and tracing tests
   - riscv_protocol: 6 packet serialization/deserialization tests
-  - riscv_macros: 4 macro functionality tests
+  - riscv_macros: 13 macro functionality tests
+  - cpu-sim test modules: 9 additional integration tests
 
 **New Validation Tests:**
 - `test_comprehensive_trace_validation`: Validates instruction trace accuracy for 12+ instructions with full operand checking (PC, register values, immediates)
@@ -176,12 +179,15 @@ top (CPU)
 
 ### Key Design Decisions
 
-1. **Single-cycle execution:** All instructions complete in one clock cycle
-2. **Exposed memory ports:** Instruction and data memory are external (managed by testbench)
-3. **Register x0 hardwired to zero:** Hardware enforcement (not just software convention)
-4. **Separate branch unit:** Dedicated branch comparison logic (not ALU-based)
-5. **CSR support:** Full Control and Status Register implementation (Zicsr extension)
-6. **FIFO-based debug:** MMIO FIFO at 0x40000000 for host communication with packet protocol
+1. **Multi-cycle execution:** Instructions take 3-5+ base cycles plus variable memory latency
+2. **FSM-based control:** 11-state finite state machine (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, HALT)
+3. **Variable-latency memory:** Ready/valid handshaking on instruction and data memory interfaces
+4. **Exposed memory ports:** Instruction and data memory are external (managed by testbench)
+5. **Register x0 hardwired to zero:** Hardware enforcement (not just software convention)
+6. **Separate branch unit:** Dedicated branch comparison logic (not ALU-based)
+7. **CSR support:** Full Control and Status Register implementation (Zicsr extension)
+8. **FIFO-based debug:** MMIO FIFO at 0x40000000 for host communication with packet protocol
+9. **Staging registers:** Flip-flop based intermediate storage for multi-cycle operation (FPGA-safe, no latches)
 
 ### Supported Instructions
 
@@ -263,7 +269,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 112 tests must pass (50 in cpu_verifier + 62 in other packages).
+   All 146 tests must pass.
 
 2. **Verify code formatting:**
    ```bash
@@ -339,7 +345,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 112 tests must pass: 50 in cpu_verifier + 62 in other packages)
+2. ✅ **Tests:** `cargo test --verbose` (all 146 tests must pass)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 
@@ -352,7 +358,7 @@ The workflow executes the following checks:
 1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with 112 total tests passed (50 in cpu_verifier + 62 in other packages)
+4. **Verify all tests pass:** Look for `test result: ok` with 146 total tests passed
 
 ### Signal Naming Conventions
 
@@ -426,7 +432,69 @@ For issues specific to this implementation, refer to:
 - Code comments in RTL and test files
 - This AGENTS.md file
 
+## Multi-cycle Architecture Details
+
+### FSM States
+
+The CPU uses an 11-state finite state machine:
+
+1. **S_IDLE (0x0):** After reset, before first fetch
+2. **S_FETCH (0x1):** Request instruction from memory, wait for `imem_ready`
+3. **S_DECODE (0x2):** Decode instruction, read registers
+4. **S_EXECUTE (0x3):** Execute ALU operation
+5. **S_MEM_ADDR (0x4):** Calculate memory address for load/store
+6. **S_MEM_READ (0x5):** Request data from memory, wait for `dmem_ready`
+7. **S_MEM_WRITE (0x6):** Write data to memory, wait for `dmem_ready`
+8. **S_WRITEBACK (0x7):** Write result to destination register
+9. **S_BRANCH (0x8):** Evaluate branch condition and update PC
+10. **S_CSR (0x9):** Execute CSR operation
+11. **S_HALT (0xA):** ECALL/EBREAK halt state
+
+### Instruction Cycle Counts
+
+Different instruction types require different numbers of cycles:
+
+| Instruction Class | Base Cycles | States |
+|-------------------|-------------|--------|
+| R-type (ADD, SUB, etc.) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| I-type Arithmetic | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| Load (LW, LH, LB) | 5 | FETCH → DECODE → MEM_ADDR → MEM_READ → WRITEBACK |
+| Store (SW, SH, SB) | 4 | FETCH → DECODE → MEM_ADDR → MEM_WRITE |
+| Branch | 3 | FETCH → DECODE → BRANCH |
+| Jump (JAL/JALR) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| Upper Immediate | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| M-Extension (MUL/DIV) | 4 | FETCH → DECODE → EXECUTE → WRITEBACK |
+| System (FENCE) | 2 | FETCH → DECODE |
+| System (ECALL/EBREAK) | 2 | FETCH → DECODE → HALT |
+| CSR Operations | 4 | FETCH → DECODE → CSR → WRITEBACK |
+
+**Note:** Memory latency adds additional cycles. For example, with 3-cycle memory latency, a load instruction takes 5 base cycles + 3 cycles in FETCH + 3 cycles in MEM_READ = 11 total cycles.
+
+### Memory Interface Signals
+
+The multi-cycle design adds handshaking signals:
+
+**Instruction Memory:**
+- `imem_req` (output): CPU requests instruction fetch
+- `imem_ready` (input): Memory has valid instruction data
+- `imem_addr` (output): Instruction address
+- `imem_data` (input): Instruction data
+
+**Data Memory:**
+- `dmem_req` (output): CPU requests memory operation
+- `dmem_ready` (input): Memory operation complete
+- `dmem_addr` (output): Data address
+- `dmem_wdata` (output): Write data
+- `dmem_rdata` (input): Read data
+- `dmem_we` (output): Write enable
+- `dmem_re` (output): Read enable
+- `dmem_size` (output): Operation size (byte/halfword/word)
+
+### Instruction Completion Signal
+
+- `instr_complete` (output): High for 1 cycle when instruction finishes execution
+
 ---
 
-**Last Updated:** 2026-01-02
+**Last Updated:** 2026-01-09
 **Maintainer:** Automated by GitHub Copilot
