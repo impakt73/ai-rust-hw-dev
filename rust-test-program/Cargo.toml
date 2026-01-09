@@ -112,3 +112,8 @@ test = false
 name = "test_panic"
 path = "src/test_panic.rs"
 test = false
+
+[[bin]]
+name = "test_minimal_c"
+path = "src/test_minimal_c.rs"
+test = false

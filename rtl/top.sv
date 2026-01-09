@@ -377,7 +377,8 @@ module top (
             // 32-bit instruction: need full word
             if (buffer_valid) begin
                 // Lower half is in buffer, upper half is in current fetch
-                assembled_insn = {imem_data[15:0], buffered_half};
+                // buffered_half contains the lower 16 bits, imem_data[31:16] contains upper 16 bits
+                assembled_insn = {imem_data[31:16], buffered_half};
             end else begin
                 // Both halves in current fetch (word-aligned)
                 assembled_insn = imem_data;
