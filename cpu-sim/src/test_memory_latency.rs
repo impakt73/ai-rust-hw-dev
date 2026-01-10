@@ -36,7 +36,7 @@ fn test_zero_latency_default() {
         None,
         0, // Zero latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions);
+            sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
         |_sim, _result| {},
@@ -77,7 +77,7 @@ fn test_multi_cycle_memory_latency() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions);
+            sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
         |_sim, _result| {},
@@ -128,7 +128,7 @@ fn test_load_store_with_latency() {
         None,
         2, // 2-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions);
+            sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
         |_sim, _result| {},

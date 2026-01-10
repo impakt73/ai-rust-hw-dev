@@ -1,4 +1,5 @@
 use super::*;
+use crate::hung_detector::HungDetectorConfig;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -507,11 +508,9 @@ fn test_packet_protocol_end_to_end() {
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         0, // Zero latency
+        None, // Disable hung detection for this test (program ends with infinite loop/halt pattern)
     )
     .expect("Failed to create simulator");
-
-    // Disable hung detection for this test as the program ends with an infinite loop (halt pattern)
-    sim.set_hung_detection(false);
 
     // Load ELF into simulator memory
     let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load packet_test.elf");
@@ -771,6 +770,7 @@ fn test_println_macro() {
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         0, // Zero latency
+            Some(HungDetectorConfig::default()),
     )
     .expect("Failed to create simulator");
 
@@ -1317,9 +1317,7 @@ fn test_hung_detection_catches_infinite_loop() {
         None,   // No VCD
         0,      // Zero latency
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes);
-            // Manually set valid PC range for programmatic loading
-            sim.set_valid_pc_range(start_addr, start_addr + program_bytes.len() as u32);
+            sim.write_memory_region(start_addr, &program_bytes, true);
             Ok(start_addr)
         },
         |_sim, _result| {},
@@ -1352,17 +1350,18 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     use riscv_core::instruction::jal;
 
     // Create a jump that goes outside the loaded program
-    // JAL with large offset that will jump outside valid memory
+    // We'll load a single instruction and jump far beyond it
     let start_addr = 0x8000_0000;
-    let valid_size = 0x100; // Only 256 bytes valid
     
-    // Jump forward by 0x200 bytes (512), which is outside our valid range
-    let jump_instr = jal(0, 0x200);
+    // Jump forward by 0x10000 bytes (64KB), which is way outside our 4-byte program
+    let jump_instr = jal(0, 0x10000);
     let program_bytes: Vec<u8> = vec![jump_instr]
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    // write_memory_region will set valid PC range to [start_addr, start_addr + 4)
+    // The jump will go to start_addr + 0x10000, which is outside this range
     let result = run_program(
         10000,
         false,
@@ -1372,9 +1371,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
         None,
         0,
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes);
-            // Set a restricted valid range
-            sim.set_valid_pc_range(start_addr, start_addr + valid_size);
+            sim.write_memory_region(start_addr, &program_bytes, true);
             Ok(start_addr)
         },
         |_sim, _result| {},

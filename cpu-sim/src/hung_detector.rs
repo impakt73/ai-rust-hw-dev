@@ -165,6 +165,13 @@ impl HungDetector {
         self.config.valid_pc_end = Some(end);
     }
 
+    /// Get the current valid PC range
+    ///
+    /// Returns (start, end) where both are Option<u32>
+    pub fn get_valid_pc_range(&self) -> (Option<u32>, Option<u32>) {
+        (self.config.valid_pc_start, self.config.valid_pc_end)
+    }
+
     /// Check for hung state after an instruction completes
     ///
     /// # Arguments

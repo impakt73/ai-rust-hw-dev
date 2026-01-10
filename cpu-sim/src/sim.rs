@@ -61,6 +61,7 @@ where
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         mem_latency_cycles: u32,
+        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime (without tracing by default)
         let cpu = runtime
@@ -68,6 +69,8 @@ where
             .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
+
+        let hung_detector = hung_detector_config.map(HungDetector::new);
 
         Ok(Simulator {
             cpu,
@@ -84,7 +87,7 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
-            hung_detector: Some(HungDetector::new_default()),
+            hung_detector,
         })
     }
 
@@ -99,6 +102,7 @@ where
         trace_callback: Option<T>,
         vcd_path: &str,
         mem_latency_cycles: u32,
+        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
         // Create CPU model with tracing enabled
         let config = VerilatedModelConfig {
@@ -115,6 +119,8 @@ where
         log::info!("VCD tracing enabled, writing to: {}", vcd_path);
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
+        let hung_detector = hung_detector_config.map(HungDetector::new);
+
         Ok(Simulator {
             cpu,
             bus,
@@ -130,7 +136,7 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
-            hung_detector: Some(HungDetector::new_default()),
+            hung_detector,
         })
     }
 
@@ -139,36 +145,13 @@ where
         self.print_debug_packets = enable;
     }
 
-    /// Enable or disable hung state detection
-    pub fn set_hung_detection(&mut self, enable: bool) {
-        if enable && self.hung_detector.is_none() {
-            self.hung_detector = Some(HungDetector::new_default());
-        } else if !enable {
-            self.hung_detector = None;
-        }
-    }
-
-    /// Configure the hung state detector
-    ///
-    /// # Arguments
-    /// * `config` - Configuration for the hung state detector
-    pub fn set_hung_detector_config(&mut self, config: HungDetectorConfig) {
-        self.hung_detector = Some(HungDetector::new(config));
-    }
-
-    /// Set the valid PC range for hung detection
+    /// Set the valid PC range for hung detection (internal use)
     ///
     /// This is useful for detecting when the PC jumps outside the loaded program memory.
     ///
     /// # Arguments
     /// * `start` - Start address of valid instruction memory (inclusive)
     /// * `end` - End address of valid instruction memory (exclusive)
-    pub fn set_valid_pc_range(&mut self, start: u32, end: u32) {
-        if let Some(ref mut detector) = self.hung_detector {
-            detector.set_valid_pc_range(start, end);
-        }
-    }
-
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
     /// This allows the host to send data to the simulated program
     pub fn fifo_write_rx(&mut self, word: u32) {
@@ -602,9 +585,13 @@ where
     /// This allows external code to populate the simulator's memory with arbitrary data,
     /// such as programmatically generated instructions or test data.
     ///
+    /// If `is_instructions` is true, the memory range will be marked as valid for the PC
+    /// (program counter) for hung state detection purposes.
+    ///
     /// # Arguments
     /// * `start_addr` - Starting address of the memory region to write
     /// * `data` - Byte slice containing the data to write
+    /// * `is_instructions` - If true, marks this region as valid for PC execution
     ///
     /// # Examples
     /// ```
@@ -620,16 +607,43 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(hung_detector::HungDetectorConfig::default()),
     /// )?;
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// sim.write_memory_region(0x8000_0000, &instructions);
+    /// sim.write_memory_region(0x8000_0000, &instructions, true);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
             self.bus.dram.write_byte(addr, byte);
+        }
+        
+        // If this is instruction memory, expand the valid PC range for hung detection
+        if is_instructions && !data.is_empty() {
+            let new_start = start_addr;
+            let new_end = start_addr.wrapping_add(data.len() as u32);
+            
+            // Get current range and expand it
+            if let Some(ref mut detector) = self.hung_detector {
+                let (current_start, current_end) = detector.get_valid_pc_range();
+                
+                // Expand the range to include the new region
+                let expanded_start = if let Some(cs) = current_start {
+                    cs.min(new_start)
+                } else {
+                    new_start
+                };
+                
+                let expanded_end = if let Some(ce) = current_end {
+                    ce.max(new_end)
+                } else {
+                    new_end
+                };
+                
+                detector.set_valid_pc_range(expanded_start, expanded_end);
+            }
         }
     }
 

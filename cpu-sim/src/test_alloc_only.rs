@@ -33,6 +33,7 @@ mod tests {
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
             0, // Zero latency
+            Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
 

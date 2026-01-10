@@ -105,7 +105,8 @@ where
                     };
 
                     let segment_data = &file_data[offset..end];
-                    sim.write_memory_region(vaddr, segment_data);
+                    // Write to memory (passing true for is_instructions if segment is executable)
+                    sim.write_memory_region(vaddr, segment_data, is_executable);
                     log::info!(
                         "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes{}",
                         vaddr,
@@ -129,12 +130,7 @@ where
         }
     }
 
-    // Set valid PC range for hung detection if we found executable segments
-    if let (Some(start), Some(end)) = (min_pc, max_pc) {
-        sim.set_valid_pc_range(start, end);
-        log::info!("Valid PC range set: [0x{:08x}, 0x{:08x})", start, end);
-    }
-
+    // Note: PC range was already set by write_memory_region calls above for executable segments
     log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);
     Ok(entry_point)
 }
@@ -634,6 +630,7 @@ where
             trace_callback,
             vcd,
             mem_latency_cycles,
+            Some(HungDetectorConfig::default()),
         )?
     } else {
         Simulator::new(
@@ -644,6 +641,7 @@ where
             fifo_callback,
             trace_callback,
             mem_latency_cycles,
+            Some(HungDetectorConfig::default()),
         )?
     };
 
