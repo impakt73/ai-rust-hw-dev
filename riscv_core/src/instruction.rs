@@ -408,7 +408,7 @@ pub fn c_lw(rd: u32, rs1: u32, offset: u32) -> u16 {
     // Per RISC-V C extension spec:
     // insn[5] = uimm[6], insn[6] = uimm[2], insn[12:10] = uimm[5:3]
     insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
-    insn |= (((u >> 0) & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= ((u & 0x1) as u16) << 6; // insn[6] = uimm[2]
     insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
     insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
     insn |= (((rd - 8) & 0x7) as u16) << 2; // insn[4:2] = rd'
@@ -432,7 +432,7 @@ pub fn c_sw(rs1: u32, rs2: u32, offset: u32) -> u16 {
     // Per RISC-V C extension spec:
     // insn[5] = uimm[6], insn[6] = uimm[2], insn[12:10] = uimm[5:3]
     insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
-    insn |= (((u >> 0) & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= ((u & 0x1) as u16) << 6; // insn[6] = uimm[2]
     insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
     insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
     insn |= (((rs2 - 8) & 0x7) as u16) << 2; // insn[4:2] = rs2'

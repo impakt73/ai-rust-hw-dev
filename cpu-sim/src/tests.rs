@@ -1201,7 +1201,7 @@ fn test_panic_handler() {
     println!("========================================");
 
     let elf_path = test_program_path("test_panic.elf");
-    
+
     // Run the panic test program with sufficient cycles
     let result = run_elf(&elf_path, 5000, false).expect("Simulation should succeed");
 
