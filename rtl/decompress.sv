@@ -243,12 +243,24 @@ module decompress (
             3'b110: begin  // C.BEQZ
                 // Format: 110 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
                 // Expands to: beq rs1', x0, offset
+                // Extract bits: offset = {offset[8], offset[7:6], offset[5], offset[4:3], offset[2:1], 1'b0}
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
                 // BEQ rs1', x0, offset
-                // Place fields per B-type: imm[12], imm[10:5], rs2, rs1, funct3, imm[4:1], imm[11], opcode
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b000,
-                           imm_b[4:1], imm_b[0], 7'b1100011};
+                // B-type encoding needs 13-bit immediate: imm[12:0] where imm[0]=0
+                // Sign-extend 9-bit imm_b to 13 bits
+                // inst[31] = imm[12], inst[30:25] = imm[10:5], inst[11:8] = imm[4:1], inst[7] = imm[11]
+                insn_32 = {{20{imm_b[8]}},  // Sign extension for bits 31:12 (imm[12])
+                           imm_b[8],         // bit 30 (imm[10])  
+                           imm_b[8],         // bit 29 (imm[9])
+                           imm_b[8],         // bit 28 (imm[8])
+                           imm_b[7:5],       // bits 27:25 (imm[7:5])
+                           5'b0,             // rs2 = x0
+                           rs1_full,         // rs1
+                           3'b000,           // funct3 = BEQ
+                           imm_b[4:1],       // bits 11:8 (imm[4:1])
+                           imm_b[8],         // bit 7 (imm[11])
+                           7'b1100011};      // BRANCH opcode
             end
             
             3'b111: begin  // C.BNEZ
@@ -256,9 +268,18 @@ module decompress (
                 // Expands to: bne rs1', x0, offset
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
-                // BNE rs1', x0, offset
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b001,
-                           imm_b[4:1], imm_b[0], 7'b1100011};
+                // BNE rs1', x0, offset  
+                insn_32 = {{20{imm_b[8]}},  // Sign extension for bits 31:12 (imm[12])
+                           imm_b[8],         // bit 30 (imm[10])
+                           imm_b[8],         // bit 29 (imm[9])
+                           imm_b[8],         // bit 28 (imm[8])
+                           imm_b[7:5],       // bits 27:25 (imm[7:5])
+                           5'b0,             // rs2 = x0
+                           rs1_full,         // rs1
+                           3'b001,           // funct3 = BNE
+                           imm_b[4:1],       // bits 11:8 (imm[4:1])
+                           imm_b[8],         // bit 7 (imm[11])
+                           7'b1100011};      // BRANCH opcode
             end
         endcase
     endtask
