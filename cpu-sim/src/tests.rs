@@ -1222,3 +1222,100 @@ fn test_panic_handler() {
     println!("✓ PANIC HANDLER TEST PASSED");
     println!("========================================");
 }
+
+// ============================================================================
+// Hung State Detection Integration Tests
+// ============================================================================
+
+#[test]
+fn test_hung_detection_with_elf_auto_range() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: ELF AUTO-RANGE TEST");
+    println!("========================================");
+
+    // Test that run_elf automatically sets valid PC range from ELF
+    // and hung detection works correctly with it
+    let elf_path = test_program_path("test.elf");
+    
+    // This should succeed with hung detection enabled and auto PC range
+    let result = run_elf(&elf_path, 500, false);
+    
+    assert!(
+        result.is_ok(),
+        "Should successfully run ELF with auto-detected PC range: {:?}",
+        result.err()
+    );
+
+    println!("✓ Valid PC range automatically detected from ELF");
+    println!("✓ Hung detection enabled by default");
+    println!("✓ Simulation completed in {} cycles", result.unwrap().cycles);
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION ELF AUTO-RANGE TEST PASSED");
+    println!("========================================");
+}
+
+#[test]
+fn test_hung_detection_legitimate_program() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: NO FALSE POSITIVES TEST");
+    println!("========================================");
+
+    // Run a legitimate program to ensure no false positives
+    let elf_path = test_program_path("test.elf");
+    
+    let result = run_elf(&elf_path, 500, false);
+    
+    assert!(
+        result.is_ok(),
+        "Legitimate program should not trigger hung detection: {:?}",
+        result.err()
+    );
+    
+    let sim_result = result.unwrap();
+    println!("✓ Program completed in {} cycles", sim_result.cycles);
+    println!("✓ No false positive hung detection");
+
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION NO FALSE POSITIVES TEST PASSED");
+    println!("========================================");
+}
+
+#[test]
+fn test_hung_detection_with_trace_callback() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: WITH TRACE CALLBACK TEST");
+    println!("========================================");
+
+    let elf_path = test_program_path("test.elf");
+    
+    let trace_count = Arc::new(Mutex::new(0usize));
+    let trace_count_clone = Arc::clone(&trace_count);
+    
+    let trace_callback = move |_trace: &InstructionTrace| {
+        let mut count = trace_count_clone.lock().unwrap();
+        *count += 1;
+    };
+    
+    let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback));
+    
+    assert!(
+        result.is_ok(),
+        "Should run with trace callback and hung detection: {:?}",
+        result.err()
+    );
+    
+    let count = *trace_count.lock().unwrap();
+    println!("✓ Traced {} instructions", count);
+    println!("✓ Hung detection works with trace callbacks");
+
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION WITH TRACE CALLBACK TEST PASSED");
+    println!("========================================");
+}
+

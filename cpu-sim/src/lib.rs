@@ -8,9 +8,6 @@ pub mod sim;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod test_hung_detection;
-
 pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
