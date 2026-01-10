@@ -1287,3 +1287,111 @@ fn test_hung_detection_with_trace_callback() {
     println!("========================================");
 }
 
+
+// Tests that verify hung states ARE detected (not just false positives)
+#[test]
+fn test_hung_detection_catches_infinite_loop() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: INFINITE LOOP DETECTION");
+    println!("========================================");
+
+    // Use run_program to create a simple infinite loop programmatically
+    use riscv_core::instruction::jal;
+
+    // Create an infinite loop: JAL x0, 0 (jump to self)
+    let infinite_loop_instr = jal(0, 0);
+    let start_addr = 0x8000_0000;
+    let program_bytes: Vec<u8> = vec![infinite_loop_instr]
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    let result = run_program(
+        10000,  // max_cycles
+        false,  // Don't print instruction trace
+        false,  // Don't print FSM state
+        None::<fn(u32)>,
+        None::<fn(&InstructionTrace)>,
+        None,   // No VCD
+        0,      // Zero latency
+        |sim| {
+            sim.write_memory_region(start_addr, &program_bytes);
+            // Manually set valid PC range for programmatic loading
+            sim.set_valid_pc_range(start_addr, start_addr + program_bytes.len() as u32);
+            Ok(start_addr)
+        },
+        |_sim, _result| {},
+    );
+
+    // Should get an error about PC stuck
+    assert!(result.is_err(), "Should detect infinite loop");
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("PC stuck") || err_msg.contains("Hung state"),
+        "Error should mention PC stuck or hung state, got: {}",
+        err_msg
+    );
+
+    println!("✓ Successfully detected infinite loop");
+    println!("✓ Error message: {}", err_msg);
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION INFINITE LOOP TEST PASSED");
+    println!("========================================");
+}
+
+#[test]
+fn test_hung_detection_catches_out_of_bounds_pc() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: OUT OF BOUNDS PC");
+    println!("========================================");
+
+    use riscv_core::instruction::jal;
+
+    // Create a jump that goes outside the loaded program
+    // JAL with large offset that will jump outside valid memory
+    let start_addr = 0x8000_0000;
+    let valid_size = 0x100; // Only 256 bytes valid
+    
+    // Jump forward by 0x200 bytes (512), which is outside our valid range
+    let jump_instr = jal(0, 0x200);
+    let program_bytes: Vec<u8> = vec![jump_instr]
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    let result = run_program(
+        10000,
+        false,
+        false,
+        None::<fn(u32)>,
+        None::<fn(&InstructionTrace)>,
+        None,
+        0,
+        |sim| {
+            sim.write_memory_region(start_addr, &program_bytes);
+            // Set a restricted valid range
+            sim.set_valid_pc_range(start_addr, start_addr + valid_size);
+            Ok(start_addr)
+        },
+        |_sim, _result| {},
+    );
+
+    // Should get an error about PC out of bounds
+    assert!(result.is_err(), "Should detect PC out of bounds");
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("outside valid") || err_msg.contains("PcOutOfBounds") || err_msg.contains("Hung state"),
+        "Error should mention PC out of bounds, got: {}",
+        err_msg
+    );
+
+    println!("✓ Successfully detected out-of-bounds PC jump");
+    println!("✓ Error message: {}", err_msg);
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION OUT OF BOUNDS TEST PASSED");
+    println!("========================================");
+}
