@@ -139,9 +139,14 @@ module decompress (
                 imm_j = {insn_16[12], insn_16[8], insn_16[10:9], insn_16[6], 
                          insn_16[7], insn_16[2], insn_16[11], insn_16[5:3], 1'b0};
                 
-                // JAL x1, offset (sign-extended)
-                insn_32 = {{11{imm_j[11]}}, imm_j[11], imm_j[10:1], imm_j[0], 
-                           8'b0, 5'd1, 7'b1101111};
+                // JAL x1, offset
+                // J-type format: {imm[20], imm[10:1], imm[11], imm[19:12], rd, opcode}
+                insn_32 = {imm_j[11],           // inst[31] = imm[20] (sign bit)
+                           imm_j[10:1],         // inst[30:21] = imm[10:1]
+                           imm_j[11],           // inst[20] = imm[11]
+                           {8{imm_j[11]}},      // inst[19:12] = imm[19:12] (sign extension)
+                           5'd1,                // rd = x1
+                           7'b1101111};         // JAL opcode
             end
             
             3'b010: begin  // C.LI
@@ -232,12 +237,19 @@ module decompress (
             3'b101: begin  // C.J
                 // Format: 101 imm[11|4|9:8|10|6|7|3:1|5] 01
                 // Expands to: jal x0, offset
+                // Extract 12-bit immediate from compressed instruction
                 imm_j = {insn_16[12], insn_16[8], insn_16[10:9], insn_16[6], 
                          insn_16[7], insn_16[2], insn_16[11], insn_16[5:3], 1'b0};
                 
                 // JAL x0, offset
-                insn_32 = {{11{imm_j[11]}}, imm_j[11], imm_j[10:1], imm_j[0], 
-                           8'b0, 5'b0, 7'b1101111};
+                // J-type format: {imm[20], imm[10:1], imm[11], imm[19:12], rd, opcode}
+                // Sign-extend 12-bit imm_j to 21 bits, then place in scrambled J-type order
+                insn_32 = {imm_j[11],           // inst[31] = imm[20] (sign bit, extended from imm[11])
+                           imm_j[10:1],         // inst[30:21] = imm[10:1]
+                           imm_j[11],           // inst[20] = imm[11]
+                           {8{imm_j[11]}},      // inst[19:12] = imm[19:12] (sign extension)
+                           5'b0,                // rd = x0
+                           7'b1101111};         // JAL opcode
             end
             
             3'b110: begin  // C.BEQZ
