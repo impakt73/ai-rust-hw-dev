@@ -67,7 +67,7 @@ where
     let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)?;
 
     let mut entry_point = 0;
-    
+
     // Track the bounds of loaded code segments for hung detection
     let mut min_pc: Option<u32> = None;
     let mut max_pc: Option<u32> = None;
@@ -86,7 +86,7 @@ where
                 let file_size = phdr.p_filesz as usize;
                 let mem_size = phdr.p_memsz as usize; // May be larger than file_size (BSS)
                 let offset = phdr.p_offset as usize;
-                
+
                 // Check if segment is executable (contains code)
                 let is_executable = (phdr.p_flags & elf::abi::PF_X) != 0;
 
@@ -116,19 +116,19 @@ where
                         if is_executable { " (executable)" } else { "" }
                     );
                 }
-                
+
                 // Track bounds of executable segments for PC range checking
                 if is_executable && mem_size > 0 {
                     let segment_start = vaddr;
                     let segment_end = vaddr.saturating_add(mem_size as u32);
-                    
+
                     min_pc = Some(min_pc.map_or(segment_start, |m| m.min(segment_start)));
                     max_pc = Some(max_pc.map_or(segment_end, |m| m.max(segment_end)));
                 }
             }
         }
     }
-    
+
     // Set valid PC range for hung detection if we found executable segments
     if let (Some(start), Some(end)) = (min_pc, max_pc) {
         sim.set_valid_pc_range(start, end);

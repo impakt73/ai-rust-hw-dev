@@ -510,6 +510,9 @@ fn test_packet_protocol_end_to_end() {
     )
     .expect("Failed to create simulator");
 
+    // Disable hung detection for this test as the program ends with an infinite loop (halt pattern)
+    sim.set_hung_detection(false);
+
     // Load ELF into simulator memory
     let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load packet_test.elf");
 

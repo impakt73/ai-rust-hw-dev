@@ -138,7 +138,7 @@ where
     pub fn set_print_debug_packets(&mut self, enable: bool) {
         self.print_debug_packets = enable;
     }
-    
+
     /// Enable or disable hung state detection
     pub fn set_hung_detection(&mut self, enable: bool) {
         if enable && self.hung_detector.is_none() {
@@ -147,7 +147,7 @@ where
             self.hung_detector = None;
         }
     }
-    
+
     /// Configure the hung state detector
     ///
     /// # Arguments
@@ -155,7 +155,7 @@ where
     pub fn set_hung_detector_config(&mut self, config: HungDetectorConfig) {
         self.hung_detector = Some(HungDetector::new(config));
     }
-    
+
     /// Set the valid PC range for hung detection
     ///
     /// This is useful for detecting when the PC jumps outside the loaded program memory.
@@ -273,7 +273,7 @@ where
         if let Some(ref mut vcd) = self.vcd {
             vcd.dump(3); // Capture state with reset released
         }
-        
+
         // Reset the hung detector state
         if let Some(ref mut detector) = self.hung_detector {
             detector.reset();
@@ -422,18 +422,15 @@ where
                     let pc = self.cpu.debug_pc;
                     let instruction = self.cpu.debug_instruction;
                     let fsm_state = self.cpu.debug_fsm_state;
-                    
-                    if let Err(hung_err) = detector.check_instruction(
-                        pc,
-                        instruction,
-                        fsm_state,
-                        self.cycle_count,
-                    ) {
+
+                    if let Err(hung_err) =
+                        detector.check_instruction(pc, instruction, fsm_state, self.cycle_count)
+                    {
                         // Convert hung state error to a panic with detailed message
                         panic!("Hung state detected: {}", hung_err);
                     }
                 }
-                
+
                 break;
             }
         }
