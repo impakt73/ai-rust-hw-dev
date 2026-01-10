@@ -1,12 +1,14 @@
 pub mod bus;
 pub mod dram;
 pub mod fifo;
+pub mod hung_detector;
 pub mod packet_transport;
 pub mod sim;
 
 #[cfg(test)]
 mod tests;
 
+pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
@@ -62,6 +64,10 @@ where
     let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)?;
 
     let mut entry_point = 0;
+    
+    // Track the bounds of loaded code segments for hung detection
+    let mut min_pc: Option<u32> = None;
+    let mut max_pc: Option<u32> = None;
 
     // Get the entry point
     if let Ok(header) = elf_file.ehdr.e_entry.try_into() {
@@ -75,7 +81,11 @@ where
             if phdr.p_type == elf::abi::PT_LOAD {
                 let vaddr = phdr.p_vaddr as u32;
                 let file_size = phdr.p_filesz as usize;
+                let mem_size = phdr.p_memsz as usize; // May be larger than file_size (BSS)
                 let offset = phdr.p_offset as usize;
+                
+                // Check if segment is executable (contains code)
+                let is_executable = (phdr.p_flags & elf::abi::PF_X) != 0;
 
                 if file_size > 0 {
                     // Validate that the segment lies within the file data to avoid panics
@@ -97,13 +107,29 @@ where
                     let segment_data = &file_data[offset..end];
                     sim.write_memory_region(vaddr, segment_data);
                     log::info!(
-                        "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
+                        "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes{}",
                         vaddr,
-                        file_size
+                        file_size,
+                        if is_executable { " (executable)" } else { "" }
                     );
+                }
+                
+                // Track bounds of executable segments for PC range checking
+                if is_executable && mem_size > 0 {
+                    let segment_start = vaddr;
+                    let segment_end = vaddr.saturating_add(mem_size as u32);
+                    
+                    min_pc = Some(min_pc.map_or(segment_start, |m| m.min(segment_start)));
+                    max_pc = Some(max_pc.map_or(segment_end, |m| m.max(segment_end)));
                 }
             }
         }
+    }
+    
+    // Set valid PC range for hung detection if we found executable segments
+    if let (Some(start), Some(end)) = (min_pc, max_pc) {
+        sim.set_valid_pc_range(start, end);
+        log::info!("Valid PC range set: [0x{:08x}, 0x{:08x})", start, end);
     }
 
     log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);

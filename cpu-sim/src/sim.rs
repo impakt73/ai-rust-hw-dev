@@ -1,4 +1,5 @@
 use crate::bus::SystemBus;
+use crate::hung_detector::{HungDetector, HungDetectorConfig};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
@@ -42,6 +43,8 @@ where
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
     imem_delay_counter: u32, // Current delay counter for instruction memory
     dmem_delay_counter: u32, // Current delay counter for data memory
+    // Hung state detection
+    hung_detector: Option<HungDetector>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -81,6 +84,7 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
+            hung_detector: Some(HungDetector::new_default()),
         })
     }
 
@@ -126,12 +130,43 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
+            hung_detector: Some(HungDetector::new_default()),
         })
     }
 
     /// Enable or disable automatic printing of DebugPacket messages
     pub fn set_print_debug_packets(&mut self, enable: bool) {
         self.print_debug_packets = enable;
+    }
+    
+    /// Enable or disable hung state detection
+    pub fn set_hung_detection(&mut self, enable: bool) {
+        if enable && self.hung_detector.is_none() {
+            self.hung_detector = Some(HungDetector::new_default());
+        } else if !enable {
+            self.hung_detector = None;
+        }
+    }
+    
+    /// Configure the hung state detector
+    ///
+    /// # Arguments
+    /// * `config` - Configuration for the hung state detector
+    pub fn set_hung_detector_config(&mut self, config: HungDetectorConfig) {
+        self.hung_detector = Some(HungDetector::new(config));
+    }
+    
+    /// Set the valid PC range for hung detection
+    ///
+    /// This is useful for detecting when the PC jumps outside the loaded program memory.
+    ///
+    /// # Arguments
+    /// * `start` - Start address of valid instruction memory (inclusive)
+    /// * `end` - End address of valid instruction memory (exclusive)
+    pub fn set_valid_pc_range(&mut self, start: u32, end: u32) {
+        if let Some(ref mut detector) = self.hung_detector {
+            detector.set_valid_pc_range(start, end);
+        }
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -237,6 +272,11 @@ where
         self.cpu.eval();
         if let Some(ref mut vcd) = self.vcd {
             vcd.dump(3); // Capture state with reset released
+        }
+        
+        // Reset the hung detector state
+        if let Some(ref mut detector) = self.hung_detector {
+            detector.reset();
         }
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
@@ -377,6 +417,23 @@ where
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
             if self.cpu.instr_complete != 0 {
+                // Check for hung state before breaking
+                if let Some(ref mut detector) = self.hung_detector {
+                    let pc = self.cpu.debug_pc;
+                    let instruction = self.cpu.debug_instruction;
+                    let fsm_state = self.cpu.debug_fsm_state;
+                    
+                    if let Err(hung_err) = detector.check_instruction(
+                        pc,
+                        instruction,
+                        fsm_state,
+                        self.cycle_count,
+                    ) {
+                        // Convert hung state error to a panic with detailed message
+                        panic!("Hung state detected: {}", hung_err);
+                    }
+                }
+                
                 break;
             }
         }
