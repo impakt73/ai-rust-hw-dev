@@ -128,8 +128,8 @@ module decompress (
                 end else begin
                     // C.ADDI
                     nzimm_addi = imm;
-                    // Sign-extend nzimm
-                    insn_32 = {{26{nzimm_addi[5]}}, nzimm_addi, rd_rs1, 3'b000, rd_rs1, 7'b0010011};
+                    // Sign-extend 6-bit immediate to 12 bits for ADDI
+                    insn_32 = {{6{nzimm_addi[5]}}, nzimm_addi, rd_rs1, 3'b000, rd_rs1, 7'b0010011};
                 end
             end
             
@@ -151,7 +151,9 @@ module decompress (
             
             3'b010: begin  // C.LI
                 // Expands to: addi rd, x0, imm
-                insn_32 = {{26{imm[5]}}, imm, 5'b0, 3'b000, rd_rs1, 7'b0010011};
+                // ADDI format: {imm[11:0], rs1[4:0], funct3[2:0], rd[4:0], opcode[6:0]}
+                // Sign-extend 6-bit imm to 12 bits
+                insn_32 = {{6{imm[5]}}, imm, 5'b0, 3'b000, rd_rs1, 7'b0010011};
             end
             
             3'b011: begin  // C.ADDI16SP / C.LUI
@@ -208,7 +210,8 @@ module decompress (
                     
                     2'b10: begin  // C.ANDI
                         // ANDI rd', rd', imm
-                        insn_32 = {{26{imm[5]}}, imm, rs1_full, 3'b111, rs1_full, 7'b0010011};
+                        // Sign-extend 6-bit immediate to 12 bits for ANDI
+                        insn_32 = {{6{imm[5]}}, imm, rs1_full, 3'b111, rs1_full, 7'b0010011};
                     end
                     
                     2'b11: begin  // C.SUB, C.XOR, C.OR, C.AND

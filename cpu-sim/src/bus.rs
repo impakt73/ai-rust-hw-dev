@@ -24,20 +24,31 @@ impl SystemBus {
     /// Read a 32-bit word from the bus
     /// Routes to FIFO or DRAM based on address
     pub fn read_word(&mut self, addr: u32) -> u32 {
-        match addr {
+        let value = match addr {
             // FIFO DATA register
             a if a == FIFO_BASE + FIFO_DATA_OFFSET => self.fifo.read_data(),
             // FIFO STATUS register
             a if a == FIFO_BASE + FIFO_STATUS_OFFSET => self.fifo.read_status(),
             // Default: DRAM
             _ => self.dram.read_word(addr),
+        };
+        // DEBUG: Log reads from data section
+        if addr >= 0x80001a00 && addr < 0x80002000 {
+            eprintln!("[MEM_DEBUG] READ_WORD: addr=0x{:08x} -> data=0x{:08x}", addr, value);
         }
+        value
     }
 
     /// Read a single byte from the bus
     /// Routes to DRAM only (FIFO is word-based)
     pub fn read_byte(&mut self, addr: u32) -> u8 {
-        self.dram.read_byte(addr)
+        let value = self.dram.read_byte(addr);
+        // DEBUG: Log reads from data section  
+        if addr >= 0x80001a00 && addr < 0x80002000 {
+            eprintln!("[MEM_DEBUG] READ_BYTE: addr=0x{:08x} -> data=0x{:02x} ('{}')", 
+                     addr, value, if value.is_ascii_graphic() { value as char } else { '.' });
+        }
+        value
     }
 
     /// Read a 16-bit halfword from the bus
