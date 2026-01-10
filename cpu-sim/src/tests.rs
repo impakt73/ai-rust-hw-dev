@@ -786,7 +786,7 @@ fn test_println_macro() {
 
     // Run until halt
     let result = sim
-        .run(entry_point, 17000)
+        .run(entry_point, 25000)
         .expect("Simulation should succeed");
 
     // Check FIFO data

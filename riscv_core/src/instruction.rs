@@ -403,11 +403,13 @@ pub fn c_lw(rd: u32, rs1: u32, offset: u32) -> u16 {
         "offset must be multiple of 4 and <=124"
     );
 
-    let u = offset >> 2; // uimm bits
+    let u = offset >> 2; // uimm bits [6:2]
     let mut insn: u16 = 0;
-    insn |= (((u >> 4) & 0x1) as u16) << 6; // insn[6] = uimm[4]
-    insn |= (((u >> 3) & 0x1) as u16) << 5; // insn[5] = uimm[3]
-    insn |= ((u & 0x7) as u16) << 10; // insn[12:10] = uimm[2:0]
+    // Per RISC-V C extension spec:
+    // insn[5] = uimm[6], insn[6] = uimm[2], insn[12:10] = uimm[5:3]
+    insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
+    insn |= (((u >> 0) & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
     insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
     insn |= (((rd - 8) & 0x7) as u16) << 2; // insn[4:2] = rd'
     insn |= (0b010u16) << 13; // funct3 = 010
@@ -425,11 +427,13 @@ pub fn c_sw(rs1: u32, rs2: u32, offset: u32) -> u16 {
         "offset must be multiple of 4 and <=124"
     );
 
-    let u = offset >> 2;
+    let u = offset >> 2; // uimm bits [6:2]
     let mut insn: u16 = 0;
-    insn |= (((u >> 4) & 0x1) as u16) << 6; // insn[6]
-    insn |= (((u >> 3) & 0x1) as u16) << 5; // insn[5]
-    insn |= ((u & 0x7) as u16) << 10; // insn[12:10]
+    // Per RISC-V C extension spec:
+    // insn[5] = uimm[6], insn[6] = uimm[2], insn[12:10] = uimm[5:3]
+    insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
+    insn |= (((u >> 0) & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
     insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
     insn |= (((rs2 - 8) & 0x7) as u16) << 2; // insn[4:2] = rs2'
     insn |= (0b110u16) << 13; // funct3 = 110
