@@ -346,8 +346,13 @@ module top (
             buffered_half <= buffered_half_next;
             buffer_valid <= buffer_valid_next;
             // Track whether current instruction being executed is compressed
-            if (ir_write)
+            if (ir_write) begin
                 current_insn_compressed <= decomp_is_compressed;
+                // DEBUG: Log fetch buffer state
+                $display("[RVC_DEBUG] PC=0x%08x ir_write=1 decomp_is_compressed=%b buffer_valid=%b->%b buffered_half=0x%04x->0x%04x imem_data=0x%08x current_half=0x%04x assembled=0x%08x", 
+                         pc, decomp_is_compressed, buffer_valid, buffer_valid_next, 
+                         buffered_half, buffered_half_next, imem_data, current_half, assembled_insn);
+            end
         end
     end
     
@@ -470,8 +475,12 @@ module top (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             pc <= boot_addr;
-        else if (pc_write)
+        else if (pc_write) begin
             pc <= next_pc_value;
+            // DEBUG: Log PC updates
+            $display("[RVC_DEBUG] PC_WRITE: 0x%08x -> 0x%08x (increment=%d compressed=%b state=%d)", 
+                     pc, next_pc_value, pc_increment, current_insn_compressed, current_state);
+        end
     end
     
     // Halted signal
