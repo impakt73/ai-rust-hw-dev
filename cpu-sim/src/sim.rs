@@ -397,7 +397,8 @@ where
             if let Some(ref mut detector) = self.hung_detector {
                 let pc = self.cpu.debug_pc;
                 let instruction = self.cpu.debug_instruction;
-                detector.check_cycle(self.cycle_count, pc, instruction)?;
+                let fsm_state = self.cpu.debug_fsm_state;
+                detector.check_cycle(self.cycle_count, pc, instruction, fsm_state)?;
             }
 
             // Check if instruction complete (AFTER clock edge)
@@ -407,10 +408,9 @@ where
                 if let Some(ref mut detector) = self.hung_detector {
                     let pc = self.cpu.debug_pc;
                     let instruction = self.cpu.debug_instruction;
-                    let fsm_state = self.cpu.debug_fsm_state;
 
                     // Propagate hung state error to caller instead of panicking
-                    detector.check_instruction(pc, instruction, fsm_state, self.cycle_count)?;
+                    detector.check_instruction(pc, instruction, self.cycle_count)?;
                 }
 
                 break;

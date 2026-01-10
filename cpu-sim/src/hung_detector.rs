@@ -47,18 +47,12 @@ pub struct HungDetectorConfig {
     /// Number of identical consecutive PCs before declaring a hang
     pub pc_stuck_threshold: u32,
 
-    /// Number of instructions a non-waiting FSM state can execute before warning
-    pub fsm_stuck_threshold: u64,
-
     /// Maximum number of cycles an instruction can take before declaring a hang
     /// This catches cases where FSM gets stuck and never completes an instruction
     pub max_cycles_per_instruction: u64,
 
     /// Enable PC loop detection
     pub enable_pc_loop_detection: bool,
-
-    /// Enable FSM state stuck detection
-    pub enable_fsm_stuck_detection: bool,
 
     /// Enable out-of-bounds PC detection
     pub enable_pc_bounds_detection: bool,
@@ -72,10 +66,8 @@ impl Default for HungDetectorConfig {
         Self {
             pc_history_size: 100,
             pc_stuck_threshold: 50,
-            fsm_stuck_threshold: 500,
             max_cycles_per_instruction: 10000,
             enable_pc_loop_detection: true,
-            enable_fsm_stuck_detection: true,
             enable_pc_bounds_detection: true,
             enable_long_instruction_detection: true,
         }
@@ -93,13 +85,6 @@ pub enum HungStateError {
         history: Vec<u32>,
     },
 
-    /// FSM has been stuck in a non-waiting state for too long
-    FsmStuck {
-        state: u8,
-        state_name: String,
-        instruction_count: u64,
-    },
-
     /// PC has jumped outside valid instruction memory
     PcOutOfBounds {
         pc: u32,
@@ -111,6 +96,7 @@ pub enum HungStateError {
         pc: u32,
         instruction: u32,
         cycle_count: u64,
+        fsm_state: u8,
     },
 }
 
@@ -134,17 +120,6 @@ impl std::fmt::Display for HungStateError {
                     history.iter().map(|p| format!("0x{:08x}", p)).collect::<Vec<_>>()
                 )
             }
-            HungStateError::FsmStuck {
-                state,
-                state_name,
-                instruction_count,
-            } => {
-                write!(
-                    f,
-                    "CPU hung: FSM stuck in state {} ({}) for {} instructions",
-                    state_name, state, instruction_count
-                )
-            }
             HungStateError::PcOutOfBounds {
                 pc,
                 valid_ranges,
@@ -162,14 +137,33 @@ impl std::fmt::Display for HungStateError {
                 pc,
                 instruction,
                 cycle_count,
+                fsm_state,
             } => {
                 write!(
                     f,
-                    "CPU hung: Instruction at PC 0x{:08x} (0x{:08x}) has taken {} cycles without completing",
-                    pc, instruction, cycle_count
+                    "CPU hung: Instruction at PC 0x{:08x} (0x{:08x}) has taken {} cycles without completing. FSM state: {} ({})",
+                    pc, instruction, cycle_count, fsm_state_name(*fsm_state), fsm_state
                 )
             }
         }
+    }
+}
+
+/// Helper function to decode FSM state value to human-readable string
+fn fsm_state_name(state: u8) -> &'static str {
+    match state {
+        0 => "IDLE",
+        1 => "FETCH",
+        2 => "DECODE",
+        3 => "EXECUTE",
+        4 => "BRANCH_RESOLVE",
+        5 => "MEM_READ",
+        6 => "MEM_WRITE",
+        7 => "CSR_READ",
+        8 => "CSR_WRITE",
+        9 => "MUL_DIV",
+        10 => "HALT",
+        _ => "UNKNOWN",
     }
 }
 
@@ -183,10 +177,6 @@ pub struct HungDetector {
     pc_history: VecDeque<u32>,
     last_pc: Option<u32>,
     pc_stuck_count: u32,
-
-    // FSM state tracking
-    current_fsm_state: Option<u8>,
-    fsm_state_cycle_count: u64,
 
     // Long instruction detection
     current_instruction_pc: Option<u32>,
@@ -205,8 +195,6 @@ impl HungDetector {
             config,
             last_pc: None,
             pc_stuck_count: 0,
-            current_fsm_state: None,
-            fsm_state_cycle_count: 0,
             current_instruction_pc: None,
             current_instruction_word: 0,
             current_instruction_start_cycle: 0,
@@ -291,12 +279,14 @@ impl HungDetector {
 
     /// Check for hung state on every cycle (called before instruction completion check)
     ///
-    /// This detects cases where the FSM gets stuck and never completes an instruction.
+    /// This detects cases where the FSM gets stuck and never completes an instruction,
+    /// and also checks if PC is within valid instruction memory bounds.
     ///
     /// # Arguments
     /// * `cycle_count` - Total simulation cycle count
     /// * `pc` - Current program counter (may not be accurate if instruction hasn't completed)
     /// * `instruction` - Current instruction word (may not be accurate)
+    /// * `fsm_state` - Current FSM state (4-bit value)
     ///
     /// # Returns
     /// * `Ok(())` if no hang detected
@@ -306,8 +296,9 @@ impl HungDetector {
         cycle_count: u64,
         pc: u32,
         instruction: u32,
+        fsm_state: u8,
     ) -> Result<(), HungStateError> {
-        // Check if current instruction has taken too many cycles
+        // Start tracking long instruction detection
         if self.config.enable_long_instruction_detection {
             if let Some(instr_pc) = self.current_instruction_pc {
                 let cycles_for_this_instruction = cycle_count.saturating_sub(self.current_instruction_start_cycle);
@@ -317,13 +308,36 @@ impl HungDetector {
                         pc: instr_pc,
                         instruction: self.current_instruction_word,
                         cycle_count: cycles_for_this_instruction,
+                        fsm_state,
                     });
                 }
             } else {
-                // First cycle, start tracking
+                // First cycle or after instruction completion, start tracking
                 self.current_instruction_pc = Some(pc);
                 self.current_instruction_word = instruction;
                 self.current_instruction_start_cycle = cycle_count;
+            }
+        }
+
+        // Check PC bounds (if enabled and ranges exist)
+        // Only check if:
+        // 1. We have valid PC ranges defined
+        // 2. FSM is not in IDLE state (0)
+        // 3. We've started tracking an instruction (current_instruction_pc is Some)
+        // 4. We're not in FETCH state (1) on the very first instruction (to avoid catching PC=0 during init)
+        //
+        // This prevents false positives during simulator initialization while still catching
+        // invalid PC jumps during execution, even if the instruction never completes.
+        if self.config.enable_pc_bounds_detection 
+            && !self.valid_pc_ranges.is_empty() 
+            && fsm_state != 0 
+            && self.current_instruction_pc.is_some() 
+            && self.is_pc_valid(self.current_instruction_pc.unwrap()) {  // Only check if we've started from a valid PC
+            if !self.is_pc_valid(pc) {
+                return Err(HungStateError::PcOutOfBounds {
+                    pc,
+                    valid_ranges: self.valid_pc_ranges.clone(),
+                });
             }
         }
 
@@ -335,7 +349,6 @@ impl HungDetector {
     /// # Arguments
     /// * `pc` - Program counter of completed instruction
     /// * `instruction` - Instruction word that was executed
-    /// * `fsm_state` - Current FSM state (4-bit value)
     /// * `cycle_count` - Total simulation cycle count
     ///
     /// # Returns
@@ -345,31 +358,15 @@ impl HungDetector {
         &mut self,
         pc: u32,
         instruction: u32,
-        fsm_state: u8,
         cycle_count: u64,
     ) -> Result<(), HungStateError> {
         // Reset long instruction tracking since instruction completed
         self.current_instruction_pc = None;
         self.current_instruction_start_cycle = cycle_count;
 
-        // Check PC bounds first (if enabled and ranges exist)
-        if self.config.enable_pc_bounds_detection && !self.valid_pc_ranges.is_empty() {
-            if !self.is_pc_valid(pc) {
-                return Err(HungStateError::PcOutOfBounds {
-                    pc,
-                    valid_ranges: self.valid_pc_ranges.clone(),
-                });
-            }
-        }
-
         // Check for PC stuck (if enabled)
         if self.config.enable_pc_loop_detection {
             self.check_pc_loop(pc, instruction)?;
-        }
-
-        // Check for FSM stuck (if enabled)
-        if self.config.enable_fsm_stuck_detection {
-            self.check_fsm_stuck(fsm_state, cycle_count)?;
         }
 
         Ok(())
@@ -411,64 +408,11 @@ impl HungDetector {
         Ok(())
     }
 
-    /// Check if FSM is stuck in a state for too long
-    fn check_fsm_stuck(&mut self, fsm_state: u8, _cycle_count: u64) -> Result<(), HungStateError> {
-        // Check if FSM state changed
-        if let Some(last_state) = self.current_fsm_state {
-            if last_state == fsm_state {
-                self.fsm_state_cycle_count += 1;
-
-                // Check if stuck in non-waiting state
-                // States 1 (FETCH), 5 (MEM_READ), 6 (MEM_WRITE) can have variable latency
-                // State 10 (HALT) is intentionally permanent
-                let is_waiting_state = matches!(fsm_state, 1 | 5 | 6 | 10);
-
-                if !is_waiting_state && self.fsm_state_cycle_count > self.config.fsm_stuck_threshold
-                {
-                    return Err(HungStateError::FsmStuck {
-                        state: fsm_state,
-                        state_name: Self::fsm_state_name(fsm_state).to_string(),
-                        instruction_count: self.fsm_state_cycle_count,
-                    });
-                }
-            } else {
-                // State changed, reset counter to 1 for this new state
-                self.fsm_state_cycle_count = 1;
-            }
-        } else {
-            // First state seen, initialize counter
-            self.fsm_state_cycle_count = 1;
-        }
-
-        self.current_fsm_state = Some(fsm_state);
-        Ok(())
-    }
-
-    /// Helper function to decode FSM state value to human-readable string
-    fn fsm_state_name(state: u8) -> &'static str {
-        match state {
-            0 => "IDLE",
-            1 => "FETCH",
-            2 => "DECODE",
-            3 => "EXECUTE",
-            4 => "MEM_ADDR",
-            5 => "MEM_READ",
-            6 => "MEM_WRITE",
-            7 => "WRITEBACK",
-            8 => "BRANCH",
-            9 => "CSR",
-            10 => "HALT",
-            _ => "UNKNOWN",
-        }
-    }
-
     /// Reset the detector state (useful when starting a new simulation)
     pub fn reset(&mut self) {
         self.pc_history.clear();
         self.last_pc = None;
         self.pc_stuck_count = 0;
-        self.current_fsm_state = None;
-        self.fsm_state_cycle_count = 0;
         self.current_instruction_pc = None;
         self.current_instruction_word = 0;
         self.current_instruction_start_cycle = 0;
@@ -486,12 +430,12 @@ mod tests {
 
         // Simulate same PC being executed repeatedly
         for i in 0..49 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, i);
+            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
             assert!(result.is_ok(), "Should not detect hang at iteration {}", i);
         }
 
         // 50th iteration should trigger hang detection
-        let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, 50);
+        let result = detector.check_instruction(0x8000_0000, 0x00000013, 50);
         assert!(result.is_err(), "Should detect PC stuck at threshold");
 
         match result {
@@ -509,90 +453,23 @@ mod tests {
 
         // Execute same PC multiple times
         for i in 0..30 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, i);
+            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
             assert!(result.is_ok());
         }
 
         // Change PC (should reset counter)
-        let result = detector.check_instruction(0x8000_0004, 0x00000013, 2, 30);
+        let result = detector.check_instruction(0x8000_0004, 0x00000013, 30);
         assert!(result.is_ok());
 
         // Go back to original PC - counter should be reset
         for i in 31..80 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, i);
+            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
             assert!(result.is_ok());
         }
 
         // Should trigger at 50 after reset
-        let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, 80);
+        let result = detector.check_instruction(0x8000_0000, 0x00000013, 80);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_fsm_stuck_detection() {
-        let mut config = HungDetectorConfig::default();
-        config.fsm_stuck_threshold = 100; // Lower threshold for testing
-        config.enable_pc_loop_detection = false; // Disable PC detection
-
-        let mut detector = HungDetector::new(config);
-
-        // Simulate being stuck in EXECUTE state (state 3)
-        for i in 0..100u64 {
-            // Use different PCs to avoid PC stuck detection
-            let result =
-                detector.check_instruction(0x8000_0000 + ((i as u32) * 4), 0x00000013, 3, i);
-            assert!(result.is_ok(), "Should not detect hang at iteration {}", i);
-        }
-
-        // Next cycle should trigger FSM stuck detection
-        let result = detector.check_instruction(0x8000_0194, 0x00000013, 3, 101);
-        assert!(result.is_err(), "Should detect FSM stuck");
-
-        match result {
-            Err(HungStateError::FsmStuck {
-                state, instruction_count, ..
-            }) => {
-                assert_eq!(state, 3);
-                assert!(instruction_count > 100);
-            }
-            _ => panic!("Expected FsmStuck error"),
-        }
-    }
-
-    #[test]
-    fn test_fsm_waiting_states_not_flagged() {
-        let mut config = HungDetectorConfig::default();
-        config.fsm_stuck_threshold = 10; // Very low threshold
-        config.enable_pc_loop_detection = false;
-
-        let mut detector = HungDetector::new(config);
-
-        // FETCH state (1) should not trigger even with low threshold
-        for i in 0..1000 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 1, i);
-            assert!(
-                result.is_ok(),
-                "FETCH state should not trigger stuck detection"
-            );
-        }
-
-        // MEM_READ state (5) should not trigger
-        for i in 1000..2000 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 5, i);
-            assert!(
-                result.is_ok(),
-                "MEM_READ state should not trigger stuck detection"
-            );
-        }
-
-        // HALT state (10) should not trigger
-        for i in 2000..3000 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, 10, i);
-            assert!(
-                result.is_ok(),
-                "HALT state should not trigger stuck detection"
-            );
-        }
     }
 
     #[test]
@@ -600,15 +477,15 @@ mod tests {
         let mut detector = HungDetector::new_default();
         detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
-        // PC within bounds should be ok
-        let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, 0);
+        // PC within bounds should be ok (checked per-cycle now)
+        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2);
         assert!(result.is_ok());
 
-        let result = detector.check_instruction(0x8000_FFFC, 0x00000013, 2, 1);
+        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2);
         assert!(result.is_ok());
 
         // PC below bounds should fail
-        let result = detector.check_instruction(0x7FFF_FFFC, 0x00000013, 2, 2);
+        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -618,7 +495,7 @@ mod tests {
         }
 
         // PC above bounds should fail
-        let result = detector.check_instruction(0x8001_0000, 0x00000013, 2, 3);
+        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -634,10 +511,10 @@ mod tests {
         // Don't set valid range
 
         // Any PC should be ok when bounds checking is enabled but range is not set
-        let result = detector.check_instruction(0x0000_0000, 0x00000013, 2, 0);
+        let result = detector.check_instruction(0x0000_0000, 0x00000013, 0);
         assert!(result.is_ok());
 
-        let result = detector.check_instruction(0xFFFF_FFFC, 0x00000013, 2, 1);
+        let result = detector.check_instruction(0xFFFF_FFFC, 0x00000013, 1);
         assert!(result.is_ok());
     }
 
@@ -647,7 +524,7 @@ mod tests {
 
         // Build up some state
         for i in 0..30 {
-            let _ = detector.check_instruction(0x8000_0000, 0x00000013, 2, i);
+            let _ = detector.check_instruction(0x8000_0000, 0x00000013, i);
         }
 
         assert_eq!(detector.pc_stuck_count, 30);
@@ -659,7 +536,6 @@ mod tests {
         assert_eq!(detector.pc_stuck_count, 0);
         assert!(detector.pc_history.is_empty());
         assert!(detector.last_pc.is_none());
-        assert!(detector.current_fsm_state.is_none());
     }
 
     #[test]
@@ -670,16 +546,16 @@ mod tests {
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
-        // PCs in first range should be ok
-        assert!(detector.check_instruction(0x8000_0000, 0, 2, 0).is_ok());
-        assert!(detector.check_instruction(0x8000_0FFC, 0, 2, 1).is_ok());
+        // PCs in first range should be ok (checked per-cycle now)
+        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2).is_ok());
+        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2).is_ok());
 
         // PCs in second range should be ok
-        assert!(detector.check_instruction(0x8000_2000, 0, 2, 2).is_ok());
-        assert!(detector.check_instruction(0x8000_2FFC, 0, 2, 3).is_ok());
+        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2).is_ok());
+        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2).is_ok());
 
         // PC in gap between ranges should fail
-        let result = detector.check_instruction(0x8000_1500, 0, 2, 4);
+        let result = detector.check_cycle(4, 0x8000_1500, 0, 2);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
@@ -690,7 +566,7 @@ mod tests {
         }
 
         // PC outside all ranges should fail
-        let result = detector.check_instruction(0x8000_4000, 0, 2, 5);
+        let result = detector.check_cycle(5, 0x8000_4000, 0, 2);
         assert!(result.is_err());
     }
 
@@ -721,24 +597,24 @@ mod tests {
         let mut config = HungDetectorConfig::default();
         config.max_cycles_per_instruction = 100;
         config.enable_pc_loop_detection = false;
-        config.enable_fsm_stuck_detection = false;
         
         let mut detector = HungDetector::new(config);
 
         // Simulate instruction taking many cycles without completing
         for cycle in 0..100u64 {
-            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013);
+            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013, 3);
             assert!(result.is_ok(), "Should not detect hang at cycle {}", cycle);
         }
 
         // Cycle 101 should trigger long instruction detection
-        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013);
+        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013, 3);
         assert!(result.is_err(), "Should detect long instruction");
 
         match result {
-            Err(HungStateError::LongInstruction { pc, cycle_count, .. }) => {
+            Err(HungStateError::LongInstruction { pc, cycle_count, fsm_state, .. }) => {
                 assert_eq!(pc, 0x8000_0000);
                 assert!(cycle_count > 100);
+                assert_eq!(fsm_state, 3);
             }
             _ => panic!("Expected LongInstruction error"),
         }

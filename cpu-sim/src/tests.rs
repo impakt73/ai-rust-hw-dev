@@ -508,7 +508,7 @@ fn test_packet_protocol_end_to_end() {
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         0, // Zero latency
-        None, // Disable hung detection for this test (program ends with infinite loop/halt pattern)
+        Some(crate::hung_detector::HungDetectorConfig::default()), // Enable hung detection (test properly ends with tohost termination)
     )
     .expect("Failed to create simulator");
 
