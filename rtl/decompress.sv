@@ -82,10 +82,9 @@ module decompress (
             
             3'b010: begin  // C.LW
                 // Format: 010 uimm[5:3] rs1' uimm[2|6] rd' 00
-                // Bit mapping: insn[5]=uimm[6], insn[12:10]=uimm[5:3], insn[6]=uimm[2]
-                // However, empirical testing shows: insn[12:10]=uimm[4:2], insn[6]=uimm[6], insn[5]=uimm[5]
-                // Full uimm = {uimm[6:5], uimm[4:2], 2'b00}
-                uimm_lw_sw = {insn_16[6], insn_16[5], insn_16[12:10], 2'b00};
+                // Bit positions: insn[12:10]=uimm[5:3], insn[6]=uimm[2], insn[5]=uimm[6]
+                // Full uimm = {uimm[6:2], 2'b00} for word-aligned offset
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
                 
                 // LW rd', offset(rs1')
                 insn_32 = {5'b0, uimm_lw_sw, rs1_full, 3'b010, rd_full, 7'b0000011};
@@ -93,8 +92,8 @@ module decompress (
             
             3'b110: begin  // C.SW
                 // Format: 110 uimm[5:3] rs1' uimm[2|6] rs2' 00
-                // Same bit mapping as C.LW
-                uimm_lw_sw = {insn_16[6], insn_16[5], insn_16[12:10], 2'b00};
+                // Same bit mapping as C.LW: insn[5]=uimm[6], insn[12:10]=uimm[5:3], insn[6]=uimm[2]
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
                 
                 // SW rs2', offset(rs1')
                 insn_32 = {5'b0, uimm_lw_sw[6:5], rs2_full, rs1_full, 3'b010, uimm_lw_sw[4:0], 7'b0100011};
@@ -128,8 +127,8 @@ module decompress (
                 end else begin
                     // C.ADDI
                     nzimm_addi = imm;
-                    // Sign-extend nzimm
-                    insn_32 = {{26{nzimm_addi[5]}}, nzimm_addi, rd_rs1, 3'b000, rd_rs1, 7'b0010011};
+                    // Sign-extend 6-bit immediate to 12 bits for ADDI
+                    insn_32 = {{6{nzimm_addi[5]}}, nzimm_addi, rd_rs1, 3'b000, rd_rs1, 7'b0010011};
                 end
             end
             
@@ -139,14 +138,21 @@ module decompress (
                 imm_j = {insn_16[12], insn_16[8], insn_16[10:9], insn_16[6], 
                          insn_16[7], insn_16[2], insn_16[11], insn_16[5:3], 1'b0};
                 
-                // JAL x1, offset (sign-extended)
-                insn_32 = {{11{imm_j[11]}}, imm_j[11], imm_j[10:1], imm_j[0], 
-                           8'b0, 5'd1, 7'b1101111};
+                // JAL x1, offset
+                // J-type format: {imm[20], imm[10:1], imm[11], imm[19:12], rd, opcode}
+                insn_32 = {imm_j[11],           // inst[31] = imm[20] (sign bit)
+                           imm_j[10:1],         // inst[30:21] = imm[10:1]
+                           imm_j[11],           // inst[20] = imm[11]
+                           {8{imm_j[11]}},      // inst[19:12] = imm[19:12] (sign extension)
+                           5'd1,                // rd = x1
+                           7'b1101111};         // JAL opcode
             end
             
             3'b010: begin  // C.LI
                 // Expands to: addi rd, x0, imm
-                insn_32 = {{26{imm[5]}}, imm, 5'b0, 3'b000, rd_rs1, 7'b0010011};
+                // ADDI format: {imm[11:0], rs1[4:0], funct3[2:0], rd[4:0], opcode[6:0]}
+                // Sign-extend 6-bit imm to 12 bits
+                insn_32 = {{6{imm[5]}}, imm, 5'b0, 3'b000, rd_rs1, 7'b0010011};
             end
             
             3'b011: begin  // C.ADDI16SP / C.LUI
@@ -203,7 +209,8 @@ module decompress (
                     
                     2'b10: begin  // C.ANDI
                         // ANDI rd', rd', imm
-                        insn_32 = {{26{imm[5]}}, imm, rs1_full, 3'b111, rs1_full, 7'b0010011};
+                        // Sign-extend 6-bit immediate to 12 bits for ANDI
+                        insn_32 = {{6{imm[5]}}, imm, rs1_full, 3'b111, rs1_full, 7'b0010011};
                     end
                     
                     2'b11: begin  // C.SUB, C.XOR, C.OR, C.AND
@@ -232,23 +239,42 @@ module decompress (
             3'b101: begin  // C.J
                 // Format: 101 imm[11|4|9:8|10|6|7|3:1|5] 01
                 // Expands to: jal x0, offset
+                // Extract 12-bit immediate from compressed instruction
                 imm_j = {insn_16[12], insn_16[8], insn_16[10:9], insn_16[6], 
                          insn_16[7], insn_16[2], insn_16[11], insn_16[5:3], 1'b0};
                 
                 // JAL x0, offset
-                insn_32 = {{11{imm_j[11]}}, imm_j[11], imm_j[10:1], imm_j[0], 
-                           8'b0, 5'b0, 7'b1101111};
+                // J-type format: {imm[20], imm[10:1], imm[11], imm[19:12], rd, opcode}
+                // Sign-extend 12-bit imm_j to 21 bits, then place in scrambled J-type order
+                insn_32 = {imm_j[11],           // inst[31] = imm[20] (sign bit, extended from imm[11])
+                           imm_j[10:1],         // inst[30:21] = imm[10:1]
+                           imm_j[11],           // inst[20] = imm[11]
+                           {8{imm_j[11]}},      // inst[19:12] = imm[19:12] (sign extension)
+                           5'b0,                // rd = x0
+                           7'b1101111};         // JAL opcode
             end
             
             3'b110: begin  // C.BEQZ
                 // Format: 110 offset[8|4:3] rs1' offset[7:6|2:1|5] 01
                 // Expands to: beq rs1', x0, offset
+                // Extract bits: offset = {offset[8], offset[7:6], offset[5], offset[4:3], offset[2:1], 1'b0}
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
                 // BEQ rs1', x0, offset
-                // Place fields per B-type: imm[12], imm[10:5], rs2, rs1, funct3, imm[4:1], imm[11], opcode
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b000,
-                           imm_b[4:1], imm_b[0], 7'b1100011};
+                // B-type encoding needs 13-bit immediate: imm[12:0] where imm[0]=0
+                // Sign-extend 9-bit imm_b to 13 bits
+                // inst[31] = imm[12], inst[30:25] = imm[10:5], inst[11:8] = imm[4:1], inst[7] = imm[11]
+                insn_32 = {imm_b[8],         // bit 31 (imm[12] - sign bit)
+                           imm_b[8],         // bit 30 (imm[10])  
+                           imm_b[8],         // bit 29 (imm[9])
+                           imm_b[8],         // bit 28 (imm[8])
+                           imm_b[7:5],       // bits 27:25 (imm[7:5])
+                           5'b0,             // rs2 = x0
+                           rs1_full,         // rs1
+                           3'b000,           // funct3 = BEQ
+                           imm_b[4:1],       // bits 11:8 (imm[4:1])
+                           imm_b[8],         // bit 7 (imm[11])
+                           7'b1100011};      // BRANCH opcode
             end
             
             3'b111: begin  // C.BNEZ
@@ -256,9 +282,18 @@ module decompress (
                 // Expands to: bne rs1', x0, offset
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
-                // BNE rs1', x0, offset
-                insn_32 = {{23{imm_b[8]}}, imm_b[8], imm_b[7:5], 5'b0, rs1_full, 3'b001,
-                           imm_b[4:1], imm_b[0], 7'b1100011};
+                // BNE rs1', x0, offset  
+                insn_32 = {imm_b[8],         // bit 31 (imm[12] - sign bit)
+                           imm_b[8],         // bit 30 (imm[10])
+                           imm_b[8],         // bit 29 (imm[9])
+                           imm_b[8],         // bit 28 (imm[8])
+                           imm_b[7:5],       // bits 27:25 (imm[7:5])
+                           5'b0,             // rs2 = x0
+                           rs1_full,         // rs1
+                           3'b001,           // funct3 = BNE
+                           imm_b[4:1],       // bits 11:8 (imm[4:1])
+                           imm_b[8],         // bit 7 (imm[11])
+                           7'b1100011};      // BRANCH opcode
             end
         endcase
     endtask

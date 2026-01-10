@@ -56,10 +56,17 @@ unsafe impl GlobalAlloc for SimpleAllocator {
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
 
-/// Default panic handler for bare-metal programs - infinite loop on panic
+/// Default panic handler for bare-metal programs - write to tohost to signal panic
+///
+/// When a panic occurs, we write a special value (0xDEAD) to tohost to signal
+/// that the program panicked. This allows the simulator to detect panics and
+/// report them properly instead of timing out in an infinite loop.
 #[inline(never)]
 pub fn default_panic_handler(_info: &PanicInfo) -> ! {
-    loop {}
+    // Write a special panic value to tohost (0xDEAD = 57005)
+    // This is different from the success value (0x2a = 42) so the simulator
+    // can distinguish between normal completion and panic
+    write_tohost(0xDEAD)
 }
 
 /// TOHOST address for signaling halt to the simulator

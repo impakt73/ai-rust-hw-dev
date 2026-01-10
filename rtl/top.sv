@@ -377,7 +377,8 @@ module top (
             // 32-bit instruction: need full word
             if (buffer_valid) begin
                 // Lower half is in buffer, upper half is in current fetch
-                assembled_insn = {imem_data[15:0], buffered_half};
+                // buffered_half contains the lower 16 bits, imem_data[31:16] contains upper 16 bits
+                assembled_insn = {imem_data[31:16], buffered_half};
             end else begin
                 // Both halves in current fetch (word-aligned)
                 assembled_insn = imem_data;
@@ -409,20 +410,25 @@ module top (
         if (ir_write && imem_ready) begin
             // Writing instruction to IR
             if (insn_is_compressed) begin
-                // Consumed a compressed instruction
+                // Consumed a compressed instruction (16-bit)
                 if (buffer_valid) begin
-                    // Used buffered half, now buffer is empty
-                    buffer_valid_next = 1'b0;
+                    // Used buffered half from previous fetch
+                    // The current fetch contains: [15:0] = data we just used (redundant)
+                    //                              [31:16] = new data we haven't processed
+                    // Buffer the new data for next instruction
+                    buffered_half_next = imem_data[31:16];
+                    buffer_valid_next = 1'b1;
                 end else if (pc[1] == 1'b0) begin
-                    // PC is word-aligned, consumed lower half, buffer upper half
+                    // PC is word-aligned, consumed lower half [15:0], buffer upper half [31:16]
                     buffered_half_next = imem_data[31:16];
                     buffer_valid_next = 1'b1;
                 end else begin
-                    // PC points to upper half-word, consumed it, buffer is empty
+                    // PC points to upper half-word (odd address), consumed upper half [31:16]
+                    // No more data in this fetch to buffer
                     buffer_valid_next = 1'b0;
                 end
             end else begin
-                // Consumed a 32-bit instruction
+                // Consumed a 32-bit instruction - used full word
                 buffer_valid_next = 1'b0;  // Buffer is empty after consuming full word
             end
         end

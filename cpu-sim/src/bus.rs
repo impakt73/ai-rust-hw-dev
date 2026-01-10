@@ -51,7 +51,9 @@ impl SystemBus {
     pub fn write_word(&mut self, addr: u32, data: u32) {
         match addr {
             // FIFO DATA register
-            a if a == FIFO_BASE + FIFO_DATA_OFFSET => self.fifo.write_data(data),
+            a if a == FIFO_BASE + FIFO_DATA_OFFSET => {
+                self.fifo.write_data(data);
+            }
             // FIFO STATUS register (read-only, ignore writes)
             a if a == FIFO_BASE + FIFO_STATUS_OFFSET => {
                 // Status is read-only, ignore write
