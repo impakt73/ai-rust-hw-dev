@@ -6,6 +6,38 @@
 /// catching problematic conditions quickly.
 use std::collections::VecDeque;
 
+/// Represents a contiguous range of valid instruction memory
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryRange {
+    pub start: u32,
+    pub end: u32, // exclusive
+}
+
+impl MemoryRange {
+    /// Check if an address is within this range
+    pub fn contains(&self, addr: u32) -> bool {
+        addr >= self.start && addr < self.end
+    }
+
+    /// Check if this range overlaps with another range
+    pub fn overlaps(&self, other: &MemoryRange) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+
+    /// Check if this range is adjacent to another range
+    pub fn adjacent_to(&self, other: &MemoryRange) -> bool {
+        self.end == other.start || other.end == self.start
+    }
+
+    /// Merge two overlapping or adjacent ranges
+    pub fn merge(&self, other: &MemoryRange) -> MemoryRange {
+        MemoryRange {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+        }
+    }
+}
+
 /// Configuration for the hung state detector
 #[derive(Debug, Clone)]
 pub struct HungDetectorConfig {
@@ -18,11 +50,9 @@ pub struct HungDetectorConfig {
     /// Number of instructions a non-waiting FSM state can execute before warning
     pub fsm_stuck_threshold: u64,
 
-    /// Start address of valid instruction memory region
-    pub valid_pc_start: Option<u32>,
-
-    /// End address of valid instruction memory region (exclusive)
-    pub valid_pc_end: Option<u32>,
+    /// Maximum number of cycles an instruction can take before declaring a hang
+    /// This catches cases where FSM gets stuck and never completes an instruction
+    pub max_cycles_per_instruction: u64,
 
     /// Enable PC loop detection
     pub enable_pc_loop_detection: bool,
@@ -32,6 +62,9 @@ pub struct HungDetectorConfig {
 
     /// Enable out-of-bounds PC detection
     pub enable_pc_bounds_detection: bool,
+
+    /// Enable detection of instructions that take too many cycles
+    pub enable_long_instruction_detection: bool,
 }
 
 impl Default for HungDetectorConfig {
@@ -40,11 +73,11 @@ impl Default for HungDetectorConfig {
             pc_history_size: 100,
             pc_stuck_threshold: 50,
             fsm_stuck_threshold: 500,
-            valid_pc_start: None,
-            valid_pc_end: None,
+            max_cycles_per_instruction: 10000,
             enable_pc_loop_detection: true,
             enable_fsm_stuck_detection: true,
             enable_pc_bounds_detection: true,
+            enable_long_instruction_detection: true,
         }
     }
 }
@@ -70,8 +103,14 @@ pub enum HungStateError {
     /// PC has jumped outside valid instruction memory
     PcOutOfBounds {
         pc: u32,
-        valid_start: u32,
-        valid_end: u32,
+        valid_ranges: Vec<MemoryRange>,
+    },
+
+    /// Current instruction has taken too many cycles to complete
+    LongInstruction {
+        pc: u32,
+        instruction: u32,
+        cycle_count: u64,
     },
 }
 
@@ -108,13 +147,26 @@ impl std::fmt::Display for HungStateError {
             }
             HungStateError::PcOutOfBounds {
                 pc,
-                valid_start,
-                valid_end,
+                valid_ranges,
+            } => {
+                write!(f, "CPU hung: PC 0x{:08x} is outside valid instruction memory. Valid ranges: ", pc)?;
+                for (i, range) in valid_ranges.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "[0x{:08x}, 0x{:08x})", range.start, range.end)?;
+                }
+                Ok(())
+            }
+            HungStateError::LongInstruction {
+                pc,
+                instruction,
+                cycle_count,
             } => {
                 write!(
                     f,
-                    "CPU hung: PC 0x{:08x} is outside valid instruction memory range [0x{:08x}, 0x{:08x})",
-                    pc, valid_start, valid_end
+                    "CPU hung: Instruction at PC 0x{:08x} (0x{:08x}) has taken {} cycles without completing",
+                    pc, instruction, cycle_count
                 )
             }
         }
@@ -135,6 +187,14 @@ pub struct HungDetector {
     // FSM state tracking
     current_fsm_state: Option<u8>,
     fsm_state_cycle_count: u64,
+
+    // Long instruction detection
+    current_instruction_pc: Option<u32>,
+    current_instruction_word: u32,
+    current_instruction_start_cycle: u64,
+
+    // Multiple non-contiguous valid PC ranges
+    valid_pc_ranges: Vec<MemoryRange>,
 }
 
 impl HungDetector {
@@ -147,6 +207,10 @@ impl HungDetector {
             pc_stuck_count: 0,
             current_fsm_state: None,
             fsm_state_cycle_count: 0,
+            current_instruction_pc: None,
+            current_instruction_word: 0,
+            current_instruction_start_cycle: 0,
+            valid_pc_ranges: Vec::new(),
         }
     }
 
@@ -155,21 +219,115 @@ impl HungDetector {
         Self::new(HungDetectorConfig::default())
     }
 
-    /// Set the valid PC range for bounds checking
+    /// Add or update a valid PC range for bounds checking
+    ///
+    /// If the new range overlaps or is adjacent to existing ranges, they will be merged.
+    /// This allows building up non-contiguous executable regions properly.
     ///
     /// # Arguments
     /// * `start` - Start address of valid instruction memory (inclusive)
     /// * `end` - End address of valid instruction memory (exclusive)
-    pub fn set_valid_pc_range(&mut self, start: u32, end: u32) {
-        self.config.valid_pc_start = Some(start);
-        self.config.valid_pc_end = Some(end);
+    /// * `is_instructions` - If true, marks this range as containing instructions;
+    ///                       if false, removes this range from valid PC ranges
+    pub fn update_pc_range(&mut self, start: u32, end: u32, is_instructions: bool) {
+        if !is_instructions {
+            // Remove or split existing ranges that overlap with this data region
+            let data_range = MemoryRange { start, end };
+            let mut new_ranges = Vec::new();
+            
+            for range in &self.valid_pc_ranges {
+                if !range.overlaps(&data_range) {
+                    // No overlap, keep the range
+                    new_ranges.push(*range);
+                } else {
+                    // Overlaps - need to split or remove
+                    if range.start < data_range.start {
+                        // Keep the part before the data region
+                        new_ranges.push(MemoryRange {
+                            start: range.start,
+                            end: range.end.min(data_range.start),
+                        });
+                    }
+                    if range.end > data_range.end {
+                        // Keep the part after the data region
+                        new_ranges.push(MemoryRange {
+                            start: range.start.max(data_range.end),
+                            end: range.end,
+                        });
+                    }
+                }
+            }
+            self.valid_pc_ranges = new_ranges;
+        } else {
+            // Add instruction range, merging with overlapping/adjacent ranges
+            let new_range = MemoryRange { start, end };
+            let mut merged_range = new_range;
+            let mut remaining_ranges = Vec::new();
+
+            for range in &self.valid_pc_ranges {
+                if range.overlaps(&merged_range) || range.adjacent_to(&merged_range) {
+                    // Merge this range into the new range
+                    merged_range = merged_range.merge(range);
+                } else {
+                    // Keep this range separate
+                    remaining_ranges.push(*range);
+                }
+            }
+
+            remaining_ranges.push(merged_range);
+            self.valid_pc_ranges = remaining_ranges;
+        }
     }
 
-    /// Get the current valid PC range
+    /// Get all valid PC ranges
+    pub fn get_valid_pc_ranges(&self) -> &[MemoryRange] {
+        &self.valid_pc_ranges
+    }
+
+    /// Check if a PC is within any valid range
+    fn is_pc_valid(&self, pc: u32) -> bool {
+        self.valid_pc_ranges.iter().any(|range| range.contains(pc))
+    }
+
+    /// Check for hung state on every cycle (called before instruction completion check)
     ///
-    /// Returns (start, end) where both are Option<u32>
-    pub fn get_valid_pc_range(&self) -> (Option<u32>, Option<u32>) {
-        (self.config.valid_pc_start, self.config.valid_pc_end)
+    /// This detects cases where the FSM gets stuck and never completes an instruction.
+    ///
+    /// # Arguments
+    /// * `cycle_count` - Total simulation cycle count
+    /// * `pc` - Current program counter (may not be accurate if instruction hasn't completed)
+    /// * `instruction` - Current instruction word (may not be accurate)
+    ///
+    /// # Returns
+    /// * `Ok(())` if no hang detected
+    /// * `Err(HungStateError)` if a hang condition was detected
+    pub fn check_cycle(
+        &mut self,
+        cycle_count: u64,
+        pc: u32,
+        instruction: u32,
+    ) -> Result<(), HungStateError> {
+        // Check if current instruction has taken too many cycles
+        if self.config.enable_long_instruction_detection {
+            if let Some(instr_pc) = self.current_instruction_pc {
+                let cycles_for_this_instruction = cycle_count.saturating_sub(self.current_instruction_start_cycle);
+                
+                if cycles_for_this_instruction > self.config.max_cycles_per_instruction {
+                    return Err(HungStateError::LongInstruction {
+                        pc: instr_pc,
+                        instruction: self.current_instruction_word,
+                        cycle_count: cycles_for_this_instruction,
+                    });
+                }
+            } else {
+                // First cycle, start tracking
+                self.current_instruction_pc = Some(pc);
+                self.current_instruction_word = instruction;
+                self.current_instruction_start_cycle = cycle_count;
+            }
+        }
+
+        Ok(())
     }
 
     /// Check for hung state after an instruction completes
@@ -190,17 +348,17 @@ impl HungDetector {
         fsm_state: u8,
         cycle_count: u64,
     ) -> Result<(), HungStateError> {
-        // Check PC bounds first (if enabled and range is set)
-        if self.config.enable_pc_bounds_detection {
-            if let (Some(start), Some(end)) = (self.config.valid_pc_start, self.config.valid_pc_end)
-            {
-                if pc < start || pc >= end {
-                    return Err(HungStateError::PcOutOfBounds {
-                        pc,
-                        valid_start: start,
-                        valid_end: end,
-                    });
-                }
+        // Reset long instruction tracking since instruction completed
+        self.current_instruction_pc = None;
+        self.current_instruction_start_cycle = cycle_count;
+
+        // Check PC bounds first (if enabled and ranges exist)
+        if self.config.enable_pc_bounds_detection && !self.valid_pc_ranges.is_empty() {
+            if !self.is_pc_valid(pc) {
+                return Err(HungStateError::PcOutOfBounds {
+                    pc,
+                    valid_ranges: self.valid_pc_ranges.clone(),
+                });
             }
         }
 
@@ -311,6 +469,10 @@ impl HungDetector {
         self.pc_stuck_count = 0;
         self.current_fsm_state = None;
         self.fsm_state_cycle_count = 0;
+        self.current_instruction_pc = None;
+        self.current_instruction_word = 0;
+        self.current_instruction_start_cycle = 0;
+        // Note: We don't clear valid_pc_ranges as they persist across resets
     }
 }
 
@@ -436,7 +598,7 @@ mod tests {
     #[test]
     fn test_pc_bounds_detection() {
         let mut detector = HungDetector::new_default();
-        detector.set_valid_pc_range(0x8000_0000, 0x8001_0000);
+        detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
         // PC within bounds should be ok
         let result = detector.check_instruction(0x8000_0000, 0x00000013, 2, 0);
@@ -491,12 +653,94 @@ mod tests {
         assert_eq!(detector.pc_stuck_count, 30);
         assert!(!detector.pc_history.is_empty());
 
-        // Reset should clear everything
+        // Reset should clear everything except PC ranges
         detector.reset();
 
         assert_eq!(detector.pc_stuck_count, 0);
         assert!(detector.pc_history.is_empty());
         assert!(detector.last_pc.is_none());
         assert!(detector.current_fsm_state.is_none());
+    }
+
+    #[test]
+    fn test_multi_range_pc_bounds() {
+        let mut detector = HungDetector::new_default();
+        
+        // Add two non-contiguous instruction ranges
+        detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
+        detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
+
+        // PCs in first range should be ok
+        assert!(detector.check_instruction(0x8000_0000, 0, 2, 0).is_ok());
+        assert!(detector.check_instruction(0x8000_0FFC, 0, 2, 1).is_ok());
+
+        // PCs in second range should be ok
+        assert!(detector.check_instruction(0x8000_2000, 0, 2, 2).is_ok());
+        assert!(detector.check_instruction(0x8000_2FFC, 0, 2, 3).is_ok());
+
+        // PC in gap between ranges should fail
+        let result = detector.check_instruction(0x8000_1500, 0, 2, 4);
+        assert!(result.is_err());
+        match result {
+            Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
+                assert_eq!(pc, 0x8000_1500);
+                assert_eq!(valid_ranges.len(), 2);
+            }
+            _ => panic!("Expected PcOutOfBounds error"),
+        }
+
+        // PC outside all ranges should fail
+        let result = detector.check_instruction(0x8000_4000, 0, 2, 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_range_merging() {
+        let mut detector = HungDetector::new_default();
+        
+        // Add two adjacent ranges - they should merge
+        detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
+        detector.update_pc_range(0x8000_1000, 0x8000_2000, true);
+
+        let ranges = detector.get_valid_pc_ranges();
+        assert_eq!(ranges.len(), 1, "Adjacent ranges should merge");
+        assert_eq!(ranges[0].start, 0x8000_0000);
+        assert_eq!(ranges[0].end, 0x8000_2000);
+
+        // Add overlapping range - should extend
+        detector.update_pc_range(0x8000_1800, 0x8000_2800, true);
+        
+        let ranges = detector.get_valid_pc_ranges();
+        assert_eq!(ranges.len(), 1, "Overlapping ranges should merge");
+        assert_eq!(ranges[0].start, 0x8000_0000);
+        assert_eq!(ranges[0].end, 0x8000_2800);
+    }
+
+    #[test]
+    fn test_long_instruction_detection() {
+        let mut config = HungDetectorConfig::default();
+        config.max_cycles_per_instruction = 100;
+        config.enable_pc_loop_detection = false;
+        config.enable_fsm_stuck_detection = false;
+        
+        let mut detector = HungDetector::new(config);
+
+        // Simulate instruction taking many cycles without completing
+        for cycle in 0..100u64 {
+            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013);
+            assert!(result.is_ok(), "Should not detect hang at cycle {}", cycle);
+        }
+
+        // Cycle 101 should trigger long instruction detection
+        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013);
+        assert!(result.is_err(), "Should detect long instruction");
+
+        match result {
+            Err(HungStateError::LongInstruction { pc, cycle_count, .. }) => {
+                assert_eq!(pc, 0x8000_0000);
+                assert!(cycle_count > 100);
+            }
+            _ => panic!("Expected LongInstruction error"),
+        }
     }
 }

@@ -145,13 +145,6 @@ where
         self.print_debug_packets = enable;
     }
 
-    /// Set the valid PC range for hung detection (internal use)
-    ///
-    /// This is useful for detecting when the PC jumps outside the loaded program memory.
-    ///
-    /// # Arguments
-    /// * `start` - Start address of valid instruction memory (inclusive)
-    /// * `end` - End address of valid instruction memory (exclusive)
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
     /// This allows the host to send data to the simulated program
     pub fn fifo_write_rx(&mut self, word: u32) {
@@ -400,10 +393,17 @@ where
                 );
             }
 
+            // Check for hung state on every cycle (detects stuck FSM that never completes instruction)
+            if let Some(ref mut detector) = self.hung_detector {
+                let pc = self.cpu.debug_pc;
+                let instruction = self.cpu.debug_instruction;
+                detector.check_cycle(self.cycle_count, pc, instruction)?;
+            }
+
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
             if self.cpu.instr_complete != 0 {
-                // Check for hung state before breaking
+                // Check for hung state after instruction completes
                 if let Some(ref mut detector) = self.hung_detector {
                     let pc = self.cpu.debug_pc;
                     let instruction = self.cpu.debug_instruction;
@@ -620,29 +620,12 @@ where
             self.bus.dram.write_byte(addr, byte);
         }
         
-        // If this is instruction memory, expand the valid PC range for hung detection
-        if is_instructions && !data.is_empty() {
-            let new_start = start_addr;
-            let new_end = start_addr.wrapping_add(data.len() as u32);
-            
-            // Get current range and expand it
+        // Update valid PC ranges for hung detection based on whether this is instruction or data memory
+        if !data.is_empty() {
             if let Some(ref mut detector) = self.hung_detector {
-                let (current_start, current_end) = detector.get_valid_pc_range();
-                
-                // Expand the range to include the new region
-                let expanded_start = if let Some(cs) = current_start {
-                    cs.min(new_start)
-                } else {
-                    new_start
-                };
-                
-                let expanded_end = if let Some(ce) = current_end {
-                    ce.max(new_end)
-                } else {
-                    new_end
-                };
-                
-                detector.set_valid_pc_range(expanded_start, expanded_end);
+                let new_start = start_addr;
+                let new_end = start_addr.wrapping_add(data.len() as u32);
+                detector.update_pc_range(new_start, new_end, is_instructions);
             }
         }
     }
@@ -673,6 +656,7 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(HungDetectorConfig::default()),
     /// )?;
     /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     /// # Ok(())
@@ -717,6 +701,7 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(HungDetectorConfig::default()),
     /// )?;
     /// sim.dump_memory_region_as_image(
     ///     0x8000_0000,

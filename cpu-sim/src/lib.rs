@@ -46,6 +46,7 @@ use std::path::Path;
 ///     None::<fn(u32)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
 ///     0, // Zero latency
+///     Some(HungDetectorConfig::default()), // Enable hung detection
 /// )?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
@@ -65,10 +66,6 @@ where
 
     let mut entry_point = 0;
 
-    // Track the bounds of loaded code segments for hung detection
-    let mut min_pc: Option<u32> = None;
-    let mut max_pc: Option<u32> = None;
-
     // Get the entry point
     if let Ok(header) = elf_file.ehdr.e_entry.try_into() {
         entry_point = header;
@@ -81,7 +78,7 @@ where
             if phdr.p_type == elf::abi::PT_LOAD {
                 let vaddr = phdr.p_vaddr as u32;
                 let file_size = phdr.p_filesz as usize;
-                let mem_size = phdr.p_memsz as usize; // May be larger than file_size (BSS)
+                let _mem_size = phdr.p_memsz as usize; // May be larger than file_size (BSS)
                 let offset = phdr.p_offset as usize;
 
                 // Check if segment is executable (contains code)
@@ -114,23 +111,11 @@ where
                         if is_executable { " (executable)" } else { "" }
                     );
                 }
-
-                // Track bounds of executable segments for PC range checking
-                // Note: This creates a single contiguous range from min to max address.
-                // If there are non-contiguous executable segments with gaps, those gaps
-                // will be incorrectly included as valid PC addresses.
-                if is_executable && mem_size > 0 {
-                    let segment_start = vaddr;
-                    let segment_end = vaddr.saturating_add(mem_size as u32);
-
-                    min_pc = Some(min_pc.map_or(segment_start, |m| m.min(segment_start)));
-                    max_pc = Some(max_pc.map_or(segment_end, |m| m.max(segment_end)));
-                }
             }
         }
     }
 
-    // Note: PC range was already set by write_memory_region calls above for executable segments
+    // PC range is automatically set by write_memory_region calls above for executable segments
     log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);
     Ok(entry_point)
 }
@@ -588,7 +573,7 @@ where
 ///         let bytes: Vec<u8> = instructions.iter()
 ///             .flat_map(|i| i.to_le_bytes())
 ///             .collect();
-///         sim.write_memory_region(start_addr, &bytes);
+///         sim.write_memory_region(start_addr, &bytes, true); // true = instructions
 ///         Ok(start_addr)
 ///     },
 ///     |_sim, _result| {}
