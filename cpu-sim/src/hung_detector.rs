@@ -15,7 +15,7 @@ pub struct HungDetectorConfig {
     /// Number of identical consecutive PCs before declaring a hang
     pub pc_stuck_threshold: u32,
 
-    /// Number of cycles a non-waiting FSM state can stay before warning
+    /// Number of instructions a non-waiting FSM state can execute before warning
     pub fsm_stuck_threshold: u64,
 
     /// Start address of valid instruction memory region
@@ -64,7 +64,7 @@ pub enum HungStateError {
     FsmStuck {
         state: u8,
         state_name: String,
-        cycle_count: u64,
+        instruction_count: u64,
     },
 
     /// PC has jumped outside valid instruction memory
@@ -98,12 +98,12 @@ impl std::fmt::Display for HungStateError {
             HungStateError::FsmStuck {
                 state,
                 state_name,
-                cycle_count,
+                instruction_count,
             } => {
                 write!(
                     f,
-                    "CPU hung: FSM stuck in state {} ({}) for {} cycles",
-                    state_name, state, cycle_count
+                    "CPU hung: FSM stuck in state {} ({}) for {} instructions",
+                    state_name, state, instruction_count
                 )
             }
             HungStateError::PcOutOfBounds {
@@ -263,7 +263,7 @@ impl HungDetector {
                     return Err(HungStateError::FsmStuck {
                         state: fsm_state,
                         state_name: Self::fsm_state_name(fsm_state).to_string(),
-                        cycle_count: self.fsm_state_cycle_count,
+                        instruction_count: self.fsm_state_cycle_count,
                     });
                 }
             } else {
@@ -381,10 +381,10 @@ mod tests {
 
         match result {
             Err(HungStateError::FsmStuck {
-                state, cycle_count, ..
+                state, instruction_count, ..
             }) => {
                 assert_eq!(state, 3);
-                assert!(cycle_count > 100);
+                assert!(instruction_count > 100);
             }
             _ => panic!("Expected FsmStuck error"),
         }

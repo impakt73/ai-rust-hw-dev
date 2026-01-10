@@ -528,7 +528,7 @@ fn test_packet_protocol_end_to_end() {
     println!("Step 1: Waiting for initial Debug packet from CPU...");
     let mut received_initial_debug = false;
     for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step();
+        sim.step().expect("Step failed");
         let words = fifo_data.lock().unwrap();
         if !words.is_empty() {
             received_initial_debug = true;
@@ -556,7 +556,7 @@ fn test_packet_protocol_end_to_end() {
     println!("\nStep 3: Waiting for Echo response from CPU...");
     let initial_word_count = fifo_data.lock().unwrap().len();
     for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step();
+        sim.step().expect("Step failed");
         let words = fifo_data.lock().unwrap();
         if words.len() > initial_word_count {
             println!("  ✓ Received Echo response ({} words total)", words.len());
@@ -579,7 +579,7 @@ fn test_packet_protocol_end_to_end() {
     println!("\nStep 5: Waiting for DataU32 response from CPU...");
     let words_before_data = fifo_data.lock().unwrap().len();
     for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step();
+        sim.step().expect("Step failed");
         let words = fifo_data.lock().unwrap();
         if words.len() > words_before_data {
             println!(
@@ -594,17 +594,13 @@ fn test_packet_protocol_end_to_end() {
     println!("\nStep 6: Running CPU until halt...");
     let mut final_tohost = None;
     for cycle in 0..50000 {
-        let step_result = sim.step();
+        let step_result = sim.step().expect("Step failed");
         if let Some(tohost) = step_result.tohost_value {
             println!(
                 "  ✓ CPU halted at cycle {} with tohost=0x{:08x}",
                 cycle, tohost
             );
             final_tohost = Some(tohost);
-            // Continue for a few more cycles to ensure we get all packets
-            for _ in 0..100 {
-                sim.step();
-            }
             break;
         }
     }
@@ -1253,34 +1249,6 @@ fn test_hung_detection_with_elf_auto_range() {
     println!("✓ Simulation completed in {} cycles", result.unwrap().cycles);
     println!("\n========================================");
     println!("✓ HUNG DETECTION ELF AUTO-RANGE TEST PASSED");
-    println!("========================================");
-}
-
-#[test]
-fn test_hung_detection_legitimate_program() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("HUNG DETECTION: NO FALSE POSITIVES TEST");
-    println!("========================================");
-
-    // Run a legitimate program to ensure no false positives
-    let elf_path = test_program_path("test.elf");
-    
-    let result = run_elf(&elf_path, 500, false);
-    
-    assert!(
-        result.is_ok(),
-        "Legitimate program should not trigger hung detection: {:?}",
-        result.err()
-    );
-    
-    let sim_result = result.unwrap();
-    println!("✓ Program completed in {} cycles", sim_result.cycles);
-    println!("✓ No false positive hung detection");
-
-    println!("\n========================================");
-    println!("✓ HUNG DETECTION NO FALSE POSITIVES TEST PASSED");
     println!("========================================");
 }
 

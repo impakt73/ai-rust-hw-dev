@@ -115,6 +115,9 @@ where
                 }
 
                 // Track bounds of executable segments for PC range checking
+                // Note: This creates a single contiguous range from min to max address.
+                // If there are non-contiguous executable segments with gaps, those gaps
+                // will be incorrectly included as valid PC addresses.
                 if is_executable && mem_size > 0 {
                     let segment_start = vaddr;
                     let segment_end = vaddr.saturating_add(mem_size as u32);

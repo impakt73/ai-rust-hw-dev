@@ -1,5 +1,5 @@
 use crate::bus::SystemBus;
-use crate::hung_detector::{HungDetector, HungDetectorConfig};
+use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
@@ -286,7 +286,10 @@ where
     /// Returns SimulationStepResult containing:
     /// - tohost_value: Some(value) if halt detected, None otherwise
     /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
-    pub fn step(&mut self) -> SimulationStepResult {
+    ///
+    /// # Errors
+    /// Returns `HungStateError` if the CPU is detected to be in a hung state
+    pub fn step(&mut self) -> Result<SimulationStepResult, HungStateError> {
         let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
@@ -423,12 +426,8 @@ where
                     let instruction = self.cpu.debug_instruction;
                     let fsm_state = self.cpu.debug_fsm_state;
 
-                    if let Err(hung_err) =
-                        detector.check_instruction(pc, instruction, fsm_state, self.cycle_count)
-                    {
-                        // Convert hung state error to a panic with detailed message
-                        panic!("Hung state detected: {}", hung_err);
-                    }
+                    // Propagate hung state error to caller instead of panicking
+                    detector.check_instruction(pc, instruction, fsm_state, self.cycle_count)?;
                 }
 
                 break;
@@ -505,10 +504,10 @@ where
         }
 
         let elapsed_us = start_time.elapsed().as_micros() as u64;
-        SimulationStepResult {
+        Ok(SimulationStepResult {
             tohost_value: halt_value,
             elapsed_cpu_time_us: elapsed_us,
-        }
+        })
     }
 
     /// Run the simulation for up to max_cycles
@@ -517,6 +516,9 @@ where
     /// # Arguments
     /// * `boot_pc` - The program counter value to start execution from
     /// * `max_cycles` - Maximum number of cycles to run
+    ///
+    /// # Errors
+    /// Returns error if hung state is detected or other simulation errors occur
     pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
         self.reset(boot_pc);
 
@@ -528,7 +530,7 @@ where
 
         while self.cycle_count < max_cycles {
             // Execute one step and check for halt
-            let step_result = self.step();
+            let step_result = self.step().map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
 
             if let Some(tohost_value) = step_result.tohost_value {
