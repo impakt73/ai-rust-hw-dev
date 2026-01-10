@@ -82,10 +82,9 @@ module decompress (
             
             3'b010: begin  // C.LW
                 // Format: 010 uimm[5:3] rs1' uimm[2|6] rd' 00
-                // Bit mapping: insn[5]=uimm[6], insn[12:10]=uimm[5:3], insn[6]=uimm[2]
-                // However, empirical testing shows: insn[12:10]=uimm[4:2], insn[6]=uimm[6], insn[5]=uimm[5]
-                // Full uimm = {uimm[6:5], uimm[4:2], 2'b00}
-                uimm_lw_sw = {insn_16[6], insn_16[5], insn_16[12:10], 2'b00};
+                // Bit positions: insn[12:10]=uimm[5:3], insn[6]=uimm[2], insn[5]=uimm[6]
+                // Full uimm = {uimm[6:2], 2'b00} for word-aligned offset
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
                 
                 // LW rd', offset(rs1')
                 insn_32 = {5'b0, uimm_lw_sw, rs1_full, 3'b010, rd_full, 7'b0000011};
@@ -93,8 +92,8 @@ module decompress (
             
             3'b110: begin  // C.SW
                 // Format: 110 uimm[5:3] rs1' uimm[2|6] rs2' 00
-                // Same bit mapping as C.LW
-                uimm_lw_sw = {insn_16[6], insn_16[5], insn_16[12:10], 2'b00};
+                // Same bit mapping as C.LW: insn[5]=uimm[6], insn[12:10]=uimm[5:3], insn[6]=uimm[2]
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
                 
                 // SW rs2', offset(rs1')
                 insn_32 = {5'b0, uimm_lw_sw[6:5], rs2_full, rs1_full, 3'b010, uimm_lw_sw[4:0], 7'b0100011};
