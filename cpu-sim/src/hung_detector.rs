@@ -185,6 +185,10 @@ pub struct HungDetector {
 
     // Multiple non-contiguous valid PC ranges
     valid_pc_ranges: Vec<MemoryRange>,
+    
+    // Track if we've completed at least one valid instruction from a valid PC
+    // Used to avoid false positives during simulator initialization
+    has_executed_valid_instruction: bool,
 }
 
 impl HungDetector {
@@ -199,6 +203,7 @@ impl HungDetector {
             current_instruction_word: 0,
             current_instruction_start_cycle: 0,
             valid_pc_ranges: Vec::new(),
+            has_executed_valid_instruction: false,
         }
     }
 
@@ -277,16 +282,18 @@ impl HungDetector {
         self.valid_pc_ranges.iter().any(|range| range.contains(pc))
     }
 
-    /// Check for hung state on every cycle (called before instruction completion check)
+    /// Check for hung state on every cycle
     ///
     /// This detects cases where the FSM gets stuck and never completes an instruction,
-    /// and also checks if PC is within valid instruction memory bounds.
+    /// checks if PC is within valid instruction memory bounds, and tracks PC loops when
+    /// instructions complete.
     ///
     /// # Arguments
     /// * `cycle_count` - Total simulation cycle count
-    /// * `pc` - Current program counter (may not be accurate if instruction hasn't completed)
-    /// * `instruction` - Current instruction word (may not be accurate)
+    /// * `pc` - Current program counter
+    /// * `instruction` - Current instruction word
     /// * `fsm_state` - Current FSM state (4-bit value)
+    /// * `instruction_complete` - True if an instruction completed this cycle
     ///
     /// # Returns
     /// * `Ok(())` if no hang detected
@@ -297,8 +304,29 @@ impl HungDetector {
         pc: u32,
         instruction: u32,
         fsm_state: u8,
+        instruction_complete: bool,
     ) -> Result<(), HungStateError> {
-        // Start tracking long instruction detection
+        // Per-instruction checks when instruction completes
+        if instruction_complete {
+            // Mark that we've completed at least one instruction
+            // Only set this if we're completing an instruction from a valid PC
+            if !self.valid_pc_ranges.is_empty() && self.is_pc_valid(pc) {
+                self.has_executed_valid_instruction = true;
+            }
+            
+            // Reset long instruction tracking since instruction completed
+            self.current_instruction_pc = None;
+            self.current_instruction_start_cycle = cycle_count;
+
+            // Check for PC stuck (if enabled)
+            if self.config.enable_pc_loop_detection {
+                self.check_pc_loop(pc, instruction)?;
+            }
+        }
+
+        // Per-cycle checks (run every cycle, not just on instruction completion)
+        
+        // Long instruction detection
         if self.config.enable_long_instruction_detection {
             if let Some(instr_pc) = self.current_instruction_pc {
                 let cycles_for_this_instruction = cycle_count.saturating_sub(self.current_instruction_start_cycle);
@@ -323,50 +351,21 @@ impl HungDetector {
         // Only check if:
         // 1. We have valid PC ranges defined
         // 2. FSM is not in IDLE state (0)
-        // 3. We've started tracking an instruction (current_instruction_pc is Some)
-        // 4. We're not in FETCH state (1) on the very first instruction (to avoid catching PC=0 during init)
+        // 3. We've executed at least one valid instruction (to avoid false positives during init)
         //
         // This prevents false positives during simulator initialization while still catching
         // invalid PC jumps during execution, even if the instruction never completes.
         if self.config.enable_pc_bounds_detection 
             && !self.valid_pc_ranges.is_empty() 
             && fsm_state != 0 
-            && self.current_instruction_pc.is_some() 
-            && self.is_pc_valid(self.current_instruction_pc.unwrap()) {  // Only check if we've started from a valid PC
+            && self.has_executed_valid_instruction {
+            // Check current PC
             if !self.is_pc_valid(pc) {
                 return Err(HungStateError::PcOutOfBounds {
                     pc,
                     valid_ranges: self.valid_pc_ranges.clone(),
                 });
             }
-        }
-
-        Ok(())
-    }
-
-    /// Check for hung state after an instruction completes
-    ///
-    /// # Arguments
-    /// * `pc` - Program counter of completed instruction
-    /// * `instruction` - Instruction word that was executed
-    /// * `cycle_count` - Total simulation cycle count
-    ///
-    /// # Returns
-    /// * `Ok(())` if no hang detected
-    /// * `Err(HungStateError)` if a hang condition was detected
-    pub fn check_instruction(
-        &mut self,
-        pc: u32,
-        instruction: u32,
-        cycle_count: u64,
-    ) -> Result<(), HungStateError> {
-        // Reset long instruction tracking since instruction completed
-        self.current_instruction_pc = None;
-        self.current_instruction_start_cycle = cycle_count;
-
-        // Check for PC stuck (if enabled)
-        if self.config.enable_pc_loop_detection {
-            self.check_pc_loop(pc, instruction)?;
         }
 
         Ok(())
@@ -416,6 +415,7 @@ impl HungDetector {
         self.current_instruction_pc = None;
         self.current_instruction_word = 0;
         self.current_instruction_start_cycle = 0;
+        self.has_executed_valid_instruction = false;
         // Note: We don't clear valid_pc_ranges as they persist across resets
     }
 }
@@ -428,14 +428,14 @@ mod tests {
     fn test_pc_stuck_detection() {
         let mut detector = HungDetector::new_default();
 
-        // Simulate same PC being executed repeatedly
+        // Simulate same PC being executed repeatedly (instruction_complete=true)
         for i in 0..49 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok(), "Should not detect hang at iteration {}", i);
         }
 
         // 50th iteration should trigger hang detection
-        let result = detector.check_instruction(0x8000_0000, 0x00000013, 50);
+        let result = detector.check_cycle(50, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_err(), "Should detect PC stuck at threshold");
 
         match result {
@@ -453,22 +453,22 @@ mod tests {
 
         // Execute same PC multiple times
         for i in 0..30 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok());
         }
 
         // Change PC (should reset counter)
-        let result = detector.check_instruction(0x8000_0004, 0x00000013, 30);
+        let result = detector.check_cycle(30, 0x8000_0004, 0x00000013, 2, true);
         assert!(result.is_ok());
 
         // Go back to original PC - counter should be reset
         for i in 31..80 {
-            let result = detector.check_instruction(0x8000_0000, 0x00000013, i);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok());
         }
 
         // Should trigger at 50 after reset
-        let result = detector.check_instruction(0x8000_0000, 0x00000013, 80);
+        let result = detector.check_cycle(80, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_err());
     }
 
@@ -477,15 +477,17 @@ mod tests {
         let mut detector = HungDetector::new_default();
         detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
-        // PC within bounds should be ok (checked per-cycle now)
-        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2);
+        // First, complete one instruction from a valid PC to enable bounds checking
+        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_ok());
-
-        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2);
+        
+        // Now bounds checking should be active
+        // PC within bounds should be ok
+        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
         assert!(result.is_ok());
 
         // PC below bounds should fail
-        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2);
+        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -495,7 +497,7 @@ mod tests {
         }
 
         // PC above bounds should fail
-        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2);
+        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -511,10 +513,10 @@ mod tests {
         // Don't set valid range
 
         // Any PC should be ok when bounds checking is enabled but range is not set
-        let result = detector.check_instruction(0x0000_0000, 0x00000013, 0);
+        let result = detector.check_cycle(0, 0x0000_0000, 0x00000013, 2, true);
         assert!(result.is_ok());
 
-        let result = detector.check_instruction(0xFFFF_FFFC, 0x00000013, 1);
+        let result = detector.check_cycle(1, 0xFFFF_FFFC, 0x00000013, 2, true);
         assert!(result.is_ok());
     }
 
@@ -524,7 +526,7 @@ mod tests {
 
         // Build up some state
         for i in 0..30 {
-            let _ = detector.check_instruction(0x8000_0000, 0x00000013, i);
+            let _ = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
         }
 
         assert_eq!(detector.pc_stuck_count, 30);
@@ -546,16 +548,19 @@ mod tests {
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
-        // PCs in first range should be ok (checked per-cycle now)
-        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2).is_ok());
-        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2).is_ok());
+        // First, complete one instruction from a valid PC to enable bounds checking
+        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, true).is_ok());
+        
+        // Now bounds checking should be active
+        // PCs in first range should be ok
+        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
 
         // PCs in second range should be ok
-        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2).is_ok());
-        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2).is_ok());
+        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, false).is_ok());
+        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, false).is_ok());
 
         // PC in gap between ranges should fail
-        let result = detector.check_cycle(4, 0x8000_1500, 0, 2);
+        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
@@ -566,7 +571,7 @@ mod tests {
         }
 
         // PC outside all ranges should fail
-        let result = detector.check_cycle(5, 0x8000_4000, 0, 2);
+        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false);
         assert!(result.is_err());
     }
 
@@ -602,12 +607,12 @@ mod tests {
 
         // Simulate instruction taking many cycles without completing
         for cycle in 0..100u64 {
-            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013, 3);
+            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013, 3, false);
             assert!(result.is_ok(), "Should not detect hang at cycle {}", cycle);
         }
 
         // Cycle 101 should trigger long instruction detection
-        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013, 3);
+        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013, 3, false);
         assert!(result.is_err(), "Should detect long instruction");
 
         match result {

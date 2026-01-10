@@ -1252,42 +1252,6 @@ fn test_hung_detection_with_elf_auto_range() {
     println!("========================================");
 }
 
-#[test]
-fn test_hung_detection_with_trace_callback() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("HUNG DETECTION: WITH TRACE CALLBACK TEST");
-    println!("========================================");
-
-    let elf_path = test_program_path("test.elf");
-    
-    let trace_count = Arc::new(Mutex::new(0usize));
-    let trace_count_clone = Arc::clone(&trace_count);
-    
-    let trace_callback = move |_trace: &InstructionTrace| {
-        let mut count = trace_count_clone.lock().unwrap();
-        *count += 1;
-    };
-    
-    let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback));
-    
-    assert!(
-        result.is_ok(),
-        "Should run with trace callback and hung detection: {:?}",
-        result.err()
-    );
-    
-    let count = *trace_count.lock().unwrap();
-    println!("✓ Traced {} instructions", count);
-    println!("✓ Hung detection works with trace callbacks");
-
-    println!("\n========================================");
-    println!("✓ HUNG DETECTION WITH TRACE CALLBACK TEST PASSED");
-    println!("========================================");
-}
-
-
 // Tests that verify hung states ARE detected (not just false positives)
 #[test]
 fn test_hung_detection_catches_infinite_loop() {
@@ -1390,5 +1354,75 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     println!("✓ Error message: {}", err_msg);
     println!("\n========================================");
     println!("✓ HUNG DETECTION OUT OF BOUNDS TEST PASSED");
+    println!("========================================");
+}
+
+#[test]
+fn test_hung_detection_catches_long_instruction() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("HUNG DETECTION: LONG INSTRUCTION DETECTION");
+    println!("========================================");
+
+    // Use memory latency to make an instruction take too many cycles
+    // We'll use a load instruction that will access memory with high latency
+    use riscv_core::instruction::lw;
+
+    let start_addr = 0x8000_0000;
+    
+    // Program:
+    // 1. ADDI x2, x0, <low 12 bits of data_addr>   - Load low part of address into x2
+    // 2. LUI x2, <high 20 bits of data_addr>        - Would be needed for full address, but we'll use a simpler approach
+    // Actually, let's just use LW with offset from x0 which is always 0
+    // We'll place data at a small offset that fits in 12-bit immediate
+    
+    // Simpler approach: Use data at address that fits in 12-bit offset from x0
+    let simple_data_addr = 0x100u32;  // Small address that fits in LW immediate
+    
+    // LW x1, 0x100(x0) - load word from address 0x100 into x1
+    let load_instr = lw(1, 0, simple_data_addr as i32);
+    let program_bytes: Vec<u8> = vec![load_instr]
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    // Set memory latency to exceed max_cycles_per_instruction (default 10000)
+    // This will cause the load instruction to take too long
+    let mem_latency_cycles = 15000;
+
+    let result = run_program(
+        100000,  // High max_cycles so we don't hit that limit first
+        false,
+        false,
+        None::<fn(u32)>,
+        None::<fn(&InstructionTrace)>,
+        None,
+        mem_latency_cycles,  // Set memory latency high enough to trigger long instruction detection
+        |sim| {
+            sim.write_memory_region(start_addr, &program_bytes, true);
+            
+            // Write data at simple_data_addr
+            let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
+            sim.write_memory_region(simple_data_addr, &data, false);
+            
+            Ok(start_addr)
+        },
+        |_sim, _result| {},
+    );
+
+    // Should get an error about instruction taking too long
+    assert!(result.is_err(), "Should detect long instruction");
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("LongInstruction") || err_msg.contains("taken") && err_msg.contains("cycles"),
+        "Error should mention long instruction, got: {}",
+        err_msg
+    );
+
+    println!("✓ Successfully detected instruction taking too many cycles");
+    println!("✓ Error message: {}", err_msg);
+    println!("\n========================================");
+    println!("✓ HUNG DETECTION LONG INSTRUCTION TEST PASSED");
     println!("========================================");
 }

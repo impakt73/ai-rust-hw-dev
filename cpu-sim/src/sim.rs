@@ -269,9 +269,7 @@ where
         let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-        const MAX_CYCLES_PER_INSTR: u32 = 100; // Safety limit for variable latency
 
-        let mut cycles = 0;
         let mut halt_value = None;
 
         // Multi-cycle execution loop - continue until instruction completes
@@ -384,35 +382,20 @@ where
                 vcd.dump(self.cycle_count + 3);
             }
 
-            // Safety check
-            cycles += 1;
-            if cycles >= MAX_CYCLES_PER_INSTR {
-                panic!(
-                    "Instruction exceeded maximum cycles ({})",
-                    MAX_CYCLES_PER_INSTR
-                );
-            }
+            // Check if instruction complete (AFTER clock edge)
+            // With delayed instr_complete, values have already settled by the time we see the signal
+            let instruction_complete = self.cpu.instr_complete != 0;
 
-            // Check for hung state on every cycle (detects stuck FSM that never completes instruction)
+            // Check for hung state on every cycle
+            // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
             if let Some(ref mut detector) = self.hung_detector {
                 let pc = self.cpu.debug_pc;
                 let instruction = self.cpu.debug_instruction;
                 let fsm_state = self.cpu.debug_fsm_state;
-                detector.check_cycle(self.cycle_count, pc, instruction, fsm_state)?;
+                detector.check_cycle(self.cycle_count, pc, instruction, fsm_state, instruction_complete)?;
             }
 
-            // Check if instruction complete (AFTER clock edge)
-            // With delayed instr_complete, values have already settled by the time we see the signal
-            if self.cpu.instr_complete != 0 {
-                // Check for hung state after instruction completes
-                if let Some(ref mut detector) = self.hung_detector {
-                    let pc = self.cpu.debug_pc;
-                    let instruction = self.cpu.debug_instruction;
-
-                    // Propagate hung state error to caller instead of panicking
-                    detector.check_instruction(pc, instruction, self.cycle_count)?;
-                }
-
+            if instruction_complete {
                 break;
             }
         }
@@ -447,11 +430,10 @@ where
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             println!(
-                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
+                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x}",
                 self.cycle_count,
                 pc,
-                instruction,
-                cycles + 1
+                instruction
             );
         }
 
