@@ -264,7 +264,7 @@ module decompress (
                 // B-type encoding needs 13-bit immediate: imm[12:0] where imm[0]=0
                 // Sign-extend 9-bit imm_b to 13 bits
                 // inst[31] = imm[12], inst[30:25] = imm[10:5], inst[11:8] = imm[4:1], inst[7] = imm[11]
-                insn_32 = {{20{imm_b[8]}},  // Sign extension for bits 31:12 (imm[12])
+                insn_32 = {imm_b[8],         // bit 31 (imm[12] - sign bit)
                            imm_b[8],         // bit 30 (imm[10])  
                            imm_b[8],         // bit 29 (imm[9])
                            imm_b[8],         // bit 28 (imm[8])
@@ -283,7 +283,7 @@ module decompress (
                 imm_b = {insn_16[12], insn_16[6:5], insn_16[2], insn_16[11:10], insn_16[4:3], 1'b0};
                 
                 // BNE rs1', x0, offset  
-                insn_32 = {{20{imm_b[8]}},  // Sign extension for bits 31:12 (imm[12])
+                insn_32 = {imm_b[8],         // bit 31 (imm[12] - sign bit)
                            imm_b[8],         // bit 30 (imm[10])
                            imm_b[8],         // bit 29 (imm[9])
                            imm_b[8],         // bit 28 (imm[8])

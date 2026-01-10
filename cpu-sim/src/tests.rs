@@ -1191,3 +1191,31 @@ fn test_image_dump() {
     println!("✓ IMAGE DUMP TEST PASSED");
     println!("========================================");
 }
+
+#[test]
+fn test_panic_handler() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("PANIC HANDLER TEST");
+    println!("========================================");
+
+    let elf_path = test_program_path("test_panic.elf");
+    
+    // Run the panic test program with sufficient cycles
+    let result = run_elf(&elf_path, 5000, false).expect("Simulation should succeed");
+
+    // Verify that the panic handler wrote 0xDEAD to tohost
+    assert_eq!(
+        result.tohost_value,
+        Some(0xDEAD),
+        "Panic handler should write 0xDEAD to tohost (got {:x?})",
+        result.tohost_value
+    );
+
+    println!("✓ Panic handler correctly signaled with 0xDEAD");
+    println!("✓ Test completed in {} cycles", result.cycles);
+    println!("\n========================================");
+    println!("✓ PANIC HANDLER TEST PASSED");
+    println!("========================================");
+}
