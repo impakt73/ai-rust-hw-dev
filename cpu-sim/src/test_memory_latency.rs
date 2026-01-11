@@ -21,10 +21,11 @@ fn test_program_path(filename: &str) -> PathBuf {
 fn test_zero_latency_default() {
     init_test_logger();
 
-    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0
+    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0, then infinite loop
     let instructions: Vec<u8> = vec![
         0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42 (0x02a00093)
         0x23, 0x28, 0x10, 0xfe, // sw x1, -16(x0) (0xfe102823) - writes to 0xFFFFFFF0
+        0x6f, 0x00, 0x00, 0x00, // jal x0, 0 (0x0000006f) - infinite loop
     ];
 
     let result = run_program(
@@ -62,10 +63,11 @@ fn test_zero_latency_default() {
 fn test_multi_cycle_memory_latency() {
     init_test_logger();
 
-    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0
+    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0, then infinite loop
     let instructions: Vec<u8> = vec![
         0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42
         0x23, 0x28, 0x10, 0xfe, // sw x1, -16(x0) - writes to 0xFFFFFFF0
+        0x6f, 0x00, 0x00, 0x00, // jal x0, 0 - infinite loop
     ];
 
     let result = run_program(
@@ -112,11 +114,13 @@ fn test_load_store_with_latency() {
     // 2. sw x1, 0(x0)      (store 100 to address 0)
     // 3. lw x2, 0(x0)      (load from address 0 into x2)
     // 4. sw x2, -16(x0)    (write to tohost 0xFFFFFFF0 to halt)
+    // 5. jal x0, 0         (infinite loop)
     let instructions: Vec<u8> = vec![
         0x93, 0x00, 0x40, 0x06, // addi x1, x0, 100
         0x23, 0x20, 0x10, 0x00, // sw x1, 0(x0)
         0x03, 0x21, 0x00, 0x00, // lw x2, 0(x0)
         0x23, 0x28, 0x20, 0xfe, // sw x2, -16(x0)
+        0x6f, 0x00, 0x00, 0x00, // jal x0, 0
     ];
 
     let result = run_program(

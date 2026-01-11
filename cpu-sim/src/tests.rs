@@ -519,7 +519,7 @@ fn test_packet_protocol_end_to_end() {
     log::info!("Entry point: 0x{:08x}", entry_point);
 
     // Reset the CPU before starting
-    sim.reset(entry_point);
+    sim.reset(entry_point).expect("Failed to reset simulator");
 
     println!("Running CPU program and exchanging packets...\n");
 
@@ -779,7 +779,7 @@ fn test_println_macro() {
         crate::load_elf(&mut sim, &elf_path).expect("Failed to load println_test.elf");
 
     // Reset the CPU before starting
-    sim.reset(entry_point);
+    sim.reset(entry_point).expect("Failed to reset simulator");
 
     println!("Running CPU program...\n");
 

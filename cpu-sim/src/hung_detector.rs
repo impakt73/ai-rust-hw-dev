@@ -157,12 +157,12 @@ fn fsm_state_name(state: u8) -> &'static str {
         1 => "FETCH",
         2 => "DECODE",
         3 => "EXECUTE",
-        4 => "BRANCH_RESOLVE",
+        4 => "MEM_ADDR",
         5 => "MEM_READ",
         6 => "MEM_WRITE",
-        7 => "CSR_READ",
-        8 => "CSR_WRITE",
-        9 => "MUL_DIV",
+        7 => "WRITEBACK",
+        8 => "BRANCH",
+        9 => "CSR",
         10 => "HALT",
         _ => "UNKNOWN",
     }
@@ -186,14 +186,6 @@ pub struct HungDetector {
 
     // Multiple non-contiguous valid PC ranges
     valid_pc_ranges: Vec<MemoryRange>,
-
-    // Track if CPU has started executing (transitioned from IDLE to active)
-    // Used to avoid false positives before first instruction fetch
-    cpu_started: bool,
-
-    // Track if at least one instruction has completed
-    // Used to avoid PC bounds check false positives during boot
-    instruction_completed_once: bool,
 }
 
 impl HungDetector {
@@ -208,8 +200,6 @@ impl HungDetector {
             current_instruction_word: 0,
             current_instruction_start_cycle: 0,
             valid_pc_ranges: Vec::new(),
-            cpu_started: false,
-            instruction_completed_once: false,
         }
     }
 
@@ -288,6 +278,29 @@ impl HungDetector {
         self.valid_pc_ranges.iter().any(|range| range.contains(pc))
     }
 
+    /// Validate a boot address before reset
+    ///
+    /// Checks if the boot address falls within the valid PC ranges.
+    /// This should be called before resetting the CPU to ensure the boot
+    /// address is valid, preventing PC out-of-bounds errors during initialization.
+    ///
+    /// # Arguments
+    /// * `boot_addr` - The boot address to validate
+    ///
+    /// # Returns
+    /// * `Ok(())` if the boot address is valid or no PC ranges are configured
+    /// * `Err(HungStateError::PcOutOfBounds)` if the boot address is outside valid ranges
+    pub fn validate_boot_addr(&self, boot_addr: u32) -> Result<(), HungStateError> {
+        // Only validate if we have PC ranges configured
+        if !self.valid_pc_ranges.is_empty() && !self.is_pc_valid(boot_addr) {
+            return Err(HungStateError::PcOutOfBounds {
+                pc: boot_addr,
+                valid_ranges: self.valid_pc_ranges.clone(),
+            });
+        }
+        Ok(())
+    }
+
     /// Check for hung state on every cycle
     ///
     /// This detects cases where the FSM gets stuck and never completes an instruction,
@@ -312,16 +325,8 @@ impl HungDetector {
         fsm_state: u8,
         instruction_complete: bool,
     ) -> Result<(), HungStateError> {
-        // Track if CPU has started executing (transitioned from IDLE to active state)
-        if !self.cpu_started && fsm_state != 0 {
-            self.cpu_started = true;
-        }
-
         // Per-instruction checks when instruction completes
         if instruction_complete {
-            // Mark that at least one instruction has completed
-            self.instruction_completed_once = true;
-
             // Reset long instruction tracking since instruction completed
             self.current_instruction_pc = None;
             self.current_instruction_start_cycle = cycle_count;
@@ -357,25 +362,27 @@ impl HungDetector {
         }
 
         // Per-cycle PC bounds checking (if enabled)
-        // Only check if:
-        // 1. We have valid PC ranges defined
-        // 2. At least one instruction has completed (to avoid false positives during boot)
-        // 3. FSM is not in IDLE state (0)
         //
-        // This prevents false positives during simulator initialization while
-        // still catching invalid PC jumps during execution
+        // Now that we use debug_current_pc instead of debug_pc (completed_pc_reg),
+        // we can check PC bounds on every cycle. The debug_current_pc signal represents
+        // the PC that was used to fetch the current instruction being executed.
+        //
+        // Hardware behavior with new debug_current_pc:
+        // - Uses instr_pc_reg (PC captured in DECODE) if available, otherwise current pc
+        // - This gives us the actual PC for the instruction being executed
+        // - Valid from DECODE state onward for each instruction
+        //
+        // Boot address validation (in reset()) ensures the initial PC starts in a valid
+        // range, providing complete coverage from the very first cycle.
         if self.config.enable_pc_bounds_detection
             && !self.valid_pc_ranges.is_empty()
-            && self.instruction_completed_once
-            && fsm_state != 0
+            && fsm_state != 0  // Skip IDLE state
+            && !self.is_pc_valid(pc)
         {
-            // Check current PC
-            if !self.is_pc_valid(pc) {
-                return Err(HungStateError::PcOutOfBounds {
-                    pc,
-                    valid_ranges: self.valid_pc_ranges.clone(),
-                });
-            }
+            return Err(HungStateError::PcOutOfBounds {
+                pc,
+                valid_ranges: self.valid_pc_ranges.clone(),
+            });
         }
 
         Ok(())
@@ -425,8 +432,6 @@ impl HungDetector {
         self.current_instruction_pc = None;
         self.current_instruction_word = 0;
         self.current_instruction_start_cycle = 0;
-        self.cpu_started = false;
-        self.instruction_completed_once = false;
         // Note: We don't clear valid_pc_ranges as they persist across resets
     }
 }
@@ -488,16 +493,14 @@ mod tests {
         let mut detector = HungDetector::new_default();
         detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
-        // First, complete one instruction from a valid PC to enable bounds checking
-        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, true);
+        // PC within bounds should be ok (FSM state != 0 to activate checking)
+        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, false);
         assert!(result.is_ok());
 
-        // Now bounds checking should be active
-        // PC within bounds should be ok
         let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
         assert!(result.is_ok());
 
-        // PC below bounds should fail
+        // PC below bounds should fail (per-cycle checking)
         let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
@@ -507,7 +510,7 @@ mod tests {
             _ => panic!("Expected PcOutOfBounds error"),
         }
 
-        // PC above bounds should fail
+        // PC above bounds should fail (per-cycle checking)
         let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
@@ -516,6 +519,10 @@ mod tests {
             }
             _ => panic!("Expected PcOutOfBounds error"),
         }
+
+        // PC out of bounds in IDLE state (fsm_state=0) should NOT fail
+        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 0, false);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -559,18 +566,15 @@ mod tests {
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
-        // First, complete one instruction from a valid PC to enable bounds checking
-        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, true).is_ok());
-
-        // Now bounds checking should be active
-        // PCs in first range should be ok
+        // PCs in first range should be ok (per-cycle checking, FSM state != 0)
+        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, false).is_ok());
         assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
 
-        // PCs in second range should be ok
+        // PCs in second range should be ok (per-cycle checking)
         assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, false).is_ok());
         assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, false).is_ok());
 
-        // PC in gap between ranges should fail
+        // PC in gap between ranges should fail (per-cycle checking)
         let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false);
         assert!(result.is_err());
         match result {
@@ -581,7 +585,7 @@ mod tests {
             _ => panic!("Expected PcOutOfBounds error"),
         }
 
-        // PC outside all ranges should fail
+        // PC outside all ranges should fail (per-cycle checking)
         let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false);
         assert!(result.is_err());
     }
@@ -638,6 +642,45 @@ mod tests {
                 assert_eq!(fsm_state, 3);
             }
             _ => panic!("Expected LongInstruction error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_boot_addr() {
+        let mut detector = HungDetector::new_default();
+
+        // Without any PC ranges configured, any boot address should be valid
+        assert!(detector.validate_boot_addr(0x0000_0000).is_ok());
+        assert!(detector.validate_boot_addr(0x8000_0000).is_ok());
+        assert!(detector.validate_boot_addr(0xFFFF_FFFC).is_ok());
+
+        // Add a valid PC range
+        detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
+
+        // Boot address within range should be valid
+        assert!(detector.validate_boot_addr(0x8000_0000).is_ok());
+        assert!(detector.validate_boot_addr(0x8000_FFFC).is_ok());
+
+        // Boot address outside range should fail
+        let result = detector.validate_boot_addr(0x7FFF_FFFC);
+        assert!(result.is_err());
+        match result {
+            Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
+                assert_eq!(pc, 0x7FFF_FFFC);
+                assert_eq!(valid_ranges.len(), 1);
+                assert_eq!(valid_ranges[0].start, 0x8000_0000);
+                assert_eq!(valid_ranges[0].end, 0x8001_0000);
+            }
+            _ => panic!("Expected PcOutOfBounds error"),
+        }
+
+        let result = detector.validate_boot_addr(0x8001_0000);
+        assert!(result.is_err());
+        match result {
+            Err(HungStateError::PcOutOfBounds { pc, .. }) => {
+                assert_eq!(pc, 0x8001_0000);
+            }
+            _ => panic!("Expected PcOutOfBounds error"),
         }
     }
 }

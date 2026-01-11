@@ -39,7 +39,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -92,7 +92,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -177,7 +177,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -257,7 +257,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -332,7 +332,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -404,7 +404,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
@@ -506,7 +506,7 @@ mod tests {
         .expect("Failed to create simulator");
 
         let entry_point = crate::load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point);
+        sim.reset(entry_point).expect("Failed to reset simulator");
 
         let mut result = None;
         for _ in 0..10000 {
