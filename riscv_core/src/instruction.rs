@@ -742,6 +742,103 @@ pub fn c_swsp(rs2: u32, offset: u32) -> u16 {
     insn
 }
 
+// ============================================================================
+// RV32A Atomic Extension
+// ============================================================================
+
+/// Encode an atomic instruction (R-type with funct5, aq, rl)
+///
+/// Format: funct5 | aq | rl | rs2 | rs1 | funct3 | rd | opcode
+/// All atomic instructions use opcode 0101111 and funct3 010 (word operations)
+pub fn encode_atomic(funct5: u32, aq: bool, rl: bool, rd: u32, rs1: u32, rs2: u32) -> u32 {
+    let aq_bit = if aq { 1 } else { 0 };
+    let rl_bit = if rl { 1 } else { 0 };
+    (funct5 << 27)
+        | (aq_bit << 26)
+        | (rl_bit << 25)
+        | (rs2 << 20)
+        | (rs1 << 15)
+        | (0b010 << 12)
+        | (rd << 7)
+        | 0b0101111
+}
+
+/// LR.W: Load-Reserved Word
+/// rd = mem[rs1], set reservation on rs1
+pub fn lr_w(rd: u32, rs1: u32) -> u32 {
+    encode_atomic(0b00010, false, false, rd, rs1, 0)
+}
+
+/// LR.W with acquire ordering
+pub fn lr_w_aq(rd: u32, rs1: u32) -> u32 {
+    encode_atomic(0b00010, true, false, rd, rs1, 0)
+}
+
+/// SC.W: Store-Conditional Word
+/// If reservation valid: mem[rs1] = rs2, rd = 0; else rd = 1
+pub fn sc_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b00011, false, false, rd, rs1, rs2)
+}
+
+/// SC.W with release ordering
+pub fn sc_w_rl(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b00011, false, true, rd, rs1, rs2)
+}
+
+/// AMOSWAP.W: Atomic Swap
+/// rd = mem[rs1], mem[rs1] = rs2
+pub fn amoswap_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b00001, false, false, rd, rs1, rs2)
+}
+
+/// AMOADD.W: Atomic Add
+/// rd = mem[rs1], mem[rs1] = mem[rs1] + rs2
+pub fn amoadd_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b00000, false, false, rd, rs1, rs2)
+}
+
+/// AMOXOR.W: Atomic XOR
+/// rd = mem[rs1], mem[rs1] = mem[rs1] ^ rs2
+pub fn amoxor_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b00100, false, false, rd, rs1, rs2)
+}
+
+/// AMOAND.W: Atomic AND
+/// rd = mem[rs1], mem[rs1] = mem[rs1] & rs2
+pub fn amoand_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b01100, false, false, rd, rs1, rs2)
+}
+
+/// AMOOR.W: Atomic OR
+/// rd = mem[rs1], mem[rs1] = mem[rs1] | rs2
+pub fn amoor_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b01000, false, false, rd, rs1, rs2)
+}
+
+/// AMOMIN.W: Atomic Minimum (signed)
+/// rd = mem[rs1], mem[rs1] = min(signed(mem[rs1]), signed(rs2))
+pub fn amomin_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b10000, false, false, rd, rs1, rs2)
+}
+
+/// AMOMAX.W: Atomic Maximum (signed)
+/// rd = mem[rs1], mem[rs1] = max(signed(mem[rs1]), signed(rs2))
+pub fn amomax_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b10100, false, false, rd, rs1, rs2)
+}
+
+/// AMOMINU.W: Atomic Minimum (unsigned)
+/// rd = mem[rs1], mem[rs1] = min(unsigned(mem[rs1]), unsigned(rs2))
+pub fn amominu_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b11000, false, false, rd, rs1, rs2)
+}
+
+/// AMOMAXU.W: Atomic Maximum (unsigned)
+/// rd = mem[rs1], mem[rs1] = max(unsigned(mem[rs1]), unsigned(rs2))
+pub fn amomaxu_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    encode_atomic(0b11100, false, false, rd, rs1, rs2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

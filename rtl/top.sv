@@ -57,7 +57,8 @@ module top (
         S_WRITEBACK  = 4'b0111,  // Write result to register
         S_BRANCH     = 4'b1000,  // Branch decision
         S_CSR        = 4'b1001,  // CSR operation
-        S_HALT       = 4'b1010   // ECALL/EBREAK
+        S_HALT       = 4'b1010,  // ECALL/EBREAK
+        S_ATOMIC_RMW = 4'b1011   // Atomic read-modify-write (A extension)
     } state_t;
 
     state_t current_state, next_state;
@@ -108,6 +109,16 @@ module top (
     logic        is_ebreak;
     logic        is_fence;
     logic        is_csr;
+    logic        is_lr;        // LR.W instruction (A extension)
+    logic        is_sc;        // SC.W instruction (A extension)
+    logic        is_amo;       // AMO instruction (A extension)
+    logic [4:0]  funct5;       // For atomic operation type
+    
+    // ============================================================
+    // LR/SC Reservation Station (A Extension)
+    // ============================================================
+    logic        reservation_valid;
+    logic [31:0] reservation_addr;
     
     // ============================================================
     // Staging Registers (Flip-Flops for Multi-Cycle Operation)
@@ -144,6 +155,8 @@ module top (
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
     logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
+    logic        is_lr_reg, is_sc_reg, is_amo_reg;  // A extension registers
+    logic [4:0]  funct5_reg;  // A extension - atomic operation type
     logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -168,7 +181,8 @@ module top (
     logic        alu_zero;
     logic        alu_start;       // NEW: Start ALU operation
     logic        alu_ready;       // NEW: ALU operation complete
-    logic        alu_start_sent;  // NEW: Track if start pulse has been sent
+    logic        alu_start_sent;  // NEW: Track if start pulse has been sent (S_EXECUTE)
+    logic        alu_start_sent_rmw;  // NEW: Track if start pulse has been sent (S_ATOMIC_RMW)
     
     // Branch/Jump logic
     logic        take_branch;
@@ -180,6 +194,15 @@ module top (
     
     // Memory interface signals
     logic [31:0] formatted_load_data;
+    
+    // A extension: SC success/failure logic
+    logic        sc_success;
+    assign sc_success = reservation_valid && (reservation_addr == alu_out_reg);
+    
+    // A extension: AMO write data selection
+    // AMOSWAP uses rs2 directly, others use ALU result
+    logic [31:0] amo_write_data;
+    assign amo_write_data = (funct5_reg == 5'b00001) ? b_reg : alu_result;  // funct5==00001 is AMOSWAP
     
     // CSR address: use combinational imm_i in S_DECODE (for read), registered imm_i_reg in other states
     assign csr_addr = (current_state == S_DECODE) ? imm_i[11:0] : imm_i_reg[11:0];
@@ -257,6 +280,10 @@ module top (
             is_ebreak_reg <= 1'b0;
             is_fence_reg <= 1'b0;
             is_csr_reg <= 1'b0;
+            is_lr_reg <= 1'b0;
+            is_sc_reg <= 1'b0;
+            is_amo_reg <= 1'b0;
+            funct5_reg <= 5'h0;
             instr_pc_reg <= 32'h0;
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
@@ -282,6 +309,10 @@ module top (
             is_ebreak_reg <= is_ebreak;
             is_fence_reg <= is_fence;
             is_csr_reg <= is_csr;
+            is_lr_reg <= is_lr;
+            is_sc_reg <= is_sc;
+            is_amo_reg <= is_amo;
+            funct5_reg <= funct5;
             instr_pc_reg <= pc;  // Capture PC of this instruction
         end
     end
@@ -324,6 +355,39 @@ module top (
             alu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
         else if (alu_start)
             alu_start_sent <= 1'b1;  // Mark as sent after pulsing
+    end
+    
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            alu_start_sent_rmw <= 1'b0;
+        else if (current_state != S_ATOMIC_RMW)
+            alu_start_sent_rmw <= 1'b0;  // Reset when leaving S_ATOMIC_RMW
+        else if (alu_start)
+            alu_start_sent_rmw <= 1'b1;  // Mark as sent after pulsing
+    end
+    
+    // ============================================================
+    // LR/SC Reservation Tracking (A Extension)
+    // ============================================================
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            reservation_valid <= 1'b0;
+            reservation_addr <= 32'h0;
+        end else begin
+            // Set reservation on LR.W completion (in S_MEM_READ with dmem_ready)
+            if (is_lr_reg && current_state == S_MEM_READ && dmem_ready) begin
+                reservation_valid <= 1'b1;
+                reservation_addr <= alu_out_reg;  // Address from ALU (rs1 + 0)
+            end
+            // Clear reservation on SC.W (any SC, regardless of success)
+            else if (is_sc_reg && current_state == S_MEM_WRITE) begin
+                reservation_valid <= 1'b0;
+            end
+            // Clear reservation on any write to the reserved address
+            else if (dmem_we && reservation_valid && dmem_addr == reservation_addr) begin
+                reservation_valid <= 1'b0;
+            end
+        end
     end
     
     // ============================================================
@@ -428,6 +492,9 @@ module top (
                     7'b0100011:  // Store
                         next_state = S_MEM_ADDR;
                     
+                    7'b0101111:  // AMO (Atomic operations - A extension)
+                        next_state = S_MEM_ADDR;
+                    
                     7'b1100011:  // Branch
                         next_state = S_BRANCH;
                     
@@ -462,18 +529,28 @@ module top (
             
             S_MEM_READ: begin
                 // Wait for data memory ready
-                if (dmem_ready)
-                    next_state = S_WRITEBACK;
-                else
+                if (dmem_ready) begin
+                    if (is_amo_reg) begin
+                        next_state = S_ATOMIC_RMW;  // AMO: proceed to RMW phase
+                    end else begin
+                        next_state = S_WRITEBACK;   // Normal load or LR.W
+                    end
+                end else begin
                     next_state = S_MEM_READ;
+                end
             end
             
             S_MEM_WRITE: begin
                 // Wait for data memory ready
-                if (dmem_ready)
-                    next_state = S_FETCH;
-                else
+                if (dmem_ready) begin
+                    if (is_sc_reg) begin
+                        next_state = S_WRITEBACK;  // SC.W: write success/failure to rd
+                    end else begin
+                        next_state = S_FETCH;      // Normal store
+                    end
+                end else begin
                     next_state = S_MEM_WRITE;
+                end
             end
             
             S_WRITEBACK: begin
@@ -486,6 +563,14 @@ module top (
             
             S_CSR: begin
                 next_state = S_WRITEBACK;
+            end
+            
+            S_ATOMIC_RMW: begin
+                // Wait for ALU ready and memory ready before writeback
+                if (alu_ready && dmem_ready)
+                    next_state = S_WRITEBACK;
+                else
+                    next_state = S_ATOMIC_RMW;
             end
             
             S_HALT: begin
@@ -583,6 +668,18 @@ module top (
                 // Don't set instr_complete here - let WRITEBACK do it
             end
             
+            S_ATOMIC_RMW: begin
+                // Atomic read-modify-write phase for AMO instructions
+                // Pulse alu_start only on first cycle in S_ATOMIC_RMW
+                alu_start = !alu_start_sent_rmw;
+                
+                dmem_req = 1'b1;  // Request memory write
+                
+                if (alu_ready && dmem_ready) begin
+                    alu_out_write = 1'b1;  // Capture computed result for memory write
+                end
+            end
+            
             S_HALT: begin
                 // HALT state: all control signals remain inactive
                 // Note: instr_complete_internal should NOT be asserted here
@@ -643,7 +740,11 @@ module top (
         .is_ecall(is_ecall),
         .is_ebreak(is_ebreak),
         .is_fence(is_fence),
-        .is_csr(is_csr)
+        .is_csr(is_csr),
+        .is_lr(is_lr),
+        .is_sc(is_sc),
+        .is_amo(is_amo),
+        .funct5(funct5)
     );
     
     // Register file instantiation (write enable gated by FSM)
@@ -682,6 +783,11 @@ module top (
                 end
             endcase
         end
+        // Special case for S_ATOMIC_RMW: compute new value for AMO
+        else if (current_state == S_ATOMIC_RMW) begin
+            alu_a = mdr;    // Original value from memory
+            alu_b = b_reg;  // rs2 data
+        end
     end
     
     // ALU instantiation (uses registered control signals)
@@ -702,9 +808,12 @@ module top (
         .funct3(funct3_reg),
         .mem_write(mem_write_reg),
         .mem_read(mem_read_reg),
-        .alu_result(alu_out_reg),  // Use registered ALU output
+        .is_atomic_rmw(current_state == S_ATOMIC_RMW),  // A extension
+        .is_sc(is_sc_reg),                               // A extension
+        .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
         .dmem_rdata(dmem_rdata),
+        .amo_wdata(amo_write_data),     // A extension: muxed AMO write data
         .dmem_addr(dmem_addr),
         .dmem_wdata(dmem_wdata),
         .dmem_we(dmem_we),
@@ -731,6 +840,10 @@ module top (
         .jump(jump_reg),
         .is_csr(is_csr_reg),
         .mem_to_reg(mem_to_reg_reg),
+        .is_lr(is_lr_reg),          // A extension
+        .is_sc(is_sc_reg),          // A extension
+        .is_amo(is_amo_reg),        // A extension
+        .sc_success(sc_success),    // A extension
         .pc(instr_pc_reg),
         .imm_u(imm_u_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output

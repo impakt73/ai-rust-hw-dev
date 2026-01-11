@@ -84,15 +84,15 @@ This project has **three specialized GitHub Copilot custom agents** to help with
 
 ## Project Overview
 
-This is a **multi-cycle non-pipelined RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **multi-cycle non-pipelined RISC-V RV32IMAC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
 - **Verification (Rust):** Test harness in `tests/` directory using marlin + Verilator
-- **Architecture:** Multi-cycle non-pipelined design with 11-state FSM and variable-latency memory support
+- **Architecture:** Multi-cycle non-pipelined design with 12-state FSM (including S_ATOMIC_RMW for atomic operations) and variable-latency memory support
 - **Memory Interface:** Ready/valid handshaking for instruction and data memory operations
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
-- **Instruction Set:** RV32IMC_Zicsr (81 instructions: 40 base + 8 multiply/divide + 27 compressed + 6 CSR)
+- **Instruction Set:** RV32IMAC_Zicsr (92 instructions: 40 base + 8 multiply/divide + 11 atomic + 27 compressed + 6 CSR)
 
 ## Critical Prerequisites
 
@@ -279,7 +279,7 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32IMC Instruction Set (81 instructions):**
+**Complete RV32IMAC Instruction Set (92 instructions):**
 
 **RV32I Base (40 instructions):**
 - **Arithmetic:** ADD, ADDI, SUB
@@ -297,6 +297,11 @@ top (CPU)
 - **Multiplication:** MUL, MULH, MULHSU, MULHU
 - **Division:** DIV, DIVU
 - **Remainder:** REM, REMU
+
+**A Extension - Atomic Instructions (11 instructions):**
+- **Load-Reserved/Store-Conditional:** LR.W, SC.W
+- **Atomic Memory Operations:** AMOSWAP.W, AMOADD.W, AMOXOR.W, AMOAND.W, AMOOR.W
+- **Atomic MIN/MAX:** AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W
 
 **C Extension - Compressed Instructions (27 instructions):**
 - **Quadrant 0:** C.ADDI4SPN, C.LW, C.SW
@@ -363,7 +368,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All 146 tests must pass.
+   All tests must pass (~150+ tests across all packages).
 
 2. **Verify code formatting:**
    ```bash
@@ -439,7 +444,7 @@ The CI workflow runs automatically on:
 
 The workflow executes the following checks:
 1. ✅ **Build:** `cargo build --verbose`
-2. ✅ **Tests:** `cargo test --verbose` (all 146 tests must pass)
+2. ✅ **Tests:** `cargo test --verbose` (all tests must pass)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
 

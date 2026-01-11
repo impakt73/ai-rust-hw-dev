@@ -25,7 +25,11 @@ module decoder (
     output logic        is_ecall,     // ECALL instruction
     output logic        is_ebreak,    // EBREAK instruction
     output logic        is_fence,     // FENCE instruction
-    output logic        is_csr        // CSR instruction
+    output logic        is_csr,       // CSR instruction
+    output logic        is_lr,        // LR.W instruction (A extension)
+    output logic        is_sc,        // SC.W instruction (A extension)
+    output logic        is_amo,       // AMO instruction (A extension)
+    output logic [4:0]  funct5        // For atomic operation type
 );
 
     // Extract fields from instruction
@@ -35,6 +39,7 @@ module decoder (
     assign rs1    = instruction[19:15];
     assign rs2    = instruction[24:20];
     assign funct7 = instruction[31:25];
+    assign funct5 = instruction[31:27];  // For atomic operations
 
     // Immediate extraction with sign extension
     // I-type (ADDI, LW, etc.)
@@ -64,6 +69,7 @@ module decoder (
     localparam logic [6:0] OP_JALR   = 7'b1100111;  // JALR
     localparam logic [6:0] OP_FENCE  = 7'b0001111;  // FENCE
     localparam logic [6:0] OP_SYSTEM = 7'b1110011;  // SYSTEM (ECALL, EBREAK, CSR*)
+    localparam logic [6:0] OP_AMO    = 7'b0101111;  // Atomic operations (A extension)
 
     // ALU operations (must match alu.sv)
     localparam logic [4:0] ALU_ADD  = 5'b00000;
@@ -86,6 +92,12 @@ module decoder (
     localparam logic [4:0] ALU_DIVU   = 5'b01111;
     localparam logic [4:0] ALU_REM    = 5'b10000;
     localparam logic [4:0] ALU_REMU   = 5'b10001;
+    
+    // A Extension operations (MIN/MAX for atomic instructions)
+    localparam logic [4:0] ALU_MIN    = 5'b10010;
+    localparam logic [4:0] ALU_MAX    = 5'b10011;
+    localparam logic [4:0] ALU_MINU   = 5'b10100;
+    localparam logic [4:0] ALU_MAXU   = 5'b10101;
 
     // Control signals and ALU operation decoding
     always_comb begin
@@ -102,6 +114,9 @@ module decoder (
         is_ebreak = 1'b0;
         is_fence = 1'b0;
         is_csr = 1'b0;
+        is_lr = 1'b0;
+        is_sc = 1'b0;
+        is_amo = 1'b0;
 
         case (opcode)
             OP_IMM: begin
@@ -225,6 +240,78 @@ module decoder (
                     is_csr = 1'b1;
                     reg_write = 1'b1;  // CSR instructions write to rd
                 end
+            end
+            
+            OP_AMO: begin
+                // Atomic operations (A extension)
+                // All atomic operations read and potentially write memory
+                alu_op = ALU_ADD;     // Default for address calculation
+                alu_src = 1'b0;       // Use rs1 for base address
+                reg_write = 1'b1;     // All atomics write to rd
+                mem_read = 1'b1;      // All atomics read from memory
+                
+                // Decode specific atomic operation based on funct5
+                case (funct5)
+                    5'b00010: begin   // LR.W
+                        is_lr = 1'b1;
+                        mem_write = 1'b0;  // LR only reads
+                    end
+                    5'b00011: begin   // SC.W
+                        is_sc = 1'b1;
+                        mem_write = 1'b1;  // SC conditionally writes
+                    end
+                    5'b00001: begin   // AMOSWAP.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        // SWAP doesn't need ALU operation (direct data path)
+                    end
+                    5'b00000: begin   // AMOADD.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_ADD;
+                    end
+                    5'b00100: begin   // AMOXOR.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_XOR;
+                    end
+                    5'b01100: begin   // AMOAND.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_AND;
+                    end
+                    5'b01000: begin   // AMOOR.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_OR;
+                    end
+                    5'b10000: begin   // AMOMIN.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_MIN;
+                    end
+                    5'b10100: begin   // AMOMAX.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_MAX;
+                    end
+                    5'b11000: begin   // AMOMINU.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_MINU;
+                    end
+                    5'b11100: begin   // AMOMAXU.W
+                        is_amo = 1'b1;
+                        mem_write = 1'b1;
+                        alu_op = ALU_MAXU;
+                    end
+                    default: begin    // Unknown atomic operation - treat as NOP
+                        is_amo = 1'b0;
+                        mem_write = 1'b0;
+                        mem_read = 1'b0;
+                        reg_write = 1'b0;
+                    end
+                endcase
             end
 
             default: begin

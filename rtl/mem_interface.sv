@@ -1,16 +1,20 @@
 // Memory Interface Module
 // Handles memory operation sizing and load data formatting
+// Supports atomic operations (A extension)
 
 module mem_interface (
     // Control signals
     input  logic [2:0]  funct3,
     input  logic        mem_write,
     input  logic        mem_read,
+    input  logic        is_atomic_rmw,  // A extension: in S_ATOMIC_RMW state
+    input  logic        is_sc,          // A extension: SC.W instruction
     
     // Data signals
     input  logic [31:0] alu_result,
     input  logic [31:0] rs2_data,
     input  logic [31:0] dmem_rdata,
+    input  logic [31:0] amo_wdata,      // A extension: computed AMO write data (direct from ALU)
     
     // Memory interface outputs
     output logic [31:0] dmem_addr,
@@ -25,7 +29,16 @@ module mem_interface (
 
     // Data memory address and control
     assign dmem_addr = alu_result;
-    assign dmem_wdata = rs2_data;  // Pass data directly - no formatting needed
+    
+    // Data memory write data selection
+    always_comb begin
+        if (is_atomic_rmw) begin
+            dmem_wdata = amo_wdata;  // AMO: use computed result from ALU directly (or rs2 for SWAP)
+        end else begin
+            dmem_wdata = rs2_data;   // Normal store or SC.W: use rs2
+        end
+    end
+    
     assign dmem_we = mem_write;
     assign dmem_re = mem_read;
     

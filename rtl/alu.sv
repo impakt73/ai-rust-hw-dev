@@ -35,6 +35,12 @@ module alu (
     localparam logic [4:0] ALU_DIVU   = 5'b01111;  // Divide (unsigned)
     localparam logic [4:0] ALU_REM    = 5'b10000;  // Remainder (signed)
     localparam logic [4:0] ALU_REMU   = 5'b10001;  // Remainder (unsigned)
+    
+    // A Extension Operation Encodings (RV32A - Atomic MIN/MAX)
+    localparam logic [4:0] ALU_MIN    = 5'b10010;  // Minimum (signed)
+    localparam logic [4:0] ALU_MAX    = 5'b10011;  // Maximum (signed)
+    localparam logic [4:0] ALU_MINU   = 5'b10100;  // Minimum (unsigned)
+    localparam logic [4:0] ALU_MAXU   = 5'b10101;  // Maximum (unsigned)
 
     // Division unit signals
     logic        div_start;
@@ -149,6 +155,12 @@ module alu (
             ALU_REMU: begin
                 result = div_result;  // Comes from division unit
             end
+            
+            // A Extension - MIN/MAX operations (for atomic instructions)
+            ALU_MIN:  result = ($signed(a) < $signed(b)) ? a : b;  // Signed minimum
+            ALU_MAX:  result = ($signed(a) > $signed(b)) ? a : b;  // Signed maximum
+            ALU_MINU: result = (a < b) ? a : b;  // Unsigned minimum
+            ALU_MAXU: result = (a > b) ? a : b;  // Unsigned maximum
             
             default:  result = 32'd0;
         endcase

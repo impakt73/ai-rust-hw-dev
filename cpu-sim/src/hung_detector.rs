@@ -164,6 +164,7 @@ fn fsm_state_name(state: u8) -> &'static str {
         8 => "BRANCH",
         9 => "CSR",
         10 => "HALT",
+        11 => "ATOMIC_RMW",
         _ => "UNKNOWN",
     }
 }

@@ -74,6 +74,21 @@ impl SystemBus {
     pub fn write_halfword(&mut self, addr: u32, data: u16) {
         self.dram.write_halfword(addr, data);
     }
+
+    /// Set LR/SC reservation (RV32A atomic extension)
+    pub fn set_reservation(&mut self, addr: u32) {
+        self.dram.set_reservation(addr);
+    }
+
+    /// Clear LR/SC reservation (RV32A atomic extension)
+    pub fn clear_reservation(&mut self) {
+        self.dram.clear_reservation();
+    }
+
+    /// Check if reservation is valid for the given address (RV32A atomic extension)
+    pub fn check_reservation(&self, addr: u32) -> bool {
+        self.dram.check_reservation(addr)
+    }
 }
 
 impl Default for SystemBus {
