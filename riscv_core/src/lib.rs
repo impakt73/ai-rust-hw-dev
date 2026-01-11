@@ -67,7 +67,6 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "div_unit.sv",
         "regfile.sv",
         "decoder.sv",
-        "pc_control.sv",
         "branch_unit.sv",
         "csr_file.sv",
         "mem_interface.sv",
