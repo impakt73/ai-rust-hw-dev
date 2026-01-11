@@ -507,7 +507,7 @@ fn test_packet_protocol_end_to_end() {
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        0, // Zero latency
+        0,                                                         // Zero latency
         Some(crate::hung_detector::HungDetectorConfig::default()), // Enable hung detection (test properly ends with tohost termination)
     )
     .expect("Failed to create simulator");
@@ -770,7 +770,7 @@ fn test_println_macro() {
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         0, // Zero latency
-            Some(HungDetectorConfig::default()),
+        Some(HungDetectorConfig::default()),
     )
     .expect("Failed to create simulator");
 
@@ -1234,10 +1234,10 @@ fn test_hung_detection_with_elf_auto_range() {
     // Test that run_elf automatically sets valid PC range from ELF
     // and hung detection works correctly with it
     let elf_path = test_program_path("test.elf");
-    
+
     // This should succeed with hung detection enabled and auto PC range
     let result = run_elf(&elf_path, 500, false);
-    
+
     assert!(
         result.is_ok(),
         "Should successfully run ELF with auto-detected PC range: {:?}",
@@ -1246,7 +1246,10 @@ fn test_hung_detection_with_elf_auto_range() {
 
     println!("✓ Valid PC range automatically detected from ELF");
     println!("✓ Hung detection enabled by default");
-    println!("✓ Simulation completed in {} cycles", result.unwrap().cycles);
+    println!(
+        "✓ Simulation completed in {} cycles",
+        result.unwrap().cycles
+    );
     println!("\n========================================");
     println!("✓ HUNG DETECTION ELF AUTO-RANGE TEST PASSED");
     println!("========================================");
@@ -1273,13 +1276,13 @@ fn test_hung_detection_catches_infinite_loop() {
         .collect();
 
     let result = run_program(
-        10000,  // max_cycles
-        false,  // Don't print instruction trace
-        false,  // Don't print FSM state
+        10000, // max_cycles
+        false, // Don't print instruction trace
+        false, // Don't print FSM state
         None::<fn(u32)>,
         None::<fn(&InstructionTrace)>,
-        None,   // No VCD
-        0,      // Zero latency
+        None, // No VCD
+        0,    // Zero latency
         |sim| {
             sim.write_memory_region(start_addr, &program_bytes, true);
             Ok(start_addr)
@@ -1316,7 +1319,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     // Create a jump that goes outside the loaded program
     // We'll load a single instruction and jump far beyond it
     let start_addr = 0x8000_0000;
-    
+
     // Jump forward by 0x10000 bytes (64KB), which is way outside our 4-byte program
     let jump_instr = jal(0, 0x10000);
     let program_bytes: Vec<u8> = vec![jump_instr]
@@ -1345,7 +1348,9 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     assert!(result.is_err(), "Should detect PC out of bounds");
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("outside valid") || err_msg.contains("PcOutOfBounds") || err_msg.contains("Hung state"),
+        err_msg.contains("outside valid")
+            || err_msg.contains("PcOutOfBounds")
+            || err_msg.contains("Hung state"),
         "Error should mention PC out of bounds, got: {}",
         err_msg
     );
@@ -1370,16 +1375,16 @@ fn test_hung_detection_catches_long_instruction() {
     use riscv_core::instruction::lw;
 
     let start_addr = 0x8000_0000;
-    
+
     // Program:
     // 1. ADDI x2, x0, <low 12 bits of data_addr>   - Load low part of address into x2
     // 2. LUI x2, <high 20 bits of data_addr>        - Would be needed for full address, but we'll use a simpler approach
     // Actually, let's just use LW with offset from x0 which is always 0
     // We'll place data at a small offset that fits in 12-bit immediate
-    
+
     // Simpler approach: Use data at address that fits in 12-bit offset from x0
-    let simple_data_addr = 0x100u32;  // Small address that fits in LW immediate
-    
+    let simple_data_addr = 0x100u32; // Small address that fits in LW immediate
+
     // LW x1, 0x100(x0) - load word from address 0x100 into x1
     let load_instr = lw(1, 0, simple_data_addr as i32);
     let program_bytes: Vec<u8> = vec![load_instr]
@@ -1392,20 +1397,20 @@ fn test_hung_detection_catches_long_instruction() {
     let mem_latency_cycles = 15000;
 
     let result = run_program(
-        100000,  // High max_cycles so we don't hit that limit first
+        100000, // High max_cycles so we don't hit that limit first
         false,
         false,
         None::<fn(u32)>,
         None::<fn(&InstructionTrace)>,
         None,
-        mem_latency_cycles,  // Set memory latency high enough to trigger long instruction detection
+        mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
         |sim| {
             sim.write_memory_region(start_addr, &program_bytes, true);
-            
+
             // Write data at simple_data_addr
             let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
             sim.write_memory_region(simple_data_addr, &data, false);
-            
+
             Ok(start_addr)
         },
         |_sim, _result| {},
@@ -1415,7 +1420,8 @@ fn test_hung_detection_catches_long_instruction() {
     assert!(result.is_err(), "Should detect long instruction");
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("LongInstruction") || err_msg.contains("taken") && err_msg.contains("cycles"),
+        err_msg.contains("LongInstruction")
+            || err_msg.contains("taken") && err_msg.contains("cycles"),
         "Error should mention long instruction, got: {}",
         err_msg
     );

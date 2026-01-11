@@ -120,11 +120,12 @@ impl std::fmt::Display for HungStateError {
                     history.iter().map(|p| format!("0x{:08x}", p)).collect::<Vec<_>>()
                 )
             }
-            HungStateError::PcOutOfBounds {
-                pc,
-                valid_ranges,
-            } => {
-                write!(f, "CPU hung: PC 0x{:08x} is outside valid instruction memory. Valid ranges: ", pc)?;
+            HungStateError::PcOutOfBounds { pc, valid_ranges } => {
+                write!(
+                    f,
+                    "CPU hung: PC 0x{:08x} is outside valid instruction memory. Valid ranges: ",
+                    pc
+                )?;
                 for (i, range) in valid_ranges.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -185,10 +186,14 @@ pub struct HungDetector {
 
     // Multiple non-contiguous valid PC ranges
     valid_pc_ranges: Vec<MemoryRange>,
-    
-    // Track if we've completed at least one valid instruction from a valid PC
-    // Used to avoid false positives during simulator initialization
-    has_executed_valid_instruction: bool,
+
+    // Track if CPU has started executing (transitioned from IDLE to active)
+    // Used to avoid false positives before first instruction fetch
+    cpu_started: bool,
+
+    // Track if at least one instruction has completed
+    // Used to avoid PC bounds check false positives during boot
+    instruction_completed_once: bool,
 }
 
 impl HungDetector {
@@ -203,7 +208,8 @@ impl HungDetector {
             current_instruction_word: 0,
             current_instruction_start_cycle: 0,
             valid_pc_ranges: Vec::new(),
-            has_executed_valid_instruction: false,
+            cpu_started: false,
+            instruction_completed_once: false,
         }
     }
 
@@ -227,7 +233,7 @@ impl HungDetector {
             // Remove or split existing ranges that overlap with this data region
             let data_range = MemoryRange { start, end };
             let mut new_ranges = Vec::new();
-            
+
             for range in &self.valid_pc_ranges {
                 if !range.overlaps(&data_range) {
                     // No overlap, keep the range
@@ -306,14 +312,16 @@ impl HungDetector {
         fsm_state: u8,
         instruction_complete: bool,
     ) -> Result<(), HungStateError> {
+        // Track if CPU has started executing (transitioned from IDLE to active state)
+        if !self.cpu_started && fsm_state != 0 {
+            self.cpu_started = true;
+        }
+
         // Per-instruction checks when instruction completes
         if instruction_complete {
-            // Mark that we've completed at least one instruction
-            // Only set this if we're completing an instruction from a valid PC
-            if !self.valid_pc_ranges.is_empty() && self.is_pc_valid(pc) {
-                self.has_executed_valid_instruction = true;
-            }
-            
+            // Mark that at least one instruction has completed
+            self.instruction_completed_once = true;
+
             // Reset long instruction tracking since instruction completed
             self.current_instruction_pc = None;
             self.current_instruction_start_cycle = cycle_count;
@@ -325,12 +333,13 @@ impl HungDetector {
         }
 
         // Per-cycle checks (run every cycle, not just on instruction completion)
-        
+
         // Long instruction detection
         if self.config.enable_long_instruction_detection {
             if let Some(instr_pc) = self.current_instruction_pc {
-                let cycles_for_this_instruction = cycle_count.saturating_sub(self.current_instruction_start_cycle);
-                
+                let cycles_for_this_instruction =
+                    cycle_count.saturating_sub(self.current_instruction_start_cycle);
+
                 if cycles_for_this_instruction > self.config.max_cycles_per_instruction {
                     return Err(HungStateError::LongInstruction {
                         pc: instr_pc,
@@ -347,18 +356,19 @@ impl HungDetector {
             }
         }
 
-        // Check PC bounds (if enabled and ranges exist)
+        // Per-cycle PC bounds checking (if enabled)
         // Only check if:
         // 1. We have valid PC ranges defined
-        // 2. FSM is not in IDLE state (0)
-        // 3. We've executed at least one valid instruction (to avoid false positives during init)
+        // 2. At least one instruction has completed (to avoid false positives during boot)
+        // 3. FSM is not in IDLE state (0)
         //
-        // This prevents false positives during simulator initialization while still catching
-        // invalid PC jumps during execution, even if the instruction never completes.
-        if self.config.enable_pc_bounds_detection 
-            && !self.valid_pc_ranges.is_empty() 
-            && fsm_state != 0 
-            && self.has_executed_valid_instruction {
+        // This prevents false positives during simulator initialization while
+        // still catching invalid PC jumps during execution
+        if self.config.enable_pc_bounds_detection
+            && !self.valid_pc_ranges.is_empty()
+            && self.instruction_completed_once
+            && fsm_state != 0
+        {
             // Check current PC
             if !self.is_pc_valid(pc) {
                 return Err(HungStateError::PcOutOfBounds {
@@ -415,7 +425,8 @@ impl HungDetector {
         self.current_instruction_pc = None;
         self.current_instruction_word = 0;
         self.current_instruction_start_cycle = 0;
-        self.has_executed_valid_instruction = false;
+        self.cpu_started = false;
+        self.instruction_completed_once = false;
         // Note: We don't clear valid_pc_ranges as they persist across resets
     }
 }
@@ -480,7 +491,7 @@ mod tests {
         // First, complete one instruction from a valid PC to enable bounds checking
         let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_ok());
-        
+
         // Now bounds checking should be active
         // PC within bounds should be ok
         let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
@@ -543,14 +554,14 @@ mod tests {
     #[test]
     fn test_multi_range_pc_bounds() {
         let mut detector = HungDetector::new_default();
-        
+
         // Add two non-contiguous instruction ranges
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
         // First, complete one instruction from a valid PC to enable bounds checking
         assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, true).is_ok());
-        
+
         // Now bounds checking should be active
         // PCs in first range should be ok
         assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
@@ -578,7 +589,7 @@ mod tests {
     #[test]
     fn test_range_merging() {
         let mut detector = HungDetector::new_default();
-        
+
         // Add two adjacent ranges - they should merge
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_1000, 0x8000_2000, true);
@@ -590,7 +601,7 @@ mod tests {
 
         // Add overlapping range - should extend
         detector.update_pc_range(0x8000_1800, 0x8000_2800, true);
-        
+
         let ranges = detector.get_valid_pc_ranges();
         assert_eq!(ranges.len(), 1, "Overlapping ranges should merge");
         assert_eq!(ranges[0].start, 0x8000_0000);
@@ -602,7 +613,7 @@ mod tests {
         let mut config = HungDetectorConfig::default();
         config.max_cycles_per_instruction = 100;
         config.enable_pc_loop_detection = false;
-        
+
         let mut detector = HungDetector::new(config);
 
         // Simulate instruction taking many cycles without completing
@@ -616,7 +627,12 @@ mod tests {
         assert!(result.is_err(), "Should detect long instruction");
 
         match result {
-            Err(HungStateError::LongInstruction { pc, cycle_count, fsm_state, .. }) => {
+            Err(HungStateError::LongInstruction {
+                pc,
+                cycle_count,
+                fsm_state,
+                ..
+            }) => {
                 assert_eq!(pc, 0x8000_0000);
                 assert!(cycle_count > 100);
                 assert_eq!(fsm_state, 3);

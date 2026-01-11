@@ -392,7 +392,13 @@ where
                 let pc = self.cpu.debug_pc;
                 let instruction = self.cpu.debug_instruction;
                 let fsm_state = self.cpu.debug_fsm_state;
-                detector.check_cycle(self.cycle_count, pc, instruction, fsm_state, instruction_complete)?;
+                detector.check_cycle(
+                    self.cycle_count,
+                    pc,
+                    instruction,
+                    fsm_state,
+                    instruction_complete,
+                )?;
             }
 
             if instruction_complete {
@@ -431,9 +437,7 @@ where
             let instruction = self.cpu.debug_instruction;
             println!(
                 "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x}",
-                self.cycle_count,
-                pc,
-                instruction
+                self.cycle_count, pc, instruction
             );
         }
 
@@ -495,7 +499,9 @@ where
 
         while self.cycle_count < max_cycles {
             // Execute one step and check for halt
-            let step_result = self.step().map_err(|e| format!("Hung state detected: {}", e))?;
+            let step_result = self
+                .step()
+                .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
 
             if let Some(tohost_value) = step_result.tohost_value {
@@ -601,7 +607,7 @@ where
             let addr = start_addr.wrapping_add(offset as u32);
             self.bus.dram.write_byte(addr, byte);
         }
-        
+
         // Update valid PC ranges for hung detection based on whether this is instruction or data memory
         if !data.is_empty() {
             if let Some(ref mut detector) = self.hung_detector {
