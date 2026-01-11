@@ -830,6 +830,7 @@ module top (
         .mem_write(mem_write_reg),
         .mem_read(mem_read_reg),
         .is_atomic_rmw(current_state == S_ATOMIC_RMW),  // A extension
+        .is_mem_write_state(current_state == S_MEM_WRITE), // NEW: In S_MEM_WRITE state
         .is_sc(is_sc_reg),                               // A extension
         .sc_success(sc_success),                         // A extension
         .alu_result(alu_out_reg),  // Use registered ALU output for address
