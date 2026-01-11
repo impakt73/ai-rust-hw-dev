@@ -1,17 +1,16 @@
 #![no_std]
 #![no_main]
 
+mod common;
+
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicU32, Ordering};
 use riscv_rt::entry;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+fn panic(info: &PanicInfo) -> ! {
+    common::default_panic_handler(info)
 }
-
-// Memory-mapped halt address
-const TOHOST: *mut u32 = 0xFFFF_FFF0 as *mut u32;
 
 #[entry]
 fn main() -> ! {
@@ -127,8 +126,5 @@ fn main() -> ! {
 }
 
 fn halt(code: u32) -> ! {
-    unsafe {
-        TOHOST.write_volatile(code);
-    }
-    loop {}
+    common::write_tohost(code)
 }
