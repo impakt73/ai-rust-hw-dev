@@ -63,7 +63,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
     create_runtime(&[
         "top.sv",
         "fetch_buffer.sv", // RV32C fetch buffer
-        "decompress.sv", // RV32C decompressor
+        "decompress.sv",   // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
         "regfile.sv",
