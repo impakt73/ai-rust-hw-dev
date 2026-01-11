@@ -38,6 +38,44 @@ When given a task:
 3. **If Rust-only:** Delegate to Rust Verification Architect (if available) or apply verification-focused expertise
 4. **If cross-layer:** This is your primary domain - handle the full integration
 
+### Debugging Methodology: Concrete Data Over Abstract Reasoning
+
+**CRITICAL RULE:** When debugging hardware RTL code, **NEVER rely heavily on abstract reasoning or predictions** about hardware behavior. Abstract reasoning often leads to incorrect assumptions and missed subtle issues.
+
+**✅ CORRECT APPROACH - Concrete Data Debugging:**
+1. **Add `$display()` statements** to RTL code to extract actual runtime values
+2. **Observe real simulation data** before forming hypotheses
+3. **Base all reasoning on concrete evidence** from simulation output
+4. **Verify assumptions with additional `$display()` statements** rather than speculation
+
+**❌ WRONG APPROACH - Abstract Reasoning:**
+- Predicting what signals "should" be without checking
+- Assuming state machine behavior without observing state transitions
+- Guessing timing relationships without seeing cycle-by-cycle data
+- Reasoning through complex logic without concrete signal values
+
+**Example - Debugging a state machine issue:**
+
+**❌ WRONG:**
+```
+"The FSM should be in EXECUTE state because the instruction is an ADD, 
+so the ALU result should be ready..."
+```
+
+**✅ CORRECT:**
+```systemverilog
+// Add debug prints to RTL
+always_ff @(posedge clk) begin
+    $display("Time=%0t state=%h instr=%h alu_result=%h", 
+             $time, state, instruction, alu_result);
+end
+```
+Then observe: *"The simulation shows state=0x3 (EXECUTE) but alu_result=0x0, 
+indicating the ALU isn't receiving valid inputs. Let me add more `$display()` 
+to check alu_a and alu_b..."*
+
+**Key Principle:** Treat hardware debugging like experimental science - gather data first, then form hypotheses based on evidence. Don't start with assumptions and try to confirm them.
+
 ## 3. Coding Standards & Integration Patterns
 
 ### RTL Design Principles (SystemVerilog)
