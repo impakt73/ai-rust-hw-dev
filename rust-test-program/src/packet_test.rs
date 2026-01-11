@@ -38,9 +38,6 @@ where
 
 #[entry]
 fn main() -> ! {
-    const SUCCESS_CODE: u32 = 42;
-    const FAILURE_CODE: u32 = 1;
-
     // Step 1: Send initial Debug packet to host
     let debug = DebugPacket {
         header: PacketHeader::new(PacketType::Debug, 0),
@@ -50,7 +47,7 @@ fn main() -> ! {
     };
 
     if send_packet(&debug).is_err() {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // Step 2: Consume FIFO data from host (Echo packet)
@@ -70,7 +67,7 @@ fn main() -> ! {
     };
 
     if send_packet(&echo_response).is_err() {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // Step 4: Consume FIFO data from host (DataU32 packet)
@@ -87,7 +84,7 @@ fn main() -> ! {
     };
 
     if send_packet(&data_response).is_err() {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // Step 6: Send Assert packet indicating test passed
@@ -102,8 +99,8 @@ fn main() -> ! {
     };
 
     if send_packet(&assert_packet).is_err() {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
-    common::write_tohost(SUCCESS_CODE);
+    common::write_tohost(common::SUCCESS_CODE);
 }

@@ -48,5 +48,5 @@ fn main() -> ! {
         common::fifo_write_word(0xBBBBBBBB);
     }
     
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }

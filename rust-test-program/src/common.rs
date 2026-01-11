@@ -58,7 +58,7 @@ unsafe impl GlobalAlloc for SimpleAllocator {
 
 /// Default panic handler for bare-metal programs - write to tohost to signal panic
 ///
-/// When a panic occurs, we write a special value (0xDEAD) to tohost to signal
+/// When a panic occurs, we write a special value (PANIC_CODE = 0xDEAD) to tohost to signal
 /// that the program panicked. This allows the simulator to detect panics and
 /// report them properly instead of timing out in an infinite loop.
 #[inline(never)]
@@ -66,11 +66,20 @@ pub fn default_panic_handler(_info: &PanicInfo) -> ! {
     // Write a special panic value to tohost (0xDEAD = 57005)
     // This is different from the success value (0x2a = 42) so the simulator
     // can distinguish between normal completion and panic
-    write_tohost(0xDEAD)
+    write_tohost(PANIC_CODE)
 }
 
 /// TOHOST address for signaling halt to the simulator
 pub const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+
+/// Standard success code for tests (expected by cpu-sim)
+pub const SUCCESS_CODE: u32 = 42;
+
+/// Standard failure code for tests (indicates test logic failure, not panic)
+pub const FAILURE_CODE: u32 = 1;
+
+/// Standard panic/failure code (different from success to aid debugging)
+pub const PANIC_CODE: u32 = 0xDEAD;
 
 /// Write to tohost to signal halt with the given value
 #[inline(never)]

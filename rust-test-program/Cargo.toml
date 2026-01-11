@@ -34,11 +34,6 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [[bin]]
-name = "simple_fifo_test"
-path = "src/simple_fifo_test.rs"
-test = false
-
-[[bin]]
 name = "minimal_postcard_test"
 path = "src/minimal_postcard_test.rs"
 test = false
@@ -89,16 +84,6 @@ path = "src/println_test.rs"
 test = false
 
 [[bin]]
-name = "test_minimal_halt"
-path = "src/test_minimal_halt.rs"
-test = false
-
-[[bin]]
-name = "test_one_println"
-path = "src/test_one_println.rs"
-test = false
-
-[[bin]]
 name = "test_memory_pattern"
 path = "src/test_memory_pattern.rs"
 test = false
@@ -111,11 +96,6 @@ test = false
 [[bin]]
 name = "test_panic"
 path = "src/test_panic.rs"
-test = false
-
-[[bin]]
-name = "test_minimal_c"
-path = "src/test_minimal_c.rs"
 test = false
 
 [[bin]]

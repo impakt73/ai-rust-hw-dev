@@ -29,5 +29,5 @@ fn main() -> ! {
     rvprintln!("Testing println macro");
 
     // Signal success
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }
