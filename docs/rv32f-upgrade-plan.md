@@ -3,7 +3,7 @@
 **⚠️ IMPORTANT: Architecture Update Notice**
 
 This document was originally written for a **single-cycle RV32IM CPU**. The CPU has since evolved to a **multi-cycle non-pipelined RV32IMAC** implementation with:
-- **12-state FSM** (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, ATOMIC_RMW, HALT)
+- **12-state FSM** (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, HALT, ATOMIC_RMW)
 - **Variable-latency memory** with ready/valid handshaking
 - **RV32A (Atomic)** and **RV32C (Compressed)** extensions already implemented
 - **196 existing tests** (not 84 as originally assumed)
