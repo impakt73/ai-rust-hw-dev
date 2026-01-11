@@ -1445,15 +1445,15 @@ fn test_atomic_operations() {
     // These use manually encoded atomic instructions and verify correct behavior.
     // The Rust atomic library may use compare-exchange loops or other patterns
     // that are more complex than direct atomic operations.
-    
+
     // For now, we rely on the comprehensive RTL tests:
     // - test_cpu_lr_sc_success: LR/SC operations
     // - test_cpu_amoswap: AMOSWAP.W
-    // - test_cpu_amoadd: AMOADD.W  
+    // - test_cpu_amoadd: AMOADD.W
     // - test_cpu_amo_logical: AMOXOR/AND/OR
     // - test_cpu_amo_min_max: AMOMIN/MAX
     // - test_cpu_amo_unsigned_min_max: AMOMINU/MAXU
-    
+
     println!("✓ Atomic operations verified via RTL tests");
     println!("✓ All 11 atomic instructions (LR.W, SC.W, 9 AMO ops) tested");
     println!("\n========================================");
