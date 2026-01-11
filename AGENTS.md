@@ -70,6 +70,12 @@ This project has **three specialized GitHub Copilot custom agents** to help with
 
 ### Important Agent Rules
 
+**All agents working with hardware (FPGA Architect, HW-SW Integration) must:**
+- ❌ **Never rely on abstract reasoning** during hardware debugging sessions
+- ✅ **Always use concrete data** from simulation via `$display()` statements
+- ✅ **Observe actual signal values** before forming hypotheses about hardware behavior
+- ✅ **Treat debugging like experimental science:** gather data first, then reason based on evidence
+
 **All Rust-based agents (Integration + Verification) must:**
 - ❌ Never use `Box::leak()` to circumvent lifetime issues → Use callbacks or `Rc<RefCell<T>>`
 - ✅ Always run `cargo fmt` before committing
