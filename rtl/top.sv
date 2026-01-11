@@ -199,6 +199,11 @@ module top (
     logic        sc_success;
     assign sc_success = reservation_valid && (reservation_addr == alu_out_reg);
     
+    // A extension: AMO write data selection
+    // AMOSWAP uses rs2 directly, others use ALU result
+    logic [31:0] amo_write_data;
+    assign amo_write_data = (funct5_reg == 5'b00001) ? b_reg : alu_result;  // funct5==00001 is AMOSWAP
+    
     // CSR address: use combinational imm_i in S_DECODE (for read), registered imm_i_reg in other states
     assign csr_addr = (current_state == S_DECODE) ? imm_i[11:0] : imm_i_reg[11:0];
     
@@ -805,10 +810,10 @@ module top (
         .mem_read(mem_read_reg),
         .is_atomic_rmw(current_state == S_ATOMIC_RMW),  // A extension
         .is_sc(is_sc_reg),                               // A extension
-        .alu_result(alu_out_reg),  // Use registered ALU output
+        .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
         .dmem_rdata(dmem_rdata),
-        .amo_wdata(alu_out_reg),    // A extension: computed AMO result
+        .amo_wdata(amo_write_data),     // A extension: muxed AMO write data
         .dmem_addr(dmem_addr),
         .dmem_wdata(dmem_wdata),
         .dmem_we(dmem_we),

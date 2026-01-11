@@ -117,3 +117,14 @@ test = false
 name = "test_minimal_c"
 path = "src/test_minimal_c.rs"
 test = false
+
+[[bin]]
+name = "test_atomic"
+path = "src/test_atomic.rs"
+test = false
+
+[[bin]]
+name = "test_atomic_simple"
+path = "src/test_atomic_simple.rs"
+test = false
+
