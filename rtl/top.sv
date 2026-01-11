@@ -843,9 +843,10 @@ module top (
     assign debug_instruction = completed_instr_reg;
     
     // Debug outputs for current execution state (for hung detection)
-    // Use instr_pc_reg if available (after DECODE), otherwise use pc
+    // Use instr_pc_reg in states after DECODE, otherwise use pc
     // This ensures we always have a valid PC that corresponds to the current instruction
-    assign debug_current_pc = (instr_pc_reg != 32'h0) ? instr_pc_reg : pc;
+    // instr_pc_reg is written during DECODE, so it's valid from EXECUTE onward
+    assign debug_current_pc = (current_state > S_DECODE) ? instr_pc_reg : pc;
     assign debug_current_instruction = ir_reg;
     
     // Debug output for FSM state

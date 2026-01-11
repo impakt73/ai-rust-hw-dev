@@ -20,6 +20,7 @@ mod tests {
             addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
             addi(value_reg, 0, 1),      // Load success code (1)
             sw(addr_reg, value_reg, 0), // Store value to tohost address
+            jal(0, 0),                  // Infinite loop (jump to self)
         ]
     }
 

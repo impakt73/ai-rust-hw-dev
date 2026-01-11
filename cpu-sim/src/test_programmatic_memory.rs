@@ -31,8 +31,9 @@ mod tests {
 
         // Define a simple program:
         // Address 0x80000000:
-        //   addi x10, x0, 42  ; x10 = 42 (0x00002a00 | 0x513 = 0x02a00513)
+        //   addi x10, x0, 42  ; x10 = 42
         //   sw x10, 0xFFFFFFF0(x0)  ; store to tohost (halt)
+        //   jal x0, 0  ; infinite loop (stay here)
         //
         // Let's manually encode these instructions:
         // addi x10, x0, 42 = 0x02a00513
@@ -51,11 +52,18 @@ mod tests {
         //   imm[4:0] = 0x10
         //   opcode = 0x23 (STORE)
         //   Encoding for sw x10, -16(x0): 0xfea02823
+        //
+        // jal x0, 0 = jump to current address (infinite loop)
+        //   imm[20] = 0, imm[10:1] = 0, imm[11] = 0, imm[19:12] = 0
+        //   rd = x0 = 0
+        //   opcode = 0x6f (JAL)
+        //   Encoding: 0x0000006f
 
         let program: Vec<u8> = vec![
             // addi x10, x0, 42 (0x02a00513 in little-endian)
             0x13, 0x05, 0xa0, 0x02, // sw x10, -16(x0) (0xfea02823 in little-endian)
-            0x23, 0x28, 0xa0, 0xfe,
+            0x23, 0x28, 0xa0, 0xfe, // jal x0, 0 (0x0000006f in little-endian)
+            0x6f, 0x00, 0x00, 0x00,
         ];
 
         // Write the program to memory starting at 0x80000000 (typical RISC-V start address)
@@ -69,6 +77,7 @@ mod tests {
         println!("  Program size: {} bytes", program.len());
         println!("  Instruction 1: addi x10, x0, 42");
         println!("  Instruction 2: sw x10, -16(x0) ; store to tohost");
+        println!("  Instruction 3: jal x0, 0 ; infinite loop");
 
         // Run the simulation with the start address as boot PC
         println!("\n✓ Running simulation with boot PC = 0x{:08x}", START_ADDR);

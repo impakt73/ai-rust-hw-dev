@@ -28,12 +28,13 @@ mod tests {
     ///
     /// Note: 0xFFFF_FFF0 = -16 in two's complement, so we use ADDI to load it
     ///
-    /// Returns: [ADDI addr_reg (load -16), ADDI value_reg, SW]
+    /// Returns: [ADDI addr_reg (load -16), ADDI value_reg, SW, JAL (infinite loop)]
     fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
         vec![
             addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
             addi(value_reg, 0, 1),      // Load success code (1)
             sw(addr_reg, value_reg, 0), // Store value to tohost address
+            jal(0, 0),                  // Infinite loop (jump to self)
         ]
     }
 
@@ -721,6 +722,7 @@ mod tests {
             addi(4, 0, -16), // x4 = 0xFFFFFFF0 (tohost address)
             addi(5, 0, 1),   // x5 = 1 (exit code)
             sw(4, 5, 0),     // Store x5 to tohost address
+            jal(0, 0),       // Infinite loop
         ];
 
         run_program_with_options(
