@@ -380,7 +380,7 @@ module top (
                 reservation_addr <= alu_out_reg;  // Address from ALU (rs1 + 0)
             end
             // Clear reservation on SC.W (any SC, regardless of success)
-            else if (is_sc_reg && current_state == S_MEM_WRITE) begin
+            else if (is_sc_reg && current_state == S_MEM_WRITE && dmem_ready) begin
                 reservation_valid <= 1'b0;
             end
             // Clear reservation on any write to the reserved address
@@ -765,8 +765,13 @@ module top (
         alu_a = a_reg;
         alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011) ? imm_s_reg : imm_i_reg) : b_reg;
         
+        // Special case for S_MEM_ADDR with AMO: address is just rs1 (no offset)
+        if (current_state == S_MEM_ADDR && is_amo_reg) begin
+            alu_a = a_reg;  // rs1
+            alu_b = 32'h0;  // No offset for AMO
+        end
         // Special cases in EXECUTE state
-        if (current_state == S_EXECUTE) begin
+        else if (current_state == S_EXECUTE) begin
             case (opcode_reg)
                 7'b0010111: begin // AUIPC
                     // Use the PC captured for this instruction at decode time
@@ -810,6 +815,7 @@ module top (
         .mem_read(mem_read_reg),
         .is_atomic_rmw(current_state == S_ATOMIC_RMW),  // A extension
         .is_sc(is_sc_reg),                               // A extension
+        .sc_success(sc_success),                         // A extension
         .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
         .dmem_rdata(dmem_rdata),
@@ -870,5 +876,41 @@ module top (
     
     // Debug output for FSM state
     assign debug_fsm_state = current_state;
+    
+    // DEBUG: Print atomic operation state transitions
+    always_ff @(posedge clk) begin
+        if (current_state == S_MEM_ADDR && is_amo_reg) begin
+            $display("[MEM_ADDR] Time=%0t PC=0x%08h (AMO)", $time, instr_pc_reg);
+            $display("  a_reg=0x%08h b_reg=0x%08h alu_src_reg=%b", a_reg, b_reg, alu_src_reg);
+            $display("  imm_i_reg=0x%08h alu_result=0x%08h (address)", imm_i_reg, alu_result);
+        end
+        if (current_state == S_MEM_READ && is_lr_reg && dmem_ready) begin
+            $display("[LR.W] Time=%0t PC=0x%08h", $time, instr_pc_reg);
+            $display("  Setting reservation: addr=0x%08h", alu_out_reg);
+        end
+        if (current_state == S_MEM_WRITE && is_sc_reg) begin
+            $display("[SC.W] Time=%0t PC=0x%08h", $time, instr_pc_reg);
+            $display("  reservation_valid=%b reservation_addr=0x%08h", reservation_valid, reservation_addr);
+            $display("  alu_out_reg=0x%08h sc_success=%b", alu_out_reg, sc_success);
+        end
+        if (current_state == S_MEM_READ && is_amo_reg && dmem_ready) begin
+            $display("[MEM_READ] Time=%0t PC=0x%08h (AMO)", $time, instr_pc_reg);
+            $display("  dmem_addr=0x%08h dmem_rdata=0x%08h", dmem_addr, dmem_rdata);
+        end
+        if (current_state == S_ATOMIC_RMW && !alu_start_sent_rmw) begin
+            $display("[ATOMIC_RMW_START] Time=%0t PC=0x%08h funct5=0x%02h", $time, instr_pc_reg, funct5_reg);
+            $display("  mdr=0x%08h (mem value)", mdr);
+            $display("  b_reg=0x%08h (rs2 value)", b_reg);
+            $display("  alu_out_reg=0x%08h (address)", alu_out_reg);
+            $display("  mem_write_reg=%b dmem_we=%b", mem_write_reg, dmem_we);
+        end
+        if (current_state == S_ATOMIC_RMW && alu_ready) begin
+            $display("[ATOMIC_RMW_READY] ALU ready: alu_result=0x%08h amo_write_data=0x%08h", alu_result, amo_write_data);
+            $display("  dmem_addr=0x%08h dmem_wdata=0x%08h dmem_we=%b", dmem_addr, dmem_wdata, dmem_we);
+        end
+        if (current_state == S_ATOMIC_RMW && alu_ready && dmem_ready) begin
+            $display("[ATOMIC_RMW_COMPLETE] Write completing");
+        end
+    end
 
 endmodule

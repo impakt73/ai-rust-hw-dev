@@ -244,11 +244,11 @@ module decoder (
             
             OP_AMO: begin
                 // Atomic operations (A extension)
-                // All atomic operations read and potentially write memory
+                // All atomic operations (except SC) read from memory
                 alu_op = ALU_ADD;     // Default for address calculation
                 alu_src = 1'b0;       // Use rs1 for base address
                 reg_write = 1'b1;     // All atomics write to rd
-                mem_read = 1'b1;      // All atomics read from memory
+                mem_read = 1'b1;      // Default: all atomics read (overridden for SC)
                 
                 // Decode specific atomic operation based on funct5
                 case (funct5)
@@ -258,6 +258,7 @@ module decoder (
                     end
                     5'b00011: begin   // SC.W
                         is_sc = 1'b1;
+                        mem_read = 1'b0;   // SC doesn't read - it checks reservation
                         mem_write = 1'b1;  // SC conditionally writes
                     end
                     5'b00001: begin   // AMOSWAP.W
