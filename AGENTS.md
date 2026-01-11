@@ -2,6 +2,80 @@
 
 This document provides essential information for AI coding agents working on this RISC-V hardware verification project.
 
+## Choosing the Right Custom Agent
+
+This project has **three specialized GitHub Copilot custom agents** to help with different types of work:
+
+### 1. Hardware-Software Integration Architect (`hw-sw-integration-architect.md`)
+**Use this agent for cross-layer tasks that span both hardware and software.**
+
+**When to use:**
+- ✅ Adding or modifying RISC-V instructions (requires both RTL and verification changes)
+- ✅ Changing memory interface protocols or handshaking logic
+- ✅ Debugging integration issues between RTL and Rust testbench
+- ✅ Adding new CPU features (CSRs, instruction extensions, debug capabilities)
+- ✅ Performance tuning affecting both hardware and test harnesses
+- ✅ Any task explicitly involving both `.sv` and `.rs` files
+
+**Expertise:**
+- Full-stack understanding of RISC-V CPU design AND verification
+- Multi-cycle FSM architecture and timing analysis
+- Rust-Verilator integration via marlin framework
+- Cross-domain debugging and validation
+
+### 2. FPGA Architect (`fpga-architect.md`)
+**Use this agent for pure RTL/hardware design tasks.**
+
+**When to use:**
+- ✅ Pure RTL refactoring without interface changes
+- ✅ Timing optimization and synthesis-focused work
+- ✅ Adding internal RTL modules that don't change external interfaces
+- ✅ FPGA-specific concerns (resource utilization, clock constraints)
+- ✅ State machine design and optimization
+- ✅ Clock domain crossing solutions
+
+**Expertise:**
+- Deep SystemVerilog and digital design expertise
+- FPGA synthesis and timing closure
+- Modern RTL coding standards (IEEE 1800)
+- Hardware debugging and optimization
+
+### 3. Rust Verification Architect (`rust-verification-architect.md`)
+**Use this agent for pure verification/testing tasks.**
+
+**When to use:**
+- ✅ Adding new test cases without RTL changes
+- ✅ Refactoring test infrastructure or test utilities
+- ✅ Improving verification methodology
+- ✅ Performance testing and benchmarking
+- ✅ Debug protocol extensions (FIFO packets, print macros)
+- ✅ Rust code quality improvements
+
+**Expertise:**
+- Rust best practices and type system mastery
+- Hardware verification patterns and methodologies
+- Property-based testing strategies
+- FFI and unsafe Rust for Verilator integration
+
+### Decision Guide
+
+**Step 1:** Identify what you need to modify:
+- Only `.sv` files → Use **FPGA Architect**
+- Only `.rs` files → Use **Rust Verification Architect**
+- Both `.sv` and `.rs` files → Use **Hardware-Software Integration Architect**
+
+**Step 2:** If unsure, default to **Hardware-Software Integration Architect** for safety.
+
+**Step 3:** The agents can delegate to each other if needed, so don't worry about picking wrong.
+
+### Important Agent Rules
+
+**All Rust-based agents (Integration + Verification) must:**
+- ❌ Never use `Box::leak()` to circumvent lifetime issues → Use callbacks or `Rc<RefCell<T>>`
+- ✅ Always run `cargo fmt` before committing
+- ✅ Always run `cargo clippy -- -D warnings` before committing
+- ✅ Address all clippy warnings (zero tolerance)
+
 ## Project Overview
 
 This is a **multi-cycle non-pipelined RISC-V RV32IMC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
