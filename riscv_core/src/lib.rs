@@ -32,6 +32,10 @@ pub struct Decompress;
 #[verilog(src = "../rtl/fp_regfile.sv", name = "fp_regfile")]
 pub struct FpRegFile;
 
+// Define FPU module
+#[verilog(src = "../rtl/fpu.sv", name = "fpu")]
+pub struct Fpu;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -97,4 +101,9 @@ pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 // Helper function to create a runtime for the FP RegFile
 pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fp_regfile.sv"])
+}
+
+// Helper function to create a runtime for the FPU
+pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu.sv"])
 }
