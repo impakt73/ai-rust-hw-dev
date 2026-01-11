@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines a comprehensive plan to add the **RV32A (Atomic Instructions)** extension to the current **RV32IM** single-cycle RISC-V CPU implementation. The A extension provides atomic read-modify-write operations and load-reserved/store-conditional primitives essential for lock-free synchronization and multi-processor systems. This upgrade will transform the CPU from **RV32IM** to **RV32IMA**, adding 11 new atomic instructions.
+This document outlines a comprehensive plan to add the **RV32A (Atomic Instructions)** extension to the current **RV32IMC** multi-cycle non-pipelined RISC-V CPU implementation. The A extension provides atomic read-modify-write operations and load-reserved/store-conditional primitives essential for lock-free synchronization and multi-processor systems. This upgrade will transform the CPU from **RV32IMC** to **RV32IMAC**, adding 11 new atomic instructions.
 
 ## Table of Contents
 
@@ -153,8 +153,8 @@ rd = temp
 - **aq=1, rl=1**: Both acquire and release (sequential consistency)
 - **aq=0, rl=0**: No ordering guarantees (relaxed)
 
-**For single-cycle, single-hart implementation:**
-- Memory ordering is naturally satisfied (all operations are sequential)
+**For multi-cycle non-pipelined, single-hart implementation:**
+- Memory ordering is naturally satisfied (all operations are sequential and non-overlapping)
 - aq/rl bits can be ignored in RTL (but must be preserved in encoding)
 - Important for future multi-hart or pipelined implementations
 
@@ -162,7 +162,7 @@ rd = temp
 
 #### Alignment Requirements
 - All atomic operations must be **word-aligned** (address[1:0] = 00)
-- **This single-cycle core treats misaligned atomic accesses as undefined behavior**:
+- **This multi-cycle core treats misaligned atomic accesses as undefined behavior**:
   - Software must not generate misaligned atomic accesses
   - The RTL implementation is **not required** to detect or trap misaligned atomic accesses; they may read/write incorrect data without raising an exception
   - Implementers may optionally add simulation-time assertions to flag misaligned atomic accesses during verification
@@ -179,7 +179,7 @@ rd = temp
 - RISC-V spec allows implementation to reserve a region (not just exact word)
 - Minimum granularity: one word (4 bytes)
 - Can be larger (e.g., cache line) for efficiency
-- **Recommended for single-cycle**: Exact word matching for simplicity
+- **Recommended for multi-cycle**: Exact word matching for simplicity
 
 ---
 
@@ -188,36 +188,51 @@ rd = temp
 ### Existing RTL Modules
 
 ```
-top.sv (CPU top-level)
+top.sv (CPU top-level with 11-state FSM)
+├── fetch_buffer.sv (RV32C fetch buffer - manages compressed instruction alignment)
+├── decompress.sv (RV32C instruction decompressor - combinational)
 ├── decoder.sv (Instruction decoder)
 ├── alu.sv (ALU - arithmetic/logic/shift/multiply/divide operations)
-└── regfile.sv (32×32-bit register file)
+│   └── div_unit.sv (Hardware division unit with multi-cycle operation)
+├── regfile.sv (32×32-bit register file)
+├── csr_file.sv (Control and Status Registers - Zicsr extension)
+├── branch_unit.sv (Branch comparison logic)
+├── mem_interface.sv (Memory interface logic)
+└── writeback_mux.sv (Result selection for register writeback)
 ```
 
 ### Current Memory Interface
 
-**Instruction Memory (Read-Only):**
+**Multi-Cycle Architecture:**
+The CPU uses an 11-state FSM (S_IDLE, S_FETCH, S_DECODE, S_EXECUTE, S_MEM_ADDR, S_MEM_READ, S_MEM_WRITE, S_WRITEBACK, S_BRANCH, S_CSR, S_HALT) with variable-latency memory support via ready/valid handshaking.
+
+**Instruction Memory (Read-Only with Handshaking):**
 ```systemverilog
 output logic [31:0] imem_addr,    // Instruction address
-input  logic [31:0] imem_rdata    // Instruction data
+input  logic [31:0] imem_data,    // Instruction data
+output logic        imem_req,     // Request instruction fetch
+input  logic        imem_ready    // Memory has valid data
 ```
 
-**Data Memory (Read/Write):**
+**Data Memory (Read/Write with Handshaking):**
 ```systemverilog
 output logic [31:0] dmem_addr,    // Data address
 output logic        dmem_we,      // Write enable
 output logic        dmem_re,      // Read enable
-output logic [3:0]  dmem_be,      // Byte enable (one bit per byte)
+output logic [1:0]  dmem_size,    // Operation size: 00=byte, 01=halfword, 10=word
 output logic [31:0] dmem_wdata,   // Write data
-input  logic [31:0] dmem_rdata    // Read data
+input  logic [31:0] dmem_rdata,   // Read data
+output logic        dmem_req,     // Request data memory operation
+input  logic        dmem_ready    // Memory operation complete
 ```
 
 ### Current Decoder Logic
 
 The decoder currently handles:
-- RV32I base instructions (arithmetic, logic, loads, stores, branches, jumps)
-- M extension (multiplication and division)
-- Zicsr extension (CSR operations)
+- RV32I base instructions (40 instructions: arithmetic, logic, loads, stores, branches, jumps)
+- M extension (8 instructions: multiplication and division)
+- C extension (27 compressed instructions via decompress.sv)
+- Zicsr extension (6 CSR operations)
 
 **Current opcode support:**
 - `0110011`: R-type (ALU, M extension)
@@ -229,6 +244,7 @@ The decoder currently handles:
 - `1100111`: JALR
 - `0110111`: LUI
 - `0010111`: AUIPC
+- `0001111`: FENCE
 - `1110011`: System/CSR
 
 **Gap:** No support for opcode `0101111` (AMO - atomic operations)
@@ -248,7 +264,7 @@ The ALU currently uses 5-bit encoding and supports:
 
 ### 1. Top Module (`rtl/top.sv`)
 
-The top module requires **significant changes** to support atomic operations due to the read-modify-write nature of AMO instructions.
+The top module requires **significant changes** to support atomic operations due to the read-modify-write nature of AMO instructions and the multi-cycle FSM architecture.
 
 #### A. Add Reservation Station for LR/SC
 
@@ -263,20 +279,44 @@ always_ff @(posedge clk or negedge rst_n) begin
         reservation_valid <= 1'b0;
         reservation_addr <= 32'd0;
     end else begin
-        if (is_lr_instr) begin
-            // Set reservation on LR.W using rs1_data (LR base address)
+        if (is_lr_instr && current_state == S_MEM_READ && dmem_ready) begin
+            // Set reservation on LR.W completion using staged rs1_data (from a_reg)
             reservation_valid <= 1'b1;
-            reservation_addr <= rs1_data;
-        end else if (is_sc_instr || (dmem_we && reservation_valid && alu_result == reservation_addr)) begin
+            reservation_addr <= a_reg;  // LR base address from staged operand
+        end else if (is_sc_instr || (dmem_we && reservation_valid && dmem_addr == reservation_addr)) begin
             // Clear reservation on SC or write to reserved address
-            // Note: alu_result is used here as the address being accessed
             reservation_valid <= 1'b0;
         end
     end
 end
 ```
 
-#### B. Modify Data Memory Interface Signals
+#### B. Add New FSM States for Atomic Operations
+
+**New states required:**
+```systemverilog
+typedef enum logic [3:0] {
+    S_IDLE       = 4'b0000,  // After reset
+    S_FETCH      = 4'b0001,  // Fetch instruction (wait for imem_ready)
+    S_DECODE     = 4'b0010,  // Decode and read registers
+    S_EXECUTE    = 4'b0011,  // ALU operation
+    S_MEM_ADDR   = 4'b0100,  // Calculate memory address
+    S_MEM_READ   = 4'b0101,  // Load from memory (wait for dmem_ready)
+    S_MEM_WRITE  = 4'b0110,  // Store to memory (wait for dmem_ready)
+    S_WRITEBACK  = 4'b0111,  // Write result to register
+    S_BRANCH     = 4'b1000,  // Branch decision
+    S_CSR        = 4'b1001,  // CSR operation
+    S_HALT       = 4'b1010,  // ECALL/EBREAK
+    S_ATOMIC_RMW = 4'b1011   // NEW: Atomic read-modify-write second phase
+} state_t;
+```
+
+**Atomic instruction flow:**
+- **LR.W**: S_FETCH → S_DECODE → S_MEM_ADDR → S_MEM_READ (set reservation) → S_WRITEBACK
+- **SC.W**: S_FETCH → S_DECODE → S_MEM_ADDR → S_MEM_WRITE (check reservation) → S_WRITEBACK
+- **AMO**: S_FETCH → S_DECODE → S_MEM_ADDR → S_MEM_READ → S_ATOMIC_RMW (compute & write) → S_WRITEBACK
+
+#### C. Modify Data Memory Interface Signals
 
 **Add new control signals:**
 ```systemverilog
@@ -287,142 +327,196 @@ logic        is_sc_instr;       // Store-Conditional
 logic        is_amo_instr;      // Atomic Memory Operation
 logic [31:0] amo_result;        // Result of AMO operation (to write back)
 logic [31:0] atomic_wdata;      // Data to write for atomic operations
+logic        sc_success;        // SC success/failure flag
 ```
 
-#### C. Implement Read-Modify-Write Logic for AMO
+#### D. Implement Read-Modify-Write Logic for AMO
 
-AMO instructions require reading memory, performing an operation, and writing back in a single instruction. 
+AMO instructions require reading memory, performing an operation, and writing back across multiple cycles.
 
-**Architectural Challenge:** In the current design, `dmem_addr` is derived from `alu_result` (see top.sv line 199), but AMO operations require using rs1 directly as the address while the ALU performs the atomic operation. This creates a conflict: the ALU needs to compute the AMO result (e.g., ADD for AMOADD.W), but the address calculation also uses the ALU result.
+**Multi-Cycle AMO Sequence:**
+1. **S_MEM_ADDR**: Calculate address (from rs1, staged in a_reg)
+2. **S_MEM_READ**: Read original value from memory, wait for dmem_ready
+3. **S_ATOMIC_RMW**: Compute new value using ALU (original_value OP rs2_data), initiate write
+4. **S_WRITEBACK**: Write original value to rd
 
-**Recommended Solution: Bypass ALU for AMO Address Calculation**
+**Implementation Approach:**
 ```systemverilog
-// For AMO instructions, use rs1_data directly as address (bypass ALU)
-// The ALU is used only to compute the new value for AMO operations
-always_comb begin
-    if (is_amo_instr) begin
-        // AMO uses rs1 directly for address (no ALU computation for address)
-        dmem_addr_override = rs1_data;
-        // ALU computes: original_value OP rs2_data
-        // dmem_rdata provides original value, ALU computes new value
-        atomic_wdata = alu_result;  // New value from ALU
-        dmem_we = 1'b1;
-    end
-end
-
-// Address selection: use rs1 directly for AMO, otherwise use alu_result
-assign dmem_addr = is_amo_instr ? rs1_data : alu_result;
+// In S_MEM_READ state for AMO:
+// - Original value arrives via dmem_rdata (latch into mdr)
+// In S_ATOMIC_RMW state for AMO:
+// - Configure ALU with mdr (original) and b_reg (rs2)
+// - Wait for alu_ready
+// - Write alu_result to memory via dmem_wdata
+// - Assert dmem_req and dmem_we
+// In S_WRITEBACK state for AMO:
+// - Write mdr (original value) to rd via register file
 ```
 
-**Note:** This is a simplified single-cycle model. Real hardware would use multi-cycle or pipelined implementation with cache coherency protocols.
+**Note:** Unlike single-cycle designs, the multi-cycle architecture naturally supports the read-modify-write sequence through the FSM state transitions.
 
-#### D. Update Write Data Multiplexer
+#### E. Update Write Data Multiplexer
 
 ```systemverilog
 // Data memory write data selection
 always_comb begin
-    if (is_amo_instr) begin
-        dmem_wdata = atomic_wdata;  // AMO computed result
+    if (is_amo_instr && current_state == S_ATOMIC_RMW) begin
+        dmem_wdata = alu_out_reg;    // AMO computed result (after RMW)
     end else if (is_sc_instr) begin
-        dmem_wdata = rs2_data;       // SC.W stores rs2
+        dmem_wdata = b_reg;          // SC.W stores rs2 (staged)
     end else begin
-        dmem_wdata = store_data;     // Normal store data
+        dmem_wdata = b_reg;          // Normal store data (rs2 staged)
     end
 end
 ```
 
-#### E. Update Result Selection for Register Write
+#### F. Update Result Selection for Register Write
 
-**Note:** The current top.sv uses conditional logic based on opcode types, not a case statement with enumerated WB_* selectors. The write-back logic should be extended using the existing architectural pattern:
+The writeback_mux.sv module should be extended to handle atomic instruction results:
 
 ```systemverilog
-// Write-back data selection (extending existing pattern in top.sv)
+// Write-back data selection (in writeback_mux.sv or top.sv)
 always_comb begin
     if (is_amo_instr) begin
-        wr_data = dmem_rdata;          // AMO returns original value from memory
+        wr_data = mdr;                 // AMO returns original value from memory
     end else if (is_sc_instr) begin
-        wr_data = sc_result;           // SC returns 0 (success) or 1 (failure)
+        wr_data = {31'b0, ~sc_success}; // SC returns 0 (success) or 1 (failure)
     end else if (mem_to_reg) begin
-        wr_data = formatted_load_data; // Normal load
+        wr_data = mdr;                 // Normal load (formatted)
     end else if (is_csr_instr) begin
-        wr_data = csr_rdata;           // CSR read
+        wr_data = csr_rdata_reg;       // CSR read
     end else begin
-        wr_data = alu_result;          // ALU result (default)
+        wr_data = alu_out_reg;         // ALU result (default)
     end
 end
 ```
 
-Alternatively, the write-back logic could be refactored to use a case statement with explicit selectors.
+#### G. Update FSM Transitions for Atomic Instructions
+
+**Decoder output additions:**
+```systemverilog
+// New decoder outputs needed:
+output logic is_lr,      // LR.W instruction
+output logic is_sc,      // SC.W instruction  
+output logic is_amo,     // AMO instruction
+output logic [4:0] funct5 // For atomic operation type
+```
+
+**FSM transition logic:**
+```systemverilog
+S_DECODE: begin
+    if (is_amo_instr) begin
+        next_state = S_MEM_ADDR;  // AMO: calculate address
+    end else if (is_lr_instr || is_sc_instr) begin
+        next_state = S_MEM_ADDR;  // LR/SC: calculate address
+    end
+    // ... other instruction types
+end
+
+S_MEM_READ: begin
+    if (dmem_ready) begin
+        if (is_amo_instr) begin
+            next_state = S_ATOMIC_RMW;  // AMO: proceed to RMW
+        end else if (is_lr_instr) begin
+            next_state = S_WRITEBACK;   // LR: complete after read
+        end else begin
+            next_state = S_WRITEBACK;   // Normal load
+        end
+    end
+end
+
+S_ATOMIC_RMW: begin
+    if (alu_ready && dmem_ready) begin  // Wait for ALU and memory
+        next_state = S_WRITEBACK;  // Write original value to rd
+    end
+end
+
+S_MEM_WRITE: begin
+    if (dmem_ready) begin
+        if (is_sc_instr) begin
+            next_state = S_WRITEBACK;  // SC: write success/failure to rd
+        end else begin
+            next_state = S_FETCH;      // Normal store: done
+        end
+    end
+end
+```
 
 ### 2. Decoder Module (`rtl/decoder.sv`)
 
 #### A. Add AMO Opcode Recognition
 
 ```systemverilog
-// Opcode definitions
+// Opcode definitions (add to existing list)
 localparam logic [6:0] OP_AMO = 7'b0101111;  // Atomic operations
+
+// New outputs needed
+output logic        is_lr,       // Load-Reserved instruction
+output logic        is_sc,       // Store-Conditional instruction  
+output logic        is_amo,      // Atomic Memory Operation
+output logic [4:0]  funct5       // For atomic operation type (bits [31:27])
+
+// Extract funct5 from instruction
+assign funct5 = instruction[31:27];
 
 // Inside decoder main logic
 case (opcode)
     // ... existing opcodes ...
     
     OP_AMO: begin
-        // Atomic operations
-        alu_src = 1'b0;           // Use rs2 (though address from rs1)
+        // Atomic operations (all require memory access)
+        alu_src = 1'b1;           // Use immediate (zero offset from rs1)
         reg_write = 1'b1;         // Write result to rd
-        mem_read = 1'b1;          // Read from memory
-        is_atomic = 1'b1;         // Flag as atomic
+        mem_read = 1'b1;          // All atomics read from memory
         
         // Decode specific atomic operation
         case (funct5)
             5'b00010: begin  // LR.W
                 is_lr = 1'b1;
-                atomic_op = ATOMIC_LR;
                 mem_write = 1'b0;     // LR only reads
             end
             5'b00011: begin  // SC.W
                 is_sc = 1'b1;
-                atomic_op = ATOMIC_SC;
-                mem_write = 1'b1;     // SC writes (conditionally)
+                mem_write = 1'b1;     // SC conditionally writes
             end
             5'b00001: begin          // AMOSWAP.W
-                atomic_op = ATOMIC_SWAP;
+                is_amo = 1'b1;
                 mem_write = 1'b1;     // AMO reads and writes
             end
             5'b00000: begin          // AMOADD.W
-                atomic_op = ATOMIC_ADD;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b00100: begin          // AMOXOR.W
-                atomic_op = ATOMIC_XOR;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b01100: begin          // AMOAND.W
-                atomic_op = ATOMIC_AND;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b01000: begin          // AMOOR.W
-                atomic_op = ATOMIC_OR;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b10000: begin          // AMOMIN.W
-                atomic_op = ATOMIC_MIN;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b10100: begin          // AMOMAX.W
-                atomic_op = ATOMIC_MAX;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b11000: begin          // AMOMINU.W
-                atomic_op = ATOMIC_MINU;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             5'b11100: begin          // AMOMAXU.W
-                atomic_op = ATOMIC_MAXU;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
             default: begin
-                atomic_op = ATOMIC_SWAP;
+                is_amo = 1'b1;
                 mem_write = 1'b1;
             end
         endcase
@@ -432,18 +526,56 @@ case (opcode)
 endcase
 ```
 
+#### B. ALU Operation Mapping for AMO
+
+The ALU operation for AMO instructions depends on the funct5 field:
+- Use existing ALU operations where possible (ADD, XOR, AND, OR)
+- Add new ALU operations for MIN/MAX variants
+
+**Mapping:**
+- AMOSWAP: No ALU operation needed (direct data path)
+- AMOADD: ALU_ADD
+- AMOXOR: ALU_XOR
+- AMOAND: ALU_AND
+- AMOOR: ALU_OR
+- AMOMIN: ALU_MIN (new)
+- AMOMAX: ALU_MAX (new)
+- AMOMINU: ALU_MINU (new)
+- AMOMAXU: ALU_MAXU (new)
+
 ---
 
 ## Memory Interface Changes
 
 ### External Memory Requirements
 
-The external memory (testbench) must support atomic operations properly.
+The external memory (testbench/simulator) must support atomic operations properly within the multi-cycle architecture.
 
-**For single-cycle implementation with simplified atomic operations:**
-- Testbench must track LR/SC reservations
-- AMO instructions read and write in same cycle
+**For multi-cycle implementation with atomic operations:**
+- Memory model must track LR/SC reservations per hart
+- AMO instructions read and write across multiple cycles (S_MEM_READ → S_ATOMIC_RMW states)
+- Memory must maintain atomicity guarantees even with multi-cycle access
 - All atomic operations must be word-aligned
+- Ready/valid handshaking must be respected for both read and write phases
+
+**Memory Model Extensions Required:**
+
+1. **LR/SC Reservation Tracking:**
+   - Maintain reservation_valid flag and reservation_addr per hart
+   - On LR.W (when dmem_req && dmem_re && is_lr): Record address, set reservation_valid
+   - On SC.W (when dmem_req && dmem_we && is_sc): Check reservation, write conditionally
+   - Clear reservation on: Any SC.W, any write to reserved address
+
+2. **AMO Atomicity Guarantee:**
+   - Treat multi-cycle AMO sequence as atomic transaction
+   - Read phase (S_MEM_READ): Return original value via dmem_rdata
+   - Write phase (S_ATOMIC_RMW): Accept new value via dmem_wdata
+   - Prevent interleaving with other accesses to same word
+
+3. **Handshaking Protocol:**
+   - Assert dmem_ready when operation completes
+   - Support variable latency (configurable delay)
+   - Respect dmem_req as transaction start signal
 
 ---
 
@@ -451,18 +583,26 @@ The external memory (testbench) must support atomic operations properly.
 
 ### Comprehensive Test Plan
 
-#### CPU Integration Tests (`tests/src/cpu_test.rs`)
+The project currently has **210 tests** across all packages (86 in cpu-sim, 63 in tests/cpu_verifier, 33 in riscv_core, 6 in riscv_protocol, 13 in riscv_macros, 9 in RV32C integration).
 
-**New test functions (8-10 tests):**
+#### CPU Integration Tests (`cpu-sim/src/test_rtl_verification.rs`)
+
+**Note:** CPU integration tests have been migrated from `tests/src/cpu_test.rs` to `cpu-sim/src/test_rtl_verification.rs` for better infrastructure (SystemBus, VCD dumps, instruction tracing).
+
+**New test functions to add (8-10 tests):**
 
 1. `test_cpu_lr_sc_success()` - Successful LR/SC sequence
-2. `test_cpu_lr_sc_failure()` - Failed LR/SC (reservation broken by second LR)
-3. `test_cpu_lr_sc_intervening_write()` - **(Future multi-hart / external-agent)** Intervening write breaks reservation; not implementable on current single-hart core
-4. `test_cpu_amo_operations()` - All AMO instructions
-5. `test_cpu_amo_min_max()` - Min/max operations
-6. `test_cpu_atomic_counter()` - Atomic counter using AMOADD
-7. `test_cpu_atomic_lock()` - Spinlock using LR/SC
-8. `test_cpu_atomic_alignment()` - Alignment checks
+2. `test_cpu_lr_sc_failure_double_lr()` - Failed LR/SC (reservation broken by second LR)
+3. `test_cpu_lr_sc_failure_store()` - Failed LR/SC (reservation broken by intervening store)
+4. `test_cpu_amo_swap()` - AMOSWAP.W operation
+5. `test_cpu_amo_add()` - AMOADD.W operation
+6. `test_cpu_amo_logical()` - AMOXOR, AMOAND, AMOOR operations
+7. `test_cpu_amo_min_max()` - AMOMIN, AMOMAX operations (signed)
+8. `test_cpu_amo_minu_maxu()` - AMOMINU, AMOMAXU operations (unsigned)
+9. `test_cpu_atomic_counter()` - Atomic counter using AMOADD
+10. `test_cpu_atomic_lock()` - Spinlock using LR/SC
+
+**Expected test count after implementation:** ~220 tests (current 210 + 10 new atomic tests)
 
 ---
 
@@ -470,64 +610,87 @@ The external memory (testbench) must support atomic operations properly.
 
 ### Phase 1: RTL Implementation - Decoder (2-3 days)
 - Update `rtl/decoder.sv` with AMO opcode support
+- Add funct5 field extraction
+- Add is_lr, is_sc, is_amo decoder outputs
 - Add atomic operation decoding
-- Lint and test
+- Lint with `verilator --lint-only rtl/decoder.sv`
+- Test decoder in isolation if possible
 
 ### Phase 2: RTL Implementation - ALU (2-3 days)
-- Add new ALU opcodes for min/max AMOs: `AMOMIN`, `AMOMAX`, `AMOMINU`, `AMOMAXU`
-- Reuse existing ALU operations (ADD, XOR, AND, OR) for other AMOs; LR/SC require no new ALU operations
-- Test ALU min/max operations and AMO integration
+- Add new ALU opcodes for min/max AMOs: `ALU_MIN`, `ALU_MAX`, `ALU_MINU`, `ALU_MAXU`
+- Update `rtl/alu.sv` with min/max comparison logic
+- Reuse existing ALU operations (ADD, XOR, AND, OR) for other AMOs
+- LR/SC require no new ALU operations
+- Test ALU min/max operations with unit tests in `tests/src/alu_test.rs`
 
-### Phase 3: RTL Implementation - Top Module (3-4 days)  
-- Add reservation station for LR/SC
-- Implement AMO read-modify-write logic
-- Update write-back multiplexers
-- Comprehensive integration
+### Phase 3: RTL Implementation - Top Module (4-5 days)  
+- Add reservation station for LR/SC (flip-flops for valid flag and address)
+- Add new FSM state S_ATOMIC_RMW for AMO write-back phase
+- Update FSM transition logic for atomic instructions
+- Implement AMO read-modify-write sequence across states
+- Update write-back multiplexer logic (in writeback_mux.sv or top.sv)
+- Add control signals for atomic operations
+- Comprehensive integration testing
+- Lint with `verilator --lint-only rtl/top.sv`
 
-### Phase 4: Memory Testbench Support (2-3 days)
-- Add reservation tracking  
-  - Extend the Rust/marlin data-memory model to maintain a per-core reservation address and valid bit
-  - On `LR.W`, record the reserved address without modifying memory contents
-  - Invalidate the reservation on any write (store or AMO) to the reserved word address, regardless of source
-- Implement LR/SC semantics  
-  - On `SC.W`, check the reservation: if the reservation is valid and the address matches, perform the store and return success; otherwise, do **not** modify memory and return failure
-  - Ensure that failed `SC.W` operations are side-effect free with respect to the data memory model
-  - Model LR/SC as atomic with respect to all other testbench memory accesses observing the same word
-- Add AMO support in testbench  
-  - Update the data memory model used by tests to perform an atomic read-modify-write when an AMO access is detected
-  - For each AMO: (1) read the current word, (2) compute the new value according to the AMO operation (swap/add/min/max/AND/OR/XOR), (3) write the new value back, and (4) return the original word to the core
-  - Implement this as a single logical transaction so that, from the DUT's point of view, the read of the old value and the write of the new value happen in the same cycle with no tearing
-  - Ensure the memory model correctly handles a read and write to the same address in one simulated cycle (read-before-write ordering inside the atomic operation)
-  - Keep the existing marlin/Verilator memory interface, but extend the Rust-side adapter to recognize LR/SC/AMO accesses and apply the appropriate atomic semantics
+### Phase 4: Memory Testbench Support (3-4 days)
+- **Extend Rust/marlin memory model** in cpu-sim:
+  - Add reservation tracking in SystemBus or DRAM model
+  - Implement LR.W: Record reserved address without modifying memory
+  - Implement SC.W: Check reservation, write conditionally, return success/failure
+  - Invalidate reservation on any write to reserved word
+  - Model LR/SC as atomic with respect to all testbench memory accesses
+- **Add AMO support** in memory model:
+  - Recognize AMO access pattern (read in S_MEM_READ, write in S_ATOMIC_RMW)
+  - Perform atomic read-modify-write transaction
+  - Return original word value on read, accept new value on write
+  - Handle read-before-write ordering correctly for same-cycle access
+  - Maintain atomicity guarantees across multi-cycle sequence
+- **Extend marlin/Verilator interface:**
+  - Keep existing interface, extend Rust adapter logic
+  - Add state tracking for multi-phase atomic operations
+  - Ensure proper handshaking with dmem_req/dmem_ready
 
-### Phase 5: Integration Testing (3-4 days)
-- Create CPU-level atomic tests
-- Test LR/SC sequences
-- Test all AMO operations
-- Regression testing
+### Phase 5: Integration Testing (4-5 days)
+- Create CPU-level atomic tests in `cpu-sim/src/test_rtl_verification.rs`
+- Test LR/SC sequences (success and failure cases)
+- Test all 9 AMO operations individually
+- Test atomic counter and spinlock patterns
+- Verify multi-cycle FSM transitions with VCD dumps
+- Regression testing: ensure all 210 existing tests still pass
+- Run with variable memory latency to stress-test FSM
 
 ### Phase 6: System-Level Testing (2-3 days)
-- Create assembly test programs
-- Create Rust test programs
-- Test with CPU simulator
+- Create assembly test programs for atomic operations
+- Create Rust test programs using atomic primitives
+- Test with CPU simulator (cpu-sim)
+- Verify instruction trace output for atomic operations
+- Test with VCD waveform dumps for debugging
 
 ### Phase 7: Build Configuration Updates (1-2 days)
-- Update build targets to RV32IMA:
-  - Adjust `Cargo.toml` target/feature specifications for all workspace members (e.g., `cpu-sim`, `riscv_core`, `tests`) to reflect RV32IMA
-  - Update test program build configuration (e.g., assembly test Makefiles or build scripts) to use an RV32IMA-capable toolchain
-  - Update any Verilator/simulation build flags or scripts that currently assume RV32IM
-- Update CI/CD pipelines to run RV32IMA tests and builds
-- Update documentation to reflect the RV32IM → RV32IMA upgrade:
-  - Edit `AGENTS.md` (including the architecture description on line 7) to state RV32IMA support
-  - Update `README.md` and any other top-level docs that describe the CPU as RV32IM
+- Update build targets to RV32IMAC:
+  - Adjust `Cargo.toml` feature flags if needed
+  - Update test program build configuration (assembly toolchain flags)
+  - Verify Verilator build configuration
+- Update CI/CD pipelines:
+  - Ensure atomic tests run in GitHub Actions
+  - Verify all 220+ tests pass in CI
+- Update documentation:
+  - Edit `AGENTS.md` to reflect RV32IMAC support (currently states RV32IMC)
+  - Update `README.md` if it mentions instruction set architecture
+  - Update any architecture diagrams or tables
 
 ### Phase 8: Final Validation (1-2 days)
-- Complete test suite
-- Code quality checks
-- CI pipeline verification
-- Documentation finalization
+- Complete test suite execution (all 220+ tests)
+- Code quality checks:
+  - `cargo fmt -- --check`
+  - `cargo clippy -- -D warnings`
+  - `verilator --lint-only rtl/*.sv`
+- CI pipeline verification (all checks must pass)
+- Documentation finalization and review
+- Performance regression check (ensure no significant slowdown)
 
-**Total: 16-24 days**
+**Total: 19-27 days**
 
 ---
 
@@ -535,17 +698,25 @@ The external memory (testbench) must support atomic operations properly.
 
 ### High-Risk Areas
 
-1. **Read-Modify-Write Atomicity in Single-Cycle Design**
-   - Risk: Architectural challenge
-   - Mitigation: Document as simplified model
+1. **Multi-Cycle FSM Complexity for AMO Operations**
+   - Risk: Managing read-modify-write across 3 states (S_MEM_READ → S_ATOMIC_RMW → S_WRITEBACK)
+   - Mitigation: Careful state machine design, comprehensive FSM testing, VCD waveform analysis
 
-2. **LR/SC Reservation Tracking Complexity**
-   - Risk: Complex state management
-   - Mitigation: Comprehensive testing, clear specification
+2. **LR/SC Reservation Tracking Across Cycles**
+   - Risk: Reservation invalidation timing, ensuring atomicity in multi-cycle architecture
+   - Mitigation: Clear specification, comprehensive testing, edge case analysis
 
 3. **Memory Interface Changes Breaking Existing Tests**
-   - Risk: Regression in existing functionality
-   - Mitigation: Careful testing, separate atomic signals
+   - Risk: Regression in existing 210 tests due to memory model changes
+   - Mitigation: Careful memory model extension, maintain backward compatibility, run full regression suite
+
+4. **ALU Datapath Conflicts for AMO**
+   - Risk: ALU must compute both address and operation value in multi-cycle sequence
+   - Mitigation: Use staging registers (a_reg, b_reg, mdr) to hold intermediate values across states
+
+5. **Ready/Valid Handshaking Timing**
+   - Risk: Incorrect FSM transitions if ready signals not properly handled
+   - Mitigation: Review existing memory handshaking code, follow established patterns
 
 ---
 
@@ -553,21 +724,36 @@ The external memory (testbench) must support atomic operations properly.
 
 ### Functional Validation
 - [ ] All 11 atomic instructions decode correctly
-- [ ] LR.W sets reservation correctly
-- [ ] SC.W validates reservation correctly
-- [ ] AMO operations compute correctly
-- [ ] Reservation invalidation works properly
+- [ ] LR.W sets reservation correctly (verified via internal signal inspection)
+- [ ] SC.W validates reservation correctly (success and failure cases)
+- [ ] SC.W returns correct value to rd (0 for success, 1 for failure)
+- [ ] AMO operations compute correctly (all 9 operations)
+- [ ] AMO operations return original value to rd
+- [ ] Reservation invalidation works properly (on SC, on write to reserved address)
+- [ ] FSM transitions correctly for all atomic instruction types
+- [ ] Multi-cycle sequence completes correctly (verified with VCD dumps)
+- [ ] Ready/valid handshaking works with variable memory latency
 
 ### Quality Validation
-- [ ] All code quality checks pass
-- [ ] Test suite expanded with 8-10 new atomic-focused test functions/modules (as described in the Testing Strategy), increasing the total test count above the current 84 tests
+- [ ] All code quality checks pass:
+  - [ ] `cargo fmt -- --check`
+  - [ ] `cargo clippy -- -D warnings`
+  - [ ] `verilator --lint-only rtl/*.sv`
+- [ ] Test suite expanded to ~220 tests (current 210 + 10 new atomic tests)
 - [ ] All existing tests pass (no regressions)
-- [ ] Documentation complete
+- [ ] New atomic tests cover all 11 instructions
+- [ ] Documentation complete and accurate
 
 ### CI/CD Validation
-- [ ] GitHub Actions CI passes
-- [ ] All tests (existing and new) pass
-- [ ] Build, format, clippy checks pass
+- [ ] GitHub Actions CI passes all checks
+- [ ] All tests (existing and new) pass in CI
+- [ ] Build succeeds with no warnings
+- [ ] Format and clippy checks pass (blocking)
+
+### Performance Validation
+- [ ] No significant regression in test execution time
+- [ ] Multi-cycle atomic operations complete within expected cycle counts
+- [ ] VCD dumps confirm correct timing and state transitions
 
 ---
 
@@ -604,16 +790,24 @@ The external memory (testbench) must support atomic operations properly.
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-31 | GitHub Copilot | Initial draft |
+| 1.1 | 2026-01-11 | GitHub Copilot | Updated for multi-cycle architecture, RV32IMC base, corrected test counts, added FSM details, updated memory interface with ready/valid handshaking |
 
 ---
 
-**Document Status:** ✅ **Ready for Implementation**
+**Document Status:** ✅ **Updated for Multi-Cycle Architecture - Ready for Implementation**
 
-This plan provides a comprehensive roadmap for adding RV32A atomic instruction support. The implementation will transform the CPU from RV32IM to RV32IMA, enabling lock-free synchronization primitives and atomic memory operations essential for concurrent programming.
+This plan provides a comprehensive roadmap for adding RV32A atomic instruction support to the multi-cycle non-pipelined RV32IMC CPU. The implementation will transform the CPU from RV32IMC to RV32IMAC, enabling lock-free synchronization primitives and atomic memory operations essential for concurrent programming.
 
 **Key Takeaways:**
 - 11 new atomic instructions (LR/SC + 9 AMO operations)
-- Significant architectural changes required (reservation station, read-modify-write)
-- Single-cycle implementation is simplified model
-- Comprehensive testing critical for correctness
-- 16-24 day estimated implementation timeline
+- Significant architectural changes required (reservation station, multi-cycle read-modify-write via FSM)
+- New FSM state (S_ATOMIC_RMW) for AMO write-back phase
+- Multi-cycle implementation naturally supports atomic operation sequencing
+- Memory model extensions needed for atomicity guarantees across cycles
+- Comprehensive testing critical for correctness (~220 tests after implementation)
+- 19-27 day estimated implementation timeline
+
+**Architecture Compatibility:**
+- Current: RV32IMC (multi-cycle, 11-state FSM, 210 tests)
+- Target: RV32IMAC (multi-cycle, 12-state FSM, ~220 tests)
+- Maintains backward compatibility with existing instruction set
