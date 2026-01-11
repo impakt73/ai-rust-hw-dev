@@ -8,7 +8,9 @@ module mem_interface (
     input  logic        mem_write,
     input  logic        mem_read,
     input  logic        is_atomic_rmw,  // A extension: in S_ATOMIC_RMW state
+    input  logic        is_mem_write_state, // In S_MEM_WRITE state
     input  logic        is_sc,          // A extension: SC.W instruction
+    input  logic        sc_success,     // A extension: SC success flag
     
     // Data signals
     input  logic [31:0] alu_result,
@@ -39,7 +41,9 @@ module mem_interface (
         end
     end
     
-    assign dmem_we = mem_write;
+    // Write enable: only in S_MEM_WRITE or S_ATOMIC_RMW states
+    // For SC.W, only write if reservation is valid
+    assign dmem_we = mem_write && (is_mem_write_state || is_atomic_rmw) && (!is_sc || sc_success);
     assign dmem_re = mem_read;
     
     // Encode memory operation size from funct3

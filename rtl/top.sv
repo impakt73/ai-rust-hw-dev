@@ -380,11 +380,11 @@ module top (
                 reservation_addr <= alu_out_reg;  // Address from ALU (rs1 + 0)
             end
             // Clear reservation on SC.W (any SC, regardless of success)
-            else if (is_sc_reg && current_state == S_MEM_WRITE) begin
+            else if (is_sc_reg && current_state == S_MEM_WRITE && dmem_ready) begin
                 reservation_valid <= 1'b0;
             end
-            // Clear reservation on any write to the reserved address
-            else if (dmem_we && reservation_valid && dmem_addr == reservation_addr) begin
+            // Clear reservation on any write to the reserved address (except SC.W writes)
+            else if (dmem_we && reservation_valid && dmem_addr == reservation_addr && !is_sc_reg) begin
                 reservation_valid <= 1'b0;
             end
         end
@@ -759,14 +759,32 @@ module top (
         .rs2_data(rs2_data)
     );
     
+    // ALU operation selection (multi-cycle: may need different ops for different states)
+    logic [4:0] alu_op_mux;
+    always_comb begin
+        // Default: use the operation from decoder
+        alu_op_mux = alu_op_reg;
+        
+        // Special case for S_MEM_ADDR: always use ADD for address calculation
+        // even if the instruction is an AMO with a different operation
+        if (current_state == S_MEM_ADDR) begin
+            alu_op_mux = 5'b00000;  // ALU_ADD
+        end
+    end
+    
     // ALU source selection (multi-cycle: uses registered operands and control)
     always_comb begin
         // Default sources
         alu_a = a_reg;
         alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011) ? imm_s_reg : imm_i_reg) : b_reg;
         
+        // Special case for S_MEM_ADDR with AMO/LR/SC: address is just rs1 (no offset)
+        if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
+            alu_a = a_reg;  // rs1
+            alu_b = 32'h0;  // No offset for atomic operations
+        end
         // Special cases in EXECUTE state
-        if (current_state == S_EXECUTE) begin
+        else if (current_state == S_EXECUTE) begin
             case (opcode_reg)
                 7'b0010111: begin // AUIPC
                     // Use the PC captured for this instruction at decode time
@@ -796,7 +814,7 @@ module top (
         .rst_n(rst_n),          // NEW: Reset for division unit
         .a(alu_a),
         .b(alu_b),
-        .alu_op(alu_op_reg),
+        .alu_op(alu_op_mux),    // Use muxed operation (not alu_op_reg directly)
         .alu_start(alu_start),  // NEW: Start operation pulse
         .result(alu_result),
         .zero(alu_zero),
@@ -809,7 +827,9 @@ module top (
         .mem_write(mem_write_reg),
         .mem_read(mem_read_reg),
         .is_atomic_rmw(current_state == S_ATOMIC_RMW),  // A extension
+        .is_mem_write_state(current_state == S_MEM_WRITE), // NEW: In S_MEM_WRITE state
         .is_sc(is_sc_reg),                               // A extension
+        .sc_success(sc_success),                         // A extension
         .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
         .dmem_rdata(dmem_rdata),
