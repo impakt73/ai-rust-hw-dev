@@ -75,6 +75,9 @@ pub const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 /// Standard success code for tests (expected by cpu-sim)
 pub const SUCCESS_CODE: u32 = 42;
 
+/// Standard failure code for tests (indicates test logic failure, not panic)
+pub const FAILURE_CODE: u32 = 1;
+
 /// Standard panic/failure code (different from success to aid debugging)
 pub const PANIC_CODE: u32 = 0xDEAD;
 

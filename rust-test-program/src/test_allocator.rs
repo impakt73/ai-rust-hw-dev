@@ -38,5 +38,5 @@ fn main() -> ! {
         common::fifo_write_word(byte as u32);
     }
     
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }

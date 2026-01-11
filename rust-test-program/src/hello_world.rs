@@ -16,8 +16,6 @@ fn panic(info: &PanicInfo) -> ! {
 /// Uses riscv_rt which properly initializes stack pointer
 #[entry]
 fn main() -> ! {
-    const SUCCESS_CODE: u32 = 42;
-
     // Echo functionality: Read from RX FIFO and write to TX FIFO
     // Continue until we receive a null terminator word (0x00000000)
     // Maximum of 50 iterations to prevent infinite loops
@@ -34,5 +32,5 @@ fn main() -> ! {
     }
 
     // Exit with success
-    common::write_tohost(SUCCESS_CODE);
+    common::write_tohost(common::SUCCESS_CODE);
 }

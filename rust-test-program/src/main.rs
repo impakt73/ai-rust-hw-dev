@@ -18,9 +18,6 @@ fn panic(info: &PanicInfo) -> ! {
 /// Uses riscv_rt which properly initializes stack pointer
 #[entry]
 fn main() -> ! {
-    const SUCCESS_CODE: u32 = 42;
-    const FAILURE_CODE: u32 = 1;
-
     // ====== Test 1: Arithmetic Operations ======
     let x1: u32 = 10;
     let x2: u32 = 20;
@@ -29,7 +26,7 @@ fn main() -> ! {
     let x5 = x1.wrapping_add(5); // 15
 
     if x1 != 10 || x2 != 20 || x3 != 30 || x4 != 10 || x5 != 15 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== Test 2: Logical Operations ======
@@ -41,7 +38,7 @@ fn main() -> ! {
     let x11 = x1 ^ 7; // 13
 
     if x6 != 0 || x7 != 30 || x8 != 30 || x9 != 10 || x10 != 15 || x11 != 13 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== Test 3: Shift Operations ======
@@ -52,7 +49,7 @@ fn main() -> ! {
     let x16 = x15 >> 1; // -4 (arithmetic shift)
 
     if x12 != 8 || x13 != 32 || x14 != 16 || x15 != -8 || x16 != -4 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== Test 4: Comparison Operations ======
@@ -63,7 +60,7 @@ fn main() -> ! {
     let cmp3 = if a < b { 1 } else { 0 }; // unsigned comparison
 
     if cmp1 != 1 || cmp2 != 0 || cmp3 != 1 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== Test 5: Memory Store and Load Verification ======
@@ -84,7 +81,7 @@ fn main() -> ! {
         let loaded3 = read_volatile((BASE_ADDR + 8) as *const u32);
 
         if loaded1 != val1 || loaded2 != val2 || loaded3 != val3 {
-            common::write_tohost(FAILURE_CODE);
+            common::write_tohost(common::FAILURE_CODE);
         }
     }
 
@@ -98,7 +95,7 @@ fn main() -> ! {
     }
 
     if accumulator != 5 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== Test 7: Array Operations ======
@@ -113,23 +110,23 @@ fn main() -> ! {
     // Verify array contents
     for i in 0..ARRAY_SIZE {
         if array[i] != (i as u32) * 2 {
-            common::write_tohost(FAILURE_CODE);
+            common::write_tohost(common::FAILURE_CODE);
         }
     }
 
     // ====== Test 8: Function Calls ======
     let result = add_numbers(10, 20);
     if result != 30 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     let result2 = multiply_by_shift(7, 3); // 7 * 8 = 56
     if result2 != 56 {
-        common::write_tohost(FAILURE_CODE);
+        common::write_tohost(common::FAILURE_CODE);
     }
 
     // ====== All Tests Passed ======
-    common::write_tohost(SUCCESS_CODE);
+    common::write_tohost(common::SUCCESS_CODE);
 }
 
 /// Simple addition function to test function calls

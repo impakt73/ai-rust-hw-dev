@@ -16,5 +16,5 @@ fn panic(info: &PanicInfo) -> ! {
 #[entry]
 fn main() -> ! {
     // Just write success immediately
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }

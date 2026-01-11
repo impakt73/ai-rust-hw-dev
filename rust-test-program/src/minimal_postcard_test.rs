@@ -39,5 +39,5 @@ fn main() -> ! {
     // Test 2: Write a known pattern
     common::fifo_write_word(0xDEADBEEF);
     
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }

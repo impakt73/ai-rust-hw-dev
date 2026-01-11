@@ -54,7 +54,7 @@ fn main() -> ! {
     }
 
     // Signal successful completion
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }
 
 /// Helper function to write a single RGBA pixel at (x, y) coordinates

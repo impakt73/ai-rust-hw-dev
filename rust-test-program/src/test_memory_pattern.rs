@@ -39,5 +39,5 @@ fn main() -> ! {
     }
 
     // Signal successful completion
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }

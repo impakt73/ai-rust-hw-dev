@@ -54,7 +54,7 @@ fn main() -> ! {
     }
     
     // All tests passed!
-    halt(1); // Success
+    halt(common::SUCCESS_CODE); // Success
 }
 
 fn halt(code: u32) -> ! {

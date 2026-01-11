@@ -1446,14 +1446,14 @@ fn test_atomic_operations() {
     let simple_path = test_program_path("test_atomic_simple.elf");
     let result =
         run_elf(&simple_path, 1000, false).expect("test_atomic_simple simulation should succeed");
-    assert_tohost(&result, 1, "test_atomic_simple");
+    assert_tohost(&result, 0x2a, "test_atomic_simple");
     println!("✓ test_atomic_simple passed in {} cycles", result.cycles);
 
     // Test 2: Comprehensive atomic operations (all AMO ops, LR/SC, compare_exchange)
     println!("\nRunning test_atomic.elf...");
     let full_path = test_program_path("test_atomic.elf");
     let result = run_elf(&full_path, 100000, false).expect("test_atomic simulation should succeed");
-    assert_tohost(&result, 1, "test_atomic");
+    assert_tohost(&result, 0x2a, "test_atomic");
     println!("✓ test_atomic passed in {} cycles", result.cycles);
 
     println!("\n✓ All atomic operations tested:");

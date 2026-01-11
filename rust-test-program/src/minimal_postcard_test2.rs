@@ -43,5 +43,5 @@ fn main() -> ! {
     // Write a known pattern to mark the end
     common::fifo_write_word(0xDEADBEEF);
     
-    common::write_tohost(42);
+    common::write_tohost(common::SUCCESS_CODE);
 }
