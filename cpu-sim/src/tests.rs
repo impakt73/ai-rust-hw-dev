@@ -1441,21 +1441,26 @@ fn test_atomic_operations() {
     println!("ATOMIC OPERATIONS TEST (RV32A)");
     println!("========================================\n");
 
-    // Note: We test atomic operations via RTL-level tests in test_rtl_verification.rs
-    // These use manually encoded atomic instructions and verify correct behavior.
-    // The Rust atomic library may use compare-exchange loops or other patterns
-    // that are more complex than direct atomic operations.
+    // Test 1: Simple atomic operations (AMOADD, AMOSWAP)
+    println!("Running test_atomic_simple.elf...");
+    let simple_path = test_program_path("test_atomic_simple.elf");
+    let result =
+        run_elf(&simple_path, 1000, false).expect("test_atomic_simple simulation should succeed");
+    assert_tohost(&result, 1, "test_atomic_simple");
+    println!("✓ test_atomic_simple passed in {} cycles", result.cycles);
 
-    // For now, we rely on the comprehensive RTL tests:
-    // - test_cpu_lr_sc_success: LR/SC operations
-    // - test_cpu_amoswap: AMOSWAP.W
-    // - test_cpu_amoadd: AMOADD.W
-    // - test_cpu_amo_logical: AMOXOR/AND/OR
-    // - test_cpu_amo_min_max: AMOMIN/MAX
-    // - test_cpu_amo_unsigned_min_max: AMOMINU/MAXU
+    // Test 2: Comprehensive atomic operations (all AMO ops, LR/SC, compare_exchange)
+    println!("\nRunning test_atomic.elf...");
+    let full_path = test_program_path("test_atomic.elf");
+    let result = run_elf(&full_path, 100000, false).expect("test_atomic simulation should succeed");
+    assert_tohost(&result, 1, "test_atomic");
+    println!("✓ test_atomic passed in {} cycles", result.cycles);
 
-    println!("✓ Atomic operations verified via RTL tests");
-    println!("✓ All 11 atomic instructions (LR.W, SC.W, 9 AMO ops) tested");
+    println!("\n✓ All atomic operations tested:");
+    println!("  - AMOADD.W, AMOSWAP.W");
+    println!("  - AMOAND.W, AMOOR.W, AMOXOR.W");
+    println!("  - AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W");
+    println!("  - LR.W, SC.W (for compare_exchange)");
     println!("\n========================================");
     println!("✓ ATOMIC OPERATIONS TEST PASSED");
     println!("========================================");

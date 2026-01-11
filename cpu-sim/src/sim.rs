@@ -322,10 +322,7 @@ where
                             let addr = self.cpu.dmem_addr;
                             let size = self.cpu.dmem_size;
                             let wdata = self.cpu.dmem_wdata;
-                            
-                            // DEBUG: Print memory writes
-                            log::debug!("Memory write: addr=0x{:08x}, wdata=0x{:08x}, size={}", addr, wdata, size);
-                            
+
                             match size {
                                 0b00 => self.bus.write_byte(addr, wdata as u8),
                                 0b01 => self.bus.write_halfword(addr, wdata as u16),
@@ -359,10 +356,7 @@ where
                                 0b01 => self.bus.read_halfword(addr) as u32,
                                 _ => self.bus.read_word(addr),
                             };
-                            
-                            // DEBUG: Print memory reads
-                            log::debug!("Memory read: addr=0x{:08x}, rdata=0x{:08x}, size={}", addr, rdata, size);
-                            
+
                             self.cpu.dmem_rdata = rdata;
                             self.cpu.dmem_ready = 1; // Ready after delay
                         } else {
