@@ -1504,11 +1504,12 @@ S_WRITEBACK → S_FETCH
    - Test FP load/store
    - Test FP/int conversions
    - Include floating point data section
+   - **Note:** Assembly must use `rv32imacf` architecture
 
 2. [ ] Build test program
    ```bash
    cd test_programs
-   riscv64-unknown-elf-as -march=rv32imf -mabi=ilp32 -o f_test.o f_extension_test.s
+   riscv64-unknown-elf-as -march=rv32imacf -mabi=ilp32 -o f_test.o f_extension_test.s
    riscv64-unknown-elf-ld -T linker.ld -o f_test.elf f_test.o
    ```
 
@@ -1521,11 +1522,13 @@ S_WRITEBACK → S_FETCH
    - Check FP register final values
    - Check memory contents
    - Check FCSR flags
+   - **Multi-cycle:** Verify instruction trace shows correct FP execution
 
 **Validation:**
 - [ ] Test program assembles without errors
 - [ ] Program executes correctly in simulator
 - [ ] All FP operations produce expected results
+- [ ] Multi-cycle execution timing is correct
 
 **Deliverables:**
 - `test_programs/f_extension_test.s` (new file)
@@ -1601,6 +1604,8 @@ S_WRITEBACK → S_FETCH
 
 ### Phase 10: Final Validation and Compliance (Estimated: 2-3 days)
 
+🔄 **Updated for Current Test Baseline**
+
 **Objective:** Comprehensive testing and compliance verification
 
 **Tasks:**
@@ -1608,6 +1613,7 @@ S_WRITEBACK → S_FETCH
    ```bash
    cargo test --verbose
    cargo test --package cpu-sim
+   # Expect 231-241 total tests passing
    ```
 
 2. [ ] Run code quality checks
@@ -1626,17 +1632,21 @@ S_WRITEBACK → S_FETCH
    - Measure simulation speed
    - Check for timing issues
    - Profile critical paths
+   - **Multi-cycle:** Verify FP instruction cycle counts are as expected
 
 5. [ ] Edge case testing
    - Test all rounding modes
    - Test all exception conditions
    - Test NaN, infinity, subnormal handling
+   - Test FP after compressed instructions
+   - Test FP after atomic operations
 
 **Validation:**
-- [ ] All 119+ tests pass
+- [ ] All 231+ tests pass
 - [ ] Code quality checks pass
 - [ ] Compliance tests pass (if run)
 - [ ] No performance regressions
+- [ ] Multi-cycle timing correct
 
 **Deliverables:**
 - Test report document
@@ -1646,28 +1656,37 @@ S_WRITEBACK → S_FETCH
 
 ## Summary of Implementation Phases
 
+🔄 **Updated Timeline and Dependencies**
+
 | Phase | Duration | Dependencies | Key Deliverables |
 |-------|----------|--------------|------------------|
 | Phase 1 | 1-2 days | None | FP register file RTL + tests |
-| Phase 2 | 3-5 days | Phase 1 | Basic FPU RTL + tests |
-| Phase 3 | 2-3 days | Phase 2 | Complete FPU with all operations |
-| Phase 4 | 1-2 days | Phase 3 | Updated decoder |
-| Phase 5 | 2-3 days | Phases 1-4 | Integrated top module |
-| Phase 6 | 2-3 days | Phase 5 | CPU integration tests |
-| Phase 7 | 1-2 days | Phase 6 | Assembly test programs |
+| Phase 2 | 4-6 days | Phase 1 | Basic FPU RTL + tests (multi-cycle decision) |
+| Phase 3 | 3-4 days | Phase 2 | Complete FPU with all operations |
+| Phase 4 | 2-3 days | Phase 3 | Updated decoder (RV32IMAC integration) |
+| Phase 5 | 3-4 days | Phases 1-4 | Integrated top module (12-state FSM) |
+| Phase 6 | 3-4 days | Phase 5 | CPU integration tests (multi-cycle) |
+| Phase 7 | 1-2 days | Phase 6 | Assembly test programs (rv32imacf) |
 | Phase 8 | 1 day | None (parallel) | Build configuration |
 | Phase 9 | 1 day | All phases | Documentation |
-| Phase 10 | 2-3 days | All phases | Final validation |
+| Phase 10 | 2-3 days | All phases | Final validation (231+ tests) |
 
-**Total Estimated Time: 16-25 days**
+**Total Estimated Time: 20-32 days** (increased from original 16-25 due to multi-cycle complexity)
 
 **Critical Path:** Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 10
 
 **Parallel Activities:** Phase 8 can start anytime after Phase 1
 
+**Key Complexity Factors:**
+- Multi-cycle architecture requires more careful FSM integration (+4-7 days)
+- Integration with existing RV32AC extensions adds testing overhead
+- Higher test baseline (196 vs 84) means more regression testing
+
 ---
 
 ## Risk Assessment
+
+🔄 **Updated for Multi-Cycle Architecture**
 
 ### High-Risk Areas
 
@@ -1675,17 +1694,36 @@ S_WRITEBACK → S_FETCH
 
 **Risk:** FP arithmetic (especially division and square root) creates very long combinational paths, potentially violating timing in single-cycle design.
 
-**Mitigation:**
+**Impact:** HIGH (blocking issue for implementation)
+
+**Mitigation (UPDATED):**
+- ✅ **Multi-cycle architecture makes this more manageable** - can spread operations across cycles
 - Initial implementation uses SystemVerilog `shortreal` with synthesis tool inference
 - Monitor synthesis reports for critical path violations
-- Consider multi-cycle FP operations if timing cannot be met
-- Alternative: Use iterative algorithms with state machines
-- May need to relax single-cycle requirement for FP ops
+- **Recommended:** Use multi-cycle FP operations (iterative DIV/SQRT with 8-32 cycles)
+- Add dedicated FP_EXECUTE or FP_WAIT states to FSM if needed
+- May need to adjust FSM to wait for FPU completion (busy/done signals)
+- Simpler operations (ADD, MUL, CMP) can likely be single-cycle within EXECUTE state
 
-**Impact:** High
-**Likelihood:** High
+**Likelihood:** MEDIUM (reduced from HIGH due to multi-cycle architecture)
 
-#### 2. IEEE 754 Compliance
+#### 2. FSM Integration Complexity (NEW RISK)
+
+**Risk:** Integrating FP execution into existing 12-state FSM is complex, especially with atomic operations and compressed instructions.
+
+**Impact:** HIGH (could break existing functionality)
+
+**Mitigation:**
+- Thorough regression testing (all 196 existing tests must pass)
+- Test FP instructions following compressed instructions
+- Test FP instructions following atomic operations
+- Use concrete simulation data ($display) rather than abstract reasoning
+- Add FP-specific FSM states if single EXECUTE state becomes too complex
+- Document state machine transitions clearly
+
+**Likelihood:** MEDIUM
+
+#### 3. IEEE 754 Compliance
 
 **Risk:** Incorrect handling of special values (NaN, infinity, subnormal) and rounding modes leads to non-compliant behavior.
 
@@ -1696,37 +1734,39 @@ S_WRITEBACK → S_FETCH
 - Reference implementation comparison (QEMU, Spike)
 - Document any known deviations
 
-**Impact:** High
-**Likelihood:** Medium
-
-#### 3. Test Coverage Gaps
-
-**Risk:** Complex FP behavior has many edge cases that may not be covered by initial tests.
-
-**Mitigation:**
-- Systematic edge case testing (NaN, infinity, zero, subnormal)
-- Use RISC-V architectural test suite
-- Test all rounding modes
-- Test all exception conditions
-- Fuzz testing with random FP values
-
-**Impact:** Medium
-**Likelihood:** Medium
+**Impact:** HIGH  
+**Likelihood:** MEDIUM
 
 ### Medium-Risk Areas
 
-#### 4. Backwards Compatibility
+#### 4. Backwards Compatibility (ELEVATED PRIORITY)
 
-**Risk:** F extension changes break existing RV32IM functionality.
+**Risk:** F extension changes break existing RV32IMAC functionality.
+
+**Impact:** HIGH (would require extensive rework)  
+**Likelihood:** MEDIUM (higher due to complex existing architecture)
 
 **Mitigation:**
-- Run all 84 existing tests after each change
+- Run all 196 existing tests after each change (not just 84)
 - Keep integer and FP data paths separate
 - No changes to integer ALU or register file
 - Regression testing at every phase
+- Test interactions: FP after compressed, FP after atomic operations
+- Ensure fetch_buffer, decompress, mem_interface remain unchanged
 
-**Impact:** High
-**Likelihood:** Low
+#### 5. Multi-Cycle Timing Complexity (NEW RISK)
+
+**Risk:** FP operations introduce unexpected stalls or timing issues in multi-cycle execution.
+
+**Impact:** MEDIUM  
+**Likelihood:** MEDIUM
+
+**Mitigation:**
+- Carefully design FPU busy/done signaling
+- Test with variable memory latency
+- Document expected cycle counts for each FP operation
+- Add cycle count validation tests
+- Profile performance before and after FP addition
 
 #### 5. Toolchain Limitations
 
@@ -1774,6 +1814,8 @@ S_WRITEBACK → S_FETCH
 
 ### Functional Validation
 
+🔄 **Updated for Multi-Cycle Architecture**
+
 **RTL Level:**
 - [ ] FP register file stores and retrieves 32-bit FP values correctly
 - [ ] FPU produces IEEE 754-compliant results for all operations
@@ -1781,6 +1823,8 @@ S_WRITEBACK → S_FETCH
 - [ ] All 26 F extension instructions decode correctly
 - [ ] Exception flags (fflags) set correctly
 - [ ] Rounding modes honored (or documented as unsupported)
+- [ ] **Multi-cycle:** FPU busy/done signals work correctly
+- [ ] **Multi-cycle:** FSM properly sequences through FP instruction execution
 
 **CPU Level:**
 - [ ] FLW/FSW load and store FP values correctly
@@ -1789,12 +1833,17 @@ S_WRITEBACK → S_FETCH
 - [ ] FP/integer conversions work bidirectionally
 - [ ] FCSR CSR accessible and functional
 - [ ] Exception flags accumulate correctly
+- [ ] **Multi-cycle:** FP operations complete in expected cycle counts
+- [ ] **Multi-cycle:** FP instructions work with variable memory latency
+- [ ] **Integration:** FP instructions work after compressed instructions
+- [ ] **Integration:** FP instructions work after atomic operations
 
 **System Level:**
 - [ ] Assembly FP programs execute correctly
 - [ ] Rust FP programs (using `f32`) work correctly
 - [ ] CPU simulator runs F extension ELF files
 - [ ] Multi-instruction FP sequences produce correct results
+- [ ] **Multi-cycle:** Instruction trace shows correct FP execution timing
 
 ### Quality Validation
 
@@ -1805,25 +1854,27 @@ S_WRITEBACK → S_FETCH
 - [ ] No compiler warnings in Rust or SystemVerilog
 
 **Testing:**
-- [ ] Test count increases from 84 to 119+ (35+ new tests)
+- [ ] Test count increases from 196 to 231+ (35+ new tests)
 - [ ] All new FP tests pass
-- [ ] All existing tests pass (no regressions)
+- [ ] All existing tests pass (no regressions on 196 tests)
 - [ ] Code coverage includes all FP instructions
 - [ ] Edge cases comprehensively tested
+- [ ] Multi-cycle timing verified in tests
 
 **Documentation:**
-- [ ] README.md updated with RV32F support
+- [ ] README.md updated with RV32F support (RV32IMAC → RV32IMACF)
 - [ ] AGENTS.md updated with F extension instructions
 - [ ] Test programs documented with FP examples
 - [ ] Build configuration changes documented
 - [ ] Known limitations documented
+- [ ] Multi-cycle FP execution timing documented
 
 ### CI/CD Validation
 
 **Automated Checks:**
 - [ ] GitHub Actions CI passes all jobs
 - [ ] Build job completes successfully
-- [ ] Test job runs all 119+ tests successfully
+- [ ] Test job runs all 231+ tests successfully
 - [ ] Format check passes
 - [ ] Clippy check passes
 
@@ -1981,14 +2032,25 @@ Value = (-1)^S × 1.mantissa × 2^(exponent-127)
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-12-31 | GitHub Copilot | Initial comprehensive plan for RV32F extension |
+| 1.1 | 2026-01-11 | GitHub Copilot | Updated for multi-cycle RV32IMAC architecture |
+
+**Version 1.1 Changes:**
+- Updated architecture from single-cycle RV32IM to multi-cycle RV32IMAC
+- Increased test baseline from 84 to 196 tests
+- Added multi-cycle FPU implementation considerations
+- Updated FSM integration notes (12-state FSM)
+- Adjusted timeline estimates (20-32 days vs 16-25 days)
+- Updated build targets (riscv32imacf vs riscv32imf)
+- Added integration considerations for Atomic and Compressed extensions
+- Updated risk assessment with multi-cycle specific risks
 
 ---
 
 ## Document Status
 
-✅ **Ready for Implementation**
+✅ **Ready for Implementation** (Updated for Current Architecture)
 
-This plan provides a complete roadmap for adding single-precision floating point support to the RISC-V CPU. All phases are detailed with specific tasks, validation criteria, RTL code examples, and estimated timelines. The plan is optimized for AI coding agent implementation with:
+This plan provides a complete roadmap for adding single-precision floating point support to the **multi-cycle RV32IMAC** RISC-V CPU. All phases are detailed with specific tasks, validation criteria, RTL code examples, and estimated timelines. The plan is optimized for AI coding agent implementation with:
 
 - Clear, sequential phases with dependencies
 - Specific file names and code snippets
@@ -1996,12 +2058,35 @@ This plan provides a complete roadmap for adding single-precision floating point
 - Build configuration details
 - Risk mitigation strategies
 - Validation checklists
+- **NEW:** Multi-cycle architecture considerations
+- **NEW:** Integration with existing RV32AC extensions
+
+**Important Notes for Implementation:**
+
+⚠️ **Architecture has changed since original plan:**
+- CPU is now **multi-cycle** (not single-cycle)
+- **12-state FSM** (not 11-state)
+- **RV32IMAC** baseline (not RV32IM)
+- **196 tests** baseline (not 84)
+- Target is `riscv32imacf` (not `riscv32imf`)
+
+⚠️ **Key Implementation Decisions Required:**
+1. **FPU Architecture:** Single-cycle vs multi-cycle (recommend multi-cycle for DIV/SQRT)
+2. **FSM Extension:** Dedicated FP states vs extending EXECUTE state
+3. **Code Examples:** Verify marlin API patterns match current usage
+
+⚠️ **Before Starting:**
+1. Review current test patterns in `tests/src/` directory
+2. Understand multi-cycle FSM flow in `rtl/top.sv`
+3. Study existing decoder logic for RV32IMAC integration patterns
+4. Verify Verilator and toolchain versions
 
 **Next Steps:**
-1. Review and approve this plan
-2. Begin Phase 1 implementation
-3. Track progress using the phase checklists
-4. Report progress after each phase completion
+1. Review and approve this updated plan
+2. Make FPU implementation decision (single vs multi-cycle)
+3. Begin Phase 1 implementation
+4. Track progress using the phase checklists
+5. Report progress after each phase completion
 
 ---
 
