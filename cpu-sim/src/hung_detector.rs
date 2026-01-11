@@ -339,13 +339,14 @@ impl HungDetector {
             // PC bounds checking when instruction completes (if enabled)
             // Since boot_addr is validated at reset time, we can check PC bounds
             // on every instruction completion without special initialization tracking
-            if self.config.enable_pc_bounds_detection && !self.valid_pc_ranges.is_empty() {
-                if !self.is_pc_valid(pc) {
-                    return Err(HungStateError::PcOutOfBounds {
-                        pc,
-                        valid_ranges: self.valid_pc_ranges.clone(),
-                    });
-                }
+            if self.config.enable_pc_bounds_detection
+                && !self.valid_pc_ranges.is_empty()
+                && !self.is_pc_valid(pc)
+            {
+                return Err(HungStateError::PcOutOfBounds {
+                    pc,
+                    valid_ranges: self.valid_pc_ranges.clone(),
+                });
             }
         }
 
