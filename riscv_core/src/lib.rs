@@ -62,12 +62,12 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "top.sv",
-        "decompress.sv", // RV32C decompressor
+        "fetch_buffer.sv", // RV32C fetch buffer
+        "decompress.sv",   // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
         "regfile.sv",
         "decoder.sv",
-        "pc_control.sv",
         "branch_unit.sv",
         "csr_file.sv",
         "mem_interface.sv",

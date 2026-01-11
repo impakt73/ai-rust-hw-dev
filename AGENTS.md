@@ -136,12 +136,13 @@ All code should pass these checks before committing.
 │   ├── regfile.sv         # 32x32-bit register file
 │   ├── decoder.sv         # Instruction decoder
 │   ├── decompress.sv      # RV32C instruction decompressor
+│   ├── fetch_buffer.sv    # RV32C fetch buffer (handles compressed instruction alignment)
+│   ├── div_unit.sv        # Hardware division unit (used by ALU)
 │   ├── csr_file.sv        # Control and Status Registers (Zicsr)
 │   ├── branch_unit.sv     # Branch comparison logic
-│   ├── pc_control.sv      # Program counter control
 │   ├── mem_interface.sv   # Memory interface logic
 │   ├── writeback_mux.sv   # Writeback multiplexer
-│   └── top.sv             # Top-level CPU module (with RV32C fetch buffer)
+│   └── top.sv             # Top-level CPU module (multi-cycle FSM control)
 ├── tests/                  # Rust verification
 │   ├── Cargo.toml         # Test package dependencies
 │   ├── build.rs           # Build script (watches RTL changes)
@@ -172,13 +173,14 @@ All code should pass these checks before committing.
 
 ```
 top (CPU)
+├── fetch_buffer (RV32C fetch buffer - manages compressed instruction alignment)
 ├── decompress (RV32C instruction decompressor - combinational)
 ├── decoder (Instruction decoder)
 ├── alu (ALU operations - RV32I + M extension)
+│   └── div_unit (Hardware division unit)
 ├── regfile (Register file)
 ├── csr_file (Control and Status Registers)
 ├── branch_unit (Branch comparison)
-├── pc_control (Program counter logic)
 ├── mem_interface (Memory interface logic)
 └── writeback_mux (Result selection)
 ```
