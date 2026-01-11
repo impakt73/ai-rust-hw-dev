@@ -215,7 +215,16 @@ where
     ///
     /// # Arguments
     /// * `boot_pc` - The program counter value to start execution from
-    pub fn reset(&mut self, boot_pc: u32) {
+    ///
+    /// # Returns
+    /// * `Ok(())` if reset succeeds
+    /// * `Err(HungStateError)` if the boot_pc is outside valid PC ranges
+    pub fn reset(&mut self, boot_pc: u32) -> Result<(), HungStateError> {
+        // Validate boot address before reset if hung detector is configured
+        if let Some(ref detector) = self.hung_detector {
+            detector.validate_boot_addr(boot_pc)?;
+        }
+
         // Set the boot address BEFORE asserting and during reset
         // This is critical because the PC register uses an asynchronous reset that
         // loads boot_addr whenever rst_n is low; boot_addr must be stable while
@@ -257,6 +266,7 @@ where
         }
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
+        Ok(())
     }
 
     /// Execute a single simulation step (one instruction - may take multiple cycles)
@@ -490,7 +500,8 @@ where
     /// # Errors
     /// Returns error if hung state is detected or other simulation errors occur
     pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
-        self.reset(boot_pc);
+        self.reset(boot_pc)
+            .map_err(|e| format!("Reset failed: {}", e))?;
 
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
 
