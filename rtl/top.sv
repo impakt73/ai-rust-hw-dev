@@ -1,5 +1,5 @@
 // Top-Level CPU Module
-// Multi-cycle RISC-V RV32IM processor with variable-latency memory support
+// Multi-cycle RISC-V RV32IMC processor with variable-latency memory support
 
 module top (
     input  logic        clk,
