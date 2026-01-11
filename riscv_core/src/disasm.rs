@@ -82,6 +82,16 @@ pub fn disassemble_with_all_values(
         }
         0b0001111 => disassemble_fence(instruction),
         0b1110011 => disassemble_system(instruction, rd, funct3, rs1, rs1_value, rd_value),
+        0b0101111 => disassemble_atomic(
+            instruction,
+            rd,
+            funct3,
+            rs1,
+            rs2,
+            rs1_value,
+            rs2_value,
+            rd_value,
+        ),
         _ => format!("unknown opcode 0x{:02x}", opcode),
     }
 }
@@ -295,6 +305,117 @@ fn disassemble_system(
                 mnemonic, rd, rd_value, csr, rs1, rs1_value
             )
         }
+    }
+}
+
+/// Disassemble atomic instructions (A extension)
+#[allow(clippy::too_many_arguments)]
+fn disassemble_atomic(
+    instruction: u32,
+    rd: u8,
+    funct3: u8,
+    rs1: u8,
+    rs2: u8,
+    rs1_value: u32,
+    rs2_value: u32,
+    rd_value: u32,
+) -> String {
+    // Only support word-sized atomics (funct3 = 010)
+    if funct3 != 0b010 {
+        return format!("unknown atomic f3={}", funct3);
+    }
+
+    let funct5 = (instruction >> 27) & 0x1F;
+    let aq = (instruction >> 26) & 0x1;
+    let rl = (instruction >> 25) & 0x1;
+
+    let ordering = match (aq, rl) {
+        (0, 0) => "",
+        (1, 0) => ".aq",
+        (0, 1) => ".rl",
+        (1, 1) => ".aqrl",
+        _ => "",
+    };
+
+    match funct5 {
+        0b00010 => {
+            // LR.W - Load-Reserved
+            format!(
+                "lr.w{} x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs1, rs1_value
+            )
+        }
+        0b00011 => {
+            // SC.W - Store-Conditional
+            format!(
+                "sc.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b00001 => {
+            // AMOSWAP.W
+            format!(
+                "amoswap.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b00000 => {
+            // AMOADD.W
+            format!(
+                "amoadd.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b00100 => {
+            // AMOXOR.W
+            format!(
+                "amoxor.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b01100 => {
+            // AMOAND.W
+            format!(
+                "amoand.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b01000 => {
+            // AMOOR.W
+            format!(
+                "amoor.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b10000 => {
+            // AMOMIN.W
+            format!(
+                "amomin.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b10100 => {
+            // AMOMAX.W
+            format!(
+                "amomax.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b11000 => {
+            // AMOMINU.W
+            format!(
+                "amominu.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        0b11100 => {
+            // AMOMAXU.W
+            format!(
+                "amomaxu.w{} x{}=0x{:x}, x{}=0x{:x}, (x{}=0x{:x})",
+                ordering, rd, rd_value, rs2, rs2_value, rs1, rs1_value
+            )
+        }
+        _ => format!("unknown atomic funct5={}", funct5),
     }
 }
 
