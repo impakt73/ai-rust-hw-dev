@@ -1572,13 +1572,13 @@ S_WRITEBACK → S_FETCH
 
 **Tasks:**
 1. [ ] Update `README.md`
-   - Change "RV32IM" to "RV32IMF"
+   - Change "RV32IMAC" to "RV32IMACF"
    - Add F extension to feature list
-   - Update instruction count (54 → 80 instructions)
+   - Update instruction count (92 → 118 instructions)
 
 2. [ ] Update `AGENTS.md`
    - Add F extension instructions to supported list
-   - Update test count (84 → 119+)
+   - Update test count (196 → 231+)
    - Add FP operation notes
    - Document FCSR and exception flags
 
