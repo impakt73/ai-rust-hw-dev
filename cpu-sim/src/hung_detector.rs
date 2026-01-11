@@ -337,8 +337,26 @@ impl HungDetector {
             }
 
             // PC bounds checking when instruction completes (if enabled)
-            // Since boot_addr is validated at reset time, we can check PC bounds
-            // on every instruction completion without special initialization tracking
+            //
+            // IMPORTANT: We only check PC bounds when instruction_complete is true because
+            // the `pc` parameter comes from the hardware's `debug_pc` signal, which is
+            // actually `completed_pc_reg` - the PC of the COMPLETED instruction.
+            //
+            // Hardware behavior:
+            // - On reset: completed_pc_reg is initialized to 0x00000000
+            // - During instruction execution (cycles 1-N): completed_pc_reg stays at its
+            //   previous value while the actual PC advances through the instruction
+            // - When instruction completes: completed_pc_reg is updated to the PC of the
+            //   instruction that just completed
+            //
+            // This means:
+            // - Checking `pc` on non-completion cycles would check a STALE value from the
+            //   previous instruction, not the current PC
+            // - Checking `pc` before the first instruction completes would always see 0x00000000
+            // - Only when instruction_complete is true does `pc` reflect the actual PC
+            //
+            // Boot address validation (in reset()) ensures the initial PC starts in a valid
+            // range, so we don't need special tracking for the first instruction.
             if self.config.enable_pc_bounds_detection
                 && !self.valid_pc_ranges.is_empty()
                 && !self.is_pc_valid(pc)
