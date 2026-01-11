@@ -227,7 +227,7 @@ impl HungDetector {
     /// * `start` - Start address of valid instruction memory (inclusive)
     /// * `end` - End address of valid instruction memory (exclusive)
     /// * `is_instructions` - If true, marks this range as containing instructions;
-    ///                       if false, removes this range from valid PC ranges
+    ///   if false, removes this range from valid PC ranges
     pub fn update_pc_range(&mut self, start: u32, end: u32, is_instructions: bool) {
         if !is_instructions {
             // Remove or split existing ranges that overlap with this data region

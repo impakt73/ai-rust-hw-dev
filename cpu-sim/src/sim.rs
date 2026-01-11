@@ -53,6 +53,7 @@ where
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
