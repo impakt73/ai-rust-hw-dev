@@ -1,8 +1,26 @@
 # RV32F Single Precision Floating Point Extension - Implementation Plan
 
+**⚠️ IMPORTANT: Architecture Update Notice**
+
+This document was originally written for a **single-cycle RV32IM CPU**. The CPU has since evolved to a **multi-cycle non-pipelined RV32IMAC** implementation with:
+- **12-state FSM** (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, ATOMIC_RMW, HALT)
+- **Variable-latency memory** with ready/valid handshaking
+- **RV32A (Atomic)** and **RV32C (Compressed)** extensions already implemented
+- **196 existing tests** (not 84 as originally assumed)
+
+**Key Impact on F Extension Implementation:**
+- FPU operations may require **multi-cycle execution** (especially DIV, SQRT)
+- FSM must be extended to handle FP instruction states
+- Integration complexity is higher due to existing compressed instruction handling
+- Test baseline starts at 196 tests (target: ~231-241 with FP tests)
+
+**Updated sections marked with 🔄**
+
+---
+
 ## Executive Summary
 
-This document provides a comprehensive technical plan to upgrade the current **RV32IM** single-cycle RISC-V CPU implementation to **RV32IMF**, adding the **F (Single-Precision Floating Point)** extension. This plan is specifically optimized for implementation by AI coding agents, with clear phase-by-phase instructions, detailed technical specifications, and comprehensive testing strategies.
+This document provides a comprehensive technical plan to upgrade the current **RV32IMAC** multi-cycle RISC-V CPU implementation to **RV32IMACF**, adding the **F (Single-Precision Floating Point)** extension. This plan is specifically optimized for implementation by AI coding agents, with clear phase-by-phase instructions, detailed technical specifications, and comprehensive testing strategies.
 
 ## Table of Contents
 
@@ -140,13 +158,22 @@ The F extension adds **26 new instructions** across multiple categories:
 
 ## Current Architecture Analysis
 
+🔄 **Updated for Multi-Cycle RV32IMAC Architecture**
+
 ### Existing RTL Modules
 
 ```
-top.sv (CPU top-level)
-├── decoder.sv (Instruction decoder for RV32IM + Zicsr)
+top.sv (CPU top-level - multi-cycle FSM)
+├── fetch_buffer.sv (RV32C fetch buffer - handles compressed instruction alignment)
+├── decompress.sv (RV32C decompressor - 27 compressed instructions)
+├── decoder.sv (Instruction decoder for RV32IMAC + Zicsr)
 ├── alu.sv (Integer ALU - RV32I + M extension)
-└── regfile.sv (32×32-bit integer register file)
+│   └── div_unit.sv (Hardware division unit)
+├── regfile.sv (32×32-bit integer register file)
+├── csr_file.sv (Control and Status Registers)
+├── branch_unit.sv (Branch comparison logic)
+├── mem_interface.sv (Memory interface with ready/valid handshaking)
+└── writeback_mux.sv (Result selection multiplexer)
 ```
 
 ### Current Capabilities
@@ -154,65 +181,74 @@ top.sv (CPU top-level)
 The CPU currently implements:
 - **RV32I Base:** 40 instructions (arithmetic, logic, shifts, branches, jumps, loads, stores)
 - **M Extension:** 8 instructions (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+- **A Extension:** 11 instructions (LR.W, SC.W, AMOSWAP.W, AMOADD.W, AMOXOR.W, AMOAND.W, AMOOR.W, AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W)
+- **C Extension:** 27 compressed instructions (C.ADDI, C.LW, C.SW, C.JALR, etc.)
 - **Zicsr Extension:** 6 instructions (CSR read/write/set/clear)
-- **Single-cycle execution:** All instructions complete in one clock cycle
+- **Multi-cycle execution:** Instructions take 3-5+ cycles plus variable memory latency
+- **12-state FSM:** Including dedicated ATOMIC_RMW state for atomic operations
 - **Exposed memory ports:** Instruction and data memory are external
+- **196 comprehensive tests:** Across ALU, regfile, decompressor, and CPU integration
 
 ### Gaps for RV32F Support
 
 1. **No floating point register file** - Need 32 × 32-bit FP registers (f0-f31)
 2. **No floating point unit (FPU)** - Need FP arithmetic, comparison, conversion logic
 3. **No FP control/status register (fcsr)** - Need frm and fflags in CSR space
-4. **Decoder doesn't recognize FP opcodes** - Need to decode 6 new opcodes
+4. **Decoder doesn't recognize FP opcodes** - Need to decode 6 new opcodes (integrate with RV32IMAC decoder)
 5. **Top module doesn't route FP data paths** - Need FP register file and FPU integration
 6. **No FP load/store support** - Need separate FP data path for FLW/FSW
+7. **FSM may need FP execution states** - Multi-cycle FP operations (DIV, SQRT) may require dedicated states
+8. **Compressed FP instructions** - RV32FC (compressed FP) NOT included in this plan (future extension)
 
 ---
 
 ## RV32F Architecture Overview
 
+🔄 **Updated for Multi-Cycle Architecture**
+
 ### Proposed Module Hierarchy
 
 ```
-top.sv (CPU top-level)
+top.sv (CPU top-level - multi-cycle FSM)
+├── fetch_buffer.sv (RV32C fetch buffer - unchanged)
+├── decompress.sv (RV32C decompressor - unchanged)
 ├── decoder.sv (Instruction decoder - updated for FP instructions)
 ├── alu.sv (Integer ALU - unchanged)
+│   └── div_unit.sv (Hardware division - unchanged)
 ├── regfile.sv (Integer register file - unchanged)
 ├── fp_regfile.sv (NEW: 32×32-bit FP register file)
-└── fpu.sv (NEW: Floating Point Unit)
-    ├── FP adder/subtractor
-    ├── FP multiplier
-    ├── FP divider
-    ├── FP square root
-    ├── FP comparator
-    ├── FP converter (int ↔ float)
-    ├── FP classifier
-    └── Rounding logic
+├── fpu.sv (NEW: Floating Point Unit - may use multi-cycle state machine)
+├── csr_file.sv (Updated for FCSR support)
+├── branch_unit.sv (Branch comparison - unchanged)
+├── mem_interface.sv (Memory interface - unchanged)
+└── writeback_mux.sv (Result selection - updated for FP path)
 ```
 
 ### Data Path Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Top Module                          │
-│                                                           │
-│  ┌──────────┐    ┌──────────┐    ┌───────────────────┐  │
-│  │  Integer │    │ Floating  │    │   Decoder         │  │
-│  │ Regfile  │    │  Point    │    │  (RV32IMF + Zicsr)│  │
-│  │  (x0-x31)│    │ Regfile   │    └───────────────────┘  │
-│  └──────────┘    │  (f0-f31) │                           │
-│       │          └──────────┘                           │
-│       │                │                                 │
-│  ┌────▼────┐     ┌────▼────┐                           │
-│  │   ALU   │     │   FPU   │                           │
-│  │  (INT)  │     │  (FP)   │                           │
-│  └────┬────┘     └────┬────┘                           │
-│       │               │                                 │
-│       └───────┬───────┘                                 │
-│            (Result Mux)                                 │
-│                 │                                       │
-│          (Writeback Logic)                              │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                      Top Module                             │
+│                   (12-state FSM Control)                    │
+│                                                              │
+│  ┌──────────┐    ┌──────────┐    ┌────────────────────┐   │
+│  │  Integer │    │ Floating  │    │   Decoder          │   │
+│  │ Regfile  │    │  Point    │    │  (RV32IMACF +      │   │
+│  │  (x0-x31)│    │ Regfile   │    │   Zicsr)           │   │
+│  └──────────┘    │  (f0-f31) │    └────────────────────┘   │
+│       │          └──────────┘                               │
+│       │                │                                     │
+│  ┌────▼────┐     ┌────▼────┐                               │
+│  │   ALU   │     │   FPU   │                               │
+│  │  (INT)  │     │  (FP)   │ ← May use multi-cycle states  │
+│  └────┬────┘     └────┬────┘                               │
+│       │               │                                     │
+│       └───────┬───────┘                                     │
+│        (Writeback Mux)                                      │
+│                 │                                           │
+│          (FSM-controlled                                    │
+│           Writeback Logic)                                  │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Design Decisions
@@ -220,11 +256,15 @@ top.sv (CPU top-level)
 1. **Separate FP register file** - Independent from integer registers for clarity
 2. **Dedicated FPU module** - Encapsulates all FP operations
 3. **IEEE 754-2008 compliant** - Use SystemVerilog real/shortreal types or custom implementation
-4. **Single-cycle FP operations** - All FP ops complete in one cycle (may limit frequency)
-5. **Shared memory interface** - FLW/FSW use existing dmem ports with FP register file
-6. **CSR integration** - fcsr at address 0x003 (standard F extension address)
-7. **Exception flag updates** - FPU sets fflags on each operation
-8. **NaN propagation** - Canonical NaN (0x7FC00000) for all NaN results
+4. **Multi-cycle FP operations** - Complex operations (DIV, SQRT) may take multiple cycles
+   - **Option A:** Single-cycle FPU using SystemVerilog synthesis (simpler, may not meet timing)
+   - **Option B:** Multi-cycle FPU with dedicated FSM states (more complex, better timing)
+5. **FSM state additions** - May add FP_EXECUTE or FP_WAIT states if Option B chosen
+6. **Shared memory interface** - FLW/FSW use existing dmem ports with FP register file
+7. **CSR integration** - fcsr at address 0x003 (standard F extension address)
+8. **Exception flag updates** - FPU sets fflags on each operation
+9. **NaN propagation** - Canonical NaN (0x7FC00000) for all NaN results
+10. **Compressed instruction interaction** - FP instructions can follow/precede compressed instructions
 
 ---
 
@@ -1022,30 +1062,37 @@ Key test cases from compliance suite:
 
 ### 1. Rust Test Program Target
 
+🔄 **Updated for RV32IMAC → RV32IMACF**
+
 Update to include F extension support:
 
 **File:** `rust-test-program/.cargo/config.toml`
 
 ```toml
 [build]
-target = "riscv32imf-unknown-none-elf"  # CHANGED: rv32im → rv32imf
+target = "riscv32imacf-unknown-none-elf"  # CHANGED: riscv32imac → riscv32imacf
 ```
 
-**Note:** The `riscv32imf-unknown-none-elf` target may not be available in standard Rust. You may need to:
-- Use custom target specification
-- Or compile with `riscv32gc-unknown-none-elf` (includes F and D extensions)
-- Or use `-C target-feature=+f` flag
+**Note:** The `riscv32imacf-unknown-none-elf` target may not be available in standard Rust. You may need to:
+- Use custom target specification (preferred for exact control)
+- Or compile with `riscv32gc-unknown-none-elf` (includes F and D extensions, then disable D)
+- Or use `-C target-feature=+f` flag with riscv32imac target
 
-**Alternative approach:**
+**Recommended approach for RV32IMACF:**
 ```toml
 [build]
 target = "riscv32gc-unknown-none-elf"
 
 [target.riscv32gc-unknown-none-elf]
-rustflags = ["-C", "target-feature=+f,-d,-c,-a"]
+rustflags = ["-C", "target-feature=+f,-d"]  # Enable F, disable D (double-precision)
 ```
 
+**Alternative - Custom target JSON:**
+Create `riscv32imacf-unknown-none-elf.json` based on existing riscv32imac target with F extension enabled.
+
 ### 2. Assembly Test Programs
+
+🔄 **Updated for RV32IMAC → RV32IMACF**
 
 Update assembler flags:
 
@@ -1056,10 +1103,13 @@ riscv64-unknown-elf-as -march=rv32im -mabi=ilp32 -o test.o test.s
 
 **New:**
 ```bash
-riscv64-unknown-elf-as -march=rv32imf -mabi=ilp32 -o test.o test.s
+riscv64-unknown-elf-as -march=rv32imacf -mabi=ilp32 -o test.o test.s
 ```
 
-**Note:** ABI remains `ilp32` (not `ilp32f`) since we're not using hardware FP calling conventions.
+**Note:** 
+- Architecture changed from `rv32im` to `rv32imacf` (includes A and C extensions already implemented)
+- ABI remains `ilp32` (not `ilp32f`) since we're not using hardware FP calling conventions
+- The `_Zicsr` suffix is implicit in modern toolchains
 
 ### 3. Create F Extension Test Programs
 
@@ -1197,16 +1247,23 @@ Add optional F extension test builds:
 
 ---
 
-### Phase 2: Create Basic FPU (Estimated: 3-5 days)
+### Phase 2: Create Basic FPU (Estimated: 4-6 days)
+
+🔄 **Updated for Multi-Cycle Considerations**
 
 **Objective:** Implement floating point unit with core arithmetic operations
+
+**Important Decision Point:** Choose FPU implementation strategy:
+- **Option A:** Single-cycle FPU using SystemVerilog synthesis (simpler, may not meet timing)
+- **Option B:** Multi-cycle FPU with dedicated states (recommended, better timing, more complex)
 
 **Tasks:**
 1. [ ] Create `rtl/fpu.sv` with basic operations
    - FPU_ADD, FPU_SUB, FPU_MUL, FPU_DIV
-   - Use SystemVerilog `shortreal` for IEEE 754 compliance
+   - Use SystemVerilog `shortreal` for IEEE 754 compliance OR custom implementation
    - Implement special value handling (NaN, infinity, zero)
    - Basic exception flag generation
+   - **If multi-cycle:** Add state machine for DIV operation (iterative algorithm)
 
 2. [ ] Create unit tests in `tests/src/fpu_test.rs`
    - Test FADD.S with various inputs
@@ -1215,6 +1272,7 @@ Add optional F extension test builds:
    - Test FDIV.S including division by zero
    - Test NaN propagation
    - Test infinity handling
+   - **If multi-cycle:** Test that operations complete correctly across multiple cycles
 
 3. [ ] Lint and verify RTL
    ```bash
@@ -1231,21 +1289,30 @@ Add optional F extension test builds:
 - [ ] Basic arithmetic operations work correctly
 - [ ] Special values handled per IEEE 754
 - [ ] 10+ FPU tests pass
+- [ ] **If multi-cycle:** Verify cycle counts match expected latency
 
 **Deliverables:**
 - `rtl/fpu.sv` (new file, basic operations only)
 - `tests/src/fpu_test.rs` (new file)
 - Update `tests/src/lib.rs` to include `mod fpu_test;`
 
+**Multi-Cycle Implementation Notes:**
+- Division and square root are prime candidates for multi-cycle execution
+- Consider 8-16 cycle iterative divider (non-restoring division algorithm)
+- Add `fpu_busy` and `fpu_done` signals if multi-cycle
+- FSM must wait for FPU completion before proceeding to WRITEBACK state
+
 ---
 
-### Phase 3: Expand FPU Operations (Estimated: 2-3 days)
+### Phase 3: Expand FPU Operations (Estimated: 3-4 days)
+
+🔄 **Updated Duration for Multi-Cycle Complexity**
 
 **Objective:** Add remaining FP operations to FPU
 
 **Tasks:**
 1. [ ] Add to `rtl/fpu.sv`:
-   - FSQRT.S (square root)
+   - FSQRT.S (square root) - **Multi-cycle candidate** (consider 16-32 cycle iterative)
    - FMIN.S, FMAX.S
    - FSGNJ.S, FSGNJN.S, FSGNJX.S (sign injection)
    - FEQ.S, FLT.S, FLE.S (comparisons)
@@ -1259,6 +1326,7 @@ Add optional F extension test builds:
    - Test edge cases for each
    - Test rounding mode effects
    - Test exception flag generation
+   - **If multi-cycle:** Test cycle counts for SQRT
 
 3. [ ] Run expanded tests
    ```bash
@@ -1268,6 +1336,7 @@ Add optional F extension test builds:
 **Validation:**
 - [ ] All 26 FP operations implemented
 - [ ] All FPU tests pass (20+ tests, 60+ test cases)
+- [ ] **Multi-cycle operations:** Verify busy/done signaling
 
 **Deliverables:**
 - Updated `rtl/fpu.sv` (complete)
@@ -1275,7 +1344,9 @@ Add optional F extension test builds:
 
 ---
 
-### Phase 4: Update Decoder (Estimated: 1-2 days)
+### Phase 4: Update Decoder (Estimated: 2-3 days)
+
+🔄 **Updated for RV32IMAC Integration**
 
 **Objective:** Add FP instruction decoding to decoder module
 
@@ -1284,8 +1355,9 @@ Add optional F extension test builds:
    - Add new output ports (fpu_op, fp_reg_write, fp_to_int, int_to_fp, is_fp_load, is_fp_store)
    - Add FP opcode parameters (OP_FP_LOAD, OP_FP_STORE, OP_FP, OP_FMADD, etc.)
    - Add FPU operation parameters (matching fpu.sv)
-   - Implement FP instruction decoding logic
+   - Implement FP instruction decoding logic **alongside existing RV32IMAC decoding**
    - Handle all 6 FP opcode types
+   - **Important:** Ensure FP instructions can follow compressed instructions (fetch_buffer integration)
 
 2. [ ] Lint updated decoder
    ```bash
@@ -1295,19 +1367,28 @@ Add optional F extension test builds:
 3. [ ] Verify existing tests still pass
    ```bash
    cargo test --package cpu_verifier -- decoder_test
+   # Should still have all 196 tests passing
    ```
 
 **Validation:**
 - [ ] Decoder compiles without errors
 - [ ] FP instructions decoded correctly
-- [ ] Existing RV32IM decoding unaffected
+- [ ] Existing RV32IMAC decoding unaffected (regression test)
+- [ ] All 196 existing tests still pass
 
 **Deliverables:**
 - Updated `rtl/decoder.sv`
 
+**Integration Notes:**
+- Decoder must handle FP instructions that may be preceded/followed by compressed instructions
+- Ensure decode signals are properly set for FP operations
+- Consider FSM state requirements (may need FP-specific execute states)
+
 ---
 
-### Phase 5: Integrate into Top Module (Estimated: 2-3 days)
+### Phase 5: Integrate into Top Module (Estimated: 3-4 days)
+
+🔄 **Updated for Multi-Cycle FSM Integration**
 
 **Objective:** Connect FP register file and FPU to top module
 
@@ -1316,11 +1397,16 @@ Add optional F extension test builds:
    - Add FP register file instantiation
    - Add FPU instantiation
    - Add internal signals for FP data paths
-   - Implement FP load/store logic
+   - Implement FP load/store logic (integrate with mem_interface.sv)
    - Implement FP-to-int and int-to-FP data routing
-   - Add FCSR register (fcsr, frm, fflags)
+   - Add FCSR register (fcsr, frm, fflags) to csr_file.sv OR top.sv
    - Update CSR read/write logic
    - Connect exception flags to FCSR
+   - **Critical:** Update 12-state FSM to handle FP operations
+     - May add FP_EXECUTE or FP_WAIT states if multi-cycle FPU
+     - Or extend existing EXECUTE state to handle FPU completion
+   - **Update writeback_mux.sv** to include FP result path
+   - Ensure FP instructions work with compressed instruction fetch (fetch_buffer integration)
 
 2. [ ] Lint updated top module
    ```bash
@@ -1330,24 +1416,41 @@ Add optional F extension test builds:
 3. [ ] Run regression tests
    ```bash
    cargo test --verbose
+   # All 196 tests must still pass
    ```
 
 **Validation:**
 - [ ] Top module compiles without errors
-- [ ] All existing tests still pass (regression)
+- [ ] All existing tests still pass (regression - 196 tests)
 - [ ] FP modules properly integrated
+- [ ] FSM state transitions correct for FP instructions
+- [ ] No timing violations introduced (check synthesis reports if available)
 
 **Deliverables:**
 - Updated `rtl/top.sv`
+- Updated `rtl/writeback_mux.sv`
+- Updated `rtl/csr_file.sv` (for FCSR support)
+
+**FSM Integration Details:**
+```
+Possible FSM flow for FP instruction:
+S_FETCH → S_DECODE → S_EXECUTE (FPU operation)
+  ↓ (if multi-cycle FPU)
+S_FP_WAIT (optional new state, wait for fpu_done)
+  ↓
+S_WRITEBACK → S_FETCH
+```
 
 ---
 
-### Phase 6: CPU Integration Tests (Estimated: 2-3 days)
+### Phase 6: CPU Integration Tests (Estimated: 3-4 days)
+
+🔄 **Updated for Multi-Cycle Testing**
 
 **Objective:** Test FP instructions in full CPU context
 
 **Tasks:**
-1. [ ] Create CPU-level FP tests in `tests/src/cpu_test.rs`
+1. [ ] Create CPU-level FP tests in `tests/src/cpu_test.rs` or new `tests/src/cpu_fp_test.rs`
    - Test FLW/FSW (FP load/store)
    - Test FP arithmetic in CPU
    - Test FP comparisons with branches
@@ -1355,24 +1458,38 @@ Add optional F extension test builds:
    - Test FP/integer interaction
    - Test CSR access (fcsr, frm, fflags)
    - Test exception flag accumulation
+   - **Multi-cycle specific:** Test that FP instructions complete correctly with memory latency
+   - **Multi-cycle specific:** Test FP operations following compressed instructions
+   - Test FP instruction after atomic operation (state transition)
 
 2. [ ] Run CPU integration tests
    ```bash
-   cargo test --package cpu_verifier -- cpu_test
+   cargo test --package cpu_verifier -- cpu_fp_test
+   # Or: cargo test --package cpu_verifier -- cpu_test::fp
    ```
 
 3. [ ] Debug any failures
    - Use `--nocapture` for debugging output
    - Check signal values and data paths
    - Verify instruction encoding
+   - **Multi-cycle:** Verify cycle counts and FSM state transitions
 
 **Validation:**
 - [ ] All CPU FP tests pass (10-15 new tests)
-- [ ] All existing CPU tests pass (regression)
-- [ ] Total test count: 84 (existing) + 35+ (FP) = 119+ tests
+- [ ] All existing CPU tests pass (regression - 196 tests)
+- [ ] Total test count: 196 (existing) + 35+ (FP) = 231+ tests
+- [ ] FSM correctly sequences through FP instruction execution
 
 **Deliverables:**
-- Updated `tests/src/cpu_test.rs` with FP tests
+- Updated `tests/src/cpu_test.rs` with FP tests OR
+- New `tests/src/cpu_fp_test.rs` file
+- Update `tests/src/lib.rs` if new file created
+
+**Testing Notes:**
+- Follow existing test patterns from `cpu_test.rs`
+- Use `clock_cycle!` macro for cycle advancement
+- Handle variable memory latency in tests
+- Verify FP operations work correctly in multi-cycle context
 
 ---
 

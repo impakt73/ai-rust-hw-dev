@@ -44,9 +44,10 @@ This directory contains comprehensive documentation for implementing the RISC-V 
 ### For Implementation
 
 1. **Read** `rv32f-upgrade-plan.md` sections 1-3 to understand requirements
-2. **Follow** Phase 1-10 in section 7 for step-by-step implementation
-3. **Reference** appendices for IEEE 754 details and instruction encodings
-4. **Use** testing guide to create tests in parallel with RTL development
+2. **Review** current architecture: Multi-cycle non-pipelined RV32IMAC CPU with 12-state FSM
+3. **Follow** Phase 1-10 in section 7 for step-by-step implementation
+4. **Reference** appendices for IEEE 754 details and instruction encodings
+5. **Use** testing guide to create tests in parallel with RTL development
 
 ### For Testing
 
@@ -60,17 +61,17 @@ This directory contains comprehensive documentation for implementing the RISC-V 
 | Phase | Estimated Time | Key Deliverables |
 |-------|----------------|------------------|
 | Phase 1 | 1-2 days | FP register file + tests |
-| Phase 2 | 3-5 days | Basic FPU + tests |
-| Phase 3 | 2-3 days | Complete FPU operations |
-| Phase 4 | 1-2 days | Updated decoder |
-| Phase 5 | 2-3 days | Integrated top module |
-| Phase 6 | 2-3 days | CPU integration tests |
+| Phase 2 | 4-6 days | Basic FPU + tests (multi-cycle considerations) |
+| Phase 3 | 3-4 days | Complete FPU operations |
+| Phase 4 | 2-3 days | Updated decoder (integrate with existing multi-cycle FSM) |
+| Phase 5 | 3-4 days | Integrated top module (12-state FSM updates) |
+| Phase 6 | 3-4 days | CPU integration tests (multi-cycle execution) |
 | Phase 7 | 1-2 days | Assembly test programs |
 | Phase 8 | 1 day | Build configuration |
 | Phase 9 | 1 day | Documentation updates |
 | Phase 10 | 2-3 days | Final validation |
 
-**Total:** 16-25 days
+**Total:** 20-32 days (increased due to multi-cycle architecture complexity)
 
 ## Key Features
 
@@ -88,11 +89,13 @@ This directory contains comprehensive documentation for implementing the RISC-V 
 
 ### New RTL Modules:
 - `rtl/fp_regfile.sv` - 32×32-bit FP register file
-- `rtl/fpu.sv` - Floating point unit
+- `rtl/fpu.sv` - Floating point unit (may require multi-cycle implementation)
 
 ### Updated RTL Modules:
-- `rtl/decoder.sv` - FP instruction decoding
-- `rtl/top.sv` - FPU/FP regfile integration, FCSR
+- `rtl/decoder.sv` - FP instruction decoding (integrate with existing RV32IMAC decoder)
+- `rtl/top.sv` - FPU/FP regfile integration, FCSR, FSM state updates for multi-cycle FP operations
+- `rtl/fetch_buffer.sv` - May need updates if FP instructions affect fetch logic
+- `rtl/writeback_mux.sv` - Add FP result path
 
 ### New Test Files:
 - `tests/src/fp_regfile_test.rs` - FP register file tests
@@ -104,9 +107,11 @@ This directory contains comprehensive documentation for implementing the RISC-V 
 **Implementation Complete When:**
 - [ ] All 26 F extension instructions implemented
 - [ ] All RTL modules pass Verilator lint
-- [ ] 35+ new FP tests pass (total 119-129 tests)
+- [ ] 35+ new FP tests pass (total 231-241 tests, up from current 196)
 - [ ] IEEE 754 compliance verified
-- [ ] All existing RV32IM tests still pass (no regressions)
+- [ ] All existing RV32IMAC tests still pass (no regressions on 196 tests)
+- [ ] Multi-cycle execution timing correct for FP operations
+- [ ] FSM properly handles FP instruction states
 - [ ] Documentation updated
 - [ ] CI/CD pipeline passes
 
@@ -136,6 +141,14 @@ Follow the phases sequentially, validate after each phase, and use `report_progr
 
 ---
 
-**Created:** 2025-12-31
-**Status:** Ready for implementation
-**Total Documentation:** 2,453 lines / 70 KB
+**Created:** 2025-12-31  
+**Last Updated:** 2026-01-11  
+**Status:** Ready for implementation (updated for multi-cycle RV32IMAC architecture)  
+**Total Documentation:** 2,453 lines / 70 KB  
+
+**⚠️ Important Notes:**
+- This plan was originally written for a single-cycle RV32IM CPU
+- The CPU has since evolved to multi-cycle RV32IMAC (12-state FSM)
+- Implementation timeline and complexity estimates have been updated
+- Test baseline updated from 84 to 196 tests
+- See `rv32f-upgrade-plan.md` for detailed architecture considerations
