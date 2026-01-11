@@ -35,6 +35,10 @@ module top (
     output logic [31:0] debug_pc,         // PC of completed instruction
     output logic [31:0] debug_instruction, // Instruction word of completed instruction
     
+    // Debug outputs for current execution state (live signals)
+    output logic [31:0] debug_current_pc,         // Current PC (for hung detection)
+    output logic [31:0] debug_current_instruction, // Current instruction (for hung detection)
+    
     // Debug output for FSM state visibility
     output logic [3:0]  debug_fsm_state   // Current FSM state (for debugging)
 );
@@ -837,6 +841,12 @@ module top (
     // Debug outputs for instruction tracing (completed instruction)
     assign debug_pc = completed_pc_reg;
     assign debug_instruction = completed_instr_reg;
+    
+    // Debug outputs for current execution state (for hung detection)
+    // Use instr_pc_reg if available (after DECODE), otherwise use pc
+    // This ensures we always have a valid PC that corresponds to the current instruction
+    assign debug_current_pc = (instr_pc_reg != 32'h0) ? instr_pc_reg : pc;
+    assign debug_current_instruction = ir_reg;
     
     // Debug output for FSM state
     assign debug_fsm_state = current_state;

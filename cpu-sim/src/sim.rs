@@ -400,8 +400,11 @@ where
             // Check for hung state on every cycle
             // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
             if let Some(ref mut detector) = self.hung_detector {
-                let pc = self.cpu.debug_pc;
-                let instruction = self.cpu.debug_instruction;
+                // Use current PC and instruction for hung detection (not completed ones)
+                // debug_current_pc: PC that was used to fetch the current instruction
+                // debug_current_instruction: The instruction currently being executed
+                let pc = self.cpu.debug_current_pc;
+                let instruction = self.cpu.debug_current_instruction;
                 let fsm_state = self.cpu.debug_fsm_state;
                 detector.check_cycle(
                     self.cycle_count,

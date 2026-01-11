@@ -335,37 +335,6 @@ impl HungDetector {
             if self.config.enable_pc_loop_detection {
                 self.check_pc_loop(pc, instruction)?;
             }
-
-            // PC bounds checking when instruction completes (if enabled)
-            //
-            // IMPORTANT: We only check PC bounds when instruction_complete is true because
-            // the `pc` parameter comes from the hardware's `debug_pc` signal, which is
-            // actually `completed_pc_reg` - the PC of the COMPLETED instruction.
-            //
-            // Hardware behavior:
-            // - On reset: completed_pc_reg is initialized to 0x00000000
-            // - During instruction execution (cycles 1-N): completed_pc_reg stays at its
-            //   previous value while the actual PC advances through the instruction
-            // - When instruction completes: completed_pc_reg is updated to the PC of the
-            //   instruction that just completed
-            //
-            // This means:
-            // - Checking `pc` on non-completion cycles would check a STALE value from the
-            //   previous instruction, not the current PC
-            // - Checking `pc` before the first instruction completes would always see 0x00000000
-            // - Only when instruction_complete is true does `pc` reflect the actual PC
-            //
-            // Boot address validation (in reset()) ensures the initial PC starts in a valid
-            // range, so we don't need special tracking for the first instruction.
-            if self.config.enable_pc_bounds_detection
-                && !self.valid_pc_ranges.is_empty()
-                && !self.is_pc_valid(pc)
-            {
-                return Err(HungStateError::PcOutOfBounds {
-                    pc,
-                    valid_ranges: self.valid_pc_ranges.clone(),
-                });
-            }
         }
 
         // Per-cycle checks (run every cycle, not just on instruction completion)
@@ -390,6 +359,30 @@ impl HungDetector {
                 self.current_instruction_word = instruction;
                 self.current_instruction_start_cycle = cycle_count;
             }
+        }
+
+        // Per-cycle PC bounds checking (if enabled)
+        //
+        // Now that we use debug_current_pc instead of debug_pc (completed_pc_reg),
+        // we can check PC bounds on every cycle. The debug_current_pc signal represents
+        // the PC that was used to fetch the current instruction being executed.
+        //
+        // Hardware behavior with new debug_current_pc:
+        // - Uses instr_pc_reg (PC captured in DECODE) if available, otherwise current pc
+        // - This gives us the actual PC for the instruction being executed
+        // - Valid from DECODE state onward for each instruction
+        //
+        // Boot address validation (in reset()) ensures the initial PC starts in a valid
+        // range, providing complete coverage from the very first cycle.
+        if self.config.enable_pc_bounds_detection
+            && !self.valid_pc_ranges.is_empty()
+            && fsm_state != 0  // Skip IDLE state
+            && !self.is_pc_valid(pc)
+        {
+            return Err(HungStateError::PcOutOfBounds {
+                pc,
+                valid_ranges: self.valid_pc_ranges.clone(),
+            });
         }
 
         Ok(())
@@ -500,15 +493,15 @@ mod tests {
         let mut detector = HungDetector::new_default();
         detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
-        // PC within bounds should be ok when instruction completes
-        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, true);
+        // PC within bounds should be ok (FSM state != 0 to activate checking)
+        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, false);
         assert!(result.is_ok());
 
-        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, true);
+        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
         assert!(result.is_ok());
 
-        // PC below bounds should fail when instruction completes
-        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, true);
+        // PC below bounds should fail (per-cycle checking)
+        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -517,8 +510,8 @@ mod tests {
             _ => panic!("Expected PcOutOfBounds error"),
         }
 
-        // PC above bounds should fail when instruction completes
-        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, true);
+        // PC above bounds should fail (per-cycle checking)
+        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -527,8 +520,8 @@ mod tests {
             _ => panic!("Expected PcOutOfBounds error"),
         }
 
-        // PC out of bounds during a cycle (not instruction completion) should NOT fail
-        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 2, false);
+        // PC out of bounds in IDLE state (fsm_state=0) should NOT fail
+        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 0, false);
         assert!(result.is_ok());
     }
 
@@ -573,16 +566,16 @@ mod tests {
         detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
-        // PCs in first range should be ok when instruction completes
-        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, true).is_ok());
-        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, true).is_ok());
+        // PCs in first range should be ok (per-cycle checking, FSM state != 0)
+        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, false).is_ok());
+        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
 
-        // PCs in second range should be ok when instruction completes
-        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, true).is_ok());
-        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, true).is_ok());
+        // PCs in second range should be ok (per-cycle checking)
+        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, false).is_ok());
+        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, false).is_ok());
 
-        // PC in gap between ranges should fail when instruction completes
-        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, true);
+        // PC in gap between ranges should fail (per-cycle checking)
+        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
@@ -592,8 +585,8 @@ mod tests {
             _ => panic!("Expected PcOutOfBounds error"),
         }
 
-        // PC outside all ranges should fail when instruction completes
-        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, true);
+        // PC outside all ranges should fail (per-cycle checking)
+        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false);
         assert!(result.is_err());
     }
 
