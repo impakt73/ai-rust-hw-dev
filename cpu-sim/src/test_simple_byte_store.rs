@@ -33,6 +33,7 @@ mod tests {
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
             0, // Zero latency
+            Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
 
@@ -42,7 +43,7 @@ mod tests {
         let mut result = None;
         for _ in 0..10000 {
             let step_result = sim.step();
-            if let Some(tohost) = step_result.tohost_value {
+            if let Some(tohost) = step_result.expect("Step failed").tohost_value {
                 result = Some(tohost);
                 break;
             }

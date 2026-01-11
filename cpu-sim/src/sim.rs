@@ -1,4 +1,5 @@
 use crate::bus::SystemBus;
+use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use riscv_protocol::*;
@@ -42,6 +43,8 @@ where
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
     imem_delay_counter: u32, // Current delay counter for instruction memory
     dmem_delay_counter: u32, // Current delay counter for data memory
+    // Hung state detection
+    hung_detector: Option<HungDetector>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -50,6 +53,7 @@ where
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
         bus: SystemBus,
@@ -58,6 +62,7 @@ where
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
         mem_latency_cycles: u32,
+        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
         // Create CPU model from the runtime (without tracing by default)
         let cpu = runtime
@@ -65,6 +70,8 @@ where
             .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
+
+        let hung_detector = hung_detector_config.map(HungDetector::new);
 
         Ok(Simulator {
             cpu,
@@ -81,6 +88,7 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
+            hung_detector,
         })
     }
 
@@ -95,6 +103,7 @@ where
         trace_callback: Option<T>,
         vcd_path: &str,
         mem_latency_cycles: u32,
+        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
         // Create CPU model with tracing enabled
         let config = VerilatedModelConfig {
@@ -111,6 +120,8 @@ where
         log::info!("VCD tracing enabled, writing to: {}", vcd_path);
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
+        let hung_detector = hung_detector_config.map(HungDetector::new);
+
         Ok(Simulator {
             cpu,
             bus,
@@ -126,6 +137,7 @@ where
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
+            hung_detector,
         })
     }
 
@@ -239,6 +251,11 @@ where
             vcd.dump(3); // Capture state with reset released
         }
 
+        // Reset the hung detector state
+        if let Some(ref mut detector) = self.hung_detector {
+            detector.reset();
+        }
+
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
     }
 
@@ -246,13 +263,14 @@ where
     /// Returns SimulationStepResult containing:
     /// - tohost_value: Some(value) if halt detected, None otherwise
     /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
-    pub fn step(&mut self) -> SimulationStepResult {
+    ///
+    /// # Errors
+    /// Returns `HungStateError` if the CPU is detected to be in a hung state
+    pub fn step(&mut self) -> Result<SimulationStepResult, HungStateError> {
         let start_time = Instant::now();
         // Magic address for halt signal (tohost mechanism)
         const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-        const MAX_CYCLES_PER_INSTR: u32 = 100; // Safety limit for variable latency
 
-        let mut cycles = 0;
         let mut halt_value = None;
 
         // Multi-cycle execution loop - continue until instruction completes
@@ -365,18 +383,26 @@ where
                 vcd.dump(self.cycle_count + 3);
             }
 
-            // Safety check
-            cycles += 1;
-            if cycles >= MAX_CYCLES_PER_INSTR {
-                panic!(
-                    "Instruction exceeded maximum cycles ({})",
-                    MAX_CYCLES_PER_INSTR
-                );
-            }
-
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
-            if self.cpu.instr_complete != 0 {
+            let instruction_complete = self.cpu.instr_complete != 0;
+
+            // Check for hung state on every cycle
+            // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
+            if let Some(ref mut detector) = self.hung_detector {
+                let pc = self.cpu.debug_pc;
+                let instruction = self.cpu.debug_instruction;
+                let fsm_state = self.cpu.debug_fsm_state;
+                detector.check_cycle(
+                    self.cycle_count,
+                    pc,
+                    instruction,
+                    fsm_state,
+                    instruction_complete,
+                )?;
+            }
+
+            if instruction_complete {
                 break;
             }
         }
@@ -411,11 +437,8 @@ where
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             println!(
-                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x} | Cycles: {}",
-                self.cycle_count,
-                pc,
-                instruction,
-                cycles + 1
+                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x}",
+                self.cycle_count, pc, instruction
             );
         }
 
@@ -451,10 +474,10 @@ where
         }
 
         let elapsed_us = start_time.elapsed().as_micros() as u64;
-        SimulationStepResult {
+        Ok(SimulationStepResult {
             tohost_value: halt_value,
             elapsed_cpu_time_us: elapsed_us,
-        }
+        })
     }
 
     /// Run the simulation for up to max_cycles
@@ -463,6 +486,9 @@ where
     /// # Arguments
     /// * `boot_pc` - The program counter value to start execution from
     /// * `max_cycles` - Maximum number of cycles to run
+    ///
+    /// # Errors
+    /// Returns error if hung state is detected or other simulation errors occur
     pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
         self.reset(boot_pc);
 
@@ -474,7 +500,9 @@ where
 
         while self.cycle_count < max_cycles {
             // Execute one step and check for halt
-            let step_result = self.step();
+            let step_result = self
+                .step()
+                .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
 
             if let Some(tohost_value) = step_result.tohost_value {
@@ -546,9 +574,13 @@ where
     /// This allows external code to populate the simulator's memory with arbitrary data,
     /// such as programmatically generated instructions or test data.
     ///
+    /// If `is_instructions` is true, the memory range will be marked as valid for the PC
+    /// (program counter) for hung state detection purposes.
+    ///
     /// # Arguments
     /// * `start_addr` - Starting address of the memory region to write
     /// * `data` - Byte slice containing the data to write
+    /// * `is_instructions` - If true, marks this region as valid for PC execution
     ///
     /// # Examples
     /// ```
@@ -564,16 +596,26 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(hung_detector::HungDetectorConfig::default()),
     /// )?;
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// sim.write_memory_region(0x8000_0000, &instructions);
+    /// sim.write_memory_region(0x8000_0000, &instructions, true);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
             self.bus.dram.write_byte(addr, byte);
+        }
+
+        // Update valid PC ranges for hung detection based on whether this is instruction or data memory
+        if !data.is_empty() {
+            if let Some(ref mut detector) = self.hung_detector {
+                let new_start = start_addr;
+                let new_end = start_addr.wrapping_add(data.len() as u32);
+                detector.update_pc_range(new_start, new_end, is_instructions);
+            }
         }
     }
 
@@ -603,6 +645,7 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(HungDetectorConfig::default()),
     /// )?;
     /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     /// # Ok(())
@@ -647,6 +690,7 @@ where
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     0, // Zero latency
+    ///     Some(HungDetectorConfig::default()),
     /// )?;
     /// sim.dump_memory_region_as_image(
     ///     0x8000_0000,

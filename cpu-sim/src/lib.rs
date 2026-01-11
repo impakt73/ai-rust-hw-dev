@@ -1,12 +1,14 @@
 pub mod bus;
 pub mod dram;
 pub mod fifo;
+pub mod hung_detector;
 pub mod packet_transport;
 pub mod sim;
 
 #[cfg(test)]
 mod tests;
 
+pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
@@ -44,6 +46,7 @@ use std::path::Path;
 ///     None::<fn(u32)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
 ///     0, // Zero latency
+///     Some(HungDetectorConfig::default()), // Enable hung detection
 /// )?;
 /// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
 /// let result = sim.run(entry_point, 1000)?;
@@ -75,7 +78,11 @@ where
             if phdr.p_type == elf::abi::PT_LOAD {
                 let vaddr = phdr.p_vaddr as u32;
                 let file_size = phdr.p_filesz as usize;
+                let _mem_size = phdr.p_memsz as usize; // May be larger than file_size (BSS)
                 let offset = phdr.p_offset as usize;
+
+                // Check if segment is executable (contains code)
+                let is_executable = (phdr.p_flags & elf::abi::PF_X) != 0;
 
                 if file_size > 0 {
                     // Validate that the segment lies within the file data to avoid panics
@@ -95,17 +102,20 @@ where
                     };
 
                     let segment_data = &file_data[offset..end];
-                    sim.write_memory_region(vaddr, segment_data);
+                    // Write to memory (passing true for is_instructions if segment is executable)
+                    sim.write_memory_region(vaddr, segment_data, is_executable);
                     log::info!(
-                        "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
+                        "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes{}",
                         vaddr,
-                        file_size
+                        file_size,
+                        if is_executable { " (executable)" } else { "" }
                     );
                 }
             }
         }
     }
 
+    // PC range is automatically set by write_memory_region calls above for executable segments
     log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);
     Ok(entry_point)
 }
@@ -563,7 +573,7 @@ where
 ///         let bytes: Vec<u8> = instructions.iter()
 ///             .flat_map(|i| i.to_le_bytes())
 ///             .collect();
-///         sim.write_memory_region(start_addr, &bytes);
+///         sim.write_memory_region(start_addr, &bytes, true); // true = instructions
 ///         Ok(start_addr)
 ///     },
 ///     |_sim, _result| {}
@@ -605,6 +615,7 @@ where
             trace_callback,
             vcd,
             mem_latency_cycles,
+            Some(HungDetectorConfig::default()),
         )?
     } else {
         Simulator::new(
@@ -615,6 +626,7 @@ where
             fifo_callback,
             trace_callback,
             mem_latency_cycles,
+            Some(HungDetectorConfig::default()),
         )?
     };
 

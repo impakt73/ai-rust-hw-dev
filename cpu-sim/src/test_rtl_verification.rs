@@ -73,7 +73,7 @@ mod tests {
             vcd_path,
             0, // Zero latency for RTL verification tests
             |sim| {
-                sim.write_memory_region(START_ADDR, &program_bytes);
+                sim.write_memory_region(START_ADDR, &program_bytes, true);
                 Ok(START_ADDR)
             },
             post_callback,

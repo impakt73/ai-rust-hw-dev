@@ -31,7 +31,7 @@ mod tests {
         T: FnMut(&riscv_core::trace::InstructionTrace),
     {
         let bytes = c_insn.to_le_bytes();
-        sim.write_memory_region(addr, &bytes);
+        sim.write_memory_region(addr, &bytes, true);
     }
 
     /// Helper to write a standard 32-bit instruction
@@ -41,7 +41,7 @@ mod tests {
         T: FnMut(&riscv_core::trace::InstructionTrace),
     {
         let bytes = insn.to_le_bytes();
-        sim.write_memory_region(addr, &bytes);
+        sim.write_memory_region(addr, &bytes, true);
     }
 
     // ============================================================================

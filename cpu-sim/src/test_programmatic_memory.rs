@@ -23,6 +23,7 @@ mod tests {
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
             0, // Zero latency
+            Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
 
@@ -59,7 +60,7 @@ mod tests {
 
         // Write the program to memory starting at 0x80000000 (typical RISC-V start address)
         const START_ADDR: u32 = 0x8000_0000;
-        sim.write_memory_region(START_ADDR, &program);
+        sim.write_memory_region(START_ADDR, &program, true);
 
         println!(
             "✓ Programmatic instructions written to memory at 0x{:08x}",
@@ -122,13 +123,14 @@ mod tests {
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
             0, // Zero latency
+            Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
 
         // Test 1: Write a pattern and read it back
         let test_addr = 0x8000_1000;
         let test_data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
-        sim.write_memory_region(test_addr, &test_data);
+        sim.write_memory_region(test_addr, &test_data, true);
 
         let read_back: Vec<u8> = sim
             .dump_memory_region(test_addr, test_data.len() as u32)
@@ -140,8 +142,8 @@ mod tests {
         println!("✓ Pattern write/read test passed");
 
         // Test 2: Write at different addresses
-        sim.write_memory_region(0x8000_2000, &[0xAA, 0xBB]);
-        sim.write_memory_region(0x8000_3000, &[0xCC, 0xDD]);
+        sim.write_memory_region(0x8000_2000, &[0xAA, 0xBB], true);
+        sim.write_memory_region(0x8000_3000, &[0xCC, 0xDD], true);
 
         let read1: Vec<u8> = sim.dump_memory_region(0x8000_2000, 2).collect();
         let read2: Vec<u8> = sim.dump_memory_region(0x8000_3000, 2).collect();
@@ -159,7 +161,7 @@ mod tests {
         println!("✓ Multiple region write test passed");
 
         // Test 3: Overwrite test
-        sim.write_memory_region(test_addr, &[0xFF; 8]);
+        sim.write_memory_region(test_addr, &[0xFF; 8], true);
         let overwritten: Vec<u8> = sim.dump_memory_region(test_addr, 8).collect();
         assert_eq!(
             overwritten,
