@@ -298,7 +298,7 @@ mod tests {
         // Program: Test FCVT.W.S (FP to integer conversion)
         let mut instructions = vec![
             lui(1, 0x80001000),     // x1 = 0x80001000
-            lui(2, 0x42280),     // x2 = 42.0 in FP
+            lui(2, 0x42280000),     // x2 = 42.0 in FP (0x42280000)
             sw(1, 2, 0),         // mem[x1] = 42.0
             flw(1, 1, 0),        // f1 = 42.0
             fcvt_w_s(3, 1),      // x3 = (int)f1 = 42
