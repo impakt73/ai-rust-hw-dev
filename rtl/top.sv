@@ -883,7 +883,8 @@ module top (
     always_comb begin
         // Default sources
         alu_a = a_reg;
-        alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011) ? imm_s_reg : imm_i_reg) : b_reg;
+        // For S-type stores (SW, FSW), use imm_s; for I-type (loads, etc.), use imm_i
+        alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011 || opcode_reg == 7'b0100111) ? imm_s_reg : imm_i_reg) : b_reg;
         
         // Special case for S_MEM_ADDR with AMO/LR/SC: address is just rs1 (no offset)
         if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
