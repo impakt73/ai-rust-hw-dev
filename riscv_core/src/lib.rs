@@ -80,6 +80,8 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "csr_file.sv",
         "mem_interface.sv",
         "writeback_mux.sv",
+        "fp_regfile.sv",   // RV32F FP register file
+        "fpu.sv",          // RV32F floating point unit
     ])
 }
 
