@@ -698,7 +698,7 @@ module top (
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
                 // FP register reads (for FP operations)
-                if (fp_reg_write || fp_to_int || int_to_fp) begin
+                if (fp_reg_write || fp_to_int || int_to_fp || is_fp_store) begin
                     fa_reg_write = 1'b1;
                     fb_reg_write = 1'b1;
                     fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
