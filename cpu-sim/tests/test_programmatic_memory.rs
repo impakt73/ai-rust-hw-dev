@@ -15,10 +15,8 @@ fn test_programmatic_instruction_loading() {
     //   jal x0, 0  ; infinite loop (stay here)
     let program: Vec<u8> = vec![
         // addi x10, x0, 42 (0x02a00513 in little-endian)
-        0x13, 0x05, 0xa0, 0x02,
-        // sw x10, -16(x0) (0xfea02823 in little-endian)
-        0x23, 0x28, 0xa0, 0xfe,
-        // jal x0, 0 (0x0000006f in little-endian)
+        0x13, 0x05, 0xa0, 0x02, // sw x10, -16(x0) (0xfea02823 in little-endian)
+        0x23, 0x28, 0xa0, 0xfe, // jal x0, 0 (0x0000006f in little-endian)
         0x6f, 0x00, 0x00, 0x00,
     ];
 
