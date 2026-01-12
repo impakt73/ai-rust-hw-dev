@@ -79,7 +79,7 @@ mod tests {
         // f1 = FP register
         let mut instructions = vec![
             lui(1, 0x80001), // x1 = 0x80001000 (data address)
-            lui(2, 0x3F800), // x2 = 0x3F800000 (1.0 in FP)
+            lui(2, 0x3F800000), // x2 = 0x3F800000 (1.0 in FP)
             sw(1, 2, 0),     // Store integer representation to memory
             flw(1, 1, 0),    // f1 = load FP value from memory
             fsw(1, 1, 4),    // Store f1 to memory[0x80001004]
@@ -121,9 +121,9 @@ mod tests {
         // Verifies that FP register file has independent registers
         let mut instructions = vec![
             lui(1, 0x80001),  // x1 = 0x80001000 (base address)
-            lui(2, 0x3F800),  // x2 = 1.0
-            lui(3, 0x40000),  // x3 = 2.0
-            lui(4, 0x40400),  // x4 = 3.0
+            lui(2, 0x3F800000),  // x2 = 1.0
+            lui(3, 0x40000000),  // x3 = 2.0
+            lui(4, 0x40400000),  // x4 = 3.0
             sw(1, 2, 0),      // mem[x1+0] = 1.0
             sw(1, 3, 4),      // mem[x1+4] = 2.0
             sw(1, 4, 8),      // mem[x1+8] = 3.0
@@ -179,8 +179,8 @@ mod tests {
         // Load two FP values, add them, store result
         let mut instructions = vec![
             lui(1, 0x80001),     // x1 = 0x80001000 (base address)
-            lui(2, 0x3F800),     // x2 = 1.0
-            lui(3, 0x40000),     // x3 = 2.0
+            lui(2, 0x3F800000),     // x2 = 1.0
+            lui(3, 0x40000000),     // x3 = 2.0
             sw(1, 2, 0),         // mem[x1+0] = 1.0
             sw(1, 3, 4),         // mem[x1+4] = 2.0
             flw(1, 1, 0),        // f1 = 1.0
@@ -219,8 +219,8 @@ mod tests {
         // Program: Test FMUL.S instruction
         let mut instructions = vec![
             lui(1, 0x80001),     // x1 = 0x80001000
-            lui(2, 0x40000),     // x2 = 2.0
-            lui(3, 0x40400),     // x3 = 3.0
+            lui(2, 0x40000000),     // x2 = 2.0
+            lui(3, 0x40400000),     // x3 = 3.0
             sw(1, 2, 0),         // mem[x1+0] = 2.0
             sw(1, 3, 4),         // mem[x1+4] = 3.0
             flw(1, 1, 0),        // f1 = 2.0
@@ -337,8 +337,8 @@ mod tests {
         // Program: Test FEQ.S and FLT.S comparisons
         let mut instructions = vec![
             lui(1, 0x80001),     // x1 = 0x80001000
-            lui(2, 0x3F800),     // x2 = 1.0
-            lui(3, 0x40000),     // x3 = 2.0
+            lui(2, 0x3F800000),     // x2 = 1.0
+            lui(3, 0x40000000),     // x3 = 2.0
             sw(1, 2, 0),         // mem[x1+0] = 1.0
             sw(1, 3, 4),         // mem[x1+4] = 2.0
             flw(1, 1, 0),        // f1 = 1.0
@@ -391,7 +391,7 @@ mod tests {
 
         // Program: Test FMV.X.W and FMV.W.X (bitwise moves)
         let mut instructions = vec![
-            lui(1, 0x3F800),     // x1 = 0x3F800000 (1.0 in FP)
+            lui(1, 0x3F800000),  // x1 = 0x3F800000 (1.0 in FP)
             fmv_w_x(1, 1),       // f1 = x1 (bitwise move)
             fmv_x_w(2, 1),       // x2 = f1 (bitwise move back)
             addi(3, 0, 0x100),   // x3 = 0x100
