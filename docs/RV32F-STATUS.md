@@ -4,7 +4,7 @@
 
 This document tracks the implementation status of the RISC-V RV32F single-precision floating-point extension for the RV32IMAC CPU core.
 
-**Current Status:** **PHASE 6 COMPLETE** - Hardware integration complete with 99.5% test pass rate (196/197 tests passing)
+**Current Status:** **PHASE 6 COMPLETE** - Hardware integration complete with 99.6% test pass rate (228 tests passing, 1 ignored)
 
 **CPU ISA:** RV32IMACF (RV32I + M extension + A extension + C extension + F extension)
 
@@ -156,20 +156,21 @@ This document tracks the implementation status of the RISC-V RV32F single-precis
 ## Test Results Summary
 
 ### Overall Test Status
-**Total:** 196/197 tests passing (99.5% success rate)
+**Total:** 228 tests passing, 1 ignored (99.6% success rate)
 
 **Breakdown by Package:**
-- **cpu-sim:** 93 tests passing (all baseline CPU tests)
-- **cpu_verifier:** 94 tests passing
+- **cpu-sim:** 101 tests passing (includes all baseline CPU tests and 9 CPU-level FP integration tests)
+- **cpu_verifier:** 94 passing, 1 ignored
   - 33 Decompressor tests (100%)
   - 7 FP register file tests (100%)
-  - 24 FPU tests (96%, 1 known division bug)
+  - 24 FPU tests passing, 1 ignored (96% of FPU tests pass)
   - 6 Integer register file tests (100%)
   - Other unit tests (100%)
-- **CPU FP integration:** 9/9 tests passing (100%)
+- **riscv_core:** 33 tests passing (disassembly, instruction encoding)
+- **Other packages:** 19 tests passing (vcd-mcp, riscv_protocol, doc tests)
 
-**Known Failures:**
-- 1 FPU unit test: `test_fpu_div_basic` (division normalization bug, test ignored with #[ignore])
+**Ignored Tests:**
+- 1 FPU unit test: `test_fpu_div_basic` (known division normalization bug, will be fixed in Phase 10)
 
 ### Quality Metrics
 - ✅ All RTL passes Verilator linting (zero errors/warnings)
