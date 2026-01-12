@@ -211,6 +211,17 @@ where
         )
     }
 
+    /// Dump VCD waveform at current timestamp and increment the timestamp counter
+    ///
+    /// This is a helper function that handles VCD dumping if VCD tracing is enabled.
+    /// It automatically increments the VCD timestamp after dumping.
+    fn dump_vcd(&mut self) {
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(self.vcd_time);
+            self.vcd_time += 1;
+        }
+    }
+
     /// Reset the CPU
     /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
@@ -238,34 +249,22 @@ where
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.vcd_time); // Capture initial state with reset asserted, clk=0
-            self.vcd_time += 1;
-        }
+        self.dump_vcd(); // Capture initial state with reset asserted, clk=0
 
         // First clock edge during reset
         self.cpu.clk = 1;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.vcd_time); // Capture state after rising edge during reset
-            self.vcd_time += 1;
-        }
+        self.dump_vcd(); // Capture state after rising edge during reset
 
         // Second clock cycle during reset (falling edge)
         self.cpu.clk = 0;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.vcd_time); // Capture state after falling edge during reset
-            self.vcd_time += 1;
-        }
+        self.dump_vcd(); // Capture state after falling edge during reset
 
         // Release reset (still at clk=0)
         self.cpu.rst_n = 1;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(self.vcd_time); // Capture state with reset released
-            self.vcd_time += 1;
-        }
+        self.dump_vcd(); // Capture state with reset released
 
         // Reset the hung detector state
         if let Some(ref mut detector) = self.hung_detector {
@@ -412,10 +411,7 @@ where
             self.cycle_count += 1;
 
             // Dump VCD if enabled (after clock edge)
-            if let Some(ref mut vcd) = self.vcd {
-                vcd.dump(self.vcd_time);
-                self.vcd_time += 1;
-            }
+            self.dump_vcd();
 
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
