@@ -8,79 +8,50 @@ fn test_programmatic_instruction_loading() {
     println!("\n=== PROGRAMMATIC INSTRUCTION LOADING TEST ===");
     println!("Demonstrating the new decoupled simulator API");
 
-    // Create system bus with internal DRAM
-    let bus = bus::SystemBus::new();
-
-    // Initialize CPU Simulator without an ELF file
-    let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
-    let mut sim = sim::Simulator::new(
-        &runtime,
-        bus,
-        false,
-        false, // Don't print FSM state,
-        None::<fn(u32)>,
-        None::<fn(&riscv_core::trace::InstructionTrace)>,
-        None, // No VCD
-        0,    // Zero latency
-        Some(HungDetectorConfig::default()),
-    )
-    .expect("Failed to create simulator");
-
-    println!("✓ Simulator created without loading an ELF file");
-
     // Define a simple program:
     // Address 0x80000000:
     //   addi x10, x0, 42  ; x10 = 42
     //   sw x10, 0xFFFFFFF0(x0)  ; store to tohost (halt)
     //   jal x0, 0  ; infinite loop (stay here)
-    //
-    // Let's manually encode these instructions:
-    // addi x10, x0, 42 = 0x02a00513
-    //   imm[11:0] = 42 = 0x02a
-    //   rs1 = x0 = 0
-    //   funct3 = 0x0 (ADDI)
-    //   rd = x10 = 10 = 0xa
-    //   opcode = 0x13 (OP-IMM)
-    //   Encoding: 0x02a00513
-    //
-    // sw x10, -16(x0) = store x10 to address 0xFFFFFFF0
-    //   imm[11:5] = 0x7f (sign-extended from -16 >> 5)
-    //   rs2 = x10 = 10 = 0xa
-    //   rs1 = x0 = 0
-    //   funct3 = 0x2 (SW)
-    //   imm[4:0] = 0x10
-    //   opcode = 0x23 (STORE)
-    //   Encoding for sw x10, -16(x0): 0xfea02823
-    //
-    // jal x0, 0 = jump to current address (infinite loop)
-    //   imm[20] = 0, imm[10:1] = 0, imm[11] = 0, imm[19:12] = 0
-    //   rd = x0 = 0
-    //   opcode = 0x6f (JAL)
-    //   Encoding: 0x0000006f
-
     let program: Vec<u8> = vec![
         // addi x10, x0, 42 (0x02a00513 in little-endian)
-        0x13, 0x05, 0xa0, 0x02, // sw x10, -16(x0) (0xfea02823 in little-endian)
-        0x23, 0x28, 0xa0, 0xfe, // jal x0, 0 (0x0000006f in little-endian)
+        0x13, 0x05, 0xa0, 0x02,
+        // sw x10, -16(x0) (0xfea02823 in little-endian)
+        0x23, 0x28, 0xa0, 0xfe,
+        // jal x0, 0 (0x0000006f in little-endian)
         0x6f, 0x00, 0x00, 0x00,
     ];
 
-    // Write the program to memory starting at 0x80000000 (typical RISC-V start address)
     const START_ADDR: u32 = 0x8000_0000;
-    sim.write_memory_region(START_ADDR, &program, true);
 
-    println!(
-        "✓ Programmatic instructions written to memory at 0x{:08x}",
-        START_ADDR
-    );
-    println!("  Program size: {} bytes", program.len());
-    println!("  Instruction 1: addi x10, x0, 42");
-    println!("  Instruction 2: sw x10, -16(x0) ; store to tohost");
-    println!("  Instruction 3: jal x0, 0 ; infinite loop");
+    let result = run_program(
+        100,
+        false,
+        false,
+        None::<fn(u32)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,
+        0, // Zero latency
+        |sim| {
+            println!("✓ Simulator created without loading an ELF file");
 
-    // Run the simulation with the start address as boot PC
-    println!("\n✓ Running simulation with boot PC = 0x{:08x}", START_ADDR);
-    let result = sim.run(START_ADDR, 100).expect("Simulation should succeed");
+            // Write the program to memory starting at 0x80000000
+            sim.write_memory_region(START_ADDR, &program, true);
+
+            println!(
+                "✓ Programmatic instructions written to memory at 0x{:08x}",
+                START_ADDR
+            );
+            println!("  Program size: {} bytes", program.len());
+            println!("  Instruction 1: addi x10, x0, 42");
+            println!("  Instruction 2: sw x10, -16(x0) ; store to tohost");
+            println!("  Instruction 3: jal x0, 0 ; infinite loop");
+
+            Ok(START_ADDR)
+        },
+        |_sim, _result| {},
+    )
+    .expect("Simulation should succeed");
 
     println!("\n=== RESULTS ===");
     println!("✓ Simulation completed in {} cycles", result.cycles);

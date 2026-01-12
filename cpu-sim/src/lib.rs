@@ -8,11 +8,11 @@ pub mod sim;
 #[cfg(test)]
 mod tests;
 
-pub use bus::SystemBus;
 pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
+use bus::SystemBus;
 use std::path::Path;
 
 /// Load an ELF file into a simulator's memory
