@@ -839,6 +839,179 @@ pub fn amomaxu_w(rd: u32, rs1: u32, rs2: u32) -> u32 {
     encode_atomic(0b11100, false, false, rd, rs1, rs2)
 }
 
+// ============================================================================
+// RV32F - Single-Precision Floating-Point Extension
+// ============================================================================
+
+/// Encode an R-type FP instruction
+///
+/// Format: funct7 | rs2 | rs1 | rm | rd | opcode
+/// rm = rounding mode (typically 0b111 for dynamic from FCSR.frm)
+pub fn encode_fp_r_type(opcode: u32, rd: u32, rm: u32, rs1: u32, rs2: u32, funct7: u32) -> u32 {
+    (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (rm << 12) | (rd << 7) | opcode
+}
+
+/// Encode an R4-type FP instruction (fused multiply-add)
+///
+/// Format: rs3 | funct2 | rs2 | rs1 | rm | rd | opcode
+pub fn encode_fp_r4_type(
+    opcode: u32,
+    rd: u32,
+    rm: u32,
+    rs1: u32,
+    rs2: u32,
+    funct2: u32,
+    rs3: u32,
+) -> u32 {
+    (rs3 << 27) | (funct2 << 25) | (rs2 << 20) | (rs1 << 15) | (rm << 12) | (rd << 7) | opcode
+}
+
+// FP Load/Store Instructions
+
+/// FLW: Load FP Word
+pub fn flw(fd: u32, rs1: u32, imm: i32) -> u32 {
+    encode_i_type(0b0000111, fd, 0b010, rs1, imm)
+}
+
+/// FSW: Store FP Word
+pub fn fsw(rs1: u32, fs2: u32, imm: i32) -> u32 {
+    encode_s_type(0b0100111, 0b010, rs1, fs2, imm)
+}
+
+// FP Arithmetic Instructions
+
+/// FADD.S: FP Add
+pub fn fadd_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, fs1, fs2, 0b0000000)
+}
+
+/// FSUB.S: FP Subtract
+pub fn fsub_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, fs1, fs2, 0b0000100)
+}
+
+/// FMUL.S: FP Multiply
+pub fn fmul_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, fs1, fs2, 0b0001000)
+}
+
+/// FDIV.S: FP Divide
+pub fn fdiv_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, fs1, fs2, 0b0001100)
+}
+
+/// FSQRT.S: FP Square Root
+pub fn fsqrt_s(fd: u32, fs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, fs1, 0, 0b0101100)
+}
+
+// FP Fused Multiply-Add Instructions
+
+/// FMADD.S: Fused Multiply-Add
+pub fn fmadd_s(fd: u32, fs1: u32, fs2: u32, fs3: u32) -> u32 {
+    encode_fp_r4_type(0b1000011, fd, 0b111, fs1, fs2, 0b00, fs3)
+}
+
+/// FMSUB.S: Fused Multiply-Subtract
+pub fn fmsub_s(fd: u32, fs1: u32, fs2: u32, fs3: u32) -> u32 {
+    encode_fp_r4_type(0b1000111, fd, 0b111, fs1, fs2, 0b00, fs3)
+}
+
+/// FNMSUB.S: Fused Negated Multiply-Subtract
+pub fn fnmsub_s(fd: u32, fs1: u32, fs2: u32, fs3: u32) -> u32 {
+    encode_fp_r4_type(0b1001011, fd, 0b111, fs1, fs2, 0b00, fs3)
+}
+
+/// FNMADD.S: Fused Negated Multiply-Add
+pub fn fnmadd_s(fd: u32, fs1: u32, fs2: u32, fs3: u32) -> u32 {
+    encode_fp_r4_type(0b1001111, fd, 0b111, fs1, fs2, 0b00, fs3)
+}
+
+// FP MIN/MAX Instructions
+
+/// FMIN.S: FP Minimum
+pub fn fmin_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b000, fs1, fs2, 0b0010100)
+}
+
+/// FMAX.S: FP Maximum
+pub fn fmax_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b001, fs1, fs2, 0b0010100)
+}
+
+// FP Sign Injection Instructions
+
+/// FSGNJ.S: FP Sign Injection
+pub fn fsgnj_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b000, fs1, fs2, 0b0010000)
+}
+
+/// FSGNJN.S: FP Sign Injection Negated
+pub fn fsgnjn_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b001, fs1, fs2, 0b0010000)
+}
+
+/// FSGNJX.S: FP Sign Injection XOR
+pub fn fsgnjx_s(fd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b010, fs1, fs2, 0b0010000)
+}
+
+// FP Comparison Instructions (write to integer register)
+
+/// FEQ.S: FP Equal
+pub fn feq_s(rd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b010, fs1, fs2, 0b1010000)
+}
+
+/// FLT.S: FP Less Than
+pub fn flt_s(rd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b001, fs1, fs2, 0b1010000)
+}
+
+/// FLE.S: FP Less Than or Equal
+pub fn fle_s(rd: u32, fs1: u32, fs2: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b000, fs1, fs2, 0b1010000)
+}
+
+// FP Conversion Instructions
+
+/// FCVT.W.S: Convert FP to Signed Integer
+pub fn fcvt_w_s(rd: u32, fs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b111, fs1, 0, 0b1100000)
+}
+
+/// FCVT.WU.S: Convert FP to Unsigned Integer
+pub fn fcvt_wu_s(rd: u32, fs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b111, fs1, 1, 0b1100000)
+}
+
+/// FCVT.S.W: Convert Signed Integer to FP
+pub fn fcvt_s_w(fd: u32, rs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, rs1, 0, 0b1101000)
+}
+
+/// FCVT.S.WU: Convert Unsigned Integer to FP
+pub fn fcvt_s_wu(fd: u32, rs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b111, rs1, 1, 0b1101000)
+}
+
+// FP Move and Classification Instructions
+
+/// FMV.X.W: Move FP to Integer Register (bitwise)
+pub fn fmv_x_w(rd: u32, fs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b000, fs1, 0, 0b1110000)
+}
+
+/// FMV.W.X: Move Integer to FP Register (bitwise)
+pub fn fmv_w_x(fd: u32, rs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, fd, 0b000, rs1, 0, 0b1111000)
+}
+
+/// FCLASS.S: FP Classify
+pub fn fclass_s(rd: u32, fs1: u32) -> u32 {
+    encode_fp_r_type(0b1010011, rd, 0b001, fs1, 0, 0b1110000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
