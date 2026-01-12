@@ -80,12 +80,12 @@ mod tests {
         let mut instructions = vec![
             lui(1, 0x80001000), // x1 = 0x80001000 (data address)
             lui(2, 0x3F800000), // x2 = 0x3F800000 (1.0 in FP)
-            sw(1, 2, 0),     // Store integer representation to memory
-            flw(1, 1, 0),    // f1 = load FP value from memory
-            fsw(1, 1, 4),    // Store f1 to memory[0x80001004]
-            lw(3, 1, 4),     // x3 = load from memory[0x80001004]
-            addi(4, 0, 0x100), // x4 = 0x100 (result marker address)
-            sw(4, 3, 0),     // Store result to 0x100
+            sw(1, 2, 0),        // Store integer representation to memory
+            flw(1, 1, 0),       // f1 = load FP value from memory
+            fsw(1, 1, 4),       // Store f1 to memory[0x80001004]
+            lw(3, 1, 4),        // x3 = load from memory[0x80001004]
+            addi(4, 0, 0x100),  // x4 = 0x100 (result marker address)
+            sw(4, 3, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -100,7 +100,7 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 // Verify that the value round-tripped correctly
                 // We stored 0x3F800000, loaded to f1, stored from f1, and loaded to x3
                 let result_value = sim.bus.read_word(0x100);
@@ -120,24 +120,24 @@ mod tests {
         // Program: Load different FP values into multiple FP registers
         // Verifies that FP register file has independent registers
         let mut instructions = vec![
-            lui(1, 0x80001000),  // x1 = 0x80001000 (base address)
-            lui(2, 0x3F800000),  // x2 = 1.0
-            lui(3, 0x40000000),  // x3 = 2.0
-            lui(4, 0x40400000),  // x4 = 3.0
-            sw(1, 2, 0),      // mem[x1+0] = 1.0
-            sw(1, 3, 4),      // mem[x1+4] = 2.0
-            sw(1, 4, 8),      // mem[x1+8] = 3.0
-            flw(1, 1, 0),     // f1 = 1.0
-            flw(2, 1, 4),     // f2 = 2.0
-            flw(3, 1, 8),     // f3 = 3.0
-            fsw(1, 1, 12),    // mem[x1+12] = f1
-            fsw(1, 2, 16),    // mem[x1+16] = f2
-            fsw(1, 3, 20),    // mem[x1+20] = f3
-            lw(5, 1, 12),     // x5 = f1 value
-            lw(6, 1, 16),     // x6 = f2 value
-            lw(7, 1, 20),     // x7 = f3 value
+            lui(1, 0x80001000), // x1 = 0x80001000 (base address)
+            lui(2, 0x3F800000), // x2 = 1.0
+            lui(3, 0x40000000), // x3 = 2.0
+            lui(4, 0x40400000), // x4 = 3.0
+            sw(1, 2, 0),        // mem[x1+0] = 1.0
+            sw(1, 3, 4),        // mem[x1+4] = 2.0
+            sw(1, 4, 8),        // mem[x1+8] = 3.0
+            flw(1, 1, 0),       // f1 = 1.0
+            flw(2, 1, 4),       // f2 = 2.0
+            flw(3, 1, 8),       // f3 = 3.0
+            fsw(1, 1, 12),      // mem[x1+12] = f1
+            fsw(1, 2, 16),      // mem[x1+16] = f2
+            fsw(1, 3, 20),      // mem[x1+20] = f3
+            lw(5, 1, 12),       // x5 = f1 value
+            lw(6, 1, 16),       // x6 = f2 value
+            lw(7, 1, 20),       // x7 = f3 value
             addi(10, 0, 0x100), // x10 = 0x100
-            sw(10, 5, 0),     // Store results to 0x100
+            sw(10, 5, 0),       // Store results to 0x100
             sw(10, 6, 4),
             sw(10, 7, 8),
         ];
@@ -154,11 +154,11 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let val1 = sim.bus.read_word(0x100);
                 let val2 = sim.bus.read_word(0x104);
                 let val3 = sim.bus.read_word(0x108);
-                
+
                 assert_eq!(val1, 0x3F800000, "f1 should be 1.0");
                 assert_eq!(val2, 0x40000000, "f2 should be 2.0");
                 assert_eq!(val3, 0x40400000, "f3 should be 3.0");
@@ -178,18 +178,18 @@ mod tests {
         // Program: Test FADD.S instruction in CPU context
         // Load two FP values, add them, store result
         let mut instructions = vec![
-            lui(1, 0x80001000),     // x1 = 0x80001000 (base address)
-            lui(2, 0x3F800000),     // x2 = 1.0
-            lui(3, 0x40000000),     // x3 = 2.0
-            sw(1, 2, 0),         // mem[x1+0] = 1.0
-            sw(1, 3, 4),         // mem[x1+4] = 2.0
-            flw(1, 1, 0),        // f1 = 1.0
-            flw(2, 1, 4),        // f2 = 2.0
-            fadd_s(3, 1, 2),     // f3 = f1 + f2 = 3.0
-            fsw(1, 3, 8),        // mem[x1+8] = f3
-            lw(4, 1, 8),         // x4 = result
-            addi(5, 0, 0x100),   // x5 = 0x100
-            sw(5, 4, 0),         // Store result to 0x100
+            lui(1, 0x80001000), // x1 = 0x80001000 (base address)
+            lui(2, 0x3F800000), // x2 = 1.0
+            lui(3, 0x40000000), // x3 = 2.0
+            sw(1, 2, 0),        // mem[x1+0] = 1.0
+            sw(1, 3, 4),        // mem[x1+4] = 2.0
+            flw(1, 1, 0),       // f1 = 1.0
+            flw(2, 1, 4),       // f2 = 2.0
+            fadd_s(3, 1, 2),    // f3 = f1 + f2 = 3.0
+            fsw(1, 3, 8),       // mem[x1+8] = f3
+            lw(4, 1, 8),        // x4 = result
+            addi(5, 0, 0x100),  // x5 = 0x100
+            sw(5, 4, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -204,7 +204,7 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let result_value = sim.bus.read_word(0x100);
                 assert_eq!(result_value, 0x40400000, "1.0 + 2.0 should equal 3.0");
             },
@@ -218,18 +218,18 @@ mod tests {
 
         // Program: Test FMUL.S instruction
         let mut instructions = vec![
-            lui(1, 0x80001000),     // x1 = 0x80001000
-            lui(2, 0x40000000),     // x2 = 2.0
-            lui(3, 0x40400000),     // x3 = 3.0
-            sw(1, 2, 0),         // mem[x1+0] = 2.0
-            sw(1, 3, 4),         // mem[x1+4] = 3.0
-            flw(1, 1, 0),        // f1 = 2.0
-            flw(2, 1, 4),        // f2 = 3.0
-            fmul_s(3, 1, 2),     // f3 = f1 * f2 = 6.0
-            fsw(1, 3, 8),        // mem[x1+8] = f3
-            lw(4, 1, 8),         // x4 = result
-            addi(5, 0, 0x100),   // x5 = 0x100
-            sw(5, 4, 0),         // Store result to 0x100
+            lui(1, 0x80001000), // x1 = 0x80001000
+            lui(2, 0x40000000), // x2 = 2.0
+            lui(3, 0x40400000), // x3 = 3.0
+            sw(1, 2, 0),        // mem[x1+0] = 2.0
+            sw(1, 3, 4),        // mem[x1+4] = 3.0
+            flw(1, 1, 0),       // f1 = 2.0
+            flw(2, 1, 4),       // f2 = 3.0
+            fmul_s(3, 1, 2),    // f3 = f1 * f2 = 6.0
+            fsw(1, 3, 8),       // mem[x1+8] = f3
+            lw(4, 1, 8),        // x4 = result
+            addi(5, 0, 0x100),  // x5 = 0x100
+            sw(5, 4, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -244,7 +244,7 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let result_value = sim.bus.read_word(0x100);
                 assert_eq!(result_value, 0x40C00000, "2.0 * 3.0 should equal 6.0");
             },
@@ -262,13 +262,13 @@ mod tests {
 
         // Program: Test FCVT.S.W (integer to FP conversion)
         let mut instructions = vec![
-            addi(1, 0, 42),      // x1 = 42 (integer)
-            fcvt_s_w(1, 1),      // f1 = (float)42
-            lui(2, 0x80001000),     // x2 = 0x80001000
-            fsw(2, 1, 0),        // mem[x2] = f1
-            lw(3, 2, 0),         // x3 = result
-            addi(4, 0, 0x100),   // x4 = 0x100
-            sw(4, 3, 0),         // Store result to 0x100
+            addi(1, 0, 42),     // x1 = 42 (integer)
+            fcvt_s_w(1, 1),     // f1 = (float)42
+            lui(2, 0x80001000), // x2 = 0x80001000
+            fsw(2, 1, 0),       // mem[x2] = f1
+            lw(3, 2, 0),        // x3 = result
+            addi(4, 0, 0x100),  // x4 = 0x100
+            sw(4, 3, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -283,7 +283,7 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let result_value = sim.bus.read_word(0x100);
                 assert_eq!(result_value, 0x42280000, "42 as float should be 0x42280000");
             },
@@ -297,13 +297,13 @@ mod tests {
 
         // Program: Test FCVT.W.S (FP to integer conversion)
         let mut instructions = vec![
-            lui(1, 0x80001000),     // x1 = 0x80001000
-            lui(2, 0x42280000),     // x2 = 42.0 in FP (0x42280000)
-            sw(1, 2, 0),         // mem[x1] = 42.0
-            flw(1, 1, 0),        // f1 = 42.0
-            fcvt_w_s(3, 1),      // x3 = (int)f1 = 42
-            addi(4, 0, 0x100),   // x4 = 0x100
-            sw(4, 3, 0),         // Store result to 0x100
+            lui(1, 0x80001000), // x1 = 0x80001000
+            lui(2, 0x42280000), // x2 = 42.0 in FP (0x42280000)
+            sw(1, 2, 0),        // mem[x1] = 42.0
+            flw(1, 1, 0),       // f1 = 42.0
+            fcvt_w_s(3, 1),     // x3 = (int)f1 = 42
+            addi(4, 0, 0x100),  // x4 = 0x100
+            sw(4, 3, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -318,7 +318,7 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let result_value = sim.bus.read_word(0x100);
                 assert_eq!(result_value, 42, "42.0 as int should be 42");
             },
@@ -336,19 +336,19 @@ mod tests {
 
         // Program: Test FEQ.S and FLT.S comparisons
         let mut instructions = vec![
-            lui(1, 0x80001000),     // x1 = 0x80001000
-            lui(2, 0x3F800000),     // x2 = 1.0
-            lui(3, 0x40000000),     // x3 = 2.0
-            sw(1, 2, 0),         // mem[x1+0] = 1.0
-            sw(1, 3, 4),         // mem[x1+4] = 2.0
-            flw(1, 1, 0),        // f1 = 1.0
-            flw(2, 1, 4),        // f2 = 2.0
-            feq_s(4, 1, 1),      // x4 = (f1 == f1) = 1
-            feq_s(5, 1, 2),      // x5 = (f1 == f2) = 0
-            flt_s(6, 1, 2),      // x6 = (f1 < f2) = 1
-            flt_s(7, 2, 1),      // x7 = (f2 < f1) = 0
-            addi(10, 0, 0x100),  // x10 = 0x100
-            sw(10, 4, 0),        // Store results to 0x100-0x10C
+            lui(1, 0x80001000), // x1 = 0x80001000
+            lui(2, 0x3F800000), // x2 = 1.0
+            lui(3, 0x40000000), // x3 = 2.0
+            sw(1, 2, 0),        // mem[x1+0] = 1.0
+            sw(1, 3, 4),        // mem[x1+4] = 2.0
+            flw(1, 1, 0),       // f1 = 1.0
+            flw(2, 1, 4),       // f2 = 2.0
+            feq_s(4, 1, 1),     // x4 = (f1 == f1) = 1
+            feq_s(5, 1, 2),     // x5 = (f1 == f2) = 0
+            flt_s(6, 1, 2),     // x6 = (f1 < f2) = 1
+            flt_s(7, 2, 1),     // x7 = (f2 < f1) = 0
+            addi(10, 0, 0x100), // x10 = 0x100
+            sw(10, 4, 0),       // Store results to 0x100-0x10C
             sw(10, 5, 4),
             sw(10, 6, 8),
             sw(10, 7, 12),
@@ -366,12 +366,12 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let eq_same = sim.bus.read_word(0x100);
                 let eq_diff = sim.bus.read_word(0x104);
                 let lt_true = sim.bus.read_word(0x108);
                 let lt_false = sim.bus.read_word(0x10C);
-                
+
                 assert_eq!(eq_same, 1, "1.0 == 1.0 should be true");
                 assert_eq!(eq_diff, 0, "1.0 == 2.0 should be false");
                 assert_eq!(lt_true, 1, "1.0 < 2.0 should be true");
@@ -391,11 +391,11 @@ mod tests {
 
         // Program: Test FMV.X.W and FMV.W.X (bitwise moves)
         let mut instructions = vec![
-            lui(1, 0x3F800000),  // x1 = 0x3F800000 (1.0 in FP)
-            fmv_w_x(1, 1),       // f1 = x1 (bitwise move)
-            fmv_x_w(2, 1),       // x2 = f1 (bitwise move back)
-            addi(3, 0, 0x100),   // x3 = 0x100
-            sw(3, 2, 0),         // Store result to 0x100
+            lui(1, 0x3F800000), // x1 = 0x3F800000 (1.0 in FP)
+            fmv_w_x(1, 1),      // f1 = x1 (bitwise move)
+            fmv_x_w(2, 1),      // x2 = f1 (bitwise move back)
+            addi(3, 0, 0x100),  // x3 = 0x100
+            sw(3, 2, 0),        // Store result to 0x100
         ];
         instructions.extend(tohost_termination(7, 8));
 
@@ -410,9 +410,12 @@ mod tests {
                     result.tohost_value == Some(1),
                     "Program should terminate with tohost=1"
                 );
-                
+
                 let result_value = sim.bus.read_word(0x100);
-                assert_eq!(result_value, 0x3F800000, "FMV round trip should preserve bits");
+                assert_eq!(
+                    result_value, 0x3F800000,
+                    "FMV round trip should preserve bits"
+                );
             },
         )
         .expect("FMV test should run");

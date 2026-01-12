@@ -615,9 +615,11 @@ mod tests {
 
     #[test]
     fn test_long_instruction_detection() {
-        let mut config = HungDetectorConfig::default();
-        config.max_cycles_per_instruction = 100;
-        config.enable_pc_loop_detection = false;
+        let config = HungDetectorConfig {
+            max_cycles_per_instruction: 100,
+            enable_pc_loop_detection: false,
+            ..Default::default()
+        };
 
         let mut detector = HungDetector::new(config);
 
