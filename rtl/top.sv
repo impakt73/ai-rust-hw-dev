@@ -113,6 +113,13 @@ module top (
     logic        is_sc;        // SC.W instruction (A extension)
     logic        is_amo;       // AMO instruction (A extension)
     logic [4:0]  funct5;       // For atomic operation type
+    // F extension decoder outputs (combinational)
+    logic [4:0]  fpu_op;       // FPU operation selector
+    logic        fp_reg_write; // FP register write enable
+    logic        fp_to_int;    // FP result goes to integer register
+    logic        int_to_fp;    // Integer source goes to FP unit
+    logic        is_fp_load;   // FLW instruction
+    logic        is_fp_store;  // FSW instruction
     
     // ============================================================
     // LR/SC Reservation Station (A Extension)
@@ -744,7 +751,14 @@ module top (
         .is_lr(is_lr),
         .is_sc(is_sc),
         .is_amo(is_amo),
-        .funct5(funct5)
+        .funct5(funct5),
+        // F extension outputs
+        .fpu_op(fpu_op),
+        .fp_reg_write(fp_reg_write),
+        .fp_to_int(fp_to_int),
+        .int_to_fp(int_to_fp),
+        .is_fp_load(is_fp_load),
+        .is_fp_store(is_fp_store)
     );
     
     // Register file instantiation (write enable gated by FSM)

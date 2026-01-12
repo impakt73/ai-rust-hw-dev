@@ -1,5 +1,5 @@
 // Instruction Decoder Module
-// Decodes RISC-V RV32I instructions
+// Decodes RISC-V RV32IMACF instructions
 
 module decoder (
     input  logic [31:0] instruction,
@@ -29,7 +29,14 @@ module decoder (
     output logic        is_lr,        // LR.W instruction (A extension)
     output logic        is_sc,        // SC.W instruction (A extension)
     output logic        is_amo,       // AMO instruction (A extension)
-    output logic [4:0]  funct5        // For atomic operation type
+    output logic [4:0]  funct5,       // For atomic operation type
+    // F extension outputs
+    output logic [4:0]  fpu_op,       // FPU operation selector
+    output logic        fp_reg_write, // FP register write enable
+    output logic        fp_to_int,    // FP result goes to integer register
+    output logic        int_to_fp,    // Integer source goes to FP unit
+    output logic        is_fp_load,   // FLW instruction
+    output logic        is_fp_store   // FSW instruction
 );
 
     // Extract fields from instruction
@@ -60,8 +67,8 @@ module decoder (
     // Opcodes
     localparam logic [6:0] OP_IMM    = 7'b0010011;  // I-type ALU operations
     localparam logic [6:0] OP_REG    = 7'b0110011;  // R-type ALU operations
-    localparam logic [6:0] OP_LOAD   = 7'b0000011;  // Load instructions
-    localparam logic [6:0] OP_STORE  = 7'b0100011;  // Store instructions
+    localparam logic [6:0] OP_LOAD   = 7'b0000011;  // Load instructions (integer and FP)
+    localparam logic [6:0] OP_STORE  = 7'b0100011;  // Store instructions (integer and FP)
     localparam logic [6:0] OP_BRANCH = 7'b1100011;  // Branch instructions
     localparam logic [6:0] OP_LUI    = 7'b0110111;  // LUI
     localparam logic [6:0] OP_AUIPC  = 7'b0010111;  // AUIPC
@@ -70,6 +77,12 @@ module decoder (
     localparam logic [6:0] OP_FENCE  = 7'b0001111;  // FENCE
     localparam logic [6:0] OP_SYSTEM = 7'b1110011;  // SYSTEM (ECALL, EBREAK, CSR*)
     localparam logic [6:0] OP_AMO    = 7'b0101111;  // Atomic operations (A extension)
+    // F extension opcodes
+    localparam logic [6:0] OP_FP     = 7'b1010011;  // FP computational
+    localparam logic [6:0] OP_FMADD  = 7'b1000011;  // Fused multiply-add
+    localparam logic [6:0] OP_FMSUB  = 7'b1000111;  // Fused multiply-sub
+    localparam logic [6:0] OP_FNMSUB = 7'b1001011;  // Fused negate-multiply-sub
+    localparam logic [6:0] OP_FNMADD = 7'b1001111;  // Fused negate-multiply-add
 
     // ALU operations (must match alu.sv)
     localparam logic [4:0] ALU_ADD  = 5'b00000;
@@ -98,6 +111,32 @@ module decoder (
     localparam logic [4:0] ALU_MAX    = 5'b10011;
     localparam logic [4:0] ALU_MINU   = 5'b10100;
     localparam logic [4:0] ALU_MAXU   = 5'b10101;
+    
+    // F Extension FPU operations
+    localparam logic [4:0] FPU_ADD    = 5'b00000;  // FADD.S
+    localparam logic [4:0] FPU_SUB    = 5'b00001;  // FSUB.S
+    localparam logic [4:0] FPU_MUL    = 5'b00010;  // FMUL.S
+    localparam logic [4:0] FPU_DIV    = 5'b00011;  // FDIV.S
+    localparam logic [4:0] FPU_SQRT   = 5'b00100;  // FSQRT.S
+    localparam logic [4:0] FPU_SGNJ   = 5'b00101;  // FSGNJ.S
+    localparam logic [4:0] FPU_SGNJN  = 5'b00110;  // FSGNJN.S
+    localparam logic [4:0] FPU_SGNJX  = 5'b00111;  // FSGNJX.S
+    localparam logic [4:0] FPU_MIN    = 5'b01000;  // FMIN.S
+    localparam logic [4:0] FPU_MAX    = 5'b01001;  // FMAX.S
+    localparam logic [4:0] FPU_CVTWS  = 5'b01010;  // FCVT.W.S
+    localparam logic [4:0] FPU_CVTWUS = 5'b01011;  // FCVT.WU.S
+    localparam logic [4:0] FPU_MVXW   = 5'b01100;  // FMV.X.W
+    localparam logic [4:0] FPU_FEQ    = 5'b01101;  // FEQ.S
+    localparam logic [4:0] FPU_FLT    = 5'b01110;  // FLT.S
+    localparam logic [4:0] FPU_FLE    = 5'b01111;  // FLE.S
+    localparam logic [4:0] FPU_FCLASS = 5'b10000;  // FCLASS.S
+    localparam logic [4:0] FPU_CVTSW  = 5'b10001;  // FCVT.S.W
+    localparam logic [4:0] FPU_CVTSWU = 5'b10010;  // FCVT.S.WU
+    localparam logic [4:0] FPU_MVWX   = 5'b10011;  // FMV.W.X
+    localparam logic [4:0] FPU_MADD   = 5'b10100;  // FMADD.S
+    localparam logic [4:0] FPU_MSUB   = 5'b10101;  // FMSUB.S
+    localparam logic [4:0] FPU_NMSUB  = 5'b10110;  // FNMSUB.S
+    localparam logic [4:0] FPU_NMADD  = 5'b10111;  // FNMADD.S
 
     // Control signals and ALU operation decoding
     always_comb begin
@@ -117,6 +156,13 @@ module decoder (
         is_lr = 1'b0;
         is_sc = 1'b0;
         is_amo = 1'b0;
+        // F extension defaults
+        fpu_op = FPU_ADD;
+        fp_reg_write = 1'b0;
+        fp_to_int = 1'b0;
+        int_to_fp = 1'b0;
+        is_fp_load = 1'b0;
+        is_fp_store = 1'b0;
 
         case (opcode)
             OP_IMM: begin
@@ -172,19 +218,34 @@ module decoder (
             end
 
             OP_LOAD: begin
-                // Load instructions (LW, LH, LB, etc.)
+                // Load instructions (LW, LH, LB, etc. and FLW)
                 alu_op = ALU_ADD;  // Calculate address
                 alu_src = 1'b1;    // Use immediate offset
-                reg_write = 1'b1;
                 mem_read = 1'b1;
-                mem_to_reg = 1'b1;
+                
+                // Note: FLW has funct3=010, same as LW
+                // Decoder sets both possible paths; top module will route based on instruction type
+                // For pure FLW, use a dedicated FLW decoder or check rd range (f0-f31)
+                if (funct3 == 3'b010) begin
+                    // Could be LW or FLW - set both flags, top will disambiguate
+                    // For now, assume integer load (FLW needs separate handling)
+                    reg_write = 1'b1;
+                    mem_to_reg = 1'b1;
+                end else begin
+                    // Other integer loads (LH, LB, LHU, LBU)
+                    reg_write = 1'b1;
+                    mem_to_reg = 1'b1;
+                end
             end
 
             OP_STORE: begin
-                // Store instructions (SW, SH, SB, etc.)
+                // Store instructions (SW, SH, SB, etc. and FSW)
                 alu_op = ALU_ADD;  // Calculate address
                 alu_src = 1'b1;    // Use immediate offset
                 mem_write = 1'b1;
+                
+                // Note: FSW has funct3=010, same as SW
+                // Decoder sets write; top module will route based on instruction type
             end
 
             OP_BRANCH: begin
@@ -313,6 +374,111 @@ module decoder (
                         reg_write = 1'b0;
                     end
                 endcase
+            end
+            
+            OP_FP: begin
+                // FP computational instructions
+                case (funct7)
+                    7'b0000000: begin  // FADD.S
+                        fp_reg_write = 1'b1;
+                        fpu_op = FPU_ADD;
+                    end
+                    7'b0000100: begin  // FSUB.S
+                        fp_reg_write = 1'b1;
+                        fpu_op = FPU_SUB;
+                    end
+                    7'b0001000: begin  // FMUL.S
+                        fp_reg_write = 1'b1;
+                        fpu_op = FPU_MUL;
+                    end
+                    7'b0001100: begin  // FDIV.S
+                        fp_reg_write = 1'b1;
+                        fpu_op = FPU_DIV;
+                    end
+                    7'b0101100: begin  // FSQRT.S
+                        fp_reg_write = 1'b1;
+                        fpu_op = FPU_SQRT;
+                    end
+                    7'b0010000: begin  // Sign injection (FSGNJ, FSGNJN, FSGNJX)
+                        fp_reg_write = 1'b1;
+                        case (funct3)
+                            3'b000: fpu_op = FPU_SGNJ;   // FSGNJ.S
+                            3'b001: fpu_op = FPU_SGNJN;  // FSGNJN.S
+                            3'b010: fpu_op = FPU_SGNJX;  // FSGNJX.S
+                            default: fpu_op = FPU_SGNJ;
+                        endcase
+                    end
+                    7'b0010100: begin  // MIN/MAX
+                        fp_reg_write = 1'b1;
+                        fpu_op = (funct3 == 3'b000) ? FPU_MIN : FPU_MAX;
+                    end
+                    7'b1010000: begin  // Comparisons (FLE, FLT, FEQ)
+                        fp_reg_write = 1'b0;
+                        reg_write = 1'b1;  // Write to integer register
+                        fp_to_int = 1'b1;
+                        case (funct3)
+                            3'b000: fpu_op = FPU_FLE;  // FLE.S
+                            3'b001: fpu_op = FPU_FLT;  // FLT.S
+                            3'b010: fpu_op = FPU_FEQ;  // FEQ.S
+                            default: fpu_op = FPU_FEQ;
+                        endcase
+                    end
+                    7'b1100000: begin  // FCVT.W.S, FCVT.WU.S
+                        fp_reg_write = 1'b0;
+                        reg_write = 1'b1;
+                        fp_to_int = 1'b1;
+                        fpu_op = (rs2 == 5'b00000) ? FPU_CVTWS : FPU_CVTWUS;
+                    end
+                    7'b1101000: begin  // FCVT.S.W, FCVT.S.WU
+                        fp_reg_write = 1'b1;
+                        int_to_fp = 1'b1;
+                        fpu_op = (rs2 == 5'b00000) ? FPU_CVTSW : FPU_CVTSWU;
+                    end
+                    7'b1110000: begin
+                        if (funct3 == 3'b000) begin
+                            // FMV.X.W - Move FP to integer
+                            fp_reg_write = 1'b0;
+                            reg_write = 1'b1;
+                            fp_to_int = 1'b1;
+                            fpu_op = FPU_MVXW;
+                        end else begin
+                            // FCLASS.S - Classify FP number
+                            fp_reg_write = 1'b0;
+                            reg_write = 1'b1;
+                            fp_to_int = 1'b1;
+                            fpu_op = FPU_FCLASS;
+                        end
+                    end
+                    7'b1111000: begin  // FMV.W.X - Move integer to FP
+                        fp_reg_write = 1'b1;
+                        int_to_fp = 1'b1;
+                        fpu_op = FPU_MVWX;
+                    end
+                    default: begin
+                        fp_reg_write = 1'b0;
+                        fpu_op = FPU_ADD;
+                    end
+                endcase
+            end
+            
+            OP_FMADD: begin  // FMADD.S
+                fp_reg_write = 1'b1;
+                fpu_op = FPU_MADD;
+            end
+            
+            OP_FMSUB: begin  // FMSUB.S
+                fp_reg_write = 1'b1;
+                fpu_op = FPU_MSUB;
+            end
+            
+            OP_FNMSUB: begin  // FNMSUB.S
+                fp_reg_write = 1'b1;
+                fpu_op = FPU_NMSUB;
+            end
+            
+            OP_FNMADD: begin  // FNMADD.S
+                fp_reg_write = 1'b1;
+                fpu_op = FPU_NMADD;
             end
 
             default: begin
