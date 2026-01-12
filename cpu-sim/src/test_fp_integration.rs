@@ -78,7 +78,7 @@ mod tests {
         // x2 = FP bit pattern (0x3F800000 = 1.0 in IEEE 754)
         // f1 = FP register
         let mut instructions = vec![
-            lui(1, 0x80001), // x1 = 0x80001000 (data address)
+            lui(1, 0x80001000), // x1 = 0x80001000 (data address)
             lui(2, 0x3F800000), // x2 = 0x3F800000 (1.0 in FP)
             sw(1, 2, 0),     // Store integer representation to memory
             flw(1, 1, 0),    // f1 = load FP value from memory
@@ -120,7 +120,7 @@ mod tests {
         // Program: Load different FP values into multiple FP registers
         // Verifies that FP register file has independent registers
         let mut instructions = vec![
-            lui(1, 0x80001),  // x1 = 0x80001000 (base address)
+            lui(1, 0x80001000),  // x1 = 0x80001000 (base address)
             lui(2, 0x3F800000),  // x2 = 1.0
             lui(3, 0x40000000),  // x3 = 2.0
             lui(4, 0x40400000),  // x4 = 3.0
@@ -178,7 +178,7 @@ mod tests {
         // Program: Test FADD.S instruction in CPU context
         // Load two FP values, add them, store result
         let mut instructions = vec![
-            lui(1, 0x80001),     // x1 = 0x80001000 (base address)
+            lui(1, 0x80001000),     // x1 = 0x80001000 (base address)
             lui(2, 0x3F800000),     // x2 = 1.0
             lui(3, 0x40000000),     // x3 = 2.0
             sw(1, 2, 0),         // mem[x1+0] = 1.0
@@ -218,7 +218,7 @@ mod tests {
 
         // Program: Test FMUL.S instruction
         let mut instructions = vec![
-            lui(1, 0x80001),     // x1 = 0x80001000
+            lui(1, 0x80001000),     // x1 = 0x80001000
             lui(2, 0x40000000),     // x2 = 2.0
             lui(3, 0x40400000),     // x3 = 3.0
             sw(1, 2, 0),         // mem[x1+0] = 2.0
@@ -264,7 +264,7 @@ mod tests {
         let mut instructions = vec![
             addi(1, 0, 42),      // x1 = 42 (integer)
             fcvt_s_w(1, 1),      // f1 = (float)42
-            lui(2, 0x80001),     // x2 = 0x80001000
+            lui(2, 0x80001000),     // x2 = 0x80001000
             fsw(2, 1, 0),        // mem[x2] = f1
             lw(3, 2, 0),         // x3 = result
             addi(4, 0, 0x100),   // x4 = 0x100
@@ -297,7 +297,7 @@ mod tests {
 
         // Program: Test FCVT.W.S (FP to integer conversion)
         let mut instructions = vec![
-            lui(1, 0x80001),     // x1 = 0x80001000
+            lui(1, 0x80001000),     // x1 = 0x80001000
             lui(2, 0x42280),     // x2 = 42.0 in FP
             sw(1, 2, 0),         // mem[x1] = 42.0
             flw(1, 1, 0),        // f1 = 42.0
@@ -336,7 +336,7 @@ mod tests {
 
         // Program: Test FEQ.S and FLT.S comparisons
         let mut instructions = vec![
-            lui(1, 0x80001),     // x1 = 0x80001000
+            lui(1, 0x80001000),     // x1 = 0x80001000
             lui(2, 0x3F800000),     // x2 = 1.0
             lui(3, 0x40000000),     // x3 = 2.0
             sw(1, 2, 0),         // mem[x1+0] = 1.0
