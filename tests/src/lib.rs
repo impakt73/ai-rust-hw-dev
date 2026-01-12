@@ -13,9 +13,8 @@ mod decompress_test;
 #[cfg(test)]
 mod fp_regfile_test;
 
-// Note: FPU unit tests are skipped due to Verilator limitations with shortreal/floating-point.
-// The FPU will be tested at the CPU integration level once integrated into top.sv.
-// See docs/rv32f-upgrade-plan.md Phase 6 for CPU-level FP testing strategy.
+#[cfg(test)]
+mod fpu_test;
 
 // cpu_test module has been migrated to cpu-sim/src/test_rtl_verification.rs
 // This consolidates programmatic instruction testing in the cpu-sim crate
