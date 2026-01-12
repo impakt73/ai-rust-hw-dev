@@ -112,31 +112,31 @@ module decoder (
     localparam logic [4:0] ALU_MINU   = 5'b10100;
     localparam logic [4:0] ALU_MAXU   = 5'b10101;
     
-    // F Extension FPU operations
+    // F Extension FPU operations (MUST match fpu.sv encodings exactly)
     localparam logic [4:0] FPU_ADD    = 5'b00000;  // FADD.S
     localparam logic [4:0] FPU_SUB    = 5'b00001;  // FSUB.S
     localparam logic [4:0] FPU_MUL    = 5'b00010;  // FMUL.S
     localparam logic [4:0] FPU_DIV    = 5'b00011;  // FDIV.S
     localparam logic [4:0] FPU_SQRT   = 5'b00100;  // FSQRT.S
-    localparam logic [4:0] FPU_SGNJ   = 5'b00101;  // FSGNJ.S
-    localparam logic [4:0] FPU_SGNJN  = 5'b00110;  // FSGNJN.S
-    localparam logic [4:0] FPU_SGNJX  = 5'b00111;  // FSGNJX.S
-    localparam logic [4:0] FPU_MIN    = 5'b01000;  // FMIN.S
-    localparam logic [4:0] FPU_MAX    = 5'b01001;  // FMAX.S
-    localparam logic [4:0] FPU_CVTWS  = 5'b01010;  // FCVT.W.S
-    localparam logic [4:0] FPU_CVTWUS = 5'b01011;  // FCVT.WU.S
-    localparam logic [4:0] FPU_MVXW   = 5'b01100;  // FMV.X.W
-    localparam logic [4:0] FPU_FEQ    = 5'b01101;  // FEQ.S
-    localparam logic [4:0] FPU_FLT    = 5'b01110;  // FLT.S
-    localparam logic [4:0] FPU_FLE    = 5'b01111;  // FLE.S
-    localparam logic [4:0] FPU_FCLASS = 5'b10000;  // FCLASS.S
-    localparam logic [4:0] FPU_CVTSW  = 5'b10001;  // FCVT.S.W
-    localparam logic [4:0] FPU_CVTSWU = 5'b10010;  // FCVT.S.WU
-    localparam logic [4:0] FPU_MVWX   = 5'b10011;  // FMV.W.X
-    localparam logic [4:0] FPU_MADD   = 5'b10100;  // FMADD.S
-    localparam logic [4:0] FPU_MSUB   = 5'b10101;  // FMSUB.S
-    localparam logic [4:0] FPU_NMSUB  = 5'b10110;  // FNMSUB.S
-    localparam logic [4:0] FPU_NMADD  = 5'b10111;  // FNMADD.S
+    localparam logic [4:0] FPU_MIN    = 5'b00101;  // FMIN.S
+    localparam logic [4:0] FPU_MAX    = 5'b00110;  // FMAX.S
+    localparam logic [4:0] FPU_MADD   = 5'b00111;  // FMADD.S
+    localparam logic [4:0] FPU_MSUB   = 5'b01000;  // FMSUB.S
+    localparam logic [4:0] FPU_NMSUB  = 5'b01001;  // FNMSUB.S
+    localparam logic [4:0] FPU_NMADD  = 5'b01010;  // FNMADD.S
+    localparam logic [4:0] FPU_SGNJ   = 5'b01011;  // FSGNJ.S
+    localparam logic [4:0] FPU_SGNJN  = 5'b01100;  // FSGNJN.S
+    localparam logic [4:0] FPU_SGNJX  = 5'b01101;  // FSGNJX.S
+    localparam logic [4:0] FPU_CVTWS  = 5'b01110;  // FCVT.W.S
+    localparam logic [4:0] FPU_CVTWUS = 5'b01111;  // FCVT.WU.S
+    localparam logic [4:0] FPU_CVTSW  = 5'b10000;  // FCVT.S.W
+    localparam logic [4:0] FPU_CVTSWU = 5'b10001;  // FCVT.S.WU
+    localparam logic [4:0] FPU_FEQ    = 5'b10010;  // FEQ.S
+    localparam logic [4:0] FPU_FLT    = 5'b10011;  // FLT.S
+    localparam logic [4:0] FPU_FLE    = 5'b10100;  // FLE.S
+    localparam logic [4:0] FPU_FCLASS = 5'b10101;  // FCLASS.S
+    localparam logic [4:0] FPU_MVXW   = 5'b10110;  // FMV.X.W
+    localparam logic [4:0] FPU_MVWX   = 5'b10111;  // FMV.W.X
 
     // Control signals and ALU operation decoding
     always_comb begin
