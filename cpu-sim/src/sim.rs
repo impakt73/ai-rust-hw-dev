@@ -36,6 +36,7 @@ where
     fifo_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
+    vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // For duplicate trace detection (prevents repeated halted instruction traces)
     last_trace_pc: Option<u32>,
     last_trace_instr: Option<u32>,
@@ -83,6 +84,7 @@ where
             fifo_callback,
             trace_callback,
             vcd: None,
+            vcd_time: 0,
             last_trace_pc: None,
             last_trace_instr: None,
             mem_latency_cycles,
@@ -132,6 +134,7 @@ where
             fifo_callback,
             trace_callback,
             vcd: Some(vcd),
+            vcd_time: 0,
             last_trace_pc: None,
             last_trace_instr: None,
             mem_latency_cycles,
@@ -208,6 +211,17 @@ where
         )
     }
 
+    /// Dump VCD waveform at current timestamp and increment the timestamp counter
+    ///
+    /// This is a helper function that handles VCD dumping if VCD tracing is enabled.
+    /// It automatically increments the VCD timestamp after dumping.
+    fn dump_vcd(&mut self) {
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(self.vcd_time);
+            self.vcd_time += 1;
+        }
+    }
+
     /// Reset the CPU
     /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
@@ -235,30 +249,22 @@ where
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(0); // Capture initial state with reset asserted, clk=0
-        }
+        self.dump_vcd(); // Capture initial state with reset asserted, clk=0
 
         // First clock edge during reset
         self.cpu.clk = 1;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(1); // Capture state after rising edge during reset
-        }
+        self.dump_vcd(); // Capture state after rising edge during reset
 
         // Second clock cycle during reset (falling edge)
         self.cpu.clk = 0;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(2); // Capture state after falling edge during reset
-        }
+        self.dump_vcd(); // Capture state after falling edge during reset
 
         // Release reset (still at clk=0)
         self.cpu.rst_n = 1;
         self.cpu.eval();
-        if let Some(ref mut vcd) = self.vcd {
-            vcd.dump(3); // Capture state with reset released
-        }
+        self.dump_vcd(); // Capture state with reset released
 
         // Reset the hung detector state
         if let Some(ref mut detector) = self.hung_detector {
@@ -404,11 +410,8 @@ where
             // Increment cycle count
             self.cycle_count += 1;
 
-            // Dump VCD if enabled (after clock edge, with proper timestamp)
-            // Reset sequence uses timestamps 0-3, so execution cycles start at 4
-            if let Some(ref mut vcd) = self.vcd {
-                vcd.dump(self.cycle_count + 3);
-            }
+            // Dump VCD if enabled (after clock edge)
+            self.dump_vcd();
 
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
@@ -511,6 +514,10 @@ where
     }
 
     /// Run the simulation for up to max_cycles
+    ///
+    /// **Note:** This method performs a CPU reset internally before starting execution,
+    /// so callers do not need to call `reset()` before calling `run()`.
+    ///
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     ///
     /// # Arguments
