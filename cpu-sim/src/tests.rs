@@ -152,6 +152,21 @@ fn test_rust_bare_metal_elf() {
 }
 
 #[test]
+fn test_fp_math_elf() {
+    init_test_logger();
+
+    let elf_path = test_program_path("test_fp_math.elf");
+    let result = run_elf(&elf_path, 1000, false)
+        .expect("Floating-point math test simulation should succeed");
+
+    assert_tohost(&result, 0x2a, "FP math test program");
+    println!(
+        "✓ Floating-point math test ELF executed successfully in {} cycles",
+        result.cycles
+    );
+}
+
+#[test]
 fn test_fifo_hello_world() {
     init_test_logger();
 
@@ -1073,7 +1088,7 @@ fn test_memory_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 5200, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 5220, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ MEMORY DUMP TEST PASSED");
@@ -1184,7 +1199,7 @@ fn test_image_dump() {
     .expect("Simulation should succeed");
 
     // Verify result outside callback
-    assert_eq!(result.cycles, 1448, "Should complete in expected cycles");
+    assert_eq!(result.cycles, 1468, "Should complete in expected cycles");
 
     println!("\n========================================");
     println!("✓ IMAGE DUMP TEST PASSED");

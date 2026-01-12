@@ -1,10 +1,10 @@
 # ai-rust-hw-dev
 
-A **multi-cycle non-pipelined RISC-V RV32IMAC CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
+A **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in SystemVerilog with Rust-based verification using Verilator.
 
 ## Features
 
-- ✅ **Complete RV32IMAC Instruction Set (RV32I + M + A + C + Zicsr)**: All 92 instructions including:
+- ✅ **Complete RV32IMACF Instruction Set (RV32I + M + A + C + F + Zicsr)**: All 118 instructions including:
   - **RV32I Base (40 instructions):**
     - Arithmetic, logic, and shift operations
     - Load/store with byte, halfword, and word access (LB, LH, LW, LBU, LHU, SB, SH, SW)
@@ -23,11 +23,23 @@ A **multi-cycle non-pipelined RISC-V RV32IMAC CPU** implementation in SystemVeri
     - 16-bit compressed instructions for improved code density (25-30% size reduction)
     - Includes compressed arithmetic, loads/stores, branches, and jumps
     - Seamlessly mixed with standard 32-bit instructions
+  - **F Extension (26 instructions):**
+    - Single-precision (32-bit) IEEE 754 floating-point operations
+    - FP arithmetic: FADD.S, FSUB.S, FMUL.S, FDIV.S, FSQRT.S
+    - FP fused multiply-add: FMADD.S, FMSUB.S, FNMSUB.S, FNMADD.S
+    - FP comparisons: FEQ.S, FLT.S, FLE.S
+    - FP conversions: FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU
+    - FP load/store: FLW, FSW
+    - FP moves and classification: FMV.X.W, FMV.W.X, FCLASS.S
+    - FP sign injection: FSGNJ.S, FSGNJN.S, FSGNJX.S
+    - FP min/max: FMIN.S, FMAX.S
+    - Separate 32-register FP register file (f0-f31)
+    - FCSR control and status register for rounding modes and exception flags
   - **Zicsr Extension (6 instructions):**
     - CSR (Control and Status Register) access instructions
 - ✅ **Multi-cycle Non-pipelined Architecture**: FSM-based design with 12 states for efficient resource sharing
 - ✅ **Variable-latency Memory Support**: Ready/valid handshaking for realistic memory operations
-- ✅ **Verilator-based Verification**: 150+ comprehensive tests using Rust + marlin framework
+- ✅ **Verilator-based Verification**: 260+ comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping and configurable memory latency
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 - ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs

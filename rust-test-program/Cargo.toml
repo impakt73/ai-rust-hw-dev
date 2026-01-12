@@ -108,3 +108,8 @@ name = "test_atomic_simple"
 path = "src/test_atomic_simple.rs"
 test = false
 
+[[bin]]
+name = "test_fp_math"
+path = "src/test_fp_math.rs"
+test = false
+

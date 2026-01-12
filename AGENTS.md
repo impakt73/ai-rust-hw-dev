@@ -84,7 +84,7 @@ This project has **three specialized GitHub Copilot custom agents** to help with
 
 ## Project Overview
 
-This is a **multi-cycle non-pipelined RISC-V RV32IMAC CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+This is a **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
@@ -92,7 +92,7 @@ This is a **multi-cycle non-pipelined RISC-V RV32IMAC CPU** implementation in Sy
 - **Architecture:** Multi-cycle non-pipelined design with 12-state FSM (including S_ATOMIC_RMW for atomic operations) and variable-latency memory support
 - **Memory Interface:** Ready/valid handshaking for instruction and data memory operations
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
-- **Instruction Set:** RV32IMAC_Zicsr (92 instructions: 40 base + 8 multiply/divide + 11 atomic + 27 compressed + 6 CSR)
+- **Instruction Set:** RV32IMACF_Zicsr (118 instructions: 40 base + 8 multiply/divide + 11 atomic + 27 compressed + 26 floating-point + 6 CSR)
 
 ## Critical Prerequisites
 
@@ -144,10 +144,12 @@ cargo clean
 
 ### Test Structure
 
-The project has 196 comprehensive tests across all packages:
+The project has 264 comprehensive tests across all packages:
 - **tests package (104 tests):**
   - ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
   - Register file tests: Validate register behavior (including x0 immutability)
+  - FP register file tests: Validate floating-point register file with 3 read ports
+  - FPU tests: Validate all 26 FP operations (arithmetic, comparisons, conversions, etc.)
   - Decompressor tests (41 tests): Validate all 27 RV32C compressed instructions
   - CPU integration tests: Validate complete instruction execution including:
     - Arithmetic, logic, and memory operations
@@ -156,13 +158,14 @@ The project has 196 comprehensive tests across all packages:
     - System instructions (FENCE, ECALL, EBREAK)
     - CSR operations (read/write, set/clear, immediate variants)
     - M extension operations (multiplication, division, remainder)
-- **Other packages (92 tests):**
-  - cpu-sim: 72 integration tests including:
+- **Other packages (160 tests):**
+  - cpu-sim: 108 integration tests including:
     - ELF loading and execution
     - FIFO communication and packet protocol
     - VCD waveform dumping validation
     - Instruction trace callbacks with comprehensive validation
     - Programmatic instruction sequence testing with trace verification
+    - FP integration tests (16 tests): Validate all 26 FP instructions in CPU context
     - Combined trace + VCD testing
     - Variable memory latency testing
     - RV32C compressed instruction tests (9 tests): Basic instructions and critical transition scenarios (C→C, C→U, U→C, U→U, mixed)
@@ -279,7 +282,7 @@ top (CPU)
 
 ### Supported Instructions
 
-**Complete RV32IMAC Instruction Set (92 instructions):**
+**Complete RV32IMACF Instruction Set (118 instructions):**
 
 **RV32I Base (40 instructions):**
 - **Arithmetic:** ADD, ADDI, SUB
@@ -308,6 +311,17 @@ top (CPU)
 - **Quadrant 1:** C.NOP, C.ADDI, C.JAL, C.LI, C.ADDI16SP, C.LUI, C.SRLI, C.SRAI, C.ANDI, C.SUB, C.XOR, C.OR, C.AND, C.J, C.BEQZ, C.BNEZ
 - **Quadrant 2:** C.SLLI, C.LWSP, C.JR, C.MV, C.EBREAK, C.JALR, C.ADD, C.SWSP
 - **Benefits:** 16-bit encoding (vs 32-bit standard), 25-30% code size reduction, seamless mixing with standard instructions
+
+**F Extension - Single-Precision Floating-Point (26 instructions):**
+- **Arithmetic:** FADD.S, FSUB.S, FMUL.S, FDIV.S, FSQRT.S
+- **Fused Multiply-Add:** FMADD.S, FMSUB.S, FNMSUB.S, FNMADD.S
+- **MIN/MAX:** FMIN.S, FMAX.S
+- **Sign Injection:** FSGNJ.S, FSGNJN.S, FSGNJX.S
+- **Comparisons:** FEQ.S, FLT.S, FLE.S
+- **Conversions:** FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU
+- **Load/Store:** FLW, FSW
+- **Move/Classify:** FMV.X.W, FMV.W.X, FCLASS.S
+- **Features:** 32-register FP file (f0-f31), IEEE 754-2008 compliant, FCSR for rounding modes and exception flags
 
 **Zicsr Extension (6 instructions):**
 - **CSR Access:** CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI
@@ -368,7 +382,7 @@ cargo clippy --fix  # Auto-fix when possible
    ```bash
    cargo test --verbose
    ```
-   All tests must pass (~150+ tests across all packages).
+   All tests must pass (~260+ tests across all packages).
 
 2. **Verify code formatting:**
    ```bash
