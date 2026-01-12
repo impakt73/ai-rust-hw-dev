@@ -15,18 +15,9 @@ fn test_program_path(filename: &str) -> PathBuf {
     workspace_root.join("test_programs").join(filename)
 }
 
-/// Unit test for packet protocol end-to-end communication
-///
-/// This test requires direct access to Simulator::new() and internal APIs because it needs to:
-/// - Manually step through simulation cycles
-/// - Send packets to the simulator during execution
-/// - Check FIFO state between steps
-///
-/// These requirements make it a true unit test that cannot be easily converted to use
-/// the public helper functions.
 #[test]
 fn test_packet_protocol_end_to_end() {
-    use riscv_protocol::{EchoPacket, PacketHeader, PacketType};
+    use riscv_protocol::*;
 
     init_test_logger();
 
@@ -107,90 +98,192 @@ fn test_packet_protocol_end_to_end() {
     println!("  ✓ Echo packet sent to CPU");
 
     // Step 3: Run CPU and wait for Echo response
-    println!("\nStep 3: Running CPU and waiting for Echo response...");
-    let mut received_echo_response = false;
+    println!("\nStep 3: Waiting for Echo response from CPU...");
+    let initial_word_count = fifo_data.lock().unwrap().len();
     for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
         sim.step().expect("Step failed");
         let words = fifo_data.lock().unwrap();
-        // Look for sufficient words to form an Echo packet (header + payload)
-        if words.len() >= 12 {
-            received_echo_response = true;
+        if words.len() > initial_word_count {
             println!("  ✓ Received Echo response ({} words total)", words.len());
             break;
         }
     }
-    assert!(
-        received_echo_response,
-        "Should receive Echo response from CPU"
+
+    // Step 4: Send DataU32 packet to CPU
+    println!("\nStep 4: Sending DataU32 packet (value=1000) to CPU...");
+    let data_request = DataU32Packet {
+        header: PacketHeader::new(PacketType::DataU32, 0),
+        value: 1000,
+        tag: 55,
+    };
+    sim.send_data_u32_packet(&data_request)
+        .expect("Failed to send DataU32 packet");
+    println!("  ✓ DataU32 packet sent to CPU");
+
+    // Step 5: Run CPU and wait for DataU32 response
+    println!("\nStep 5: Waiting for DataU32 response from CPU...");
+    let words_before_data = fifo_data.lock().unwrap().len();
+    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
+        sim.step().expect("Step failed");
+        let words = fifo_data.lock().unwrap();
+        if words.len() > words_before_data {
+            println!(
+                "  ✓ Received DataU32 response ({} words total)",
+                words.len()
+            );
+            break;
+        }
+    }
+
+    // Step 6: Run until CPU halts
+    println!("\nStep 6: Running CPU until halt...");
+    let mut final_tohost = None;
+    for cycle in 0..50000 {
+        let step_result = sim.step().expect("Step failed");
+        if let Some(tohost) = step_result.tohost_value {
+            println!(
+                "  ✓ CPU halted at cycle {} with tohost=0x{:08x}",
+                cycle, tohost
+            );
+            final_tohost = Some(tohost);
+            break;
+        }
+    }
+
+    // Verify results
+    println!("\n========================================");
+    println!("VERIFICATION");
+    println!("========================================");
+
+    let fifo_words = fifo_data.lock().unwrap();
+    println!(
+        "Total packets received from CPU: {} words ({} bytes)",
+        fifo_words.len(),
+        fifo_words.len() * 4
     );
 
-    // Step 4: Parse and validate the Echo response
-    println!("\nStep 4: Validating Echo response packet...");
-    let fifo_words = fifo_data.lock().unwrap();
+    // Convert words to VecDeque for packet parsing (using packet_transport functions)
     let mut fifo_tx = std::collections::VecDeque::new();
     for &word in fifo_words.iter() {
         fifo_tx.push_back(word);
     }
 
-    // Expect: Debug packet first, then Echo packet
-    let debug_pkt =
-        crate::packet_transport::receive_debug_packet(&mut fifo_tx).expect("Should parse Debug");
-    println!("  ✓ Received Debug packet");
-    if let Some(debug_pkt) = debug_pkt {
+    println!("Parsing received packets using postcard...");
+
+    // Convert first few words to bytes for debug display
+    let mut first_bytes = Vec::new();
+    for i in 0..fifo_words.len().min(16) {
+        first_bytes.extend_from_slice(&fifo_words[i].to_le_bytes());
+    }
+    println!(
+        "First 64 bytes: {:02x?}",
+        &first_bytes[..first_bytes.len().min(64)]
+    );
+
+    // Parse packets using packet_transport functions
+    let mut found_debug = false;
+    let mut found_echo = false;
+    let mut found_data = false;
+    let mut found_assert = false;
+
+    // Try to receive Debug packet (first packet from CPU)
+    if let Ok(Some(debug_pkt)) = crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
         println!(
-            "    Message: \"{}\"",
-            debug_pkt.message.trim_end_matches('\0')
+            "  ✓ Debug packet: level={:?}, message='{}'",
+            debug_pkt.level, debug_pkt.message
         );
-        println!("    Level: {:?}", debug_pkt.level);
+        assert_eq!(
+            debug_pkt.header.magic, 0x52565043,
+            "Debug packet should have correct magic"
+        );
+        assert_eq!(
+            debug_pkt.message, "CPU Started",
+            "Debug message should match"
+        );
+        found_debug = true;
+    } else {
+        println!("  ✗ Failed to deserialize Debug packet");
     }
 
-    let echo_response = crate::packet_transport::receive_echo_packet(&mut fifo_tx)
-        .expect("Should parse Echo response");
-    println!("  ✓ Received Echo response packet");
-    if let Some(echo_pkt) = echo_response {
-        println!("    Sequence: {}", echo_pkt.sequence);
-        println!("    Timestamp: {}", echo_pkt.timestamp);
+    // Try to receive Echo response (should have sequence=101)
+    if let Ok(Some(echo_pkt)) = crate::packet_transport::receive_echo_packet(&mut fifo_tx) {
+        println!(
+            "  ✓ Echo response: sequence={} (expected 101)",
+            echo_pkt.sequence
+        );
+        assert_eq!(
+            echo_pkt.header.magic, 0x52565043,
+            "Echo packet should have correct magic"
+        );
         assert_eq!(
             echo_pkt.sequence, 101,
-            "Echo response sequence should be incremented from request (100 → 101)"
+            "Echo sequence should be incremented"
         );
+        found_echo = true;
     } else {
-        panic!("No Echo packet found in FIFO");
+        println!("  ✗ Failed to deserialize Echo packet");
     }
 
-    // Step 5: Run to completion (tohost termination)
-    println!("\nStep 5: Running to program completion...");
-    let mut final_result = None;
-    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        let step_result = sim.step();
-        if let Ok(sr) = step_result {
-            if sr.tohost_value.is_some() {
-                final_result = sr.tohost_value;
-                break;
-            }
-        }
+    // Try to receive DataU32 response (should have value=2000, which is 1000*2)
+    if let Ok(Some(data_pkt)) = crate::packet_transport::receive_data_u32_packet(&mut fifo_tx) {
+        println!(
+            "  ✓ DataU32 response: value={} (expected 2000)",
+            data_pkt.value
+        );
+        assert_eq!(
+            data_pkt.header.magic, 0x52565043,
+            "DataU32 packet should have correct magic"
+        );
+        assert_eq!(data_pkt.value, 2000, "DataU32 value should be doubled");
+        found_data = true;
+    } else {
+        println!("  ✗ Failed to deserialize DataU32 packet");
     }
 
+    // Try to receive Assert packet
+    if let Ok(Some(assert_pkt)) = crate::packet_transport::receive_assert_packet(&mut fifo_tx) {
+        println!(
+            "  ✓ Assert packet: passed={}, message='{}'",
+            assert_pkt.passed, assert_pkt.message
+        );
+        assert_eq!(
+            assert_pkt.header.magic, 0x52565043,
+            "Assert packet should have correct magic"
+        );
+        assert!(
+            assert_pkt.passed,
+            "Assert packet should indicate test passed"
+        );
+        found_assert = true;
+    } else {
+        println!("  ✗ Failed to deserialize Assert packet");
+    }
+
+    // Verify we received all expected packets
+    assert!(found_debug, "Should receive Debug packet from CPU");
+    assert!(found_echo, "Should receive Echo response from CPU");
+    assert!(found_data, "Should receive DataU32 response from CPU");
+    assert!(found_assert, "Should receive Assert packet from CPU");
+
+    // Verify successful completion
     assert_eq!(
-        final_result,
+        final_tohost,
         Some(42),
-        "Program should terminate with tohost=42"
+        "Program should complete with success code 42"
     );
-    println!("  ✓ Program terminated with tohost=42");
 
     println!("\n========================================");
-    println!("✓ ALL PACKET PROTOCOL TESTS PASSED");
+    println!("END-TO-END TEST COMPLETE ✓");
     println!("========================================");
+    println!("✓ Bidirectional communication verified");
+    println!("✓ Host→CPU: Echo and DataU32 packets sent");
+    println!("✓ CPU→Host: Debug, Echo, DataU32, and Assert packets received");
+    println!("✓ Echo sequence incremented correctly (100 → 101)");
+    println!("✓ DataU32 value doubled correctly (1000 → 2000)");
+    println!("✓ All packet types validated");
+    println!("✓ Program completed with success code 42");
+    println!("========================================\n");
 }
-
-/// Unit test for rvprintln! macro functionality
-///
-/// This test requires direct access to Simulator::new() and internal APIs because it needs to:
-/// - Manually step through simulation and check FIFO state
-/// - Parse packet protocol data directly
-///
-/// These requirements make it a true unit test that cannot be easily converted to use
-/// the public helper functions.
 #[test]
 fn test_println_macro() {
     init_test_logger();
@@ -264,39 +357,76 @@ fn test_println_macro() {
         match crate::packet_transport::receive_debug_packet(&mut fifo_tx) {
             Ok(Some(debug_pkt)) => {
                 packet_count += 1;
-                let msg = debug_pkt.message.trim_end_matches('\0');
-                println!(
-                    "✓ Debug Packet {}: Level={:?}, Message=\"{}\"",
-                    packet_count, debug_pkt.level, msg
-                );
 
-                assert_eq!(
-                    msg, *expected_msg,
-                    "Debug message {} should match expected",
-                    packet_count
-                );
+                // Validate packet level
                 assert_eq!(
                     debug_pkt.level, *expected_level,
-                    "Debug level {} should match expected",
+                    "Packet {} should have level {:?}",
+                    packet_count, expected_level
+                );
+
+                // Validate packet message
+                assert_eq!(
+                    debug_pkt.message, *expected_msg,
+                    "Packet {} should have message '{}'",
+                    packet_count, expected_msg
+                );
+
+                // Validate packet header magic
+                assert_eq!(
+                    debug_pkt.header.magic, 0x52565043,
+                    "Packet {} should have correct magic number",
                     packet_count
                 );
+
+                // Validate packet type
+                assert_eq!(
+                    debug_pkt.header.packet_type,
+                    riscv_protocol::PacketType::Debug,
+                    "Packet {} should be a Debug packet",
+                    packet_count
+                );
+
+                // Print for visibility
+                let level_str = match debug_pkt.level {
+                    riscv_protocol::DebugLevel::Trace => "[TRACE]",
+                    riscv_protocol::DebugLevel::Debug => "[DEBUG]",
+                    riscv_protocol::DebugLevel::Info => "[INFO]",
+                    riscv_protocol::DebugLevel::Warning => "[WARN]",
+                    riscv_protocol::DebugLevel::Error => "[ERROR]",
+                };
+                print!("{} {}", level_str, debug_pkt.message);
             }
             Ok(None) => {
-                panic!("Expected Debug packet {} but got None", packet_count + 1);
+                panic!("Expected packet {} but received None", packet_count + 1);
             }
             Err(e) => {
-                panic!("Failed to parse Debug packet {}: {:?}", packet_count + 1, e);
+                panic!("Failed to deserialize packet {}: {}", packet_count + 1, e);
             }
         }
     }
 
-    assert_eq!(packet_count, 3, "Should receive exactly 3 Debug packets");
+    println!("\nReceived and validated {} DebugPacket(s)", packet_count);
+
+    // Verify successful completion
     assert_eq!(
         result.tohost_value,
         Some(42),
-        "Program should halt with tohost=42"
+        "Program should complete with success code 42"
     );
 
-    println!("\n✓ All println tests passed!");
+    assert_eq!(
+        packet_count, 3,
+        "Should have received exactly 3 DebugPackets"
+    );
+
+    println!("\n========================================");
+    println!("PRINTLN MACRO TEST COMPLETE ✓");
     println!("========================================");
+    println!("✓ rvprintln! messages received and validated");
+    println!(
+        "✓ Program completed successfully in {} cycles",
+        result.cycles
+    );
+    println!("========================================\n");
 }
