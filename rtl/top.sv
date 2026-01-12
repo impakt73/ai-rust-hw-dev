@@ -174,6 +174,7 @@ module top (
     // F extension registers
     logic [4:0]  fpu_op_reg;
     logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
+    logic        is_fp_load_reg, is_fp_store_reg;  // FP load/store flags
     logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -340,6 +341,8 @@ module top (
             fp_reg_write_reg <= 1'b0;
             fp_to_int_reg <= 1'b0;
             int_to_fp_reg <= 1'b0;
+            is_fp_load_reg <= 1'b0;
+            is_fp_store_reg <= 1'b0;
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
             rd_reg <= rd;
@@ -374,6 +377,8 @@ module top (
             fp_reg_write_reg <= fp_reg_write;
             fp_to_int_reg <= fp_to_int;
             int_to_fp_reg <= int_to_fp;
+            is_fp_load_reg <= is_fp_load;
+            is_fp_store_reg <= is_fp_store;
         end
     end
 
@@ -555,8 +560,10 @@ module top (
                     7'b1001111:  // OP_FNMADD: Fused negate-multiply-add
                         next_state = S_EXECUTE;  // FP operations execute in S_EXECUTE
                     
-                    7'b0000011,  // Load (integer and FP - FLW)
-                    7'b0100011:  // Store (integer and FP - FSW)
+                    7'b0000011,  // Load (integer: LW, LH, LB, LHU, LBU)
+                    7'b0000111,  // Load FP (FLW)
+                    7'b0100011,  // Store (integer: SW, SH, SB)
+                    7'b0100111:  // Store FP (FSW)
                         next_state = S_MEM_ADDR;
                     
                     7'b0101111:  // AMO (Atomic operations - A extension)
@@ -580,8 +587,9 @@ module top (
             end
             
             S_EXECUTE: begin
-                // FP operations are single-cycle (combinational), go directly to writeback
-                if (fp_reg_write_reg || fp_to_int_reg) begin
+                // FP computational operations are single-cycle (combinational), go directly to writeback
+                // But FP loads/stores go through memory states (not handled here)
+                if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
                     next_state = S_WRITEBACK;
                 // Integer ALU operations may be multi-cycle (e.g., division)
                 end else if (alu_ready) begin
@@ -929,8 +937,10 @@ module top (
         .is_mem_write_state(current_state == S_MEM_WRITE), // NEW: In S_MEM_WRITE state
         .is_sc(is_sc_reg),                               // A extension
         .sc_success(sc_success),                         // A extension
+        .is_fp_store(is_fp_store_reg),                   // F extension
         .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
+        .fs2_data(fs2_data),        // F extension: FP store data
         .dmem_rdata(dmem_rdata),
         .amo_wdata(amo_write_data),     // A extension: muxed AMO write data
         .dmem_addr(dmem_addr),
@@ -1035,17 +1045,20 @@ module top (
     );
     
     // FP Writeback Data Selection
-    // For FP instructions, select between FP result and integer-to-FP result
+    // For FP instructions, select between FP result, integer-to-FP result, and FP load
     always_comb begin
         if (fp_to_int_reg) begin
             // FP-to-integer operation: result goes to integer regfile (handled by writeback_mux via fpu_out_reg)
             fd_data = 32'h0;  // Not used
+        end else if (is_fp_load_reg) begin
+            // Load FP from memory (FLW) - use MDR
+            fd_data = mdr;
         end else if (fp_reg_write_reg) begin
             // FP operation result goes to FP regfile
             fd_data = fpu_out_reg;
         end else begin
-            // Load FP from memory (FLW) - use MDR
-            fd_data = mdr;
+            // Default
+            fd_data = 32'h0;
         end
     end
     

@@ -65,24 +65,26 @@ module decoder (
     assign imm_j = {{11{instruction[31]}}, instruction[31], instruction[19:12], instruction[20], instruction[30:21], 1'b0};
 
     // Opcodes
-    localparam logic [6:0] OP_IMM    = 7'b0010011;  // I-type ALU operations
-    localparam logic [6:0] OP_REG    = 7'b0110011;  // R-type ALU operations
-    localparam logic [6:0] OP_LOAD   = 7'b0000011;  // Load instructions (integer and FP)
-    localparam logic [6:0] OP_STORE  = 7'b0100011;  // Store instructions (integer and FP)
-    localparam logic [6:0] OP_BRANCH = 7'b1100011;  // Branch instructions
-    localparam logic [6:0] OP_LUI    = 7'b0110111;  // LUI
-    localparam logic [6:0] OP_AUIPC  = 7'b0010111;  // AUIPC
-    localparam logic [6:0] OP_JAL    = 7'b1101111;  // JAL
-    localparam logic [6:0] OP_JALR   = 7'b1100111;  // JALR
-    localparam logic [6:0] OP_FENCE  = 7'b0001111;  // FENCE
-    localparam logic [6:0] OP_SYSTEM = 7'b1110011;  // SYSTEM (ECALL, EBREAK, CSR*)
-    localparam logic [6:0] OP_AMO    = 7'b0101111;  // Atomic operations (A extension)
+    localparam logic [6:0] OP_IMM      = 7'b0010011;  // I-type ALU operations
+    localparam logic [6:0] OP_REG      = 7'b0110011;  // R-type ALU operations
+    localparam logic [6:0] OP_LOAD     = 7'b0000011;  // Load instructions (LW, LH, LB, LHU, LBU)
+    localparam logic [6:0] OP_LOAD_FP  = 7'b0000111;  // FP Load (FLW) - bit 2 = 1
+    localparam logic [6:0] OP_STORE    = 7'b0100011;  // Store instructions (SW, SH, SB)
+    localparam logic [6:0] OP_STORE_FP = 7'b0100111;  // FP Store (FSW) - bit 2 = 1
+    localparam logic [6:0] OP_BRANCH   = 7'b1100011;  // Branch instructions
+    localparam logic [6:0] OP_LUI      = 7'b0110111;  // LUI
+    localparam logic [6:0] OP_AUIPC    = 7'b0010111;  // AUIPC
+    localparam logic [6:0] OP_JAL      = 7'b1101111;  // JAL
+    localparam logic [6:0] OP_JALR     = 7'b1100111;  // JALR
+    localparam logic [6:0] OP_FENCE    = 7'b0001111;  // FENCE
+    localparam logic [6:0] OP_SYSTEM   = 7'b1110011;  // SYSTEM (ECALL, EBREAK, CSR*)
+    localparam logic [6:0] OP_AMO      = 7'b0101111;  // Atomic operations (A extension)
     // F extension opcodes
-    localparam logic [6:0] OP_FP     = 7'b1010011;  // FP computational
-    localparam logic [6:0] OP_FMADD  = 7'b1000011;  // Fused multiply-add
-    localparam logic [6:0] OP_FMSUB  = 7'b1000111;  // Fused multiply-sub
-    localparam logic [6:0] OP_FNMSUB = 7'b1001011;  // Fused negate-multiply-sub
-    localparam logic [6:0] OP_FNMADD = 7'b1001111;  // Fused negate-multiply-add
+    localparam logic [6:0] OP_FP       = 7'b1010011;  // FP computational
+    localparam logic [6:0] OP_FMADD    = 7'b1000011;  // Fused multiply-add
+    localparam logic [6:0] OP_FMSUB    = 7'b1000111;  // Fused multiply-sub
+    localparam logic [6:0] OP_FNMSUB   = 7'b1001011;  // Fused negate-multiply-sub
+    localparam logic [6:0] OP_FNMADD   = 7'b1001111;  // Fused negate-multiply-add
 
     // ALU operations (must match alu.sv)
     localparam logic [4:0] ALU_ADD  = 5'b00000;
@@ -218,34 +220,40 @@ module decoder (
             end
 
             OP_LOAD: begin
-                // Load instructions (LW, LH, LB, etc. and FLW)
+                // Integer load instructions (LW, LH, LB, LHU, LBU)
                 alu_op = ALU_ADD;  // Calculate address
                 alu_src = 1'b1;    // Use immediate offset
                 mem_read = 1'b1;
-                
-                // Note: FLW has funct3=010, same as LW
-                // Decoder sets both possible paths; top module will route based on instruction type
-                // For pure FLW, use a dedicated FLW decoder or check rd range (f0-f31)
-                if (funct3 == 3'b010) begin
-                    // Could be LW or FLW - set both flags, top will disambiguate
-                    // For now, assume integer load (FLW needs separate handling)
-                    reg_write = 1'b1;
-                    mem_to_reg = 1'b1;
-                end else begin
-                    // Other integer loads (LH, LB, LHU, LBU)
-                    reg_write = 1'b1;
-                    mem_to_reg = 1'b1;
-                end
+                reg_write = 1'b1;
+                mem_to_reg = 1'b1;
+            end
+
+            OP_LOAD_FP: begin
+                // FP load instruction (FLW)
+                // Opcode 0b0000111 (bit 2 = 1 distinguishes from OP_LOAD)
+                alu_op = ALU_ADD;  // Calculate address
+                alu_src = 1'b1;    // Use immediate offset
+                mem_read = 1'b1;
+                is_fp_load = 1'b1;
+                fp_reg_write = 1'b1;  // Write to FP register file
+                // Note: funct3 is always 010 for FLW (word-sized FP load)
             end
 
             OP_STORE: begin
-                // Store instructions (SW, SH, SB, etc. and FSW)
+                // Integer store instructions (SW, SH, SB)
                 alu_op = ALU_ADD;  // Calculate address
                 alu_src = 1'b1;    // Use immediate offset
                 mem_write = 1'b1;
-                
-                // Note: FSW has funct3=010, same as SW
-                // Decoder sets write; top module will route based on instruction type
+            end
+
+            OP_STORE_FP: begin
+                // FP store instruction (FSW)
+                // Opcode 0b0100111 (bit 2 = 1 distinguishes from OP_STORE)
+                alu_op = ALU_ADD;  // Calculate address
+                alu_src = 1'b1;    // Use immediate offset
+                mem_write = 1'b1;
+                is_fp_store = 1'b1;
+                // Note: funct3 is always 010 for FSW (word-sized FP store)
             end
 
             OP_BRANCH: begin

@@ -11,10 +11,12 @@ module mem_interface (
     input  logic        is_mem_write_state, // In S_MEM_WRITE state
     input  logic        is_sc,          // A extension: SC.W instruction
     input  logic        sc_success,     // A extension: SC success flag
+    input  logic        is_fp_store,    // F extension: FSW instruction
     
     // Data signals
     input  logic [31:0] alu_result,
     input  logic [31:0] rs2_data,
+    input  logic [31:0] fs2_data,       // F extension: FP store data
     input  logic [31:0] dmem_rdata,
     input  logic [31:0] amo_wdata,      // A extension: computed AMO write data (direct from ALU)
     
@@ -36,8 +38,10 @@ module mem_interface (
     always_comb begin
         if (is_atomic_rmw) begin
             dmem_wdata = amo_wdata;  // AMO: use computed result from ALU directly (or rs2 for SWAP)
+        end else if (is_fp_store) begin
+            dmem_wdata = fs2_data;   // FSW: use FP register data
         end else begin
-            dmem_wdata = rs2_data;   // Normal store or SC.W: use rs2
+            dmem_wdata = rs2_data;   // Normal store or SC.W: use integer rs2
         end
     end
     
