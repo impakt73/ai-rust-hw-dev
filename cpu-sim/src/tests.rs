@@ -522,6 +522,7 @@ fn test_packet_protocol_end_to_end() {
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,                                                      // No VCD
         0,                                                         // Zero latency
         Some(crate::hung_detector::HungDetectorConfig::default()), // Enable hung detection (test properly ends with tohost termination)
     )
@@ -784,7 +785,8 @@ fn test_println_macro() {
         false, // Don't print FSM state
         Some(fifo_callback),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        0, // Zero latency
+        None, // No VCD
+        0,    // Zero latency
         Some(HungDetectorConfig::default()),
     )
     .expect("Failed to create simulator");

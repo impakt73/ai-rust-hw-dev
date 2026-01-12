@@ -54,6 +54,17 @@ where
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
+    ///
+    /// # Arguments
+    /// * `runtime` - Verilator runtime for creating CPU model
+    /// * `bus` - System bus with memory and peripherals
+    /// * `print_inst_trace` - Enable instruction trace printing
+    /// * `print_fsm_state` - Enable FSM state printing
+    /// * `fifo_callback` - Optional callback for FIFO TX data
+    /// * `trace_callback` - Optional callback for instruction traces
+    /// * `vcd_path` - Optional path to VCD file for waveform tracing
+    /// * `mem_latency_cycles` - Number of cycles to delay memory operations
+    /// * `hung_detector_config` - Optional hung state detector configuration
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
@@ -62,13 +73,33 @@ where
         print_fsm_state: bool,
         fifo_callback: Option<F>,
         trace_callback: Option<T>,
+        vcd_path: Option<&str>,
         mem_latency_cycles: u32,
         hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
-        // Create CPU model from the runtime (without tracing by default)
-        let cpu = runtime
-            .create_model_simple::<Top>()
-            .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+        // Create CPU model - enable tracing if VCD path is provided
+        let (cpu, vcd) = if let Some(vcd_file_path) = vcd_path {
+            let config = VerilatedModelConfig {
+                enable_tracing: true,
+                ..Default::default()
+            };
+
+            let mut cpu = runtime
+                .create_model::<Top>(&config)
+                .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
+
+            // Open VCD file
+            let vcd = cpu.open_vcd(vcd_file_path);
+            log::info!("VCD tracing enabled, writing to: {}", vcd_file_path);
+
+            (cpu, Some(vcd))
+        } else {
+            let cpu = runtime
+                .create_model_simple::<Top>()
+                .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+
+            (cpu, None)
+        };
 
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
@@ -83,57 +114,7 @@ where
             print_fsm_state,
             fifo_callback,
             trace_callback,
-            vcd: None,
-            vcd_time: 0,
-            last_trace_pc: None,
-            last_trace_instr: None,
-            mem_latency_cycles,
-            imem_delay_counter: 0,
-            dmem_delay_counter: 0,
-            hung_detector,
-        })
-    }
-
-    /// Create a new simulator with VCD tracing enabled
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_vcd(
-        runtime: &'a riscv_core::VerilatorRuntime,
-        bus: SystemBus,
-        print_inst_trace: bool,
-        print_fsm_state: bool,
-        fifo_callback: Option<F>,
-        trace_callback: Option<T>,
-        vcd_path: &str,
-        mem_latency_cycles: u32,
-        hung_detector_config: Option<HungDetectorConfig>,
-    ) -> Result<Self, String> {
-        // Create CPU model with tracing enabled
-        let config = VerilatedModelConfig {
-            enable_tracing: true,
-            ..Default::default()
-        };
-
-        let mut cpu = runtime
-            .create_model::<Top>(&config)
-            .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
-
-        // Open VCD file
-        let vcd = cpu.open_vcd(vcd_path);
-        log::info!("VCD tracing enabled, writing to: {}", vcd_path);
-        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
-
-        let hung_detector = hung_detector_config.map(HungDetector::new);
-
-        Ok(Simulator {
-            cpu,
-            bus,
-            cycle_count: 0,
-            print_inst_trace,
-            print_debug_packets: true,
-            print_fsm_state,
-            fifo_callback,
-            trace_callback,
-            vcd: Some(vcd),
+            vcd,
             vcd_time: 0,
             last_trace_pc: None,
             last_trace_instr: None,
@@ -633,6 +614,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     None, // No VCD
     ///     0, // Zero latency
     ///     Some(hung_detector::HungDetectorConfig::default()),
     /// )?;
@@ -682,6 +664,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     None, // No VCD
     ///     0, // Zero latency
     ///     Some(HungDetectorConfig::default()),
     /// )?;
@@ -727,6 +710,7 @@ where
     ///     false,
     ///     None::<fn(u32)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+    ///     None, // No VCD
     ///     0, // Zero latency
     ///     Some(HungDetectorConfig::default()),
     /// )?;
