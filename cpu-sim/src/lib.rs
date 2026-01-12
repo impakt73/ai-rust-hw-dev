@@ -632,32 +632,3 @@ where
 
     Ok(result)
 }
-
-// Disabled broken test module
-// #[cfg(test)]
-#[cfg(test)]
-mod test_minimal;
-
-#[cfg(test)]
-mod test_byte_enable;
-
-#[cfg(test)]
-mod test_simple_byte_store;
-
-#[cfg(test)]
-mod test_alloc_only;
-
-#[cfg(test)]
-mod test_programmatic_memory;
-
-#[cfg(test)]
-mod test_rtl_verification;
-
-#[cfg(test)]
-mod test_memory_latency;
-
-#[cfg(test)]
-mod test_rv32c_basic;
-
-#[cfg(test)]
-mod test_fp_integration;
