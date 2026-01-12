@@ -7,22 +7,20 @@
 //! cpu-sim infrastructure (SystemBus, VCD dumps, instruction tracing)
 //! rather than maintaining a duplicate CpuTestHarness implementation.
 
-#[cfg(test)]
-mod tests {
-    use crate::*;
-    use riscv_core::instruction::*;
+use cpu_sim::*;
+use riscv_core::instruction::*;
 
-    /// Helper function to initialize test logger (idempotent)
-    fn init_test_logger() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
+/// Helper function to initialize test logger (idempotent)
+fn init_test_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
 
-    /// Generate tohost termination sequence
-    ///
-    /// Generates a sequence of instructions that write a success code to the tohost address.
-    /// This is required for multi-cycle CPU implementations to signal program completion.
-    ///
-    /// The sequence uses two registers:
+/// Generate tohost termination sequence
+///
+/// Generates a sequence of instructions that write a success code to the tohost address.
+/// This is required for multi-cycle CPU implementations to signal program completion.
+///
+/// The sequence uses two registers:
     /// - addr_reg: holds the tohost address (0xFFFF_FFF0)
     /// - value_reg: holds the success code (1)
     ///
@@ -1914,6 +1912,5 @@ mod tests {
         .expect("AMO unsigned MIN/MAX test should run");
 
         println!("✓ AMOMINU, AMOMAXU executed");
-        println!("========================================\n");
-    }
+            println!("========================================\n");
 }

@@ -1,11 +1,9 @@
-#[cfg(test)]
-mod tests {
-    use crate::*;
+use cpu_sim::*;
 
-    /// Test that demonstrates writing programmatic instructions to memory without an ELF file
-    #[test]
-    fn test_programmatic_instruction_loading() {
-        let _ = env_logger::builder().is_test(true).try_init();
+/// Test that demonstrates writing programmatic instructions to memory without an ELF file
+#[test]
+fn test_programmatic_instruction_loading() {
+    let _ = env_logger::builder().is_test(true).try_init();
 
         println!("\n=== PROGRAMMATIC INSTRUCTION LOADING TEST ===");
         println!("Demonstrating the new decoupled simulator API");
@@ -196,6 +194,5 @@ mod tests {
 
         println!("\n========================================");
         println!("✓ MEMORY REGION WRITE TEST COMPLETE");
-        println!("========================================");
-    }
+            println!("========================================");
 }

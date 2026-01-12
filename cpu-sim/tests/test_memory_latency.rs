@@ -1,5 +1,5 @@
 /// Test memory latency functionality
-use super::*;
+use cpu_sim::*;
 use std::path::PathBuf;
 
 /// Helper function to initialize test logger (idempotent)

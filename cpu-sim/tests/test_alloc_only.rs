@@ -1,37 +1,35 @@
-#[cfg(test)]
-mod tests {
-    use crate::*;
-    use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+use cpu_sim::*;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-    fn test_program_path(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../test_programs")
-            .join(name)
-    }
+fn test_program_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../test_programs")
+        .join(name)
+}
 
-    #[test]
-    fn test_alloc_only() {
-        let _ = env_logger::builder().is_test(true).try_init();
+#[test]
+fn test_alloc_only() {
+    let _ = env_logger::builder().is_test(true).try_init();
 
-        let elf_path = test_program_path("test_alloc_only.elf");
+    let elf_path = test_program_path("test_alloc_only.elf");
 
-        let fifo_data = Arc::new(Mutex::new(Vec::new()));
-        let fifo_data_clone = fifo_data.clone();
-        let fifo_callback = move |word: u32| {
-            fifo_data_clone.lock().unwrap().push(word);
-        };
+    let fifo_data = Arc::new(Mutex::new(Vec::new()));
+    let fifo_data_clone = fifo_data.clone();
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
+    };
 
-        let result = run_elf_with_fifo(
-            &elf_path,
-            10000,
-            false,
-            Some(fifo_callback),
-            None,
-        )
-        .expect("Simulation should succeed");
+    let result = run_elf_with_fifo(
+        &elf_path,
+        10000,
+        false,
+        Some(fifo_callback),
+        None,
+    )
+    .expect("Simulation should succeed");
 
-        assert_eq!(result.tohost_value, Some(42), "Program should exit with code 42");
+    assert_eq!(result.tohost_value, Some(42), "Program should exit with code 42");
 
         let words = fifo_data.lock().unwrap();
         println!("\n=== ALLOC ONLY TEST ===");
@@ -70,4 +68,3 @@ mod tests {
             panic!("Could not find markers in FIFO data");
         }
     }
-}

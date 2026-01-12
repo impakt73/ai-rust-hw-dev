@@ -1,23 +1,21 @@
-#[cfg(test)]
-mod tests {
-    use crate::*;
-    use std::sync::{Arc, Mutex};
+use cpu_sim::*;
+use std::sync::{Arc, Mutex};
 
-    fn test_program_path(name: &str) -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("test_programs")
-            .join(name)
-    }
+fn test_program_path(name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("test_programs")
+        .join(name)
+}
 
-    #[test]
-    fn test_minimal_postcard_byte_by_byte() {
-        let _ = env_logger::builder().is_test(true).try_init();
+#[test]
+fn test_minimal_postcard_byte_by_byte() {
+    let _ = env_logger::builder().is_test(true).try_init();
 
-        let elf_path = test_program_path("minimal_postcard_test.elf");
+    let elf_path = test_program_path("minimal_postcard_test.elf");
 
-        let fifo_data = Arc::new(Mutex::new(Vec::new()));
+    let fifo_data = Arc::new(Mutex::new(Vec::new()));
         let fifo_data_clone = fifo_data.clone();
         let fifo_callback = move |word: u32| {
             fifo_data_clone.lock().unwrap().push(word);
@@ -456,4 +454,3 @@ mod tests {
             }
         }
     }
-}

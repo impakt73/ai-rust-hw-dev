@@ -4,25 +4,23 @@
 //! Tests basic compressed instructions, memory operations, control flow,
 //! and critical transitions between compressed and uncompressed instructions.
 
-#[cfg(test)]
-mod tests {
-    use crate::*;
-    use riscv_core::instruction::*;
+use cpu_sim::*;
+use riscv_core::instruction::*;
 
-    /// Helper function to initialize test logger (idempotent)
-    fn init_test_logger() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
+/// Helper function to initialize test logger (idempotent)
+fn init_test_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
 
-    /// Generate tohost termination sequence using standard (32-bit) instructions
-    fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-        vec![
-            addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
-            addi(value_reg, 0, 1),      // Load success code (1)
-            sw(addr_reg, value_reg, 0), // Store value to tohost address
-            jal(0, 0),                  // Infinite loop (jump to self)
-        ]
-    }
+/// Generate tohost termination sequence using standard (32-bit) instructions
+fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
+    vec![
+        addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
+        addi(value_reg, 0, 1),      // Load success code (1)
+        sw(addr_reg, value_reg, 0), // Store value to tohost address
+        jal(0, 0),                  // Infinite loop (jump to self)
+    ]
+}
 
     /// Helper to write compressed instruction bytes at a specific address
     /// Compressed instructions are 16 bits (2 bytes)
@@ -499,6 +497,5 @@ mod tests {
             },
         );
 
-        result.expect("Mixed sequence test should run successfully");
-    }
+            result.expect("Mixed sequence test should run successfully");
 }
