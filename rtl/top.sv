@@ -113,6 +113,13 @@ module top (
     logic        is_sc;        // SC.W instruction (A extension)
     logic        is_amo;       // AMO instruction (A extension)
     logic [4:0]  funct5;       // For atomic operation type
+    // F extension decoder outputs (combinational)
+    logic [4:0]  fpu_op;       // FPU operation selector
+    logic        fp_reg_write; // FP register write enable
+    logic        fp_to_int;    // FP result goes to integer register
+    logic        int_to_fp;    // Integer source goes to FP unit
+    logic        is_fp_load;   // FLW instruction
+    logic        is_fp_store;  // FSW instruction
     
     // ============================================================
     // LR/SC Reservation Station (A Extension)
@@ -128,15 +135,22 @@ module top (
     logic [31:0] ir_reg;
     logic ir_write;
     
-    // Operand Registers
-    logic [31:0] a_reg;  // rs1 data
-    logic [31:0] b_reg;  // rs2 data
+    // Operand Registers (Integer)
+    logic [31:0] a_reg;  // rs1 data (integer)
+    logic [31:0] b_reg;  // rs2 data (integer)
     logic a_reg_write, b_reg_write;
+    
+    // FP Operand Registers
+    logic [31:0] fa_reg;  // fs1 data (FP)
+    logic [31:0] fb_reg;  // fs2 data (FP)
+    logic [31:0] fc_reg;  // fs3 data (FP, for fused multiply-add)
+    logic fa_reg_write, fb_reg_write, fc_reg_write;
     
     // Result Registers
     logic [31:0] alu_out_reg;  // ALU output
+    logic [31:0] fpu_out_reg;  // FPU output
     logic [31:0] mdr;          // Memory data register
-    logic alu_out_write, mdr_write;
+    logic alu_out_write, fpu_out_write, mdr_write;
     
     // Decoder Output Registers (all control signals stored)
     logic [6:0]  opcode_reg;
@@ -157,6 +171,10 @@ module top (
     logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
     logic        is_lr_reg, is_sc_reg, is_amo_reg;  // A extension registers
     logic [4:0]  funct5_reg;  // A extension - atomic operation type
+    // F extension registers
+    logic [4:0]  fpu_op_reg;
+    logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
+    logic        is_fp_load_reg, is_fp_store_reg;  // FP load/store flags
     logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -167,12 +185,19 @@ module top (
     // Control Signals
     logic        pc_write;
     logic        reg_write_en;
+    logic        fp_reg_write_en;  // FP register write enable (gated by FSM)
     logic        csr_rdata_write;  // Control signal to latch CSR read data
     
-    // Register file signals
+    // Integer Register file signals
     logic [31:0] rs1_data;
     logic [31:0] rs2_data;
     logic [31:0] rd_data;
+    
+    // FP Register file signals
+    logic [31:0] fs1_data;
+    logic [31:0] fs2_data;
+    logic [31:0] fs3_data;
+    logic [31:0] fd_data;
     
     // ALU signals
     logic [31:0] alu_a;
@@ -183,6 +208,17 @@ module top (
     logic        alu_ready;       // NEW: ALU operation complete
     logic        alu_start_sent;  // NEW: Track if start pulse has been sent (S_EXECUTE)
     logic        alu_start_sent_rmw;  // NEW: Track if start pulse has been sent (S_ATOMIC_RMW)
+    
+    // FPU signals
+    logic [31:0] fpu_fp_result;   // FP result from FPU
+    logic [31:0] fpu_int_result;  // Integer result from FPU (for comparisons, conversions)
+    logic [4:0]  fpu_fflags;      // FPU exception flags
+    logic [2:0]  fpu_rm;          // Rounding mode (from instruction or FCSR)
+    
+    // FCSR (Floating Point Control and Status Register)
+    logic [31:0] fcsr;            // Full FCSR register
+    // FCSR bitfields: {24'h0, frm[2:0], fflags[4:0]}
+    // frm = rounding mode, fflags = exception flags (NV, DZ, OF, UF, NX)
     
     // Branch/Jump logic
     logic        take_branch;
@@ -230,7 +266,7 @@ module top (
             ir_reg <= decomp_output;  // Use decompressed output
     end
     
-    // Operand Registers
+    // Operand Registers (Integer)
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             a_reg <= 32'h0;
@@ -241,14 +277,29 @@ module top (
         end
     end
     
+    // FP Operand Registers
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            fa_reg <= 32'h0;
+            fb_reg <= 32'h0;
+            fc_reg <= 32'h0;
+        end else begin
+            if (fa_reg_write) fa_reg <= fs1_data;
+            if (fb_reg_write) fb_reg <= fs2_data;
+            if (fc_reg_write) fc_reg <= fs3_data;
+        end
+    end
+    
     // Result Registers
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             alu_out_reg <= 32'h0;
+            fpu_out_reg <= 32'h0;
             mdr <= 32'h0;
             csr_rdata_reg <= 32'h0;
         end else begin
             if (alu_out_write) alu_out_reg <= alu_result;
+            if (fpu_out_write) fpu_out_reg <= fp_to_int_reg ? fpu_int_result : fpu_fp_result;
             if (mdr_write) mdr <= formatted_load_data;
             if (csr_rdata_write) csr_rdata_reg <= csr_rdata;
         end
@@ -285,6 +336,13 @@ module top (
             is_amo_reg <= 1'b0;
             funct5_reg <= 5'h0;
             instr_pc_reg <= 32'h0;
+            // F extension registers
+            fpu_op_reg <= 5'h0;
+            fp_reg_write_reg <= 1'b0;
+            fp_to_int_reg <= 1'b0;
+            int_to_fp_reg <= 1'b0;
+            is_fp_load_reg <= 1'b0;
+            is_fp_store_reg <= 1'b0;
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
             rd_reg <= rd;
@@ -314,6 +372,13 @@ module top (
             is_amo_reg <= is_amo;
             funct5_reg <= funct5;
             instr_pc_reg <= pc;  // Capture PC of this instruction
+            // F extension signals
+            fpu_op_reg <= fpu_op;
+            fp_reg_write_reg <= fp_reg_write;
+            fp_to_int_reg <= fp_to_int;
+            int_to_fp_reg <= int_to_fp;
+            is_fp_load_reg <= is_fp_load;
+            is_fp_store_reg <= is_fp_store;
         end
     end
 
@@ -488,8 +553,17 @@ module top (
                     7'b1100111:  // JALR
                         next_state = S_EXECUTE;
                     
-                    7'b0000011,  // Load
-                    7'b0100011:  // Store
+                    7'b1010011,  // OP_FP: FP computational instructions
+                    7'b1000011,  // OP_FMADD: Fused multiply-add
+                    7'b1000111,  // OP_FMSUB: Fused multiply-sub
+                    7'b1001011,  // OP_FNMSUB: Fused negate-multiply-sub
+                    7'b1001111:  // OP_FNMADD: Fused negate-multiply-add
+                        next_state = S_EXECUTE;  // FP operations execute in S_EXECUTE
+                    
+                    7'b0000011,  // Load (integer: LW, LH, LB, LHU, LBU)
+                    7'b0000111,  // Load FP (FLW)
+                    7'b0100011,  // Store (integer: SW, SH, SB)
+                    7'b0100111:  // Store FP (FSW)
                         next_state = S_MEM_ADDR;
                     
                     7'b0101111:  // AMO (Atomic operations - A extension)
@@ -513,11 +587,16 @@ module top (
             end
             
             S_EXECUTE: begin
-                // Wait for ALU ready signal before proceeding
-                if (alu_ready)
+                // FP computational operations are single-cycle (combinational), go directly to writeback
+                // But FP loads/stores go through memory states (not handled here)
+                if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
                     next_state = S_WRITEBACK;
-                else
+                // Integer ALU operations may be multi-cycle (e.g., division)
+                end else if (alu_ready) begin
+                    next_state = S_WRITEBACK;
+                end else begin
                     next_state = S_EXECUTE;  // Wait for multi-cycle division
+                end
             end
             
             S_MEM_ADDR: begin
@@ -591,11 +670,16 @@ module top (
         ir_write = 1'b0;
         a_reg_write = 1'b0;
         b_reg_write = 1'b0;
+        fa_reg_write = 1'b0;
+        fb_reg_write = 1'b0;
+        fc_reg_write = 1'b0;
         alu_out_write = 1'b0;
+        fpu_out_write = 1'b0;
         mdr_write = 1'b0;
         csr_rdata_write = 1'b0;
         pc_write = 1'b0;
         reg_write_en = 1'b0;
+        fp_reg_write_en = 1'b0;
         decode_reg_write = 1'b0;
         imem_req = 1'b0;
         dmem_req = 1'b0;
@@ -610,8 +694,15 @@ module top (
             end
             
             S_DECODE: begin
+                // Integer register reads (always for integer ops, also for some FP ops like int-to-FP)
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
+                // FP register reads (for FP operations)
+                if (fp_reg_write || fp_to_int || int_to_fp || is_fp_store) begin
+                    fa_reg_write = 1'b1;
+                    fb_reg_write = 1'b1;
+                    fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
+                end
                 decode_reg_write = 1'b1;
                 // Capture CSR read data before write (for read-modify-write operations)
                 if (is_csr)
@@ -624,13 +715,19 @@ module top (
             end
             
             S_EXECUTE: begin
-                // Pulse alu_start only on first cycle in S_EXECUTE
-                alu_start = !alu_start_sent;
-                
-                if (alu_ready) begin
-                    alu_out_write = 1'b1;
+                // Integer ALU operations
+                if (!fp_reg_write_reg && !fp_to_int_reg) begin
+                    // Pulse alu_start only on first cycle in S_EXECUTE
+                    alu_start = !alu_start_sent;
+                    
+                    if (alu_ready) begin
+                        alu_out_write = 1'b1;
+                    end
                 end
-                // No else needed - stays in S_EXECUTE until alu_ready (handled by next_state logic)
+                // FP operations (all FP ops are single-cycle combinational)
+                else begin
+                    fpu_out_write = 1'b1;
+                end
             end
             
             S_MEM_ADDR: begin
@@ -652,7 +749,10 @@ module top (
             end
             
             S_WRITEBACK: begin
+                // Enable write to integer regfile (for integer ops and FP-to-int conversions)
                 reg_write_en = 1'b1;
+                // Enable write to FP regfile (for FP ops)
+                fp_reg_write_en = 1'b1;
                 pc_write = 1'b1;
                 instr_complete_internal = 1'b1;
             end
@@ -744,7 +844,14 @@ module top (
         .is_lr(is_lr),
         .is_sc(is_sc),
         .is_amo(is_amo),
-        .funct5(funct5)
+        .funct5(funct5),
+        // F extension outputs
+        .fpu_op(fpu_op),
+        .fp_reg_write(fp_reg_write),
+        .fp_to_int(fp_to_int),
+        .int_to_fp(int_to_fp),
+        .is_fp_load(is_fp_load),
+        .is_fp_store(is_fp_store)
     );
     
     // Register file instantiation (write enable gated by FSM)
@@ -776,7 +883,8 @@ module top (
     always_comb begin
         // Default sources
         alu_a = a_reg;
-        alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011) ? imm_s_reg : imm_i_reg) : b_reg;
+        // For S-type stores (SW, FSW), use imm_s; for I-type (loads, etc.), use imm_i
+        alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011 || opcode_reg == 7'b0100111) ? imm_s_reg : imm_i_reg) : b_reg;
         
         // Special case for S_MEM_ADDR with AMO/LR/SC: address is just rs1 (no offset)
         if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
@@ -830,8 +938,10 @@ module top (
         .is_mem_write_state(current_state == S_MEM_WRITE), // NEW: In S_MEM_WRITE state
         .is_sc(is_sc_reg),                               // A extension
         .sc_success(sc_success),                         // A extension
+        .is_fp_store(is_fp_store_reg),                   // F extension
         .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
+        .fs2_data(fs2_data),        // F extension: FP store data
         .dmem_rdata(dmem_rdata),
         .amo_wdata(amo_write_data),     // A extension: muxed AMO write data
         .dmem_addr(dmem_addr),
@@ -851,8 +961,69 @@ module top (
         .rs1(rs1_reg),
         .csr_addr(csr_addr),
         .rs1_data(a_reg),  // Use registered rs1 data
+        .fcsr(fcsr),       // F extension: FCSR register
         .csr_rdata(csr_rdata)
     );
+    
+    // ============================================================
+    // F Extension: FP Register File and FPU
+    // ============================================================
+    
+    // FP Register File Module
+    fp_regfile u_fp_regfile (
+        .clk(clk),
+        .rst_n(rst_n),
+        .we(fp_reg_write_en & fp_reg_write_reg),  // Gated by FSM
+        .rs1_addr(rs1),  // Use combinational decoder output for reads
+        .rs2_addr(rs2),  // Use combinational decoder output for reads
+        .rs3_addr(instruction[31:27]),  // rs3 field for fused multiply-add
+        .rd_addr(rd_reg),
+        .rd_data(fd_data),
+        .rs1_data(fs1_data),
+        .rs2_data(fs2_data),
+        .rs3_data(fs3_data)
+    );
+    
+    // FPU rounding mode selection
+    // Instruction rm field (funct3) encodes:
+    // 000=RNE, 001=RTZ, 010=RDN, 011=RUP, 100=RMM, 111=dynamic (use FCSR.frm)
+    assign fpu_rm = (funct3_reg == 3'b111) ? fcsr[7:5] : funct3_reg;
+    
+    // FPU Module
+    fpu u_fpu (
+        .fs1(int_to_fp_reg ? a_reg : fa_reg),  // Source 1: integer or FP
+        .fs2(fb_reg),                           // Source 2: always FP
+        .fs3(fc_reg),                           // Source 3: FP (for fused multiply-add)
+        .int_src(a_reg),                        // Integer source (for int-to-FP conversions)
+        .fpu_op(fpu_op_reg),
+        .rm(fpu_rm),
+        .fp_result(fpu_fp_result),
+        .int_result(fpu_int_result),
+        .fflags(fpu_fflags)
+    );
+    
+    // FCSR (Floating Point Control and Status Register)
+    // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
+    // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
+        end else begin
+            // Accumulate exception flags when FP instruction completes
+            if (current_state == S_WRITEBACK && fp_reg_write_reg) begin
+                fcsr[4:0] <= fcsr[4:0] | fpu_fflags;  // OR in new exception flags
+            end
+            // Handle CSR writes to FCSR, FRM, FFLAGS
+            else if (is_csr_reg && current_state == S_CSR) begin
+                case (csr_addr)
+                    12'h001: fcsr[4:0] <= a_reg[4:0];   // FFLAGS write
+                    12'h002: fcsr[7:5] <= a_reg[2:0];   // FRM write
+                    12'h003: fcsr <= a_reg;              // FCSR write (full register)
+                    default: ; // No change
+                endcase
+            end
+        end
+    end
     
     // Writeback Multiplexer Module (uses registered signals)
     writeback_mux u_writeback_mux (
@@ -864,13 +1035,33 @@ module top (
         .is_sc(is_sc_reg),          // A extension
         .is_amo(is_amo_reg),        // A extension
         .sc_success(sc_success),    // A extension
+        .fp_to_int(fp_to_int_reg),  // F extension
         .pc(instr_pc_reg),
         .imm_u(imm_u_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
         .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)
         .formatted_load_data(mdr),  // Use MDR (memory data register)
+        .fpu_result(fpu_out_reg),   // F extension: FP-to-int result
         .rd_data(rd_data)
     );
+    
+    // FP Writeback Data Selection
+    // For FP instructions, select between FP result, integer-to-FP result, and FP load
+    always_comb begin
+        if (fp_to_int_reg) begin
+            // FP-to-integer operation: result goes to integer regfile (handled by writeback_mux via fpu_out_reg)
+            fd_data = 32'h0;  // Not used
+        end else if (is_fp_load_reg) begin
+            // Load FP from memory (FLW) - use MDR
+            fd_data = mdr;
+        end else if (fp_reg_write_reg) begin
+            // FP operation result goes to FP regfile
+            fd_data = fpu_out_reg;
+        end else begin
+            // Default
+            fd_data = 32'h0;
+        end
+    end
     
     // Debug outputs for trace callback (use captured values at instruction completion)
     assign debug_rs1_data = trace_rs1_data_reg;

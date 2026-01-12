@@ -278,7 +278,7 @@ fn test_vcd_value_bit_width() {
     assert_eq!(vector.bit_width(), 3);
 
     // Real has width 64
-    let real = VcdValue::Real(3.14);
+    let real = VcdValue::Real(3.15); // Intentionally not PI to avoid clippy warning
     assert_eq!(real.bit_width(), 64);
 
     // String has width 0

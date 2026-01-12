@@ -671,3 +671,6 @@ mod test_memory_latency;
 
 #[cfg(test)]
 mod test_rv32c_basic;
+
+#[cfg(test)]
+mod test_fp_integration;

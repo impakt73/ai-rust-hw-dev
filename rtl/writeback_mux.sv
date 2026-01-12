@@ -1,6 +1,6 @@
 // Writeback Multiplexer Module
 // Selects the appropriate data to write back to the register file
-// Supports atomic operations (A extension)
+// Supports atomic operations (A extension) and FP operations (F extension)
 
 module writeback_mux (
     // Control signals
@@ -12,6 +12,7 @@ module writeback_mux (
     input  logic        is_sc,          // A extension: SC.W instruction
     input  logic        is_amo,         // A extension: AMO instruction
     input  logic        sc_success,     // A extension: SC success flag
+    input  logic        fp_to_int,      // F extension: FP result goes to integer register
     
     // Data inputs
     input  logic [31:0] pc,
@@ -19,6 +20,7 @@ module writeback_mux (
     input  logic [31:0] alu_result,
     input  logic [31:0] csr_rdata,
     input  logic [31:0] formatted_load_data,
+    input  logic [31:0] fpu_result,     // F extension: FP-to-int result
     
     // Output
     output logic [31:0] rd_data
@@ -26,7 +28,10 @@ module writeback_mux (
 
     // Write-back data selection
     always_comb begin
-        if (is_amo) begin
+        if (fp_to_int) begin
+            // F extension: FP-to-integer operation (comparisons, conversions, moves, class)
+            rd_data = fpu_result;
+        end else if (is_amo) begin
             // AMO instruction - Return original value from memory
             rd_data = formatted_load_data;
         end else if (is_sc) begin

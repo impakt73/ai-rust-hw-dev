@@ -28,6 +28,14 @@ pub struct RegFile;
 #[verilog(src = "../rtl/decompress.sv", name = "decompress")]
 pub struct Decompress;
 
+// Define FP RegFile module
+#[verilog(src = "../rtl/fp_regfile.sv", name = "fp_regfile")]
+pub struct FpRegFile;
+
+// Define FPU module
+#[verilog(src = "../rtl/fpu.sv", name = "fpu")]
+pub struct Fpu;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -72,6 +80,8 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "csr_file.sv",
         "mem_interface.sv",
         "writeback_mux.sv",
+        "fp_regfile.sv", // RV32F FP register file
+        "fpu.sv",        // RV32F floating point unit
     ])
 }
 
@@ -88,4 +98,14 @@ pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::
 // Helper function to create a runtime for the Decompressor
 pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["decompress.sv"])
+}
+
+// Helper function to create a runtime for the FP RegFile
+pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fp_regfile.sv"])
+}
+
+// Helper function to create a runtime for the FPU
+pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu.sv"])
 }

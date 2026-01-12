@@ -1270,7 +1270,7 @@ fn test_hung_detection_catches_infinite_loop() {
     // Create an infinite loop: JAL x0, 0 (jump to self)
     let infinite_loop_instr = jal(0, 0);
     let start_addr = 0x8000_0000;
-    let program_bytes: Vec<u8> = vec![infinite_loop_instr]
+    let program_bytes: Vec<u8> = [infinite_loop_instr]
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
@@ -1322,7 +1322,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
 
     // Jump forward by 0x10000 bytes (64KB), which is way outside our 4-byte program
     let jump_instr = jal(0, 0x10000);
-    let program_bytes: Vec<u8> = vec![jump_instr]
+    let program_bytes: Vec<u8> = [jump_instr]
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
@@ -1387,7 +1387,7 @@ fn test_hung_detection_catches_long_instruction() {
 
     // LW x1, 0x100(x0) - load word from address 0x100 into x1
     let load_instr = lw(1, 0, simple_data_addr as i32);
-    let program_bytes: Vec<u8> = vec![load_instr]
+    let program_bytes: Vec<u8> = [load_instr]
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
