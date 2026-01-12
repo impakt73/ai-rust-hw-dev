@@ -45,6 +45,7 @@ use std::path::Path;
 ///     false,
 ///     None::<fn(u32)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
+///     None, // No VCD
 ///     0, // Zero latency
 ///     Some(HungDetectorConfig::default()), // Enable hung detection
 /// )?;
@@ -605,30 +606,17 @@ where
     let runtime = riscv_core::create_cpu_runtime()
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
-    let mut sim = if let Some(vcd) = vcd_path {
-        Simulator::new_with_vcd(
-            &runtime,
-            bus,
-            print_inst_trace,
-            print_fsm_state,
-            fifo_callback,
-            trace_callback,
-            vcd,
-            mem_latency_cycles,
-            Some(HungDetectorConfig::default()),
-        )?
-    } else {
-        Simulator::new(
-            &runtime,
-            bus,
-            print_inst_trace,
-            print_fsm_state,
-            fifo_callback,
-            trace_callback,
-            mem_latency_cycles,
-            Some(HungDetectorConfig::default()),
-        )?
-    };
+    let mut sim = Simulator::new(
+        &runtime,
+        bus,
+        print_inst_trace,
+        print_fsm_state,
+        fifo_callback,
+        trace_callback,
+        vcd_path,
+        mem_latency_cycles,
+        Some(HungDetectorConfig::default()),
+    )?;
 
     // Execute pre-execution callback to load program and get entry point
     let entry_point = prep_callback(&mut sim)?;

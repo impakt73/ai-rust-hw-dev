@@ -33,7 +33,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -86,7 +87,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -171,7 +173,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -251,7 +254,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -326,7 +330,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -398,7 +403,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
@@ -500,7 +506,8 @@ mod tests {
             false, // Don't print FSM state,
             Some(fifo_callback),
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            0, // Zero latency
+            None, // No VCD
+            0,    // Zero latency
             Some(HungDetectorConfig::default()),
         )
         .expect("Failed to create simulator");
