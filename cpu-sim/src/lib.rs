@@ -636,8 +636,7 @@ where
     log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
 
     // Run simulation with entry point as boot PC
-    sim.reset(entry_point)
-        .map_err(|e| format!("Reset failed: {}", e))?;
+    // Note: run() handles reset internally, so we don't call reset() here
     let result = sim.run(entry_point, max_cycles)?;
 
     // Execute post-execution callback with mutable simulator and result
