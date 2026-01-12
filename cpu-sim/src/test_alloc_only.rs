@@ -22,35 +22,16 @@ mod tests {
             fifo_data_clone.lock().unwrap().push(word);
         };
 
-        let bus = SystemBus::new();
-        let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
-
-        let mut sim = Simulator::new(
-            &runtime,
-            bus,
+        let result = run_elf_with_fifo(
+            &elf_path,
+            10000,
             false,
-            false, // Don't print FSM state,
             Some(fifo_callback),
-            None::<fn(&riscv_core::trace::InstructionTrace)>,
-            None, // No VCD
-            0,    // Zero latency
-            Some(HungDetectorConfig::default()),
+            None,
         )
-        .expect("Failed to create simulator");
+        .expect("Simulation should succeed");
 
-        let entry_point = load_elf(&mut sim, &elf_path).expect("Failed to load ELF");
-        sim.reset(entry_point).expect("Failed to reset simulator");
-
-        let mut result = None;
-        for _ in 0..10000 {
-            let step_result = sim.step();
-            if let Some(tohost) = step_result.expect("Step failed").tohost_value {
-                result = Some(tohost);
-                break;
-            }
-        }
-
-        assert_eq!(result, Some(42), "Program should exit with code 42");
+        assert_eq!(result.tohost_value, Some(42), "Program should exit with code 42");
 
         let words = fifo_data.lock().unwrap();
         println!("\n=== ALLOC ONLY TEST ===");

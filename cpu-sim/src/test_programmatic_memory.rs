@@ -122,64 +122,77 @@ mod tests {
 
         println!("\n=== MEMORY REGION WRITE TEST ===");
 
-        // Create simulator with system bus
-        let bus = bus::SystemBus::new();
-        let runtime = riscv_core::create_cpu_runtime().expect("Failed to create CPU runtime");
-        let mut sim = sim::Simulator::new(
-            &runtime,
-            bus,
+        // Test by writing patterns and then running a program that reads them
+        let result = run_program(
+            100,
             false,
-            false, // Don't print FSM state,
+            false,
             None::<fn(u32)>,
             None::<fn(&riscv_core::trace::InstructionTrace)>,
-            None, // No VCD
-            0,    // Zero latency
-            Some(HungDetectorConfig::default()),
+            None,
+            0, // Zero latency
+            |sim| {
+                // Test 1: Write a pattern and read it back
+                let test_addr = 0x8000_1000;
+                let test_data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+                sim.write_memory_region(test_addr, &test_data, true);
+
+                let read_back: Vec<u8> = sim
+                    .dump_memory_region(test_addr, test_data.len() as u32)
+                    .collect();
+                assert_eq!(
+                    read_back, test_data,
+                    "Written data should match read-back data"
+                );
+                println!("✓ Pattern write/read test passed");
+
+                // Test 2: Write at different addresses
+                sim.write_memory_region(0x8000_2000, &[0xAA, 0xBB], true);
+                sim.write_memory_region(0x8000_3000, &[0xCC, 0xDD], true);
+
+                let read1: Vec<u8> = sim.dump_memory_region(0x8000_2000, 2).collect();
+                let read2: Vec<u8> = sim.dump_memory_region(0x8000_3000, 2).collect();
+
+                assert_eq!(
+                    read1,
+                    vec![0xAA, 0xBB],
+                    "First region should be independent"
+                );
+                assert_eq!(
+                    read2,
+                    vec![0xCC, 0xDD],
+                    "Second region should be independent"
+                );
+                println!("✓ Multiple region write test passed");
+
+                // Test 3: Overwrite test
+                sim.write_memory_region(test_addr, &[0xFF; 8], true);
+                let overwritten: Vec<u8> = sim.dump_memory_region(test_addr, 8).collect();
+                assert_eq!(
+                    overwritten,
+                    vec![0xFF; 8],
+                    "Overwrite should replace previous data"
+                );
+                println!("✓ Overwrite test passed");
+
+                // Return a simple program to satisfy the prep callback
+                let program: Vec<u8> = vec![
+                    0x13, 0x05, 0xa0, 0x02, // addi x10, x0, 42
+                    0x23, 0x28, 0xa0, 0xfe, // sw x10, -16(x0)
+                    0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+                ];
+                sim.write_memory_region(0x8000_0000, &program, true);
+                Ok(0x8000_0000)
+            },
+            |_sim, _result| {},
         )
-        .expect("Failed to create simulator");
-
-        // Test 1: Write a pattern and read it back
-        let test_addr = 0x8000_1000;
-        let test_data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
-        sim.write_memory_region(test_addr, &test_data, true);
-
-        let read_back: Vec<u8> = sim
-            .dump_memory_region(test_addr, test_data.len() as u32)
-            .collect();
-        assert_eq!(
-            read_back, test_data,
-            "Written data should match read-back data"
-        );
-        println!("✓ Pattern write/read test passed");
-
-        // Test 2: Write at different addresses
-        sim.write_memory_region(0x8000_2000, &[0xAA, 0xBB], true);
-        sim.write_memory_region(0x8000_3000, &[0xCC, 0xDD], true);
-
-        let read1: Vec<u8> = sim.dump_memory_region(0x8000_2000, 2).collect();
-        let read2: Vec<u8> = sim.dump_memory_region(0x8000_3000, 2).collect();
+        .expect("Simulation should succeed");
 
         assert_eq!(
-            read1,
-            vec![0xAA, 0xBB],
-            "First region should be independent"
+            result.tohost_value,
+            Some(42),
+            "Simple program should complete successfully"
         );
-        assert_eq!(
-            read2,
-            vec![0xCC, 0xDD],
-            "Second region should be independent"
-        );
-        println!("✓ Multiple region write test passed");
-
-        // Test 3: Overwrite test
-        sim.write_memory_region(test_addr, &[0xFF; 8], true);
-        let overwritten: Vec<u8> = sim.dump_memory_region(test_addr, 8).collect();
-        assert_eq!(
-            overwritten,
-            vec![0xFF; 8],
-            "Overwrite should replace previous data"
-        );
-        println!("✓ Overwrite test passed");
 
         println!("\n========================================");
         println!("✓ MEMORY REGION WRITE TEST COMPLETE");
