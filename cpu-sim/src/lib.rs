@@ -52,14 +52,10 @@ use std::path::Path;
 /// # Ok(())
 /// # }
 /// ```
-pub fn load_elf<F, T>(
-    sim: &mut Simulator<F, T>,
+pub fn load_elf(
+    sim: &mut SimulatorView,
     path: &Path,
-) -> Result<u32, Box<dyn std::error::Error>>
-where
-    F: FnMut(&mut SimulatorView),
-    T: FnMut(&InstructionTrace),
-{
+) -> Result<u32, Box<dyn std::error::Error>> {
     let file_data = std::fs::read(path)?;
     let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)?;
 
@@ -205,7 +201,7 @@ fn run_elf_in_simulator_internal<F, T, C>(
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
-    C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
+    C: FnOnce(&SimulatorView, &SimulationResult),
 {
     run_program(
         max_cycles,
@@ -257,10 +253,7 @@ pub fn run_elf_in_simulator_with_options<F>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(
-        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
-        &SimulationResult,
-    ),
+    F: FnOnce(&SimulatorView, &SimulationResult),
 {
     run_elf_in_simulator_internal(
         elf_path,
@@ -271,7 +264,7 @@ where
         None::<fn(&InstructionTrace)>,
         vcd_path,
         0, // Zero latency for backward compatibility
-        |sim, result| callback(sim, result),
+        callback,
     )
 }
 
@@ -354,8 +347,8 @@ pub fn run_program<F, T, P, C>(
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
-    P: for<'a> FnOnce(&mut Simulator<'a, F, T>) -> Result<u32, String>,
-    C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
+    P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
+    C: FnOnce(&SimulatorView, &SimulationResult),
 {
     // Create system bus with internal DRAM
     let bus = SystemBus::new();
@@ -377,7 +370,15 @@ where
     )?;
 
     // Execute pre-execution callback to load program and get entry point
-    let entry_point = prep_callback(&mut sim)?;
+    // Create a SimulatorView for the prep callback
+    let entry_point = {
+        let mut view = SimulatorView::new(
+            &mut sim.bus.fifo,
+            &mut sim.bus.dram,
+            &mut sim.hung_detector,
+        );
+        prep_callback(&mut view)?
+    };
 
     log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
 
@@ -385,8 +386,15 @@ where
     // Note: run() handles reset internally, so we don't call reset() here
     let result = sim.run(entry_point, max_cycles)?;
 
-    // Execute post-execution callback with mutable simulator and result
-    post_callback(&mut sim, &result);
+    // Execute post-execution callback with read-only SimulatorView and result
+    {
+        let view = SimulatorView::new(
+            &mut sim.bus.fifo,
+            &mut sim.bus.dram,
+            &mut sim.hung_detector,
+        );
+        post_callback(&view, &result);
+    }
 
     Ok(result)
 }

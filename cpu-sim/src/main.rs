@@ -1,10 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-// Type alias to simplify complex type signatures
-type SimulatorRef<'a> =
-    cpu_sim::Simulator<'a, fn(&mut cpu_sim::SimulatorView), fn(&cpu_sim::InstructionTrace)>;
-
 #[derive(Parser)]
 #[command(author, version, about = "RISC-V CPU Simulator")]
 struct Args {
@@ -107,7 +103,7 @@ fn print_simulation_result(result: &cpu_sim::SimulationResult) {
     }
 }
 
-fn handle_memory_dump(sim: &SimulatorRef, params: &[String]) {
+fn handle_memory_dump(sim: &cpu_sim::SimulatorView, params: &[String]) {
     if params.len() != 3 {
         eprintln!("✗ Invalid --dump-memory arguments. Expected: <addr> <size> <output>");
         std::process::exit(1);
@@ -137,7 +133,7 @@ fn handle_memory_dump(sim: &SimulatorRef, params: &[String]) {
     );
 }
 
-fn handle_image_dump(sim: &SimulatorRef, params: &[String]) {
+fn handle_image_dump(sim: &cpu_sim::SimulatorView, params: &[String]) {
     if params.len() != 4 {
         eprintln!("✗ Invalid --dump-image arguments. Expected: <addr> <width> <height> <output>");
         std::process::exit(1);
