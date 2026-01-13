@@ -8,10 +8,11 @@ mod sim;
 
 // Public API exports - only what's needed for external use
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, Simulator, SimulatorView};
+pub use sim::{SimulationResult, SimulatorView};
 
 use bus::SystemBus;
 use hung_detector::HungDetectorConfig;
+use sim::Simulator;
 use std::path::Path;
 /// Load an ELF file into a simulator's memory
 ///
