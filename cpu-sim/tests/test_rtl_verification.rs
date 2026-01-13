@@ -1142,11 +1142,7 @@ fn test_cpu_divu_remu_unsigned() {
                 0x7FFFFFFF,
                 "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
             );
-            assert_eq!(
-                sim.read_word(0x104),
-                1,
-                "REMU: 0xFFFFFFFF % 2 should be 1"
-            );
+            assert_eq!(sim.read_word(0x104), 1, "REMU: 0xFFFFFFFF % 2 should be 1");
         },
     )
     .expect("Program should run");

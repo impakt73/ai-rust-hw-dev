@@ -53,10 +53,7 @@ use std::path::Path;
 /// # Ok(())
 /// # }
 /// ```
-pub fn load_elf(
-    sim: &mut SimulatorView,
-    path: &Path,
-) -> Result<u32, Box<dyn std::error::Error>> {
+pub fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::error::Error>> {
     let file_data = std::fs::read(path)?;
     let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)?;
 
@@ -373,11 +370,8 @@ where
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the prep callback
     let entry_point = {
-        let mut view = SimulatorView::new(
-            &mut sim.bus.fifo,
-            &mut sim.bus.dram,
-            &mut sim.hung_detector,
-        );
+        let mut view =
+            SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
         prep_callback(&mut view)?
     };
 
@@ -389,11 +383,7 @@ where
 
     // Execute post-execution callback with read-only SimulatorView and result
     {
-        let view = SimulatorView::new(
-            &mut sim.bus.fifo,
-            &mut sim.bus.dram,
-            &mut sim.hung_detector,
-        );
+        let view = SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
         post_callback(&view, &result);
     }
 
