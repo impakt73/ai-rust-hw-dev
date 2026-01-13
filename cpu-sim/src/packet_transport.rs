@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 /// Helper macro to send any packet type
 macro_rules! impl_send_packet {
     ($name:ident, $packet_type:ty) => {
+        #[allow(dead_code)]
         pub fn $name(packet: &$packet_type, fifo_rx: &mut VecDeque<u32>) -> Result<(), String> {
             let bytes: Vec<u8> =
                 to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
@@ -30,6 +31,7 @@ macro_rules! impl_send_packet {
 /// Helper macro to receive any packet type
 macro_rules! impl_receive_packet {
     ($name:ident, $packet_type:ty) => {
+        #[allow(dead_code)]
         pub fn $name(fifo_tx: &mut VecDeque<u32>) -> Result<Option<$packet_type>, String> {
             // For simplicity, try to read up to 256 bytes (64 words)
             // This should be enough for most packets

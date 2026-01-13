@@ -1,15 +1,17 @@
-pub mod bus;
-pub mod dram;
-pub mod fifo;
-pub mod hung_detector;
-pub mod packet_transport;
-pub mod sim;
+// Internal modules - not part of public API
+mod bus;
+mod dram;
+mod fifo;
+mod hung_detector;
+mod packet_transport;
+mod sim;
 
-pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
+// Public API exports - only what's needed for external use
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult, Simulator, SimulatorView};
+pub use sim::{SimulationResult, Simulator, SimulatorView};
 
 use bus::SystemBus;
+use hung_detector::HungDetectorConfig;
 use std::path::Path;
 /// Load an ELF file into a simulator's memory
 ///
@@ -148,92 +150,6 @@ where
     )
 }
 
-/// Run an ELF file on the simulated CPU with an optional FIFO callback and RX data
-///
-/// # Arguments
-/// * `elf_path` - Path to the RISC-V ELF executable
-/// * `max_cycles` - Maximum number of cycles to run
-/// * `print_inst_trace` - Whether to print instruction trace
-/// * `inst_complete_callback` - Optional callback invoked after each instruction completes (receives mutable SimulatorView)
-/// * `fifo_rx_data` - Optional string to write to the FIFO RX queue before running
-///
-/// # Returns
-/// * `Ok(SimulationResult)` on success
-/// * `Err(String)` on error
-pub fn run_elf_with_fifo<F>(
-    elf_path: &Path,
-    max_cycles: u64,
-    print_inst_trace: bool,
-    inst_complete_callback: Option<F>,
-    fifo_rx_data: Option<&str>,
-) -> Result<SimulationResult, String>
-where
-    F: FnMut(&mut SimulatorView),
-{
-    run_elf_internal(
-        elf_path,
-        max_cycles,
-        print_inst_trace,
-        inst_complete_callback,
-        fifo_rx_data,
-        None::<fn(&InstructionTrace)>,
-        None,
-    )
-}
-
-/// Run an ELF file on the simulated CPU with an optional trace callback
-///
-/// # Arguments
-/// * `elf_path` - Path to the RISC-V ELF executable
-/// * `max_cycles` - Maximum number of cycles to run
-/// * `print_inst_trace` - Whether to print instruction trace to console
-/// * `trace_callback` - Optional callback invoked for each instruction executed (receives InstructionTrace)
-///
-/// # Returns
-/// * `Ok(SimulationResult)` on success
-/// * `Err(String)` on error
-///
-/// # Examples
-/// ```no_run
-/// use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
-/// use std::{path::Path, sync::{Arc, Mutex}};
-///
-/// let trace_count = Arc::new(Mutex::new(0usize));
-/// let trace_count_cloned = Arc::clone(&trace_count);
-/// let trace_callback = move |trace: &InstructionTrace| {
-///     let mut count = trace_count_cloned.lock().unwrap();
-///     *count += 1;
-///     println!("Instruction {}: {:?}", *count, trace.inst_type);
-/// };
-///
-/// let result = run_elf_with_trace_callback(
-///     Path::new("test.elf"),
-///     1000,
-///     false,
-///     Some(trace_callback)
-/// )?;
-/// # Ok::<(), String>(())
-/// ```
-pub fn run_elf_with_trace_callback<T>(
-    elf_path: &Path,
-    max_cycles: u64,
-    print_inst_trace: bool,
-    trace_callback: Option<T>,
-) -> Result<SimulationResult, String>
-where
-    T: FnMut(&InstructionTrace),
-{
-    run_elf_internal(
-        elf_path,
-        max_cycles,
-        print_inst_trace,
-        None::<fn(&mut SimulatorView)>,
-        None,
-        trace_callback,
-        None,
-    )
-}
-
 /// Run an ELF file on the simulated CPU
 ///
 /// # Arguments
@@ -270,47 +186,6 @@ pub fn run_elf(
     )
 }
 
-/// Run an ELF file on the simulated CPU with VCD waveform dumping
-///
-/// # Arguments
-/// * `elf_path` - Path to the RISC-V ELF executable
-/// * `max_cycles` - Maximum number of cycles to run
-/// * `print_inst_trace` - Whether to print instruction trace
-/// * `vcd_path` - Path to the VCD file to generate
-///
-/// # Returns
-/// * `Ok(SimulationResult)` on success
-/// * `Err(String)` on error
-///
-/// # Examples
-/// ```no_run
-/// use cpu_sim::run_elf_with_vcd;
-/// use std::path::Path;
-///
-/// let result = run_elf_with_vcd(
-///     Path::new("test.elf"),
-///     1000,
-///     false,
-///     "trace.vcd"
-/// )?;
-/// # Ok::<(), String>(())
-/// ```
-pub fn run_elf_with_vcd(
-    elf_path: &Path,
-    max_cycles: u64,
-    print_inst_trace: bool,
-    vcd_path: &str,
-) -> Result<SimulationResult, String> {
-    run_elf_internal(
-        elf_path,
-        max_cycles,
-        print_inst_trace,
-        None::<fn(&mut SimulatorView)>,
-        None,
-        None::<fn(&InstructionTrace)>,
-        Some(vcd_path),
-    )
-}
 
 /// Internal helper function that consolidates the common pattern for running an ELF
 /// with a callback that has access to the simulator after execution.
@@ -360,64 +235,6 @@ where
     )
 }
 
-/// Run an ELF file in a simulator and execute a callback with access to the simulator
-///
-/// This function provides a safe way to access the simulator after running an ELF file.
-/// The callback is executed with a reference to the simulator, ensuring proper lifetime
-/// management without memory leaks.
-///
-/// # Arguments
-/// * `elf_path` - Path to the RISC-V ELF executable
-/// * `max_cycles` - Maximum number of cycles to run
-/// * `callback` - Function to execute with simulator access after the run completes
-/// * `vcd_path` - Optional path to VCD file for waveform dumping
-///
-/// # Returns
-/// * `Ok(SimulationResult)` on success
-/// * `Err(String)` on error
-///
-/// # Examples
-/// ```no_run
-/// use cpu_sim::run_elf_in_simulator;
-/// use std::path::Path;
-///
-/// run_elf_in_simulator(
-///     Path::new("test.elf"),
-///     1000,
-///     |sim, result| {
-///         println!("Simulation completed in {} cycles", result.cycles);
-///         let bytes: Vec<u8> = sim.dump_memory_region(0x80000000, 1024).collect();
-///         // Process bytes...
-///     },
-///     None, // No VCD
-/// )?;
-/// # Ok::<(), String>(())
-/// ```
-pub fn run_elf_in_simulator<F>(
-    elf_path: &Path,
-    max_cycles: u64,
-    callback: F,
-    vcd_path: Option<&str>,
-) -> Result<SimulationResult, String>
-where
-    F: for<'a> FnOnce(
-        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
-        &SimulationResult,
-    ),
-{
-    run_elf_in_simulator_internal(
-        elf_path,
-        max_cycles,
-        false,
-        None::<fn(&mut SimulatorView)>,
-        None,
-        None::<fn(&InstructionTrace)>,
-        vcd_path,
-        0, // Zero latency for backward compatibility
-        |sim, result| callback(sim, result),
-    )
-}
-
 /// Run an ELF file in a simulator with full configuration options
 ///
 /// This is the most flexible simulator execution function, supporting all options
@@ -456,66 +273,6 @@ where
         vcd_path,
         0, // Zero latency for backward compatibility
         |sim, result| callback(sim, result),
-    )
-}
-
-/// Run an ELF file with trace callback and mutable simulator access
-///
-/// This function supports instruction trace callbacks and provides mutable
-/// simulator access before the run for configuration (e.g., enabling debug flags).
-///
-/// This delegates to the unified run_program function.
-///
-/// # Arguments
-/// * `elf_path` - Path to the RISC-V ELF executable
-/// * `max_cycles` - Maximum number of cycles to run
-/// * `callback_before` - Function to configure simulator before running (e.g., enable debug flags)
-/// * `vcd_path` - Optional path to VCD file for waveform dumping
-/// * `print_inst_trace` - Whether to print instruction trace to console
-/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
-/// * `trace_callback` - Optional callback for instruction traces
-///
-/// # Returns
-/// * `Ok(SimulationResult)` on success
-/// * `Err(String)` on error
-pub fn run_elf_in_simulator_with_trace<F, T, C>(
-    elf_path: &Path,
-    max_cycles: u64,
-    callback_before: C,
-    vcd_path: Option<&str>,
-    print_inst_trace: bool,
-    fifo_callback: Option<F>,
-    trace_callback: Option<T>,
-) -> Result<SimulationResult, String>
-where
-    F: FnMut(&mut SimulatorView),
-    T: FnMut(&InstructionTrace),
-    C: for<'a> FnOnce(&mut Simulator<'a, F, T>),
-{
-    run_program(
-        max_cycles,
-        print_inst_trace,
-        false, // Don't print FSM state
-        fifo_callback,
-        trace_callback,
-        vcd_path,
-        0, // Zero latency for backward compatibility
-        |sim| {
-            // Execute callback_before to configure simulator (e.g., enable debug flags)
-            callback_before(sim);
-
-            // Load ELF into simulator memory
-            let entry_point =
-                load_elf(sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
-
-            log::info!("ELF loaded successfully");
-            log::info!("Entry point: 0x{:08x}", entry_point);
-
-            Ok(entry_point)
-        },
-        |_sim, _result| {
-            // No post-execution callback needed for this function
-        },
     )
 }
 
