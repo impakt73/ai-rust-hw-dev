@@ -209,8 +209,8 @@ impl<'a> SimulatorView<'a> {
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
+    ///     None::<fn(&mut SimulatorView)>, // inst_complete_callback
+    ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
     ///     None::<fn(&mut SimulatorView)>, // prep_callback
@@ -258,8 +258,8 @@ impl<'a> SimulatorView<'a> {
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
+    ///     None::<fn(&mut SimulatorView)>, // inst_complete_callback
+    ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
     ///     None::<fn(&mut SimulatorView)>, // prep_callback

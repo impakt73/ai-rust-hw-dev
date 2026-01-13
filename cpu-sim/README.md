@@ -79,7 +79,7 @@ let result = run_elf(
     10000,          // max_cycles
     false,          // print_inst_trace
     false,          // print_fsm_state
-    None,           // fifo_callback
+    None,           // inst_complete_callback
     None,           // trace_callback
     Some("trace.vcd"), // vcd_path
     0,              // mem_latency_cycles
@@ -138,7 +138,7 @@ let result = run_elf(
     10000,
     false,  // print_inst_trace (false to use only callback)
     false,  // print_fsm_state
-    None,   // fifo_callback
+    None,   // inst_complete_callback
     Some(trace_callback),
     None,   // vcd_path
     0,      // mem_latency_cycles
@@ -165,8 +165,8 @@ The `InstructionTrace` struct provides detailed information about each executed 
 
 The library provides two main functions for different use cases:
 
-- `run_elf(elf_path, max_cycles, print_inst_trace, print_fsm_state, fifo_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run an ELF file with full configuration and optional pre-execution setup
-- `run_program(max_cycles, print_inst_trace, print_fsm_state, fifo_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run a program with custom loading logic
+- `run_elf(elf_path, max_cycles, print_inst_trace, print_fsm_state, inst_complete_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run an ELF file with full configuration and optional pre-execution setup
+- `run_program(max_cycles, print_inst_trace, print_fsm_state, inst_complete_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run a program with custom loading logic
 
 ### Unified Execution API
 
@@ -177,7 +177,7 @@ pub fn run_program<F, T, P, C>(
     max_cycles: u64,
     print_inst_trace: bool,
     print_fsm_state: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
@@ -191,7 +191,7 @@ pub fn run_elf<F, T, P, C>(
     max_cycles: u64,
     print_inst_trace: bool,
     print_fsm_state: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
@@ -200,7 +200,7 @@ pub fn run_elf<F, T, P, C>(
 ) -> Result<SimulationResult, String>
 ```
 
-This single function handles both ELF and programmatic instruction loading through the `prep_callback`. All other API functions delegate to this for consistency.
+Here, `run_program` is the underlying execution engine: it directly supports programmatic instruction loading via `prep_callback`, and `run_elf` is a convenience wrapper that first loads an ELF file and then invokes `run_program`. All other API functions delegate to `run_program` for consistency.
 
 
 ## Programmatic Testing with cpu-sim

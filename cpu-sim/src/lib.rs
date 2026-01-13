@@ -88,7 +88,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace to console
 /// * `print_fsm_state` - Whether to print FSM state transitions
-/// * `fifo_callback` - Optional callback invoked after each instruction completes
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `mem_latency_cycles` - Number of cycles for memory latency simulation
@@ -119,7 +119,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With prep callback to write to FIFO before execution
+/// // With prep callback to write to FIFO after ELF is loaded
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
@@ -143,7 +143,7 @@ pub fn run_elf<F, T, P, C>(
     max_cycles: u64,
     print_inst_trace: bool,
     print_fsm_state: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
@@ -160,7 +160,7 @@ where
         max_cycles,
         print_inst_trace,
         print_fsm_state,
-        fifo_callback,
+        inst_complete_callback,
         trace_callback,
         vcd_path,
         mem_latency_cycles,
@@ -237,7 +237,7 @@ pub fn run_program<F, T, P, C>(
     max_cycles: u64,
     print_inst_trace: bool,
     print_fsm_state: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
@@ -262,7 +262,7 @@ where
         bus,
         print_inst_trace,
         print_fsm_state,
-        fifo_callback,
+        inst_complete_callback,
         trace_callback,
         vcd_path,
         mem_latency_cycles,

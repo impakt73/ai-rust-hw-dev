@@ -54,7 +54,7 @@ fn run_simulation(args: &Args) {
         args.max_cycles,
         args.print_inst_trace,
         false,                                   // print_fsm_state
-        None::<fn(&mut cpu_sim::SimulatorView)>, // fifo_callback
+        None::<fn(&mut cpu_sim::SimulatorView)>, // inst_complete_callback
         None::<fn(&cpu_sim::InstructionTrace)>,  // trace_callback
         args.vcd.as_deref(),
         0,                                       // mem_latency_cycles
