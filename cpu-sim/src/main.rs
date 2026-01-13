@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 // Type alias to simplify complex type signatures
 type SimulatorRef<'a> =
-    cpu_sim::Simulator<'a, fn(&mut cpu_sim::Fifo), fn(&cpu_sim::InstructionTrace)>;
+    cpu_sim::Simulator<'a, fn(&mut cpu_sim::SimulatorView), fn(&cpu_sim::InstructionTrace)>;
 
 #[derive(Parser)]
 #[command(author, version, about = "RISC-V CPU Simulator")]

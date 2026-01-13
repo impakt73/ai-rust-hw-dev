@@ -26,7 +26,7 @@ fn test_programmatic_instruction_loading() {
         100,
         false,
         false,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0, // Zero latency
@@ -94,7 +94,7 @@ fn test_write_memory_region_patterns() {
         100,
         false,
         false,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0, // Zero latency

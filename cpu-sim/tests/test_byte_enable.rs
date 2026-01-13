@@ -16,8 +16,8 @@ fn test_byte_enable_heap_directly() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |fifo: &mut Fifo| {
-        while let Some(word) = fifo.tx.pop_front() {
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
             fifo_data_clone.lock().unwrap().push(word);
         }
     };
@@ -88,8 +88,8 @@ fn test_byte_enable_stack_memory() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |fifo: &mut Fifo| {
-        while let Some(word) = fifo.tx.pop_front() {
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
             fifo_data_clone.lock().unwrap().push(word);
         }
     };

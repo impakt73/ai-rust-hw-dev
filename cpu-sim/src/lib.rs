@@ -5,10 +5,9 @@ pub mod hung_detector;
 pub mod packet_transport;
 pub mod sim;
 
-pub use fifo::Fifo;
 pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult, Simulator};
+pub use sim::{SimulationResult, SimulationStepResult, Simulator, SimulatorView};
 
 use bus::SystemBus;
 use std::path::Path;
@@ -40,7 +39,7 @@ use std::path::Path;
 ///     bus,
 ///     false,
 ///     false,
-///     None::<fn(&mut Fifo)>,
+///     None::<fn(&mut SimulatorView)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
 ///     None, // No VCD
 ///     0, // Zero latency
@@ -56,7 +55,7 @@ pub fn load_elf<F, T>(
     path: &Path,
 ) -> Result<u32, Box<dyn std::error::Error>>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     let file_data = std::fs::read(path)?;
@@ -131,7 +130,7 @@ fn run_elf_internal<F, T>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     run_elf_in_simulator_internal(
@@ -169,7 +168,7 @@ pub fn run_elf_with_fifo<F>(
     fifo_rx_data: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
 {
     run_elf_internal(
         elf_path,
@@ -228,7 +227,7 @@ where
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         trace_callback,
         None,
@@ -264,7 +263,7 @@ pub fn run_elf(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         None,
@@ -306,7 +305,7 @@ pub fn run_elf_with_vcd(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         Some(vcd_path),
@@ -330,7 +329,7 @@ fn run_elf_in_simulator_internal<F, T, C>(
     callback: C,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
 {
@@ -401,13 +400,16 @@ pub fn run_elf_in_simulator<F>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(&Simulator<'a, fn(&mut Fifo), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnOnce(
+        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
+        &SimulationResult,
+    ),
 {
     run_elf_in_simulator_internal(
         elf_path,
         max_cycles,
         false,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
@@ -439,13 +441,16 @@ pub fn run_elf_in_simulator_with_options<F>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(&Simulator<'a, fn(&mut Fifo), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnOnce(
+        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
+        &SimulationResult,
+    ),
 {
     run_elf_in_simulator_internal(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
@@ -483,7 +488,7 @@ pub fn run_elf_in_simulator_with_trace<F, T, C>(
     trace_callback: Option<T>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>),
 {
@@ -544,7 +549,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None::<fn(&mut cpu_sim::Fifo)>,
+///     None::<fn(&mut cpu_sim::SimulatorView)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
@@ -561,7 +566,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None::<fn(&mut cpu_sim::Fifo)>,
+///     None::<fn(&mut cpu_sim::SimulatorView)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
@@ -591,7 +596,7 @@ pub fn run_program<F, T, P, C>(
     post_callback: C,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     P: for<'a> FnOnce(&mut Simulator<'a, F, T>) -> Result<u32, String>,
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),

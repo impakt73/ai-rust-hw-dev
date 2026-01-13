@@ -29,13 +29,13 @@ fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
 }
 
 /// Helper function to create a FIFO data collector
-fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut Fifo)) {
+fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut SimulatorView)) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback = move |fifo: &mut Fifo| {
+    let callback = move |view: &mut SimulatorView| {
         // Drain all words from TX FIFO and collect them as bytes
-        while let Some(word) = fifo.tx.pop_front() {
+        while let Some(word) = view.fifo_read_tx() {
             // Convert u32 word to bytes (little-endian)
             let bytes = [
                 (word & 0xFF) as u8,
@@ -880,7 +880,7 @@ fn test_hung_detection_catches_infinite_loop() {
         10000, // max_cycles
         false, // Don't print instruction trace
         false, // Don't print FSM state
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None, // No VCD
         0,    // Zero latency
@@ -934,7 +934,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
         10000,
         false,
         false,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None,
         0,
@@ -1001,7 +1001,7 @@ fn test_hung_detection_catches_long_instruction() {
         100000, // High max_cycles so we don't hit that limit first
         false,
         false,
-        None::<fn(&mut Fifo)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None,
         mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
@@ -1089,9 +1089,9 @@ fn test_packet_protocol_end_to_end() {
     let packets_sent_clone = packets_sent.clone();
 
     // Callback that handles bidirectional packet communication
-    let inst_complete_callback = move |fifo: &mut Fifo| {
+    let inst_complete_callback = move |view: &mut SimulatorView| {
         // Collect all TX data
-        while let Some(word) = fifo.tx.pop_front() {
+        while let Some(word) = view.fifo_read_tx() {
             fifo_tx_data_clone.lock().unwrap().push(word);
         }
 
@@ -1107,7 +1107,7 @@ fn test_packet_protocol_end_to_end() {
                 sequence: 100,
                 timestamp: 12345,
             };
-            if let Ok(()) = packet_transport::send_echo_packet(&echo_request, &mut fifo.rx) {
+            if let Ok(()) = view.send_packet_to_rx(&echo_request) {
                 println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
             }
 
@@ -1117,7 +1117,7 @@ fn test_packet_protocol_end_to_end() {
                 value: 1000,
                 tag: 55,
             };
-            if let Ok(()) = packet_transport::send_data_u32_packet(&data_request, &mut fifo.rx) {
+            if let Ok(()) = view.send_packet_to_rx(&data_request) {
                 println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
             }
 
@@ -1274,9 +1274,9 @@ fn test_println_macro() {
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |fifo: &mut Fifo| {
+    let inst_complete_callback = move |view: &mut SimulatorView| {
         // Drain all words from TX FIFO and collect them
-        while let Some(word) = fifo.tx.pop_front() {
+        while let Some(word) = view.fifo_read_tx() {
             fifo_data_clone.lock().unwrap().push(word);
         }
     };

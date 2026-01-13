@@ -16,9 +16,9 @@ fn test_simple_byte_store() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |fifo: &mut Fifo| {
+    let inst_complete_callback = move |view: &mut SimulatorView| {
         // Drain all words from TX FIFO and collect them
-        while let Some(word) = fifo.tx.pop_front() {
+        while let Some(word) = view.fifo_read_tx() {
             fifo_data_clone.lock().unwrap().push(word);
         }
     };

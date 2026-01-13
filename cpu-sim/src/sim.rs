@@ -21,10 +21,85 @@ pub struct SimulationResult {
     pub elapsed_cpu_time_us: u64,
 }
 
+/// Restricted view of the Simulator for use in callbacks
+///
+/// Provides controlled access to FIFO operations without exposing
+/// the full Simulator or internal Fifo structure. This allows callbacks
+/// to interact with the FIFO while maintaining encapsulation.
+pub struct SimulatorView<'a> {
+    fifo: &'a mut crate::fifo::Fifo,
+}
+
+impl<'a> SimulatorView<'a> {
+    /// Create a new SimulatorView with access to the given FIFO
+    fn new(fifo: &'a mut crate::fifo::Fifo) -> Self {
+        SimulatorView { fifo }
+    }
+
+    /// Read a word from the FIFO TX queue (CPU → Host)
+    ///
+    /// Returns `Some(word)` if data is available, `None` if the queue is empty.
+    pub fn fifo_read_tx(&mut self) -> Option<u32> {
+        self.fifo.tx.pop_front()
+    }
+
+    /// Write a word to the FIFO RX queue (Host → CPU)
+    ///
+    /// This allows the host to send data to the simulated CPU.
+    pub fn fifo_write_rx(&mut self, word: u32) {
+        self.fifo.rx.push_back(word);
+    }
+
+    /// Check if the FIFO TX queue (CPU → Host) is empty
+    pub fn fifo_tx_is_empty(&self) -> bool {
+        self.fifo.tx.is_empty()
+    }
+
+    /// Check if the FIFO RX queue (Host → CPU) is empty
+    pub fn fifo_rx_is_empty(&self) -> bool {
+        self.fifo.rx.is_empty()
+    }
+
+    /// Get the number of words in the FIFO TX queue (CPU → Host)
+    pub fn fifo_tx_len(&self) -> usize {
+        self.fifo.tx.len()
+    }
+
+    /// Get the number of words in the FIFO RX queue (Host → CPU)
+    pub fn fifo_rx_len(&self) -> usize {
+        self.fifo.rx.len()
+    }
+
+    /// Send a packet to the FIFO RX queue using the packet_transport module
+    ///
+    /// This is a convenience wrapper around packet_transport send functions.
+    /// It serializes the packet and writes it to the RX queue.
+    pub fn send_packet_to_rx<T: serde::Serialize>(&mut self, packet: &T) -> Result<(), String> {
+        use postcard::to_allocvec;
+
+        let bytes: Vec<u8> =
+            to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+            }
+            self.fifo.rx.push_back(word);
+            i += 4;
+        }
+
+        Ok(())
+    }
+}
+
 /// RISC-V CPU Simulator
 pub struct Simulator<'a, F, T>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     cpu: Top<'a>,
@@ -49,7 +124,7 @@ where
 
 impl<'a, F, T> Simulator<'a, F, T>
 where
-    F: FnMut(&mut crate::fifo::Fifo),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
@@ -415,9 +490,10 @@ where
         }
 
         // Call inst_complete callback if provided (after instruction completion)
-        // This callback receives mutable access to the FIFO and can read/write as needed
+        // This callback receives restricted access to the Simulator via SimulatorView
         if let Some(ref mut callback) = self.inst_complete_callback {
-            callback(&mut self.bus.fifo);
+            let mut view = SimulatorView::new(&mut self.bus.fifo);
+            callback(&mut view);
         }
 
         // Trace printing (simplified - only at instruction completion)
@@ -586,7 +662,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(&mut crate::fifo::Fifo)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -636,7 +712,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(&mut crate::fifo::Fifo)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -682,7 +758,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(&mut crate::fifo::Fifo)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
