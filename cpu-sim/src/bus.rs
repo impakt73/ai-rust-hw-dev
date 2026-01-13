@@ -76,16 +76,19 @@ impl SystemBus {
     }
 
     /// Set LR/SC reservation (RV32A atomic extension)
+    #[allow(dead_code)]
     pub fn set_reservation(&mut self, addr: u32) {
         self.dram.set_reservation(addr);
     }
 
     /// Clear LR/SC reservation (RV32A atomic extension)
+    #[allow(dead_code)]
     pub fn clear_reservation(&mut self) {
         self.dram.clear_reservation();
     }
 
     /// Check if reservation is valid for the given address (RV32A atomic extension)
+    #[allow(dead_code)]
     pub fn check_reservation(&self, addr: u32) -> bool {
         self.dram.check_reservation(addr)
     }

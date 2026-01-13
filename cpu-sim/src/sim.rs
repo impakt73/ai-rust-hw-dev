@@ -2,7 +2,6 @@ use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
-use riscv_protocol::*;
 use std::path::Path;
 use std::time::Instant;
 
@@ -23,17 +22,27 @@ pub struct SimulationResult {
 
 /// Restricted view of the Simulator for use in callbacks
 ///
-/// Provides controlled access to FIFO operations without exposing
-/// the full Simulator or internal Fifo structure. This allows callbacks
-/// to interact with the FIFO while maintaining encapsulation.
+/// Provides controlled access to FIFO and memory operations without exposing
+/// the full Simulator internals. This allows callbacks to interact with memory,
+/// FIFO, and other simulator components while maintaining encapsulation.
 pub struct SimulatorView<'a> {
     fifo: &'a mut crate::fifo::Fifo,
+    dram: &'a mut crate::dram::Dram,
+    hung_detector: &'a mut Option<HungDetector>,
 }
 
 impl<'a> SimulatorView<'a> {
-    /// Create a new SimulatorView with access to the given FIFO
-    fn new(fifo: &'a mut crate::fifo::Fifo) -> Self {
-        SimulatorView { fifo }
+    /// Create a new SimulatorView with access to the given components
+    pub(crate) fn new(
+        fifo: &'a mut crate::fifo::Fifo,
+        dram: &'a mut crate::dram::Dram,
+        hung_detector: &'a mut Option<HungDetector>,
+    ) -> Self {
+        SimulatorView {
+            fifo,
+            dram,
+            hung_detector,
+        }
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
@@ -94,6 +103,225 @@ impl<'a> SimulatorView<'a> {
 
         Ok(())
     }
+
+    /// Write a string to the FIFO RX queue
+    /// Chunks the string into u32 words with zero-padding and adds a null terminator
+    pub fn fifo_write_rx_string(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        let mut i = 0;
+
+        // Write all complete words
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+
+            // Pack up to 4 bytes into a u32 word (little-endian)
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+                // Remaining bytes are implicitly 0 (zero-padding)
+            }
+
+            self.fifo_write_rx(word);
+            i += 4;
+        }
+
+        // Add a null terminator word if the string ends on a word boundary
+        // This ensures the reading side can detect the end of the string
+        if bytes.len().is_multiple_of(4) {
+            self.fifo_write_rx(0);
+        }
+    }
+
+    /// Write a region of memory from a byte slice
+    ///
+    /// Writes bytes from the provided slice into the memory region starting at `start_addr`.
+    /// This allows external code to populate the simulator's memory with arbitrary data,
+    /// such as programmatically generated instructions or test data.
+    ///
+    /// If `is_instructions` is true, the memory range will be marked as valid for the PC
+    /// (program counter) for hung state detection purposes.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region to write
+    /// * `data` - Byte slice containing the data to write
+    /// * `is_instructions` - If true, marks this region as valid for PC execution
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::*;
+    /// # fn main() -> Result<(), String> {
+    /// // write_memory_region is typically used within run_program's prep_callback
+    /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
+    /// let result = run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         sim.write_memory_region(0x8000_0000, &instructions, true);
+    ///         Ok(0x8000_0000)
+    ///     },
+    ///     |_sim, _result| {},
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
+        for (offset, &byte) in data.iter().enumerate() {
+            let addr = start_addr.wrapping_add(offset as u32);
+            self.dram.write_byte(addr, byte);
+        }
+
+        // Update valid PC ranges for hung detection based on whether this is instruction or data memory
+        if !data.is_empty() {
+            if let Some(ref mut detector) = self.hung_detector {
+                let new_start = start_addr;
+                let new_end = start_addr.wrapping_add(data.len() as u32);
+                detector.update_pc_range(new_start, new_end, is_instructions);
+            }
+        }
+    }
+
+    /// Dump a region of memory as a byte iterator
+    ///
+    /// Returns an iterator over bytes in the specified memory region.
+    /// This allows efficient access without allocating a new buffer.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region
+    /// * `size` - Number of bytes to dump
+    ///
+    /// # Returns
+    /// An iterator yielding bytes from the memory region
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::*;
+    /// # use std::path::Path;
+    /// # fn main() -> Result<(), String> {
+    /// // dump_memory_region is typically used in run_program's post_callback
+    /// run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         load_elf(sim, Path::new("test.elf")).map_err(|e| e.to_string())
+    ///     },
+    ///     |sim, _result| {
+    ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
+    ///         // Process bytes...
+    ///     },
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
+        (0..size).map(move |offset| {
+            let addr = start_addr.wrapping_add(offset);
+            self.dram.read_byte(addr)
+        })
+    }
+
+    /// Dump a region of memory as an RGBA8 image
+    ///
+    /// Interprets the memory region as RGBA8 pixel data (4 bytes per pixel)
+    /// and saves it as an image file. The format is determined by the file extension.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address of the memory region containing image data
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `output_path` - Path to the output image file (format determined by extension)
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` on error
+    ///
+    /// # Requirements
+    /// The memory region must contain at least `width * height * 4` bytes of valid data.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::*;
+    /// # use std::path::Path;
+    /// # fn main() -> Result<(), String> {
+    /// // dump_memory_region_as_image is typically used in run_program's post_callback
+    /// run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         load_elf(sim, Path::new("graphics.elf")).map_err(|e| e.to_string())
+    ///     },
+    ///     |sim, _result| {
+    ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
+    ///             .expect("Failed to dump image");
+    ///     },
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn dump_memory_region_as_image(
+        &self,
+        start_addr: u32,
+        width: u32,
+        height: u32,
+        output_path: &str,
+    ) -> Result<(), String> {
+        use image::{ImageBuffer, Rgba};
+
+        // Calculate total bytes needed
+        let pixel_count = width
+            .checked_mul(height)
+            .ok_or_else(|| "Image dimensions overflow".to_string())?;
+        let total_bytes = pixel_count
+            .checked_mul(4)
+            .ok_or_else(|| "Image size overflow".to_string())?;
+
+        // Collect pixel data from memory
+        let pixel_data: Vec<u8> = self.dump_memory_region(start_addr, total_bytes).collect();
+
+        // Create image buffer from raw RGBA8 data
+        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixel_data)
+            .ok_or_else(|| {
+                "Failed to create image buffer from pixel data (size mismatch)".to_string()
+            })?;
+
+        // Save the image
+        img_buffer
+            .save(Path::new(output_path))
+            .map_err(|e| format!("Failed to save image: {}", e))?;
+
+        log::info!("Image saved: {} ({}x{} RGBA8)", output_path, width, height);
+        Ok(())
+    }
+
+    /// Read a single byte from memory
+    pub fn read_byte(&self, addr: u32) -> u8 {
+        self.dram.read_byte(addr)
+    }
+
+    /// Read a 16-bit halfword from memory (little-endian)
+    pub fn read_halfword(&self, addr: u32) -> u16 {
+        self.dram.read_halfword(addr)
+    }
+
+    /// Read a 32-bit word from memory (little-endian)
+    pub fn read_word(&self, addr: u32) -> u32 {
+        self.dram.read_word(addr)
+    }
 }
 
 /// RISC-V CPU Simulator
@@ -116,7 +344,7 @@ where
     imem_delay_counter: u32, // Current delay counter for instruction memory
     dmem_delay_counter: u32, // Current delay counter for data memory
     // Hung state detection
-    hung_detector: Option<HungDetector>,
+    pub(crate) hung_detector: Option<HungDetector>,
 }
 
 impl<'a, F, T> Simulator<'a, F, T>
@@ -191,41 +419,6 @@ where
             dmem_delay_counter: 0,
             hung_detector,
         })
-    }
-
-    /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
-    /// This allows the host to send data to the simulated program
-    pub fn fifo_write_rx(&mut self, word: u32) {
-        self.bus.fifo.rx.push_back(word);
-    }
-
-    /// Write a string to the FIFO RX queue
-    /// Chunks the string into u32 words with zero-padding and adds a null terminator
-    pub fn fifo_write_rx_string(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        let mut i = 0;
-
-        // Write all complete words
-        while i < bytes.len() {
-            let mut word: u32 = 0;
-
-            // Pack up to 4 bytes into a u32 word (little-endian)
-            for j in 0..4 {
-                if i + j < bytes.len() {
-                    word |= (bytes[i + j] as u32) << (j * 8);
-                }
-                // Remaining bytes are implicitly 0 (zero-padding)
-            }
-
-            self.fifo_write_rx(word);
-            i += 4;
-        }
-
-        // Add a null terminator word if the string ends on a word boundary
-        // This ensures the reading side can detect the end of the string
-        if bytes.len().is_multiple_of(4) {
-            self.fifo_write_rx(0);
-        }
     }
 
     /// Helper function to decode FSM state value to human-readable string
@@ -478,7 +671,11 @@ where
         // Call inst_complete callback if provided (after instruction completion)
         // This callback receives restricted access to the Simulator via SimulatorView
         if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(&mut self.bus.fifo);
+            let mut view = SimulatorView::new(
+                &mut self.bus.fifo,
+                &mut self.bus.dram,
+                &mut self.hung_detector,
+            );
             callback(&mut view);
         }
 
@@ -573,210 +770,5 @@ where
             tohost_value: None,
             elapsed_cpu_time_us: total_elapsed_us,
         })
-    }
-
-    /// Send an Echo packet to the simulated CPU
-    pub fn send_echo_packet(&mut self, packet: &EchoPacket) -> Result<(), String> {
-        crate::packet_transport::send_echo_packet(packet, &mut self.bus.fifo.rx)
-    }
-
-    /// Send a DataU32 packet to the simulated CPU
-    pub fn send_data_u32_packet(&mut self, packet: &DataU32Packet) -> Result<(), String> {
-        crate::packet_transport::send_data_u32_packet(packet, &mut self.bus.fifo.rx)
-    }
-
-    /// Try to receive an Echo packet from the simulated CPU
-    pub fn try_receive_echo_packet(&mut self) -> Result<Option<EchoPacket>, String> {
-        crate::packet_transport::receive_echo_packet(&mut self.bus.fifo.tx)
-    }
-
-    /// Try to receive a DataU32 packet from the simulated CPU
-    pub fn try_receive_data_u32_packet(&mut self) -> Result<Option<DataU32Packet>, String> {
-        crate::packet_transport::receive_data_u32_packet(&mut self.bus.fifo.tx)
-    }
-
-    /// Try to receive a Debug packet from the simulated CPU
-    pub fn try_receive_debug_packet(&mut self) -> Result<Option<DebugPacket>, String> {
-        crate::packet_transport::receive_debug_packet(&mut self.bus.fifo.tx)
-    }
-
-    /// Try to receive an Assert packet from the simulated CPU
-    pub fn try_receive_assert_packet(&mut self) -> Result<Option<AssertPacket>, String> {
-        crate::packet_transport::receive_assert_packet(&mut self.bus.fifo.tx)
-    }
-
-    /// Write a region of memory from a byte slice
-    ///
-    /// Writes bytes from the provided slice into the memory region starting at `start_addr`.
-    /// This allows external code to populate the simulator's memory with arbitrary data,
-    /// such as programmatically generated instructions or test data.
-    ///
-    /// If `is_instructions` is true, the memory range will be marked as valid for the PC
-    /// (program counter) for hung state detection purposes.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address of the memory region to write
-    /// * `data` - Byte slice containing the data to write
-    /// * `is_instructions` - If true, marks this region as valid for PC execution
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::*;
-    /// # fn main() -> Result<(), String> {
-    /// // write_memory_region is typically used within run_program's prep_callback
-    /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// let result = run_program(
-    ///     100,
-    ///     false, // print_inst_trace
-    ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
-    ///     None, // vcd_path
-    ///     0, // mem_latency_cycles
-    ///     |sim| {
-    ///         sim.write_memory_region(0x8000_0000, &instructions, true);
-    ///         Ok(0x8000_0000)
-    ///     },
-    ///     |_sim, _result| {},
-    /// )?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
-        for (offset, &byte) in data.iter().enumerate() {
-            let addr = start_addr.wrapping_add(offset as u32);
-            self.bus.dram.write_byte(addr, byte);
-        }
-
-        // Update valid PC ranges for hung detection based on whether this is instruction or data memory
-        if !data.is_empty() {
-            if let Some(ref mut detector) = self.hung_detector {
-                let new_start = start_addr;
-                let new_end = start_addr.wrapping_add(data.len() as u32);
-                detector.update_pc_range(new_start, new_end, is_instructions);
-            }
-        }
-    }
-
-    /// Dump a region of memory as a byte iterator
-    ///
-    /// Returns an iterator over bytes in the specified memory region.
-    /// This allows efficient access without allocating a new buffer.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address of the memory region
-    /// * `size` - Number of bytes to dump
-    ///
-    /// # Returns
-    /// An iterator yielding bytes from the memory region
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::*;
-    /// # use std::path::Path;
-    /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region is typically used in run_program's post_callback
-    /// run_program(
-    ///     100,
-    ///     false, // print_inst_trace
-    ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
-    ///     None, // vcd_path
-    ///     0, // mem_latency_cycles
-    ///     |sim| {
-    ///         load_elf(sim, Path::new("test.elf")).map_err(|e| e.to_string())
-    ///     },
-    ///     |sim, _result| {
-    ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
-    ///         // Process bytes...
-    ///     },
-    /// )?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
-        (0..size).map(move |offset| {
-            let addr = start_addr.wrapping_add(offset);
-            self.bus.dram.read_byte(addr)
-        })
-    }
-
-    /// Dump a region of memory as an RGBA8 image
-    ///
-    /// Interprets the memory region as RGBA8 pixel data (4 bytes per pixel)
-    /// and saves it as an image file. The format is determined by the file extension.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address of the memory region containing image data
-    /// * `width` - Image width in pixels
-    /// * `height` - Image height in pixels
-    /// * `output_path` - Path to the output image file (format determined by extension)
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` on error
-    ///
-    /// # Requirements
-    /// The memory region must contain at least `width * height * 4` bytes of valid data.
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::*;
-    /// # use std::path::Path;
-    /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region_as_image is typically used in run_program's post_callback
-    /// run_program(
-    ///     100,
-    ///     false, // print_inst_trace
-    ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
-    ///     None, // vcd_path
-    ///     0, // mem_latency_cycles
-    ///     |sim| {
-    ///         load_elf(sim, Path::new("graphics.elf")).map_err(|e| e.to_string())
-    ///     },
-    ///     |sim, _result| {
-    ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
-    ///             .expect("Failed to dump image");
-    ///     },
-    /// )?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn dump_memory_region_as_image(
-        &self,
-        start_addr: u32,
-        width: u32,
-        height: u32,
-        output_path: &str,
-    ) -> Result<(), String> {
-        use image::{ImageBuffer, Rgba};
-
-        // Calculate total bytes needed
-        let pixel_count = width
-            .checked_mul(height)
-            .ok_or_else(|| "Image dimensions overflow".to_string())?;
-        let total_bytes = pixel_count
-            .checked_mul(4)
-            .ok_or_else(|| "Image size overflow".to_string())?;
-
-        // Collect pixel data from memory
-        let pixel_data: Vec<u8> = self.dump_memory_region(start_addr, total_bytes).collect();
-
-        // Create image buffer from raw RGBA8 data
-        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixel_data)
-            .ok_or_else(|| {
-                "Failed to create image buffer from pixel data (size mismatch)".to_string()
-            })?;
-
-        // Save the image
-        img_buffer
-            .save(Path::new(output_path))
-            .map_err(|e| format!("Failed to save image: {}", e))?;
-
-        log::info!("Image saved: {} ({}x{} RGBA8)", output_path, width, height);
-        Ok(())
     }
 }

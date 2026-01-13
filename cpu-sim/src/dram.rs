@@ -85,6 +85,7 @@ impl Dram {
 
     /// Set LR/SC reservation (RV32A atomic extension)
     /// Called when LR.W instruction completes
+    #[allow(dead_code)]
     pub fn set_reservation(&mut self, addr: u32) {
         self.reservation_valid = true;
         self.reservation_addr = addr & !0x3; // Word-align the address
@@ -92,12 +93,14 @@ impl Dram {
 
     /// Clear LR/SC reservation (RV32A atomic extension)
     /// Called when SC.W instruction executes (regardless of success)
+    #[allow(dead_code)]
     pub fn clear_reservation(&mut self) {
         self.reservation_valid = false;
     }
 
     /// Check if reservation is valid for the given address (RV32A atomic extension)
     /// Used by SC.W to determine success/failure
+    #[allow(dead_code)]
     pub fn check_reservation(&self, addr: u32) -> bool {
         self.reservation_valid && (addr & !0x3) == (self.reservation_addr & !0x3)
     }
