@@ -205,7 +205,8 @@ impl HungDetector {
     }
 
     /// Create a new hung state detector with default configuration
-    pub fn new_default() -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn new_default() -> Self {
         Self::new(HungDetectorConfig::default())
     }
 
@@ -270,7 +271,8 @@ impl HungDetector {
     }
 
     /// Get all valid PC ranges
-    pub fn get_valid_pc_ranges(&self) -> &[MemoryRange] {
+    #[allow(dead_code)]
+    pub(crate) fn get_valid_pc_ranges(&self) -> &[MemoryRange] {
         &self.valid_pc_ranges
     }
 
