@@ -154,7 +154,7 @@ where
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace
-/// * `fifo_callback` - Optional callback invoked after each instruction completes (receives mutable FIFO reference)
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes (receives mutable SimulatorView)
 /// * `fifo_rx_data` - Optional string to write to the FIFO RX queue before running
 ///
 /// # Returns
@@ -472,7 +472,7 @@ where
 /// * `callback_before` - Function to configure simulator before running (e.g., enable debug flags)
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `print_inst_trace` - Whether to print instruction trace to console
-/// * `fifo_callback` - Optional callback invoked after each instruction completes
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 ///
 /// # Returns
@@ -529,7 +529,7 @@ where
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace to console
 /// * `print_fsm_state` - Whether to print FSM state transitions
-/// * `fifo_callback` - Optional callback invoked after each instruction completes
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `prep_callback` - Pre-execution callback that loads the program and returns entry point

@@ -1107,9 +1107,9 @@ fn test_packet_protocol_end_to_end() {
                 sequence: 100,
                 timestamp: 12345,
             };
-            if let Ok(()) = view.send_packet_to_rx(&echo_request) {
-                println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
-            }
+            view.send_packet_to_rx(&echo_request)
+                .expect("Failed to send Echo packet to CPU");
+            println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
 
             // Send DataU32 packet (value=1000)
             let data_request = DataU32Packet {
@@ -1117,9 +1117,9 @@ fn test_packet_protocol_end_to_end() {
                 value: 1000,
                 tag: 55,
             };
-            if let Ok(()) = view.send_packet_to_rx(&data_request) {
-                println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
-            }
+            view.send_packet_to_rx(&data_request)
+                .expect("Failed to send DataU32 packet to CPU");
+            println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
 
             *sent = true;
         }
