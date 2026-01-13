@@ -32,7 +32,7 @@ fn run_fp_program_with_options<T, F>(
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
-    F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), T>, &SimulationResult),
+    F: for<'a> FnOnce(&mut Simulator<'a, fn(&mut SimulatorView), T>, &SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -45,7 +45,7 @@ where
         max_cycles,
         print_inst_trace,
         false, // Don't print FSM state
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         trace_callback,
         vcd_path,
         0, // Zero latency for RTL verification tests

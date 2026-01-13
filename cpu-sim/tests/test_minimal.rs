@@ -17,11 +17,13 @@ fn test_minimal_postcard_byte_by_byte() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -50,11 +52,13 @@ fn test_minimal_postcard_word_packing() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -115,11 +119,13 @@ fn test_minimal_debug_double_write() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -175,11 +181,13 @@ fn test_allocator() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -230,11 +238,13 @@ fn test_heap_directly() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -282,11 +292,13 @@ fn test_stack_memory() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -362,11 +374,13 @@ fn test_static_heap() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(

@@ -5,16 +5,12 @@ pub mod hung_detector;
 pub mod packet_transport;
 pub mod sim;
 
-#[cfg(test)]
-mod tests;
-
 pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult, Simulator};
+pub use sim::{SimulationResult, SimulationStepResult, Simulator, SimulatorView};
 
 use bus::SystemBus;
 use std::path::Path;
-
 /// Load an ELF file into a simulator's memory
 ///
 /// This function reads an ELF file and loads its LOAD segments into the simulator's
@@ -43,7 +39,7 @@ use std::path::Path;
 ///     bus,
 ///     false,
 ///     false,
-///     None::<fn(u32)>,
+///     None::<fn(&mut SimulatorView)>,
 ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
 ///     None, // No VCD
 ///     0, // Zero latency
@@ -59,7 +55,7 @@ pub fn load_elf<F, T>(
     path: &Path,
 ) -> Result<u32, Box<dyn std::error::Error>>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     let file_data = std::fs::read(path)?;
@@ -134,7 +130,7 @@ fn run_elf_internal<F, T>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     run_elf_in_simulator_internal(
@@ -158,7 +154,7 @@ where
 /// * `elf_path` - Path to the RISC-V ELF executable
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace
-/// * `fifo_callback` - Optional callback invoked when data is written to the FIFO (receives u32 words)
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes (receives mutable SimulatorView)
 /// * `fifo_rx_data` - Optional string to write to the FIFO RX queue before running
 ///
 /// # Returns
@@ -168,17 +164,17 @@ pub fn run_elf_with_fifo<F>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     fifo_rx_data: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
 {
     run_elf_internal(
         elf_path,
         max_cycles,
         print_inst_trace,
-        fifo_callback,
+        inst_complete_callback,
         fifo_rx_data,
         None::<fn(&InstructionTrace)>,
         None,
@@ -231,7 +227,7 @@ where
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         trace_callback,
         None,
@@ -267,7 +263,7 @@ pub fn run_elf(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         None,
@@ -309,7 +305,7 @@ pub fn run_elf_with_vcd(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         Some(vcd_path),
@@ -325,7 +321,7 @@ fn run_elf_in_simulator_internal<F, T, C>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     fifo_rx_data: Option<&str>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
@@ -333,7 +329,7 @@ fn run_elf_in_simulator_internal<F, T, C>(
     callback: C,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),
 {
@@ -341,7 +337,7 @@ where
         max_cycles,
         print_inst_trace,
         false, // Don't print FSM state
-        fifo_callback,
+        inst_complete_callback,
         trace_callback,
         vcd_path,
         mem_latency_cycles,
@@ -404,13 +400,16 @@ pub fn run_elf_in_simulator<F>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(&Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnOnce(
+        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
+        &SimulationResult,
+    ),
 {
     run_elf_in_simulator_internal(
         elf_path,
         max_cycles,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
@@ -442,13 +441,16 @@ pub fn run_elf_in_simulator_with_options<F>(
     vcd_path: Option<&str>,
 ) -> Result<SimulationResult, String>
 where
-    F: for<'a> FnOnce(&Simulator<'a, fn(u32), fn(&InstructionTrace)>, &SimulationResult),
+    F: for<'a> FnOnce(
+        &Simulator<'a, fn(&mut SimulatorView), fn(&InstructionTrace)>,
+        &SimulationResult,
+    ),
 {
     run_elf_in_simulator_internal(
         elf_path,
         max_cycles,
         print_inst_trace,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None,
         None::<fn(&InstructionTrace)>,
         vcd_path,
@@ -470,7 +472,7 @@ where
 /// * `callback_before` - Function to configure simulator before running (e.g., enable debug flags)
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `print_inst_trace` - Whether to print instruction trace to console
-/// * `fifo_callback` - Optional callback for FIFO TX data
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 ///
 /// # Returns
@@ -486,7 +488,7 @@ pub fn run_elf_in_simulator_with_trace<F, T, C>(
     trace_callback: Option<T>,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>),
 {
@@ -527,7 +529,7 @@ where
 /// * `max_cycles` - Maximum number of cycles to run
 /// * `print_inst_trace` - Whether to print instruction trace to console
 /// * `print_fsm_state` - Whether to print FSM state transitions
-/// * `fifo_callback` - Optional callback for FIFO TX data
+/// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `prep_callback` - Pre-execution callback that loads the program and returns entry point
@@ -547,7 +549,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None::<fn(u32)>,
+///     None::<fn(&mut cpu_sim::SimulatorView)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
@@ -564,7 +566,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None::<fn(u32)>,
+///     None::<fn(&mut cpu_sim::SimulatorView)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
@@ -594,7 +596,7 @@ pub fn run_program<F, T, P, C>(
     post_callback: C,
 ) -> Result<SimulationResult, String>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
     P: for<'a> FnOnce(&mut Simulator<'a, F, T>) -> Result<u32, String>,
     C: for<'a> FnOnce(&mut Simulator<'a, F, T>, &SimulationResult),

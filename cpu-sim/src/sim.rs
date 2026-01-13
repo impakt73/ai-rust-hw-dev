@@ -21,19 +21,93 @@ pub struct SimulationResult {
     pub elapsed_cpu_time_us: u64,
 }
 
+/// Restricted view of the Simulator for use in callbacks
+///
+/// Provides controlled access to FIFO operations without exposing
+/// the full Simulator or internal Fifo structure. This allows callbacks
+/// to interact with the FIFO while maintaining encapsulation.
+pub struct SimulatorView<'a> {
+    fifo: &'a mut crate::fifo::Fifo,
+}
+
+impl<'a> SimulatorView<'a> {
+    /// Create a new SimulatorView with access to the given FIFO
+    fn new(fifo: &'a mut crate::fifo::Fifo) -> Self {
+        SimulatorView { fifo }
+    }
+
+    /// Read a word from the FIFO TX queue (CPU → Host)
+    ///
+    /// Returns `Some(word)` if data is available, `None` if the queue is empty.
+    pub fn fifo_read_tx(&mut self) -> Option<u32> {
+        self.fifo.tx.pop_front()
+    }
+
+    /// Write a word to the FIFO RX queue (Host → CPU)
+    ///
+    /// This allows the host to send data to the simulated CPU.
+    pub fn fifo_write_rx(&mut self, word: u32) {
+        self.fifo.rx.push_back(word);
+    }
+
+    /// Check if the FIFO TX queue (CPU → Host) is empty
+    pub fn fifo_tx_is_empty(&self) -> bool {
+        self.fifo.tx.is_empty()
+    }
+
+    /// Check if the FIFO RX queue (Host → CPU) is empty
+    pub fn fifo_rx_is_empty(&self) -> bool {
+        self.fifo.rx.is_empty()
+    }
+
+    /// Get the number of words in the FIFO TX queue (CPU → Host)
+    pub fn fifo_tx_len(&self) -> usize {
+        self.fifo.tx.len()
+    }
+
+    /// Get the number of words in the FIFO RX queue (Host → CPU)
+    pub fn fifo_rx_len(&self) -> usize {
+        self.fifo.rx.len()
+    }
+
+    /// Send a packet to the FIFO RX queue using the packet_transport module
+    ///
+    /// This is a convenience wrapper around packet_transport send functions.
+    /// It serializes the packet and writes it to the RX queue.
+    pub fn send_packet_to_rx<T: serde::Serialize>(&mut self, packet: &T) -> Result<(), String> {
+        use postcard::to_allocvec;
+
+        let bytes: Vec<u8> =
+            to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+            }
+            self.fifo.rx.push_back(word);
+            i += 4;
+        }
+
+        Ok(())
+    }
+}
+
 /// RISC-V CPU Simulator
 pub struct Simulator<'a, F, T>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     cpu: Top<'a>,
     pub bus: SystemBus,
     cycle_count: u64,
     print_inst_trace: bool,
-    print_debug_packets: bool,
-    print_fsm_state: bool, // NEW: Print FSM state every cycle
-    fifo_callback: Option<F>,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
@@ -47,7 +121,7 @@ where
 
 impl<'a, F, T> Simulator<'a, F, T>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
@@ -57,7 +131,7 @@ where
     /// * `bus` - System bus with memory and peripherals
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
-    /// * `fifo_callback` - Optional callback for FIFO TX data
+    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes, receives a mutable `SimulatorView` providing controlled FIFO access
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
@@ -68,7 +142,7 @@ where
         bus: SystemBus,
         print_inst_trace: bool,
         print_fsm_state: bool,
-        fifo_callback: Option<F>,
+        inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
@@ -107,9 +181,8 @@ where
             bus,
             cycle_count: 0,
             print_inst_trace,
-            print_debug_packets: true, // Enable by default
             print_fsm_state,
-            fifo_callback,
+            inst_complete_callback,
             trace_callback,
             vcd,
             vcd_time: 0,
@@ -118,11 +191,6 @@ where
             dmem_delay_counter: 0,
             hung_detector,
         })
-    }
-
-    /// Enable or disable automatic printing of DebugPacket messages
-    pub fn set_print_debug_packets(&mut self, enable: bool) {
-        self.print_debug_packets = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -407,29 +475,11 @@ where
             }
         }
 
-        // Process FIFO TX data
-        // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
-        if let Some(ref mut callback) = self.fifo_callback {
-            // Callback provided - drain FIFO and invoke callback for each word
-            while let Some(word) = self.bus.fifo.tx.pop_front() {
-                callback(word);
-            }
-        } else if self.print_debug_packets {
-            // No callback but auto-printing enabled - parse and print DebugPackets
-            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
-                // Format the message with level prefix
-                let level_str = match debug_pkt.level {
-                    DebugLevel::Trace => "[TRACE]",
-                    DebugLevel::Debug => "[DEBUG]",
-                    DebugLevel::Info => "[INFO]",
-                    DebugLevel::Warning => "[WARN]",
-                    DebugLevel::Error => "[ERROR]",
-                };
-                println!("{} {}", level_str, debug_pkt.message);
-            }
-        } else {
-            // No callback and no auto-printing - drain FIFO to prevent accumulation
-            while self.bus.fifo.tx.pop_front().is_some() {}
+        // Call inst_complete callback if provided (after instruction completion)
+        // This callback receives restricted access to the Simulator via SimulatorView
+        if let Some(ref mut callback) = self.inst_complete_callback {
+            let mut view = SimulatorView::new(&mut self.bus.fifo);
+            callback(&mut view);
         }
 
         // Trace printing (simplified - only at instruction completion)
@@ -580,7 +630,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -630,7 +680,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -676,7 +726,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut SimulatorView)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency

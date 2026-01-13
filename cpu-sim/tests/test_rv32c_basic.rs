@@ -26,7 +26,7 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// Compressed instructions are 16 bits (2 bytes)
 fn write_compressed_instruction<'a, F, T>(sim: &mut Simulator<'a, F, T>, addr: u32, c_insn: u16)
 where
-    F: FnMut(u32),
+    F: FnMut(&mut cpu_sim::SimulatorView),
     T: FnMut(&riscv_core::trace::InstructionTrace),
 {
     let bytes = c_insn.to_le_bytes();
@@ -36,7 +36,7 @@ where
 /// Helper to write a standard 32-bit instruction
 fn write_standard_instruction<'a, F, T>(sim: &mut Simulator<'a, F, T>, addr: u32, insn: u32)
 where
-    F: FnMut(u32),
+    F: FnMut(&mut cpu_sim::SimulatorView),
     T: FnMut(&riscv_core::trace::InstructionTrace),
 {
     let bytes = insn.to_le_bytes();
@@ -57,7 +57,7 @@ fn test_c_li() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -103,7 +103,7 @@ fn test_c_addi() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -151,7 +151,7 @@ fn test_c_add() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -200,7 +200,7 @@ fn test_c_mv() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -252,7 +252,7 @@ fn test_compressed_to_compressed_transition() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -305,7 +305,7 @@ fn test_compressed_to_uncompressed_transition() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -354,7 +354,7 @@ fn test_uncompressed_to_compressed_transition() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -403,7 +403,7 @@ fn test_uncompressed_to_uncompressed_regression() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
@@ -454,7 +454,7 @@ fn test_mixed_sequence_across_word_boundary() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0,
