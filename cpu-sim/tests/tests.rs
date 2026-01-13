@@ -77,8 +77,9 @@ fn test_comprehensive_elf() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -102,8 +103,9 @@ fn test_instruction_trace() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation with trace should succeed");
@@ -148,8 +150,9 @@ fn test_register_trace_audit() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Register trace audit simulation should succeed");
@@ -183,8 +186,9 @@ fn test_rust_bare_metal_elf() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Rust bare metal simulation should succeed");
@@ -208,8 +212,9 @@ fn test_fp_math_elf() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Floating-point math test simulation should succeed");
@@ -229,7 +234,8 @@ fn test_fifo_hello_world() {
     let (fifo_data, callback) = create_fifo_collector();
 
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -237,43 +243,10 @@ fn test_fifo_hello_world() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| {
-            // Write test string to FIFO RX before loading ELF
+        Some(|sim: &mut SimulatorView| {
+            // Write test string to FIFO RX after ELF is loaded
             sim.fifo_write_rx_string(test_string);
-
-            // Inline ELF loading logic (since load_elf is now private)
-            let file_data = std::fs::read(&elf_path).map_err(|e| e.to_string())?;
-            let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
-                .map_err(|e| e.to_string())?;
-
-            let mut entry_point = 0;
-            if let Ok(header) = elf_file.ehdr.e_entry.try_into() {
-                entry_point = header;
-            }
-
-            if let Some(phdrs) = elf_file.segments() {
-                for phdr in phdrs.iter() {
-                    if phdr.p_type == elf::abi::PT_LOAD {
-                        let vaddr = phdr.p_vaddr as u32;
-                        let file_size = phdr.p_filesz as usize;
-                        let offset = phdr.p_offset as usize;
-                        let is_executable = (phdr.p_flags & elf::abi::PF_X) != 0;
-
-                        if file_size > 0 {
-                            let end = offset
-                                .checked_add(file_size)
-                                .filter(|&e| e <= file_data.len())
-                                .ok_or_else(|| "ELF segment out of bounds".to_string())?;
-
-                            let segment_data = &file_data[offset..end];
-                            sim.write_memory_region(vaddr, segment_data, is_executable);
-                        }
-                    }
-                }
-            }
-
-            Ok(entry_point)
-        },
+        }),
         |_sim, _result| {},
     )
     .expect("FIFO hello world simulation should succeed");
@@ -317,8 +290,9 @@ fn test_trace_callback() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         Some(trace_callback),
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Trace test simulation should succeed");
@@ -626,7 +600,8 @@ fn test_vcd_generation() {
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         Some(vcd_path_str),
-        0, // mem_latency_cycles
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation with VCD should succeed");
@@ -738,8 +713,9 @@ fn test_memory_dump() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |sim, result| {
             assert_tohost(result, 42, "memory pattern test");
             println!("✓ Program executed successfully");
@@ -821,8 +797,9 @@ fn test_image_dump() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |sim, result| {
             assert_tohost(result, 42, "image data test");
             println!("✓ Program executed successfully");
@@ -937,8 +914,9 @@ fn test_panic_handler() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -982,8 +960,9 @@ fn test_hung_detection_with_elf_auto_range() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     );
 
@@ -1200,8 +1179,9 @@ fn test_atomic_operations() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("test_atomic_simple simulation should succeed");
@@ -1218,8 +1198,9 @@ fn test_atomic_operations() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("test_atomic simulation should succeed");
@@ -1302,8 +1283,9 @@ fn test_packet_protocol_end_to_end() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -1462,8 +1444,9 @@ fn test_println_macro() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

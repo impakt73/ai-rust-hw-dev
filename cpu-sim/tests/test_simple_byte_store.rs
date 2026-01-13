@@ -30,8 +30,9 @@ fn test_simple_byte_store() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

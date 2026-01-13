@@ -57,7 +57,8 @@ fn run_simulation(args: &Args) {
         None::<fn(&mut cpu_sim::SimulatorView)>, // fifo_callback
         None::<fn(&cpu_sim::InstructionTrace)>,  // trace_callback
         args.vcd.as_deref(),
-        0, // mem_latency_cycles
+        0,                                       // mem_latency_cycles
+        None::<fn(&mut cpu_sim::SimulatorView)>, // prep_callback
         |sim, result| {
             // Print simulation result
             print_simulation_result(result);

@@ -92,6 +92,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `mem_latency_cycles` - Number of cycles for memory latency simulation
+/// * `prep_callback` - Optional callback for additional setup after ELF is loaded
 /// * `post_callback` - Post-execution callback with access to simulator and result
 ///
 /// # Returns
@@ -113,29 +114,31 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None, // vcd_path
 ///     0, // mem_latency_cycles
+///     None::<fn(&mut cpu_sim::SimulatorView)>, // prep_callback
 ///     |_sim, _result| {}
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With callback to access simulator after execution
+/// // With prep callback to write to FIFO before execution
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
-///     true, // print_inst_trace
+///     false,
 ///     false,
 ///     None::<fn(&mut cpu_sim::SimulatorView)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
-///     Some("output.vcd"),
+///     None,
 ///     0,
-///     |sim, result| {
-///         println!("Simulation finished in {} cycles", result.cycles);
-///         // Access simulator state here
-///     }
+///     Some(|sim: &mut cpu_sim::SimulatorView| {
+///         // Additional setup after ELF is loaded
+///         sim.fifo_write_rx_string("test data");
+///     }),
+///     |_sim, _result| {}
 /// )?;
 /// # Ok::<(), String>(())
 /// ```
 #[allow(clippy::too_many_arguments)]
-pub fn run_elf<F, T, C>(
+pub fn run_elf<F, T, P, C>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
@@ -144,11 +147,13 @@ pub fn run_elf<F, T, C>(
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
+    prep_callback: Option<P>,
     post_callback: C,
 ) -> Result<SimulationResult, String>
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
+    P: FnMut(&mut SimulatorView),
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
     run_program(
@@ -166,6 +171,11 @@ where
 
             log::info!("ELF loaded successfully");
             log::info!("Entry point: 0x{:08x}", entry_point);
+
+            // Call optional prep callback for additional setup after ELF loading
+            if let Some(mut callback) = prep_callback {
+                callback(sim);
+            }
 
             Ok(entry_point)
         },

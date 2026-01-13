@@ -83,6 +83,7 @@ let result = run_elf(
     None,           // trace_callback
     Some("trace.vcd"), // vcd_path
     0,              // mem_latency_cycles
+    None,           // prep_callback
     |_sim, _result| {} // post_callback
 )?;
 
@@ -104,7 +105,7 @@ The simulator provides a programmatic interface for receiving instruction trace 
 ### Using the Trace Callback
 
 ```rust
-use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
+use cpu_sim::{run_elf, InstructionTrace};
 use riscv_core::trace::InstructionType;
 use std::{cell::Cell, path::Path};
 
@@ -132,11 +133,17 @@ let trace_callback = |trace: &InstructionTrace| {
 };
 
 // Run simulation with trace callback
-let result = run_elf_with_trace_callback(
+let result = run_elf(
     Path::new("program.elf"),
     10000,
     false,  // print_inst_trace (false to use only callback)
-    Some(trace_callback)
+    false,  // print_fsm_state
+    None,   // fifo_callback
+    Some(trace_callback),
+    None,   // vcd_path
+    0,      // mem_latency_cycles
+    None,   // prep_callback
+    |_sim, _result| {} // post_callback
 )?;
 
 println!("Executed {} instructions", instruction_count.get());
@@ -158,7 +165,7 @@ The `InstructionTrace` struct provides detailed information about each executed 
 
 The library provides two main functions for different use cases:
 
-- `run_elf(elf_path, max_cycles, print_inst_trace, print_fsm_state, fifo_callback, trace_callback, vcd_path, mem_latency_cycles, post_callback)` - Run an ELF file with full configuration
+- `run_elf(elf_path, max_cycles, print_inst_trace, print_fsm_state, fifo_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run an ELF file with full configuration and optional pre-execution setup
 - `run_program(max_cycles, print_inst_trace, print_fsm_state, fifo_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run a program with custom loading logic
 
 ### Unified Execution API
@@ -178,8 +185,8 @@ pub fn run_program<F, T, P, C>(
     post_callback: C,      // Access simulator after execution
 ) -> Result<SimulationResult, String>
 
-// For ELF files, use run_elf which has the same parameters but takes elf_path instead of prep_callback
-pub fn run_elf<F, T, C>(
+// For ELF files, use run_elf which loads the ELF and provides a prep_callback for additional setup
+pub fn run_elf<F, T, P, C>(
     elf_path: &Path,
     max_cycles: u64,
     print_inst_trace: bool,
@@ -188,6 +195,7 @@ pub fn run_elf<F, T, C>(
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
+    prep_callback: Option<P>,  // Optional additional setup after ELF is loaded
     post_callback: C,
 ) -> Result<SimulationResult, String>
 ```

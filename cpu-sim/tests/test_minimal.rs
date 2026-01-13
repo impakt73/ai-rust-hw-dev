@@ -30,8 +30,9 @@ fn test_minimal_postcard_byte_by_byte() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -75,8 +76,9 @@ fn test_minimal_postcard_word_packing() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -152,8 +154,9 @@ fn test_minimal_debug_double_write() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -224,8 +227,9 @@ fn test_allocator() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -291,8 +295,9 @@ fn test_heap_directly() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -355,8 +360,9 @@ fn test_stack_memory() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -447,8 +453,9 @@ fn test_static_heap() {
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

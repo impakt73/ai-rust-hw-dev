@@ -170,7 +170,8 @@ fn test_comprehensive_elf_with_latency() {
         None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
-        2, // 2-cycle latency
+        2,                              // 2-cycle latency
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
