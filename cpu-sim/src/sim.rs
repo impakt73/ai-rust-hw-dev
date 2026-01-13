@@ -37,9 +37,6 @@ where
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
-    // For duplicate trace detection (prevents repeated halted instruction traces)
-    last_trace_pc: Option<u32>,
-    last_trace_instr: Option<u32>,
     // Memory latency simulation
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
     imem_delay_counter: u32, // Current delay counter for instruction memory
@@ -116,8 +113,6 @@ where
             trace_callback,
             vcd,
             vcd_time: 0,
-            last_trace_pc: None,
-            last_trace_instr: None,
             mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
@@ -181,15 +176,6 @@ where
             10 => "HALT",
             _ => "UNKNOWN",
         }
-    }
-
-    /// Check if trace is a duplicate (same PC and instruction as last trace)
-    /// Used to prevent repeated halted instruction traces
-    fn is_duplicate_trace(&self, pc: u32, instruction: u32) -> bool {
-        matches!(
-            (self.last_trace_pc, self.last_trace_instr),
-            (Some(last_pc), Some(last_instr)) if last_pc == pc && last_instr == instruction
-        )
     }
 
     /// Dump VCD waveform at current timestamp and increment the timestamp counter
@@ -457,34 +443,16 @@ where
         }
 
         // Call trace callback if provided (at instruction completion)
-        // Skip if this is a duplicate trace (same PC and instruction as last trace)
-        if self.trace_callback.is_some() {
+        if let Some(ref mut callback) = self.trace_callback {
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             let rs1_value = self.cpu.debug_rs1_data;
             let rs2_value = self.cpu.debug_rs2_data;
             let rd_value = self.cpu.debug_rd_data;
 
-            // Check for duplicate before borrowing callback
-            let is_duplicate = self.is_duplicate_trace(pc, instruction);
-
-            // Skip bogus traces at PC=0 (from reset state) and duplicate halted traces
-            if pc != 0 && !is_duplicate {
-                let trace = InstructionTrace::from_instruction(
-                    pc,
-                    instruction,
-                    rs1_value,
-                    rs2_value,
-                    rd_value,
-                );
-                if let Some(ref mut callback) = self.trace_callback {
-                    callback(&trace);
-                }
-
-                // Update last trace for duplicate detection
-                self.last_trace_pc = Some(pc);
-                self.last_trace_instr = Some(instruction);
-            }
+            let trace =
+                InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
+            callback(&trace);
         }
 
         let elapsed_us = start_time.elapsed().as_micros() as u64;
