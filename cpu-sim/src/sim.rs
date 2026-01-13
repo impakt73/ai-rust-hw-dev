@@ -24,16 +24,15 @@ pub struct SimulationResult {
 /// RISC-V CPU Simulator
 pub struct Simulator<'a, F, T>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut crate::fifo::Fifo),
     T: FnMut(&InstructionTrace),
 {
     cpu: Top<'a>,
     pub bus: SystemBus,
     cycle_count: u64,
     print_inst_trace: bool,
-    print_debug_packets: bool,
-    print_fsm_state: bool, // NEW: Print FSM state every cycle
-    fifo_callback: Option<F>,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd: Option<Vcd<'a>>,
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
@@ -50,7 +49,7 @@ where
 
 impl<'a, F, T> Simulator<'a, F, T>
 where
-    F: FnMut(u32),
+    F: FnMut(&mut crate::fifo::Fifo),
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with the given bus, runtime, and optional callbacks
@@ -60,7 +59,7 @@ where
     /// * `bus` - System bus with memory and peripherals
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
-    /// * `fifo_callback` - Optional callback for FIFO TX data
+    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes, receives mutable FIFO reference
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
@@ -71,7 +70,7 @@ where
         bus: SystemBus,
         print_inst_trace: bool,
         print_fsm_state: bool,
-        fifo_callback: Option<F>,
+        inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
@@ -110,9 +109,8 @@ where
             bus,
             cycle_count: 0,
             print_inst_trace,
-            print_debug_packets: true, // Enable by default
             print_fsm_state,
-            fifo_callback,
+            inst_complete_callback,
             trace_callback,
             vcd,
             vcd_time: 0,
@@ -123,11 +121,6 @@ where
             dmem_delay_counter: 0,
             hung_detector,
         })
-    }
-
-    /// Enable or disable automatic printing of DebugPacket messages
-    pub fn set_print_debug_packets(&mut self, enable: bool) {
-        self.print_debug_packets = enable;
     }
 
     /// Write a u32 word to the FIFO RX queue (host-to-CPU direction)
@@ -421,29 +414,10 @@ where
             }
         }
 
-        // Process FIFO TX data
-        // Strategy: drain FIFO via callback, or parse packets for printing, or just drain
-        if let Some(ref mut callback) = self.fifo_callback {
-            // Callback provided - drain FIFO and invoke callback for each word
-            while let Some(word) = self.bus.fifo.tx.pop_front() {
-                callback(word);
-            }
-        } else if self.print_debug_packets {
-            // No callback but auto-printing enabled - parse and print DebugPackets
-            while let Ok(Some(debug_pkt)) = self.try_receive_debug_packet() {
-                // Format the message with level prefix
-                let level_str = match debug_pkt.level {
-                    DebugLevel::Trace => "[TRACE]",
-                    DebugLevel::Debug => "[DEBUG]",
-                    DebugLevel::Info => "[INFO]",
-                    DebugLevel::Warning => "[WARN]",
-                    DebugLevel::Error => "[ERROR]",
-                };
-                println!("{} {}", level_str, debug_pkt.message);
-            }
-        } else {
-            // No callback and no auto-printing - drain FIFO to prevent accumulation
-            while self.bus.fifo.tx.pop_front().is_some() {}
+        // Call inst_complete callback if provided (after instruction completion)
+        // This callback receives mutable access to the FIFO and can read/write as needed
+        if let Some(ref mut callback) = self.inst_complete_callback {
+            callback(&mut self.bus.fifo);
         }
 
         // Trace printing (simplified - only at instruction completion)
