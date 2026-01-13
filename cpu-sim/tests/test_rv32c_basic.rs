@@ -24,21 +24,13 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 
 /// Helper to write compressed instruction bytes at a specific address
 /// Compressed instructions are 16 bits (2 bytes)
-fn write_compressed_instruction<'a, F, T>(sim: &mut Simulator<'a, F, T>, addr: u32, c_insn: u16)
-where
-    F: FnMut(&mut cpu_sim::SimulatorView),
-    T: FnMut(&riscv_core::trace::InstructionTrace),
-{
+fn write_compressed_instruction(sim: &mut cpu_sim::SimulatorView, addr: u32, c_insn: u16) {
     let bytes = c_insn.to_le_bytes();
     sim.write_memory_region(addr, &bytes, true);
 }
 
 /// Helper to write a standard 32-bit instruction
-fn write_standard_instruction<'a, F, T>(sim: &mut Simulator<'a, F, T>, addr: u32, insn: u32)
-where
-    F: FnMut(&mut cpu_sim::SimulatorView),
-    T: FnMut(&riscv_core::trace::InstructionTrace),
-{
+fn write_standard_instruction(sim: &mut cpu_sim::SimulatorView, addr: u32, insn: u32) {
     let bytes = insn.to_le_bytes();
     sim.write_memory_region(addr, &bytes, true);
 }
@@ -85,7 +77,7 @@ fn test_c_li() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 5, "x10 should be 5");
         },
     );
@@ -133,7 +125,7 @@ fn test_c_addi() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15");
         },
     );
@@ -182,7 +174,7 @@ fn test_c_add() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 10, "x10 should be 10");
         },
     );
@@ -230,7 +222,7 @@ fn test_c_mv() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 42, "x10 should be 42");
         },
     );
@@ -287,7 +279,7 @@ fn test_compressed_to_compressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 10, "x10 should be 10 after C→C transitions");
         },
     );
@@ -336,7 +328,7 @@ fn test_compressed_to_uncompressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after C→U transition");
         },
     );
@@ -385,7 +377,7 @@ fn test_uncompressed_to_compressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after U→C transition");
         },
     );
@@ -436,7 +428,7 @@ fn test_uncompressed_to_uncompressed_regression() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 8, "x12 should be 8");
         },
     );
@@ -492,7 +484,7 @@ fn test_mixed_sequence_across_word_boundary() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.bus.read_word(0x100);
+            let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after mixed sequence");
         },
     );

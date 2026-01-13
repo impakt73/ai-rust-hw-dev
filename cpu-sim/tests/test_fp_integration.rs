@@ -32,7 +32,7 @@ fn run_fp_program_with_options<T, F>(
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
-    F: for<'a> FnOnce(&mut Simulator<'a, fn(&mut SimulatorView), T>, &SimulationResult),
+    F: FnOnce(&SimulatorView, &SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -101,7 +101,7 @@ fn test_cpu_flw_fsw_basic() {
 
             // Verify that the value round-tripped correctly
             // We stored 0x3F800000, loaded to f1, stored from f1, and loaded to x3
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(
                 result_value, 0x3F800000,
                 "FLW/FSW round trip should preserve bit pattern"
@@ -153,9 +153,9 @@ fn test_cpu_flw_multiple_registers() {
                 "Program should terminate with tohost=1"
             );
 
-            let val1 = sim.bus.read_word(0x100);
-            let val2 = sim.bus.read_word(0x104);
-            let val3 = sim.bus.read_word(0x108);
+            let val1 = sim.read_word(0x100);
+            let val2 = sim.read_word(0x104);
+            let val3 = sim.read_word(0x108);
 
             assert_eq!(val1, 0x3F800000, "f1 should be 1.0");
             assert_eq!(val2, 0x40000000, "f2 should be 2.0");
@@ -203,7 +203,7 @@ fn test_cpu_fadd_basic() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x40400000, "1.0 + 2.0 should equal 3.0");
         },
     )
@@ -243,7 +243,7 @@ fn test_cpu_fmul_basic() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x40C00000, "2.0 * 3.0 should equal 6.0");
         },
     )
@@ -282,7 +282,7 @@ fn test_cpu_fcvt_s_w() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x42280000, "42 as float should be 0x42280000");
         },
     )
@@ -317,7 +317,7 @@ fn test_cpu_fcvt_w_s() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 42, "42.0 as int should be 42");
         },
     )
@@ -365,10 +365,10 @@ fn test_cpu_feq_flt() {
                 "Program should terminate with tohost=1"
             );
 
-            let eq_same = sim.bus.read_word(0x100);
-            let eq_diff = sim.bus.read_word(0x104);
-            let lt_true = sim.bus.read_word(0x108);
-            let lt_false = sim.bus.read_word(0x10C);
+            let eq_same = sim.read_word(0x100);
+            let eq_diff = sim.read_word(0x104);
+            let lt_true = sim.read_word(0x108);
+            let lt_false = sim.read_word(0x10C);
 
             assert_eq!(eq_same, 1, "1.0 == 1.0 should be true");
             assert_eq!(eq_diff, 0, "1.0 == 2.0 should be false");
@@ -409,7 +409,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.bus.read_word(0x100);
+            let result_value = sim.read_word(0x100);
             assert_eq!(
                 result_value, 0x3F800000,
                 "FMV round trip should preserve bits"
@@ -461,8 +461,8 @@ fn test_cpu_fsub_fdiv_fsqrt() {
                 "Program should terminate with tohost=1"
             );
 
-            let fsub_result = sim.bus.read_word(0x100);
-            let fdiv_result = sim.bus.read_word(0x104);
+            let fsub_result = sim.read_word(0x100);
+            let fdiv_result = sim.read_word(0x104);
             assert_eq!(fsub_result, 0x40400000, "5.0 - 2.0 should equal 3.0");
             assert_eq!(fdiv_result, 0x40200000, "5.0 / 2.0 should equal 2.5");
         },
@@ -507,8 +507,8 @@ fn test_cpu_fmin_fmax() {
                 "Program should terminate with tohost=1"
             );
 
-            let min_result = sim.bus.read_word(0x100);
-            let max_result = sim.bus.read_word(0x104);
+            let min_result = sim.read_word(0x100);
+            let max_result = sim.read_word(0x104);
             assert_eq!(min_result, 0x3F800000, "min(1.0, 3.0) should be 1.0");
             assert_eq!(max_result, 0x40400000, "max(1.0, 3.0) should be 3.0");
         },
@@ -551,9 +551,9 @@ fn test_cpu_fsgnj_ops() {
                 "Program should terminate with tohost=1"
             );
 
-            let fsgnj_result = sim.bus.read_word(0x100);
-            let fsgnjn_result = sim.bus.read_word(0x104);
-            let fsgnjx_result = sim.bus.read_word(0x108);
+            let fsgnj_result = sim.read_word(0x100);
+            let fsgnjn_result = sim.read_word(0x104);
+            let fsgnjx_result = sim.read_word(0x108);
             assert_eq!(
                 fsgnj_result, 0xBF800000,
                 "FSGNJ should copy sign: result should be -1.0"
@@ -606,9 +606,9 @@ fn test_cpu_fle() {
                 "Program should terminate with tohost=1"
             );
 
-            let le1 = sim.bus.read_word(0x100);
-            let le2 = sim.bus.read_word(0x104);
-            let le3 = sim.bus.read_word(0x108);
+            let le1 = sim.read_word(0x100);
+            let le2 = sim.read_word(0x104);
+            let le3 = sim.read_word(0x108);
             assert_eq!(le1, 1, "1.0 <= 2.0 should be true");
             assert_eq!(le2, 0, "2.0 <= 1.0 should be false");
             assert_eq!(le3, 1, "1.0 <= 1.0 should be true");
@@ -650,8 +650,8 @@ fn test_cpu_fcvt_unsigned() {
                 "Program should terminate with tohost=1"
             );
 
-            let wu_result = sim.bus.read_word(0x100);
-            let swu_result = sim.bus.read_word(0x104);
+            let wu_result = sim.read_word(0x100);
+            let swu_result = sim.read_word(0x104);
             assert_eq!(
                 wu_result, 42,
                 "FCVT.WU.S: 42.0 as unsigned int should be 42"
@@ -699,9 +699,9 @@ fn test_cpu_fclass() {
                 "Program should terminate with tohost=1"
             );
 
-            let class_pos_normal = sim.bus.read_word(0x100);
-            let class_neg_normal = sim.bus.read_word(0x104);
-            let class_pos_zero = sim.bus.read_word(0x108);
+            let class_pos_normal = sim.read_word(0x100);
+            let class_neg_normal = sim.read_word(0x104);
+            let class_pos_zero = sim.read_word(0x108);
             assert_eq!(
                 class_pos_normal, 0x40,
                 "FCLASS: 1.0 should be positive normal (bit 6)"
@@ -767,10 +767,10 @@ fn test_cpu_fused_multiply_add_ops() {
                 "Program should terminate with tohost=1"
             );
 
-            let fmadd_result = sim.bus.read_word(0x100);
-            let fmsub_result = sim.bus.read_word(0x104);
-            let fnmsub_result = sim.bus.read_word(0x108);
-            let fnmadd_result = sim.bus.read_word(0x10C);
+            let fmadd_result = sim.read_word(0x100);
+            let fmsub_result = sim.read_word(0x104);
+            let fnmsub_result = sim.read_word(0x108);
+            let fnmadd_result = sim.read_word(0x10C);
             assert_eq!(fmadd_result, 0x40E00000, "FMADD: (2*3)+1 should be 7.0");
             assert_eq!(fmsub_result, 0x40A00000, "FMSUB: (2*3)-1 should be 5.0");
             assert_eq!(

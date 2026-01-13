@@ -54,7 +54,7 @@ fn run_program_with_options<T, F>(
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
-    F: for<'a> FnOnce(&mut Simulator<'a, fn(&mut SimulatorView), T>, &SimulationResult),
+    F: FnOnce(&SimulatorView, &SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -245,8 +245,8 @@ fn test_cpu_branch_beq_bne() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, result| {
             // Verify branches worked - skipped instructions should leave registers at 0
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
+            let marker1 = sim.read_word(0x100);
+            let marker2 = sim.read_word(0x104);
             assert_eq!(
                 marker1, 0,
                 "First branch should skip addi x3,x0,99, so x3 should be 0"
@@ -301,8 +301,8 @@ fn test_cpu_branch_blt_bge() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, result| {
             // Verify branches worked
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
+            let marker1 = sim.read_word(0x100);
+            let marker2 = sim.read_word(0x104);
             assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
             assert!(
@@ -351,8 +351,8 @@ fn test_cpu_branch_bltu_bgeu() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, result| {
             // Verify branches worked
-            let marker1 = sim.bus.read_word(0x100);
-            let marker2 = sim.bus.read_word(0x104);
+            let marker1 = sim.read_word(0x100);
+            let marker2 = sim.read_word(0x104);
             assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
             assert!(
@@ -400,8 +400,8 @@ fn test_cpu_load_store() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
-            assert_eq!(sim.bus.read_word(100), 42, "Memory[100] should contain 42");
-            assert_eq!(sim.bus.read_word(108), 42, "Memory[108] should contain 42");
+            assert_eq!(sim.read_word(100), 42, "Memory[100] should contain 42");
+            assert_eq!(sim.read_word(108), 42, "Memory[108] should contain 42");
         },
     )
     .expect("Program should run");
@@ -450,28 +450,28 @@ fn test_cpu_load_byte() {
         |sim, _result| {
             // Verify memory operations
             assert_eq!(
-                sim.bus.read_word(100),
+                sim.read_word(100),
                 0xFFFFFFFF,
                 "Memory[100] should contain 0xFFFFFFFF"
             );
             // Verify load operations
             assert_eq!(
-                sim.bus.read_word(0x200),
+                sim.read_word(0x200),
                 0xFFFFFFFF,
                 "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x204),
+                sim.read_word(0x204),
                 0xFFFFFFFF,
                 "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x208),
+                sim.read_word(0x208),
                 0x000000FF,
                 "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
             );
             assert_eq!(
-                sim.bus.read_word(0x20C),
+                sim.read_word(0x20C),
                 0x000000FF,
                 "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
             );
@@ -511,28 +511,28 @@ fn test_cpu_load_halfword() {
         |sim, _result| {
             // Verify memory operations
             assert_eq!(
-                sim.bus.read_word(100),
+                sim.read_word(100),
                 0xFFFFFFFF,
                 "Memory[100] should contain 0xFFFFFFFF"
             );
             // Verify load operations
             assert_eq!(
-                sim.bus.read_word(0x200),
+                sim.read_word(0x200),
                 0xFFFFFFFF,
                 "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x204),
+                sim.read_word(0x204),
                 0xFFFFFFFF,
                 "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x208),
+                sim.read_word(0x208),
                 0x0000FFFF,
                 "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x20C),
+                sim.read_word(0x20C),
                 0x0000FFFF,
                 "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
@@ -572,7 +572,7 @@ fn test_cpu_store_byte() {
         |sim, _result| {
             // Verify memory operations - bytes stored in little-endian order
             assert_eq!(
-                sim.bus.read_word(100),
+                sim.read_word(100),
                 0x78563412,
                 "Memory should contain 0x78563412"
             );
@@ -607,7 +607,7 @@ fn test_cpu_store_halfword() {
         |sim, _result| {
             // Verify memory operations - halfwords stored in little-endian order
             assert_eq!(
-                sim.bus.read_word(100),
+                sim.read_word(100),
                 0x06780234,
                 "Memory should contain 0x06780234"
             );
@@ -649,22 +649,22 @@ fn test_cpu_byte_halfword_mixed() {
         |sim, _result| {
             // Verify load operations
             assert_eq!(
-                sim.bus.read_word(0x200),
+                sim.read_word(0x200),
                 0xFFFFFF80,
                 "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
             );
             assert_eq!(
-                sim.bus.read_word(0x204),
+                sim.read_word(0x204),
                 0x00000080,
                 "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
             );
             assert_eq!(
-                sim.bus.read_word(0x208),
+                sim.read_word(0x208),
                 0xFFFFFFFF,
                 "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x20C),
+                sim.read_word(0x20C),
                 0x0000FFFF,
                 "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
@@ -737,7 +737,7 @@ fn test_cpu_tohost_halt() {
                 "Expected tohost value to be 1 (exit code)"
             );
             assert_eq!(
-                sim.bus.read_word(TOHOST_ADDR),
+                sim.read_word(TOHOST_ADDR),
                 1,
                 "TOHOST memory location should contain 1"
             );
@@ -859,17 +859,17 @@ fn test_cpu_csr_read_write() {
         |sim, _result| {
             // Verify CSR operations
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0,
                 "First CSRRW should read 0 from uninitialized CSR"
             );
             assert_eq!(
-                sim.bus.read_word(0x104),
+                sim.read_word(0x104),
                 100,
                 "Second CSRRW should read 100 from CSR"
             );
             assert_eq!(
-                sim.bus.read_word(0x108),
+                sim.read_word(0x108),
                 0,
                 "Third CSRRW should read 0 from CSR"
             );
@@ -908,17 +908,17 @@ fn test_cpu_csr_set_clear() {
         |sim, _result| {
             // Verify CSR operations
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0b1010,
                 "CSRRS should read old value 0b1010"
             );
             assert_eq!(
-                sim.bus.read_word(0x104),
+                sim.read_word(0x104),
                 0b1111,
                 "CSRRC should read value 0b1111"
             );
             assert_eq!(
-                sim.bus.read_word(0x108),
+                sim.read_word(0x108),
                 0b0111,
                 "Final CSR value should be 0b0111"
             );
@@ -955,13 +955,13 @@ fn test_cpu_csr_immediate() {
         |sim, _result| {
             // Verify CSR operations
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0,
                 "CSRRWI should read 0 from uninitialized CSR"
             );
-            assert_eq!(sim.bus.read_word(0x104), 15, "CSRRSI should read 15");
-            assert_eq!(sim.bus.read_word(0x108), 15, "CSRRCI should read 15");
-            assert_eq!(sim.bus.read_word(0x10C), 11, "Final CSR value should be 11");
+            assert_eq!(sim.read_word(0x104), 15, "CSRRSI should read 15");
+            assert_eq!(sim.read_word(0x108), 15, "CSRRCI should read 15");
+            assert_eq!(sim.read_word(0x10C), 11, "Final CSR value should be 11");
         },
     )
     .expect("Program should run");
@@ -992,7 +992,7 @@ fn test_cpu_mul_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
+            assert_eq!(sim.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
         },
     )
     .expect("Program should run");
@@ -1020,7 +1020,7 @@ fn test_cpu_mulh_instruction() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0x00000001,
                 "MULH: upper 32 bits should be 0x00000001"
             );
@@ -1050,7 +1050,7 @@ fn test_cpu_div_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
+            assert_eq!(sim.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
         },
     )
     .expect("Program should run");
@@ -1078,7 +1078,7 @@ fn test_cpu_div_by_zero() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0xFFFFFFFF,
                 "DIV by zero should return 0xFFFFFFFF"
             );
@@ -1108,7 +1108,7 @@ fn test_cpu_rem_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
-            assert_eq!(sim.bus.read_word(0x100), 2, "REM: 100 % 7 should be 2");
+            assert_eq!(sim.read_word(0x100), 2, "REM: 100 % 7 should be 2");
         },
     )
     .expect("Program should run");
@@ -1138,12 +1138,12 @@ fn test_cpu_divu_remu_unsigned() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 0x7FFFFFFF,
                 "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
             );
             assert_eq!(
-                sim.bus.read_word(0x104),
+                sim.read_word(0x104),
                 1,
                 "REMU: 0xFFFFFFFF % 2 should be 1"
             );
@@ -1182,7 +1182,7 @@ fn test_cpu_m_extension_program() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         |sim, _result| {
             assert_eq!(
-                sim.bus.read_word(0x100),
+                sim.read_word(0x100),
                 22,
                 "Complex M extension program result should be 22"
             );
@@ -1670,7 +1670,7 @@ fn test_cpu_lr_sc_success() {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
             // Verify SC succeeded by checking program completed successfully
             // (In a real test, we would check x4 register value = 0 for success)
-            let _mem_value = sim.bus.read_word(mem_addr); // Should be 105
+            let _mem_value = sim.read_word(mem_addr); // Should be 105
         },
     )
     .expect("LR/SC test should run");

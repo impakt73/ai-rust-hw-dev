@@ -308,6 +308,21 @@ impl<'a> SimulatorView<'a> {
         log::info!("Image saved: {} ({}x{} RGBA8)", output_path, width, height);
         Ok(())
     }
+
+    /// Read a single byte from memory
+    pub fn read_byte(&self, addr: u32) -> u8 {
+        self.dram.read_byte(addr)
+    }
+
+    /// Read a 16-bit halfword from memory (little-endian)
+    pub fn read_halfword(&self, addr: u32) -> u16 {
+        self.dram.read_halfword(addr)
+    }
+
+    /// Read a 32-bit word from memory (little-endian)
+    pub fn read_word(&self, addr: u32) -> u32 {
+        self.dram.read_word(addr)
+    }
 }
 
 /// RISC-V CPU Simulator
