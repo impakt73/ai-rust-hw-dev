@@ -70,7 +70,19 @@ fn test_comprehensive_elf() {
     init_test_logger();
 
     let elf_path = test_program_path("test.elf");
-    let result = run_elf(&elf_path, 500, false).expect("Simulation should succeed");
+    let result = run_elf(
+        &elf_path,
+        500,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Simulation should succeed");
 
     assert_tohost(&result, 0x2a, "comprehensive test");
     println!(
@@ -84,7 +96,19 @@ fn test_instruction_trace() {
     init_test_logger();
 
     let elf_path = test_program_path("test.elf");
-    let result = run_elf(&elf_path, 500, true).expect("Simulation with trace should succeed");
+    let result = run_elf(
+        &elf_path,
+        500,
+        true,  // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Simulation with trace should succeed");
 
     assert_tohost(&result, 0x2a, "instruction trace test");
     println!(
@@ -119,8 +143,19 @@ fn test_register_trace_audit() {
     println!("  Phase 5: Load/Store with value 123 (0x7b)");
     println!("========================================\n");
 
-    let result =
-        run_elf(&elf_path, 500, true).expect("Register trace audit simulation should succeed");
+    let result = run_elf(
+        &elf_path,
+        500,
+        true,  // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Register trace audit simulation should succeed");
 
     assert_tohost(&result, 0x2a, "register trace audit program");
     println!(
@@ -144,7 +179,19 @@ fn test_rust_bare_metal_elf() {
     init_test_logger();
 
     let elf_path = test_program_path("rust_test.elf");
-    let result = run_elf(&elf_path, 500, false).expect("Rust bare metal simulation should succeed");
+    let result = run_elf(
+        &elf_path,
+        500,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Rust bare metal simulation should succeed");
 
     assert_tohost(&result, 0x2a, "Rust bare metal program");
     println!(
@@ -158,8 +205,19 @@ fn test_fp_math_elf() {
     init_test_logger();
 
     let elf_path = test_program_path("test_fp_math.elf");
-    let result = run_elf(&elf_path, 1000, false)
-        .expect("Floating-point math test simulation should succeed");
+    let result = run_elf(
+        &elf_path,
+        1000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Floating-point math test simulation should succeed");
 
     assert_tohost(&result, 0x2a, "FP math test program");
     println!(
@@ -176,7 +234,8 @@ fn test_fifo_hello_world() {
     let (fifo_data, callback) = create_fifo_collector();
 
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -184,11 +243,10 @@ fn test_fifo_hello_world() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| {
-            // Write test string to FIFO RX before loading ELF
+        Some(|sim: &mut SimulatorView| {
+            // Write test string to FIFO RX after ELF is loaded
             sim.fifo_write_rx_string(test_string);
-            load_elf(sim, &elf_path).map_err(|e| e.to_string())
-        },
+        }),
         |_sim, _result| {},
     )
     .expect("FIFO hello world simulation should succeed");
@@ -223,17 +281,18 @@ fn test_trace_callback() {
         traces_clone.lock().unwrap().push(trace.clone());
     };
 
-    // NOTE: Replaced run_elf_with_trace_callback() with run_program()
+    // NOTE: Replaced run_elf_with_trace_callback() with run_elf()
     // to use the unified execution API
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         500,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         Some(trace_callback),
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Trace test simulation should succeed");
@@ -533,15 +592,16 @@ fn test_vcd_generation() {
     }
 
     println!("Running simulation with VCD enabled...");
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         500,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         Some(vcd_path_str),
-        0, // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation with VCD should succeed");
@@ -646,15 +706,16 @@ fn test_memory_dump() {
     let elf_path = test_program_path("test_memory_pattern.elf");
 
     // Run simulation and access memory in callback
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |sim, result| {
             assert_tohost(result, 42, "memory pattern test");
             println!("✓ Program executed successfully");
@@ -729,15 +790,16 @@ fn test_image_dump() {
     let elf_path = test_program_path("test_image_data.elf");
 
     // Run simulation and access memory in callback
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |sim, result| {
             assert_tohost(result, 42, "image data test");
             println!("✓ Program executed successfully");
@@ -845,7 +907,19 @@ fn test_panic_handler() {
     let elf_path = test_program_path("test_panic.elf");
 
     // Run the panic test program with sufficient cycles
-    let result = run_elf(&elf_path, 5000, false).expect("Simulation should succeed");
+    let result = run_elf(
+        &elf_path,
+        5000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("Simulation should succeed");
 
     // Verify that the panic handler wrote 0xDEAD to tohost
     assert_eq!(
@@ -879,7 +953,18 @@ fn test_hung_detection_with_elf_auto_range() {
     let elf_path = test_program_path("test.elf");
 
     // This should succeed with hung detection enabled and auto PC range
-    let result = run_elf(&elf_path, 500, false);
+    let result = run_elf(
+        &elf_path,
+        500,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    );
 
     assert!(
         result.is_ok(),
@@ -1087,15 +1172,38 @@ fn test_atomic_operations() {
     // Test 1: Simple atomic operations (AMOADD, AMOSWAP)
     println!("Running test_atomic_simple.elf...");
     let simple_path = test_program_path("test_atomic_simple.elf");
-    let result =
-        run_elf(&simple_path, 1000, false).expect("test_atomic_simple simulation should succeed");
+    let result = run_elf(
+        &simple_path,
+        1000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("test_atomic_simple simulation should succeed");
     assert_tohost(&result, 0x2a, "test_atomic_simple");
     println!("✓ test_atomic_simple passed in {} cycles", result.cycles);
 
     // Test 2: Comprehensive atomic operations (all AMO ops, LR/SC, compare_exchange)
     println!("\nRunning test_atomic.elf...");
     let full_path = test_program_path("test_atomic.elf");
-    let result = run_elf(&full_path, 100000, false).expect("test_atomic simulation should succeed");
+    let result = run_elf(
+        &full_path,
+        100000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
+        |_sim, _result| {},
+    )
+    .expect("test_atomic simulation should succeed");
     assert_tohost(&result, 0x2a, "test_atomic");
     println!("✓ test_atomic passed in {} cycles", result.cycles);
 
@@ -1168,15 +1276,16 @@ fn test_packet_protocol_end_to_end() {
     };
 
     // Run the simulation
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         50000,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -1328,18 +1437,16 @@ fn test_println_macro() {
     };
 
     // Run the simulation with inst_complete callback
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         25000,
         true,  // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| {
-            // No pre-configuration needed, just load ELF
-            load_elf(sim, &elf_path).map_err(|e| e.to_string())
-        },
+        None,                           // vcd_path
+        0,                              // mem_latency_cycles
+        None::<fn(&mut SimulatorView)>, // prep_callback
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

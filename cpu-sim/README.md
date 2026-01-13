@@ -71,14 +71,20 @@ gtkwave trace.vcd
 You can also enable VCD dumping programmatically:
 
 ```rust
-use cpu_sim::run_elf_with_vcd;
+use cpu_sim::run_elf;
 use std::path::Path;
 
-let result = run_elf_with_vcd(
+let result = run_elf(
     Path::new("program.elf"),
     10000,          // max_cycles
     false,          // print_inst_trace
-    "trace.vcd"     // vcd_path
+    false,          // print_fsm_state
+    None,           // inst_complete_callback
+    None,           // trace_callback
+    Some("trace.vcd"), // vcd_path
+    0,              // mem_latency_cycles
+    None,           // prep_callback
+    |_sim, _result| {} // post_callback
 )?;
 
 println!("VCD waveform saved to trace.vcd");
@@ -99,7 +105,7 @@ The simulator provides a programmatic interface for receiving instruction trace 
 ### Using the Trace Callback
 
 ```rust
-use cpu_sim::{run_elf_with_trace_callback, InstructionTrace};
+use cpu_sim::{run_elf, InstructionTrace};
 use riscv_core::trace::InstructionType;
 use std::{cell::Cell, path::Path};
 
@@ -127,11 +133,17 @@ let trace_callback = |trace: &InstructionTrace| {
 };
 
 // Run simulation with trace callback
-let result = run_elf_with_trace_callback(
+let result = run_elf(
     Path::new("program.elf"),
     10000,
     false,  // print_inst_trace (false to use only callback)
-    Some(trace_callback)
+    false,  // print_fsm_state
+    None,   // inst_complete_callback
+    Some(trace_callback),
+    None,   // vcd_path
+    0,      // mem_latency_cycles
+    None,   // prep_callback
+    |_sim, _result| {} // post_callback
 )?;
 
 println!("Executed {} instructions", instruction_count.get());
@@ -151,35 +163,44 @@ The `InstructionTrace` struct provides detailed information about each executed 
 
 ### Available API Functions
 
-The library provides several convenience functions for different use cases:
+The library provides two main functions for different use cases:
 
-- `run_elf(path, max_cycles, print_trace)` - Basic simulation
-- `run_elf_with_vcd(path, max_cycles, print_trace, vcd_path)` - With VCD waveform dumping
-- `run_elf_with_trace_callback(path, max_cycles, print_trace, trace_callback)` - With instruction trace callback
-- `run_elf_with_fifo(path, max_cycles, print_trace, fifo_callback, fifo_rx_data)` - With FIFO callback and RX data
-
-For advanced use cases that need access to the simulator after execution:
-- `run_elf_in_simulator(path, max_cycles, callback, vcd_path)` - Access simulator via callback
-- `run_elf_in_simulator_with_options(path, max_cycles, print_trace, callback, vcd_path)` - Full options with simulator access
+- `run_elf(elf_path, max_cycles, print_inst_trace, print_fsm_state, inst_complete_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run an ELF file with full configuration and optional pre-execution setup
+- `run_program(max_cycles, print_inst_trace, print_fsm_state, inst_complete_callback, trace_callback, vcd_path, mem_latency_cycles, prep_callback, post_callback)` - Run a program with custom loading logic
 
 ### Unified Execution API
 
-The `run_program` function provides a unified interface for all simulator execution:
+The `run_program` function provides a unified interface for all simulator execution with custom program loading:
 
 ```rust
 pub fn run_program<F, T, P, C>(
     max_cycles: u64,
     print_inst_trace: bool,
     print_fsm_state: bool,
-    fifo_callback: Option<F>,
+    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
     prep_callback: P,      // Load program, return entry point
     post_callback: C,      // Access simulator after execution
 ) -> Result<SimulationResult, String>
+
+// For ELF files, use run_elf which loads the ELF and provides a prep_callback for additional setup
+pub fn run_elf<F, T, P, C>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
+    prep_callback: Option<P>,  // Optional additional setup after ELF is loaded
+    post_callback: C,
+) -> Result<SimulationResult, String>
 ```
 
-This single function handles both ELF and programmatic instruction loading through the `prep_callback`. All other API functions delegate to this for consistency.
+Here, `run_program` is the underlying execution engine: it directly supports programmatic instruction loading via `prep_callback`, and `run_elf` is a convenience wrapper that first loads an ELF file and then invokes `run_program`. All other API functions delegate to `run_program` for consistency.
 
 
 ## Programmatic Testing with cpu-sim
