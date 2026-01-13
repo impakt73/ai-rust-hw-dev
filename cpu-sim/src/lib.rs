@@ -3,7 +3,7 @@ mod bus;
 mod dram;
 mod fifo;
 mod hung_detector;
-mod packet_transport;
+pub mod packet_transport; // Public for integration tests
 mod sim;
 
 // Public API exports - only what's needed for external use
@@ -33,22 +33,22 @@ use std::path::Path;
 /// # use cpu_sim::*;
 /// # use std::path::Path;
 /// #
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let runtime = riscv_core::create_cpu_runtime()?;
-/// let bus = bus::SystemBus::new();
-/// let mut sim = Simulator::new(
-///     &runtime,
-///     bus,
-///     false,
-///     false,
+/// # fn main() -> Result<(), String> {
+/// // load_elf is typically used within run_program's prep_callback
+/// let result = run_program(
+///     1000,
+///     false, // print_inst_trace
+///     false, // print_fsm_state
 ///     None::<fn(&mut SimulatorView)>,
-///     None::<fn(&riscv_core::trace::InstructionTrace)>,
-///     None, // No VCD
-///     0, // Zero latency
-///     Some(HungDetectorConfig::default()), // Enable hung detection
+///     None::<fn(&InstructionTrace)>,
+///     None, // vcd_path
+///     0, // mem_latency_cycles
+///     |sim| {
+///         // load_elf is called here to load the program
+///         load_elf(sim, Path::new("program.elf")).map_err(|e| e.to_string())
+///     },
+///     |_sim, _result| {},
 /// )?;
-/// let entry_point = load_elf(&mut sim, Path::new("program.elf"))?;
-/// let result = sim.run(entry_point, 1000)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -185,7 +185,6 @@ pub fn run_elf(
         None,
     )
 }
-
 
 /// Internal helper function that consolidates the common pattern for running an ELF
 /// with a callback that has access to the simulator after execution.

@@ -176,8 +176,22 @@ fn test_fifo_hello_world() {
     let (fifo_data, callback) = create_fifo_collector();
 
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(callback), Some(test_string))
-        .expect("FIFO hello world simulation should succeed");
+    let result = run_program(
+        10000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        Some(callback),
+        None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| {
+            // Write test string to FIFO RX before loading ELF
+            sim.fifo_write_rx_string(test_string);
+            load_elf(sim, &elf_path).map_err(|e| e.to_string())
+        },
+        |_sim, _result| {},
+    )
+    .expect("FIFO hello world simulation should succeed");
 
     assert_tohost(&result, 0x2a, "hello_world program");
 
@@ -209,12 +223,20 @@ fn test_trace_callback() {
         traces_clone.lock().unwrap().push(trace.clone());
     };
 
-    // NOTE: Use run_elf_with_fsm_debug() instead of run_elf_with_trace_callback()
-    // to enable detailed FSM state printing for debugging instruction trace issues
-    // let result = run_elf_with_fsm_debug(&elf_path, 500, false, Some(trace_callback))
-    //     .expect("Trace test simulation should succeed");
-    let result = run_elf_with_trace_callback(&elf_path, 500, false, Some(trace_callback))
-        .expect("Trace test simulation should succeed");
+    // NOTE: Replaced run_elf_with_trace_callback() with run_program()
+    // to use the unified execution API
+    let result = run_program(
+        500,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        Some(trace_callback),
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        |_sim, _result| {},
+    )
+    .expect("Trace test simulation should succeed");
 
     assert_tohost(&result, 0x2a, "trace test program");
 
@@ -511,8 +533,18 @@ fn test_vcd_generation() {
     }
 
     println!("Running simulation with VCD enabled...");
-    let result = run_elf_with_vcd(&elf_path, 500, false, vcd_path_str)
-        .expect("Simulation with VCD should succeed");
+    let result = run_program(
+        500,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        Some(vcd_path_str),
+        0, // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        |_sim, _result| {},
+    )
+    .expect("Simulation with VCD should succeed");
 
     assert_tohost(&result, 0x2a, "VCD generation test");
 
@@ -614,9 +646,15 @@ fn test_memory_dump() {
     let elf_path = test_program_path("test_memory_pattern.elf");
 
     // Run simulation and access memory in callback
-    let result = cpu_sim::run_elf_in_simulator(
-        &elf_path,
+    let result = run_program(
         10000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |sim, result| {
             assert_tohost(result, 42, "memory pattern test");
             println!("✓ Program executed successfully");
@@ -669,7 +707,6 @@ fn test_memory_dump() {
             // Clean up test file
             std::fs::remove_file(dump_path).expect("Should be able to remove test file");
         },
-        None, // No VCD
     )
     .expect("Simulation should succeed");
 
@@ -692,9 +729,15 @@ fn test_image_dump() {
     let elf_path = test_program_path("test_image_data.elf");
 
     // Run simulation and access memory in callback
-    let result = cpu_sim::run_elf_in_simulator(
-        &elf_path,
+    let result = run_program(
         10000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |sim, result| {
             assert_tohost(result, 42, "image data test");
             println!("✓ Program executed successfully");
@@ -780,7 +823,6 @@ fn test_image_dump() {
             // Clean up test file
             std::fs::remove_file(image_path).expect("Should be able to remove test file");
         },
-        None, // No VCD
     )
     .expect("Simulation should succeed");
 
@@ -1126,12 +1168,16 @@ fn test_packet_protocol_end_to_end() {
     };
 
     // Run the simulation
-    let result = run_elf_with_fifo(
-        &elf_path,
+    let result = run_program(
         50000,
-        false, // Don't print instruction trace
+        false, // print_inst_trace
+        false, // print_fsm_state
         Some(inst_complete_callback),
-        None, // No RX data to pre-load
+        None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        |_sim, _result| {},
     )
     .expect("Simulation should succeed");
 
@@ -1282,16 +1328,19 @@ fn test_println_macro() {
     };
 
     // Run the simulation with inst_complete callback
-    let result = run_elf_in_simulator_with_trace(
-        &elf_path,
+    let result = run_program(
         25000,
-        |_sim| {
-            // No pre-configuration needed
-        },
-        None, // No VCD
-        true, // Enable instruction trace
+        true,  // print_inst_trace
+        false, // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| {
+            // No pre-configuration needed, just load ELF
+            load_elf(sim, &elf_path).map_err(|e| e.to_string())
+        },
+        |_sim, _result| {},
     )
     .expect("Simulation should succeed");
 

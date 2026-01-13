@@ -620,24 +620,25 @@ where
     /// * `is_instructions` - If true, marks this region as valid for PC execution
     ///
     /// # Examples
-    /// ```
+    /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
-    /// # let bus = bus::SystemBus::new();
-    /// let mut sim = Simulator::new(
-    ///     &runtime,
-    ///     bus,
-    ///     false,
-    ///     false,
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
-    ///     None, // No VCD
-    ///     0, // Zero latency
-    ///     Some(hung_detector::HungDetectorConfig::default()),
-    /// )?;
+    /// // write_memory_region is typically used within run_program's prep_callback
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// sim.write_memory_region(0x8000_0000, &instructions, true);
+    /// let result = run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         sim.write_memory_region(0x8000_0000, &instructions, true);
+    ///         Ok(0x8000_0000)
+    ///     },
+    ///     |_sim, _result| {},
+    /// )?;
     /// # Ok(())
     /// # }
     /// ```
@@ -670,23 +671,27 @@ where
     /// An iterator yielding bytes from the memory region
     ///
     /// # Examples
-    /// ```
+    /// ```no_run
     /// # use cpu_sim::*;
+    /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
-    /// # let bus = bus::SystemBus::new();
-    /// let sim = Simulator::new(
-    ///     &runtime,
-    ///     bus,
-    ///     false,
-    ///     false,
+    /// // dump_memory_region is typically used in run_program's post_callback
+    /// run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
     ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
-    ///     None, // No VCD
-    ///     0, // Zero latency
-    ///     Some(HungDetectorConfig::default()),
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         load_elf(sim, Path::new("test.elf")).map_err(|e| e.to_string())
+    ///     },
+    ///     |sim, _result| {
+    ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
+    ///         // Process bytes...
+    ///     },
     /// )?;
-    /// let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     /// # Ok(())
     /// # }
     /// ```
@@ -718,25 +723,24 @@ where
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::*;
+    /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// # let runtime = riscv_core::create_cpu_runtime().map_err(|e| e.to_string())?;
-    /// # let bus = bus::SystemBus::new();
-    /// let sim = Simulator::new(
-    ///     &runtime,
-    ///     bus,
-    ///     false,
-    ///     false,
+    /// // dump_memory_region_as_image is typically used in run_program's post_callback
+    /// run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
     ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
-    ///     None, // No VCD
-    ///     0, // Zero latency
-    ///     Some(HungDetectorConfig::default()),
-    /// )?;
-    /// sim.dump_memory_region_as_image(
-    ///     0x8000_0000,
-    ///     640,
-    ///     480,
-    ///     "output.png"
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |sim| {
+    ///         load_elf(sim, Path::new("graphics.elf")).map_err(|e| e.to_string())
+    ///     },
+    ///     |sim, _result| {
+    ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
+    ///             .expect("Failed to dump image");
+    ///     },
     /// )?;
     /// # Ok(())
     /// # }

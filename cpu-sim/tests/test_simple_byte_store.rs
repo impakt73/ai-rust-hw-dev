@@ -23,8 +23,18 @@ fn test_simple_byte_store() {
         }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
-        .expect("Simulation should succeed");
+    let result = run_program(
+        10000,
+        false, // print_inst_trace
+        false, // print_fsm_state
+        Some(inst_complete_callback),
+        None::<fn(&InstructionTrace)>,
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
+        |_sim, _result| {},
+    )
+    .expect("Simulation should succeed");
 
     assert_eq!(
         result.tohost_value,
