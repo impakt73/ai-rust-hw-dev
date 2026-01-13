@@ -32,7 +32,7 @@ fn run_fp_program_with_options<T, F>(
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
-    F: for<'a> FnOnce(&mut Simulator<'a, fn(u32), T>, &SimulationResult),
+    F: for<'a> FnOnce(&mut Simulator<'a, fn(&mut Fifo), T>, &SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
 

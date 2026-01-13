@@ -1083,7 +1083,7 @@ fn test_packet_protocol_end_to_end() {
     // Shared state for collecting FIFO TX data
     let fifo_tx_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_tx_data_clone = fifo_tx_data.clone();
-    
+
     // Track whether we've sent the test packets yet
     let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
     let packets_sent_clone = packets_sent.clone();
@@ -1094,13 +1094,13 @@ fn test_packet_protocol_end_to_end() {
         while let Some(word) = fifo.tx.pop_front() {
             fifo_tx_data_clone.lock().unwrap().push(word);
         }
-        
+
         // After collecting some data, send test packets once
         let tx_word_count = fifo_tx_data_clone.lock().unwrap().len();
         let mut sent = packets_sent_clone.lock().unwrap();
         if !*sent && tx_word_count > 0 {
             // Initial Debug packet received, now send Echo and DataU32 packets
-            
+
             // Send Echo packet (seq=100)
             let echo_request = EchoPacket {
                 header: PacketHeader::new(PacketType::Echo, 0),
@@ -1110,7 +1110,7 @@ fn test_packet_protocol_end_to_end() {
             if let Ok(()) = packet_transport::send_echo_packet(&echo_request, &mut fifo.rx) {
                 println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
             }
-            
+
             // Send DataU32 packet (value=1000)
             let data_request = DataU32Packet {
                 header: PacketHeader::new(PacketType::DataU32, 0),
@@ -1120,7 +1120,7 @@ fn test_packet_protocol_end_to_end() {
             if let Ok(()) = packet_transport::send_data_u32_packet(&data_request, &mut fifo.rx) {
                 println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
             }
-            
+
             *sent = true;
         }
     };
@@ -1129,9 +1129,9 @@ fn test_packet_protocol_end_to_end() {
     let result = run_elf_with_fifo(
         &elf_path,
         50000,
-        false,  // Don't print instruction trace
+        false, // Don't print instruction trace
         Some(inst_complete_callback),
-        None,   // No RX data to pre-load
+        None, // No RX data to pre-load
     )
     .expect("Simulation should succeed");
 
@@ -1288,8 +1288,8 @@ fn test_println_macro() {
         |_sim| {
             // No pre-configuration needed
         },
-        None,  // No VCD
-        true,  // Enable instruction trace
+        None, // No VCD
+        true, // Enable instruction trace
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
     )

@@ -544,7 +544,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None,
+///     None::<fn(&mut cpu_sim::Fifo)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
@@ -561,7 +561,7 @@ where
 ///     1000,
 ///     false,
 ///     false,
-///     None,
+///     None::<fn(&mut cpu_sim::Fifo)>,
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency

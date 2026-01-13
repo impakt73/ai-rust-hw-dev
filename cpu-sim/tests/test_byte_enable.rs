@@ -16,11 +16,13 @@ fn test_byte_enable_heap_directly() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |fifo: &mut Fifo| {
+        while let Some(word) = fifo.tx.pop_front() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(
@@ -86,11 +88,13 @@ fn test_byte_enable_stack_memory() {
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |fifo: &mut Fifo| {
+        while let Some(word) = fifo.tx.pop_front() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(fifo_callback), None)
+    let result = run_elf_with_fifo(&elf_path, 10000, false, Some(inst_complete_callback), None)
         .expect("Simulation should succeed");
 
     assert_eq!(

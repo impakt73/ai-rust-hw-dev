@@ -26,7 +26,7 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// Compressed instructions are 16 bits (2 bytes)
 fn write_compressed_instruction<'a, F, T>(sim: &mut Simulator<'a, F, T>, addr: u32, c_insn: u16)
 where
-    F: FnMut(u32),
+    F: FnMut(&mut cpu_sim::Fifo),
     T: FnMut(&riscv_core::trace::InstructionTrace),
 {
     let bytes = c_insn.to_le_bytes();

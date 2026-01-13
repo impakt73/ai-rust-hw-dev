@@ -586,7 +586,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut crate::fifo::Fifo)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -636,7 +636,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut crate::fifo::Fifo)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
@@ -682,7 +682,7 @@ where
     ///     bus,
     ///     false,
     ///     false,
-    ///     None::<fn(u32)>,
+    ///     None::<fn(&mut crate::fifo::Fifo)>,
     ///     None::<fn(&riscv_core::trace::InstructionTrace)>,
     ///     None, // No VCD
     ///     0, // Zero latency
