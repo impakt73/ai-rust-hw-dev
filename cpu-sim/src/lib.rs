@@ -5,15 +5,85 @@ pub mod hung_detector;
 pub mod packet_transport;
 pub mod sim;
 
-#[cfg(test)]
-mod tests;
-
 pub use hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, Simulator};
 
 use bus::SystemBus;
 use std::path::Path;
+
+/// Create a new Simulator with a default SystemBus and Runtime
+///
+/// This is a convenience function for creating a Simulator without needing direct
+/// access to the SystemBus type. It creates a default SystemBus and a boxed
+/// VerilatorRuntime internally.
+///
+/// # Arguments
+/// * `print_inst_trace` - Enable instruction trace printing
+/// * `print_fsm_state` - Enable FSM state printing
+/// * `fifo_callback` - Optional callback for FIFO TX data
+/// * `trace_callback` - Optional callback for instruction traces
+/// * `vcd_path` - Optional path to VCD file for waveform tracing
+/// * `mem_latency_cycles` - Number of cycles to delay memory operations
+/// * `hung_detector_config` - Optional hung state detector configuration
+///
+/// # Returns
+/// * `Ok(Simulator)` on success
+/// * `Err(String)` on error
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::{create_simulator, HungDetectorConfig};
+///
+/// let mut sim = create_simulator(
+///     false,  // print_inst_trace
+///     false,  // print_fsm_state
+///     None::<fn(u32)>,  // fifo_callback
+///     None::<fn(&cpu_sim::InstructionTrace)>,  // trace_callback
+///     None,  // vcd_path
+///     0,  // mem_latency_cycles
+///     Some(HungDetectorConfig::default()),  // hung_detector_config
+/// )?;
+/// # Ok::<(), String>(())
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub fn create_simulator<F, T>(
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    fifo_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
+    hung_detector_config: Option<HungDetectorConfig>,
+) -> Result<Simulator<'static, F, T>, String>
+where
+    F: FnMut(u32),
+    T: FnMut(&InstructionTrace),
+{
+    let bus = SystemBus::new();
+    let runtime = riscv_core::create_cpu_runtime()
+        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
+
+    // SAFETY: We're using Box::leak here to create a 'static reference to the runtime.
+    // This is acceptable in a test context where we want the runtime to live for the duration
+    // of the program. The memory will be reclaimed when the process exits.
+    // For production code, consider using a different lifetime management strategy.
+    let runtime_ref: &'static riscv_core::VerilatorRuntime = Box::leak(Box::new(runtime));
+
+    let sim = Simulator::new(
+        runtime_ref,
+        bus,
+        print_inst_trace,
+        print_fsm_state,
+        fifo_callback,
+        trace_callback,
+        vcd_path,
+        mem_latency_cycles,
+        hung_detector_config,
+    )?;
+
+    Ok(sim)
+}
 
 /// Load an ELF file into a simulator's memory
 ///
