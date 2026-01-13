@@ -162,7 +162,8 @@ fn test_comprehensive_elf_with_latency() {
 
     let elf_path = test_program_path("test.elf");
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         1000,
         false,
         false,
@@ -170,12 +171,6 @@ fn test_comprehensive_elf_with_latency() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         2, // 2-cycle latency
-        |sim| {
-            // Load ELF
-            let entry_point =
-                load_elf(sim, &elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
-            Ok(entry_point)
-        },
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

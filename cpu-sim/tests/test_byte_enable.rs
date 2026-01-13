@@ -22,7 +22,8 @@ fn test_byte_enable_heap_directly() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -30,7 +31,6 @@ fn test_byte_enable_heap_directly() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -104,7 +104,8 @@ fn test_byte_enable_stack_memory() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -112,7 +113,6 @@ fn test_byte_enable_stack_memory() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

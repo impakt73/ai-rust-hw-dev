@@ -23,7 +23,8 @@ fn test_minimal_postcard_byte_by_byte() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -31,7 +32,6 @@ fn test_minimal_postcard_byte_by_byte() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -68,7 +68,8 @@ fn test_minimal_postcard_word_packing() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -76,7 +77,6 @@ fn test_minimal_postcard_word_packing() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -145,7 +145,8 @@ fn test_minimal_debug_double_write() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -153,7 +154,6 @@ fn test_minimal_debug_double_write() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -217,7 +217,8 @@ fn test_allocator() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -225,7 +226,6 @@ fn test_allocator() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -284,7 +284,8 @@ fn test_heap_directly() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -292,7 +293,6 @@ fn test_heap_directly() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -348,7 +348,8 @@ fn test_stack_memory() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -356,7 +357,6 @@ fn test_stack_memory() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");
@@ -440,7 +440,8 @@ fn test_static_heap() {
         }
     };
 
-    let result = run_program(
+    let result = run_elf(
+        &elf_path,
         10000,
         false, // print_inst_trace
         false, // print_fsm_state
@@ -448,7 +449,6 @@ fn test_static_heap() {
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| load_elf(sim, &elf_path).map_err(|e| e.to_string()),
         |_sim, _result| {},
     )
     .expect("Simulation should succeed");

@@ -49,10 +49,15 @@ fn main() {
 /// Unified simulation runner that handles all options through a single code path
 fn run_simulation(args: &Args) {
     // Always use the callback-based approach for unified handling
-    let result = cpu_sim::run_elf_in_simulator_with_options(
+    let result = cpu_sim::run_elf(
         &args.elf,
         args.max_cycles,
         args.print_inst_trace,
+        false,                                   // print_fsm_state
+        None::<fn(&mut cpu_sim::SimulatorView)>, // fifo_callback
+        None::<fn(&cpu_sim::InstructionTrace)>,  // trace_callback
+        args.vcd.as_deref(),
+        0, // mem_latency_cycles
         |sim, result| {
             // Print simulation result
             print_simulation_result(result);
@@ -72,7 +77,6 @@ fn run_simulation(args: &Args) {
                 println!("✓ VCD waveform written to: {}", vcd_path);
             }
         },
-        args.vcd.as_deref(),
     );
 
     match result {
