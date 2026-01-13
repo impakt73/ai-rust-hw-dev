@@ -198,24 +198,7 @@ where
 /// use cpu_sim::run_program;
 /// use std::path::Path;
 ///
-/// // Example 1: Load ELF file
-/// run_program(
-///     1000,
-///     false,
-///     false,
-///     None::<fn(&mut cpu_sim::SimulatorView)>,
-///     None::<fn(&cpu_sim::InstructionTrace)>,
-///     None,
-///     0, // Zero latency
-///     |sim| {
-///         let entry = cpu_sim::load_elf(sim, Path::new("test.elf"))
-///             .map_err(|e| e.to_string())?;
-///         Ok(entry)
-///     },
-///     |_sim, _result| {}
-/// )?;
-///
-/// // Example 2: Load instruction array
+/// // Example: Load instruction array programmatically
 /// run_program(
 ///     1000,
 ///     false,
@@ -235,6 +218,8 @@ where
 ///     },
 ///     |_sim, _result| {}
 /// )?;
+///
+/// // For loading ELF files, use run_elf() instead
 /// # Ok::<(), String>(())
 /// ```
 #[allow(clippy::too_many_arguments)]
