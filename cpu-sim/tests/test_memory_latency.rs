@@ -32,7 +32,7 @@ fn test_zero_latency_default() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         0, // Zero latency
@@ -74,7 +74,7 @@ fn test_multi_cycle_memory_latency() {
         100,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         3, // 3-cycle latency
@@ -127,7 +127,7 @@ fn test_load_store_with_latency() {
         200,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         2, // 2-cycle latency
@@ -166,7 +166,7 @@ fn test_comprehensive_elf_with_latency() {
         1000,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         2, // 2-cycle latency

@@ -45,7 +45,7 @@ where
         max_cycles,
         print_inst_trace,
         false, // Don't print FSM state
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         trace_callback,
         vcd_path,
         0, // Zero latency for RTL verification tests

@@ -29,22 +29,25 @@ fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
 }
 
 /// Helper function to create a FIFO data collector
-fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(u32)) {
+fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut Fifo)) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback = move |word: u32| {
-        // Convert u32 word to bytes (little-endian)
-        let bytes = [
-            (word & 0xFF) as u8,
-            ((word >> 8) & 0xFF) as u8,
-            ((word >> 16) & 0xFF) as u8,
-            ((word >> 24) & 0xFF) as u8,
-        ];
-        let mut fifo = fifo_data_clone
-            .lock()
-            .expect("Failed to lock FIFO data mutex in create_fifo_collector callback");
-        fifo.extend_from_slice(&bytes);
+    let callback = move |fifo: &mut Fifo| {
+        // Drain all words from TX FIFO and collect them as bytes
+        while let Some(word) = fifo.tx.pop_front() {
+            // Convert u32 word to bytes (little-endian)
+            let bytes = [
+                (word & 0xFF) as u8,
+                ((word >> 8) & 0xFF) as u8,
+                ((word >> 16) & 0xFF) as u8,
+                ((word >> 24) & 0xFF) as u8,
+            ];
+            let mut data = fifo_data_clone
+                .lock()
+                .expect("Failed to lock FIFO data mutex in create_fifo_collector callback");
+            data.extend_from_slice(&bytes);
+        }
     };
 
     (fifo_data, callback)
@@ -877,7 +880,7 @@ fn test_hung_detection_catches_infinite_loop() {
         10000, // max_cycles
         false, // Don't print instruction trace
         false, // Don't print FSM state
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&InstructionTrace)>,
         None, // No VCD
         0,    // Zero latency
@@ -931,7 +934,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
         10000,
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&InstructionTrace)>,
         None,
         0,
@@ -998,7 +1001,7 @@ fn test_hung_detection_catches_long_instruction() {
         100000, // High max_cycles so we don't hit that limit first
         false,
         false,
-        None::<fn(u32)>,
+        None::<fn(&mut Fifo)>,
         None::<fn(&InstructionTrace)>,
         None,
         mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
@@ -1070,11 +1073,6 @@ fn test_packet_protocol_end_to_end() {
 
     init_test_logger();
 
-    // Configurable timeout for packet exchange operations.
-    // This value balances reasonable wait time for packet operations against
-    // quick failure detection. Adjust based on packet complexity and CPU speed.
-    const PACKET_EXCHANGE_TIMEOUT_CYCLES: u32 = 10000;
-
     println!("\n========================================");
     println!("PACKET PROTOCOL END-TO-END TEST");
     println!("========================================");
@@ -1082,146 +1080,80 @@ fn test_packet_protocol_end_to_end() {
 
     let elf_path = test_program_path("packet_test.elf");
 
-    // Create a callback to collect FIFO data from CPU
-    let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    // Shared state for collecting FIFO TX data
+    let fifo_tx_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fifo_tx_data_clone = fifo_tx_data.clone();
+    
+    // Track whether we've sent the test packets yet
+    let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
+    let packets_sent_clone = packets_sent.clone();
+
+    // Callback that handles bidirectional packet communication
+    let inst_complete_callback = move |fifo: &mut Fifo| {
+        // Collect all TX data
+        while let Some(word) = fifo.tx.pop_front() {
+            fifo_tx_data_clone.lock().unwrap().push(word);
+        }
+        
+        // After collecting some data, send test packets once
+        let tx_word_count = fifo_tx_data_clone.lock().unwrap().len();
+        let mut sent = packets_sent_clone.lock().unwrap();
+        if !*sent && tx_word_count > 0 {
+            // Initial Debug packet received, now send Echo and DataU32 packets
+            
+            // Send Echo packet (seq=100)
+            let echo_request = EchoPacket {
+                header: PacketHeader::new(PacketType::Echo, 0),
+                sequence: 100,
+                timestamp: 12345,
+            };
+            if let Ok(()) = packet_transport::send_echo_packet(&echo_request, &mut fifo.rx) {
+                println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
+            }
+            
+            // Send DataU32 packet (value=1000)
+            let data_request = DataU32Packet {
+                header: PacketHeader::new(PacketType::DataU32, 0),
+                value: 1000,
+                tag: 55,
+            };
+            if let Ok(()) = packet_transport::send_data_u32_packet(&data_request, &mut fifo.rx) {
+                println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
+            }
+            
+            *sent = true;
+        }
     };
 
-    // Initialize CPU Simulator using the helper function
-    let mut sim = create_simulator(
-        false, // Disable instruction trace
-        false, // Don't print FSM state
-        Some(fifo_callback),
-        None::<fn(&InstructionTrace)>,
-        None,                                // No VCD
-        0,                                   // Zero latency
-        Some(HungDetectorConfig::default()), // Enable hung detection
+    // Run the simulation
+    let result = run_elf_with_fifo(
+        &elf_path,
+        50000,
+        false,  // Don't print instruction trace
+        Some(inst_complete_callback),
+        None,   // No RX data to pre-load
     )
-    .expect("Failed to create simulator");
-
-    // Load ELF into simulator memory
-    let entry_point = load_elf(&mut sim, &elf_path).expect("Failed to load packet_test.elf");
-
-    log::info!("ELF loaded successfully");
-    log::info!("Entry point: 0x{:08x}", entry_point);
-
-    // Reset the CPU before starting
-    sim.reset(entry_point).expect("Failed to reset simulator");
-
-    println!("Running CPU program and exchanging packets...\n");
-
-    // Step 1: Run CPU until it sends initial Debug packet
-    println!("Step 1: Waiting for initial Debug packet from CPU...");
-    let mut received_initial_debug = false;
-    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step().expect("Step failed");
-        let words = fifo_data.lock().unwrap();
-        if !words.is_empty() {
-            received_initial_debug = true;
-            println!("  ✓ Received {} words from CPU", words.len());
-            break;
-        }
-    }
-    assert!(
-        received_initial_debug,
-        "Should receive initial Debug packet from CPU"
-    );
-
-    // Step 2: Send Echo packet to CPU
-    println!("\nStep 2: Sending Echo packet (seq=100) to CPU...");
-    let echo_request = EchoPacket {
-        header: PacketHeader::new(PacketType::Echo, 0),
-        sequence: 100,
-        timestamp: 12345,
-    };
-    sim.send_echo_packet(&echo_request)
-        .expect("Failed to send Echo packet");
-    println!("  ✓ Echo packet sent to CPU");
-
-    // Step 3: Run CPU and wait for Echo response
-    println!("\nStep 3: Waiting for Echo response from CPU...");
-    let initial_word_count = fifo_data.lock().unwrap().len();
-    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step().expect("Step failed");
-        let words = fifo_data.lock().unwrap();
-        if words.len() > initial_word_count {
-            println!("  ✓ Received Echo response ({} words total)", words.len());
-            break;
-        }
-    }
-
-    // Step 4: Send DataU32 packet to CPU
-    println!("\nStep 4: Sending DataU32 packet (value=1000) to CPU...");
-    let data_request = DataU32Packet {
-        header: PacketHeader::new(PacketType::DataU32, 0),
-        value: 1000,
-        tag: 55,
-    };
-    sim.send_data_u32_packet(&data_request)
-        .expect("Failed to send DataU32 packet");
-    println!("  ✓ DataU32 packet sent to CPU");
-
-    // Step 5: Run CPU and wait for DataU32 response
-    println!("\nStep 5: Waiting for DataU32 response from CPU...");
-    let words_before_data = fifo_data.lock().unwrap().len();
-    for _ in 0..PACKET_EXCHANGE_TIMEOUT_CYCLES {
-        sim.step().expect("Step failed");
-        let words = fifo_data.lock().unwrap();
-        if words.len() > words_before_data {
-            println!(
-                "  ✓ Received DataU32 response ({} words total)",
-                words.len()
-            );
-            break;
-        }
-    }
-
-    // Step 6: Run until CPU halts
-    println!("\nStep 6: Running CPU until halt...");
-    let mut final_tohost = None;
-    for cycle in 0..50000 {
-        let step_result = sim.step().expect("Step failed");
-        if let Some(tohost) = step_result.tohost_value {
-            println!(
-                "  ✓ CPU halted at cycle {} with tohost=0x{:08x}",
-                cycle, tohost
-            );
-            final_tohost = Some(tohost);
-            break;
-        }
-    }
+    .expect("Simulation should succeed");
 
     // Verify results
     println!("\n========================================");
     println!("VERIFICATION");
     println!("========================================");
 
-    let fifo_words = fifo_data.lock().unwrap();
+    let fifo_words = fifo_tx_data.lock().unwrap();
     println!(
         "Total packets received from CPU: {} words ({} bytes)",
         fifo_words.len(),
         fifo_words.len() * 4
     );
 
-    // Convert words to VecDeque for packet parsing (using packet_transport functions)
+    // Convert words to VecDeque for packet parsing
     let mut fifo_tx = std::collections::VecDeque::new();
     for &word in fifo_words.iter() {
         fifo_tx.push_back(word);
     }
 
     println!("Parsing received packets using postcard...");
-
-    // Convert first few words to bytes for debug display
-    let mut first_bytes = Vec::new();
-    for i in 0..fifo_words.len().min(16) {
-        first_bytes.extend_from_slice(&fifo_words[i].to_le_bytes());
-    }
-    println!(
-        "First 64 bytes: {:02x?}",
-        &first_bytes[..first_bytes.len().min(64)]
-    );
 
     // Parse packets using packet_transport functions
     let mut found_debug = false;
@@ -1310,7 +1242,7 @@ fn test_packet_protocol_end_to_end() {
 
     // Verify successful completion
     assert_eq!(
-        final_tohost,
+        result.tohost_value,
         Some(42),
         "Program should complete with success code 42"
     );
@@ -1342,20 +1274,23 @@ fn test_println_macro() {
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+    let inst_complete_callback = move |fifo: &mut Fifo| {
+        // Drain all words from TX FIFO and collect them
+        while let Some(word) = fifo.tx.pop_front() {
+            fifo_data_clone.lock().unwrap().push(word);
+        }
     };
 
-    // Run the simulation with FIFO callback
+    // Run the simulation with inst_complete callback
     let result = run_elf_in_simulator_with_trace(
         &elf_path,
         25000,
         |_sim| {
             // No pre-configuration needed
         },
-        None, // No VCD
-        true, // Enable instruction trace
-        Some(fifo_callback),
+        None,  // No VCD
+        true,  // Enable instruction trace
+        Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
     )
     .expect("Simulation should succeed");
