@@ -79,8 +79,8 @@ fn test_comprehensive_elf() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,  // vcd_path
-        0,     // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
@@ -107,8 +107,8 @@ fn test_instruction_trace() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,  // vcd_path
-        0,     // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
@@ -155,8 +155,8 @@ fn test_register_trace_audit() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,  // vcd_path
-        0,     // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
@@ -295,8 +295,8 @@ fn test_trace_callback() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         Some(trace_callback),
-        None,  // vcd_path
-        0,     // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
@@ -966,8 +966,8 @@ fn test_hung_detection_with_elf_auto_range() {
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,  // vcd_path
-        0,     // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)

@@ -162,7 +162,7 @@ fn test_comprehensive_elf_with_latency() {
         None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
-        2,  // 2-cycle latency
+        2, // 2-cycle latency
         |sim| {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
