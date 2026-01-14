@@ -1,4 +1,7 @@
 /// Test memory latency functionality
+mod common;
+
+use common::create_test_program;
 use cpu_sim::*;
 
 /// Helper function to initialize test logger (idempotent)
@@ -148,29 +151,9 @@ fn test_load_store_with_latency() {
 /// Test that existing ELF programs still work with variable latency
 #[test]
 fn test_comprehensive_elf_with_latency() {
-    use riscv_core::instruction::*;
-    
     init_test_logger();
 
-    // Simple program using instruction helpers instead of test.elf
-    // This program performs basic operations and writes 42 to tohost
-    let instructions = vec![
-        addi(1, 0, 10),      // x1 = 10
-        addi(2, 0, 20),      // x2 = 20
-        add(3, 1, 2),        // x3 = x1 + x2 = 30
-        lui(4, 0x80001000),  // x4 = 0x80001000
-        sw(4, 1, 0),         // mem[x4] = x1
-        lw(5, 4, 0),         // x5 = mem[x4]
-        addi(10, 0, 42),     // x10 = 42
-        addi(11, 0, -16),    // x11 = 0xFFFFFFF0
-        sw(11, 10, 0),       // tohost = 42
-        jal(0, 0),           // halt
-    ];
-
-    let program: Vec<u8> = instructions
-        .iter()
-        .flat_map(|instr| instr.to_le_bytes())
-        .collect();
+    let program = create_test_program();
 
     let result = run_program(
         1000,
