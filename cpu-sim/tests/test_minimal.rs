@@ -32,8 +32,8 @@ fn test_minimal_postcard_byte_by_byte() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -78,8 +78,8 @@ fn test_minimal_postcard_word_packing() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -156,8 +156,8 @@ fn test_minimal_debug_double_write() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -229,8 +229,8 @@ fn test_allocator() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -297,8 +297,8 @@ fn test_heap_directly() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -362,8 +362,8 @@ fn test_stack_memory() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -455,8 +455,8 @@ fn test_static_heap() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

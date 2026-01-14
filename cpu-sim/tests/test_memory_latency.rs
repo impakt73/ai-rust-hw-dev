@@ -40,7 +40,7 @@ fn test_zero_latency_default() {
             sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -82,7 +82,7 @@ fn test_multi_cycle_memory_latency() {
             sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -135,7 +135,7 @@ fn test_load_store_with_latency() {
             sim.write_memory_region(0x8000_0000, &instructions, true);
             Ok(0x8000_0000)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -171,8 +171,8 @@ fn test_comprehensive_elf_with_latency() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
         2,                              // 2-cycle latency
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

@@ -43,14 +43,14 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// - Instruction trace printing (print_inst_trace)
 /// - VCD waveform dumping (vcd_path)
 /// - Trace callbacks for programmatic validation (trace_callback)
-/// - Post-execution callbacks for verification (post_callback)
+/// - Post-execution callbacks for verification (termination_callback)
 fn run_program_with_options<T, F>(
     instructions: &[u32],
     max_cycles: u64,
     print_inst_trace: bool,
     vcd_path: Option<&str>,
     trace_callback: Option<T>,
-    post_callback: F,
+    termination_callback: Option<F>,
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
@@ -75,7 +75,7 @@ where
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        post_callback,
+        termination_callback,
     )
 }
 
@@ -100,12 +100,12 @@ fn test_cpu_basic_execution() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 }
@@ -127,12 +127,12 @@ fn test_cpu_three_instructions() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -155,12 +155,12 @@ fn test_cpu_lui_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -192,12 +192,12 @@ fn test_cpu_logic_operations() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -243,7 +243,7 @@ fn test_cpu_branch_beq_bne() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked - skipped instructions should leave registers at 0
             let marker1 = sim.read_word(0x100);
             let marker2 = sim.read_word(0x104);
@@ -259,7 +259,7 @@ fn test_cpu_branch_beq_bne() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -299,7 +299,7 @@ fn test_cpu_branch_blt_bge() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked
             let marker1 = sim.read_word(0x100);
             let marker2 = sim.read_word(0x104);
@@ -309,7 +309,7 @@ fn test_cpu_branch_blt_bge() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -349,7 +349,7 @@ fn test_cpu_branch_bltu_bgeu() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked
             let marker1 = sim.read_word(0x100);
             let marker2 = sim.read_word(0x104);
@@ -359,7 +359,7 @@ fn test_cpu_branch_bltu_bgeu() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -399,10 +399,10 @@ fn test_cpu_load_store() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(sim.read_word(100), 42, "Memory[100] should contain 42");
             assert_eq!(sim.read_word(108), 42, "Memory[108] should contain 42");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -447,7 +447,7 @@ fn test_cpu_load_byte() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations
             assert_eq!(
                 sim.read_word(100),
@@ -475,7 +475,7 @@ fn test_cpu_load_byte() {
                 0x000000FF,
                 "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -508,7 +508,7 @@ fn test_cpu_load_halfword() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations
             assert_eq!(
                 sim.read_word(100),
@@ -536,7 +536,7 @@ fn test_cpu_load_halfword() {
                 0x0000FFFF,
                 "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -569,14 +569,14 @@ fn test_cpu_store_byte() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations - bytes stored in little-endian order
             assert_eq!(
                 sim.read_word(100),
                 0x78563412,
                 "Memory should contain 0x78563412"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -604,14 +604,14 @@ fn test_cpu_store_halfword() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations - halfwords stored in little-endian order
             assert_eq!(
                 sim.read_word(100),
                 0x06780234,
                 "Memory should contain 0x06780234"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -646,7 +646,7 @@ fn test_cpu_byte_halfword_mixed() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify load operations
             assert_eq!(
                 sim.read_word(0x200),
@@ -668,7 +668,7 @@ fn test_cpu_byte_halfword_mixed() {
                 0x0000FFFF,
                 "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -693,12 +693,12 @@ fn test_cpu_auipc() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -729,7 +729,7 @@ fn test_cpu_tohost_halt() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify that tohost write was detected
             assert_eq!(
                 result.tohost_value,
@@ -741,7 +741,7 @@ fn test_cpu_tohost_halt() {
                 1,
                 "TOHOST memory location should contain 1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -761,13 +761,13 @@ fn test_cpu_fence_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // FENCE is essentially a NOP for single-cycle CPU
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -789,13 +789,13 @@ fn test_cpu_ecall_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // After ECALL, CPU should halt
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -817,13 +817,13 @@ fn test_cpu_ebreak_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // After EBREAK, CPU should halt
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -856,7 +856,7 @@ fn test_cpu_csr_read_write() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
                 sim.read_word(0x100),
@@ -873,7 +873,7 @@ fn test_cpu_csr_read_write() {
                 0,
                 "Third CSRRW should read 0 from CSR"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -905,7 +905,7 @@ fn test_cpu_csr_set_clear() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
                 sim.read_word(0x100),
@@ -922,7 +922,7 @@ fn test_cpu_csr_set_clear() {
                 0b0111,
                 "Final CSR value should be 0b0111"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -952,7 +952,7 @@ fn test_cpu_csr_immediate() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
                 sim.read_word(0x100),
@@ -962,7 +962,7 @@ fn test_cpu_csr_immediate() {
             assert_eq!(sim.read_word(0x104), 15, "CSRRSI should read 15");
             assert_eq!(sim.read_word(0x108), 15, "CSRRCI should read 15");
             assert_eq!(sim.read_word(0x10C), 11, "Final CSR value should be 11");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -991,9 +991,9 @@ fn test_cpu_mul_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(sim.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1018,13 +1018,13 @@ fn test_cpu_mulh_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
                 sim.read_word(0x100),
                 0x00000001,
                 "MULH: upper 32 bits should be 0x00000001"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1049,9 +1049,9 @@ fn test_cpu_div_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(sim.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1076,13 +1076,13 @@ fn test_cpu_div_by_zero() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
                 sim.read_word(0x100),
                 0xFFFFFFFF,
                 "DIV by zero should return 0xFFFFFFFF"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1107,9 +1107,9 @@ fn test_cpu_rem_instruction() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(sim.read_word(0x100), 2, "REM: 100 % 7 should be 2");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1136,14 +1136,14 @@ fn test_cpu_divu_remu_unsigned() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
                 sim.read_word(0x100),
                 0x7FFFFFFF,
                 "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
             );
             assert_eq!(sim.read_word(0x104), 1, "REMU: 0xFFFFFFFF % 2 should be 1");
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1176,13 +1176,13 @@ fn test_cpu_m_extension_program() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, _result| {
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
                 sim.read_word(0x100),
                 22,
                 "Complex M extension program result should be 22"
             );
-        },
+        }),
     )
     .expect("Program should run");
 
@@ -1343,13 +1343,13 @@ fn test_comprehensive_trace_validation() {
         Some(|trace: &riscv_core::trace::InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(
                 result.tohost_value,
                 Some(1),
                 "Program should terminate with tohost=1"
             );
-        },
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -1491,9 +1491,9 @@ fn test_trace_with_branches() {
         Some(|trace: &riscv_core::trace::InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1));
-        },
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -1572,9 +1572,9 @@ fn test_trace_and_vcd_together() {
         false,
         Some(vcd_path),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1));
-        },
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -1662,12 +1662,12 @@ fn test_cpu_lr_sc_success() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
             // Verify SC succeeded by checking program completed successfully
             // (In a real test, we would check x4 register value = 0 for success)
             let _mem_value = sim.read_word(mem_addr); // Should be 105
-        },
+        }),
     )
     .expect("LR/SC test should run");
 
@@ -1713,9 +1713,9 @@ fn test_cpu_amoswap() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
-        },
+        }),
     )
     .expect("AMOSWAP test should run");
 
@@ -1761,9 +1761,9 @@ fn test_cpu_amoadd() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
-        },
+        }),
     )
     .expect("AMOADD test should run");
 
@@ -1810,9 +1810,9 @@ fn test_cpu_amo_logical() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
-        },
+        }),
     )
     .expect("AMO logical test should run");
 
@@ -1855,9 +1855,9 @@ fn test_cpu_amo_min_max() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
-        },
+        }),
     )
     .expect("AMO MIN/MAX test should run");
 
@@ -1900,9 +1900,9 @@ fn test_cpu_amo_unsigned_min_max() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |_sim, result| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(1), "Program should complete");
-        },
+        }),
     )
     .expect("AMO unsigned MIN/MAX test should run");
 

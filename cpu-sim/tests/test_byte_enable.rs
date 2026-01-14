@@ -31,8 +31,8 @@ fn test_byte_enable_heap_directly() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -114,8 +114,8 @@ fn test_byte_enable_stack_memory() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
