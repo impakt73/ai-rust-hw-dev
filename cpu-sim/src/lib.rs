@@ -153,7 +153,7 @@ pub fn run_elf<F, T, P, C>(
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
-    P: FnMut(&mut SimulatorView),
+    P: FnOnce(&mut SimulatorView),
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
     run_program(
@@ -173,7 +173,7 @@ where
             log::info!("Entry point: 0x{:08x}", entry_point);
 
             // Call optional setup callback for additional setup after ELF loading
-            if let Some(mut callback) = setup_callback {
+            if let Some(callback) = setup_callback {
                 callback(sim);
             }
 
