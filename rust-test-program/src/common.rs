@@ -95,39 +95,58 @@ pub const FIFO_BASE: u32 = 0x4000_0000;
 pub const FIFO_DATA: u32 = FIFO_BASE + 0x0;
 pub const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
 pub const RX_VALID: u32 = 1 << 0;
+pub const TX_READY: u32 = 1 << 1;
 
-/// Write a word to the FIFO
+/// FIFO operation errors
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FifoError {
+    /// Attempted to read from an empty FIFO
+    EmptyRead,
+    /// Attempted to write to a full FIFO
+    FullWrite,
+}
+
+/// Write a word to the FIFO, checking TX_READY status first
+///
+/// # Errors
+///
+/// Returns `FifoError::FullWrite` if the TX FIFO is not ready to accept data
 #[inline(never)]
-pub fn fifo_write_word(word: u32) {
+pub fn fifo_write_word(word: u32) -> Result<(), FifoError> {
     unsafe {
-        // TX is always ready in simulation, so just write
-        write_volatile(FIFO_DATA as *mut u32, word);
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & TX_READY != 0 {
+            write_volatile(FIFO_DATA as *mut u32, word);
+            Ok(())
+        } else {
+            Err(FifoError::FullWrite)
+        }
     }
 }
 
-/// Read a word from the FIFO (without status check - just read and return)
+/// Read a word from the FIFO, checking RX_VALID status first
+///
+/// # Errors
+///
+/// Returns `FifoError::EmptyRead` if the RX FIFO has no data available
 #[inline(never)]
-pub fn fifo_read_word_unchecked() -> u32 {
-    unsafe { read_volatile(FIFO_DATA as *const u32) }
-}
-
-/// Simple function to read a u32 from FIFO if available
-pub fn try_read_fifo_word() -> Option<u32> {
+pub fn fifo_read_word() -> Result<u32, FifoError> {
     unsafe {
         let status = read_volatile(FIFO_STATUS as *const u32);
         if status & RX_VALID != 0 {
-            Some(read_volatile(FIFO_DATA as *const u32))
+            Ok(read_volatile(FIFO_DATA as *const u32))
         } else {
-            None
+            Err(FifoError::EmptyRead)
         }
     }
 }
 
 /// Read multiple words from FIFO (up to max_words)
+/// Returns the number of words successfully read
 pub fn read_fifo_words(max_words: usize) -> usize {
     let mut count = 0;
     while count < max_words {
-        if try_read_fifo_word().is_some() {
+        if fifo_read_word().is_ok() {
             count += 1;
         } else {
             break;

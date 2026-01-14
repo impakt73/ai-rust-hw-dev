@@ -17,18 +17,25 @@ fn panic(info: &PanicInfo) -> ! {
 #[entry]
 fn main() -> ! {
     // Echo functionality: Read from RX FIFO and write to TX FIFO
-    // Continue until we receive a null terminator word (0x00000000)
+    // Continue until we receive a null terminator word (0x00000000) or the FIFO is empty
     // Maximum of 50 iterations to prevent infinite loops
     for _ in 0..50 {
-        let word = common::fifo_read_word_unchecked();
+        // Try to read from FIFO - if empty, we're done
+        let word = match common::fifo_read_word() {
+            Ok(w) => w,
+            Err(_) => break, // Both EmptyRead and FullWrite (though FullWrite shouldn't happen on read)
+        };
 
         // If we read a null terminator, we're done
         if word == 0 {
             break;
         }
 
-        // Echo non-zero words
-        common::fifo_write_word(word);
+        // Echo non-zero words - TX should always be ready in simulation
+        // but we handle the error case for completeness
+        if common::fifo_write_word(word).is_err() {
+            break;
+        }
     }
 
     // Exit with success

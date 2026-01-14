@@ -30,7 +30,7 @@ where
         for (i, &byte) in chunk.iter().enumerate() {
             word |= (byte as u32) << (i * 8);
         }
-        common::fifo_write_word(word);
+        common::fifo_write_word(word).map_err(|_| "FIFO write failed")?;
     }
 
     Ok(())
