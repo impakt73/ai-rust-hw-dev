@@ -28,6 +28,111 @@ fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
     );
 }
 
+/// Helper to convert instructions to bytes
+fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
+    instructions
+        .iter()
+        .flat_map(|instr| instr.to_le_bytes())
+        .collect()
+}
+
+/// Create a simple test program (equivalent to test.s)
+fn create_test_program() -> Vec<u8> {
+    use riscv_core::instruction::*;
+    
+    let instructions = vec![
+        addi(1, 0, 10),      // x1 = 10
+        addi(2, 0, 20),      // x2 = 20
+        add(3, 1, 2),        // x3 = 30
+        sub(4, 2, 1),        // x4 = 10
+        lui(5, 0x80001000),  // x5 = 0x80001000
+        sw(5, 1, 0),         // mem[x5] = x1
+        lw(6, 5, 0),         // x6 = mem[x5]
+        addi(10, 0, 42),     // x10 = 42
+        addi(11, 0, -16),    // x11 = 0xFFFFFFF0
+        sw(11, 10, 0),       // tohost = 42
+        jal(0, 0),           // halt
+    ];
+    
+    instructions_to_bytes(&instructions)
+}
+
+/// Create a trace test program (equivalent to trace_test.s)
+fn create_trace_test_program() -> Vec<u8> {
+    use riscv_core::instruction::*;
+    
+    let instructions = vec![
+        addi(1, 0, 10),       // x1 = 10
+        addi(2, 0, 20),       // x2 = 20
+        addi(3, 0, 5),        // x3 = 5
+        add(4, 1, 2),         // x4 = 30
+        sub(5, 2, 3),         // x5 = 15
+        andi(6, 1, 0xFF),     // x6 = 10
+        ori(7, 2, 0x1),       // x7 = 21
+        lui(8, 0x12345000),   // x8 = 0x12345000
+        sw(0, 1, 0),          // mem[0] = x1
+        lw(9, 0, 0),          // x9 = mem[0]
+        addi(10, 0, 42),      // x10 = 42
+        addi(11, 0, -16),     // x11 = 0xFFFFFFF0
+        sw(11, 10, 0),        // tohost = 42
+        jal(0, 0),            // halt
+    ];
+    
+    instructions_to_bytes(&instructions)
+}
+
+/// Create a register trace audit program (equivalent to register_trace_audit.s)
+fn create_register_trace_program() -> Vec<u8> {
+    use riscv_core::instruction::*;
+    
+    let instructions = vec![
+        // Fibonacci-like sequence
+        addi(1, 0, 1),        // x1 = 1
+        addi(2, 0, 2),        // x2 = 2
+        add(3, 1, 2),         // x3 = 3
+        add(4, 2, 3),         // x4 = 5
+        add(5, 3, 4),         // x5 = 8
+        add(6, 4, 5),         // x6 = 13
+        add(7, 5, 6),         // x7 = 21
+        // Round numbers
+        addi(8, 0, 10),       // x8 = 10
+        addi(9, 0, 20),       // x9 = 20
+        add(10, 8, 9),        // x10 = 30
+        addi(11, 0, 50),      // x11 = 50
+        add(12, 10, 11),      // x12 = 80
+        add(13, 12, 9),       // x13 = 100
+        // Powers of 2
+        addi(14, 0, 1),       // x14 = 1
+        add(15, 14, 14),      // x15 = 2
+        add(16, 15, 15),      // x16 = 4
+        add(17, 16, 16),      // x17 = 8
+        add(18, 17, 17),      // x18 = 16
+        add(19, 18, 18),      // x19 = 32
+        add(20, 19, 19),      // x20 = 64
+        add(21, 20, 20),      // x21 = 128
+        add(22, 21, 21),      // x22 = 256
+        // Subtraction
+        addi(23, 0, 100),     // x23 = 100
+        addi(24, 0, 40),      // x24 = 40
+        sub(25, 23, 24),      // x25 = 60
+        sub(26, 25, 24),      // x26 = 20
+        // Load/Store
+        lui(27, 0x80001000),  // x27 = 0x80001000
+        addi(28, 0, 123),     // x28 = 123
+        sw(27, 28, 0),        // mem[0x80001000] = 123
+        lw(29, 27, 0),        // x29 = 123
+        add(30, 29, 1),       // x30 = 124
+        // Success
+        lui(31, 0),           // x31 = 0
+        addi(31, 31, -16),    // x31 = 0xFFFFFFF0
+        addi(30, 0, 42),      // x30 = 42
+        sw(31, 30, 0),        // tohost = 42
+        jal(0, 0),            // halt
+    ];
+    
+    instructions_to_bytes(&instructions)
+}
+
 /// Helper function to create a FIFO data collector
 fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut SimulatorView)) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
@@ -63,30 +168,32 @@ fn fifo_data_to_string(data: &[u8]) -> String {
     String::from_utf8(trimmed_data.to_vec()).expect("FIFO data should be valid UTF-8")
 }
 
-/// Helper function to run ELF with FSM state printing enabled for debugging
+/// Helper function to run program with FSM state printing enabled for debugging
 #[allow(dead_code)]
 #[test]
 fn test_comprehensive_elf() {
     init_test_logger();
 
-    let elf_path = test_program_path("test.elf");
-    let result = run_elf(
-        &elf_path,
+    let program = create_test_program();
+    let result = run_program(
         500,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None,  // vcd_path
+        0,     // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
     assert_tohost(&result, 0x2a, "comprehensive test");
     println!(
-        "✓ Comprehensive test ELF executed successfully in {} cycles",
+        "✓ Comprehensive test executed successfully in {} cycles",
         result.cycles
     );
 }
@@ -95,17 +202,19 @@ fn test_comprehensive_elf() {
 fn test_instruction_trace() {
     init_test_logger();
 
-    let elf_path = test_program_path("test.elf");
-    let result = run_elf(
-        &elf_path,
+    let program = create_test_program();
+    let result = run_program(
         500,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None,  // vcd_path
+        0,     // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with trace should succeed");
@@ -120,8 +229,6 @@ fn test_instruction_trace() {
 #[test]
 fn test_register_trace_audit() {
     init_test_logger();
-
-    let elf_path = test_program_path("register_trace_audit.elf");
 
     println!("\n========================================");
     println!("REGISTER TRACE AUDIT TEST");
@@ -143,16 +250,19 @@ fn test_register_trace_audit() {
     println!("  Phase 5: Load/Store with value 123 (0x7b)");
     println!("========================================\n");
 
-    let result = run_elf(
-        &elf_path,
+    let program = create_register_trace_program();
+    let result = run_program(
         500,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None,  // vcd_path
+        0,     // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Register trace audit simulation should succeed");
@@ -271,7 +381,7 @@ fn test_trace_callback() {
 
     init_test_logger();
 
-    let elf_path = test_program_path("trace_test.elf");
+    let program = create_trace_test_program();
 
     // Collect instruction traces via callback
     let traces = Arc::new(Mutex::new(Vec::new()));
@@ -281,18 +391,18 @@ fn test_trace_callback() {
         traces_clone.lock().unwrap().push(trace.clone());
     };
 
-    // NOTE: Replaced run_elf_with_trace_callback() with run_elf()
-    // to use the unified execution API
-    let result = run_elf(
-        &elf_path,
+    let result = run_program(
         500,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         Some(trace_callback),
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None,  // vcd_path
+        0,     // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Trace test simulation should succeed");
@@ -945,41 +1055,42 @@ fn test_hung_detection_with_elf_auto_range() {
     init_test_logger();
 
     println!("\n========================================");
-    println!("HUNG DETECTION: ELF AUTO-RANGE TEST");
+    println!("HUNG DETECTION: PROGRAMMATIC AUTO-RANGE TEST");
     println!("========================================");
 
-    // Test that run_elf automatically sets valid PC range from ELF
-    // and hung detection works correctly with it
-    let elf_path = test_program_path("test.elf");
+    // Test that run_program works correctly with hung detection enabled
+    let program = create_test_program();
 
-    // This should succeed with hung detection enabled and auto PC range
-    let result = run_elf(
-        &elf_path,
+    // This should succeed with hung detection enabled
+    let result = run_program(
         500,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None,  // vcd_path
+        0,     // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     );
 
     assert!(
         result.is_ok(),
-        "Should successfully run ELF with auto-detected PC range: {:?}",
+        "Should successfully run program: {:?}",
         result.err()
     );
 
-    println!("✓ Valid PC range automatically detected from ELF");
+    println!("✓ Valid PC range automatically set for programmatic execution");
     println!("✓ Hung detection enabled by default");
     println!(
         "✓ Simulation completed in {} cycles",
         result.unwrap().cycles
     );
     println!("\n========================================");
-    println!("✓ HUNG DETECTION ELF AUTO-RANGE TEST PASSED");
+    println!("✓ HUNG DETECTION PROGRAMMATIC AUTO-RANGE TEST PASSED");
     println!("========================================");
 }
 

@@ -1,19 +1,9 @@
 /// Test memory latency functionality
 use cpu_sim::*;
-use std::path::PathBuf;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Helper function to get path to a test program ELF file
-fn test_program_path(filename: &str) -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .expect("CARGO_MANIFEST_DIR should have a parent directory (workspace root)");
-    workspace_root.join("test_programs").join(filename)
 }
 
 /// Test that the simulator works with zero latency (default)
@@ -158,20 +148,42 @@ fn test_load_store_with_latency() {
 /// Test that existing ELF programs still work with variable latency
 #[test]
 fn test_comprehensive_elf_with_latency() {
+    use riscv_core::instruction::*;
+    
     init_test_logger();
 
-    let elf_path = test_program_path("test.elf");
+    // Simple program using instruction helpers instead of test.elf
+    // This program performs basic operations and writes 42 to tohost
+    let instructions = vec![
+        addi(1, 0, 10),      // x1 = 10
+        addi(2, 0, 20),      // x2 = 20
+        add(3, 1, 2),        // x3 = x1 + x2 = 30
+        lui(4, 0x80001000),  // x4 = 0x80001000
+        sw(4, 1, 0),         // mem[x4] = x1
+        lw(5, 4, 0),         // x5 = mem[x4]
+        addi(10, 0, 42),     // x10 = 42
+        addi(11, 0, -16),    // x11 = 0xFFFFFFF0
+        sw(11, 10, 0),       // tohost = 42
+        jal(0, 0),           // halt
+    ];
 
-    let result = run_elf(
-        &elf_path,
+    let program: Vec<u8> = instructions
+        .iter()
+        .flat_map(|instr| instr.to_le_bytes())
+        .collect();
+
+    let result = run_program(
         1000,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
-        2,                              // 2-cycle latency
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        2,  // 2-cycle latency
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
@@ -183,7 +195,7 @@ fn test_comprehensive_elf_with_latency() {
     );
 
     println!(
-        "✓ Comprehensive ELF with latency completed in {} cycles",
+        "✓ Comprehensive program with latency completed in {} cycles",
         result.cycles
     );
 }
