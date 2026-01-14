@@ -72,14 +72,14 @@ fn test_c_li() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 5, "x10 should be 5");
-        },
+        }),
     );
 
     result.expect("C.LI test should run successfully");
@@ -120,14 +120,14 @@ fn test_c_addi() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15");
-        },
+        }),
     );
 
     result.expect("C.ADDI test should run successfully");
@@ -169,14 +169,14 @@ fn test_c_add() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 10, "x10 should be 10");
-        },
+        }),
     );
 
     result.expect("C.ADD test should run successfully");
@@ -217,14 +217,14 @@ fn test_c_mv() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 42, "x10 should be 42");
-        },
+        }),
     );
 
     result.expect("C.MV test should run successfully");
@@ -274,14 +274,14 @@ fn test_compressed_to_compressed_transition() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 10, "x10 should be 10 after C→C transitions");
-        },
+        }),
     );
 
     result.expect("C→C transition test should run successfully");
@@ -323,14 +323,14 @@ fn test_compressed_to_uncompressed_transition() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after C→U transition");
-        },
+        }),
     );
 
     result.expect("C→U transition test should run successfully");
@@ -372,14 +372,14 @@ fn test_uncompressed_to_compressed_transition() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after U→C transition");
-        },
+        }),
     );
 
     result.expect("U→C transition test should run successfully");
@@ -423,14 +423,14 @@ fn test_uncompressed_to_uncompressed_regression() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 8, "x12 should be 8");
-        },
+        }),
     );
 
     result.expect("U→U regression test should run successfully");
@@ -479,14 +479,14 @@ fn test_mixed_sequence_across_word_boundary() {
 
             Ok(START_ADDR)
         },
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x100);
             assert_eq!(value, 15, "x10 should be 15 after mixed sequence");
-        },
+        }),
     );
 
     result.expect("Mixed sequence test should run successfully");

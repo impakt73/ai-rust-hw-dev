@@ -48,6 +48,28 @@ fn main() {
 
 /// Unified simulation runner that handles all options through a single code path
 fn run_simulation(args: &Args) {
+    // Define the termination callback
+    let termination_callback = |sim: &cpu_sim::SimulatorView,
+                                result: &cpu_sim::SimulationResult| {
+        // Print simulation result
+        print_simulation_result(result);
+
+        // Handle memory dump if requested
+        if let Some(params) = &args.dump_memory {
+            handle_memory_dump(sim, params);
+        }
+
+        // Handle image dump if requested
+        if let Some(params) = &args.dump_image {
+            handle_image_dump(sim, params);
+        }
+
+        // Print VCD path if enabled
+        if let Some(vcd_path) = &args.vcd {
+            println!("✓ VCD waveform written to: {}", vcd_path);
+        }
+    };
+
     // Always use the callback-based approach for unified handling
     let result = cpu_sim::run_elf(
         &args.elf,
@@ -58,26 +80,8 @@ fn run_simulation(args: &Args) {
         None::<fn(&cpu_sim::InstructionTrace)>,  // trace_callback
         args.vcd.as_deref(),
         0,                                       // mem_latency_cycles
-        None::<fn(&mut cpu_sim::SimulatorView)>, // prep_callback
-        |sim, result| {
-            // Print simulation result
-            print_simulation_result(result);
-
-            // Handle memory dump if requested
-            if let Some(params) = &args.dump_memory {
-                handle_memory_dump(sim, params);
-            }
-
-            // Handle image dump if requested
-            if let Some(params) = &args.dump_image {
-                handle_image_dump(sim, params);
-            }
-
-            // Print VCD path if enabled
-            if let Some(vcd_path) = &args.vcd {
-                println!("✓ VCD waveform written to: {}", vcd_path);
-            }
-        },
+        None::<fn(&mut cpu_sim::SimulatorView)>, // setup_callback
+        Some(termination_callback),
     );
 
     match result {

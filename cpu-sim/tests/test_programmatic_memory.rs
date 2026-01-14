@@ -47,7 +47,7 @@ fn test_programmatic_instruction_loading() {
 
             Ok(START_ADDR)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -151,7 +151,7 @@ fn test_write_memory_region_patterns() {
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

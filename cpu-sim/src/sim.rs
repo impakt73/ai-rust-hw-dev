@@ -151,7 +151,7 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // write_memory_region is typically used within run_program's prep_callback
+    /// // write_memory_region is typically used within run_program's setup_callback
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
     /// let result = run_program(
     ///     100,
@@ -165,7 +165,7 @@ impl<'a> SimulatorView<'a> {
     ///         sim.write_memory_region(0x8000_0000, &instructions, true);
     ///         Ok(0x8000_0000)
     ///     },
-    ///     |_sim, _result| {},
+    ///     None::<fn(&SimulatorView, &SimulationResult)>,
     /// )?;
     /// # Ok(())
     /// # }
@@ -203,7 +203,7 @@ impl<'a> SimulatorView<'a> {
     /// # use cpu_sim::*;
     /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region is typically used in run_elf's post_callback
+    /// // dump_memory_region is typically used in run_elf's termination_callback
     /// run_elf(
     ///     Path::new("test.elf"),
     ///     100,
@@ -213,11 +213,11 @@ impl<'a> SimulatorView<'a> {
     ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
-    ///     None::<fn(&mut SimulatorView)>, // prep_callback
-    ///     |sim, _result| {
+    ///     None::<fn(&mut SimulatorView)>, // setup_callback
+    ///     Some(|sim, _result| {
     ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     ///         // Process bytes...
-    ///     },
+    ///     }),
     /// )?;
     /// # Ok(())
     /// # }
@@ -252,7 +252,7 @@ impl<'a> SimulatorView<'a> {
     /// # use cpu_sim::*;
     /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region_as_image is typically used in run_elf's post_callback
+    /// // dump_memory_region_as_image is typically used in run_elf's termination_callback
     /// run_elf(
     ///     Path::new("graphics.elf"),
     ///     100,
@@ -262,11 +262,11 @@ impl<'a> SimulatorView<'a> {
     ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
-    ///     None::<fn(&mut SimulatorView)>, // prep_callback
-    ///     |sim, _result| {
+    ///     None::<fn(&mut SimulatorView)>, // setup_callback
+    ///     Some(|sim, _result| {
     ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
     ///             .expect("Failed to dump image");
-    ///     },
+    ///     }),
     /// )?;
     /// # Ok(())
     /// # }

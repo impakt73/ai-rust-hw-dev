@@ -28,7 +28,7 @@ fn run_fp_program_with_options<T, F>(
     print_inst_trace: bool,
     vcd_path: Option<&str>,
     trace_callback: Option<T>,
-    post_callback: F,
+    termination_callback: Option<F>,
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
@@ -53,7 +53,7 @@ where
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        post_callback,
+        termination_callback,
     )
 }
 
@@ -93,7 +93,7 @@ fn test_cpu_flw_fsw_basic() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -106,7 +106,7 @@ fn test_cpu_flw_fsw_basic() {
                 result_value, 0x3F800000,
                 "FLW/FSW round trip should preserve bit pattern"
             );
-        },
+        }),
     )
     .expect("FP load/store test should run");
 }
@@ -147,7 +147,7 @@ fn test_cpu_flw_multiple_registers() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -160,7 +160,7 @@ fn test_cpu_flw_multiple_registers() {
             assert_eq!(val1, 0x3F800000, "f1 should be 1.0");
             assert_eq!(val2, 0x40000000, "f2 should be 2.0");
             assert_eq!(val3, 0x40400000, "f3 should be 3.0");
-        },
+        }),
     )
     .expect("Multiple FP register test should run");
 }
@@ -197,7 +197,7 @@ fn test_cpu_fadd_basic() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -205,7 +205,7 @@ fn test_cpu_fadd_basic() {
 
             let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x40400000, "1.0 + 2.0 should equal 3.0");
-        },
+        }),
     )
     .expect("FADD test should run");
 }
@@ -237,7 +237,7 @@ fn test_cpu_fmul_basic() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -245,7 +245,7 @@ fn test_cpu_fmul_basic() {
 
             let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x40C00000, "2.0 * 3.0 should equal 6.0");
-        },
+        }),
     )
     .expect("FMUL test should run");
 }
@@ -276,7 +276,7 @@ fn test_cpu_fcvt_s_w() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -284,7 +284,7 @@ fn test_cpu_fcvt_s_w() {
 
             let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 0x42280000, "42 as float should be 0x42280000");
-        },
+        }),
     )
     .expect("FCVT.S.W test should run");
 }
@@ -311,7 +311,7 @@ fn test_cpu_fcvt_w_s() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -319,7 +319,7 @@ fn test_cpu_fcvt_w_s() {
 
             let result_value = sim.read_word(0x100);
             assert_eq!(result_value, 42, "42.0 as int should be 42");
-        },
+        }),
     )
     .expect("FCVT.W.S test should run");
 }
@@ -359,7 +359,7 @@ fn test_cpu_feq_flt() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -374,7 +374,7 @@ fn test_cpu_feq_flt() {
             assert_eq!(eq_diff, 0, "1.0 == 2.0 should be false");
             assert_eq!(lt_true, 1, "1.0 < 2.0 should be true");
             assert_eq!(lt_false, 0, "2.0 < 1.0 should be false");
-        },
+        }),
     )
     .expect("FP comparison test should run");
 }
@@ -403,7 +403,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -414,7 +414,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
                 result_value, 0x3F800000,
                 "FMV round trip should preserve bits"
             );
-        },
+        }),
     )
     .expect("FMV test should run");
 }
@@ -455,7 +455,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -465,7 +465,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
             let fdiv_result = sim.read_word(0x104);
             assert_eq!(fsub_result, 0x40400000, "5.0 - 2.0 should equal 3.0");
             assert_eq!(fdiv_result, 0x40200000, "5.0 / 2.0 should equal 2.5");
-        },
+        }),
     )
     .expect("FSUB/FDIV/FSQRT test should run");
 }
@@ -501,7 +501,7 @@ fn test_cpu_fmin_fmax() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -511,7 +511,7 @@ fn test_cpu_fmin_fmax() {
             let max_result = sim.read_word(0x104);
             assert_eq!(min_result, 0x3F800000, "min(1.0, 3.0) should be 1.0");
             assert_eq!(max_result, 0x40400000, "max(1.0, 3.0) should be 3.0");
-        },
+        }),
     )
     .expect("FMIN/FMAX test should run");
 }
@@ -545,7 +545,7 @@ fn test_cpu_fsgnj_ops() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -566,7 +566,7 @@ fn test_cpu_fsgnj_ops() {
                 fsgnjx_result, 0xBF800000,
                 "FSGNJX should XOR signs: result should be -1.0"
             );
-        },
+        }),
     )
     .expect("FSGNJ operations test should run");
 }
@@ -600,7 +600,7 @@ fn test_cpu_fle() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -612,7 +612,7 @@ fn test_cpu_fle() {
             assert_eq!(le1, 1, "1.0 <= 2.0 should be true");
             assert_eq!(le2, 0, "2.0 <= 1.0 should be false");
             assert_eq!(le3, 1, "1.0 <= 1.0 should be true");
-        },
+        }),
     )
     .expect("FLE test should run");
 }
@@ -644,7 +644,7 @@ fn test_cpu_fcvt_unsigned() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -660,7 +660,7 @@ fn test_cpu_fcvt_unsigned() {
                 swu_result, 0x42C80000,
                 "FCVT.S.WU: 100 as float should be 100.0"
             );
-        },
+        }),
     )
     .expect("FCVT unsigned conversion test should run");
 }
@@ -693,7 +693,7 @@ fn test_cpu_fclass() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -714,7 +714,7 @@ fn test_cpu_fclass() {
                 class_pos_zero, 0x10,
                 "FCLASS: +0.0 should be positive zero (bit 4)"
             );
-        },
+        }),
     )
     .expect("FCLASS test should run");
 }
@@ -761,7 +761,7 @@ fn test_cpu_fused_multiply_add_ops() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        |sim, result| {
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
@@ -781,7 +781,7 @@ fn test_cpu_fused_multiply_add_ops() {
                 fnmadd_result, 0xC0E00000,
                 "FNMADD: -((2*3)+1) should be -7.0"
             );
-        },
+        }),
     )
     .expect("Fused multiply-add operations test should run");
 }

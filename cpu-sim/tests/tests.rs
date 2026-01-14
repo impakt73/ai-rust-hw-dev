@@ -79,8 +79,8 @@ fn test_comprehensive_elf() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -105,8 +105,8 @@ fn test_instruction_trace() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with trace should succeed");
 
@@ -152,8 +152,8 @@ fn test_register_trace_audit() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Register trace audit simulation should succeed");
 
@@ -188,8 +188,8 @@ fn test_rust_bare_metal_elf() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Rust bare metal simulation should succeed");
 
@@ -214,8 +214,8 @@ fn test_fp_math_elf() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Floating-point math test simulation should succeed");
 
@@ -247,7 +247,7 @@ fn test_fifo_hello_world() {
             // Write test string to FIFO RX after ELF is loaded
             sim.fifo_write_rx_string(test_string);
         }),
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("FIFO hello world simulation should succeed");
 
@@ -292,8 +292,8 @@ fn test_trace_callback() {
         Some(trace_callback),
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Trace test simulation should succeed");
 
@@ -601,8 +601,8 @@ fn test_vcd_generation() {
         None::<fn(&InstructionTrace)>,
         Some(vcd_path_str),
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with VCD should succeed");
 
@@ -715,8 +715,8 @@ fn test_memory_dump() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |sim, result| {
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert_tohost(result, 42, "memory pattern test");
             println!("✓ Program executed successfully");
 
@@ -767,7 +767,7 @@ fn test_memory_dump() {
 
             // Clean up test file
             std::fs::remove_file(dump_path).expect("Should be able to remove test file");
-        },
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -799,8 +799,8 @@ fn test_image_dump() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |sim, result| {
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert_tohost(result, 42, "image data test");
             println!("✓ Program executed successfully");
 
@@ -884,7 +884,7 @@ fn test_image_dump() {
 
             // Clean up test file
             std::fs::remove_file(image_path).expect("Should be able to remove test file");
-        },
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -916,8 +916,8 @@ fn test_panic_handler() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -962,8 +962,8 @@ fn test_hung_detection_with_elf_auto_range() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     );
 
     assert!(
@@ -1015,7 +1015,7 @@ fn test_hung_detection_catches_infinite_loop() {
             sim.write_memory_region(start_addr, &program_bytes, true);
             Ok(start_addr)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     );
 
     // Should get an error about PC stuck
@@ -1069,7 +1069,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
             sim.write_memory_region(start_addr, &program_bytes, true);
             Ok(start_addr)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     );
 
     // Should get an error about PC out of bounds
@@ -1141,7 +1141,7 @@ fn test_hung_detection_catches_long_instruction() {
 
             Ok(start_addr)
         },
-        |_sim, _result| {},
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     );
 
     // Should get an error about instruction taking too long
@@ -1181,8 +1181,8 @@ fn test_atomic_operations() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("test_atomic_simple simulation should succeed");
     assert_tohost(&result, 0x2a, "test_atomic_simple");
@@ -1200,8 +1200,8 @@ fn test_atomic_operations() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("test_atomic simulation should succeed");
     assert_tohost(&result, 0x2a, "test_atomic");
@@ -1285,8 +1285,8 @@ fn test_packet_protocol_end_to_end() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -1446,8 +1446,8 @@ fn test_println_macro() {
         None::<fn(&InstructionTrace)>,
         None,                           // vcd_path
         0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // prep_callback
-        |_sim, _result| {},
+        None::<fn(&mut SimulatorView)>, // setup_callback
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

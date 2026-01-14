@@ -81,7 +81,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// Run an ELF file on the simulated CPU with full configuration options
 ///
 /// This function provides the same interface as `run_program`, but with an ELF file path
-/// instead of a prep callback. It loads the ELF file into memory and executes it.
+/// instead of a setup callback. It loads the ELF file into memory and executes it.
 ///
 /// # Arguments
 /// * `elf_path` - Path to the RISC-V ELF executable
@@ -92,8 +92,8 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
 /// * `mem_latency_cycles` - Number of cycles for memory latency simulation
-/// * `prep_callback` - Optional callback for additional setup after ELF is loaded
-/// * `post_callback` - Post-execution callback with access to simulator and result
+/// * `setup_callback` - Optional callback for additional setup after ELF is loaded
+/// * `termination_callback` - Optional post-execution callback with access to simulator and result
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -114,12 +114,12 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///     None::<fn(&cpu_sim::InstructionTrace)>,
 ///     None, // vcd_path
 ///     0, // mem_latency_cycles
-///     None::<fn(&mut cpu_sim::SimulatorView)>, // prep_callback
-///     |_sim, _result| {}
+///     None::<fn(&mut cpu_sim::SimulatorView)>, // setup_callback
+///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With prep callback to write to FIFO after ELF is loaded
+/// // With setup callback to write to FIFO after ELF is loaded
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
@@ -133,7 +133,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///         // Additional setup after ELF is loaded
 ///         sim.fifo_write_rx_string("test data");
 ///     }),
-///     |_sim, _result| {}
+///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;
 /// # Ok::<(), String>(())
 /// ```
@@ -147,8 +147,8 @@ pub fn run_elf<F, T, P, C>(
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
-    prep_callback: Option<P>,
-    post_callback: C,
+    setup_callback: Option<P>,
+    termination_callback: Option<C>,
 ) -> Result<SimulationResult, String>
 where
     F: FnMut(&mut SimulatorView),
@@ -172,14 +172,14 @@ where
             log::info!("ELF loaded successfully");
             log::info!("Entry point: 0x{:08x}", entry_point);
 
-            // Call optional prep callback for additional setup after ELF loading
-            if let Some(mut callback) = prep_callback {
+            // Call optional setup callback for additional setup after ELF loading
+            if let Some(mut callback) = setup_callback {
                 callback(sim);
             }
 
             Ok(entry_point)
         },
-        post_callback,
+        termination_callback,
     )
 }
 
@@ -196,8 +196,8 @@ where
 /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
 /// * `trace_callback` - Optional callback for instruction traces
 /// * `vcd_path` - Optional path to VCD file for waveform dumping
-/// * `prep_callback` - Pre-execution callback that loads the program and returns entry point
-/// * `post_callback` - Post-execution callback with access to simulator and result
+/// * `setup_callback` - Pre-execution callback that loads the program and returns entry point
+/// * `termination_callback` - Optional post-execution callback with access to simulator and result
 ///
 /// # Returns
 /// * `Ok(SimulationResult)` on success
@@ -226,7 +226,7 @@ where
 ///         sim.write_memory_region(start_addr, &bytes, true); // true = instructions
 ///         Ok(start_addr)
 ///     },
-///     |_sim, _result| {}
+///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;
 ///
 /// // For loading ELF files, use run_elf() instead
@@ -241,8 +241,8 @@ pub fn run_program<F, T, P, C>(
     trace_callback: Option<T>,
     vcd_path: Option<&str>,
     mem_latency_cycles: u32,
-    prep_callback: P,
-    post_callback: C,
+    setup_callback: P,
+    termination_callback: Option<C>,
 ) -> Result<SimulationResult, String>
 where
     F: FnMut(&mut SimulatorView),
@@ -270,11 +270,11 @@ where
     )?;
 
     // Execute pre-execution callback to load program and get entry point
-    // Create a SimulatorView for the prep callback
+    // Create a SimulatorView for the setup callback
     let entry_point = {
         let mut view =
             SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
-        prep_callback(&mut view)?
+        setup_callback(&mut view)?
     };
 
     log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
@@ -283,10 +283,10 @@ where
     // Note: run() handles reset internally, so we don't call reset() here
     let result = sim.run(entry_point, max_cycles)?;
 
-    // Execute post-execution callback with read-only SimulatorView and result
-    {
+    // Execute optional post-execution callback with read-only SimulatorView and result
+    if let Some(callback) = termination_callback {
         let view = SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
-        post_callback(&view, &result);
+        callback(&view, &result);
     }
 
     Ok(result)
