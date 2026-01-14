@@ -1,19 +1,12 @@
 /// Test memory latency functionality
+mod common;
+
+use common::create_test_program;
 use cpu_sim::*;
-use std::path::PathBuf;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Helper function to get path to a test program ELF file
-fn test_program_path(filename: &str) -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .expect("CARGO_MANIFEST_DIR should have a parent directory (workspace root)");
-    workspace_root.join("test_programs").join(filename)
 }
 
 /// Test that the simulator works with zero latency (default)
@@ -160,18 +153,20 @@ fn test_load_store_with_latency() {
 fn test_comprehensive_elf_with_latency() {
     init_test_logger();
 
-    let elf_path = test_program_path("test.elf");
+    let program = create_test_program();
 
-    let result = run_elf(
-        &elf_path,
+    let result = run_program(
         1000,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None,
-        2,                              // 2-cycle latency
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        2, // 2-cycle latency
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
@@ -183,7 +178,7 @@ fn test_comprehensive_elf_with_latency() {
     );
 
     println!(
-        "✓ Comprehensive ELF with latency completed in {} cycles",
+        "✓ Comprehensive program with latency completed in {} cycles",
         result.cycles
     );
 }
