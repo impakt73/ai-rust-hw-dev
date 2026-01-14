@@ -97,29 +97,34 @@ pub const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
 pub const RX_VALID: u32 = 1 << 0;
 pub const TX_READY: u32 = 1 << 1;
 
-/// FIFO operation errors
+/// FIFO read error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FifoError {
+pub enum FifoReadError {
     /// Attempted to read from an empty FIFO
-    EmptyRead,
+    Empty,
+}
+
+/// FIFO write error
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FifoWriteError {
     /// Attempted to write to a full FIFO
-    FullWrite,
+    Full,
 }
 
 /// Write a word to the FIFO, checking TX_READY status first
 ///
 /// # Errors
 ///
-/// Returns `FifoError::FullWrite` if the TX FIFO is not ready to accept data
+/// Returns `FifoWriteError::Full` if the TX FIFO is not ready to accept data
 #[inline(never)]
-pub fn fifo_write_word(word: u32) -> Result<(), FifoError> {
+pub fn fifo_write_word(word: u32) -> Result<(), FifoWriteError> {
     unsafe {
         let status = read_volatile(FIFO_STATUS as *const u32);
         if status & TX_READY != 0 {
             write_volatile(FIFO_DATA as *mut u32, word);
             Ok(())
         } else {
-            Err(FifoError::FullWrite)
+            Err(FifoWriteError::Full)
         }
     }
 }
@@ -128,15 +133,15 @@ pub fn fifo_write_word(word: u32) -> Result<(), FifoError> {
 ///
 /// # Errors
 ///
-/// Returns `FifoError::EmptyRead` if the RX FIFO has no data available
+/// Returns `FifoReadError::Empty` if the RX FIFO has no data available
 #[inline(never)]
-pub fn fifo_read_word() -> Result<u32, FifoError> {
+pub fn fifo_read_word() -> Result<u32, FifoReadError> {
     unsafe {
         let status = read_volatile(FIFO_STATUS as *const u32);
         if status & RX_VALID != 0 {
             Ok(read_volatile(FIFO_DATA as *const u32))
         } else {
-            Err(FifoError::EmptyRead)
+            Err(FifoReadError::Empty)
         }
     }
 }
