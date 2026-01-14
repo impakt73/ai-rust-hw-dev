@@ -80,7 +80,7 @@ This design enables higher clock frequencies and more realistic hardware impleme
 ## Project Structure
 
 - **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, CSR file, top module)
-- **`tests/`** - Rust-based verification tests (cpu_verifier package)
+- **`testbench/`** - Rust-based verification tests (testbench package, integration tests)
 - **`cpu-sim/`** - Command-line CPU simulator for running ELF executables with VCD waveform dumping
 - **`riscv_core/`** - Shared Verilator bindings and utilities
 - **`riscv_protocol/`** - Debug packet protocol definitions

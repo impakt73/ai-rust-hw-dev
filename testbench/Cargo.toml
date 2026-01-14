@@ -1,0 +1,11 @@
+[package]
+name = "testbench"
+version = "0.1.0"
+edition = "2021"
+
+# Integration tests for RTL modules using Verilator
+# Tests are in the tests/ directory and run as separate binaries
+
+[dependencies]
+riscv_core = { path = "../riscv_core" }
+rand = "0.8"

@@ -88,7 +88,7 @@ This is a **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in S
 
 **Key Components:**
 - **RTL (SystemVerilog):** Hardware implementation in `rtl/` directory
-- **Verification (Rust):** Test harness in `tests/` directory using marlin + Verilator
+- **Verification (Rust):** Test harness in `testbench/` directory using marlin + Verilator
 - **Architecture:** Multi-cycle non-pipelined design with 12-state FSM (including S_ATOMIC_RMW for atomic operations) and variable-latency memory support
 - **Memory Interface:** Ready/valid handshaking for instruction and data memory operations
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros for bare-metal programs
@@ -131,9 +131,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo test
 
 # Run specific test suite
-cargo test --package cpu_verifier -- alu_test
-cargo test --package cpu_verifier -- regfile_test
-cargo test --package cpu_verifier -- cpu_test
+cargo test --package testbench -- alu_test
+cargo test --package testbench -- regfile_test
+cargo test --package testbench -- cpu_test
 
 # Build only (without running tests)
 cargo build
@@ -144,21 +144,20 @@ cargo clean
 
 ### Test Structure
 
+**Important:** The `testbench` package uses **integration tests** (not unit tests). Each test file in `testbench/tests/` is compiled as a separate binary. This is the recommended pattern for Verilator-based tests because:
+- Integration tests run in separate processes, preventing C++ memory conflicts
+- Each test binary gets its own Verilator runtime, avoiding destructor race conditions
+- Follows marlin crate's recommended usage patterns
+- No manual locking or serialization required
+
 The project has 264 comprehensive tests across all packages:
-- **tests package (104 tests):**
-  - ALU tests: Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
-  - Register file tests: Validate register behavior (including x0 immutability)
-  - FP register file tests: Validate floating-point register file with 3 read ports
-  - FPU tests: Validate all 26 FP operations (arithmetic, comparisons, conversions, etc.)
+- **testbench package (95 integration tests):**
+  - ALU tests (16 tests): Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+  - Register file tests (6 tests): Validate register behavior (including x0 immutability)
+  - FP register file tests (7 tests): Validate floating-point register file with 3 read ports
+  - FPU tests (25 tests): Validate all 26 FP operations (arithmetic, comparisons, conversions, etc.)
   - Decompressor tests (41 tests): Validate all 27 RV32C compressed instructions
-  - CPU integration tests: Validate complete instruction execution including:
-    - Arithmetic, logic, and memory operations
-    - Branches and jumps
-    - Byte/halfword operations
-    - System instructions (FENCE, ECALL, EBREAK)
-    - CSR operations (read/write, set/clear, immediate variants)
-    - M extension operations (multiplication, division, remainder)
-- **Other packages (160 tests):**
+- **Other packages (169 tests):**
   - cpu-sim: 108 integration tests including:
     - ELF loading and execution
     - FIFO communication and packet protocol
@@ -226,15 +225,14 @@ All code should pass these checks before committing.
 │   ├── mem_interface.sv   # Memory interface logic
 │   ├── writeback_mux.sv   # Writeback multiplexer
 │   └── top.sv             # Top-level CPU module (multi-cycle FSM control)
-├── tests/                  # Rust verification
+├── testbench/              # Rust verification (integration tests)
 │   ├── Cargo.toml         # Test package dependencies
-│   ├── build.rs           # Build script (watches RTL changes)
-│   └── src/
-│       ├── lib.rs         # Test module declarations
+│   └── tests/             # Integration test files
 │       ├── alu_test.rs    # ALU verification tests
 │       ├── regfile_test.rs # Register file tests
 │       ├── decompress_test.rs # RV32C decompressor tests (41 tests)
-│       └── cpu_test.rs    # CPU integration tests
+│       ├── fp_regfile_test.rs # FP register file tests
+│       └── fpu_test.rs    # FPU tests
 ├── cpu-sim/               # CPU simulator
 │   └── src/
 │       ├── main.rs        # CLI entry point
@@ -525,7 +523,7 @@ cargo test -- --show-output # Show output even for passing tests
 ### Run Single Test
 
 ```bash
-cargo test --package cpu_verifier -- test_cpu_branch_beq_bne --nocapture
+cargo test --package testbench -- test_cpu_branch_beq_bne --nocapture
 ```
 
 ### Check Verilator Compilation

@@ -31,8 +31,8 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 ## Tech Stack
 
 - **RTL:** SystemVerilog (in `rtl/` directory)
-- **Verification:** Rust with marlin + Verilator (in `tests/` directory)
-- **Build System:** Cargo workspace with 5 members: cpu-sim, riscv_core, tests, riscv_protocol, riscv_macros
+- **Verification:** Rust with marlin + Verilator (in `testbench/` directory)
+- **Build System:** Cargo workspace with 6 members: cpu-sim, riscv_core, testbench, riscv_protocol, riscv_macros, vcd-mcp
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
 
 ## Coding Conventions
@@ -42,6 +42,7 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 - Address all clippy warnings (`cargo clippy -- -D warnings`)
 - Write tests for new functionality
 - Use meaningful test names prefixed with `test_`
+- **Testbench tests are integration tests** (in `testbench/tests/`, not unit tests)
 
 ### SystemVerilog Code
 - Use `snake_case` for signal names
@@ -51,10 +52,11 @@ verilator --lint-only rtl/*.sv # Lint SystemVerilog
 
 ## Testing Requirements
 
-- All 146 tests must pass before marking PR ready for review
+- All tests must pass before marking PR ready for review
 - Run `cargo test --verbose` to verify
 - After RTL changes, run `cargo clean` to clear Verilator cache
 - Use `cargo test -- --nocapture` to see test output during debugging
+- **Note:** Testbench tests are integration tests (each file runs as a separate binary)
 
 ## PR Readiness Checklist
 
