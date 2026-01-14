@@ -214,7 +214,7 @@ impl<'a> SimulatorView<'a> {
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
     ///     None::<fn(&mut SimulatorView)>, // setup_callback
-    ///     Some(|sim, _result| {
+    ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
     ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     ///         // Process bytes...
     ///     }),
@@ -263,7 +263,7 @@ impl<'a> SimulatorView<'a> {
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
     ///     None::<fn(&mut SimulatorView)>, // setup_callback
-    ///     Some(|sim, _result| {
+    ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
     ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
     ///             .expect("Failed to dump image");
     ///     }),
