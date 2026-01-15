@@ -1,5 +1,5 @@
 // Division Unit Module
-// Hardware-synthesizable division using Restoring Algorithm
+// Hardware-synthesizable division using Non-Restoring Algorithm
 // Implements 32-bit signed and unsigned division and remainder
 
 module div_unit (
@@ -57,7 +57,8 @@ module div_unit (
     
     // Temporary variables for division iteration
     logic [63:0] P_shifted;
-    logic [63:0] P_test;
+    logic [63:0] P_add;      // P + D (for non-restoring when P is negative)
+    logic [63:0] P_sub;      // P - D (for non-restoring when P is non-negative)
     
     // ============================================================
     // State Register
@@ -90,13 +91,13 @@ module div_unit (
             
             DIV_ITER: begin
                 if (iter_count == 6'd31)  // After 32 iterations (0-31)
-                    next_state = DIV_DONE;  // Skip CORRECT for restoring algorithm
+                    next_state = DIV_CORRECT;  // Need correction for non-restoring
                 else
                     next_state = DIV_ITER;
             end
             
             DIV_CORRECT: begin
-                // Not needed for restoring division, but keep state for compatibility
+                // Final correction step for non-restoring division
                 next_state = DIV_DONE;
             end
             
@@ -124,9 +125,10 @@ module div_unit (
             abs_divisor  = divisor[31]  ? (~divisor  + 32'd1) : divisor;
         end
         
-        // Compute shifted and test values for division iteration
+        // Compute shifted, add, and subtract values for non-restoring division
         P_shifted = P << 1;
-        P_test = P_shifted - D;
+        P_sub = P_shifted - D;  // Subtract divisor from shifted P
+        P_add = P_shifted + D;  // Add divisor to shifted P
     end
     
     // ============================================================
@@ -170,25 +172,32 @@ module div_unit (
                 end
                 
                 DIV_ITER: begin
-                    // Restoring division iteration
-                    // P_shifted and P_test are computed combinationally above
+                    // Non-restoring division iteration
+                    // Decision based on current partial remainder sign:
+                    // - If P >= 0: shift and subtract divisor
+                    // - If P < 0: shift and add divisor
+                    // Quotient bit is determined by the result's sign (1 if non-negative, 0 if negative)
                     
-                    if (!P_test[63]) begin
-                        // Result is non-negative: keep subtraction, set quotient bit
-                        P <= P_test;
-                        Q <= {Q[30:0], 1'b1};
+                    if (!P[63]) begin
+                        // Partial remainder is non-negative: shift left and subtract divisor
+                        P <= P_sub;
+                        Q <= {Q[30:0], !P_sub[63] ? 1'b1 : 1'b0};
                     end else begin
-                        // Result is negative: restore (don't subtract), clear quotient bit
-                        P <= P_shifted;
-                        Q <= {Q[30:0], 1'b0};
+                        // Partial remainder is negative: shift left and add divisor
+                        P <= P_add;
+                        Q <= {Q[30:0], !P_add[63] ? 1'b1 : 1'b0};
                     end
                     
                     iter_count <= iter_count + 6'd1;
                 end
                 
                 DIV_CORRECT: begin
-                    // Not needed for restoring division algorithm
-                    // All corrections are done during iterations
+                    // Final correction for non-restoring division
+                    // If the final remainder is negative, add divisor to make it positive
+                    if (P[63]) begin
+                        P <= P + D;
+                    end
+                    // Quotient is already correct from iteration loop
                 end
                 
                 default: begin
