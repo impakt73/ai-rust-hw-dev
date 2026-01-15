@@ -35,7 +35,8 @@ impl SystemBus {
 - **FIFO Base Address**: `0x4000_0000`
   - DATA offset: `0x00` (read/write)
   - STATUS offset: `0x04` (read-only)
-- **DRAM**: Everything else (default)
+- **DRAM**: Everything else (default, catch-all)
+- **Tohost**: `0xFFFF_FFF0` (hardcoded in simulator logic)
 
 ### Problems with Current Architecture
 
@@ -43,6 +44,7 @@ impl SystemBus {
 2. **Address Conflicts**: No validation to prevent overlapping device ranges
 3. **Tight Coupling**: `SimulatorView` directly exposes FIFO and DRAM internals
 4. **Hardcoded Routing**: Memory map is not configurable or documented
+5. **Tohost Hardcoded**: Simulator directly hooks memory writes to detect tohost, should be a device
 
 ## Design Goals
 
@@ -70,6 +72,8 @@ pub enum BusDeviceError {
     ReadFromWriteOnly { offset: u32 },
     /// Invalid address/offset within the device's address range
     InvalidAddress { offset: u32 },
+    /// Operation size not supported by this device at this address
+    UnsupportedSize { offset: u32, size: u8 },
     /// Other device-specific errors
     Other(String),
 }
@@ -86,6 +90,9 @@ impl std::fmt::Display for BusDeviceError {
             BusDeviceError::InvalidAddress { offset } => {
                 write!(f, "Invalid address offset 0x{:08x}", offset)
             }
+            BusDeviceError::UnsupportedSize { offset, size } => {
+                write!(f, "Unsupported size {} at offset 0x{:08x}", size, offset)
+            }
             BusDeviceError::Other(msg) => write!(f, "Device error: {}", msg),
         }
     }
@@ -95,13 +102,15 @@ impl std::error::Error for BusDeviceError {}
 
 /// Trait for devices that can be registered on the system bus
 ///
-/// All operations use word granularity (u32) and operate on offsets
-/// relative to the device's base address in the system memory map.
+/// All operations operate on offsets relative to the device's base address
+/// in the system memory map. Devices can support byte (u8), halfword (u16),
+/// and word (u32) operations. Devices that don't support a particular size
+/// at a given address should return `BusDeviceError::UnsupportedSize`.
 pub trait BusDevice {
     /// Read a 32-bit word from the device at the given offset
     ///
     /// # Arguments
-    /// * `offset` - Byte offset relative to the device's base address
+    /// * `offset` - Byte offset relative to the device's base address (must be word-aligned)
     ///
     /// # Returns
     /// * `Ok(u32)` - The word value read from the device
@@ -111,13 +120,75 @@ pub trait BusDevice {
     /// Write a 32-bit word to the device at the given offset
     ///
     /// # Arguments
-    /// * `offset` - Byte offset relative to the device's base address
+    /// * `offset` - Byte offset relative to the device's base address (must be word-aligned)
     /// * `value` - The 32-bit value to write
     ///
     /// # Returns
     /// * `Ok(())` - Write successful
     /// * `Err(BusDeviceError)` - If the write is invalid (e.g., read-only register)
     fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError>;
+
+    /// Read a 16-bit halfword from the device at the given offset
+    ///
+    /// # Arguments
+    /// * `offset` - Byte offset relative to the device's base address (must be halfword-aligned)
+    ///
+    /// # Returns
+    /// * `Ok(u16)` - The halfword value read from the device
+    /// * `Err(BusDeviceError)` - If the read is invalid or size not supported
+    ///
+    /// # Default Implementation
+    /// Returns `UnsupportedSize` error. Devices that support halfword access should override this.
+    fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> {
+        Err(BusDeviceError::UnsupportedSize { offset, size: 2 })
+    }
+
+    /// Write a 16-bit halfword to the device at the given offset
+    ///
+    /// # Arguments
+    /// * `offset` - Byte offset relative to the device's base address (must be halfword-aligned)
+    /// * `value` - The 16-bit value to write
+    ///
+    /// # Returns
+    /// * `Ok(())` - Write successful
+    /// * `Err(BusDeviceError)` - If the write is invalid or size not supported
+    ///
+    /// # Default Implementation
+    /// Returns `UnsupportedSize` error. Devices that support halfword access should override this.
+    fn write_halfword(&mut self, offset: u32, value: u16) -> Result<(), BusDeviceError> {
+        Err(BusDeviceError::UnsupportedSize { offset, size: 2 })
+    }
+
+    /// Read a single byte from the device at the given offset
+    ///
+    /// # Arguments
+    /// * `offset` - Byte offset relative to the device's base address
+    ///
+    /// # Returns
+    /// * `Ok(u8)` - The byte value read from the device
+    /// * `Err(BusDeviceError)` - If the read is invalid or size not supported
+    ///
+    /// # Default Implementation
+    /// Returns `UnsupportedSize` error. Devices that support byte access should override this.
+    fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> {
+        Err(BusDeviceError::UnsupportedSize { offset, size: 1 })
+    }
+
+    /// Write a single byte to the device at the given offset
+    ///
+    /// # Arguments
+    /// * `offset` - Byte offset relative to the device's base address
+    /// * `value` - The 8-bit value to write
+    ///
+    /// # Returns
+    /// * `Ok(())` - Write successful
+    /// * `Err(BusDeviceError)` - If the write is invalid or size not supported
+    ///
+    /// # Default Implementation
+    /// Returns `UnsupportedSize` error. Devices that support byte access should override this.
+    fn write_byte(&mut self, offset: u32, value: u8) -> Result<(), BusDeviceError> {
+        Err(BusDeviceError::UnsupportedSize { offset, size: 1 })
+    }
 
     /// Get the size of the device's address space in bytes
     ///
@@ -163,34 +234,34 @@ pub enum RegistrationError {
 
 pub struct SystemBus {
     devices: Vec<RegisteredDevice>,
-    // Internal devices (backward compatibility)
-    dram: Dram,
-    fifo: Fifo,
 }
 
 impl SystemBus {
-    /// Create a new system bus with default internal devices
+    /// Create a new system bus with no devices registered
     ///
-    /// Automatically registers DRAM and FIFO at their standard addresses:
-    /// - FIFO: 0x4000_0000 - 0x4000_0007 (8 bytes)
-    /// - DRAM: 0x0000_0000 - 0xFFFF_FFFF (entire address space, lowest priority)
+    /// Unlike the old architecture, the bus starts empty. Devices (including
+    /// internal DRAM, FIFO, and SimControl) must be registered explicitly
+    /// during Simulator initialization.
     pub fn new() -> Self {
-        // Implementation details in next section
+        SystemBus {
+            devices: Vec::new(),
+        }
     }
 
-    /// Register a custom device at the specified base address
+    /// Register a device at the specified base address
     ///
     /// # Arguments
-    /// * `base_addr` - Base address for the device in the system memory map
+    /// * `base_addr` - Base address for the device in the system memory map (must be word-aligned)
     /// * `device` - The device to register (must implement BusDevice trait)
     ///
     /// # Returns
     /// * `Ok(())` - Device registered successfully
-    /// * `Err(RegistrationError)` - Address range conflicts with existing device
+    /// * `Err(RegistrationError)` - Address range conflicts with existing device or invalid alignment
     ///
     /// # Errors
     /// Returns error if:
     /// - Device address range overlaps with existing device
+    /// - Device base address is not word-aligned (multiple of 4)
     /// - Device size is not word-aligned (multiple of 4)
     /// - Device size is zero
     pub fn register_device(
@@ -199,6 +270,13 @@ impl SystemBus {
         device: Box<dyn BusDevice>,
     ) -> Result<(), RegistrationError> {
         // Validation and registration logic
+    }
+
+    /// Get immutable access to registered devices (for introspection/debugging)
+    ///
+    /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
+    pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)> + '_ {
+        self.devices.iter().map(|d| (d.base_addr, d.size, d.device.name()))
     }
 
     /// Read a 32-bit word from the bus
@@ -216,29 +294,84 @@ impl SystemBus {
     pub fn write_word(&mut self, addr: u32, value: u32) {
         // Route to appropriate device
     }
+
+    /// Read a 16-bit halfword from the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and returns 0.
+    pub fn read_halfword(&mut self, addr: u32) -> u16 {
+        // Route to appropriate device
+    }
+
+    /// Write a 16-bit halfword to the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and discards the write.
+    pub fn write_halfword(&mut self, addr: u32, value: u16) {
+        // Route to appropriate device
+    }
+
+    /// Read a single byte from the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and returns 0.
+    pub fn read_byte(&mut self, addr: u32) -> u8 {
+        // Route to appropriate device
+    }
+
+    /// Write a single byte to the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and discards the write.
+    pub fn write_byte(&mut self, addr: u32, value: u8) {
+        // Route to appropriate device
+    }
 }
 ```
 
 ### 3. DRAM as BusDevice
 
-Convert the existing DRAM to implement `BusDevice`:
+Convert the existing DRAM to implement `BusDevice`. DRAM will be registered at `0x8000_0000` to match the linker script configuration used by Rust test programs.
 
 ```rust
 impl BusDevice for Dram {
     fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
-        // Use existing read_word logic
+        // Use existing read_word logic (offset is relative to 0x8000_0000)
         Ok(self.read_word_internal(offset))
     }
 
     fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
-        // Use existing write_word logic
+        // Use existing write_word logic (offset is relative to 0x8000_0000)
         self.write_word_internal(offset, value);
         Ok(())
     }
 
+    fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> {
+        Ok(self.read_halfword_internal(offset))
+    }
+
+    fn write_halfword(&mut self, offset: u32, value: u16) -> Result<(), BusDeviceError> {
+        self.write_halfword_internal(offset, value);
+        Ok(())
+    }
+
+    fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> {
+        Ok(self.read_byte_internal(offset))
+    }
+
+    fn write_byte(&mut self, offset: u32, value: u8) -> Result<(), BusDeviceError> {
+        self.write_byte_internal(offset, value);
+        Ok(())
+    }
+
     fn size(&self) -> u32 {
-        // DRAM covers the entire address space
-        0xFFFF_FFFF
+        // DRAM size: 2 GiB (0x8000_0000 to 0xFFFF_FFFF)
+        // This is u32::MAX - 0x8000_0000 + 1 = 0x8000_0000
+        0x8000_0000
     }
 
     fn name(&self) -> &str {
@@ -247,7 +380,8 @@ impl BusDevice for Dram {
 }
 ```
 
-**Note**: DRAM will be registered with **lowest priority** so it acts as a catch-all for unmapped addresses. The device routing algorithm searches registered devices in reverse order, so DRAM (registered first) is checked last.
+**Memory Map**: DRAM will be registered at base address `0x8000_0000` with size `0x8000_0000` (2 GiB), covering the range `0x8000_0000` to `0xFFFF_FFFF`.
+
 
 ### 4. FIFO as BusDevice
 
@@ -289,30 +423,83 @@ impl BusDevice for Fifo {
 }
 ```
 
-### 5. System Bus Implementation
+### 5. SimControl as BusDevice
 
-The `SystemBus` will own DRAM and FIFO internally and automatically register them during initialization:
+Create a new `SimControl` device to handle simulator control operations, including the tohost register for program termination. This device will be registered at `0x1000_0000`.
+
+```rust
+/// Simulator control device
+///
+/// Provides memory-mapped registers for controlling the simulator,
+/// including the tohost register for signaling program completion.
+pub struct SimControl {
+    tohost_value: Option<u32>,
+}
+
+impl SimControl {
+    pub fn new() -> Self {
+        SimControl { tohost_value: None }
+    }
+
+    /// Check if a termination request has been made
+    pub fn termination_requested(&self) -> Option<u32> {
+        self.tohost_value
+    }
+
+    /// Clear the termination request (for reset)
+    pub fn clear_termination(&mut self) {
+        self.tohost_value = None;
+    }
+}
+
+impl BusDevice for SimControl {
+    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+        match offset {
+            0x00 => {
+                // TOHOST register - read returns current value
+                Ok(self.tohost_value.unwrap_or(0))
+            }
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
+    }
+
+    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+        match offset {
+            0x00 => {
+                // TOHOST register - write triggers termination
+                self.tohost_value = Some(value);
+                log::info!("SimControl: tohost write detected, value=0x{:08x}", value);
+                Ok(())
+            }
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
+    }
+
+    fn size(&self) -> u32 {
+        // Single 32-bit register: TOHOST
+        4
+    }
+
+    fn name(&self) -> &str {
+        "SimControl"
+    }
+}
+```
+
+**Memory Map**: SimControl will be registered at base address `0x1000_0000` with size `4` bytes, providing the TOHOST register at offset `0x00`.
+
+**Integration**: The Simulator will need to query `SimControl::termination_requested()` after each instruction to check if the program has signaled completion.
+
+### 6. System Bus Implementation
+
+The `SystemBus` routing logic finds the device whose address range contains the requested address and forwards the operation with a relative offset. Since devices have exclusive, non-overlapping ranges, there is no priority system - each address maps to at most one device.
 
 ```rust
 impl SystemBus {
-    pub fn new() -> Self {
-        let mut bus = SystemBus {
-            devices: Vec::new(),
-            dram: Dram::new(),
-            fifo: Fifo::new(),
-        };
-
-        // Auto-register internal devices
-        // Note: We cannot move dram/fifo into Box since we need them for SimulatorView
-        // Instead, we'll use a different approach - see "Internal vs External Devices" section
-
-        bus
-    }
-
     fn find_device(&mut self, addr: u32) -> Option<(&mut dyn BusDevice, u32)> {
-        // Search devices in reverse order (last registered = highest priority)
-        // This allows DRAM (registered first) to act as catch-all
-        for registered in self.devices.iter_mut().rev() {
+        // Search all registered devices for one that contains this address
+        // Since devices have exclusive ranges, at most one device will match
+        for registered in self.devices.iter_mut() {
             let base = registered.base_addr;
             let end = base.saturating_add(registered.size);
             
@@ -329,12 +516,12 @@ impl SystemBus {
             match device.read_word(offset) {
                 Ok(value) => value,
                 Err(e) => {
-                    log::warn!("Bus read error at 0x{:08x}: {}", addr, e);
+                    log::warn!("Bus read_word error at 0x{:08x}: {}", addr, e);
                     0
                 }
             }
         } else {
-            log::warn!("Bus read from unmapped address 0x{:08x}, returning 0", addr);
+            log::warn!("Bus read_word from unmapped address 0x{:08x}, returning 0", addr);
             0
         }
     }
@@ -342,11 +529,67 @@ impl SystemBus {
     pub fn write_word(&mut self, addr: u32, value: u32) {
         if let Some((device, offset)) = self.find_device(addr) {
             if let Err(e) = device.write_word(offset, value) {
-                log::warn!("Bus write error at 0x{:08x}: {}", addr, e);
+                log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
             }
         } else {
             log::warn!(
-                "Bus write to unmapped address 0x{:08x} (value=0x{:08x}), discarding",
+                "Bus write_word to unmapped address 0x{:08x} (value=0x{:08x}), discarding",
+                addr, value
+            );
+        }
+    }
+
+    pub fn read_halfword(&mut self, addr: u32) -> u16 {
+        if let Some((device, offset)) = self.find_device(addr) {
+            match device.read_halfword(offset) {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_halfword error at 0x{:08x}: {}", addr, e);
+                    0
+                }
+            }
+        } else {
+            log::warn!("Bus read_halfword from unmapped address 0x{:08x}, returning 0", addr);
+            0
+        }
+    }
+
+    pub fn write_halfword(&mut self, addr: u32, value: u16) {
+        if let Some((device, offset)) = self.find_device(addr) {
+            if let Err(e) = device.write_halfword(offset, value) {
+                log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_halfword to unmapped address 0x{:08x} (value=0x{:04x}), discarding",
+                addr, value
+            );
+        }
+    }
+
+    pub fn read_byte(&mut self, addr: u32) -> u8 {
+        if let Some((device, offset)) = self.find_device(addr) {
+            match device.read_byte(offset) {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_byte error at 0x{:08x}: {}", addr, e);
+                    0
+                }
+            }
+        } else {
+            log::warn!("Bus read_byte from unmapped address 0x{:08x}, returning 0", addr);
+            0
+        }
+    }
+
+    pub fn write_byte(&mut self, addr: u32, value: u8) {
+        if let Some((device, offset)) = self.find_device(addr) {
+            if let Err(e) = device.write_byte(offset, value) {
+                log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_byte to unmapped address 0x{:08x} (value=0x{:02x}), discarding",
                 addr, value
             );
         }
@@ -354,97 +597,117 @@ impl SystemBus {
 }
 ```
 
-### 6. Internal vs External Devices
+**Key Points:**
+- No priority system: devices have exclusive, non-overlapping address ranges
+- `find_device()` returns the first (and only) device matching the address
+- All unmapped accesses log warnings and return 0 (reads) or discard (writes)
+- Device receives offset relative to its base address for portability
 
-**Challenge**: `SimulatorView` needs direct access to DRAM and FIFO for backward compatibility, but we also want them to be `BusDevice` implementations registered on the bus.
+### 7. Simulator Device Ownership
 
-**Solution**: Use a hybrid approach:
-
-1. **Internal Devices** (DRAM, FIFO): Owned directly by `SystemBus` as fields
-2. **Device Wrappers**: Create wrapper structs that implement `BusDevice` and delegate to internal devices
-3. **Registration**: Register the wrappers instead of moving the internal devices
-
-```rust
-/// Wrapper that provides BusDevice access to the internal DRAM
-struct DramBusAdapter<'a> {
-    dram: &'a mut Dram,
-}
-
-impl<'a> BusDevice for DramBusAdapter<'a> {
-    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
-        Ok(self.dram.read_word(offset))
-    }
-    
-    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
-        self.dram.write_word(offset, value);
-        Ok(())
-    }
-    
-    fn size(&self) -> u32 {
-        0xFFFF_FFFF
-    }
-    
-    fn name(&self) -> &str {
-        "DRAM"
-    }
-}
-
-// Similar wrapper for FIFO
-```
-
-**Alternative (Simpler) Approach**: Keep the current hardcoded routing for DRAM and FIFO in `SystemBus`, and only use the dynamic device registration for external devices. This maintains full backward compatibility while still enabling extensibility.
+Instead of `SystemBus` owning internal devices, the `Simulator` will own DRAM, FIFO, and SimControl instances and register them onto the bus during initialization. This proves the design works for all devices, not just external ones.
 
 ```rust
-pub struct SystemBus {
-    // Internal devices (not moved into the registry)
-    pub(crate) dram: Dram,
-    pub(crate) fifo: Fifo,
+pub struct Simulator {
+    // ... existing fields
+    bus: SystemBus,
     
-    // External devices (registered dynamically)
-    devices: Vec<RegisteredDevice>,
+    // Owned device instances (registered into bus)
+    dram: Dram,
+    fifo: Fifo,
+    sim_control: SimControl,
 }
 
-impl SystemBus {
-    pub fn read_word(&mut self, addr: u32) -> u32 {
-        // First, check registered external devices
-        if let Some((device, offset)) = self.find_device(addr) {
-            return match device.read_word(offset) {
-                Ok(value) => value,
-                Err(e) => {
-                    log::warn!("Bus read error at 0x{:08x}: {}", addr, e);
-                    0
-                }
-            };
+impl Simulator {
+    pub fn new(...) -> Result<Self, String> {
+        // Create empty bus
+        let mut bus = SystemBus::new();
+        
+        // Create device instances
+        let mut dram = Dram::new();
+        let mut fifo = Fifo::new();
+        let mut sim_control = SimControl::new();
+        
+        // Register devices onto the bus
+        bus.register_device(0x8000_0000, Box::new(&mut dram as &mut dyn BusDevice))?;
+        bus.register_device(0x4000_0000, Box::new(&mut fifo as &mut dyn BusDevice))?;
+        bus.register_device(0x1000_0000, Box::new(&mut sim_control as &mut dyn BusDevice))?;
+        
+        Ok(Simulator {
+            bus,
+            dram,
+            fifo,
+            sim_control,
+            // ... other fields
+        })
+    }
+    
+    pub fn step(&mut self) -> Result<SimulationStepResult, HungStateError> {
+        // ... execute instruction ...
+        
+        // Check for termination via SimControl device
+        if let Some(tohost_value) = self.sim_control.termination_requested() {
+            return Ok(SimulationStepResult {
+                tohost_value: Some(tohost_value),
+                // ... other fields
+            });
         }
         
-        // Fall back to hardcoded FIFO/DRAM routing
-        const FIFO_BASE: u32 = 0x4000_0000;
-        match addr {
-            a if a == FIFO_BASE => self.fifo.read_data(),
-            a if a == FIFO_BASE + 4 => self.fifo.read_status(),
-            _ => self.dram.read_word(addr),
-        }
+        // ... rest of step logic
     }
 }
 ```
 
-**Recommendation**: Use the **simpler approach** for this initial implementation. It:
-- Maintains 100% backward compatibility
-- Keeps `SimulatorView` unchanged
-- Allows external devices to be registered
-- Reserves the FIFO address range (0x4000_0000 - 0x4000_0007) during validation
-- Can be refactored later if needed
+**SimulatorView Access**: `SimulatorView` can continue to provide direct access to FIFO and DRAM for backward compatibility, since `Simulator` owns them:
 
-### 7. Address Range Validation
+```rust
+impl<'a> SimulatorView<'a> {
+    pub(crate) fn new(
+        fifo: &'a mut Fifo,
+        dram: &'a mut Dram,
+        bus: &'a mut SystemBus,
+        hung_detector: &'a mut Option<HungDetector>,
+    ) -> Self {
+        SimulatorView {
+            fifo,
+            dram,
+            bus,
+            hung_detector,
+        }
+    }
+    
+    // Existing FIFO methods use direct access
+    pub fn fifo_read_tx(&mut self) -> Option<u32> {
+        self.fifo.tx.pop_front()
+    }
+    
+    // Existing DRAM methods use direct access
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
+        for (offset, &byte) in data.iter().enumerate() {
+            let addr = start_addr.wrapping_add(offset as u32);
+            self.dram.write_byte(addr, byte);
+        }
+        // ... hung detector update
+    }
+    
+    // NEW: Device registration for external devices
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), String> {
+        self.bus.register_device(base_addr, device)
+            .map_err(|e| format!("{:?}", e))
+    }
+}
+```
 
-During device registration, validate that the new device does not overlap with existing devices or reserved ranges:
+### 8. Address Range Validation
+
+During device registration, validate that the new device does not overlap with existing devices:
 
 ```rust
 impl SystemBus {
-    // Reserved address ranges for internal devices
-    const FIFO_BASE: u32 = 0x4000_0000;
-    const FIFO_SIZE: u32 = 8; // 2 words: DATA and STATUS
-
     fn check_address_overlap(
         &self,
         new_base: u32,
@@ -452,19 +715,7 @@ impl SystemBus {
     ) -> Result<(), RegistrationError> {
         let new_end = new_base.saturating_add(new_size);
 
-        // Check against reserved FIFO range
-        let fifo_end = Self::FIFO_BASE.saturating_add(Self::FIFO_SIZE);
-        if ranges_overlap(new_base, new_end, Self::FIFO_BASE, fifo_end) {
-            return Err(RegistrationError::AddressOverlap {
-                new_base,
-                new_end,
-                existing_base: Self::FIFO_BASE,
-                existing_end: fifo_end,
-                existing_name: "FIFO (internal)".to_string(),
-            });
-        }
-
-        // Check against other registered devices
+        // Check against all registered devices
         for registered in &self.devices {
             let existing_end = registered.base_addr.saturating_add(registered.size);
             if ranges_overlap(new_base, new_end, registered.base_addr, existing_end) {
@@ -495,10 +746,17 @@ impl SystemBus {
         if size % 4 != 0 {
             return Err(RegistrationError::InvalidAlignment { size });
         }
+        
+        // Validate base address alignment
+        if base_addr % 4 != 0 {
+            return Err(RegistrationError::InvalidBaseAlignment { base_addr });
+        }
 
-        // Check for overlaps
+        // Check for overlaps with existing devices
         self.check_address_overlap(base_addr, size)?;
 
+        let name = device.name().to_string();
+        
         // Register device
         self.devices.push(RegisteredDevice {
             base_addr,
@@ -508,9 +766,9 @@ impl SystemBus {
 
         log::info!(
             "Registered device '{}' at 0x{:08x} - 0x{:08x} (size: {} bytes)",
-            self.devices.last().unwrap().device.name(),
+            name,
             base_addr,
-            base_addr.saturating_add(size),
+            base_addr.saturating_add(size) - 1,
             size
         );
 
@@ -523,9 +781,9 @@ fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
 }
 ```
 
-### 8. SimulatorView Updates
+### 9. SimulatorView Updates
 
-The `SimulatorView` provides the public API for accessing the simulator during callbacks. We need to update it to support device registration:
+The `SimulatorView` provides the public API for accessing the simulator during callbacks:
 
 ```rust
 impl<'a> SimulatorView<'a> {
@@ -678,48 +936,80 @@ Document the reserved memory ranges:
 ### Phase 1: Core Trait and Error Types
 
 1. Create `cpu-sim/src/bus_device.rs` with:
-   - `BusDeviceError` enum
-   - `BusDevice` trait
+   - `BusDeviceError` enum (including `UnsupportedSize`)
+   - `BusDevice` trait with word, halfword, and byte operations
    - Helper functions (`ranges_overlap`)
 
-2. Update `cpu-sim/src/lib.rs` to export public types:
+2. Create `cpu-sim/src/sim_control.rs` with:
+   - `SimControl` struct
+   - `BusDevice` implementation for `SimControl`
+
+3. Update `cpu-sim/src/lib.rs` to export public types:
    ```rust
    mod bus_device;
+   mod sim_control;
    pub use bus_device::{BusDevice, BusDeviceError};
+   pub use sim_control::SimControl;
    ```
 
 ### Phase 2: BusDevice Implementations
 
 1. Implement `BusDevice` for `Dram`:
-   - Word-only interface (no byte/halfword in trait)
-   - Keep existing methods for internal use
+   - All six methods: read/write word, halfword, byte
+   - Registered at 0x8000_0000 with size 0x8000_0000
    - Add error handling (though DRAM never errors)
 
 2. Implement `BusDevice` for `Fifo`:
    - Handle DATA and STATUS registers
    - Return `WriteToReadOnly` for STATUS writes
    - Return `InvalidAddress` for invalid offsets
+   - Return `UnsupportedSize` for byte/halfword operations
+
+3. `SimControl` implementation (from Phase 1):
+   - TOHOST register at offset 0x00
+   - Track termination value
+   - Return `UnsupportedSize` for non-word operations
 
 ### Phase 3: SystemBus Refactoring
 
-1. Add device registry to `SystemBus`:
+1. Update `SystemBus` to use pure device registry:
    ```rust
    pub struct SystemBus {
-       pub(crate) dram: Dram,
-       pub(crate) fifo: Fifo,
        devices: Vec<RegisteredDevice>,
    }
    ```
 
-2. Implement `register_device()` with validation
+2. Implement `register_device()` with validation (address and size alignment, overlap checking)
 
-3. Update `read_word()` and `write_word()` to check registered devices first
+3. Implement routing methods: `read_word()`, `write_word()`, `read_halfword()`, `write_halfword()`, `read_byte()`, `write_byte()`
 
-4. Keep existing byte/halfword methods routing to DRAM only
+4. Add `registered_devices()` for introspection
 
-5. Add `RegistrationError` type
+5. Add `RegistrationError` type with `InvalidBaseAlignment`
 
-### Phase 4: SimulatorView Updates
+### Phase 4: Simulator Updates
+
+1. Update `Simulator` to own device instances:
+   ```rust
+   pub struct Simulator {
+       bus: SystemBus,
+       dram: Dram,
+       fifo: Fifo,
+       sim_control: SimControl,
+       // ... existing fields
+   }
+   ```
+
+2. Register devices during Simulator initialization:
+   - DRAM at 0x8000_0000
+   - FIFO at 0x4000_0000
+   - SimControl at 0x1000_0000
+
+3. Update `Simulator::step()` to query `sim_control.termination_requested()` instead of checking tohost writes
+
+4. Remove hardcoded tohost address constant (now in SimControl)
+
+### Phase 5: SimulatorView Updates
 
 1. Add bus access to `SimulatorView`:
    ```rust
@@ -735,7 +1025,23 @@ Document the reserved memory ranges:
 
 3. Update all `SimulatorView::new()` call sites to pass bus reference
 
-### Phase 5: Documentation
+### Phase 6: Update Rust Test Programs
+
+1. Update `rust-test-program/src/common.rs`:
+   - Change `TOHOST_ADDR` from `0xFFFF_FFF0` to `0x1000_0000`
+
+2. Recompile all ELF files in `test_programs/`:
+   ```bash
+   cd rust-test-program
+   cargo build --release
+   # Copy ELF files to test_programs/
+   ```
+
+3. Update non-ELF based tests that use tohost:
+   - Search for `0xFFFF_FFF0` in cpu-sim tests
+   - Replace with `0x1000_0000`
+
+### Phase 7: Documentation
 
 1. Add module-level documentation to `bus_device.rs`
 
@@ -743,9 +1049,11 @@ Document the reserved memory ranges:
 
 3. Create usage examples in doc comments
 
-4. Update this technical plan with any implementation learnings
+4. Document SimControl device
 
-### Phase 6: Testing
+5. Update memory map references throughout codebase
+
+### Phase 8: Testing
 
 1. Unit tests for overlap detection:
    ```rust
@@ -835,31 +1143,7 @@ impl<'a> SimulatorView<'a> {
 
 This avoids the borrowing conflict while still allowing device registration.
 
-### Challenge 2: Byte/Halfword Operations
-
-**Problem**: `BusDevice` trait only supports word operations, but the bus needs byte/halfword support for DRAM.
-
-**Solution**: Keep byte/halfword operations as separate methods on `SystemBus` that directly route to DRAM:
-
-```rust
-impl SystemBus {
-    pub fn read_byte(&mut self, addr: u32) -> u8 {
-        // Always route to DRAM
-        self.dram.read_byte(addr)
-    }
-    
-    pub fn read_halfword(&mut self, addr: u32) -> u16 {
-        // Always route to DRAM
-        self.dram.read_halfword(addr)
-    }
-    
-    // Similar for write_byte, write_halfword
-}
-```
-
-This matches current behavior where byte operations only work on DRAM (FIFO is word-only).
-
-### Challenge 3: Device Ownership in Callbacks
+### Challenge 2: Device Ownership in Callbacks
 
 **Problem**: User callbacks receive `&mut SimulatorView`, but devices may need to be created in that scope and registered.
 
@@ -1170,17 +1454,6 @@ fn test_custom_device_registration() {
    - Write to read-only registers
    - Read from write-only registers
 
-## Future Enhancements
-
-1. **Device Removal**: Add ability to unregister devices
-2. **Device Introspection**: Query registered devices and their ranges
-3. **Priority Levels**: Allow devices to specify priority for overlapping ranges
-4. **Default Device**: Configurable default device instead of hardcoded DRAM
-5. **Address Translation**: Support for MMU-style address translation
-6. **DMA Support**: Direct memory access between devices
-7. **Interrupt Support**: Devices can trigger CPU interrupts
-8. **MMIO Callbacks**: Register callbacks for specific address ranges without full device implementation
-
 ## API Compatibility
 
 ### Breaking Changes
@@ -1194,10 +1467,14 @@ fn test_custom_device_registration() {
 pub trait BusDevice { ... }
 pub enum BusDeviceError { ... }
 
+// New device (cpu-sim/src/sim_control.rs)
+pub struct SimControl { ... }
+
 // New SystemBus methods (cpu-sim/src/bus.rs)
 impl SystemBus {
     pub fn register_device(&mut self, base_addr: u32, device: Box<dyn BusDevice>) 
         -> Result<(), RegistrationError>;
+    pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)>;
 }
 
 // New SimulatorView methods (cpu-sim/src/sim.rs)
@@ -1216,26 +1493,28 @@ pub enum RegistrationError { ... }
 
 ## Memory Map Reference
 
-### Reserved Ranges (Internal Devices)
+### Internal Device Ranges
 
-| Start Address | End Address   | Size    | Device | Description                          |
-|---------------|---------------|---------|--------|--------------------------------------|
-| 0x4000_0000   | 0x4000_0003   | 4 bytes | FIFO   | FIFO_DATA register (R/W)             |
-| 0x4000_0004   | 0x4000_0007   | 4 bytes | FIFO   | FIFO_STATUS register (R/O)           |
-| 0x0000_0000   | 0xFFFF_FFFF   | 4 GiB   | DRAM   | Main memory (catch-all, low priority)|
+| Start Address | End Address   | Size    | Device     | Description                         |
+|---------------|---------------|---------|------------|-------------------------------------|
+| 0x1000_0000   | 0x1000_0003   | 4 bytes | SimControl | TOHOST register (W/O - halt signal) |
+| 0x4000_0000   | 0x4000_0003   | 4 bytes | FIFO       | FIFO_DATA register (R/W)            |
+| 0x4000_0004   | 0x4000_0007   | 4 bytes | FIFO       | FIFO_STATUS register (R/O)          |
+| 0x8000_0000   | 0xFFFF_FFFF   | 2 GiB   | DRAM       | Main memory (code and data)         |
 
 ### Recommended Ranges for Custom Devices
 
 | Start Address | End Address   | Suggested Use                        |
 |---------------|---------------|--------------------------------------|
-| 0x5000_0000   | 0x5FFF_FFFF   | Video/Graphics devices               |
-| 0x6000_0000   | 0x6FFF_FFFF   | Audio devices                        |
-| 0x7000_0000   | 0x7FFF_FFFF   | Custom peripherals                   |
-| 0x8000_0000   | 0xBFFF_FFFF   | DRAM (typical code region)           |
-| 0xC000_0000   | 0xFFFF_FFEF   | DRAM (typical data region)           |
-| 0xFFFF_FFF0   | 0xFFFF_FFF3   | tohost (halt signal) - **Reserved**  |
+| 0x2000_0000   | 0x2FFF_FFFF   | Video/Graphics devices               |
+| 0x3000_0000   | 0x3FFF_FFFF   | Audio devices                        |
+| 0x5000_0000   | 0x7FFF_FFFF   | Custom peripherals                   |
 
-**Note**: These are suggestions only. Custom devices can use any non-overlapping range except the FIFO range (0x4000_0000 - 0x4000_0007) and tohost (0xFFFF_FFF0).
+**Notes**:
+- These are suggestions only. Custom devices can use any non-overlapping range not already occupied by internal devices.
+- All device base addresses and sizes must be word-aligned (multiple of 4).
+- Devices have exclusive address ranges - no overlapping is allowed.
+- DRAM range (0x8000_0000 - 0xFFFF_FFFF) matches the linker script used by Rust test programs.
 
 ## Appendix: Complete Type Definitions
 
@@ -1248,6 +1527,7 @@ pub enum BusDeviceError {
     WriteToReadOnly { offset: u32 },
     ReadFromWriteOnly { offset: u32 },
     InvalidAddress { offset: u32 },
+    UnsupportedSize { offset: u32, size: u8 },
     Other(String),
 }
 
@@ -1255,6 +1535,10 @@ pub enum BusDeviceError {
 pub trait BusDevice {
     fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError>;
     fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError>;
+    fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> { /* default impl */ }
+    fn write_halfword(&mut self, offset: u32, value: u16) -> Result<(), BusDeviceError> { /* default impl */ }
+    fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> { /* default impl */ }
+    fn write_byte(&mut self, offset: u32, value: u8) -> Result<(), BusDeviceError> { /* default impl */ }
     fn size(&self) -> u32;
     fn name(&self) -> &str { "Unknown Device" }
 }
@@ -1279,6 +1563,7 @@ pub enum RegistrationError {
         existing_name: String,
     },
     InvalidAlignment { size: u32 },
+    InvalidBaseAlignment { base_addr: u32 },
     ZeroSize,
 }
 ```
@@ -1290,6 +1575,11 @@ This plan provides a complete, production-ready design for adding dynamic bus de
 - ✅ Maintains 100% backward compatibility
 - ✅ Enables extensibility for future devices (video, audio, etc.)
 - ✅ Validates address ranges to prevent conflicts
+- ✅ Uses exclusive non-overlapping ranges (no priority system)
+- ✅ Supports byte, halfword, and word operations
+- ✅ Includes SimControl device for tohost register
+- ✅ DRAM at 0x8000_0000 matching linker script
+- ✅ Device introspection for debugging
 - ✅ Uses relative addressing for device portability
 - ✅ Provides proper error handling
 - ✅ Includes comprehensive documentation and examples
