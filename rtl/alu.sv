@@ -49,8 +49,10 @@ module alu (
     logic [31:0] div_result;
     logic        div_ready;
     
-    // Instantiate division unit
-    div_unit u_div (
+    // Instantiate division unit with default 32-bit width for integer operations
+    div_unit #(
+        .WIDTH(32)
+    ) u_div (
         .clk(clk),
         .rst_n(rst_n),
         .start(div_start),

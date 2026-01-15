@@ -1,8 +1,10 @@
 // Division Unit Module
 // Hardware-synthesizable division using Non-Restoring Algorithm
-// Implements 32-bit signed and unsigned division and remainder
+// Parameterizable width for signed and unsigned division and remainder
 
-module div_unit (
+module div_unit #(
+    parameter int WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
+) (
     input  logic        clk,
     input  logic        rst_n,
     
@@ -12,10 +14,10 @@ module div_unit (
     input  logic        rem_sel,      // 1=remainder, 0=quotient
     
     // Data interface
-    input  logic [31:0] dividend,     // Dividend (A)
-    input  logic [31:0] divisor,      // Divisor (B)
-    output logic [31:0] result,       // Quotient or Remainder
-    output logic        ready         // Result valid
+    input  logic [WIDTH-1:0] dividend,     // Dividend (A)
+    input  logic [WIDTH-1:0] divisor,      // Divisor (B)
+    output logic [WIDTH-1:0] result,       // Quotient or Remainder
+    output logic             ready         // Result valid
 );
 
     // ============================================================
@@ -24,7 +26,7 @@ module div_unit (
     typedef enum logic [2:0] {
         DIV_IDLE     = 3'b000,  // Waiting for start
         DIV_INIT     = 3'b001,  // Initialize registers
-        DIV_ITER     = 3'b010,  // Perform 32 iterations
+        DIV_ITER     = 3'b010,  // Perform WIDTH iterations
         DIV_CORRECT  = 3'b011,  // Final correction if needed
         DIV_DONE     = 3'b100   // Result ready
     } div_state_t;
@@ -36,10 +38,10 @@ module div_unit (
     // ============================================================
     
     // Division working registers
-    logic [63:0] P;           // Partial remainder (64-bit)
-    logic [63:0] D;           // Divisor aligned (64-bit)
-    logic [31:0] Q;           // Quotient accumulator
-    logic [5:0]  iter_count;  // Iteration counter (0-31)
+    logic [2*WIDTH-1:0] P;                   // Partial remainder (2*WIDTH-bit)
+    logic [2*WIDTH-1:0] D;                   // Divisor aligned (2*WIDTH-bit)
+    logic [WIDTH-1:0]   Q;                   // Quotient accumulator
+    logic [$clog2(WIDTH)-1:0] iter_count;    // Iteration counter (0 to WIDTH-1), scales with WIDTH
     
     // Sign tracking
     logic        dividend_neg;
@@ -50,15 +52,15 @@ module div_unit (
     logic        overflow;
     
     // Intermediate values (combinational)
-    logic [31:0] abs_dividend;
-    logic [31:0] abs_divisor;
-    logic [31:0] final_quotient;
-    logic [31:0] final_remainder;
+    logic [WIDTH-1:0] abs_dividend;
+    logic [WIDTH-1:0] abs_divisor;
+    logic [WIDTH-1:0] final_quotient;
+    logic [WIDTH-1:0] final_remainder;
     
     // Temporary variables for division iteration
-    logic [63:0] P_shifted;
-    logic [63:0] P_add;      // P + D (for non-restoring when P is negative)
-    logic [63:0] P_sub;      // P - D (for non-restoring when P is non-negative)
+    logic [2*WIDTH-1:0] P_shifted;
+    logic [2*WIDTH-1:0] P_add;      // P + D (for non-restoring when P is negative)
+    logic [2*WIDTH-1:0] P_sub;      // P - D (for non-restoring when P is non-negative)
     
     // ============================================================
     // State Register
@@ -90,7 +92,9 @@ module div_unit (
             end
             
             DIV_ITER: begin
-                if (iter_count == 6'd31)  // After 32 iterations (0-31)
+                /* verilator lint_off WIDTHEXPAND */
+                if (iter_count == (WIDTH-1))  // After WIDTH iterations (0 to WIDTH-1)
+                /* verilator lint_on WIDTHEXPAND */
                     next_state = DIV_CORRECT;  // Need correction for non-restoring
                 else
                     next_state = DIV_ITER;
@@ -120,9 +124,9 @@ module div_unit (
         abs_divisor = divisor;
         
         // Compute absolute values in INIT state for signed operations
-        if (state == DIV_INIT && is_signed && divisor != 32'd0) begin
-            abs_dividend = dividend[31] ? (~dividend + 32'd1) : dividend;
-            abs_divisor  = divisor[31]  ? (~divisor  + 32'd1) : divisor;
+        if (state == DIV_INIT && is_signed && divisor != '0) begin
+            abs_dividend = dividend[WIDTH-1] ? (~dividend + 1'b1) : dividend;
+            abs_divisor  = divisor[WIDTH-1]  ? (~divisor  + 1'b1) : divisor;
         end
         
         // Compute shifted, add, and subtract values for non-restoring division
@@ -136,10 +140,10 @@ module div_unit (
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            P <= 64'h0;
-            D <= 64'h0;
-            Q <= 32'h0;
-            iter_count <= 6'd0;
+            P <= '0;
+            D <= '0;
+            Q <= '0;
+            iter_count <= '0;
             dividend_neg <= 1'b0;
             divisor_neg <= 1'b0;
             div_by_zero <= 1'b0;
@@ -148,26 +152,29 @@ module div_unit (
             case (state)
                 DIV_INIT: begin
                     // Check for special cases
-                    div_by_zero <= (divisor == 32'd0);
+                    div_by_zero <= (divisor == '0);
+                    // Overflow only for signed: most negative / -1
+                    /* verilator lint_off WIDTHEXPAND */
                     overflow <= is_signed && 
-                                (dividend == 32'h80000000) && 
-                                (divisor == 32'hFFFFFFFF);
+                                (dividend == (1'b1 << (WIDTH-1))) && 
+                                (divisor == '1);
+                    /* verilator lint_on WIDTHEXPAND */
                     
-                    if (divisor != 32'd0) begin
+                    if (divisor != '0) begin
                         // Handle sign tracking for signed division
                         if (is_signed) begin
-                            dividend_neg <= dividend[31];
-                            divisor_neg <= divisor[31];
+                            dividend_neg <= dividend[WIDTH-1];
+                            divisor_neg <= divisor[WIDTH-1];
                         end else begin
                             dividend_neg <= 1'b0;
                             divisor_neg <= 1'b0;
                         end
                         
                         // Initialize division registers (abs values computed combinationally)
-                        P <= {32'h0, abs_dividend};  // {remainder, dividend}
-                        D <= {abs_divisor, 32'h0};   // Divisor in upper 32 bits
-                        Q <= 32'h0;
-                        iter_count <= 6'd0;
+                        P <= {{WIDTH{1'b0}}, abs_dividend};  // {remainder, dividend}
+                        D <= {abs_divisor, {WIDTH{1'b0}}};   // Divisor in upper WIDTH bits
+                        Q <= '0;
+                        iter_count <= '0;
                     end
                 end
                 
@@ -178,23 +185,23 @@ module div_unit (
                     // - If P < 0: shift and add divisor
                     // Quotient bit is determined by the result's sign (1 if non-negative, 0 if negative)
                     
-                    if (!P[63]) begin
+                    if (!P[2*WIDTH-1]) begin
                         // Partial remainder is non-negative: shift left and subtract divisor
                         P <= P_sub;
-                        Q <= {Q[30:0], !P_sub[63] ? 1'b1 : 1'b0};
+                        Q <= {Q[WIDTH-2:0], !P_sub[2*WIDTH-1] ? 1'b1 : 1'b0};
                     end else begin
                         // Partial remainder is negative: shift left and add divisor
                         P <= P_add;
-                        Q <= {Q[30:0], !P_add[63] ? 1'b1 : 1'b0};
+                        Q <= {Q[WIDTH-2:0], !P_add[2*WIDTH-1] ? 1'b1 : 1'b0};
                     end
                     
-                    iter_count <= iter_count + 6'd1;
+                    iter_count <= iter_count + 1'b1;
                 end
                 
                 DIV_CORRECT: begin
                     // Final correction for non-restoring division
                     // If the final remainder is negative, add divisor to make it positive
-                    if (P[63]) begin
+                    if (P[2*WIDTH-1]) begin
                         P <= P + D;
                     end
                     // Quotient is already correct from iteration loop
@@ -215,19 +222,19 @@ module div_unit (
         if (is_signed && !div_by_zero && !overflow) begin
             // Quotient sign: sign(dividend) XOR sign(divisor)
             if (dividend_neg ^ divisor_neg)
-                final_quotient = ~Q + 32'd1;  // Two's complement negation
+                final_quotient = ~Q + 1'b1;  // Two's complement negation
             else
                 final_quotient = Q;
             
             // Remainder sign: same as dividend
             if (dividend_neg)
-                final_remainder = ~P[63:32] + 32'd1;  // Two's complement negation
+                final_remainder = ~P[2*WIDTH-1:WIDTH] + 1'b1;  // Two's complement negation
             else
-                final_remainder = P[63:32];
+                final_remainder = P[2*WIDTH-1:WIDTH];
         end else begin
             // Unsigned or edge cases: use values as-is
             final_quotient = Q;
-            final_remainder = P[63:32];
+            final_remainder = P[2*WIDTH-1:WIDTH];
         end
     end
     
@@ -243,13 +250,13 @@ module div_unit (
                 if (rem_sel)
                     result = dividend;  // REM/REMU: return dividend unchanged
                 else
-                    result = 32'hFFFFFFFF;  // DIV/DIVU: return all 1's
+                    result = '1;  // DIV/DIVU: return all 1's
             end else if (overflow) begin
-                // RISC-V spec: -2^31 / -1 overflow
+                // RISC-V spec: most negative / -1 overflow
                 if (rem_sel)
-                    result = 32'd0;  // REM: return 0
+                    result = '0;  // REM: return 0
                 else
-                    result = 32'h80000000;  // DIV: return -2^31
+                    result = (1'b1 << (WIDTH-1));  // DIV: return most negative number
             end else begin
                 if (rem_sel)
                     result = final_remainder;  // Remainder
@@ -257,7 +264,7 @@ module div_unit (
                     result = final_quotient;   // Quotient
             end
         end else begin
-            result = 32'h0;  // Default when not ready
+            result = '0;  // Default when not ready
         end
     end
 

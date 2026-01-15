@@ -3,6 +3,9 @@
 // IEEE 754-2008 compliant using manual bit manipulation (Verilator-compatible)
 
 module fpu (
+    input  logic        clk,          // Clock for multi-cycle division
+    input  logic        rst_n,        // Reset for multi-cycle division
+    input  logic        fpu_start,    // Start FPU operation (pulse)
     input  logic [31:0] fs1,
     input  logic [31:0] fs2,
     input  logic [31:0] fs3,
@@ -11,7 +14,8 @@ module fpu (
     input  logic [2:0]  rm,
     output logic [31:0] fp_result,
     output logic [31:0] int_result,
-    output logic [4:0]  fflags
+    output logic [4:0]  fflags,
+    output logic        fpu_ready     // FPU operation complete
 );
 
     // FPU Operation Encodings
@@ -46,6 +50,11 @@ module fpu (
     localparam [31:0] POS_INF  = 32'h7F800000;
     localparam [31:0] NEG_INF  = 32'hFF800000;
     localparam [31:0] QNAN     = 32'h7FC00000;
+    
+    // Division normalization constant
+    // The target bit position for the mantissa MSB after 48-bit division
+    // This represents where the implicit '1' should be positioned
+    localparam MANT_MSB_POS = 24;
 
     // Helper functions
     function automatic logic is_nan(input logic [31:0] val);
@@ -304,21 +313,24 @@ module fpu (
         return {result_sign, result_exp, result_mant};
     endfunction
 
-    // FP Division (simplified implementation)
-    // For production use, a more sophisticated iterative divider may be needed for
-    // better accuracy on edge cases, but basic division operations work correctly.
-    function automatic logic [31:0] fp_div(
+    // FP Division (hardware implementation using div_unit)
+    // Multi-cycle operation that uses a 48-bit division unit
+    // The div_unit handles the mantissa division in hardware with full precision
+    function automatic logic [31:0] fp_div_setup(
         input logic [31:0] a,
         input logic [31:0] b,
-        output logic [4:0] flags
+        output logic [47:0] dividend_out,
+        output logic [47:0] divisor_out,
+        output logic        needs_div,
+        output logic [4:0]  flags
     );
         logic result_sign;
         logic [8:0] result_exp_wide;
-        logic [7:0] result_exp;
-        logic [47:0] dividend, quotient;
-        logic [23:0] divisor;
-        logic [22:0] result_mant;
         
+        // Default: no division needed
+        needs_div = 1'b0;
+        dividend_out = 48'h0;
+        divisor_out = 48'h0;
         flags = 5'b0;
         
         // Handle NaN
@@ -343,37 +355,94 @@ module fpu (
         // Handle zero dividend
         if (is_zero(a)) return {a[31] ^ b[31], 31'h0};
         
+        // Normal case: need to perform division
+        needs_div = 1'b1;
+        
+        // With 48-bit div_unit, we can implement proper IEEE 754 division:
+        // To get a quotient in the range we want, we scale only the dividend:
+        // dividend = {1.mant_a, MANT_MSB_POS'h0} gives 48 bits total (scaled up by 2^MANT_MSB_POS)
+        // divisor  = {MANT_MSB_POS'h0, 1.mant_b} gives 48 bits total (in lower bits)
+        //
+        // This computes (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) which yields a MANT_MSB_POS-bit quotient
+        // in the upper bits, representing the mantissa ratio scaled by 2^MANT_MSB_POS.
+        //
+        dividend_out = {1'b1, a[22:0], 24'h0};    // 24-bit mantissa (1.mant_a) shifted left by MANT_MSB_POS
+        divisor_out = {24'h0, 1'b1, b[22:0]};     // 24-bit mantissa (1.mant_b) in lower bits
+        
+        // Return a placeholder (will be replaced after division completes)
+        return 32'h0;
+    endfunction
+    
+    // FP Division result assembly (called after div_unit completes)
+    function automatic logic [31:0] fp_div_assemble(
+        input logic [31:0] a,
+        input logic [31:0] b,
+        input logic [47:0] quotient_raw,
+        output logic [4:0] flags
+    );
+        logic result_sign;
+        logic [8:0] result_exp_wide;
+        logic [7:0] result_exp;
+        logic [47:0] quotient;
+        logic [22:0] result_mant;
+        logic [47:0] normalized_quotient;
+        integer i;
+        integer shift;
+        
+        flags = 5'b0;
+        
         result_sign = a[31] ^ b[31];
         result_exp_wide = {1'b0, a[30:23]} - {1'b0, b[30:23]} + 9'd127;
         
-        // Division: We want (1.mant_a) / (1.mant_b) as a 24-bit fixed-point result
-        // Scale up dividend to get precision
-        dividend = {{1'b1, a[22:0]}, 24'h0};  // 48 bits: 1.mantissa followed by 24 zeros
-        divisor = {1'b1, b[22:0]};             // 24 bits: 1.mantissa
+        // The quotient from the 48-bit div_unit represents:
+        // (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) = (mant_a / mant_b) * 2^MANT_MSB_POS
+        // For normalized IEEE 754 inputs (mantissas ~1.0), quotient should be around 2^MANT_MSB_POS = 0x1000000
+        // This means the implicit '1' of the result will typically be at bit MANT_MSB_POS
+        quotient = quotient_raw;
         
-        // Perform division
-        /* verilator lint_off WIDTHEXPAND */
-        quotient = dividend / divisor;
-        /* verilator lint_on WIDTHEXPAND */
-        
-        // The result of (48-bit / 24-bit) usually lands around bit 24.
-        // Range of normalized div is (0.5, 2.0).
-        // In integer terms: [0x800000, 0x1FFFFFF] relative to shift.
-        
-        if (quotient[24]) begin
-            // Case: A >= B. Result >= 1.0
-            // The implicit '1' is at bit 24.
-            // We need the 23 bits following it.
-            result_mant = quotient[23:1];
-            // Exponent is already correct.
+        // Normalize the quotient to extract the 23-bit mantissa:
+        // Find the MSB and determine how to extract the mantissa
+        if (quotient[MANT_MSB_POS]) begin
+            // Normal case: quotient ~= 2^MANT_MSB_POS, MSB at bit MANT_MSB_POS
+            // The implicit 1 is at bit MANT_MSB_POS, mantissa is bits [MANT_MSB_POS-1:1]
+            result_mant = quotient[MANT_MSB_POS-1:1];
+            // No exponent adjustment needed
+        end else if (quotient[MANT_MSB_POS-1]) begin
+            // quotient in [2^(MANT_MSB_POS-1), 2^MANT_MSB_POS): implicit 1 at bit MANT_MSB_POS-1
+            result_mant = quotient[MANT_MSB_POS-2:0];
+            result_exp_wide = result_exp_wide - 9'd1;
         end else begin
-            // Case: A < B. Result < 1.0 (e.g., 0.1xxxx)
-            // The implicit '1' (from the 0.5) is at bit 23.
-            // We need to Normalize: Shift Left 1, Decrement Exponent.
-            // Effectively, we just take bits [22:0] as the mantissa.
-            result_mant = quotient[22:0];
-            result_exp_wide = result_exp_wide - 1;
+            // Quotient < 2^(MANT_MSB_POS-1): use general normalization
+            normalized_quotient = 48'b0;
+            shift = 0;
+            
+            // Find the MSB position
+            for (i = 47; i >= 0; i--) begin
+                if (quotient[i]) begin
+                    // Compute shift so that MSB moves to bit MANT_MSB_POS
+                    shift = MANT_MSB_POS - i;
+                    if (shift > 0) begin
+                        // Left shift increases magnitude -> decrement exponent
+                        /* verilator lint_off WIDTHEXPAND */
+                        normalized_quotient = quotient << shift;
+                        result_exp_wide = result_exp_wide - 9'(shift);
+                        /* verilator lint_on WIDTHEXPAND */
+                    end else if (shift < 0) begin
+                        // Right shift decreases magnitude -> increment exponent
+                        normalized_quotient = quotient >> (-shift);
+                        result_exp_wide = result_exp_wide + 9'(-shift);
+                    end else begin
+                        normalized_quotient = quotient;
+                    end
+                    // Mantissa is bits [MANT_MSB_POS-1:1] below the normalized leading 1 at bit MANT_MSB_POS
+                    result_mant = normalized_quotient[MANT_MSB_POS-1:1];
+                    break;
+                end
+            end
         end
+        
+        // If quotient is zero (no bits set), result_mant remains 0 and
+        // result_exp_wide will be handled by underflow/zero logic below
         
         // Handle underflow/overflow
         if (result_exp_wide[8] && result_exp_wide[7]) begin 
@@ -472,6 +541,74 @@ module fpu (
         end
     endfunction
 
+    // ============================================================
+    // Division Unit Integration for FP Division
+    // ============================================================
+    
+    // Division unit signals (48-bit for FP mantissa precision)
+    logic        div_start;
+    logic        div_ready;
+    logic [47:0] div_dividend;
+    logic [47:0] div_divisor;
+    logic [47:0] div_result;
+    
+    // Instantiate 48-bit division unit for FP mantissa division
+    // This provides the full precision needed for IEEE 754 single-precision (23-bit mantissa)
+    div_unit #(
+        .WIDTH(48)
+    ) u_div (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(div_start),
+        .is_signed(1'b0),        // Always unsigned for FP mantissa
+        .rem_sel(1'b0),          // Always quotient for FP division
+        .dividend(div_dividend),
+        .divisor(div_divisor),
+        .result(div_result),
+        .ready(div_ready)
+    );
+    
+    // Detect FP division operation
+    logic is_fp_div;
+    logic needs_div_comb;  // Combinational signal from fp_div_setup
+    assign is_fp_div = (fpu_op == FPU_DIV);
+    
+    // Start division only when requested AND hardware division is actually needed
+    assign div_start = fpu_start && is_fp_div && needs_div_comb;
+    
+    // FPU ready signal - three cases:
+    // 1. Division in progress: wait for div_ready to signal completion
+    // 2. Starting a new division this cycle: not ready yet (needs one cycle to register div_in_progress)
+    // 3. All other operations: ready immediately (combinational ops or special cases like NaN/Inf/zero)
+    assign fpu_ready = div_in_progress ? div_ready : 
+                       (fpu_start && is_fp_div && needs_div_comb) ? 1'b0 :
+                       1'b1;
+    
+    // ============================================================
+    // Division State Registers
+    // ============================================================
+    logic [31:0] div_fs1_reg;
+    logic [31:0] div_fs2_reg;
+    logic        div_in_progress;
+    
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            div_fs1_reg <= 32'h0;
+            div_fs2_reg <= 32'h0;
+            div_in_progress <= 1'b0;
+        end else begin
+            if (div_start) begin
+                // Capture operands when division starts
+                div_fs1_reg <= fs1;
+                div_fs2_reg <= fs2;
+                div_in_progress <= 1'b1;
+            end else if (div_ready) begin
+                // Clear in-progress flag when division completes
+                div_in_progress <= 1'b0;
+            end
+        end
+    end
+    
     // Main logic
     logic inv_flag;  // Move outside always_comb to avoid latch
     
@@ -480,12 +617,26 @@ module fpu (
         int_result = 32'h0;
         fflags = 5'b0;
         inv_flag = 1'b0;  // Initialize
+        needs_div_comb = 1'b0;  // Initialize
+        div_dividend = 48'h0;
+        div_divisor = 48'h0;
         
         case (fpu_op)
             FPU_ADD: fp_result = fp_add_sub(fs1, fs2, 1'b0, fflags);
             FPU_SUB: fp_result = fp_add_sub(fs1, fs2, 1'b1, fflags);
             FPU_MUL: fp_result = fp_mul(fs1, fs2, fflags);
-            FPU_DIV: fp_result = fp_div(fs1, fs2, fflags);
+            
+            FPU_DIV: begin
+                if (div_in_progress && div_ready) begin
+                    // Division complete - assemble result using captured operands
+                    fp_result = fp_div_assemble(div_fs1_reg, div_fs2_reg, div_result, fflags);
+                end else begin
+                    // Setup division or return intermediate result (for special cases)
+                    fp_result = fp_div_setup(fs1, fs2, div_dividend, div_divisor, needs_div_comb, fflags);
+                    // If special case (NaN, Inf, Zero), needs_div_comb will be 0 and result is valid
+                end
+            end
+            
             FPU_SQRT: fp_result = fp_sqrt(fs1, fflags);
             
             // Fused multiply-add operations

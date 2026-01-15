@@ -214,6 +214,9 @@ module top (
     logic [31:0] fpu_int_result;  // Integer result from FPU (for comparisons, conversions)
     logic [4:0]  fpu_fflags;      // FPU exception flags
     logic [2:0]  fpu_rm;          // Rounding mode (from instruction or FCSR)
+    logic        fpu_start;       // NEW: Start FPU operation
+    logic        fpu_ready;       // NEW: FPU operation complete
+    logic        fpu_start_sent;  // NEW: Track if start pulse has been sent
     
     // FCSR (Floating Point Control and Status Register)
     logic [31:0] fcsr;            // Full FCSR register
@@ -431,6 +434,16 @@ module top (
             alu_start_sent_rmw <= 1'b1;  // Mark as sent after pulsing
     end
     
+    // Track if FPU start pulse has been sent (for multi-cycle FP operations)
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            fpu_start_sent <= 1'b0;
+        else if (current_state != S_EXECUTE)
+            fpu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
+        else if (fpu_start)
+            fpu_start_sent <= 1'b1;  // Mark as sent after pulsing
+    end
+    
     // ============================================================
     // LR/SC Reservation Tracking (A Extension)
     // ============================================================
@@ -587,15 +600,20 @@ module top (
             end
             
             S_EXECUTE: begin
-                // FP computational operations are single-cycle (combinational), go directly to writeback
+                // FP computational operations may be multi-cycle (e.g., FP division)
                 // But FP loads/stores go through memory states (not handled here)
                 if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
-                    next_state = S_WRITEBACK;
+                    // FP operations - wait for FPU ready
+                    if (fpu_ready) begin
+                        next_state = S_WRITEBACK;
+                    end else begin
+                        next_state = S_EXECUTE;  // Wait for multi-cycle FPU operation
+                    end
                 // Integer ALU operations may be multi-cycle (e.g., division)
                 end else if (alu_ready) begin
                     next_state = S_WRITEBACK;
                 end else begin
-                    next_state = S_EXECUTE;  // Wait for multi-cycle division
+                    next_state = S_EXECUTE;  // Wait for multi-cycle ALU operation
                 end
             end
             
@@ -685,6 +703,7 @@ module top (
         dmem_req = 1'b0;
         instr_complete_internal = 1'b0;
         alu_start = 1'b0;  // NEW: Default ALU start to inactive
+        fpu_start = 1'b0;  // NEW: Default FPU start to inactive
         
         case (current_state)
             S_FETCH: begin
@@ -724,9 +743,14 @@ module top (
                         alu_out_write = 1'b1;
                     end
                 end
-                // FP operations (all FP ops are single-cycle combinational)
+                // FP operations (may be multi-cycle, e.g., division)
                 else begin
-                    fpu_out_write = 1'b1;
+                    // Pulse fpu_start only on first cycle in S_EXECUTE
+                    fpu_start = !fpu_start_sent;
+                    
+                    if (fpu_ready) begin
+                        fpu_out_write = 1'b1;
+                    end
                 end
             end
             
@@ -991,7 +1015,10 @@ module top (
     
     // FPU Module
     fpu u_fpu (
-        .fs1(int_to_fp_reg ? a_reg : fa_reg),  // Source 1: integer or FP
+        .clk(clk),                              // NEW: Clock for multi-cycle division
+        .rst_n(rst_n),                          // NEW: Reset for multi-cycle division
+        .fpu_start(fpu_start),                  // NEW: Start FPU operation
+        .fs1(int_to_fp_reg ? a_reg : fa_reg),   // Source 1: integer or FP
         .fs2(fb_reg),                           // Source 2: always FP
         .fs3(fc_reg),                           // Source 3: FP (for fused multiply-add)
         .int_src(a_reg),                        // Integer source (for int-to-FP conversions)
@@ -999,7 +1026,8 @@ module top (
         .rm(fpu_rm),
         .fp_result(fpu_fp_result),
         .int_result(fpu_int_result),
-        .fflags(fpu_fflags)
+        .fflags(fpu_fflags),
+        .fpu_ready(fpu_ready)                   // NEW: FPU operation complete
     );
     
     // FCSR (Floating Point Control and Status Register)
