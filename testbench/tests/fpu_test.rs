@@ -85,8 +85,8 @@ fn execute_fpu_div_operation(
     clock_cycle!(dut);
     dut.fpu_start = 0;
 
-    // Wait for fpu_ready (max 100 cycles for safety)
-    for _ in 0..100 {
+    // Wait for fpu_ready (max 200 cycles for safety - 48-bit div needs ~52 cycles)
+    for _ in 0..200 {
         dut.eval();
         if dut.fpu_ready == 1 {
             break;
