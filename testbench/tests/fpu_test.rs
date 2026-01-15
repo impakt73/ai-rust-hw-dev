@@ -56,12 +56,21 @@ macro_rules! clock_cycle {
 
 // Helper function for multi-cycle FPU operations
 // Sets up inputs, pulses fpu_start, and waits for fpu_ready
-fn execute_fpu_operation(dut: &mut Fpu, fs1: u32, fs2: u32, fpu_op: u8, rm: u8) {
+// All parameters are passed to the hardware; unused parameters should be set to 0
+fn execute_fpu_operation(
+    dut: &mut Fpu,
+    fs1: u32,
+    fs2: u32,
+    fs3: u32,
+    int_src: u32,
+    fpu_op: u8,
+    rm: u8,
+) {
     // Set inputs
     dut.fs1 = fs1;
     dut.fs2 = fs2;
-    dut.fs3 = 0;
-    dut.int_src = 0;
+    dut.fs3 = fs3;
+    dut.int_src = int_src;
     dut.fpu_op = fpu_op;
     dut.rm = rm;
 
@@ -79,8 +88,8 @@ fn execute_fpu_operation(dut: &mut Fpu, fs1: u32, fs2: u32, fpu_op: u8, rm: u8) 
     clock_cycle!(dut);
     dut.fpu_start = 0;
 
-    // Wait for fpu_ready (max 200 cycles for safety - 48-bit div needs ~52 cycles)
-    for _ in 0..200 {
+    // Wait for fpu_ready (max 60 cycles - 48-bit div needs ~50 cycles)
+    for _ in 0..60 {
         dut.eval();
         if dut.fpu_ready == 1 {
             break;
@@ -100,14 +109,7 @@ fn test_fpu_add_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 1.0 + 2.0 = 3.0
-    dut.fs1 = ONE;
-    dut.fs2 = TWO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_ADD;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_ADD, 0);
     assert_eq!(dut.fp_result, THREE, "1.0 + 2.0 should equal 3.0");
 }
 
@@ -117,14 +119,7 @@ fn test_fpu_add_negative() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 1.0 + (-1.0) = 0.0
-    dut.fs1 = ONE;
-    dut.fs2 = NEG_ONE;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_ADD;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_ADD, 0);
     assert_eq!(dut.fp_result, POS_ZERO, "1.0 + (-1.0) should equal 0.0");
 }
 
@@ -134,14 +129,7 @@ fn test_fpu_sub_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 3.0 - 1.0 = 2.0
-    dut.fs1 = THREE;
-    dut.fs2 = ONE;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_SUB;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, THREE, ONE, 0, 0, FPU_SUB, 0);
     assert_eq!(dut.fp_result, TWO, "3.0 - 1.0 should equal 2.0");
 }
 
@@ -151,14 +139,7 @@ fn test_fpu_mul_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 2.0 * 2.0 = 4.0
-    dut.fs1 = TWO;
-    dut.fs2 = TWO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_MUL;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, TWO, TWO, 0, 0, FPU_MUL, 0);
     assert_eq!(dut.fp_result, FOUR, "2.0 * 2.0 should equal 4.0");
 }
 
@@ -169,25 +150,16 @@ fn test_fpu_sign_injection() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = ONE; // 1.0 (positive)
-    dut.fs2 = NEG_ONE; // -1.0 (negative sign)
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.rm = 0;
-
     // FSGNJ: copy sign of fs2 to fs1 -> -1.0
-    dut.fpu_op = FPU_SGNJ;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_SGNJ, 0);
     assert_eq!(dut.fp_result, NEG_ONE, "fsgnj(1.0, -1.0) should equal -1.0");
 
     // FSGNJN: copy inverted sign of fs2 to fs1 -> 1.0
-    dut.fpu_op = FPU_SGNJN;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_SGNJN, 0);
     assert_eq!(dut.fp_result, ONE, "fsgnjn(1.0, -1.0) should equal 1.0");
 
     // FSGNJX: XOR signs -> -1.0
-    dut.fpu_op = FPU_SGNJX;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_SGNJX, 0);
     assert_eq!(
         dut.fp_result, NEG_ONE,
         "fsgnjx(1.0, -1.0) should equal -1.0"
@@ -201,20 +173,12 @@ fn test_fpu_feq() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_FEQ;
-    dut.rm = 0;
-
     // Test: 1.0 == 1.0 -> true (1)
-    dut.fs1 = ONE;
-    dut.fs2 = ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, ONE, 0, 0, FPU_FEQ, 0);
     assert_eq!(dut.int_result, 1, "1.0 == 1.0 should be true");
 
     // Test: 1.0 == 2.0 -> false (0)
-    dut.fs2 = TWO;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_FEQ, 0);
     assert_eq!(dut.int_result, 0, "1.0 == 2.0 should be false");
 }
 
@@ -223,21 +187,12 @@ fn test_fpu_flt() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_FLT;
-    dut.rm = 0;
-
     // Test: 1.0 < 2.0 -> true (1)
-    dut.fs1 = ONE;
-    dut.fs2 = TWO;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_FLT, 0);
     assert_eq!(dut.int_result, 1, "1.0 < 2.0 should be true");
 
     // Test: 2.0 < 1.0 -> false (0)
-    dut.fs1 = TWO;
-    dut.fs2 = ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, TWO, ONE, 0, 0, FPU_FLT, 0);
     assert_eq!(dut.int_result, 0, "2.0 < 1.0 should be false");
 }
 
@@ -246,26 +201,16 @@ fn test_fpu_fle() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_FLE;
-    dut.rm = 0;
-
     // Test: 1.0 <= 2.0 -> true (1)
-    dut.fs1 = ONE;
-    dut.fs2 = TWO;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_FLE, 0);
     assert_eq!(dut.int_result, 1, "1.0 <= 2.0 should be true");
 
     // Test: 1.0 <= 1.0 -> true (1)
-    dut.fs2 = ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, ONE, 0, 0, FPU_FLE, 0);
     assert_eq!(dut.int_result, 1, "1.0 <= 1.0 should be true");
 
     // Test: 2.0 <= 1.0 -> false (0)
-    dut.fs1 = TWO;
-    dut.fs2 = ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, TWO, ONE, 0, 0, FPU_FLE, 0);
     assert_eq!(dut.int_result, 0, "2.0 <= 1.0 should be false");
 }
 
@@ -276,20 +221,12 @@ fn test_fpu_min_max() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = ONE;
-    dut.fs2 = TWO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.rm = 0;
-
     // MIN: min(1.0, 2.0) = 1.0
-    dut.fpu_op = FPU_MIN;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_MIN, 0);
     assert_eq!(dut.fp_result, ONE, "min(1.0, 2.0) should equal 1.0");
 
     // MAX: max(1.0, 2.0) = 2.0
-    dut.fpu_op = FPU_MAX;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_MAX, 0);
     assert_eq!(dut.fp_result, TWO, "max(1.0, 2.0) should equal 2.0");
 }
 
@@ -298,20 +235,12 @@ fn test_fpu_min_max_signed_zero() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = POS_ZERO;
-    dut.fs2 = NEG_ZERO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.rm = 0;
-
     // MIN: min(+0.0, -0.0) = -0.0
-    dut.fpu_op = FPU_MIN;
-    dut.eval();
+    execute_fpu_operation(&mut dut, POS_ZERO, NEG_ZERO, 0, 0, FPU_MIN, 0);
     assert_eq!(dut.fp_result, NEG_ZERO, "min(+0.0, -0.0) should equal -0.0");
 
     // MAX: max(+0.0, -0.0) = +0.0
-    dut.fpu_op = FPU_MAX;
-    dut.eval();
+    execute_fpu_operation(&mut dut, POS_ZERO, NEG_ZERO, 0, 0, FPU_MAX, 0);
     assert_eq!(dut.fp_result, POS_ZERO, "max(+0.0, -0.0) should equal +0.0");
 }
 
@@ -322,20 +251,12 @@ fn test_fpu_fcvt_w_s() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_CVTWS;
-    dut.rm = 0;
-
     // Test: float 3.0 -> int 3
-    dut.fs1 = THREE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, THREE, 0, 0, 0, FPU_CVTWS, 0);
     assert_eq!(dut.int_result, 3, "fcvt.w.s(3.0) should equal 3");
 
     // Test: float -1.0 -> int -1
-    dut.fs1 = NEG_ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, NEG_ONE, 0, 0, 0, FPU_CVTWS, 0);
     assert_eq!(dut.int_result as i32, -1, "fcvt.w.s(-1.0) should equal -1");
 }
 
@@ -344,20 +265,12 @@ fn test_fpu_fcvt_wu_s() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_CVTWUS;
-    dut.rm = 0;
-
     // Test: float 3.0 -> unsigned int 3
-    dut.fs1 = THREE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, THREE, 0, 0, 0, FPU_CVTWUS, 0);
     assert_eq!(dut.int_result, 3, "fcvt.wu.s(3.0) should equal 3");
 
     // Test: float -1.0 -> unsigned int 0 (saturates with NV flag)
-    dut.fs1 = NEG_ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, NEG_ONE, 0, 0, 0, FPU_CVTWUS, 0);
     assert_eq!(dut.int_result, 0, "fcvt.wu.s(-1.0) should saturate to 0");
     assert_eq!(dut.fflags & 0b10000, 0b10000, "NV flag should be set");
 }
@@ -367,20 +280,12 @@ fn test_fpu_fcvt_s_w() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = 0;
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.fpu_op = FPU_CVTSW;
-    dut.rm = 0;
-
     // Test: int 3 -> float 3.0
-    dut.int_src = 3;
-    dut.eval();
+    execute_fpu_operation(&mut dut, 0, 0, 0, 3, FPU_CVTSW, 0);
     assert_eq!(dut.fp_result, THREE, "fcvt.s.w(3) should equal 3.0");
 
     // Test: int -1 -> float -1.0
-    dut.int_src = (-1i32) as u32;
-    dut.eval();
+    execute_fpu_operation(&mut dut, 0, 0, 0, (-1i32) as u32, FPU_CVTSW, 0);
     assert_eq!(dut.fp_result, NEG_ONE, "fcvt.s.w(-1) should equal -1.0");
 }
 
@@ -389,20 +294,12 @@ fn test_fpu_fcvt_s_wu() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = 0;
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.fpu_op = FPU_CVTSWU;
-    dut.rm = 0;
-
     // Test: unsigned int 3 -> float 3.0
-    dut.int_src = 3;
-    dut.eval();
+    execute_fpu_operation(&mut dut, 0, 0, 0, 3, FPU_CVTSWU, 0);
     assert_eq!(dut.fp_result, THREE, "fcvt.s.wu(3) should equal 3.0");
 
     // Test: unsigned int 100 -> float 100.0
-    dut.int_src = 100;
-    dut.eval();
+    execute_fpu_operation(&mut dut, 0, 0, 0, 100, FPU_CVTSWU, 0);
     let hundred: u32 = 0x42C80000; // 100.0
     assert_eq!(dut.fp_result, hundred, "fcvt.s.wu(100) should equal 100.0");
 }
@@ -414,14 +311,7 @@ fn test_fpu_fmv_x_w() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = ONE; // 0x3F800000
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_MVXW;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, ONE, 0, 0, 0, FPU_MVXW, 0);
     assert_eq!(dut.int_result, ONE, "fmv.x.w should copy bits unchanged");
 }
 
@@ -430,14 +320,7 @@ fn test_fpu_fmv_w_x() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs1 = 0;
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = ONE; // 0x3F800000
-    dut.fpu_op = FPU_MVWX;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, 0, 0, 0, ONE, FPU_MVWX, 0);
     assert_eq!(dut.fp_result, ONE, "fmv.w.x should copy bits unchanged");
 }
 
@@ -446,45 +329,32 @@ fn test_fpu_fclass() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_FCLASS;
-    dut.rm = 0;
-
     // Test: fclass(-inf) = bit 0
-    dut.fs1 = NEG_INF;
-    dut.eval();
+    execute_fpu_operation(&mut dut, NEG_INF, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000001, "fclass(-inf) should be 0x001");
 
     // Test: fclass(-1.0) = bit 1 (negative normal)
-    dut.fs1 = NEG_ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, NEG_ONE, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000002, "fclass(-1.0) should be 0x002");
 
     // Test: fclass(-0.0) = bit 3
-    dut.fs1 = NEG_ZERO;
-    dut.eval();
+    execute_fpu_operation(&mut dut, NEG_ZERO, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000008, "fclass(-0.0) should be 0x008");
 
     // Test: fclass(+0.0) = bit 4
-    dut.fs1 = POS_ZERO;
-    dut.eval();
+    execute_fpu_operation(&mut dut, POS_ZERO, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000010, "fclass(+0.0) should be 0x010");
 
     // Test: fclass(1.0) = bit 6 (positive normal)
-    dut.fs1 = ONE;
-    dut.eval();
+    execute_fpu_operation(&mut dut, ONE, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000040, "fclass(1.0) should be 0x040");
 
     // Test: fclass(+inf) = bit 7
-    dut.fs1 = POS_INF;
-    dut.eval();
+    execute_fpu_operation(&mut dut, POS_INF, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000080, "fclass(+inf) should be 0x080");
 
     // Test: fclass(QNaN) = bit 9
-    dut.fs1 = QNAN;
-    dut.eval();
+    execute_fpu_operation(&mut dut, QNAN, 0, 0, 0, FPU_FCLASS, 0);
     assert_eq!(dut.int_result, 0x00000200, "fclass(QNaN) should be 0x200");
 }
 
@@ -497,7 +367,7 @@ fn test_fpu_div_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 4.0 / 2.0 = 2.0
-    execute_fpu_operation(&mut dut, FOUR, TWO, FPU_DIV, 0);
+    execute_fpu_operation(&mut dut, FOUR, TWO, 0, 0, FPU_DIV, 0);
     assert_eq!(dut.fp_result, TWO, "4.0 / 2.0 should equal 2.0");
 }
 
@@ -507,7 +377,7 @@ fn test_fpu_div_by_zero() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 1.0 / 0.0 = +inf with DZ flag
-    execute_fpu_operation(&mut dut, ONE, POS_ZERO, FPU_DIV, 0);
+    execute_fpu_operation(&mut dut, ONE, POS_ZERO, 0, 0, FPU_DIV, 0);
     assert_eq!(dut.fp_result, POS_INF, "1.0 / 0.0 should equal +inf");
     assert_eq!(dut.fflags & 0b01000, 0b01000, "DZ flag should be set");
 }
@@ -520,14 +390,7 @@ fn test_fpu_sqrt_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: sqrt(4.0) = 2.0
-    dut.fs1 = FOUR;
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_SQRT;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, FOUR, 0, 0, 0, FPU_SQRT, 0);
     assert_eq!(dut.fp_result, TWO, "sqrt(4.0) should equal 2.0");
 }
 
@@ -537,14 +400,7 @@ fn test_fpu_sqrt_negative() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: sqrt(-1.0) = NaN with NV flag
-    dut.fs1 = NEG_ONE;
-    dut.fs2 = 0;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_SQRT;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_operation(&mut dut, NEG_ONE, 0, 0, 0, FPU_SQRT, 0);
     assert_eq!(dut.fp_result, QNAN, "sqrt(-1.0) should equal NaN");
     assert_eq!(dut.fflags & 0b10000, 0b10000, "NV flag should be set");
 }
@@ -557,15 +413,8 @@ fn test_fpu_fmadd() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: FMADD 2.0 * 3.0 + 1.0 = 7.0
-    dut.fs1 = TWO;
-    dut.fs2 = THREE;
-    dut.fs3 = ONE;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_MADD;
-    dut.rm = 0;
-    dut.eval();
-
     let seven: u32 = 0x40E00000; // 7.0
+    execute_fpu_operation(&mut dut, TWO, THREE, ONE, 0, FPU_MADD, 0);
     assert_eq!(dut.fp_result, seven, "2.0 * 3.0 + 1.0 should equal 7.0");
 }
 
@@ -575,15 +424,8 @@ fn test_fpu_fmsub() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: FMSUB 2.0 * 3.0 - 1.0 = 5.0
-    dut.fs1 = TWO;
-    dut.fs2 = THREE;
-    dut.fs3 = ONE;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_MSUB;
-    dut.rm = 0;
-    dut.eval();
-
     let five: u32 = 0x40A00000; // 5.0
+    execute_fpu_operation(&mut dut, TWO, THREE, ONE, 0, FPU_MSUB, 0);
     assert_eq!(dut.fp_result, five, "2.0 * 3.0 - 1.0 should equal 5.0");
 }
 
@@ -593,15 +435,8 @@ fn test_fpu_fnmsub() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: FNMSUB -(2.0 * 3.0) + 1.0 = -5.0
-    dut.fs1 = TWO;
-    dut.fs2 = THREE;
-    dut.fs3 = ONE;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_NMSUB;
-    dut.rm = 0;
-    dut.eval();
-
     let neg_five: u32 = 0xC0A00000; // -5.0
+    execute_fpu_operation(&mut dut, TWO, THREE, ONE, 0, FPU_NMSUB, 0);
     assert_eq!(
         dut.fp_result, neg_five,
         "-(2.0 * 3.0) + 1.0 should equal -5.0"
@@ -614,15 +449,8 @@ fn test_fpu_fnmadd() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: FNMADD -(2.0 * 3.0) - 1.0 = -7.0
-    dut.fs1 = TWO;
-    dut.fs2 = THREE;
-    dut.fs3 = ONE;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_NMADD;
-    dut.rm = 0;
-    dut.eval();
-
     let neg_seven: u32 = 0xC0E00000; // -7.0
+    execute_fpu_operation(&mut dut, TWO, THREE, ONE, 0, FPU_NMADD, 0);
     assert_eq!(
         dut.fp_result, neg_seven,
         "-(2.0 * 3.0) - 1.0 should equal -7.0"
