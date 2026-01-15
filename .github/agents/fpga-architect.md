@@ -75,6 +75,26 @@ to check alu_a and alu_b..."*
 *   Use `assert` properties to validate protocols.
 *   Generate clocks using `initial begin ... forever #5 clk = ~clk; end`.
 
+### Rust Testbench Code Quality (MANDATORY)
+
+When working with Rust-based verification code (testbenches, simulation harnesses):
+
+**Code Quality Requirements:**
+*   ✅ **ALWAYS** run `cargo fmt` before committing any Rust code changes
+*   ✅ **ALWAYS** run `cargo clippy -- -D warnings` before committing
+*   ✅ Address **ALL** clippy warnings (no exceptions)
+*   ✅ Verify formatting with `cargo fmt -- --check`
+
+**Workflow for Rust Changes:**
+1. Make Rust code modifications (in `testbench/`, `cpu-sim/`, etc.)
+2. Format the code: `cargo fmt`
+3. Check for warnings: `cargo clippy -- -D warnings`
+4. Fix any warnings identified by clippy
+5. Verify formatting: `cargo fmt -- --check`
+6. Run tests: `cargo test --verbose`
+
+**Note:** CI will reject any PR with formatting issues or clippy warnings. Always run these checks locally before committing.
+
 ## 4. Forbidden Patterns (Anti-Patterns)
 *   ❌ **Mixing Blocking/Non-blocking:** Never mix `=` and `<=` in the same `always` block.
 *   ❌ **CDC Violations:** Never sample a signal from `clk_a` directly in `clk_b` without a synchronizer (2-FF or FIFO). **Warn the user immediately if you detect Clock Domain Crossing.**

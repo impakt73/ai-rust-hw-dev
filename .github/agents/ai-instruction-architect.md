@@ -33,6 +33,7 @@ When you are asked to create an instruction file or agent definition:
 2.  **Anti-Hallucination Rules:** Explicitly instruct the target agent to admit when it doesn't know something rather than guessing imports.
 3.  **Tech Stack Lockdown:** Hardcode version numbers (e.g., "Next.js 14 (App Router)", "Python 3.12") to prevent deprecated syntax generation.
 4.  **Negative Constraints:** Use bold "Forbidden Patterns" sections to block common bad habits (e.g., "No `any` types", "No generic `Exception` catching").
+5.  **Project-Specific Code Quality:** For this RISC-V hardware verification project, when creating agents that work with Rust code, **ALWAYS** include mandatory requirements to run `cargo fmt` and `cargo clippy -- -D warnings` before committing any Rust code changes.
 
 ## 5. Response Template
 When asked to generate an agent or instruction file, use this structure:
