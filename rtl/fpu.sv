@@ -571,8 +571,13 @@ module fpu (
     // Start division only when requested AND hardware division is actually needed
     assign div_start = fpu_start && is_fp_div && needs_div_comb;
     
-    // FPU ready signal: immediate for non-div ops, waits for div_ready when division in progress
-    assign fpu_ready = div_in_progress ? div_ready : 1'b1;
+    // FPU ready signal: 
+    // - If division is in progress, wait for div_ready
+    // - If starting a division this cycle, not ready yet
+    // - Otherwise, ready immediately (combinational operations or special cases)
+    assign fpu_ready = div_in_progress ? div_ready : 
+                       (fpu_start && is_fp_div && needs_div_comb) ? 1'b0 :
+                       1'b1;
     
     // ============================================================
     // Division State Registers
