@@ -56,13 +56,7 @@ macro_rules! clock_cycle {
 
 // Helper function for multi-cycle FPU operations
 // Sets up inputs, pulses fpu_start, and waits for fpu_ready
-fn execute_fpu_operation(
-    dut: &mut Fpu,
-    fs1: u32,
-    fs2: u32,
-    fpu_op: u8,
-    rm: u8,
-) {
+fn execute_fpu_operation(dut: &mut Fpu, fs1: u32, fs2: u32, fpu_op: u8, rm: u8) {
     // Set inputs
     dut.fs1 = fs1;
     dut.fs2 = fs2;
