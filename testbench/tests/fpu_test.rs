@@ -54,9 +54,9 @@ macro_rules! clock_cycle {
     };
 }
 
-// Helper function for multi-cycle FPU operations (division)
+// Helper function for multi-cycle FPU operations
 // Sets up inputs, pulses fpu_start, and waits for fpu_ready
-fn execute_fpu_div_operation(
+fn execute_fpu_operation(
     dut: &mut Fpu,
     fs1: u32,
     fs2: u32,
@@ -503,7 +503,7 @@ fn test_fpu_div_basic() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 4.0 / 2.0 = 2.0
-    execute_fpu_div_operation(&mut dut, FOUR, TWO, FPU_DIV, 0);
+    execute_fpu_operation(&mut dut, FOUR, TWO, FPU_DIV, 0);
     assert_eq!(dut.fp_result, TWO, "4.0 / 2.0 should equal 2.0");
 }
 
@@ -513,7 +513,7 @@ fn test_fpu_div_by_zero() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 1.0 / 0.0 = +inf with DZ flag
-    execute_fpu_div_operation(&mut dut, ONE, POS_ZERO, FPU_DIV, 0);
+    execute_fpu_operation(&mut dut, ONE, POS_ZERO, FPU_DIV, 0);
     assert_eq!(dut.fp_result, POS_INF, "1.0 / 0.0 should equal +inf");
     assert_eq!(dut.fflags & 0b01000, 0b01000, "DZ flag should be set");
 }

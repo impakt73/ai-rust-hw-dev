@@ -50,6 +50,11 @@ module fpu (
     localparam [31:0] POS_INF  = 32'h7F800000;
     localparam [31:0] NEG_INF  = 32'hFF800000;
     localparam [31:0] QNAN     = 32'h7FC00000;
+    
+    // Division normalization constant
+    // The target bit position for the mantissa MSB after 48-bit division
+    // This represents where the implicit '1' should be positioned
+    localparam MANT_MSB_POS = 24;
 
     // Helper functions
     function automatic logic is_nan(input logic [31:0] val);
@@ -355,14 +360,14 @@ module fpu (
         
         // With 48-bit div_unit, we can implement proper IEEE 754 division:
         // To get a quotient in the range we want, we scale only the dividend:
-        // dividend = {1.mant_a, 24'h0} gives 48 bits total (scaled up by 2^24)
-        // divisor  = {24'h0, 1.mant_b} gives 48 bits total (in lower bits)
+        // dividend = {1.mant_a, MANT_MSB_POS'h0} gives 48 bits total (scaled up by 2^MANT_MSB_POS)
+        // divisor  = {MANT_MSB_POS'h0, 1.mant_b} gives 48 bits total (in lower bits)
         //
-        // This computes (1.mant_a * 2^24) / (1.mant_b) which yields a 24-bit quotient
-        // in the upper bits, representing the mantissa ratio scaled by 2^24.
+        // This computes (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) which yields a MANT_MSB_POS-bit quotient
+        // in the upper bits, representing the mantissa ratio scaled by 2^MANT_MSB_POS.
         //
-        dividend_out = {{1'b1, a[22:0]}, 24'h0};  // 24-bit mantissa (1.mant_a) shifted left by 24
-        divisor_out = {24'h0, {1'b1, b[22:0]}};   // 24-bit mantissa (1.mant_b) in lower bits
+        dividend_out = {1'b1, a[22:0], 24'h0};    // 24-bit mantissa (1.mant_a) shifted left by MANT_MSB_POS
+        divisor_out = {24'h0, 1'b1, b[22:0]};     // 24-bit mantissa (1.mant_b) in lower bits
         
         // Return a placeholder (will be replaced after division completes)
         return 32'h0;
@@ -390,32 +395,32 @@ module fpu (
         result_exp_wide = {1'b0, a[30:23]} - {1'b0, b[30:23]} + 9'd127;
         
         // The quotient from the 48-bit div_unit represents:
-        // (1.mant_a * 2^24) / (1.mant_b) = (mant_a / mant_b) * 2^24
-        // For normalized IEEE 754 inputs (mantissas ~1.0), quotient should be around 2^24 = 0x1000000
-        // This means the implicit '1' of the result will typically be at bit 24
+        // (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) = (mant_a / mant_b) * 2^MANT_MSB_POS
+        // For normalized IEEE 754 inputs (mantissas ~1.0), quotient should be around 2^MANT_MSB_POS = 0x1000000
+        // This means the implicit '1' of the result will typically be at bit MANT_MSB_POS
         quotient = quotient_raw;
         
         // Normalize the quotient to extract the 23-bit mantissa:
         // Find the MSB and determine how to extract the mantissa
-        if (quotient[24]) begin
-            // Normal case: quotient ~= 2^24, MSB at bit 24
-            // The implicit 1 is at bit 24, mantissa is bits [23:1]
-            result_mant = quotient[23:1];
+        if (quotient[MANT_MSB_POS]) begin
+            // Normal case: quotient ~= 2^MANT_MSB_POS, MSB at bit MANT_MSB_POS
+            // The implicit 1 is at bit MANT_MSB_POS, mantissa is bits [MANT_MSB_POS-1:1]
+            result_mant = quotient[MANT_MSB_POS-1:1];
             // No exponent adjustment needed
-        end else if (quotient[23]) begin
-            // quotient in [2^23, 2^24): implicit 1 at bit 23
-            result_mant = quotient[22:0];
+        end else if (quotient[MANT_MSB_POS-1]) begin
+            // quotient in [2^(MANT_MSB_POS-1), 2^MANT_MSB_POS): implicit 1 at bit MANT_MSB_POS-1
+            result_mant = quotient[MANT_MSB_POS-2:0];
             result_exp_wide = result_exp_wide - 9'd1;
         end else begin
-            // Quotient < 2^23: use general normalization
+            // Quotient < 2^(MANT_MSB_POS-1): use general normalization
             normalized_quotient = 48'b0;
             shift = 0;
             
             // Find the MSB position
             for (i = 47; i >= 0; i--) begin
                 if (quotient[i]) begin
-                    // Compute shift so that MSB moves to bit 24 (not 23)
-                    shift = 24 - i;
+                    // Compute shift so that MSB moves to bit MANT_MSB_POS
+                    shift = MANT_MSB_POS - i;
                     if (shift > 0) begin
                         // Left shift increases magnitude -> decrement exponent
                         /* verilator lint_off WIDTHEXPAND */
@@ -424,13 +429,13 @@ module fpu (
                         /* verilator lint_on WIDTHEXPAND */
                     end else if (shift < 0) begin
                         // Right shift decreases magnitude -> increment exponent
-                        normalized_quotient = quotient >> (0 - shift);
-                        result_exp_wide = result_exp_wide + 9'(0 - shift);
+                        normalized_quotient = quotient >> (-shift);
+                        result_exp_wide = result_exp_wide + 9'(-shift);
                     end else begin
                         normalized_quotient = quotient;
                     end
-                    // Mantissa is bits [23:1] below the normalized leading 1 at bit 24
-                    result_mant = normalized_quotient[23:1];
+                    // Mantissa is bits [MANT_MSB_POS-1:1] below the normalized leading 1 at bit MANT_MSB_POS
+                    result_mant = normalized_quotient[MANT_MSB_POS-1:1];
                     break;
                 end
             end
@@ -571,10 +576,10 @@ module fpu (
     // Start division only when requested AND hardware division is actually needed
     assign div_start = fpu_start && is_fp_div && needs_div_comb;
     
-    // FPU ready signal: 
-    // - If division is in progress, wait for div_ready
-    // - If starting a division this cycle, not ready yet
-    // - Otherwise, ready immediately (combinational operations or special cases)
+    // FPU ready signal - three cases:
+    // 1. Division in progress: wait for div_ready to signal completion
+    // 2. Starting a new division this cycle: not ready yet (needs one cycle to register div_in_progress)
+    // 3. All other operations: ready immediately (combinational ops or special cases like NaN/Inf/zero)
     assign fpu_ready = div_in_progress ? div_ready : 
                        (fpu_start && is_fp_div && needs_div_comb) ? 1'b0 :
                        1'b1;

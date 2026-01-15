@@ -38,10 +38,10 @@ module div_unit #(
     // ============================================================
     
     // Division working registers
-    logic [2*WIDTH-1:0] P;           // Partial remainder (2*WIDTH-bit)
-    logic [2*WIDTH-1:0] D;           // Divisor aligned (2*WIDTH-bit)
-    logic [WIDTH-1:0]   Q;           // Quotient accumulator
-    logic [7:0]         iter_count;  // Iteration counter (0 to WIDTH-1)
+    logic [2*WIDTH-1:0] P;                   // Partial remainder (2*WIDTH-bit)
+    logic [2*WIDTH-1:0] D;                   // Divisor aligned (2*WIDTH-bit)
+    logic [WIDTH-1:0]   Q;                   // Quotient accumulator
+    logic [$clog2(WIDTH)-1:0] iter_count;    // Iteration counter (0 to WIDTH-1), scales with WIDTH
     
     // Sign tracking
     logic        dividend_neg;
