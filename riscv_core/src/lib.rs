@@ -107,5 +107,5 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 
 // Helper function to create a runtime for the FPU
 pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu.sv"])
+    create_runtime(&["fpu.sv", "div_unit.sv"])  // FPU now depends on div_unit for multi-cycle division
 }

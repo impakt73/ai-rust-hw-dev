@@ -42,6 +42,62 @@ fn create_runtime() -> riscv_core::VerilatorRuntime {
     create_fpu_runtime().expect("Failed to create FPU runtime")
 }
 
+// Clock cycle macro for FPU tests
+macro_rules! clock_cycle {
+    ($dut:expr) => {
+        $dut.clk = 0;
+        $dut.eval();
+        $dut.clk = 1;
+        $dut.eval();
+        $dut.clk = 0;
+        $dut.eval();
+    };
+}
+
+// Helper function for multi-cycle FPU operations (division)
+// Sets up inputs, pulses fpu_start, and waits for fpu_ready
+fn execute_fpu_div_operation(
+    dut: &mut Fpu,
+    fs1: u32,
+    fs2: u32,
+    fpu_op: u8,
+    rm: u8,
+) {
+    // Set inputs
+    dut.fs1 = fs1;
+    dut.fs2 = fs2;
+    dut.fs3 = 0;
+    dut.int_src = 0;
+    dut.fpu_op = fpu_op;
+    dut.rm = rm;
+
+    // Reset state
+    dut.rst_n = 0;
+    dut.fpu_start = 0;
+    clock_cycle!(dut);
+
+    // Release reset
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+
+    // Pulse fpu_start for one cycle
+    dut.fpu_start = 1;
+    clock_cycle!(dut);
+    dut.fpu_start = 0;
+
+    // Wait for fpu_ready (max 100 cycles for safety)
+    for _ in 0..100 {
+        dut.eval();
+        if dut.fpu_ready == 1 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Final eval to get result
+    dut.eval();
+}
+
 // ========== Arithmetic Tests ==========
 
 #[test]
@@ -440,21 +496,14 @@ fn test_fpu_fclass() {
 
 // ========== Division Tests ==========
 
-// FP32 division test - fixed normalization bug
+// FP32 division test - using multi-cycle hardware divider
 #[test]
 fn test_fpu_div_basic() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 4.0 / 2.0 = 2.0
-    dut.fs1 = FOUR;
-    dut.fs2 = TWO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_DIV;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_div_operation(&mut dut, FOUR, TWO, FPU_DIV, 0);
     assert_eq!(dut.fp_result, TWO, "4.0 / 2.0 should equal 2.0");
 }
 
@@ -464,14 +513,7 @@ fn test_fpu_div_by_zero() {
     let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
 
     // Test: 1.0 / 0.0 = +inf with DZ flag
-    dut.fs1 = ONE;
-    dut.fs2 = POS_ZERO;
-    dut.fs3 = 0;
-    dut.int_src = 0;
-    dut.fpu_op = FPU_DIV;
-    dut.rm = 0;
-    dut.eval();
-
+    execute_fpu_div_operation(&mut dut, ONE, POS_ZERO, FPU_DIV, 0);
     assert_eq!(dut.fp_result, POS_INF, "1.0 / 0.0 should equal +inf");
     assert_eq!(dut.fflags & 0b01000, 0b01000, "DZ flag should be set");
 }
