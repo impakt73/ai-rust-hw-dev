@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document provides a comprehensive technical plan for implementing a dynamic bus device registration system in the `cpu-sim` crate. The system will allow abstract devices to be registered onto the system bus with non-overlapping address ranges, enabling future extensibility (e.g., video devices, custom peripherals) while maintaining backward compatibility with existing code.
+This document provides a comprehensive technical plan for implementing a dynamic bus device registration system in the `cpu-sim` crate. The system uses a **handle-based architecture** that allows abstract devices to be registered onto the system bus with non-overlapping address ranges, enabling future extensibility (e.g., video devices, custom peripherals) while maintaining backward compatibility with existing code.
+
+**Key Innovation**: The design uses 100% safe Rust with a `DeviceId` handle system that decouples address mapping from device storage, providing zero-cost access to internal devices while supporting dynamic registration of external devices.
 
 ## Current Architecture
 
@@ -50,13 +52,14 @@ impl SystemBus {
 
 1. **Extensibility**: Allow registration of custom devices without modifying core code
 2. **Safety**: Validate that device address ranges do not overlap
-3. **Backward Compatibility**: Preserve all existing functionality and tests
-4. **Lifetime Safety**: Ensure devices live as long as the simulator
-5. **Relative Addressing**: Device implementations use offsets relative to their base address
-6. **Clean API**: Simple interface for both internal and external device registration
-7. **Error Handling**: Proper error types for invalid operations (read-only writes, write-only reads, invalid addresses)
+3. **100% Safe Rust**: No unsafe code blocks, no raw pointers, borrow-checker compliant
+4. **Backward Compatibility**: Preserve all existing functionality and tests
+5. **Zero-Cost Abstraction**: Direct field access to internal devices via handle dispatch
+6. **Relative Addressing**: Device implementations use offsets relative to their base address
+7. **Clean API**: Simple interface for both internal and external device registration
+8. **Error Handling**: Proper error types for invalid operations (read-only writes, write-only reads, invalid addresses)
 
-## Proposed Architecture
+## Proposed Architecture - Handle-Based Design
 
 ### 1. BusDevice Trait
 
@@ -203,16 +206,32 @@ pub trait BusDevice {
 }
 ```
 
-### 2. Device Registration System
+### 2. Device Registration System - Handle-Based Architecture
 
-The `SystemBus` will maintain a collection of registered devices with their address ranges. For internal devices (DRAM, FIFO, SimControl), the bus stores raw pointers since the Simulator owns them. For external devices registered via callbacks, the bus takes ownership via `Box<dyn BusDevice>`.
+The `SystemBus` uses a decoupled handle-based architecture that separates address mapping from device storage. This approach provides 100% safe Rust with zero-cost access to internal devices.
+
+**Key Innovation**: Instead of storing device pointers in the address map, we use lightweight `DeviceId` handles that identify which concrete field or external device Vec index to access.
 
 ```rust
-/// Represents a registered device with its address range
-struct RegisteredDevice {
-    base_addr: u32,
-    size: u32,
-    device: *mut dyn BusDevice,  // Raw pointer for flexibility
+/// Lightweight handle identifying which device owns an address range
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceId {
+    /// Internal DRAM device (SystemBus.dram field)
+    Dram,
+    /// Internal FIFO device (SystemBus.fifo field)
+    Fifo,
+    /// Internal SimControl device (SystemBus.sim_control field)
+    SimControl,
+    /// External device (index into SystemBus.external_devices Vec)
+    External(usize),
+}
+
+/// Memory map entry separating "where" from "what"
+/// Maps an address range to a device handle
+struct MemoryMapEntry {
+    base: u32,
+    end: u32,  // Exclusive end address (base + size)
+    id: DeviceId,
 }
 
 /// Error types for device registration
@@ -235,74 +254,125 @@ pub enum RegistrationError {
 }
 
 pub struct SystemBus {
-    devices: Vec<RegisteredDevice>,
-    // Owned external devices (registered via Box)
-    owned_devices: Vec<Box<dyn BusDevice>>,
+    // Internal devices as concrete public fields (for SimulatorView access)
+    pub dram: Dram,
+    pub fifo: Fifo,
+    pub sim_control: SimControl,
+    
+    // External devices (owned by the bus)
+    external_devices: Vec<Box<dyn BusDevice>>,
+    
+    // Address map (lightweight handles, not device references)
+    memory_map: Vec<MemoryMapEntry>,
 }
 
 impl SystemBus {
-    /// Create a new system bus with no devices registered
+    /// Create a new system bus with internal devices initialized
     ///
-    /// Unlike the old architecture, the bus starts empty. Devices (including
-    /// internal DRAM, FIFO, and SimControl) must be registered explicitly
-    /// during Simulator initialization.
+    /// The bus owns DRAM, FIFO, and SimControl as concrete fields,
+    /// pre-registered in the memory map. External devices can be added later.
     pub fn new() -> Self {
+        let dram = Dram::new();
+        let fifo = Fifo::new();
+        let sim_control = SimControl::new();
+        
+        // Pre-populate memory map with internal devices
+        let memory_map = vec![
+            MemoryMapEntry {
+                base: 0x1000_0000,
+                end: 0x1000_0004,  // SimControl: 4 bytes
+                id: DeviceId::SimControl,
+            },
+            MemoryMapEntry {
+                base: 0x4000_0000,
+                end: 0x4000_0008,  // FIFO: 8 bytes
+                id: DeviceId::Fifo,
+            },
+            MemoryMapEntry {
+                base: 0x8000_0000,
+                end: 0xFFFF_FFFF + 1,  // DRAM: 2 GiB (wraps to 0)
+                id: DeviceId::Dram,
+            },
+        ];
+        
         SystemBus {
-            devices: Vec::new(),
-            owned_devices: Vec::new(),
+            dram,
+            fifo,
+            sim_control,
+            external_devices: Vec::new(),
+            memory_map,
         }
     }
 
-    /// Register a device at the specified base address (takes ownership via Box)
+    /// Register an external device at the specified base address
     ///
-    /// This method is used for external devices registered via SimulatorView.
-    /// The bus takes ownership of the device and manages its lifetime.
+    /// Takes ownership of the device and adds it to the memory map.
     ///
     /// # Arguments
-    /// * `base_addr` - Base address for the device in the system memory map (must be word-aligned)
+    /// * `base_addr` - Base address for the device (must be word-aligned)
     /// * `device` - The device to register (must implement BusDevice trait)
     ///
     /// # Returns
     /// * `Ok(())` - Device registered successfully
-    /// * `Err(RegistrationError)` - Address range conflicts with existing device or invalid alignment
+    /// * `Err(RegistrationError)` - Address range conflicts or invalid alignment
     pub fn register_device(
         &mut self,
         base_addr: u32,
         device: Box<dyn BusDevice>,
     ) -> Result<(), RegistrationError> {
         let size = device.size();
-        // Validation logic...
-        
-        // Store the boxed device and get a raw pointer to it
-        self.owned_devices.push(device);
-        let device_ptr = self.owned_devices.last_mut().unwrap().as_mut() as *mut dyn BusDevice;
-        
-        self.devices.push(RegisteredDevice {
-            base_addr,
-            size,
-            device: device_ptr,
-        });
-        Ok(())
-    }
 
-    /// Register a device using a raw pointer (for internal devices owned by Simulator)
-    ///
-    /// # Safety
-    /// The caller must ensure the device pointer remains valid for the lifetime
-    /// of the SystemBus. The Simulator owns internal devices and ensures this invariant.
-    pub unsafe fn register_device_ptr(
-        &mut self,
-        base_addr: u32,
-        device: *mut dyn BusDevice,
-    ) -> Result<(), RegistrationError> {
-        let size = (*device).size();
-        // Validation logic...
+        // Validate size and alignment
+        if size == 0 {
+            return Err(RegistrationError::ZeroSize);
+        }
+        if size % 4 != 0 {
+            return Err(RegistrationError::InvalidAlignment { size });
+        }
+        if base_addr % 4 != 0 {
+            return Err(RegistrationError::InvalidBaseAlignment { base_addr });
+        }
+
+        let end = base_addr.saturating_add(size);
+
+        // Check for overlaps with existing devices
+        for entry in &self.memory_map {
+            if ranges_overlap(base_addr, end, entry.base, entry.end) {
+                let device_name = match entry.id {
+                    DeviceId::Dram => "DRAM",
+                    DeviceId::Fifo => "FIFO",
+                    DeviceId::SimControl => "SimControl",
+                    DeviceId::External(idx) => self.external_devices[idx].name(),
+                };
+                return Err(RegistrationError::AddressOverlap {
+                    new_base: base_addr,
+                    new_end: end,
+                    existing_base: entry.base,
+                    existing_end: entry.end,
+                    existing_name: device_name.to_string(),
+                });
+            }
+        }
+
+        // Add device to storage and create memory map entry
+        let device_idx = self.external_devices.len();
+        let device_name = device.name().to_string();
+        self.external_devices.push(device);
         
-        self.devices.push(RegisteredDevice {
-            base_addr,
-            size,
-            device,
+        self.memory_map.push(MemoryMapEntry {
+            base: base_addr,
+            end,
+            id: DeviceId::External(device_idx),
         });
+
+        log::info!(
+            "Registered device '{}' at 0x{:08x} - 0x{:08x} (size: {} bytes)",
+            device_name,
+            base_addr,
+            end - 1,
+            size
+        );
+
         Ok(())
     }
 
@@ -310,9 +380,15 @@ impl SystemBus {
     ///
     /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
     pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)> + '_ {
-        self.devices.iter().map(|d| unsafe {
-            // SAFETY: Device pointers are valid for the lifetime of SystemBus
-            (d.base_addr, d.size, (*d.device).name())
+        self.memory_map.iter().map(|entry| {
+            let size = entry.end.wrapping_sub(entry.base);
+            let name = match entry.id {
+                DeviceId::Dram => "DRAM",
+                DeviceId::Fifo => "FIFO",
+                DeviceId::SimControl => "SimControl",
+                DeviceId::External(idx) => self.external_devices[idx].name(),
+            };
+            (entry.base, size, name)
         })
     }
 
@@ -535,33 +611,39 @@ impl BusDevice for SimControl {
 
 **Integration**: The Simulator will need to query `SimControl::termination_requested()` after each instruction to check if the program has signaled completion.
 
-### 6. System Bus Implementation
+### 6. System Bus Implementation - Handle-Based Dispatch
 
-The `SystemBus` routing logic finds the device whose address range contains the requested address and forwards the operation with a relative offset. Since devices have exclusive, non-overlapping ranges, there is no priority system - each address maps to at most one device.
+The `SystemBus` routing logic uses a two-step process:
+1. Find the memory map entry containing the address (returns a `DeviceId` handle)
+2. Dispatch to the appropriate concrete field or external device based on the handle
+
+This approach is 100% safe Rust - no unsafe code, no raw pointers.
 
 ```rust
 impl SystemBus {
-    fn find_device(&mut self, addr: u32) -> Option<(&mut dyn BusDevice, u32)> {
-        // Search all registered devices for one that contains this address
-        // Since devices have exclusive ranges, at most one device will match
-        for registered in self.devices.iter_mut() {
-            let base = registered.base_addr;
-            let end = base.saturating_add(registered.size);
-            
-            if addr >= base && addr < end {
-                let offset = addr - base;
-                // SAFETY: Device pointers are valid for the lifetime of SystemBus
-                unsafe {
-                    return Some((&mut *registered.device, offset));
-                }
+    /// Find the device ID for the given address
+    ///
+    /// Returns the DeviceId handle and the offset relative to the device's base address.
+    fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
+        for entry in &self.memory_map {
+            if addr >= entry.base && addr < entry.end {
+                let offset = addr - entry.base;
+                return Some((entry.id, offset));
             }
         }
         None
     }
 
     pub fn read_word(&mut self, addr: u32) -> u32 {
-        if let Some((device, offset)) = self.find_device(addr) {
-            match device.read_word(offset) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.read_word(offset),
+                DeviceId::Fifo => self.fifo.read_word(offset),
+                DeviceId::SimControl => self.sim_control.read_word(offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_word(offset),
+            };
+            
+            match result {
                 Ok(value) => value,
                 Err(e) => {
                     log::warn!("Bus read_word error at 0x{:08x}: {}", addr, e);
@@ -575,8 +657,15 @@ impl SystemBus {
     }
 
     pub fn write_word(&mut self, addr: u32, value: u32) {
-        if let Some((device, offset)) = self.find_device(addr) {
-            if let Err(e) = device.write_word(offset, value) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.write_word(offset, value),
+                DeviceId::Fifo => self.fifo.write_word(offset, value),
+                DeviceId::SimControl => self.sim_control.write_word(offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_word(offset, value),
+            };
+            
+            if let Err(e) = result {
                 log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
             }
         } else {
@@ -588,8 +677,15 @@ impl SystemBus {
     }
 
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
-        if let Some((device, offset)) = self.find_device(addr) {
-            match device.read_halfword(offset) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.read_halfword(offset),
+                DeviceId::Fifo => self.fifo.read_halfword(offset),
+                DeviceId::SimControl => self.sim_control.read_halfword(offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_halfword(offset),
+            };
+            
+            match result {
                 Ok(value) => value,
                 Err(e) => {
                     log::warn!("Bus read_halfword error at 0x{:08x}: {}", addr, e);
@@ -603,8 +699,15 @@ impl SystemBus {
     }
 
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
-        if let Some((device, offset)) = self.find_device(addr) {
-            if let Err(e) = device.write_halfword(offset, value) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.write_halfword(offset, value),
+                DeviceId::Fifo => self.fifo.write_halfword(offset, value),
+                DeviceId::SimControl => self.sim_control.write_halfword(offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_halfword(offset, value),
+            };
+            
+            if let Err(e) = result {
                 log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
             }
         } else {
@@ -616,8 +719,15 @@ impl SystemBus {
     }
 
     pub fn read_byte(&mut self, addr: u32) -> u8 {
-        if let Some((device, offset)) = self.find_device(addr) {
-            match device.read_byte(offset) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.read_byte(offset),
+                DeviceId::Fifo => self.fifo.read_byte(offset),
+                DeviceId::SimControl => self.sim_control.read_byte(offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_byte(offset),
+            };
+            
+            match result {
                 Ok(value) => value,
                 Err(e) => {
                     log::warn!("Bus read_byte error at 0x{:08x}: {}", addr, e);
@@ -631,8 +741,15 @@ impl SystemBus {
     }
 
     pub fn write_byte(&mut self, addr: u32, value: u8) {
-        if let Some((device, offset)) = self.find_device(addr) {
-            if let Err(e) = device.write_byte(offset, value) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => self.dram.write_byte(offset, value),
+                DeviceId::Fifo => self.fifo.write_byte(offset, value),
+                DeviceId::SimControl => self.sim_control.write_byte(offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_byte(offset, value),
+            };
+            
+            if let Err(e) = result {
                 log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
             }
         } else {
@@ -646,84 +763,32 @@ impl SystemBus {
 ```
 
 **Key Points:**
-- No priority system: devices have exclusive, non-overlapping address ranges
-- `find_device()` returns the first (and only) device matching the address
+- 100% Safe Rust - no unsafe code required
+- Handle-based dispatch using DeviceId enum
+- Zero-cost access to internal devices (direct field access)
+- External devices accessed via Vec index
 - All unmapped accesses log warnings and return 0 (reads) or discard (writes)
 - Device receives offset relative to its base address for portability
 
-### 7. Simulator Device Ownership
+### 7. Simulator Integration
 
-The `Simulator` will own DRAM, FIFO, and SimControl instances. Since `SystemBus` needs to store devices in `Box<dyn BusDevice>` but we also need direct access to these devices (for `SimulatorView` backward compatibility), we need a careful ownership model.
-
-**Challenge**: We cannot use `Box::new(&mut dram)` because Box requires ownership, not a reference.
-
-**Solution**: Use raw pointers with careful lifetime management. The `SystemBus` will store raw pointers to devices, and the `Simulator` ensures these devices outlive the bus.
-
-**Important Constraint**: This design means only one device can be accessed at a time through the bus (appropriate for a bus architecture). The mutable borrow checker ensures this at the SystemBus method level.
+The `Simulator` simply owns a `SystemBus`, which internally owns all devices. No special registration logic is needed - the bus initializes with DRAM, FIFO, and SimControl already registered.
 
 ```rust
-// In bus.rs
-struct RegisteredDevice {
-    base_addr: u32,
-    size: u32,
-    device: *mut dyn BusDevice,  // Raw pointer instead of Box
-}
-
-impl SystemBus {
-    /// Register a device using a raw pointer
-    ///
-    /// # Safety
-    /// The caller must ensure the device pointer remains valid for the lifetime
-    /// of the SystemBus. The Simulator owns the devices and ensures this invariant.
-    pub unsafe fn register_device_ptr(
-        &mut self,
-        base_addr: u32,
-        device: *mut dyn BusDevice,
-    ) -> Result<(), RegistrationError> {
-        // Validation logic...
-        self.devices.push(RegisteredDevice {
-            base_addr,
-            size: (*device).size(),
-            device,
-        });
-        Ok(())
-    }
-}
-
 // In sim.rs
 pub struct Simulator {
     // ... existing fields
     bus: SystemBus,
-    
-    // Owned device instances - must outlive bus
-    dram: Dram,
-    fifo: Fifo,
-    sim_control: SimControl,
+    // No need to separately own devices - bus owns them
 }
 
 impl Simulator {
     pub fn new(...) -> Result<Self, String> {
-        // Create empty bus
-        let mut bus = SystemBus::new();
-        
-        // Create device instances
-        let mut dram = Dram::new();
-        let mut fifo = Fifo::new();
-        let mut sim_control = SimControl::new();
-        
-        // Register devices onto the bus using raw pointers
-        // SAFETY: The Simulator owns these devices and they outlive the bus
-        unsafe {
-            bus.register_device_ptr(0x8000_0000, &mut dram as *mut dyn BusDevice)?;
-            bus.register_device_ptr(0x4000_0000, &mut fifo as *mut dyn BusDevice)?;
-            bus.register_device_ptr(0x1000_0000, &mut sim_control as *mut dyn BusDevice)?;
-        }
+        // Create bus with internal devices pre-initialized
+        let bus = SystemBus::new();
         
         Ok(Simulator {
             bus,
-            dram,
-            fifo,
-            sim_control,
             // ... other fields
         })
     }
@@ -732,7 +797,7 @@ impl Simulator {
         // ... execute instruction ...
         
         // Check for termination via SimControl device
-        if let Some(tohost_value) = self.sim_control.termination_requested() {
+        if let Some(tohost_value) = self.bus.sim_control.termination_requested() {
             return Ok(SimulationStepResult {
                 tohost_value: Some(tohost_value),
                 // ... other fields
@@ -744,39 +809,35 @@ impl Simulator {
 }
 ```
 
-**SimulatorView Access**: `SimulatorView` can continue to provide direct access to FIFO and DRAM for backward compatibility, since `Simulator` owns them:
+**SimulatorView Access**: `SimulatorView` can access internal devices directly through public fields:
 
 ```rust
 impl<'a> SimulatorView<'a> {
     pub(crate) fn new(
-        fifo: &'a mut Fifo,
-        dram: &'a mut Dram,
         bus: &'a mut SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
     ) -> Self {
         SimulatorView {
-            fifo,
-            dram,
             bus,
             hung_detector,
         }
     }
     
-    // Existing FIFO methods use direct access
+    // Direct access to FIFO via bus.fifo field
     pub fn fifo_read_tx(&mut self) -> Option<u32> {
-        self.fifo.tx.pop_front()
+        self.bus.fifo.tx.pop_front()
     }
     
-    // Existing DRAM methods use direct access
+    // Direct access to DRAM via bus.dram field
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
-            self.dram.write_byte(addr, byte);
+            self.bus.dram.write_byte(addr, byte);
         }
         // ... hung detector update
     }
     
-    // NEW: Device registration for external devices
+    // External device registration routes to bus
     pub fn register_device(
         &mut self,
         base_addr: u32,
@@ -788,84 +849,28 @@ impl<'a> SimulatorView<'a> {
 }
 ```
 
+**Benefits of Handle-Based Architecture:**
+1. **100% Safe Rust**: No unsafe blocks, no raw pointers, no lifetime issues
+2. **Zero-cost Internal Access**: Direct field access to `bus.dram`, `bus.fifo`, `bus.sim_control`
+3. **Simplified Ownership**: Bus owns everything, no complex lifetime management
+4. **Borrow-Checker Friendly**: No mutable aliasing concerns
+5. **Unified Routing**: All devices (internal and external) use the same dispatch logic
+
 ### 8. Address Range Validation
 
-During device registration, validate that the new device does not overlap with existing devices:
+Address range validation is built into the `SystemBus::register_device()` method (shown in section 2). The validation logic checks for:
+- Zero size
+- Size not word-aligned (multiple of 4)
+- Base address not word-aligned  
+- Overlaps with existing memory map entries
 
 ```rust
-impl SystemBus {
-    fn check_address_overlap(
-        &self,
-        new_base: u32,
-        new_size: u32,
-    ) -> Result<(), RegistrationError> {
-        let new_end = new_base.saturating_add(new_size);
-
-        // Check against all registered devices
-        for registered in &self.devices {
-            let existing_end = registered.base_addr.saturating_add(registered.size);
-            if ranges_overlap(new_base, new_end, registered.base_addr, existing_end) {
-                return Err(RegistrationError::AddressOverlap {
-                    new_base,
-                    new_end,
-                    existing_base: registered.base_addr,
-                    existing_end,
-                    existing_name: registered.device.name().to_string(),
-                });
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn register_device(
-        &mut self,
-        base_addr: u32,
-        device: Box<dyn BusDevice>,
-    ) -> Result<(), RegistrationError> {
-        let size = device.size();
-
-        // Validate size
-        if size == 0 {
-            return Err(RegistrationError::ZeroSize);
-        }
-        if size % 4 != 0 {
-            return Err(RegistrationError::InvalidAlignment { size });
-        }
-        
-        // Validate base address alignment
-        if base_addr % 4 != 0 {
-            return Err(RegistrationError::InvalidBaseAlignment { base_addr });
-        }
-
-        // Check for overlaps with existing devices
-        self.check_address_overlap(base_addr, size)?;
-
-        let name = device.name().to_string();
-        
-        // Register device
-        self.devices.push(RegisteredDevice {
-            base_addr,
-            size,
-            device,
-        });
-
-        log::info!(
-            "Registered device '{}' at 0x{:08x} - 0x{:08x} (size: {} bytes)",
-            name,
-            base_addr,
-            base_addr.saturating_add(size) - 1,
-            size
-        );
-
-        Ok(())
-    }
-}
-
 fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
     a_start < b_end && b_start < a_end
 }
 ```
+
+The internal devices are pre-registered in `SystemBus::new()` with their fixed addresses, so validation automatically prevents external devices from overlapping with them.
 
 ### 9. SimulatorView Updates
 
@@ -1074,43 +1079,58 @@ Document the reserved memory ranges:
 
 5. Add `RegistrationError` type with `InvalidBaseAlignment`
 
-### Phase 4: Simulator Updates
+### Phase 3: SystemBus Refactoring
 
-1. Update `Simulator` to own device instances:
+1. Update `SystemBus` to use handle-based architecture:
    ```rust
-   pub struct Simulator {
-       bus: SystemBus,
-       dram: Dram,
-       fifo: Fifo,
-       sim_control: SimControl,
-       // ... existing fields
+   pub struct SystemBus {
+       pub dram: Dram,
+       pub fifo: Fifo,
+       pub sim_control: SimControl,
+       external_devices: Vec<Box<dyn BusDevice>>,
+       memory_map: Vec<MemoryMapEntry>,
    }
    ```
 
-2. Register devices during Simulator initialization:
-   - DRAM at 0x8000_0000
-   - FIFO at 0x4000_0000
-   - SimControl at 0x1000_0000
+2. Implement `DeviceId` enum and `MemoryMapEntry` struct
 
-3. Update `Simulator::step()` to query `sim_control.termination_requested()` instead of checking tohost writes
+3. Update `new()` to initialize internal devices and pre-populate memory map
+
+4. Implement handle-based routing in all bus methods (read/write word/halfword/byte)
+
+5. Remove all unsafe code - 100% safe Rust
+
+### Phase 4: Simulator Updates
+
+1. Simplify `Simulator` structure:
+   ```rust
+   pub struct Simulator {
+       bus: SystemBus,
+       // ... existing fields (no separate device fields)
+   }
+   ```
+
+2. Update `Simulator::new()` - just create `SystemBus::new()`, no device registration needed
+
+3. Update `Simulator::step()` to query `bus.sim_control.termination_requested()` instead of checking tohost writes
 
 4. Remove hardcoded tohost address constant (now in SimControl)
 
 ### Phase 5: SimulatorView Updates
 
-1. Add bus access to `SimulatorView`:
+1. Update `SimulatorView` to reference bus:
    ```rust
    pub struct SimulatorView<'a> {
-       fifo: &'a mut Fifo,
-       dram: &'a mut Dram,
-       bus: &'a mut SystemBus,  // NEW
+       bus: &'a mut SystemBus,
        hung_detector: &'a mut Option<HungDetector>,
    }
    ```
 
-2. Add `register_device()` method to `SimulatorView`
+2. Update all methods to access devices via `self.bus.dram`, `self.bus.fifo`
 
-3. Update all `SimulatorView::new()` call sites to pass bus reference
+3. Add `register_device()` method that forwards to `self.bus.register_device()`
+
+4. Update all `SimulatorView::new()` call sites to pass only bus reference
 
 ### Phase 6: Update Rust Test Programs
 
@@ -1643,18 +1663,36 @@ pub trait BusDevice {
 }
 ```
 
-### Registration Types
+### Registration Types - Handle-Based Architecture
 
 ```rust
-struct RegisteredDevice {
-    base_addr: u32,
-    size: u32,
-    device: *mut dyn BusDevice,  // Raw pointer for flexibility
+/// Lightweight handle identifying which device owns an address range
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceId {
+    Dram,
+    Fifo,
+    SimControl,
+    External(usize),  // Index into external_devices Vec
+}
+
+/// Memory map entry separating address mapping from device storage
+struct MemoryMapEntry {
+    base: u32,
+    end: u32,  // Exclusive end address
+    id: DeviceId,
 }
 
 pub struct SystemBus {
-    devices: Vec<RegisteredDevice>,
-    owned_devices: Vec<Box<dyn BusDevice>>,  // Owned external devices
+    // Internal devices as concrete public fields
+    pub dram: Dram,
+    pub fifo: Fifo,
+    pub sim_control: SimControl,
+    
+    // External devices (owned by bus)
+    external_devices: Vec<Box<dyn BusDevice>>,
+    
+    // Address map (lightweight handles)
+    memory_map: Vec<MemoryMapEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1686,6 +1724,9 @@ This plan provides a complete, production-ready design for adding dynamic bus de
 - ✅ Device introspection for debugging
 - ✅ Uses relative addressing for device portability
 - ✅ Provides proper error handling
+- ✅ **100% Safe Rust** - No unsafe code, no raw pointers
+- ✅ **Zero-cost internal device access** - Direct field access via handle dispatch
+- ✅ **Simplified ownership** - Bus owns all devices, eliminating lifetime complexity
 - ✅ Includes comprehensive documentation and examples
 - ✅ Has a clear testing strategy
 - ✅ Follows Rust best practices for safety and lifetime management
