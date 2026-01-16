@@ -37,9 +37,8 @@ impl BusDevice for SimControl {
     fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => {
-                // TOHOST register - return the stored value (for testing/debugging)
-                // Returns 0 if no value has been written yet
-                Ok(self.tohost_value.unwrap_or(0))
+                // TOHOST register is write-only
+                Err(BusDeviceError::ReadFromWriteOnly { offset })
             }
             _ => Err(BusDeviceError::InvalidAddress { offset }),
         }
@@ -81,20 +80,13 @@ mod tests {
     }
 
     #[test]
-    fn test_sim_control_read_tohost_returns_zero_initially() {
+    fn test_sim_control_read_tohost_fails() {
         let mut sim_control = SimControl::new();
         let result = sim_control.read_word(0);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
-    }
-
-    #[test]
-    fn test_sim_control_read_after_write() {
-        let mut sim_control = SimControl::new();
-        sim_control.write_word(0, 42).unwrap();
-        let result = sim_control.read_word(0);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
+        assert!(matches!(
+            result,
+            Err(BusDeviceError::ReadFromWriteOnly { offset: 0 })
+        ));
     }
 
     #[test]

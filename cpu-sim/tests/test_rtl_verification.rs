@@ -707,9 +707,6 @@ fn test_cpu_auipc() {
 fn test_cpu_tohost_halt() {
     init_test_logger();
 
-    // TOHOST address for halt signal
-    const TOHOST_ADDR: u32 = 0x1000_0000;
-
     // Program: Execute a few instructions, then write to tohost to signal halt
     let instructions = vec![
         addi(1, 0, 10),
@@ -727,18 +724,15 @@ fn test_cpu_tohost_halt() {
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        Some(|sim: &SimulatorView, result: &SimulationResult| {
+        Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // Verify that tohost write was detected
             assert_eq!(
                 result.tohost_value,
                 Some(1),
                 "Expected tohost value to be 1 (exit code)"
             );
-            assert_eq!(
-                sim.read_word(TOHOST_ADDR),
-                1,
-                "TOHOST memory location should contain 1"
-            );
+            // Note: We cannot read from TOHOST_ADDR directly as it's write-only
+            // The tohost value is captured in result.tohost_value above
         }),
     )
     .expect("Program should run");

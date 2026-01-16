@@ -3,6 +3,15 @@ use crate::dram::Dram;
 use crate::fifo::Fifo;
 use crate::sim_control::SimControl;
 
+/// Base address for SimControl device (tohost register)
+pub const SIM_CONTROL_BASE: u32 = 0x1000_0000;
+
+/// Base address for FIFO device
+pub const FIFO_BASE: u32 = 0x4000_0000;
+
+/// Base address for DRAM
+pub const DRAM_BASE: u32 = 0x8000_0000;
+
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeviceId {
@@ -51,18 +60,18 @@ impl SystemBus {
         // Pre-populate memory map with internal devices
         let memory_map = vec![
             MemoryMapEntry {
-                base: 0x1000_0000,
-                end: 0x1000_0000_u32.saturating_add(sim_control.size()),
+                base: SIM_CONTROL_BASE,
+                end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
                 id: DeviceId::SimControl,
             },
             MemoryMapEntry {
-                base: 0x4000_0000,
-                end: 0x4000_0000_u32.saturating_add(fifo.size()),
+                base: FIFO_BASE,
+                end: FIFO_BASE.saturating_add(fifo.size()),
                 id: DeviceId::Fifo,
             },
             MemoryMapEntry {
-                base: 0x8000_0000,
-                end: 0x8000_0000_u32.saturating_add(dram.size()),
+                base: DRAM_BASE,
+                end: DRAM_BASE.saturating_add(dram.size()),
                 id: DeviceId::Dram,
             },
         ];
@@ -168,138 +177,181 @@ impl SystemBus {
     /// Find the device ID for the given address
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
-    /// If no device explicitly matches, returns DRAM with the offset calculated from
-    /// DRAM's base address (DRAM acts as the default device for backward compatibility).
-    fn find_device_id(&self, addr: u32) -> (DeviceId, u32) {
+    fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
         for entry in &self.memory_map {
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
-                return (entry.id, offset);
+                return Some((entry.id, offset));
             }
         }
-        // Default to DRAM for any unmapped address (backward compatibility)
-        // Calculate offset from DRAM's base (0x80000000)
-        let dram_offset = addr.wrapping_sub(0x8000_0000);
-        (DeviceId::Dram, dram_offset)
+        None
     }
 
     /// Read a 32-bit word from the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::read_word(&mut self.dram, offset),
-            DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, offset),
-            DeviceId::SimControl => BusDevice::read_word(&mut self.sim_control, offset),
-            DeviceId::External(idx) => self.external_devices[idx].read_word(offset),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_word(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_word(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_word(offset),
+            };
 
-        match result {
-            Ok(value) => value,
-            Err(e) => {
-                log::warn!("Bus read_word error at 0x{:08x}: {}", addr, e);
-                0
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_word error at 0x{:08x}: {}", addr, e);
+                    0
+                }
             }
+        } else {
+            log::warn!(
+                "Bus read_word from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
         }
     }
 
     /// Write a 32-bit word to the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches, logs a warning and discards the write.
     pub fn write_word(&mut self, addr: u32, value: u32) {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::write_word(&mut self.dram, offset, value),
-            DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, offset, value),
-            DeviceId::SimControl => BusDevice::write_word(&mut self.sim_control, offset, value),
-            DeviceId::External(idx) => self.external_devices[idx].write_word(offset, value),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_word(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, offset, value),
+                DeviceId::SimControl => BusDevice::write_word(&mut self.sim_control, offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_word(offset, value),
+            };
 
-        if let Err(e) = result {
-            log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
+            if let Err(e) = result {
+                log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_word to unmapped address 0x{:08x} (value=0x{:08x}), discarding",
+                addr,
+                value
+            );
         }
     }
 
     /// Read a 16-bit halfword from the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and returns 0.
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, offset),
-            DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, offset),
-            DeviceId::SimControl => BusDevice::read_halfword(&mut self.sim_control, offset),
-            DeviceId::External(idx) => self.external_devices[idx].read_halfword(offset),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_halfword(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_halfword(offset),
+            };
 
-        match result {
-            Ok(value) => value,
-            Err(e) => {
-                log::warn!("Bus read_halfword error at 0x{:08x}: {}", addr, e);
-                0
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_halfword error at 0x{:08x}: {}", addr, e);
+                    0
+                }
             }
+        } else {
+            log::warn!(
+                "Bus read_halfword from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
         }
     }
 
     /// Write a 16-bit halfword to the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and discards the write.
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::write_halfword(&mut self.dram, offset, value),
-            DeviceId::Fifo => BusDevice::write_halfword(&mut self.fifo, offset, value),
-            DeviceId::SimControl => BusDevice::write_halfword(&mut self.sim_control, offset, value),
-            DeviceId::External(idx) => self.external_devices[idx].write_halfword(offset, value),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_halfword(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_halfword(&mut self.fifo, offset, value),
+                DeviceId::SimControl => {
+                    BusDevice::write_halfword(&mut self.sim_control, offset, value)
+                }
+                DeviceId::External(idx) => self.external_devices[idx].write_halfword(offset, value),
+            };
 
-        if let Err(e) = result {
-            log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
+            if let Err(e) = result {
+                log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_halfword to unmapped address 0x{:08x} (value=0x{:04x}), discarding",
+                addr,
+                value
+            );
         }
     }
 
     /// Read a single byte from the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::read_byte(&mut self.dram, offset),
-            DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, offset),
-            DeviceId::SimControl => BusDevice::read_byte(&mut self.sim_control, offset),
-            DeviceId::External(idx) => self.external_devices[idx].read_byte(offset),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_byte(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_byte(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_byte(offset),
+            };
 
-        match result {
-            Ok(value) => value,
-            Err(e) => {
-                log::warn!("Bus read_byte error at 0x{:08x}: {}", addr, e);
-                0
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_byte error at 0x{:08x}: {}", addr, e);
+                    0
+                }
             }
+        } else {
+            log::warn!(
+                "Bus read_byte from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
         }
     }
 
     /// Write a single byte to the bus
     ///
     /// Routes the request to the appropriate device based on address.
-    /// DRAM is used as default for any unmapped addresses.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and discards the write.
     pub fn write_byte(&mut self, addr: u32, value: u8) {
-        let (id, offset) = self.find_device_id(addr);
-        let result = match id {
-            DeviceId::Dram => BusDevice::write_byte(&mut self.dram, offset, value),
-            DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, offset, value),
-            DeviceId::SimControl => BusDevice::write_byte(&mut self.sim_control, offset, value),
-            DeviceId::External(idx) => self.external_devices[idx].write_byte(offset, value),
-        };
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_byte(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, offset, value),
+                DeviceId::SimControl => BusDevice::write_byte(&mut self.sim_control, offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_byte(offset, value),
+            };
 
-        if let Err(e) = result {
-            log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
+            if let Err(e) = result {
+                log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_byte to unmapped address 0x{:08x} (value=0x{:02x}), discarding",
+                addr,
+                value
+            );
         }
     }
 

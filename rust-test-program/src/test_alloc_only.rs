@@ -36,16 +36,16 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0xF0u8);
         
         // Write marker
-        let _ = common::fifo_write_word(0xAAAAAAAA);
+        common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
         
         // Read back and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            let _ = common::fifo_write_word(byte as u32);
+            common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
         }
         
         // Write marker
-        let _ = common::fifo_write_word(0xBBBBBBBB);
+        common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
     }
     
     common::write_tohost(common::SUCCESS_CODE);

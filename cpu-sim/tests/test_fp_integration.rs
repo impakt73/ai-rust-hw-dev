@@ -176,7 +176,7 @@ fn test_cpu_fadd_basic() {
     // Program: Test FADD.S instruction in CPU context
     // Load two FP values, add them, store result
     let mut instructions = vec![
-        lui(1, 0x80001000), // x1 = 0x80001000 (base address)
+        lui(1, 0x80001000), // x1 = 0x80001000 (base address in DRAM)
         lui(2, 0x3F800000), // x2 = 1.0
         lui(3, 0x40000000), // x3 = 2.0
         sw(1, 2, 0),        // mem[x1+0] = 1.0
@@ -186,8 +186,7 @@ fn test_cpu_fadd_basic() {
         fadd_s(3, 1, 2),    // f3 = f1 + f2 = 3.0
         fsw(1, 3, 8),       // mem[x1+8] = f3
         lw(4, 1, 8),        // x4 = result
-        addi(5, 0, 0x100),  // x5 = 0x100
-        sw(5, 4, 0),        // Store result to 0x100
+        sw(1, 4, 12),       // Store result to mem[x1+12] = 0x8000100C
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -203,7 +202,8 @@ fn test_cpu_fadd_basic() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            // Read from offset 0x100C (which maps to absolute address 0x8000100C)
+            let result_value = sim.read_word(0x100C);
             assert_eq!(result_value, 0x40400000, "1.0 + 2.0 should equal 3.0");
         }),
     )

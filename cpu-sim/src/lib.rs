@@ -9,6 +9,7 @@ mod sim;
 mod sim_control;
 
 // Public API exports - only what's needed for external use
+pub use bus::{DRAM_BASE, FIFO_BASE, SIM_CONTROL_BASE};
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};

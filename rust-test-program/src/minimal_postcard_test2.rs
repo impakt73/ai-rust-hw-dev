@@ -36,12 +36,12 @@ fn main() -> ! {
             for (i, &byte) in chunk.iter().enumerate() {
                 word |= (byte as u32) << (i * 8);
             }
-            let _ = common::fifo_write_word(word);
+            common::fifo_write_word(word).expect("Failed to write to FIFO");
         }
     }
     
     // Write a known pattern to mark the end
-    let _ = common::fifo_write_word(0xDEADBEEF);
+    common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
     
     common::write_tohost(common::SUCCESS_CODE);
 }
