@@ -60,7 +60,8 @@ impl<'a> SimulatorView<'a> {
         let end_addr = end_addr.unwrap();
 
         // Check if both start and end are within DRAM range
-        addr >= DRAM_START && addr <= DRAM_END && end_addr >= DRAM_START && end_addr <= DRAM_END
+        // Note: DRAM_END is 0xFFFF_FFFF (u32::MAX), so the upper bound check is implicit
+        addr >= DRAM_START && end_addr >= DRAM_START
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
