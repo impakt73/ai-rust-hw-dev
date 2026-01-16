@@ -26,57 +26,51 @@ pub struct SimulationResult {
 /// the full Simulator internals. This allows callbacks to interact with memory,
 /// FIFO, and other simulator components while maintaining encapsulation.
 pub struct SimulatorView<'a> {
-    fifo: &'a mut crate::fifo::Fifo,
-    dram: &'a mut crate::dram::Dram,
+    bus: &'a mut crate::bus::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
 }
 
 impl<'a> SimulatorView<'a> {
     /// Create a new SimulatorView with access to the given components
     pub(crate) fn new(
-        fifo: &'a mut crate::fifo::Fifo,
-        dram: &'a mut crate::dram::Dram,
+        bus: &'a mut crate::bus::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
     ) -> Self {
-        SimulatorView {
-            fifo,
-            dram,
-            hung_detector,
-        }
+        SimulatorView { bus, hung_detector }
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
     ///
     /// Returns `Some(word)` if data is available, `None` if the queue is empty.
     pub fn fifo_read_tx(&mut self) -> Option<u32> {
-        self.fifo.tx.pop_front()
+        self.bus.fifo.tx.pop_front()
     }
 
     /// Write a word to the FIFO RX queue (Host → CPU)
     ///
     /// This allows the host to send data to the simulated CPU.
     pub fn fifo_write_rx(&mut self, word: u32) {
-        self.fifo.rx.push_back(word);
+        self.bus.fifo.rx.push_back(word);
     }
 
     /// Check if the FIFO TX queue (CPU → Host) is empty
     pub fn fifo_tx_is_empty(&self) -> bool {
-        self.fifo.tx.is_empty()
+        self.bus.fifo.tx.is_empty()
     }
 
     /// Check if the FIFO RX queue (Host → CPU) is empty
     pub fn fifo_rx_is_empty(&self) -> bool {
-        self.fifo.rx.is_empty()
+        self.bus.fifo.rx.is_empty()
     }
 
     /// Get the number of words in the FIFO TX queue (CPU → Host)
     pub fn fifo_tx_len(&self) -> usize {
-        self.fifo.tx.len()
+        self.bus.fifo.tx.len()
     }
 
     /// Get the number of words in the FIFO RX queue (Host → CPU)
     pub fn fifo_rx_len(&self) -> usize {
-        self.fifo.rx.len()
+        self.bus.fifo.rx.len()
     }
 
     /// Send a packet to the FIFO RX queue using the packet_transport module
@@ -97,7 +91,7 @@ impl<'a> SimulatorView<'a> {
                     word |= (bytes[i + j] as u32) << (j * 8);
                 }
             }
-            self.fifo.rx.push_back(word);
+            self.bus.fifo.rx.push_back(word);
             i += 4;
         }
 
@@ -173,7 +167,7 @@ impl<'a> SimulatorView<'a> {
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
-            self.dram.write_byte(addr, byte);
+            self.bus.dram.write_byte(addr, byte);
         }
 
         // Update valid PC ranges for hung detection based on whether this is instruction or data memory
@@ -225,7 +219,7 @@ impl<'a> SimulatorView<'a> {
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
         (0..size).map(move |offset| {
             let addr = start_addr.wrapping_add(offset);
-            self.dram.read_byte(addr)
+            self.bus.dram.read_byte(addr)
         })
     }
 
@@ -308,17 +302,74 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a single byte from memory
     pub fn read_byte(&self, addr: u32) -> u8 {
-        self.dram.read_byte(addr)
+        self.bus.dram.read_byte(addr)
     }
 
     /// Read a 16-bit halfword from memory (little-endian)
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        self.dram.read_halfword(addr)
+        self.bus.dram.read_halfword(addr)
     }
 
     /// Read a 32-bit word from memory (little-endian)
     pub fn read_word(&self, addr: u32) -> u32 {
-        self.dram.read_word(addr)
+        self.bus.dram.read_word(addr)
+    }
+
+    /// Register a custom device on the system bus
+    ///
+    /// This allows user code to register custom peripherals that will be
+    /// accessible via the CPU's memory-mapped I/O.
+    ///
+    /// # Arguments
+    /// * `base_addr` - Base address for the device in the system memory map
+    /// * `device` - The device to register (must implement BusDevice trait)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Device registered successfully
+    /// * `Err(String)` - Address range conflicts with existing device
+    ///
+    /// # Example
+    /// ```no_run
+    /// use cpu_sim::*;
+    ///
+    /// # struct MyVideoDevice;
+    /// # impl MyVideoDevice {
+    /// #     fn new() -> Self { MyVideoDevice }
+    /// # }
+    /// # impl BusDevice for MyVideoDevice {
+    /// #     fn read_word(&mut self, _offset: u32) -> Result<u32, BusDeviceError> { Ok(0) }
+    /// #     fn write_word(&mut self, _offset: u32, _value: u32) -> Result<(), BusDeviceError> { Ok(()) }
+    /// #     fn size(&self) -> u32 { 4 }
+    /// # }
+    /// run_program(
+    ///     1000,
+    ///     false,
+    ///     false,
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None,
+    ///     0,
+    ///     |sim| {
+    ///         // Register custom video device
+    ///         let video_device = Box::new(MyVideoDevice::new());
+    ///         sim.register_device(0x5000_0000, video_device)
+    ///             .map_err(|e| format!("Failed to register device: {}", e))?;
+    ///
+    ///         // Load program
+    ///         Ok(0x8000_0000)
+    ///     },
+    ///     None::<fn(&SimulatorView, &SimulationResult)>,
+    /// )?;
+    /// # Ok::<(), String>(())
+    /// ```
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn crate::BusDevice>,
+    ) -> Result<(), String> {
+        self.bus
+            .register_device(base_addr, device)
+            .map_err(|e| format!("{}", e))
     }
 }
 
@@ -510,10 +561,6 @@ where
     /// Returns `HungStateError` if the CPU is detected to be in a hung state
     pub fn step(&mut self) -> Result<SimulationStepResult, HungStateError> {
         let start_time = Instant::now();
-        // Magic address for halt signal (tohost mechanism)
-        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-
-        let mut halt_value = None;
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
@@ -559,11 +606,6 @@ where
                                 0b00 => self.bus.write_byte(addr, wdata as u8),
                                 0b01 => self.bus.write_halfword(addr, wdata as u16),
                                 _ => self.bus.write_word(addr, wdata),
-                            }
-
-                            // Check for halt signal
-                            if addr == TOHOST_ADDR {
-                                halt_value = Some(wdata);
                             }
 
                             self.cpu.dmem_ready = 1; // Ready after delay
@@ -669,11 +711,7 @@ where
         // Call inst_complete callback if provided (after instruction completion)
         // This callback receives restricted access to the Simulator via SimulatorView
         if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(
-                &mut self.bus.fifo,
-                &mut self.bus.dram,
-                &mut self.hung_detector,
-            );
+            let mut view = SimulatorView::new(&mut self.bus, &mut self.hung_detector);
             callback(&mut view);
         }
 
@@ -700,6 +738,9 @@ where
             callback(&trace);
         }
 
+        // Check for termination via SimControl device
+        let halt_value = self.bus.sim_control.termination_requested();
+
         let elapsed_us = start_time.elapsed().as_micros() as u64;
         Ok(SimulationStepResult {
             tohost_value: halt_value,
@@ -724,8 +765,6 @@ where
         self.reset(boot_pc)
             .map_err(|e| format!("Reset failed: {}", e))?;
 
-        const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
-
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;
@@ -739,8 +778,7 @@ where
 
             if let Some(tohost_value) = step_result.tohost_value {
                 log::info!(
-                    "Halt signal detected at tohost (0x{:08x}), value=0x{:08x}",
-                    TOHOST_ADDR,
+                    "Halt signal detected via SimControl, value=0x{:08x}",
                     tohost_value
                 );
                 return Ok(SimulationResult {

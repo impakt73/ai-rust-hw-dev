@@ -1,78 +1,349 @@
+use crate::bus_device::{ranges_overlap, BusDevice, RegistrationError};
 use crate::dram::Dram;
 use crate::fifo::Fifo;
+use crate::sim_control::SimControl;
 
-/// Memory map constants
-const FIFO_BASE: u32 = 0x4000_0000;
-const FIFO_DATA_OFFSET: u32 = 0x00;
-const FIFO_STATUS_OFFSET: u32 = 0x04;
+/// Lightweight handle identifying which device owns an address range
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceId {
+    /// Internal DRAM device (SystemBus.dram field)
+    Dram,
+    /// Internal FIFO device (SystemBus.fifo field)
+    Fifo,
+    /// Internal SimControl device (SystemBus.sim_control field)
+    SimControl,
+    /// External device (index into SystemBus.external_devices Vec)
+    External(usize),
+}
+
+/// Memory map entry separating "where" from "what"
+/// Maps an address range to a device handle
+struct MemoryMapEntry {
+    base: u32,
+    end: u32, // Exclusive end address (base + size)
+    id: DeviceId,
+}
 
 /// System bus that routes memory accesses to the correct device
 pub struct SystemBus {
+    // Internal devices as concrete public fields (for SimulatorView access)
     pub dram: Dram,
     pub fifo: Fifo,
+    pub sim_control: SimControl,
+
+    // External devices (owned by the bus)
+    external_devices: Vec<Box<dyn BusDevice>>,
+
+    // Address map (lightweight handles, not device references)
+    memory_map: Vec<MemoryMapEntry>,
 }
 
 impl SystemBus {
-    /// Create a new system bus with initialized DRAM and FIFO
+    /// Create a new system bus with internal devices initialized
+    ///
+    /// The bus owns DRAM, FIFO, and SimControl as concrete fields,
+    /// pre-registered in the memory map. External devices can be added later.
     pub fn new() -> Self {
+        let dram = Dram::new();
+        let fifo = Fifo::new();
+        let sim_control = SimControl::new();
+
+        // Pre-populate memory map with internal devices
+        let memory_map = vec![
+            MemoryMapEntry {
+                base: 0x1000_0000,
+                end: 0x1000_0000_u32.saturating_add(sim_control.size()),
+                id: DeviceId::SimControl,
+            },
+            MemoryMapEntry {
+                base: 0x4000_0000,
+                end: 0x4000_0000_u32.saturating_add(fifo.size()),
+                id: DeviceId::Fifo,
+            },
+            MemoryMapEntry {
+                base: 0x8000_0000,
+                end: 0x8000_0000_u32.saturating_add(dram.size()),
+                id: DeviceId::Dram,
+            },
+        ];
+
         SystemBus {
-            dram: Dram::new(),
-            fifo: Fifo::new(),
+            dram,
+            fifo,
+            sim_control,
+            external_devices: Vec::new(),
+            memory_map,
         }
     }
 
+    /// Register an external device at the specified base address
+    ///
+    /// Takes ownership of the device and adds it to the memory map.
+    ///
+    /// # Arguments
+    /// * `base_addr` - Base address for the device (must be word-aligned)
+    /// * `device` - The device to register (must implement BusDevice trait)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Device registered successfully
+    /// * `Err(RegistrationError)` - Address range conflicts or invalid alignment
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), RegistrationError> {
+        let size = device.size();
+
+        // Validate size and alignment
+        if size == 0 {
+            return Err(RegistrationError::ZeroSize);
+        }
+        if !size.is_multiple_of(4) {
+            return Err(RegistrationError::InvalidAlignment { size });
+        }
+        if !base_addr.is_multiple_of(4) {
+            return Err(RegistrationError::InvalidBaseAlignment { base_addr });
+        }
+
+        let end = base_addr.saturating_add(size);
+
+        // Check for overlaps with existing devices
+        for entry in &self.memory_map {
+            if ranges_overlap(base_addr, end, entry.base, entry.end) {
+                let device_name = match entry.id {
+                    DeviceId::Dram => self.dram.name(),
+                    DeviceId::Fifo => self.fifo.name(),
+                    DeviceId::SimControl => self.sim_control.name(),
+                    DeviceId::External(idx) => self.external_devices[idx].name(),
+                };
+                return Err(RegistrationError::AddressOverlap {
+                    new_base: base_addr,
+                    new_end: end,
+                    existing_base: entry.base,
+                    existing_end: entry.end,
+                    existing_name: device_name.to_string(),
+                });
+            }
+        }
+
+        // Add device to storage and create memory map entry
+        let device_idx = self.external_devices.len();
+        let device_name = device.name().to_string();
+        self.external_devices.push(device);
+
+        self.memory_map.push(MemoryMapEntry {
+            base: base_addr,
+            end,
+            id: DeviceId::External(device_idx),
+        });
+
+        log::info!(
+            "Registered device '{}' at 0x{:08x} - 0x{:08x} (size: {} bytes)",
+            device_name,
+            base_addr,
+            end - 1,
+            size
+        );
+
+        Ok(())
+    }
+
+    /// Get immutable access to registered devices (for introspection/debugging)
+    ///
+    /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
+    #[allow(dead_code)]
+    pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)> + '_ {
+        self.memory_map.iter().map(|entry| {
+            let size = entry.end.wrapping_sub(entry.base);
+            let name = match entry.id {
+                DeviceId::Dram => self.dram.name(),
+                DeviceId::Fifo => self.fifo.name(),
+                DeviceId::SimControl => self.sim_control.name(),
+                DeviceId::External(idx) => self.external_devices[idx].name(),
+            };
+            (entry.base, size, name)
+        })
+    }
+
+    /// Find the device ID for the given address
+    ///
+    /// Returns the DeviceId handle and the offset relative to the device's base address.
+    fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
+        for entry in &self.memory_map {
+            if addr >= entry.base && addr < entry.end {
+                let offset = addr - entry.base;
+                return Some((entry.id, offset));
+            }
+        }
+        None
+    }
+
     /// Read a 32-bit word from the bus
-    /// Routes to FIFO or DRAM based on address
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
-        match addr {
-            // FIFO DATA register
-            a if a == FIFO_BASE + FIFO_DATA_OFFSET => self.fifo.read_data(),
-            // FIFO STATUS register
-            a if a == FIFO_BASE + FIFO_STATUS_OFFSET => self.fifo.read_status(),
-            // Default: DRAM
-            _ => self.dram.read_word(addr),
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_word(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_word(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_word(offset),
+            };
+
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_word error at 0x{:08x}: {}", addr, e);
+                    0
+                }
+            }
+        } else {
+            log::warn!(
+                "Bus read_word from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
+        }
+    }
+
+    /// Write a 32-bit word to the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches, logs a warning and discards the write.
+    pub fn write_word(&mut self, addr: u32, value: u32) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_word(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, offset, value),
+                DeviceId::SimControl => BusDevice::write_word(&mut self.sim_control, offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_word(offset, value),
+            };
+
+            if let Err(e) = result {
+                log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_word to unmapped address 0x{:08x} (value=0x{:08x}), discarding",
+                addr,
+                value
+            );
+        }
+    }
+
+    /// Read a 16-bit halfword from the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and returns 0.
+    pub fn read_halfword(&mut self, addr: u32) -> u16 {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_halfword(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_halfword(offset),
+            };
+
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_halfword error at 0x{:08x}: {}", addr, e);
+                    0
+                }
+            }
+        } else {
+            log::warn!(
+                "Bus read_halfword from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
+        }
+    }
+
+    /// Write a 16-bit halfword to the bus
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support halfword access,
+    /// logs a warning and discards the write.
+    pub fn write_halfword(&mut self, addr: u32, value: u16) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_halfword(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_halfword(&mut self.fifo, offset, value),
+                DeviceId::SimControl => {
+                    BusDevice::write_halfword(&mut self.sim_control, offset, value)
+                }
+                DeviceId::External(idx) => self.external_devices[idx].write_halfword(offset, value),
+            };
+
+            if let Err(e) = result {
+                log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_halfword to unmapped address 0x{:08x} (value=0x{:04x}), discarding",
+                addr,
+                value
+            );
         }
     }
 
     /// Read a single byte from the bus
-    /// Routes to DRAM only (FIFO is word-based)
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
-        self.dram.read_byte(addr)
-    }
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::read_byte(&mut self.dram, offset),
+                DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, offset),
+                DeviceId::SimControl => BusDevice::read_byte(&mut self.sim_control, offset),
+                DeviceId::External(idx) => self.external_devices[idx].read_byte(offset),
+            };
 
-    /// Read a 16-bit halfword from the bus
-    /// Routes to DRAM only (FIFO is word-based)
-    pub fn read_halfword(&mut self, addr: u32) -> u16 {
-        self.dram.read_halfword(addr)
-    }
-
-    /// Write a 32-bit word to the bus
-    /// Routes to FIFO or DRAM based on address
-    pub fn write_word(&mut self, addr: u32, data: u32) {
-        match addr {
-            // FIFO DATA register
-            a if a == FIFO_BASE + FIFO_DATA_OFFSET => {
-                self.fifo.write_data(data);
+            match result {
+                Ok(value) => value,
+                Err(e) => {
+                    log::warn!("Bus read_byte error at 0x{:08x}: {}", addr, e);
+                    0
+                }
             }
-            // FIFO STATUS register (read-only, ignore writes)
-            a if a == FIFO_BASE + FIFO_STATUS_OFFSET => {
-                // Status is read-only, ignore write
-            }
-            // Default: DRAM
-            _ => self.dram.write_word(addr, data),
+        } else {
+            log::warn!(
+                "Bus read_byte from unmapped address 0x{:08x}, returning 0",
+                addr
+            );
+            0
         }
     }
 
     /// Write a single byte to the bus
-    /// Routes to DRAM only (FIFO is word-based)
-    pub fn write_byte(&mut self, addr: u32, data: u8) {
-        self.dram.write_byte(addr, data);
-    }
+    ///
+    /// Routes the request to the appropriate device based on address.
+    /// If no device matches or device doesn't support byte access,
+    /// logs a warning and discards the write.
+    pub fn write_byte(&mut self, addr: u32, value: u8) {
+        if let Some((id, offset)) = self.find_device_id(addr) {
+            let result = match id {
+                DeviceId::Dram => BusDevice::write_byte(&mut self.dram, offset, value),
+                DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, offset, value),
+                DeviceId::SimControl => BusDevice::write_byte(&mut self.sim_control, offset, value),
+                DeviceId::External(idx) => self.external_devices[idx].write_byte(offset, value),
+            };
 
-    /// Write a 16-bit halfword to the bus
-    /// Routes to DRAM only (FIFO is word-based)
-    pub fn write_halfword(&mut self, addr: u32, data: u16) {
-        self.dram.write_halfword(addr, data);
+            if let Err(e) = result {
+                log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
+            }
+        } else {
+            log::warn!(
+                "Bus write_byte to unmapped address 0x{:08x} (value=0x{:02x}), discarding",
+                addr,
+                value
+            );
+        }
     }
 
     /// Set LR/SC reservation (RV32A atomic extension)

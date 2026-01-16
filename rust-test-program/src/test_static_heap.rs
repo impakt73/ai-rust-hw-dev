@@ -32,12 +32,12 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0xF0u8);
         
         // Write marker
-        common::fifo_write_word(0xAAAAAAAA);
+        let _ = common::fifo_write_word(0xAAAAAAAA);
         
         // Read back
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32);
+            let _ = common::fifo_write_word(byte as u32);
         }
     }
     
@@ -50,12 +50,12 @@ fn main() -> ! {
         core::ptr::write(ptr.add(13), 0xDDu8);
         
         // Write marker
-        common::fifo_write_word(0xBBBBBBBB);
+        let _ = common::fifo_write_word(0xBBBBBBBB);
         
         // Read back using pointer arithmetic
         for i in 10..14 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32);
+            let _ = common::fifo_write_word(byte as u32);
         }
     }
     

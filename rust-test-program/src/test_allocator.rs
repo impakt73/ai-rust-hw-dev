@@ -31,11 +31,11 @@ fn main() -> ! {
     v.push(0xF0u8);
     
     // Write the vec length
-    common::fifo_write_word(v.len() as u32);
+    let _ = common::fifo_write_word(v.len() as u32);
     
     // Write each byte
     for &byte in v.iter() {
-        common::fifo_write_word(byte as u32);
+        let _ = common::fifo_write_word(byte as u32);
     }
     
     common::write_tohost(common::SUCCESS_CODE);

@@ -1,3 +1,4 @@
+use crate::bus_device::{BusDevice, BusDeviceError};
 use std::collections::HashMap;
 
 /// DRAM model for the RISC-V CPU simulator
@@ -109,5 +110,52 @@ impl Dram {
 impl Default for Dram {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl BusDevice for Dram {
+    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+        // DRAM receives offset relative to its base address (0x8000_0000)
+        // Convert to absolute address and call the internal read_word method
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Ok(Dram::read_word(self, addr))
+    }
+
+    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Dram::write_word(self, addr, value);
+        Ok(())
+    }
+
+    fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> {
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Ok(Dram::read_halfword(self, addr))
+    }
+
+    fn write_halfword(&mut self, offset: u32, value: u16) -> Result<(), BusDeviceError> {
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Dram::write_halfword(self, addr, value);
+        Ok(())
+    }
+
+    fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> {
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Ok(Dram::read_byte(self, addr))
+    }
+
+    fn write_byte(&mut self, offset: u32, value: u8) -> Result<(), BusDeviceError> {
+        let addr = 0x8000_0000_u32.wrapping_add(offset);
+        Dram::write_byte(self, addr, value);
+        Ok(())
+    }
+
+    fn size(&self) -> u32 {
+        // DRAM size: 2 GiB mapped from 0x8000_0000 to 0xFFFF_FFFF
+        // Size = 0xFFFF_FFFF - 0x8000_0000 + 1 = 0x8000_0000 bytes
+        0x8000_0000
+    }
+
+    fn name(&self) -> &str {
+        "DRAM"
     }
 }

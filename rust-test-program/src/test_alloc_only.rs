@@ -36,16 +36,16 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0xF0u8);
         
         // Write marker
-        common::fifo_write_word(0xAAAAAAAA);
+        let _ = common::fifo_write_word(0xAAAAAAAA);
         
         // Read back and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32);
+            let _ = common::fifo_write_word(byte as u32);
         }
         
         // Write marker
-        common::fifo_write_word(0xBBBBBBBB);
+        let _ = common::fifo_write_word(0xBBBBBBBB);
     }
     
     common::write_tohost(common::SUCCESS_CODE);

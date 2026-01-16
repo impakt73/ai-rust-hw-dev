@@ -32,12 +32,12 @@ fn main() -> ! {
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write each byte individually to FIFO to see if duplication happens
         for &byte in bytes.iter() {
-            common::fifo_write_word(byte as u32);
+            let _ = common::fifo_write_word(byte as u32);
         }
     }
     
     // Test 2: Write a known pattern
-    common::fifo_write_word(0xDEADBEEF);
+    let _ = common::fifo_write_word(0xDEADBEEF);
     
     common::write_tohost(common::SUCCESS_CODE);
 }
