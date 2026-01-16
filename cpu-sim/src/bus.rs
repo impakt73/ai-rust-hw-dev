@@ -26,16 +26,18 @@ pub const DRAM_END: u32 = 0xFFFF_FFFF;
 /// # Returns
 /// `true` if the entire range [addr, addr+size-1] is within DRAM range
 pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
-    // Check for overflow
+    // Check for overflow when computing the inclusive end address
     let end_addr = addr.checked_add(size.saturating_sub(1));
     if end_addr.is_none() {
         return false;
     }
     let end_addr = end_addr.unwrap();
 
-    // Check if both start and end are within DRAM range
-    // Note: DRAM_END is 0xFFFF_FFFF (u32::MAX), so the upper bound check is implicit
-    addr >= DRAM_BASE && end_addr >= DRAM_BASE
+    // Check if both start and end are within the inclusive DRAM range [DRAM_BASE, DRAM_END]
+    // Using explicit range checks for maintainability. If DRAM_END is changed in the future
+    // (e.g., to reserve high addresses for memory-mapped I/O), this validation will continue
+    // to work correctly.
+    (DRAM_BASE..=DRAM_END).contains(&addr) && (DRAM_BASE..=DRAM_END).contains(&end_addr)
 }
 
 /// Lightweight handle identifying which device owns an address range

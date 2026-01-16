@@ -204,7 +204,7 @@ impl<'a> SimulatorView<'a> {
     /// Returns an iterator over bytes in the specified memory region.
     /// This allows efficient access without allocating a new buffer.
     ///
-    /// **SAFETY:** This method validates that all reads fall within the valid
+    /// **Validation:** This method validates that all reads fall within the valid
     /// DRAM range. Out-of-bounds reads return 0 and log warnings.
     ///
     /// # Arguments
@@ -256,8 +256,9 @@ impl<'a> SimulatorView<'a> {
             );
         }
 
-        // Dump from memory using absolute addresses
-        // Individual reads will also be validated by Memory access through the iterator
+        // Dump from memory using absolute addresses.
+        // The address range is validated once above; if it is invalid, this iterator
+        // returns 0 without performing any memory reads.
         (0..size).map(move |offset| {
             let addr = start_addr.wrapping_add(offset);
             if is_valid {
@@ -347,7 +348,7 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a single byte from memory
     ///
-    /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
+    /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_byte(&self, addr: u32) -> u8 {
         if !is_valid_dram_range(addr, 1) {
@@ -364,7 +365,7 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a 16-bit halfword from memory (little-endian)
     ///
-    /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
+    /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_halfword(&self, addr: u32) -> u16 {
         if !is_valid_dram_range(addr, 2) {
@@ -381,7 +382,7 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a 32-bit word from memory (little-endian)
     ///
-    /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
+    /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_word(&self, addr: u32) -> u32 {
         if !is_valid_dram_range(addr, 4) {
