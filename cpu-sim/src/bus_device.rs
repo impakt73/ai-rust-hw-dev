@@ -1,7 +1,7 @@
 use crate::memory::Memory;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{DRAM_BASE as DRAM_START, DRAM_END};
+use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// SystemContext provides BusDevice implementations with access to system memory
 ///
@@ -22,38 +22,17 @@ impl<'a> SystemContext<'a> {
         SystemContext { memory }
     }
 
-    /// Check if an address is within the valid DRAM range
-    ///
-    /// # Arguments
-    /// * `addr` - Address to check
-    /// * `size` - Number of bytes the access will span (1, 2, or 4)
-    ///
-    /// # Returns
-    /// `true` if the entire access [addr, addr+size-1] is within DRAM range
-    fn is_valid_dram_access(&self, addr: u32, size: u32) -> bool {
-        // Check for overflow
-        let end_addr = addr.checked_add(size.saturating_sub(1));
-        if end_addr.is_none() {
-            return false;
-        }
-        let end_addr = end_addr.unwrap();
-
-        // Check if both start and end are within DRAM range
-        // Note: DRAM_END is 0xFFFF_FFFF (u32::MAX), so the upper bound check is implicit
-        addr >= DRAM_START && end_addr >= DRAM_START
-    }
-
     /// Read a 32-bit word from memory at the given address
     /// Addresses are absolute (not offset-relative)
     ///
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_word(&self, addr: u32) -> u32 {
-        if !self.is_valid_dram_access(addr, 4) {
+        if !is_valid_dram_range(addr, 4) {
             log::warn!(
                 "SystemContext::read_word: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
@@ -67,11 +46,11 @@ impl<'a> SystemContext<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        if !self.is_valid_dram_access(addr, 2) {
+        if !is_valid_dram_range(addr, 2) {
             log::warn!(
                 "SystemContext::read_halfword: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
@@ -85,11 +64,11 @@ impl<'a> SystemContext<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_byte(&self, addr: u32) -> u8 {
-        if !self.is_valid_dram_access(addr, 1) {
+        if !is_valid_dram_range(addr, 1) {
             log::warn!(
                 "SystemContext::read_byte: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
@@ -103,11 +82,11 @@ impl<'a> SystemContext<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds writes are logged as warnings and silently discarded.
     pub fn write_word(&mut self, addr: u32, data: u32) {
-        if !self.is_valid_dram_access(addr, 4) {
+        if !is_valid_dram_range(addr, 4) {
             log::warn!(
                 "SystemContext::write_word: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), discarding write (value=0x{:08x})",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END,
                 data
             );
@@ -122,11 +101,11 @@ impl<'a> SystemContext<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds writes are logged as warnings and silently discarded.
     pub fn write_halfword(&mut self, addr: u32, data: u16) {
-        if !self.is_valid_dram_access(addr, 2) {
+        if !is_valid_dram_range(addr, 2) {
             log::warn!(
                 "SystemContext::write_halfword: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), discarding write (value=0x{:04x})",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END,
                 data
             );
@@ -141,11 +120,11 @@ impl<'a> SystemContext<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds writes are logged as warnings and silently discarded.
     pub fn write_byte(&mut self, addr: u32, data: u8) {
-        if !self.is_valid_dram_access(addr, 1) {
+        if !is_valid_dram_range(addr, 1) {
             log::warn!(
                 "SystemContext::write_byte: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), discarding write (value=0x{:02x})",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END,
                 data
             );

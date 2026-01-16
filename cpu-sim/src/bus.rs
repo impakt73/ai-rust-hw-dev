@@ -17,6 +17,27 @@ pub const DRAM_BASE: u32 = 0x8000_0000;
 /// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0xFFFF_FFFF]
 pub const DRAM_END: u32 = 0xFFFF_FFFF;
 
+/// Check if an address range is within the valid DRAM range
+///
+/// # Arguments
+/// * `addr` - Starting address
+/// * `size` - Number of bytes the access will span
+///
+/// # Returns
+/// `true` if the entire range [addr, addr+size-1] is within DRAM range
+pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
+    // Check for overflow
+    let end_addr = addr.checked_add(size.saturating_sub(1));
+    if end_addr.is_none() {
+        return false;
+    }
+    let end_addr = end_addr.unwrap();
+
+    // Check if both start and end are within DRAM range
+    // Note: DRAM_END is 0xFFFF_FFFF (u32::MAX), so the upper bound check is implicit
+    addr >= DRAM_BASE && end_addr >= DRAM_BASE
+}
+
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeviceId {

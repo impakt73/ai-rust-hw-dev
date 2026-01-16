@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Instant;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{DRAM_BASE as DRAM_START, DRAM_END};
+use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// Result of a single simulation step
 #[derive(Debug)]
@@ -40,27 +40,6 @@ impl<'a> SimulatorView<'a> {
         hung_detector: &'a mut Option<HungDetector>,
     ) -> Self {
         SimulatorView { bus, hung_detector }
-    }
-
-    /// Check if an address range is within the valid DRAM range
-    ///
-    /// # Arguments
-    /// * `addr` - Starting address
-    /// * `size` - Number of bytes the access will span
-    ///
-    /// # Returns
-    /// `true` if the entire range [addr, addr+size-1] is within DRAM range
-    fn is_valid_dram_range(&self, addr: u32, size: u32) -> bool {
-        // Check for overflow
-        let end_addr = addr.checked_add(size.saturating_sub(1));
-        if end_addr.is_none() {
-            return false;
-        }
-        let end_addr = end_addr.unwrap();
-
-        // Check if both start and end are within DRAM range
-        // Note: DRAM_END is 0xFFFF_FFFF (u32::MAX), so the upper bound check is implicit
-        addr >= DRAM_START && end_addr >= DRAM_START
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
@@ -192,12 +171,12 @@ impl<'a> SimulatorView<'a> {
         // Validate the entire range before writing
         if !data.is_empty() {
             let size = data.len() as u32;
-            if !self.is_valid_dram_range(start_addr, size) {
+            if !is_valid_dram_range(start_addr, size) {
                 log::warn!(
                     "write_memory_region: Address range 0x{:08x} - 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), operation rejected",
                     start_addr,
                     start_addr.wrapping_add(size).wrapping_sub(1),
-                    DRAM_START,
+                    DRAM_BASE,
                     DRAM_END
                 );
                 return;
@@ -262,7 +241,7 @@ impl<'a> SimulatorView<'a> {
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
         // Validate the entire range upfront
         let is_valid = if size > 0 {
-            self.is_valid_dram_range(start_addr, size)
+            is_valid_dram_range(start_addr, size)
         } else {
             true // Empty range is valid
         };
@@ -272,7 +251,7 @@ impl<'a> SimulatorView<'a> {
                 "dump_memory_region: Address range 0x{:08x} - 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x})",
                 start_addr,
                 start_addr.wrapping_add(size).wrapping_sub(1),
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
         }
@@ -371,11 +350,11 @@ impl<'a> SimulatorView<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_byte(&self, addr: u32) -> u8 {
-        if !self.is_valid_dram_range(addr, 1) {
+        if !is_valid_dram_range(addr, 1) {
             log::warn!(
                 "read_byte: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
@@ -388,11 +367,11 @@ impl<'a> SimulatorView<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        if !self.is_valid_dram_range(addr, 2) {
+        if !is_valid_dram_range(addr, 2) {
             log::warn!(
                 "read_halfword: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
@@ -405,11 +384,11 @@ impl<'a> SimulatorView<'a> {
     /// **SAFETY:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds reads are logged as warnings and return 0.
     pub fn read_word(&self, addr: u32) -> u32 {
-        if !self.is_valid_dram_range(addr, 4) {
+        if !is_valid_dram_range(addr, 4) {
             log::warn!(
                 "read_word: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), returning 0",
                 addr,
-                DRAM_START,
+                DRAM_BASE,
                 DRAM_END
             );
             return 0;
