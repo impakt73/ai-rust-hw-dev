@@ -710,7 +710,7 @@ fn test_cpu_tohost_halt() {
     init_test_logger();
 
     // TOHOST address for halt signal
-    const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+    const TOHOST_ADDR: u32 = 0x1000_0000;
 
     // Program: Execute a few instructions, then write to tohost to signal halt
     let instructions = vec![
