@@ -370,3 +370,7 @@ impl Default for SystemBus {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "bus_tests.rs"]
+mod tests;
