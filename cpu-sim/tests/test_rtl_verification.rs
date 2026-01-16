@@ -715,10 +715,10 @@ fn test_cpu_tohost_halt() {
         addi(1, 0, 10),
         addi(2, 1, 5),
         add(3, 1, 2),
-        addi(4, 0, -16), // x4 = 0xFFFFFFF0 (tohost address)
-        addi(5, 0, 1),   // x5 = 1 (exit code)
-        sw(4, 5, 0),     // Store x5 to tohost address
-        jal(0, 0),       // Infinite loop
+        lui(4, 0x10000000), // x4 = 0x10000000 (tohost address)
+        addi(5, 0, 1),      // x5 = 1 (exit code)
+        sw(4, 5, 0),        // Store x5 to tohost address
+        jal(0, 0),          // Infinite loop
     ];
 
     run_program_with_options(

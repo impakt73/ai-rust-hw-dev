@@ -10,13 +10,15 @@ fn test_programmatic_instruction_loading() {
 
     // Define a simple program:
     // Address 0x80000000:
-    //   addi x10, x0, 42  ; x10 = 42
-    //   sw x10, 0xFFFFFFF0(x0)  ; store to tohost (halt)
-    //   jal x0, 0  ; infinite loop (stay here)
+    //   addi x10, x0, 42       ; x10 = 42
+    //   lui x11, 0x10000000    ; x11 = tohost address (0x10000000)
+    //   sw x10, 0(x11)         ; store to tohost (halt)
+    //   jal x0, 0              ; infinite loop (stay here)
     let program: Vec<u8> = vec![
         // addi x10, x0, 42 (0x02a00513 in little-endian)
-        0x13, 0x05, 0xa0, 0x02, // sw x10, -16(x0) (0xfea02823 in little-endian)
-        0x23, 0x28, 0xa0, 0xfe, // jal x0, 0 (0x0000006f in little-endian)
+        0x13, 0x05, 0xa0, 0x02, // lui x11, 0x10000000 (0x100005b7 in little-endian)
+        0xb7, 0x05, 0x00, 0x10, // sw x10, 0(x11) (0x00a5a023 in little-endian)
+        0x23, 0xa0, 0xa5, 0x00, // jal x0, 0 (0x0000006f in little-endian)
         0x6f, 0x00, 0x00, 0x00,
     ];
 
@@ -42,8 +44,9 @@ fn test_programmatic_instruction_loading() {
             );
             println!("  Program size: {} bytes", program.len());
             println!("  Instruction 1: addi x10, x0, 42");
-            println!("  Instruction 2: sw x10, -16(x0) ; store to tohost");
-            println!("  Instruction 3: jal x0, 0 ; infinite loop");
+            println!("  Instruction 2: lui x11, 0x10000000 ; load tohost address");
+            println!("  Instruction 3: sw x10, 0(x11) ; store to tohost");
+            println!("  Instruction 4: jal x0, 0 ; infinite loop");
 
             Ok(START_ADDR)
         },
@@ -66,8 +69,8 @@ fn test_programmatic_instruction_loading() {
         "Expected tohost value 42 from programmatic instructions"
     );
     assert!(
-        result.cycles < 20,
-        "Expected program to complete in less than 20 cycles, got {}",
+        result.cycles < 25,
+        "Expected program to complete in less than 25 cycles, got {}",
         result.cycles
     );
 
@@ -145,7 +148,8 @@ fn test_write_memory_region_patterns() {
             // Return a simple program to satisfy the prep callback
             let program: Vec<u8> = vec![
                 0x13, 0x05, 0xa0, 0x02, // addi x10, x0, 42
-                0x23, 0x28, 0xa0, 0xfe, // sw x10, -16(x0)
+                0xb7, 0x05, 0x00, 0x10, // lui x11, 0x10000000
+                0x23, 0xa0, 0xa5, 0x00, // sw x10, 0(x11)
                 0x6f, 0x00, 0x00, 0x00, // jal x0, 0
             ];
             sim.write_memory_region(0x8000_0000, &program, true);

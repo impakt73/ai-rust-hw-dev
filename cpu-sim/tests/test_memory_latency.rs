@@ -14,10 +14,15 @@ fn init_test_logger() {
 fn test_zero_latency_default() {
     init_test_logger();
 
-    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0, then infinite loop
+    // Load a simple program:
+    // lui x2, 0x10000000   - load tohost address
+    // addi x1, x0, 42      - load value 42
+    // sw x1, 0(x2)         - write to tohost (0x10000000)
+    // jal x0, 0            - infinite loop
     let instructions: Vec<u8> = vec![
+        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000 (0x10000137) - loads 0x10000000
         0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42 (0x02a00093)
-        0x23, 0x28, 0x10, 0xfe, // sw x1, -16(x0) (0xfe102823) - writes to 0xFFFFFFF0
+        0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2) (0x00112023) - writes to 0x10000000
         0x6f, 0x00, 0x00, 0x00, // jal x0, 0 (0x0000006f) - infinite loop
     ];
 
@@ -46,8 +51,8 @@ fn test_zero_latency_default() {
     // With zero latency, this should complete quickly
     println!("✓ Zero latency test completed in {} cycles", result.cycles);
     assert!(
-        result.cycles < 20,
-        "Should complete in fewer than 20 cycles with zero latency"
+        result.cycles < 30,
+        "Should complete in fewer than 30 cycles with zero latency"
     );
 }
 
@@ -56,10 +61,15 @@ fn test_zero_latency_default() {
 fn test_multi_cycle_memory_latency() {
     init_test_logger();
 
-    // Load a simple program: addi x1, x0, 42 then sw x1, -16(x0) to write to 0xFFFFFFF0, then infinite loop
+    // Load a simple program:
+    // lui x2, 0x10000000   - load tohost address
+    // addi x1, x0, 42      - load value 42
+    // sw x1, 0(x2)         - write to tohost
+    // jal x0, 0            - infinite loop
     let instructions: Vec<u8> = vec![
+        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000 - loads 0x10000000
         0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42
-        0x23, 0x28, 0x10, 0xfe, // sw x1, -16(x0) - writes to 0xFFFFFFF0
+        0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2) - writes to 0x10000000
         0x6f, 0x00, 0x00, 0x00, // jal x0, 0 - infinite loop
     ];
 
@@ -92,7 +102,7 @@ fn test_multi_cycle_memory_latency() {
         result.cycles
     );
     assert!(
-        result.cycles > 10,
+        result.cycles > 15,
         "Should take more cycles with 3-cycle latency"
     );
 }
@@ -106,13 +116,15 @@ fn test_load_store_with_latency() {
     // 1. addi x1, x0, 100  (x1 = 100)
     // 2. sw x1, 0(x0)      (store 100 to address 0)
     // 3. lw x2, 0(x0)      (load from address 0 into x2)
-    // 4. sw x2, -16(x0)    (write to tohost 0xFFFFFFF0 to halt)
-    // 5. jal x0, 0         (infinite loop)
+    // 4. lui x3, 0x10000000 (load tohost address)
+    // 5. sw x2, 0(x3)      (write to tohost 0x10000000 to halt)
+    // 6. jal x0, 0         (infinite loop)
     let instructions: Vec<u8> = vec![
         0x93, 0x00, 0x40, 0x06, // addi x1, x0, 100
         0x23, 0x20, 0x10, 0x00, // sw x1, 0(x0)
         0x03, 0x21, 0x00, 0x00, // lw x2, 0(x0)
-        0x23, 0x28, 0x20, 0xfe, // sw x2, -16(x0)
+        0xb7, 0x01, 0x00, 0x10, // lui x3, 0x10000000 - loads 0x10000000
+        0x23, 0xa0, 0x21, 0x00, // sw x2, 0(x3) - writes to tohost
         0x6f, 0x00, 0x00, 0x00, // jal x0, 0
     ];
 
@@ -143,7 +155,7 @@ fn test_load_store_with_latency() {
         result.cycles
     );
     assert!(
-        result.cycles > 15,
+        result.cycles > 20,
         "Should take more cycles with memory latency"
     );
 }

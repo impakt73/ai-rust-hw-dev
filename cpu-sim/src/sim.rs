@@ -302,17 +302,28 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a single byte from memory
     pub fn read_byte(&self, addr: u32) -> u8 {
-        self.bus.dram.read_byte(addr)
+        // Use bus routing instead of direct DRAM access
+        // SAFETY: We have exclusive access to the bus through SimulatorView
+        unsafe {
+            let bus_ptr = self.bus as *const SystemBus as *mut SystemBus;
+            (*bus_ptr).read_byte(addr)
+        }
     }
 
     /// Read a 16-bit halfword from memory (little-endian)
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        self.bus.dram.read_halfword(addr)
+        unsafe {
+            let bus_ptr = self.bus as *const SystemBus as *mut SystemBus;
+            (*bus_ptr).read_halfword(addr)
+        }
     }
 
     /// Read a 32-bit word from memory (little-endian)
     pub fn read_word(&self, addr: u32) -> u32 {
-        self.bus.dram.read_word(addr)
+        unsafe {
+            let bus_ptr = self.bus as *const SystemBus as *mut SystemBus;
+            (*bus_ptr).read_word(addr)
+        }
     }
 
     /// Register a custom device on the system bus

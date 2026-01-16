@@ -233,24 +233,29 @@ fn test_device_read_write_routing() {
 }
 
 #[test]
-fn test_device_unmapped_address_read_returns_zero() {
+fn test_device_unmapped_address_read_from_dram() {
     let mut bus = SystemBus::new();
 
-    // Read from unmapped address
+    // Read from unmapped address (defaults to DRAM, which returns 0 for uninitialized)
     let value = bus.read_word(0x6000_0000);
     assert_eq!(value, 0);
+
+    // Write and verify we can read it back (proving it's using DRAM)
+    bus.write_word(0x6000_0000, 0xABCDEF00);
+    let value = bus.read_word(0x6000_0000);
+    assert_eq!(value, 0xABCDEF00);
 }
 
 #[test]
-fn test_device_unmapped_address_write_discarded() {
+fn test_device_unmapped_address_write_to_dram() {
     let mut bus = SystemBus::new();
 
-    // Write to unmapped address (should not panic, just log warning)
+    // Write to unmapped address (defaults to DRAM for backward compatibility)
     bus.write_word(0x6000_0000, 0x12345678);
 
-    // Verify write was discarded (read returns 0)
+    // Verify write went to DRAM (can read it back)
     let value = bus.read_word(0x6000_0000);
-    assert_eq!(value, 0);
+    assert_eq!(value, 0x12345678);
 }
 
 #[test]

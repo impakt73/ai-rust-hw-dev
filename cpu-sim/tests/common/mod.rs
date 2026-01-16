@@ -15,17 +15,17 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 /// Create a simple test program (equivalent to test.s)
 pub fn create_test_program() -> Vec<u8> {
     let instructions = vec![
-        addi(1, 0, 10),     // x1 = 10
-        addi(2, 0, 20),     // x2 = 20
-        add(3, 1, 2),       // x3 = 30
-        sub(4, 2, 1),       // x4 = 10
-        lui(5, 0x80001000), // x5 = 0x80001000
-        sw(5, 1, 0),        // mem[x5] = x1
-        lw(6, 5, 0),        // x6 = mem[x5]
-        addi(10, 0, 42),    // x10 = 42
-        addi(11, 0, -16),   // x11 = 0xFFFFFFF0
-        sw(11, 10, 0),      // tohost = 42
-        jal(0, 0),          // halt
+        addi(1, 0, 10),      // x1 = 10
+        addi(2, 0, 20),      // x2 = 20
+        add(3, 1, 2),        // x3 = 30
+        sub(4, 2, 1),        // x4 = 10
+        lui(5, 0x80001000),  // x5 = 0x80001000
+        sw(5, 1, 0),         // mem[x5] = x1
+        lw(6, 5, 0),         // x6 = mem[x5]
+        addi(10, 0, 42),     // x10 = 42
+        lui(11, 0x10000000), // x11 = 0x10000000 (tohost address)
+        sw(11, 10, 0),       // tohost = 42
+        jal(0, 0),           // halt
     ];
 
     instructions_to_bytes(&instructions)
@@ -34,20 +34,20 @@ pub fn create_test_program() -> Vec<u8> {
 /// Create a trace test program (equivalent to trace_test.s)
 pub fn create_trace_test_program() -> Vec<u8> {
     let instructions = vec![
-        addi(1, 0, 10),     // x1 = 10
-        addi(2, 0, 20),     // x2 = 20
-        addi(3, 0, 5),      // x3 = 5
-        add(4, 1, 2),       // x4 = 30
-        sub(5, 2, 3),       // x5 = 15
-        andi(6, 1, 0xFF),   // x6 = 10
-        ori(7, 2, 0x1),     // x7 = 21
-        lui(8, 0x12345000), // x8 = 0x12345000
-        sw(0, 1, 0),        // mem[0] = x1
-        lw(9, 0, 0),        // x9 = mem[0]
-        addi(10, 0, 42),    // x10 = 42
-        addi(11, 0, -16),   // x11 = 0xFFFFFFF0
-        sw(11, 10, 0),      // tohost = 42
-        jal(0, 0),          // halt
+        addi(1, 0, 10),      // x1 = 10
+        addi(2, 0, 20),      // x2 = 20
+        addi(3, 0, 5),       // x3 = 5
+        add(4, 1, 2),        // x4 = 30
+        sub(5, 2, 3),        // x5 = 15
+        andi(6, 1, 0xFF),    // x6 = 10
+        ori(7, 2, 0x1),      // x7 = 21
+        lui(8, 0x12345000),  // x8 = 0x12345000
+        sw(0, 1, 0),         // mem[0] = x1
+        lw(9, 0, 0),         // x9 = mem[0]
+        addi(10, 0, 42),     // x10 = 42
+        lui(11, 0x10000000), // x11 = 0x10000000 (tohost address)
+        sw(11, 10, 0),       // tohost = 42
+        jal(0, 0),           // halt
     ];
 
     instructions_to_bytes(&instructions)
@@ -93,11 +93,10 @@ pub fn create_register_trace_program() -> Vec<u8> {
         lw(29, 27, 0),       // x29 = 123
         add(30, 29, 1),      // x30 = 124
         // Success
-        lui(31, 0),        // x31 = 0
-        addi(31, 31, -16), // x31 = 0xFFFFFFF0
-        addi(30, 0, 42),   // x30 = 42
-        sw(31, 30, 0),     // tohost = 42
-        jal(0, 0),         // halt
+        addi(30, 0, 42),     // x30 = 42
+        lui(31, 0x10000000), // x31 = 0x10000000 (tohost address)
+        sw(31, 30, 0),       // tohost = 42
+        jal(0, 0),           // halt
     ];
 
     instructions_to_bytes(&instructions)
