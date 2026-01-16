@@ -22,6 +22,7 @@ impl SimControl {
     }
 
     /// Clear the termination request (for reset)
+    #[allow(dead_code)]
     pub fn clear_termination(&mut self) {
         self.tohost_value = None;
     }

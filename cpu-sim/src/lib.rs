@@ -13,7 +13,6 @@ pub use bus::{DRAM_BASE, FIFO_BASE, SIM_CONTROL_BASE};
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};
-pub use sim_control::SimControl;
 
 use bus::SystemBus;
 use hung_detector::HungDetectorConfig;

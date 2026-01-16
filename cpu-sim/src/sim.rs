@@ -165,10 +165,23 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
-        // Write to DRAM at the provided absolute address
+        use crate::bus::DRAM_BASE;
+
+        // Convert absolute address to DRAM offset
+        // SimulatorView accepts absolute addresses for compatibility with ELF loading
+        // But DRAM internally uses offsets from DRAM_BASE
+        let dram_offset = start_addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
+            panic!(
+                "write_memory_region: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
+                 Tests must use addresses within the DRAM device range.",
+                start_addr, DRAM_BASE
+            )
+        });
+
+        // Write to DRAM using relative offsets
         for (offset, &byte) in data.iter().enumerate() {
-            let addr = start_addr.wrapping_add(offset as u32);
-            self.bus.dram.write_byte(addr, byte);
+            let relative_offset = dram_offset.wrapping_add(offset as u32);
+            self.bus.dram.write_byte(relative_offset, byte);
         }
 
         // Update valid PC ranges for hung detection based on whether this is instruction or data memory
@@ -218,10 +231,21 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
-        // Dump from DRAM at the provided absolute address
+        use crate::bus::DRAM_BASE;
+
+        // Convert absolute address to DRAM offset
+        let dram_offset = start_addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
+            panic!(
+                "dump_memory_region: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
+                 Tests must use addresses within the DRAM device range.",
+                start_addr, DRAM_BASE
+            )
+        });
+
+        // Dump from DRAM using relative offsets
         (0..size).map(move |offset| {
-            let addr = start_addr.wrapping_add(offset);
-            self.bus.dram.read_byte(addr)
+            let relative_offset = dram_offset.wrapping_add(offset);
+            self.bus.dram.read_byte(relative_offset)
         })
     }
 
@@ -304,17 +328,50 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a single byte from memory
     pub fn read_byte(&self, addr: u32) -> u8 {
-        self.bus.dram.read_byte(addr)
+        use crate::bus::DRAM_BASE;
+
+        // Convert absolute address to DRAM offset
+        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
+            panic!(
+                "read_byte: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
+                 Tests must use addresses within the DRAM device range.",
+                addr, DRAM_BASE
+            )
+        });
+
+        self.bus.dram.read_byte(dram_offset)
     }
 
     /// Read a 16-bit halfword from memory (little-endian)
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        self.bus.dram.read_halfword(addr)
+        use crate::bus::DRAM_BASE;
+
+        // Convert absolute address to DRAM offset
+        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
+            panic!(
+                "read_halfword: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
+                 Tests must use addresses within the DRAM device range.",
+                addr, DRAM_BASE
+            )
+        });
+
+        self.bus.dram.read_halfword(dram_offset)
     }
 
     /// Read a 32-bit word from memory (little-endian)
     pub fn read_word(&self, addr: u32) -> u32 {
-        self.bus.dram.read_word(addr)
+        use crate::bus::DRAM_BASE;
+
+        // Convert absolute address to DRAM offset
+        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
+            panic!(
+                "read_word: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
+                 Tests must use addresses within the DRAM device range.",
+                addr, DRAM_BASE
+            )
+        });
+
+        self.bus.dram.read_word(dram_offset)
     }
 
     /// Register a custom device on the system bus

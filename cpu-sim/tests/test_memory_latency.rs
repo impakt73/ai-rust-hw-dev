@@ -113,17 +113,19 @@ fn test_load_store_with_latency() {
     init_test_logger();
 
     // Load a program that does:
-    // 1. addi x1, x0, 100  (x1 = 100)
-    // 2. sw x1, 0(x0)      (store 100 to address 0)
-    // 3. lw x2, 0(x0)      (load from address 0 into x2)
-    // 4. lui x3, 0x10000000 (load tohost address)
-    // 5. sw x2, 0(x3)      (write to tohost 0x10000000 to halt)
-    // 6. jal x0, 0         (infinite loop)
+    // 1. lui x4, 0x80000000  (x4 = DRAM base address)
+    // 2. addi x1, x0, 100    (x1 = 100)
+    // 3. sw x1, 0(x4)        (store 100 to DRAM address)
+    // 4. lw x2, 0(x4)        (load from DRAM into x2)
+    // 5. lui x3, 0x10000000  (load tohost address)
+    // 6. sw x2, 0(x3)        (write to tohost 0x10000000 to halt)
+    // 7. jal x0, 0           (infinite loop)
     let instructions: Vec<u8> = vec![
+        0x37, 0x02, 0x00, 0x80, // lui x4, 0x80000 (x4 = 0x80000000)
         0x93, 0x00, 0x40, 0x06, // addi x1, x0, 100
-        0x23, 0x20, 0x10, 0x00, // sw x1, 0(x0)
-        0x03, 0x21, 0x00, 0x00, // lw x2, 0(x0)
-        0xb7, 0x01, 0x00, 0x10, // lui x3, 0x10000000 - loads 0x10000000
+        0x23, 0x20, 0x12, 0x00, // sw x1, 0(x4)
+        0x03, 0x21, 0x02, 0x00, // lw x2, 0(x4)
+        0xb7, 0x01, 0x00, 0x10, // lui x3, 0x10000 (x3 = 0x10000000)
         0x23, 0xa0, 0x21, 0x00, // sw x2, 0(x3) - writes to tohost
         0x6f, 0x00, 0x00, 0x00, // jal x0, 0
     ];

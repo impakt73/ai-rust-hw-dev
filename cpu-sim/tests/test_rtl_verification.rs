@@ -219,8 +219,9 @@ fn test_cpu_branch_beq_bne() {
     // 0x14: BNE  x1, x4, 8    ; Should branch to 0x1C (skip next instr)
     // 0x18: ADDI x5, x0, 99   ; Should be skipped - write marker to memory if executed
     // 0x1C: ADDI x6, x0, 1    ; x6 = 1
-    // 0x20: SW   x3, 0x100(x0) ; Store x3 to verify it wasn't set to 99
-    // 0x24: SW   x5, 0x104(x0) ; Store x5 to verify it wasn't set to 99
+    // 0x20: LUI x9, 0x80000   ; x9 = 0x80000000 (base address)
+    // 0x24: SW   x3, 0(x9)    ; Store x3 to verify it wasn't set to 99
+    // 0x28: SW   x5, 4(x9)    ; Store x5 to verify it wasn't set to 99
     let mut instructions = vec![
         addi(1, 0, 10),
         addi(2, 0, 10),
@@ -230,8 +231,9 @@ fn test_cpu_branch_beq_bne() {
         bne(1, 4, 8),
         addi(5, 0, 99),
         addi(6, 0, 1),
-        sw(0, 3, 0x100),
-        sw(0, 5, 0x104),
+        lui(9, 0x80000000),
+        sw(9, 3, 0),
+        sw(9, 5, 4),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -243,8 +245,8 @@ fn test_cpu_branch_beq_bne() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked - skipped instructions should leave registers at 0
-            let marker1 = sim.read_word(0x100);
-            let marker2 = sim.read_word(0x104);
+            let marker1 = sim.read_word(0x80000000);
+            let marker2 = sim.read_word(0x80000004);
             assert_eq!(
                 marker1, 0,
                 "First branch should skip addi x3,x0,99, so x3 should be 0"
@@ -276,8 +278,9 @@ fn test_cpu_branch_blt_bge() {
     // 0x10: BGE  x2, x1, 8     ; Should branch (10 >= 5)
     // 0x14: ADDI x4, x0, 99    ; Should be skipped
     // 0x18: ADDI x5, x0, 1     ; x5 = 1
-    // 0x1C: SW   x3, 0x100(x0) ; Store x3 to verify
-    // 0x20: SW   x4, 0x104(x0) ; Store x4 to verify
+    // 0x1C: LUI x9, 0x80000    ; x9 = 0x80000000 (base address)
+    // 0x20: SW   x3, 0(x9)     ; Store x3 to verify
+    // 0x24: SW   x4, 4(x9)     ; Store x4 to verify
     let mut instructions = vec![
         addi(1, 0, 5),
         addi(2, 0, 10),
@@ -286,8 +289,9 @@ fn test_cpu_branch_blt_bge() {
         bge(2, 1, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
-        sw(0, 3, 0x100),
-        sw(0, 4, 0x104),
+        lui(9, 0x80000000),
+        sw(9, 3, 0),
+        sw(9, 4, 4),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -299,8 +303,8 @@ fn test_cpu_branch_blt_bge() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked
-            let marker1 = sim.read_word(0x100);
-            let marker2 = sim.read_word(0x104);
+            let marker1 = sim.read_word(0x80000000);
+            let marker2 = sim.read_word(0x80000004);
             assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
             assert!(
@@ -326,8 +330,9 @@ fn test_cpu_branch_bltu_bgeu() {
     // 0x10: BGEU x1, x2, 8     ; Should branch (0xFFFFFFFF >= 5 unsigned)
     // 0x14: ADDI x4, x0, 99    ; Should be skipped
     // 0x18: ADDI x5, x0, 1     ; x5 = 1
-    // 0x1C: SW   x3, 0x100(x0) ; Store x3 to verify
-    // 0x20: SW   x4, 0x104(x0) ; Store x4 to verify
+    // 0x1C: LUI x9, 0x80000    ; x9 = 0x80000000 (base address)
+    // 0x20: SW   x3, 0(x9)     ; Store x3 to verify
+    // 0x24: SW   x4, 4(x9)     ; Store x4 to verify
     let mut instructions = vec![
         addi(1, 0, -1),
         addi(2, 0, 5),
@@ -336,8 +341,9 @@ fn test_cpu_branch_bltu_bgeu() {
         bgeu(1, 2, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
-        sw(0, 3, 0x100),
-        sw(0, 4, 0x104),
+        lui(9, 0x80000000),
+        sw(9, 3, 0),
+        sw(9, 4, 4),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -349,8 +355,8 @@ fn test_cpu_branch_bltu_bgeu() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             // Verify branches worked
-            let marker1 = sim.read_word(0x100);
-            let marker2 = sim.read_word(0x104);
+            let marker1 = sim.read_word(0x80000000);
+            let marker2 = sim.read_word(0x80000004);
             assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
             assert!(
@@ -373,15 +379,16 @@ fn test_cpu_load_store() {
     init_test_logger();
 
     // Program: Test load and store instructions
-    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
-    // 0x04: ADDI x2, x0, 42    ; x2 = 42 (value to store)
-    // 0x08: SW   x2, 0(x1)     ; Store x2 to memory[100]
-    // 0x0C: LW   x3, 0(x1)     ; Load from memory[100] to x3
-    // 0x10: ADDI x4, x0, 8     ; x4 = 8 (offset)
-    // 0x14: SW   x2, 8(x1)     ; Store x2 to memory[108]
-    // 0x18: LW   x5, 8(x1)     ; Load from memory[108] to x5
+    // Memory base: 0x80000000 (DRAM start)
+    // 0x00: LUI x1, 0x80000  ; x1 = 0x80000000 (base address)
+    // 0x04: ADDI x2, x0, 42   ; x2 = 42 (value to store)
+    // 0x08: SW   x2, 0(x1)    ; Store x2 to memory[0x80000000]
+    // 0x0C: LW   x3, 0(x1)    ; Load from memory[0x80000000] to x3
+    // 0x10: ADDI x4, x0, 8    ; x4 = 8 (offset)
+    // 0x14: SW   x2, 8(x1)    ; Store x2 to memory[0x80000008]
+    // 0x18: LW   x5, 8(x1)    ; Load from memory[0x80000008] to x5
     let mut instructions = vec![
-        addi(1, 0, 100),
+        lui(1, 0x80000000),
         addi(2, 0, 42),
         sw(1, 2, 0),
         lw(3, 1, 0),
@@ -398,8 +405,16 @@ fn test_cpu_load_store() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            assert_eq!(sim.read_word(100), 42, "Memory[100] should contain 42");
-            assert_eq!(sim.read_word(108), 42, "Memory[108] should contain 42");
+            assert_eq!(
+                sim.read_word(0x80000000),
+                42,
+                "Memory[0x80000000] should contain 42"
+            );
+            assert_eq!(
+                sim.read_word(0x80000008),
+                42,
+                "Memory[0x80000008] should contain 42"
+            );
         }),
     )
     .expect("Program should run");
@@ -413,29 +428,30 @@ fn test_cpu_load_byte() {
 
     // Program: Test LB (load byte signed) and LBU (load byte unsigned)
     // We'll store a word with mixed signed/unsigned bytes and load them
-    // 0x00: ADDI x1, x0, 100   ; x1 = 100 (base address)
-    // 0x04: ADDI x2, x0, -1    ; x2 = 0xFFFFFFFF
-    // 0x08: SW   x2, 0(x1)     ; Store 0xFFFFFFFF to mem[100]
-    // 0x0C: LB   x3, 0(x1)     ; Load byte 0 (0xFF), sign-extend to 0xFFFFFFFF
-    // 0x10: LB   x4, 1(x1)     ; Load byte 1 (0xFF), sign-extend to 0xFFFFFFFF
-    // 0x14: LBU  x5, 0(x1)     ; Load byte 0 (0xFF), zero-extend to 0x000000FF
-    // 0x18: LBU  x6, 1(x1)     ; Load byte 1 (0xFF), zero-extend to 0x000000FF
-    // 0x1C: SW   x3, 0x200(x0) ; Store loaded values for verification
-    // 0x20: SW   x4, 0x204(x0)
-    // 0x24: SW   x5, 0x208(x0)
-    // 0x28: SW   x6, 0x20C(x0)
+    // Memory base: 0x80000000
+    // 0x00: LUI x1, 0x80000  ; x1 = 0x80000000 (base address)
+    // 0x04: ADDI x2, x0, -1   ; x2 = 0xFFFFFFFF
+    // 0x08: SW   x2, 0(x1)    ; Store 0xFFFFFFFF to mem[0x80000000]
+    // 0x0C: LB   x3, 0(x1)    ; Load byte 0 (0xFF), sign-extend to 0xFFFFFFFF
+    // 0x10: LB   x4, 1(x1)    ; Load byte 1 (0xFF), sign-extend to 0xFFFFFFFF
+    // 0x14: LBU  x5, 0(x1)    ; Load byte 0 (0xFF), zero-extend to 0x000000FF
+    // 0x18: LBU  x6, 1(x1)    ; Load byte 1 (0xFF), zero-extend to 0x000000FF
+    // 0x1C: SW   x3, 0x10(x1) ; Store loaded values for verification
+    // 0x20: SW   x4, 0x14(x1)
+    // 0x24: SW   x5, 0x18(x1)
+    // 0x28: SW   x6, 0x1C(x1)
     let mut instructions = vec![
-        addi(1, 0, 100),
+        lui(1, 0x80000000),
         addi(2, 0, -1),
         sw(1, 2, 0),
         lb(3, 1, 0),
         lb(4, 1, 1),
         lbu(5, 1, 0),
         lbu(6, 1, 1),
-        sw(0, 3, 0x200),
-        sw(0, 4, 0x204),
-        sw(0, 5, 0x208),
-        sw(0, 6, 0x20C),
+        sw(1, 3, 0x10),
+        sw(1, 4, 0x14),
+        sw(1, 5, 0x18),
+        sw(1, 6, 0x1C),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -448,28 +464,28 @@ fn test_cpu_load_byte() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations
             assert_eq!(
-                sim.read_word(100),
+                sim.read_word(0x80000000),
                 0xFFFFFFFF,
-                "Memory[100] should contain 0xFFFFFFFF"
+                "Memory[0x80000000] should contain 0xFFFFFFFF"
             );
             // Verify load operations
             assert_eq!(
-                sim.read_word(0x200),
+                sim.read_word(0x80000010),
                 0xFFFFFFFF,
                 "LB x3, 0(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.read_word(0x204),
+                sim.read_word(0x80000014),
                 0xFFFFFFFF,
                 "LB x4, 1(x1) should load 0xFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.read_word(0x208),
+                sim.read_word(0x80000018),
                 0x000000FF,
                 "LBU x5, 0(x1) should load 0xFF and zero-extend to 0x000000FF"
             );
             assert_eq!(
-                sim.read_word(0x20C),
+                sim.read_word(0x8000001C),
                 0x000000FF,
                 "LBU x6, 1(x1) should load 0xFF and zero-extend to 0x000000FF"
             );
@@ -485,18 +501,19 @@ fn test_cpu_load_halfword() {
     init_test_logger();
 
     // Program: Test LH (load halfword signed) and LHU (load halfword unsigned)
+    // Memory base: 0x80000000
     let mut instructions = vec![
-        addi(1, 0, 100),
+        lui(1, 0x80000000),
         addi(2, 0, -1),
         sw(1, 2, 0),
         lh(3, 1, 0),
         lh(4, 1, 2),
         lhu(5, 1, 0),
         lhu(6, 1, 2),
-        sw(0, 3, 0x200),
-        sw(0, 4, 0x204),
-        sw(0, 5, 0x208),
-        sw(0, 6, 0x20C),
+        sw(1, 3, 0x10),
+        sw(1, 4, 0x14),
+        sw(1, 5, 0x18),
+        sw(1, 6, 0x1C),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -509,28 +526,28 @@ fn test_cpu_load_halfword() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations
             assert_eq!(
-                sim.read_word(100),
+                sim.read_word(0x80000000),
                 0xFFFFFFFF,
-                "Memory[100] should contain 0xFFFFFFFF"
+                "Memory[0x80000000] should contain 0xFFFFFFFF"
             );
             // Verify load operations
             assert_eq!(
-                sim.read_word(0x200),
+                sim.read_word(0x80000010),
                 0xFFFFFFFF,
                 "LH x3, 0(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.read_word(0x204),
+                sim.read_word(0x80000014),
                 0xFFFFFFFF,
                 "LH x4, 2(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.read_word(0x208),
+                sim.read_word(0x80000018),
                 0x0000FFFF,
                 "LHU x5, 0(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
             assert_eq!(
-                sim.read_word(0x20C),
+                sim.read_word(0x8000001C),
                 0x0000FFFF,
                 "LHU x6, 2(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
@@ -547,8 +564,9 @@ fn test_cpu_store_byte() {
 
     // Program: Test SB (store byte)
     // We'll write individual bytes to different positions in a word
+    // Memory base: 0x80000000
     let mut instructions = vec![
-        addi(1, 0, 100),
+        lui(1, 0x80000000),
         addi(2, 0, 0x12),
         addi(3, 0, 0x34),
         addi(4, 0, 0x56),
@@ -570,7 +588,7 @@ fn test_cpu_store_byte() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations - bytes stored in little-endian order
             assert_eq!(
-                sim.read_word(100),
+                sim.read_word(0x80000000),
                 0x78563412,
                 "Memory should contain 0x78563412"
             );
@@ -586,8 +604,9 @@ fn test_cpu_store_halfword() {
     init_test_logger();
 
     // Program: Test SH (store halfword)
+    // Memory base: 0x80000000
     let mut instructions = vec![
-        addi(1, 0, 100),
+        lui(1, 0x80000000),
         addi(2, 0, 0x234),
         addi(3, 0, 0x678),
         sh(1, 2, 0),
@@ -605,7 +624,7 @@ fn test_cpu_store_halfword() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify memory operations - halfwords stored in little-endian order
             assert_eq!(
-                sim.read_word(100),
+                sim.read_word(0x80000000),
                 0x06780234,
                 "Memory should contain 0x06780234"
             );
@@ -621,8 +640,9 @@ fn test_cpu_byte_halfword_mixed() {
     init_test_logger();
 
     // Program: Test mixed byte/halfword operations with positive and negative values
+    // Memory base: 0x80000000
     let mut instructions = vec![
-        addi(1, 0, 200),
+        lui(1, 0x80000000),
         addi(2, 0, -128),
         sb(1, 2, 0),
         lb(3, 1, 0),
@@ -631,10 +651,10 @@ fn test_cpu_byte_halfword_mixed() {
         sh(1, 5, 4),
         lh(6, 1, 4),
         lhu(7, 1, 4),
-        sw(0, 3, 0x200),
-        sw(0, 4, 0x204),
-        sw(0, 6, 0x208),
-        sw(0, 7, 0x20C),
+        sw(1, 3, 0x10),
+        sw(1, 4, 0x14),
+        sw(1, 6, 0x18),
+        sw(1, 7, 0x1C),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -647,22 +667,22 @@ fn test_cpu_byte_halfword_mixed() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify load operations
             assert_eq!(
-                sim.read_word(0x200),
+                sim.read_word(0x80000010),
                 0xFFFFFF80,
                 "LB x3, 0(x1) should load 0x80 and sign-extend to 0xFFFFFF80"
             );
             assert_eq!(
-                sim.read_word(0x204),
+                sim.read_word(0x80000014),
                 0x00000080,
                 "LBU x4, 0(x1) should load 0x80 and zero-extend to 0x00000080"
             );
             assert_eq!(
-                sim.read_word(0x208),
+                sim.read_word(0x80000018),
                 0xFFFFFFFF,
                 "LH x6, 4(x1) should load 0xFFFF and sign-extend to 0xFFFFFFFF"
             );
             assert_eq!(
-                sim.read_word(0x20C),
+                sim.read_word(0x8000001C),
                 0x0000FFFF,
                 "LHU x7, 4(x1) should load 0xFFFF and zero-extend to 0x0000FFFF"
             );
@@ -831,14 +851,16 @@ fn test_cpu_csr_read_write() {
     init_test_logger();
 
     // Test CSRRW (CSR Read/Write)
+    // Memory base: 0x80000000
     let mut instructions = vec![
         addi(1, 0, 100),
         csrrw(2, 1, 0x300), // x2 = CSR[0x300]; CSR[0x300] = x1
-        sw(0, 2, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 2, 0),
         csrrw(3, 0, 0x300), // x3 = CSR[0x300]; CSR[0x300] = 0
-        sw(0, 3, 0x104),
+        sw(8, 3, 4),
         csrrw(4, 0, 0x300),
-        sw(0, 4, 0x108),
+        sw(8, 4, 8),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -851,17 +873,17 @@ fn test_cpu_csr_read_write() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0,
                 "First CSRRW should read 0 from uninitialized CSR"
             );
             assert_eq!(
-                sim.read_word(0x104),
+                sim.read_word(0x80000004),
                 100,
                 "Second CSRRW should read 100 from CSR"
             );
             assert_eq!(
-                sim.read_word(0x108),
+                sim.read_word(0x80000008),
                 0,
                 "Third CSRRW should read 0 from CSR"
             );
@@ -877,17 +899,19 @@ fn test_cpu_csr_set_clear() {
     init_test_logger();
 
     // Test CSRRS (CSR Read and Set) and CSRRC (CSR Read and Clear)
+    // Memory base: 0x80000000
     let mut instructions = vec![
         addi(1, 0, 0b1010),
         csrrw(0, 1, 0x301),
         addi(2, 0, 0b0101),
         csrrs(3, 2, 0x301), // x3 = CSR; CSR |= x2
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
         addi(4, 0, 0b1000),
         csrrc(5, 4, 0x301), // x5 = CSR; CSR &= ~x4
-        sw(0, 5, 0x104),
+        sw(8, 5, 4),
         csrrw(6, 0, 0x301),
-        sw(0, 6, 0x108),
+        sw(8, 6, 8),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -900,17 +924,17 @@ fn test_cpu_csr_set_clear() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0b1010,
                 "CSRRS should read old value 0b1010"
             );
             assert_eq!(
-                sim.read_word(0x104),
+                sim.read_word(0x80000004),
                 0b1111,
                 "CSRRC should read value 0b1111"
             );
             assert_eq!(
-                sim.read_word(0x108),
+                sim.read_word(0x80000008),
                 0b0111,
                 "Final CSR value should be 0b0111"
             );
@@ -926,15 +950,17 @@ fn test_cpu_csr_immediate() {
     init_test_logger();
 
     // Test immediate CSR instructions (CSRRWI, CSRRSI, CSRRCI)
+    // Memory base: 0x80000000
     let mut instructions = vec![
         csrrwi(1, 15, 0x302),
-        sw(0, 1, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 1, 0),
         csrrsi(2, 8, 0x302),
-        sw(0, 2, 0x104),
+        sw(8, 2, 4),
         csrrci(3, 4, 0x302),
-        sw(0, 3, 0x108),
+        sw(8, 3, 8),
         csrrw(4, 0, 0x302),
-        sw(0, 4, 0x10C),
+        sw(8, 4, 12),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -947,13 +973,17 @@ fn test_cpu_csr_immediate() {
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify CSR operations
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0,
                 "CSRRWI should read 0 from uninitialized CSR"
             );
-            assert_eq!(sim.read_word(0x104), 15, "CSRRSI should read 15");
-            assert_eq!(sim.read_word(0x108), 15, "CSRRCI should read 15");
-            assert_eq!(sim.read_word(0x10C), 11, "Final CSR value should be 11");
+            assert_eq!(sim.read_word(0x80000004), 15, "CSRRSI should read 15");
+            assert_eq!(sim.read_word(0x80000008), 15, "CSRRCI should read 15");
+            assert_eq!(
+                sim.read_word(0x8000000C),
+                11,
+                "Final CSR value should be 11"
+            );
         }),
     )
     .expect("Program should run");
@@ -973,7 +1003,8 @@ fn test_cpu_mul_instruction() {
         addi(1, 0, 10),
         addi(2, 0, 20),
         mul(3, 1, 2),
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -984,7 +1015,7 @@ fn test_cpu_mul_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            assert_eq!(sim.read_word(0x100), 200, "MUL: 10 × 20 should be 200");
+            assert_eq!(sim.read_word(0x80000000), 200, "MUL: 10 × 20 should be 200");
         }),
     )
     .expect("Program should run");
@@ -1000,7 +1031,8 @@ fn test_cpu_mulh_instruction() {
         lui(1, 0x10000),
         lui(2, 0x10000),
         mulh(3, 1, 2),
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1012,7 +1044,7 @@ fn test_cpu_mulh_instruction() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0x00000001,
                 "MULH: upper 32 bits should be 0x00000001"
             );
@@ -1031,7 +1063,8 @@ fn test_cpu_div_instruction() {
         addi(1, 0, 100),
         addi(2, 0, 7),
         div(3, 1, 2),
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1042,7 +1075,7 @@ fn test_cpu_div_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            assert_eq!(sim.read_word(0x100), 14, "DIV: 100 ÷ 7 should be 14");
+            assert_eq!(sim.read_word(0x80000000), 14, "DIV: 100 ÷ 7 should be 14");
         }),
     )
     .expect("Program should run");
@@ -1058,7 +1091,8 @@ fn test_cpu_div_by_zero() {
         addi(1, 0, 100),
         addi(2, 0, 0),
         div(3, 1, 2),
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1070,7 +1104,7 @@ fn test_cpu_div_by_zero() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0xFFFFFFFF,
                 "DIV by zero should return 0xFFFFFFFF"
             );
@@ -1089,7 +1123,8 @@ fn test_cpu_rem_instruction() {
         addi(1, 0, 100),
         addi(2, 0, 7),
         rem(3, 1, 2),
-        sw(0, 3, 0x100),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1100,7 +1135,7 @@ fn test_cpu_rem_instruction() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            assert_eq!(sim.read_word(0x100), 2, "REM: 100 % 7 should be 2");
+            assert_eq!(sim.read_word(0x80000000), 2, "REM: 100 % 7 should be 2");
         }),
     )
     .expect("Program should run");
@@ -1117,8 +1152,9 @@ fn test_cpu_divu_remu_unsigned() {
         addi(2, 0, 2),
         divu(3, 1, 2),
         remu(4, 1, 2),
-        sw(0, 3, 0x100),
-        sw(0, 4, 0x104),
+        lui(8, 0x80000000),
+        sw(8, 3, 0),
+        sw(8, 4, 4),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1130,11 +1166,15 @@ fn test_cpu_divu_remu_unsigned() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 0x7FFFFFFF,
                 "DIVU: 0xFFFFFFFF ÷ 2 should be 0x7FFFFFFF"
             );
-            assert_eq!(sim.read_word(0x104), 1, "REMU: 0xFFFFFFFF % 2 should be 1");
+            assert_eq!(
+                sim.read_word(0x80000004),
+                1,
+                "REMU: 0xFFFFFFFF % 2 should be 1"
+            );
         }),
     )
     .expect("Program should run");
@@ -1148,6 +1188,7 @@ fn test_cpu_m_extension_program() {
 
     // Complex program using multiple M extension instructions
     // Calculate: result = (a × b) ÷ c + (d % e)
+    // Memory base: 0x80000000
     let mut instructions = vec![
         addi(1, 0, 12),
         addi(2, 0, 5),
@@ -1158,7 +1199,8 @@ fn test_cpu_m_extension_program() {
         div(7, 6, 3),
         rem(8, 4, 5),
         add(9, 7, 8),
-        sw(0, 9, 0x100),
+        lui(10, 0x80000000),
+        sw(10, 9, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -1170,7 +1212,7 @@ fn test_cpu_m_extension_program() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             assert_eq!(
-                sim.read_word(0x100),
+                sim.read_word(0x80000000),
                 22,
                 "Complex M extension program result should be 22"
             );
@@ -1218,8 +1260,9 @@ fn test_comprehensive_trace_validation() {
         sll(8, 1, 0),        // x8 = x1 << 0 = 10
         srl(9, 2, 0),        // x9 = x2 >> 0 = 20
         lui(10, 0x12345000), // x10 = 0x12345000
-        sw(0, 1, 0x100),     // mem[0x100] = x1 = 10
-        lw(11, 0, 0x100),    // x11 = mem[0x100] = 10
+        lui(11, 0x80000000), // x11 = 0x80000000 (base address)
+        sw(11, 1, 0),        // mem[0x80000000] = x1 = 10
+        lw(11, 11, 0),       // x11 = mem[0x80000000] = 10
     ];
 
     // Define expected traces (before adding termination sequence)
@@ -1305,20 +1348,28 @@ fn test_comprehensive_trace_validation() {
             immediate: Some(74565), // 0x12345
         },
         ExpectedInstruction {
-            inst_type: riscv_core::trace::InstructionType::Sw,
+            inst_type: riscv_core::trace::InstructionType::Lui,
             pc: base_addr + 40,
+            rd: Some((11, 0x80000000)),
+            rs1: None,
+            rs2: None,
+            immediate: Some(524288), // 0x80000
+        },
+        ExpectedInstruction {
+            inst_type: riscv_core::trace::InstructionType::Sw,
+            pc: base_addr + 44,
             rd: None,
-            rs1: Some((0, 0)),
+            rs1: Some((11, 0x80000000)),
             rs2: Some((1, 10)),
-            immediate: Some(0x100),
+            immediate: Some(0),
         },
         ExpectedInstruction {
             inst_type: riscv_core::trace::InstructionType::Lw,
-            pc: base_addr + 44,
+            pc: base_addr + 48,
             rd: Some((11, 10)),
-            rs1: Some((0, 0)),
+            rs1: Some((11, 0x80000000)),
             rs2: None,
-            immediate: Some(0x100),
+            immediate: Some(0),
         },
     ];
 
@@ -1622,20 +1673,19 @@ fn test_cpu_lr_sc_success() {
     println!("========================================\n");
 
     // Program: Successful LR/SC sequence
-    // Memory location: 0x1000
-    // 1. Store initial value 100 to 0x1000
-    // 2. Load-Reserved from 0x1000 into x2
+    // Memory location: 0x80000000 (DRAM start)
+    // 1. Store initial value 100 to 0x80000000
+    // 2. Load-Reserved from 0x80000000 into x2
     // 3. Add 5 to the loaded value (x2 = 100 + 5 = 105)
-    // 4. Store-Conditional the new value back to 0x1000
+    // 4. Store-Conditional the new value back to 0x80000000
     // 5. Check that SC succeeded (x4 should be 0)
 
-    let mem_addr = 0x1000u32;
+    let mem_addr = 0x80000000u32;
     let initial_value = 100u32;
 
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 100
@@ -1676,18 +1726,16 @@ fn test_cpu_amoswap() {
     println!("========================================\n");
 
     // Program: Atomic swap operation
-    // 1. Store initial value 42 to 0x1000
+    // 1. Store initial value 42 to 0x80000000
     // 2. Atomic swap with value 100
     // 3. Verify old value was returned and new value was stored
 
-    let mem_addr = 0x1000u32;
     let initial_value = 42u32;
     let swap_value = 100u32;
 
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 42
@@ -1724,18 +1772,16 @@ fn test_cpu_amoadd() {
     println!("========================================\n");
 
     // Program: Atomic add operation (atomic counter)
-    // 1. Store initial counter value 10 to 0x1000
+    // 1. Store initial counter value 10 to 0x80000000
     // 2. Atomic add 5 to the counter
     // 3. Verify old value was returned and new value is 15
 
-    let mem_addr = 0x1000u32;
     let initial_value = 10u32;
     let add_value = 5u32;
 
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 10
@@ -1774,12 +1820,9 @@ fn test_cpu_amo_logical() {
     // Program: Test AMOXOR, AMOAND, AMOOR
     // All operate on the same memory location with different values
 
-    let mem_addr = 0x1000u32;
-
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Test AMOXOR: mem = 0xFF, xor with 0x0F -> mem = 0xF0
         addi(2, 0, 0xFF),
         sw(1, 2, 0), // mem[x1] = 0xFF
@@ -1822,12 +1865,9 @@ fn test_cpu_amo_min_max() {
 
     // Program: Test AMOMIN, AMOMAX (signed)
 
-    let mem_addr = 0x1000u32;
-
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Test AMOMIN: mem = 20, min with 15 -> mem = 15
         addi(2, 0, 20),
         sw(1, 2, 0), // mem[x1] = 20
@@ -1867,12 +1907,9 @@ fn test_cpu_amo_unsigned_min_max() {
 
     // Program: Test AMOMINU, AMOMAXU (unsigned)
 
-    let mem_addr = 0x1000u32;
-
     let mut instructions = vec![
-        // Setup: x1 = 0x1000 (memory address)
-        lui(1, mem_addr & 0xFFFFF000),
-        addi(1, 1, (mem_addr & 0xFFF) as i32),
+        // Setup: x1 = 0x80000000 (memory address)
+        lui(1, 0x80000000),
         // Test AMOMINU: mem = 100, minu with 50 -> mem = 50
         addi(2, 0, 100),
         sw(1, 2, 0), // mem[x1] = 100

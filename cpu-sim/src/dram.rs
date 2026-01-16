@@ -116,36 +116,35 @@ impl Default for Dram {
 impl BusDevice for Dram {
     fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
         // DRAM receives offset relative to its base address (0x8000_0000)
-        // Convert to absolute address and call the internal read_word method
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Ok(Dram::read_word(self, addr))
+        // Use offset directly - internal HashMap stores relative addresses
+        Ok(Dram::read_word(self, offset))
     }
 
     fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Dram::write_word(self, addr, value);
+        // Use offset directly - internal HashMap stores relative addresses
+        Dram::write_word(self, offset, value);
         Ok(())
     }
 
     fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> {
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Ok(Dram::read_halfword(self, addr))
+        // Use offset directly - internal HashMap stores relative addresses
+        Ok(Dram::read_halfword(self, offset))
     }
 
     fn write_halfword(&mut self, offset: u32, value: u16) -> Result<(), BusDeviceError> {
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Dram::write_halfword(self, addr, value);
+        // Use offset directly - internal HashMap stores relative addresses
+        Dram::write_halfword(self, offset, value);
         Ok(())
     }
 
     fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> {
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Ok(Dram::read_byte(self, addr))
+        // Use offset directly - internal HashMap stores relative addresses
+        Ok(Dram::read_byte(self, offset))
     }
 
     fn write_byte(&mut self, offset: u32, value: u8) -> Result<(), BusDeviceError> {
-        let addr = 0x8000_0000_u32.wrapping_add(offset);
-        Dram::write_byte(self, addr, value);
+        // Use offset directly - internal HashMap stores relative addresses
+        Dram::write_byte(self, offset, value);
         Ok(())
     }
 

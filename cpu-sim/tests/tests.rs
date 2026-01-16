@@ -1119,12 +1119,15 @@ fn test_hung_detection_catches_long_instruction() {
     // Actually, let's just use LW with offset from x0 which is always 0
     // We'll place data at a small offset that fits in 12-bit immediate
 
-    // Simpler approach: Use data at address that fits in 12-bit offset from x0
-    let simple_data_addr = 0x100u32; // Small address that fits in LW immediate
+    // Simpler approach: Use data at address within DRAM range
+    // Use address 0x80000100 (DRAM base + 0x100)
+    let data_addr = 0x80000100u32;
 
-    // LW x1, 0x100(x0) - load word from address 0x100 into x1
-    let load_instr = lw(1, 0, simple_data_addr as i32);
-    let program_bytes: Vec<u8> = [load_instr]
+    // LUI x2, 0x80000 (load upper bits of DRAM base)
+    // LW x1, 0x100(x2) - load word from address 0x80000100 into x1
+    let lui_instr = riscv_core::instruction::lui(2, 0x80000000);
+    let load_instr = lw(1, 2, 0x100);
+    let program_bytes: Vec<u8> = [lui_instr, load_instr]
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
@@ -1144,9 +1147,9 @@ fn test_hung_detection_catches_long_instruction() {
         |sim| {
             sim.write_memory_region(start_addr, &program_bytes, true);
 
-            // Write data at simple_data_addr
+            // Write data at data_addr (0x80000100)
             let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
-            sim.write_memory_region(simple_data_addr, &data, false);
+            sim.write_memory_region(data_addr, &data, false);
 
             Ok(start_addr)
         },
