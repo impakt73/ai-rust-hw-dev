@@ -1,4 +1,4 @@
-use crate::bus::{SystemBus, DRAM_BASE};
+use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig};
@@ -165,20 +165,17 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
-        // Convert address to DRAM-relative offset by adding DRAM_BASE
+        // Write to DRAM at the provided absolute address
         for (offset, &byte) in data.iter().enumerate() {
-            let addr = DRAM_BASE
-                .wrapping_add(start_addr)
-                .wrapping_add(offset as u32);
+            let addr = start_addr.wrapping_add(offset as u32);
             self.bus.dram.write_byte(addr, byte);
         }
 
         // Update valid PC ranges for hung detection based on whether this is instruction or data memory
         if !data.is_empty() {
             if let Some(ref mut detector) = self.hung_detector {
-                // Hung detector expects absolute addresses (DRAM-based)
-                let new_start = DRAM_BASE.wrapping_add(start_addr);
-                let new_end = new_start.wrapping_add(data.len() as u32);
+                let new_start = start_addr;
+                let new_end = start_addr.wrapping_add(data.len() as u32);
                 detector.update_pc_range(new_start, new_end, is_instructions);
             }
         }
@@ -221,9 +218,9 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
-        // Convert address to DRAM-relative offset by adding DRAM_BASE
+        // Dump from DRAM at the provided absolute address
         (0..size).map(move |offset| {
-            let addr = DRAM_BASE.wrapping_add(start_addr).wrapping_add(offset);
+            let addr = start_addr.wrapping_add(offset);
             self.bus.dram.read_byte(addr)
         })
     }
@@ -306,27 +303,18 @@ impl<'a> SimulatorView<'a> {
     }
 
     /// Read a single byte from memory
-    ///
-    /// The address is interpreted as an offset from DRAM_BASE (0x8000_0000).
     pub fn read_byte(&self, addr: u32) -> u8 {
-        let dram_addr = DRAM_BASE.wrapping_add(addr);
-        self.bus.dram.read_byte(dram_addr)
+        self.bus.dram.read_byte(addr)
     }
 
     /// Read a 16-bit halfword from memory (little-endian)
-    ///
-    /// The address is interpreted as an offset from DRAM_BASE (0x8000_0000).
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        let dram_addr = DRAM_BASE.wrapping_add(addr);
-        self.bus.dram.read_halfword(dram_addr)
+        self.bus.dram.read_halfword(addr)
     }
 
     /// Read a 32-bit word from memory (little-endian)
-    ///
-    /// The address is interpreted as an offset from DRAM_BASE (0x8000_0000).
     pub fn read_word(&self, addr: u32) -> u32 {
-        let dram_addr = DRAM_BASE.wrapping_add(addr);
-        self.bus.dram.read_word(dram_addr)
+        self.bus.dram.read_word(addr)
     }
 
     /// Register a custom device on the system bus
