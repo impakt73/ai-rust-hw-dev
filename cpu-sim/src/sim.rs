@@ -5,9 +5,8 @@ use riscv_core::{Top, Vcd, VerilatedModelConfig};
 use std::path::Path;
 use std::time::Instant;
 
-/// DRAM memory range: 0x8000_0000 to 0xFFFF_FFFF (2 GiB)
-const DRAM_START: u32 = 0x8000_0000;
-const DRAM_END: u32 = 0xFFFF_FFFF;
+/// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
+use crate::bus::{DRAM_BASE as DRAM_START, DRAM_END};
 
 /// Result of a single simulation step
 #[derive(Debug)]

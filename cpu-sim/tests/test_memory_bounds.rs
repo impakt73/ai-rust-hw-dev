@@ -14,10 +14,6 @@ mod common;
 use cpu_sim::*;
 use riscv_core::instruction::*;
 
-/// DRAM memory range constants (must match those in bus_device.rs and sim.rs)
-const DRAM_START: u32 = 0x8000_0000;
-const DRAM_END: u32 = 0xFFFF_FFFF;
-
 /// Helper function to create a termination sequence (write to tohost and halt)
 fn create_termination_program(tohost_value: u32) -> Vec<u8> {
     let instructions = vec![
@@ -53,8 +49,8 @@ fn test_write_memory_below_dram_range() {
             sim.write_memory_region(0x0000_0000, &program, true);
 
             // Write valid program to DRAM (this should succeed)
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
@@ -90,13 +86,13 @@ fn test_write_memory_spanning_below_dram() {
         None,
         0,
         |sim| {
-            // Try to write starting just below DRAM_START, spanning into valid range
+            // Try to write starting just below DRAM_BASE, spanning into valid range
             // This should be rejected because the start address is invalid
-            sim.write_memory_region(DRAM_START - 8, &instructions, true);
+            sim.write_memory_region(DRAM_BASE - 8, &instructions, true);
 
             // Write valid program to DRAM
-            sim.write_memory_region(DRAM_START, &program_bytes, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program_bytes, true);
+            Ok(DRAM_BASE)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
@@ -136,8 +132,8 @@ fn test_write_memory_above_dram_range() {
             sim.write_memory_region(DRAM_END, &instructions, true);
 
             // Write valid program to DRAM
-            sim.write_memory_region(DRAM_START, &program_bytes, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program_bytes, true);
+            Ok(DRAM_BASE)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
@@ -177,13 +173,13 @@ fn test_write_memory_at_dram_start() {
         0,
         |sim| {
             // Write at the very start of DRAM (should succeed)
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
 
-    assert!(result.is_ok(), "Write at DRAM_START should succeed");
+    assert!(result.is_ok(), "Write at DRAM_BASE should succeed");
     let result = result.unwrap();
     assert_eq!(result.tohost_value, Some(42));
 }
@@ -213,10 +209,10 @@ fn test_write_memory_ending_at_dram_end() {
             // This write should succeed (ends exactly at DRAM_END)
             sim.write_memory_region(start_addr, &data, false);
 
-            // Write valid program to DRAM_START
+            // Write valid program to DRAM_BASE
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
@@ -247,15 +243,15 @@ fn test_read_byte_below_dram_range() {
         0,
         |sim| {
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Try to read from below DRAM range (should return 0 and log warning)
             let value = sim.read_byte(0x0000_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
-            let value = sim.read_byte(DRAM_START - 1);
+            let value = sim.read_byte(DRAM_BASE - 1);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
         }),
     );
@@ -286,8 +282,8 @@ fn test_read_halfword_outside_dram_range() {
         0,
         |sim| {
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Read below DRAM range
@@ -326,8 +322,8 @@ fn test_read_word_outside_dram_range() {
         0,
         |sim| {
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Read from below DRAM range
@@ -370,8 +366,8 @@ fn test_dump_memory_region_outside_dram() {
         0,
         |sim| {
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Dump from below DRAM range (should return all zeros and log warning)
@@ -420,31 +416,31 @@ fn test_valid_dram_accesses() {
         0,
         |sim| {
             // Write test data to DRAM
-            sim.write_memory_region(DRAM_START + 0x1000, &test_data, false);
+            sim.write_memory_region(DRAM_BASE + 0x1000, &test_data, false);
 
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Verify we can read the data back
-            let byte = sim.read_byte(DRAM_START + 0x1000);
+            let byte = sim.read_byte(DRAM_BASE + 0x1000);
             assert_eq!(byte, 0xAA, "Valid read should return correct value");
 
-            let halfword = sim.read_halfword(DRAM_START + 0x1000);
+            let halfword = sim.read_halfword(DRAM_BASE + 0x1000);
             assert_eq!(
                 halfword, 0xBBAA,
                 "Valid read should return correct value (little-endian)"
             );
 
-            let word = sim.read_word(DRAM_START + 0x1000);
+            let word = sim.read_word(DRAM_BASE + 0x1000);
             assert_eq!(
                 word, 0xDDCCBBAA,
                 "Valid read should return correct value (little-endian)"
             );
 
             // Verify dump_memory_region
-            let bytes: Vec<u8> = sim.dump_memory_region(DRAM_START + 0x1000, 4).collect();
+            let bytes: Vec<u8> = sim.dump_memory_region(DRAM_BASE + 0x1000, 4).collect();
             assert_eq!(bytes, test_data, "Valid dump should return correct data");
         }),
     );
@@ -456,7 +452,7 @@ fn test_valid_dram_accesses() {
     );
 }
 
-/// Test that boundary condition at DRAM_START works correctly
+/// Test that boundary condition at DRAM_BASE works correctly
 #[test]
 fn test_boundary_at_dram_start() {
     env_logger::builder()
@@ -475,17 +471,17 @@ fn test_boundary_at_dram_start() {
         0,
         |sim| {
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            // Read at exactly DRAM_START (should succeed)
-            let value = sim.read_word(DRAM_START);
-            assert_ne!(value, 0, "Read at DRAM_START should succeed");
+            // Read at exactly DRAM_BASE (should succeed)
+            let value = sim.read_word(DRAM_BASE);
+            assert_ne!(value, 0, "Read at DRAM_BASE should succeed");
 
-            // Read just before DRAM_START (should fail)
-            let value = sim.read_byte(DRAM_START - 1);
-            assert_eq!(value, 0, "Read before DRAM_START should return 0");
+            // Read just before DRAM_BASE (should fail)
+            let value = sim.read_byte(DRAM_BASE - 1);
+            assert_eq!(value, 0, "Read before DRAM_BASE should return 0");
         }),
     );
 
@@ -519,8 +515,8 @@ fn test_boundary_at_dram_end() {
             sim.write_memory_region(DRAM_END, &data, false); // Single byte at DRAM_END
 
             let program = create_termination_program(1);
-            sim.write_memory_region(DRAM_START, &program, true);
-            Ok(DRAM_START)
+            sim.write_memory_region(DRAM_BASE, &program, true);
+            Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Read at exactly DRAM_END (should succeed for single byte)

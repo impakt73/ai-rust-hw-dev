@@ -13,6 +13,10 @@ pub const FIFO_BASE: u32 = 0x4000_0000;
 /// Base address for DRAM
 pub const DRAM_BASE: u32 = 0x8000_0000;
 
+/// End address for DRAM (inclusive)
+/// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0xFFFF_FFFF]
+pub const DRAM_END: u32 = 0xFFFF_FFFF;
+
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeviceId {
