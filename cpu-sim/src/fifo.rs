@@ -1,3 +1,4 @@
+use crate::bus_device::{BusDevice, BusDeviceError};
 use std::collections::VecDeque;
 
 /// Maximum capacity for TX FIFO buffer
@@ -65,5 +66,45 @@ impl Fifo {
 impl Default for Fifo {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl BusDevice for Fifo {
+    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+        match offset {
+            0x00 => Ok(self.read_data()),
+            0x04 => Ok(self.read_status()),
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
+    }
+
+    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+        match offset {
+            0x00 => {
+                self.write_data(value);
+                Ok(())
+            }
+            0x04 => {
+                // STATUS register is read-only
+                Err(BusDeviceError::WriteToReadOnly { offset })
+            }
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
+    }
+
+    fn size(&self) -> u32 {
+        // FIFO has 2 word-aligned registers within its address window:
+        //   - DATA   at offset 0x00 (read/write)
+        //   - STATUS at offset 0x04 (read-only)
+        //
+        // The device reserves a contiguous 8-byte region [0x00..=0x07] on the bus
+        // to allow for potential future expansion. Currently, only word-aligned
+        // offsets 0x00 and 0x04 are valid for word access operations.
+        // All other offsets will result in BusDeviceError::InvalidAddress.
+        8
+    }
+
+    fn name(&self) -> &str {
+        "FIFO"
     }
 }

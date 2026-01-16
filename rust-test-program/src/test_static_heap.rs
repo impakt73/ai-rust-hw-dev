@@ -32,12 +32,12 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0xF0u8);
         
         // Write marker
-        common::fifo_write_word(0xAAAAAAAA);
+        common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
         
         // Read back
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32);
+            common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
         }
     }
     
@@ -50,12 +50,12 @@ fn main() -> ! {
         core::ptr::write(ptr.add(13), 0xDDu8);
         
         // Write marker
-        common::fifo_write_word(0xBBBBBBBB);
+        common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
         
         // Read back using pointer arithmetic
         for i in 10..14 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32);
+            common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
         }
     }
     

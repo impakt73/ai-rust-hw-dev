@@ -14,9 +14,9 @@ fn init_test_logger() {
 /// Generate tohost termination sequence
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
+        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
         addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address
+        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x1000_0000)
         jal(0, 0),                  // Infinite loop (jump to self)
     ]
 }
@@ -82,8 +82,9 @@ fn test_cpu_flw_fsw_basic() {
         flw(1, 1, 0),       // f1 = load FP value from memory
         fsw(1, 1, 4),       // Store f1 to memory[0x80001004]
         lw(3, 1, 4),        // x3 = load from memory[0x80001004]
-        addi(4, 0, 0x100),  // x4 = 0x100 (result marker address)
-        sw(4, 3, 0),        // Store result to 0x100
+        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        addi(4, 4, 0x100),  // x4 = 0x80000100
+        sw(4, 3, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -101,7 +102,7 @@ fn test_cpu_flw_fsw_basic() {
 
             // Verify that the value round-tripped correctly
             // We stored 0x3F800000, loaded to f1, stored from f1, and loaded to x3
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(
                 result_value, 0x3F800000,
                 "FLW/FSW round trip should preserve bit pattern"
@@ -134,10 +135,9 @@ fn test_cpu_flw_multiple_registers() {
         lw(5, 1, 12),       // x5 = f1 value
         lw(6, 1, 16),       // x6 = f2 value
         lw(7, 1, 20),       // x7 = f3 value
-        addi(10, 0, 0x100), // x10 = 0x100
-        sw(10, 5, 0),       // Store results to 0x100
-        sw(10, 6, 4),
-        sw(10, 7, 8),
+        sw(1, 5, 0x100),    // Store results to x1+0x100 (0x80001100)
+        sw(1, 6, 0x104),
+        sw(1, 7, 0x108),
     ];
     instructions.extend(tohost_termination(11, 12));
 
@@ -153,9 +153,9 @@ fn test_cpu_flw_multiple_registers() {
                 "Program should terminate with tohost=1"
             );
 
-            let val1 = sim.read_word(0x100);
-            let val2 = sim.read_word(0x104);
-            let val3 = sim.read_word(0x108);
+            let val1 = sim.read_word(0x80001100);
+            let val2 = sim.read_word(0x80001104);
+            let val3 = sim.read_word(0x80001108);
 
             assert_eq!(val1, 0x3F800000, "f1 should be 1.0");
             assert_eq!(val2, 0x40000000, "f2 should be 2.0");
@@ -186,8 +186,9 @@ fn test_cpu_fadd_basic() {
         fadd_s(3, 1, 2),    // f3 = f1 + f2 = 3.0
         fsw(1, 3, 8),       // mem[x1+8] = f3
         lw(4, 1, 8),        // x4 = result
-        addi(5, 0, 0x100),  // x5 = 0x100
-        sw(5, 4, 0),        // Store result to 0x100
+        lui(5, 0x80000000), // x5 = 0x80000000 (base)
+        addi(5, 5, 0x100),  // x5 = 0x80000100
+        sw(5, 4, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -203,7 +204,7 @@ fn test_cpu_fadd_basic() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(result_value, 0x40400000, "1.0 + 2.0 should equal 3.0");
         }),
     )
@@ -226,8 +227,9 @@ fn test_cpu_fmul_basic() {
         fmul_s(3, 1, 2),    // f3 = f1 * f2 = 6.0
         fsw(1, 3, 8),       // mem[x1+8] = f3
         lw(4, 1, 8),        // x4 = result
-        addi(5, 0, 0x100),  // x5 = 0x100
-        sw(5, 4, 0),        // Store result to 0x100
+        lui(5, 0x80000000), // x5 = 0x80000000 (base)
+        addi(5, 5, 0x100),  // x5 = 0x80000100
+        sw(5, 4, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -243,7 +245,7 @@ fn test_cpu_fmul_basic() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(result_value, 0x40C00000, "2.0 * 3.0 should equal 6.0");
         }),
     )
@@ -265,8 +267,9 @@ fn test_cpu_fcvt_s_w() {
         lui(2, 0x80001000), // x2 = 0x80001000
         fsw(2, 1, 0),       // mem[x2] = f1
         lw(3, 2, 0),        // x3 = result
-        addi(4, 0, 0x100),  // x4 = 0x100
-        sw(4, 3, 0),        // Store result to 0x100
+        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        addi(4, 4, 0x100),  // x4 = 0x80000100
+        sw(4, 3, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -282,7 +285,7 @@ fn test_cpu_fcvt_s_w() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(result_value, 0x42280000, "42 as float should be 0x42280000");
         }),
     )
@@ -300,8 +303,9 @@ fn test_cpu_fcvt_w_s() {
         sw(1, 2, 0),        // mem[x1] = 42.0
         flw(1, 1, 0),       // f1 = 42.0
         fcvt_w_s(3, 1),     // x3 = (int)f1 = 42
-        addi(4, 0, 0x100),  // x4 = 0x100
-        sw(4, 3, 0),        // Store result to 0x100
+        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        addi(4, 4, 0x100),  // x4 = 0x80000100
+        sw(4, 3, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -317,7 +321,7 @@ fn test_cpu_fcvt_w_s() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(result_value, 42, "42.0 as int should be 42");
         }),
     )
@@ -345,11 +349,10 @@ fn test_cpu_feq_flt() {
         feq_s(5, 1, 2),     // x5 = (f1 == f2) = 0
         flt_s(6, 1, 2),     // x6 = (f1 < f2) = 1
         flt_s(7, 2, 1),     // x7 = (f2 < f1) = 0
-        addi(10, 0, 0x100), // x10 = 0x100
-        sw(10, 4, 0),       // Store results to 0x100-0x10C
-        sw(10, 5, 4),
-        sw(10, 6, 8),
-        sw(10, 7, 12),
+        sw(1, 4, 0x100),    // Store results to x1+0x100 (0x80001100)
+        sw(1, 5, 0x104),
+        sw(1, 6, 0x108),
+        sw(1, 7, 0x10C),
     ];
     instructions.extend(tohost_termination(11, 12));
 
@@ -365,10 +368,10 @@ fn test_cpu_feq_flt() {
                 "Program should terminate with tohost=1"
             );
 
-            let eq_same = sim.read_word(0x100);
-            let eq_diff = sim.read_word(0x104);
-            let lt_true = sim.read_word(0x108);
-            let lt_false = sim.read_word(0x10C);
+            let eq_same = sim.read_word(0x80001100);
+            let eq_diff = sim.read_word(0x80001104);
+            let lt_true = sim.read_word(0x80001108);
+            let lt_false = sim.read_word(0x8000110C);
 
             assert_eq!(eq_same, 1, "1.0 == 1.0 should be true");
             assert_eq!(eq_diff, 0, "1.0 == 2.0 should be false");
@@ -392,8 +395,9 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
         lui(1, 0x3F800000), // x1 = 0x3F800000 (1.0 in FP)
         fmv_w_x(1, 1),      // f1 = x1 (bitwise move)
         fmv_x_w(2, 1),      // x2 = f1 (bitwise move back)
-        addi(3, 0, 0x100),  // x3 = 0x100
-        sw(3, 2, 0),        // Store result to 0x100
+        lui(3, 0x80000000), // x3 = 0x80000000 (base)
+        addi(3, 3, 0x100),  // x3 = 0x80000100
+        sw(3, 2, 0),        // Store result to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -409,7 +413,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
                 "Program should terminate with tohost=1"
             );
 
-            let result_value = sim.read_word(0x100);
+            let result_value = sim.read_word(0x80000100);
             assert_eq!(
                 result_value, 0x3F800000,
                 "FMV round trip should preserve bits"
@@ -443,9 +447,8 @@ fn test_cpu_fsub_fdiv_fsqrt() {
         fsw(1, 4, 12),      // Store f4 to mem[x1+12]
         lw(4, 1, 8),        // x4 = result (FSUB)
         lw(5, 1, 12),       // x5 = result (FDIV)
-        addi(6, 0, 0x100),  // x6 = 0x100
-        sw(6, 4, 0),        // Store FSUB result
-        sw(6, 5, 4),        // Store FDIV result
+        sw(1, 4, 0x100),    // Store FSUB result to mem[x1+0x100]
+        sw(1, 5, 0x104),    // Store FDIV result to mem[x1+0x104]
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -461,8 +464,8 @@ fn test_cpu_fsub_fdiv_fsqrt() {
                 "Program should terminate with tohost=1"
             );
 
-            let fsub_result = sim.read_word(0x100);
-            let fdiv_result = sim.read_word(0x104);
+            let fsub_result = sim.read_word(0x80001100);
+            let fdiv_result = sim.read_word(0x80001104);
             assert_eq!(fsub_result, 0x40400000, "5.0 - 2.0 should equal 3.0");
             assert_eq!(fdiv_result, 0x40200000, "5.0 / 2.0 should equal 2.5");
         }),
@@ -489,9 +492,8 @@ fn test_cpu_fmin_fmax() {
         fsw(1, 4, 12),      // Store max result
         lw(4, 1, 8),        // x4 = min result
         lw(5, 1, 12),       // x5 = max result
-        addi(6, 0, 0x100),  // x6 = 0x100
-        sw(6, 4, 0),        // Store min
-        sw(6, 5, 4),        // Store max
+        sw(1, 4, 0x100),    // Store min to mem[x1+0x100]
+        sw(1, 5, 0x104),    // Store max to mem[x1+0x104]
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -507,8 +509,8 @@ fn test_cpu_fmin_fmax() {
                 "Program should terminate with tohost=1"
             );
 
-            let min_result = sim.read_word(0x100);
-            let max_result = sim.read_word(0x104);
+            let min_result = sim.read_word(0x80001100);
+            let max_result = sim.read_word(0x80001104);
             assert_eq!(min_result, 0x3F800000, "min(1.0, 3.0) should be 1.0");
             assert_eq!(max_result, 0x40400000, "max(1.0, 3.0) should be 3.0");
         }),
@@ -522,6 +524,7 @@ fn test_cpu_fsgnj_ops() {
 
     // Program: Test FSGNJ.S, FSGNJN.S, FSGNJX.S
     let mut instructions = vec![
+        lui(7, 0x80001000), // x7 = 0x80001000 (base address)
         lui(1, 0x3F800000), // x1 = 1.0 (positive)
         lui(2, 0xBF800000), // x2 = -1.0 (negative)
         fmv_w_x(1, 1),      // f1 = 1.0
@@ -532,10 +535,9 @@ fn test_cpu_fsgnj_ops() {
         fmv_x_w(4, 3),      // x4 = bits of f3
         fmv_x_w(5, 4),      // x5 = bits of f4
         fmv_x_w(6, 5),      // x6 = bits of f5
-        addi(7, 0, 0x100),  // x7 = 0x100
-        sw(7, 4, 0),        // Store FSGNJ result
-        sw(7, 5, 4),        // Store FSGNJN result
-        sw(7, 6, 8),        // Store FSGNJX result
+        sw(7, 4, 0x100),    // Store FSGNJ result to mem[x7+0x100]
+        sw(7, 5, 0x104),    // Store FSGNJN result to mem[x7+0x104]
+        sw(7, 6, 0x108),    // Store FSGNJX result to mem[x7+0x108]
     ];
     instructions.extend(tohost_termination(10, 11));
 
@@ -551,9 +553,9 @@ fn test_cpu_fsgnj_ops() {
                 "Program should terminate with tohost=1"
             );
 
-            let fsgnj_result = sim.read_word(0x100);
-            let fsgnjn_result = sim.read_word(0x104);
-            let fsgnjx_result = sim.read_word(0x108);
+            let fsgnj_result = sim.read_word(0x80001100);
+            let fsgnjn_result = sim.read_word(0x80001104);
+            let fsgnjx_result = sim.read_word(0x80001108);
             assert_eq!(
                 fsgnj_result, 0xBF800000,
                 "FSGNJ should copy sign: result should be -1.0"
@@ -587,10 +589,9 @@ fn test_cpu_fle() {
         fle_s(4, 1, 2),     // x4 = (1.0 <= 2.0) = 1
         fle_s(5, 2, 1),     // x5 = (2.0 <= 1.0) = 0
         fle_s(6, 1, 1),     // x6 = (1.0 <= 1.0) = 1
-        addi(7, 0, 0x100),  // x7 = 0x100
-        sw(7, 4, 0),        // Store results
-        sw(7, 5, 4),
-        sw(7, 6, 8),
+        sw(1, 4, 0x100),    // Store results to mem[x1+0x100]
+        sw(1, 5, 0x104),    // Store to mem[x1+0x104]
+        sw(1, 6, 0x108),    // Store to mem[x1+0x108]
     ];
     instructions.extend(tohost_termination(10, 11));
 
@@ -606,9 +607,9 @@ fn test_cpu_fle() {
                 "Program should terminate with tohost=1"
             );
 
-            let le1 = sim.read_word(0x100);
-            let le2 = sim.read_word(0x104);
-            let le3 = sim.read_word(0x108);
+            let le1 = sim.read_word(0x80001100);
+            let le2 = sim.read_word(0x80001104);
+            let le3 = sim.read_word(0x80001108);
             assert_eq!(le1, 1, "1.0 <= 2.0 should be true");
             assert_eq!(le2, 0, "2.0 <= 1.0 should be false");
             assert_eq!(le3, 1, "1.0 <= 1.0 should be true");
@@ -632,9 +633,8 @@ fn test_cpu_fcvt_unsigned() {
         fcvt_s_wu(2, 4),    // f2 = (float)100 = 100.0
         fsw(1, 2, 4),       // Store conversion result
         lw(5, 1, 4),        // x5 = 100.0 as bits
-        addi(6, 0, 0x100),  // x6 = 0x100
-        sw(6, 3, 0),        // Store FCVT.WU.S result
-        sw(6, 5, 4),        // Store FCVT.S.WU result
+        sw(1, 3, 0x100),    // Store FCVT.WU.S result to mem[x1+0x100]
+        sw(1, 5, 0x104),    // Store FCVT.S.WU result to mem[x1+0x104]
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -650,8 +650,8 @@ fn test_cpu_fcvt_unsigned() {
                 "Program should terminate with tohost=1"
             );
 
-            let wu_result = sim.read_word(0x100);
-            let swu_result = sim.read_word(0x104);
+            let wu_result = sim.read_word(0x80001100);
+            let swu_result = sim.read_word(0x80001104);
             assert_eq!(
                 wu_result, 42,
                 "FCVT.WU.S: 42.0 as unsigned int should be 42"
@@ -671,6 +671,7 @@ fn test_cpu_fclass() {
 
     // Program: Test FCLASS.S instruction
     let mut instructions = vec![
+        lui(7, 0x80001000), // x7 = 0x80001000 (base address)
         lui(1, 0x3F800000), // x1 = 1.0 (positive normal)
         lui(2, 0xBF800000), // x2 = -1.0 (negative normal)
         lui(3, 0x00000000), // x3 = +0.0 (positive zero)
@@ -680,10 +681,9 @@ fn test_cpu_fclass() {
         fclass_s(4, 1),     // x4 = classify(1.0) = positive normal (bit 6 = 0x40)
         fclass_s(5, 2),     // x5 = classify(-1.0) = negative normal (bit 1 = 0x02)
         fclass_s(6, 3),     // x6 = classify(+0.0) = positive zero (bit 4 = 0x10)
-        addi(7, 0, 0x100),  // x7 = 0x100
-        sw(7, 4, 0),        // Store classify results
-        sw(7, 5, 4),
-        sw(7, 6, 8),
+        sw(7, 4, 0x100),    // Store classify results to mem[x7+0x100]
+        sw(7, 5, 0x104),    // Store to mem[x7+0x104]
+        sw(7, 6, 0x108),    // Store to mem[x7+0x108]
     ];
     instructions.extend(tohost_termination(10, 11));
 
@@ -699,9 +699,9 @@ fn test_cpu_fclass() {
                 "Program should terminate with tohost=1"
             );
 
-            let class_pos_normal = sim.read_word(0x100);
-            let class_neg_normal = sim.read_word(0x104);
-            let class_pos_zero = sim.read_word(0x108);
+            let class_pos_normal = sim.read_word(0x80001100);
+            let class_neg_normal = sim.read_word(0x80001104);
+            let class_pos_zero = sim.read_word(0x80001108);
             assert_eq!(
                 class_pos_normal, 0x40,
                 "FCLASS: 1.0 should be positive normal (bit 6)"
@@ -747,11 +747,10 @@ fn test_cpu_fused_multiply_add_ops() {
         lw(5, 1, 16),
         lw(6, 1, 20),
         lw(7, 1, 24),
-        addi(8, 0, 0x100), // x8 = 0x100
-        sw(8, 4, 0),       // Store all results
-        sw(8, 5, 4),
-        sw(8, 6, 8),
-        sw(8, 7, 12),
+        sw(1, 4, 0x100), // Store all results to mem[x1+0x100]
+        sw(1, 5, 0x104), // Store to mem[x1+0x104]
+        sw(1, 6, 0x108), // Store to mem[x1+0x108]
+        sw(1, 7, 0x10C), // Store to mem[x1+0x10C]
     ];
     instructions.extend(tohost_termination(10, 11));
 
@@ -767,10 +766,10 @@ fn test_cpu_fused_multiply_add_ops() {
                 "Program should terminate with tohost=1"
             );
 
-            let fmadd_result = sim.read_word(0x100);
-            let fmsub_result = sim.read_word(0x104);
-            let fnmsub_result = sim.read_word(0x108);
-            let fnmadd_result = sim.read_word(0x10C);
+            let fmadd_result = sim.read_word(0x80001100);
+            let fmsub_result = sim.read_word(0x80001104);
+            let fnmsub_result = sim.read_word(0x80001108);
+            let fnmadd_result = sim.read_word(0x8000110C);
             assert_eq!(fmadd_result, 0x40E00000, "FMADD: (2*3)+1 should be 7.0");
             assert_eq!(fmsub_result, 0x40A00000, "FMSUB: (2*3)-1 should be 5.0");
             assert_eq!(

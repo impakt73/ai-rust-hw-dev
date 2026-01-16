@@ -70,7 +70,14 @@ pub fn default_panic_handler(_info: &PanicInfo) -> ! {
 }
 
 /// TOHOST address for signaling halt to the simulator
-pub const TOHOST_ADDR: u32 = 0xFFFF_FFF0;
+///
+/// This register is provided by the SimControl device and is used to signal
+/// program termination to the simulator. Writing any value to this address
+/// will cause the simulator to halt and capture the written value.
+///
+/// Note: The tohost register is write-only. Attempting to read from it will
+/// result in a bus error.
+pub const TOHOST_ADDR: u32 = 0x1000_0000;
 
 /// Standard success code for tests (expected by cpu-sim)
 pub const SUCCESS_CODE: u32 = 42;

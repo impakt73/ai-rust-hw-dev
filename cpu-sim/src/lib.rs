@@ -1,12 +1,16 @@
 // Internal modules - not part of public API
 mod bus;
+mod bus_device;
 mod dram;
 mod fifo;
 mod hung_detector;
 pub mod packet_transport; // Public for integration tests
 mod sim;
+mod sim_control;
 
 // Public API exports - only what's needed for external use
+pub use bus::{DRAM_BASE, FIFO_BASE, SIM_CONTROL_BASE};
+pub use bus_device::{BusDevice, BusDeviceError, RegistrationError};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};
 
@@ -272,8 +276,7 @@ where
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback
     let entry_point = {
-        let mut view =
-            SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
+        let mut view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector);
         setup_callback(&mut view)?
     };
 
@@ -285,7 +288,7 @@ where
 
     // Execute optional post-execution callback with read-only SimulatorView and result
     if let Some(callback) = termination_callback {
-        let view = SimulatorView::new(&mut sim.bus.fifo, &mut sim.bus.dram, &mut sim.hung_detector);
+        let view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector);
         callback(&view, &result);
     }
 

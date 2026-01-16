@@ -15,9 +15,9 @@ fn init_test_logger() {
 /// Generate tohost termination sequence using standard (32-bit) instructions
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        addi(addr_reg, 0, -16),     // Load -16 (0xFFFF_FFF0) into addr_reg
+        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
         addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address
+        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x1000_0000)
         jal(0, 0),                  // Infinite loop (jump to self)
     ]
 }
@@ -59,9 +59,9 @@ fn test_c_li() {
 
             // Write result to memory
             let mut offset = 2;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -77,7 +77,7 @@ fn test_c_li() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 5, "x10 should be 5");
         }),
     );
@@ -107,9 +107,9 @@ fn test_c_addi() {
 
             // Write result to memory
             let mut offset = 4;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -125,7 +125,7 @@ fn test_c_addi() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 15, "x10 should be 15");
         }),
     );
@@ -156,9 +156,9 @@ fn test_c_add() {
 
             // Write result to memory
             let mut offset = 6;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -174,7 +174,7 @@ fn test_c_add() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 10, "x10 should be 10");
         }),
     );
@@ -204,9 +204,9 @@ fn test_c_mv() {
 
             // Write result to memory
             let mut offset = 6;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -222,7 +222,7 @@ fn test_c_mv() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 42, "x10 should be 42");
         }),
     );
@@ -261,9 +261,9 @@ fn test_compressed_to_compressed_transition() {
 
             // Write result to memory
             let mut offset = 8;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -279,7 +279,7 @@ fn test_compressed_to_compressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 10, "x10 should be 10 after C→C transitions");
         }),
     );
@@ -310,9 +310,9 @@ fn test_compressed_to_uncompressed_transition() {
 
             // Write result to memory
             let mut offset = 6; // 2 bytes (C.LI) + 4 bytes (ADDI)
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -328,7 +328,7 @@ fn test_compressed_to_uncompressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 15, "x10 should be 15 after C→U transition");
         }),
     );
@@ -359,9 +359,9 @@ fn test_uncompressed_to_compressed_transition() {
 
             // Write result to memory
             let mut offset = 6; // 4 bytes (ADDI) + 2 bytes (C.ADDI)
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -377,7 +377,7 @@ fn test_uncompressed_to_compressed_transition() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 15, "x10 should be 15 after U→C transition");
         }),
     );
@@ -410,9 +410,9 @@ fn test_uncompressed_to_uncompressed_regression() {
             offset += 4;
 
             // Write results to memory
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 12, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 12, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -428,7 +428,7 @@ fn test_uncompressed_to_uncompressed_regression() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 8, "x12 should be 8");
         }),
     );
@@ -466,9 +466,9 @@ fn test_mixed_sequence_across_word_boundary() {
 
             // Write result to memory
             let mut offset = 10;
-            write_standard_instruction(sim, START_ADDR + offset, addi(15, 0, 0x100));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
             offset += 4;
-            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0));
+            write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
 
             // Add tohost termination
@@ -484,7 +484,7 @@ fn test_mixed_sequence_across_word_boundary() {
                 result.tohost_value == Some(1),
                 "Program should terminate with tohost=1"
             );
-            let value = sim.read_word(0x100);
+            let value = sim.read_word(0x80000100);
             assert_eq!(value, 15, "x10 should be 15 after mixed sequence");
         }),
     );

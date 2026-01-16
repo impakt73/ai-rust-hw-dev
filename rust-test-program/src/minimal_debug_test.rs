@@ -30,15 +30,15 @@ fn main() -> ! {
     
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write the raw bytes vector length first as a marker
-        common::fifo_write_word(bytes.len() as u32);
+        common::fifo_write_word(bytes.len() as u32).expect("Failed to write length to FIFO");
         
         // Write each individual byte of the serialized data
         for &byte in bytes.iter() {
-            common::fifo_write_word(byte as u32);
+            common::fifo_write_word(byte as u32).expect("Failed to write byte to FIFO");
         }
         
         // Write a marker
-        common::fifo_write_word(0xAAAAAAAA);
+        common::fifo_write_word(0xAAAAAAAA).expect("Failed to write marker to FIFO");
         
         // Now write using the chunking method
         for chunk in bytes.chunks(4) {
@@ -46,7 +46,7 @@ fn main() -> ! {
             for (i, &byte) in chunk.iter().enumerate() {
                 word |= (byte as u32) << (i * 8);
             }
-            common::fifo_write_word(word);
+            common::fifo_write_word(word).expect("Failed to write word to FIFO");
         }
     }
     
