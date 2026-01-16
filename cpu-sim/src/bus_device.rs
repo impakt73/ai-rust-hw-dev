@@ -1,3 +1,57 @@
+use crate::memory::Memory;
+
+/// SystemContext provides BusDevice implementations with access to system memory
+///
+/// This structure contains a mutable reference to the system's Memory and allows
+/// BusDevice implementations to read and write memory. This enables devices to
+/// perform DMA-like operations or use memory for bulk data transfers.
+pub struct SystemContext<'a> {
+    memory: &'a mut Memory,
+}
+
+impl<'a> SystemContext<'a> {
+    /// Create a new SystemContext with access to system memory
+    pub fn new(memory: &'a mut Memory) -> Self {
+        SystemContext { memory }
+    }
+
+    /// Read a 32-bit word from memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn read_word(&self, addr: u32) -> u32 {
+        self.memory.read_word(addr)
+    }
+
+    /// Read a 16-bit halfword from memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn read_halfword(&self, addr: u32) -> u16 {
+        self.memory.read_halfword(addr)
+    }
+
+    /// Read a single byte from memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn read_byte(&self, addr: u32) -> u8 {
+        self.memory.read_byte(addr)
+    }
+
+    /// Write a 32-bit word to memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn write_word(&mut self, addr: u32, data: u32) {
+        self.memory.write_word(addr, data);
+    }
+
+    /// Write a 16-bit halfword to memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn write_halfword(&mut self, addr: u32, data: u16) {
+        self.memory.write_halfword(addr, data);
+    }
+
+    /// Write a single byte to memory at the given address
+    /// Addresses are absolute (not offset-relative)
+    pub fn write_byte(&mut self, addr: u32, data: u8) {
+        self.memory.write_byte(addr, data);
+    }
+}
+
 /// Error types for bus device operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BusDeviceError {
@@ -45,31 +99,42 @@ impl std::error::Error for BusDeviceError {}
 /// in the system memory map. Devices can support byte (u8), halfword (u16),
 /// and word (u32) operations. Devices that don't support a particular size
 /// at a given address should return `BusDeviceError::UnsupportedSize`.
+///
+/// All methods receive a SystemContext parameter that provides access to
+/// system memory. This allows devices to perform DMA-like operations.
 pub trait BusDevice {
     /// Read a 32-bit word from the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address (must be word-aligned)
     ///
     /// # Returns
     /// * `Ok(u32)` - The word value read from the device
     /// * `Err(BusDeviceError)` - If the read is invalid (e.g., write-only register)
-    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError>;
+    fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError>;
 
     /// Write a 32-bit word to the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address (must be word-aligned)
     /// * `value` - The 32-bit value to write
     ///
     /// # Returns
     /// * `Ok(())` - Write successful
     /// * `Err(BusDeviceError)` - If the write is invalid (e.g., read-only register)
-    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError>;
+    fn write_word(
+        &mut self,
+        ctx: &mut SystemContext,
+        offset: u32,
+        value: u32,
+    ) -> Result<(), BusDeviceError>;
 
     /// Read a 16-bit halfword from the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address (must be halfword-aligned)
     ///
     /// # Returns
@@ -78,13 +143,18 @@ pub trait BusDevice {
     ///
     /// # Default Implementation
     /// Returns `UnsupportedSize` error. Devices that support halfword access should override this.
-    fn read_halfword(&mut self, offset: u32) -> Result<u16, BusDeviceError> {
+    fn read_halfword(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+    ) -> Result<u16, BusDeviceError> {
         Err(BusDeviceError::UnsupportedSize { offset, size: 2 })
     }
 
     /// Write a 16-bit halfword to the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address (must be halfword-aligned)
     /// * `_value` - The 16-bit value to write
     ///
@@ -94,13 +164,19 @@ pub trait BusDevice {
     ///
     /// # Default Implementation
     /// Returns `UnsupportedSize` error. Devices that support halfword access should override this.
-    fn write_halfword(&mut self, offset: u32, _value: u16) -> Result<(), BusDeviceError> {
+    fn write_halfword(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        _value: u16,
+    ) -> Result<(), BusDeviceError> {
         Err(BusDeviceError::UnsupportedSize { offset, size: 2 })
     }
 
     /// Read a single byte from the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address
     ///
     /// # Returns
@@ -109,13 +185,14 @@ pub trait BusDevice {
     ///
     /// # Default Implementation
     /// Returns `UnsupportedSize` error. Devices that support byte access should override this.
-    fn read_byte(&mut self, offset: u32) -> Result<u8, BusDeviceError> {
+    fn read_byte(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u8, BusDeviceError> {
         Err(BusDeviceError::UnsupportedSize { offset, size: 1 })
     }
 
     /// Write a single byte to the device at the given offset
     ///
     /// # Arguments
+    /// * `ctx` - System context providing access to system memory
     /// * `offset` - Byte offset relative to the device's base address
     /// * `_value` - The 8-bit value to write
     ///
@@ -125,7 +202,12 @@ pub trait BusDevice {
     ///
     /// # Default Implementation
     /// Returns `UnsupportedSize` error. Devices that support byte access should override this.
-    fn write_byte(&mut self, offset: u32, _value: u8) -> Result<(), BusDeviceError> {
+    fn write_byte(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        _value: u8,
+    ) -> Result<(), BusDeviceError> {
         Err(BusDeviceError::UnsupportedSize { offset, size: 1 })
     }
 

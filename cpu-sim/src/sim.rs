@@ -137,7 +137,7 @@ impl<'a> SimulatorView<'a> {
     /// (program counter) for hung state detection purposes.
     ///
     /// # Arguments
-    /// * `start_addr` - Starting address of the memory region to write
+    /// * `start_addr` - Starting address of the memory region to write (absolute address)
     /// * `data` - Byte slice containing the data to write
     /// * `is_instructions` - If true, marks this region as valid for PC execution
     ///
@@ -165,23 +165,10 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
-        use crate::bus::DRAM_BASE;
-
-        // Convert absolute address to DRAM offset
-        // SimulatorView accepts absolute addresses for compatibility with ELF loading
-        // But DRAM internally uses offsets from DRAM_BASE
-        let dram_offset = start_addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
-            panic!(
-                "write_memory_region: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
-                 Tests must use addresses within the DRAM device range.",
-                start_addr, DRAM_BASE
-            )
-        });
-
-        // Write to DRAM using relative offsets
+        // Write to memory using absolute addresses
         for (offset, &byte) in data.iter().enumerate() {
-            let relative_offset = dram_offset.wrapping_add(offset as u32);
-            self.bus.dram.write_byte(relative_offset, byte);
+            let addr = start_addr.wrapping_add(offset as u32);
+            self.bus.memory.write_byte(addr, byte);
         }
 
         // Update valid PC ranges for hung detection based on whether this is instruction or data memory
@@ -200,7 +187,7 @@ impl<'a> SimulatorView<'a> {
     /// This allows efficient access without allocating a new buffer.
     ///
     /// # Arguments
-    /// * `start_addr` - Starting address of the memory region
+    /// * `start_addr` - Starting address of the memory region (absolute address)
     /// * `size` - Number of bytes to dump
     ///
     /// # Returns
@@ -231,21 +218,10 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
-        use crate::bus::DRAM_BASE;
-
-        // Convert absolute address to DRAM offset
-        let dram_offset = start_addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
-            panic!(
-                "dump_memory_region: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
-                 Tests must use addresses within the DRAM device range.",
-                start_addr, DRAM_BASE
-            )
-        });
-
-        // Dump from DRAM using relative offsets
+        // Dump from memory using absolute addresses
         (0..size).map(move |offset| {
-            let relative_offset = dram_offset.wrapping_add(offset);
-            self.bus.dram.read_byte(relative_offset)
+            let addr = start_addr.wrapping_add(offset);
+            self.bus.memory.read_byte(addr)
         })
     }
 
@@ -328,50 +304,17 @@ impl<'a> SimulatorView<'a> {
 
     /// Read a single byte from memory
     pub fn read_byte(&self, addr: u32) -> u8 {
-        use crate::bus::DRAM_BASE;
-
-        // Convert absolute address to DRAM offset
-        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
-            panic!(
-                "read_byte: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
-                 Tests must use addresses within the DRAM device range.",
-                addr, DRAM_BASE
-            )
-        });
-
-        self.bus.dram.read_byte(dram_offset)
+        self.bus.memory.read_byte(addr)
     }
 
     /// Read a 16-bit halfword from memory (little-endian)
     pub fn read_halfword(&self, addr: u32) -> u16 {
-        use crate::bus::DRAM_BASE;
-
-        // Convert absolute address to DRAM offset
-        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
-            panic!(
-                "read_halfword: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
-                 Tests must use addresses within the DRAM device range.",
-                addr, DRAM_BASE
-            )
-        });
-
-        self.bus.dram.read_halfword(dram_offset)
+        self.bus.memory.read_halfword(addr)
     }
 
     /// Read a 32-bit word from memory (little-endian)
     pub fn read_word(&self, addr: u32) -> u32 {
-        use crate::bus::DRAM_BASE;
-
-        // Convert absolute address to DRAM offset
-        let dram_offset = addr.checked_sub(DRAM_BASE).unwrap_or_else(|| {
-            panic!(
-                "read_word: address 0x{:08x} is outside DRAM range (base=0x{:08x}). \
-                 Tests must use addresses within the DRAM device range.",
-                addr, DRAM_BASE
-            )
-        });
-
-        self.bus.dram.read_word(dram_offset)
+        self.bus.memory.read_word(addr)
     }
 
     /// Register a custom device on the system bus
@@ -396,8 +339,8 @@ impl<'a> SimulatorView<'a> {
     /// #     fn new() -> Self { MyVideoDevice }
     /// # }
     /// # impl BusDevice for MyVideoDevice {
-    /// #     fn read_word(&mut self, _offset: u32) -> Result<u32, BusDeviceError> { Ok(0) }
-    /// #     fn write_word(&mut self, _offset: u32, _value: u32) -> Result<(), BusDeviceError> { Ok(()) }
+    /// #     fn read_word(&mut self, _ctx: &mut SystemContext, _offset: u32) -> Result<u32, BusDeviceError> { Ok(0) }
+    /// #     fn write_word(&mut self, _ctx: &mut SystemContext, _offset: u32, _value: u32) -> Result<(), BusDeviceError> { Ok(()) }
     /// #     fn size(&self) -> u32 { 4 }
     /// # }
     /// run_program(
