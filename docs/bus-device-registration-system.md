@@ -383,9 +383,9 @@ impl SystemBus {
         self.memory_map.iter().map(|entry| {
             let size = entry.end.wrapping_sub(entry.base);
             let name = match entry.id {
-                DeviceId::Dram => "DRAM",
-                DeviceId::Fifo => "FIFO",
-                DeviceId::SimControl => "SimControl",
+                DeviceId::Dram => self.dram.name(),
+                DeviceId::Fifo => self.fifo.name(),
+                DeviceId::SimControl => self.sim_control.name(),
                 DeviceId::External(idx) => self.external_devices[idx].name(),
             };
             (entry.base, size, name)
@@ -1064,23 +1064,6 @@ Document the reserved memory ranges:
 
 ### Phase 3: SystemBus Refactoring
 
-1. Update `SystemBus` to use pure device registry:
-   ```rust
-   pub struct SystemBus {
-       devices: Vec<RegisteredDevice>,
-   }
-   ```
-
-2. Implement `register_device()` with validation (address and size alignment, overlap checking)
-
-3. Implement routing methods: `read_word()`, `write_word()`, `read_halfword()`, `write_halfword()`, `read_byte()`, `write_byte()`
-
-4. Add `registered_devices()` for introspection
-
-5. Add `RegistrationError` type with `InvalidBaseAlignment`
-
-### Phase 3: SystemBus Refactoring
-
 1. Update `SystemBus` to use handle-based architecture:
    ```rust
    pub struct SystemBus {
@@ -1210,14 +1193,14 @@ Document the reserved memory ranges:
    
    impl BusDevice for MockDevice {
        fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
-           if offset >= self.size || offset % 4 != 0 {
+           if offset >= self.size() || offset % 4 != 0 {
                return Err(BusDeviceError::InvalidAddress { offset });
            }
            Ok(*self.registers.get(&offset).unwrap_or(&0))
        }
        
        fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
-           if offset >= self.size || offset % 4 != 0 {
+           if offset >= self.size() || offset % 4 != 0 {
                return Err(BusDeviceError::InvalidAddress { offset });
            }
            self.registers.insert(offset, value);
@@ -1389,6 +1372,12 @@ impl BusDevice for VideoDevice {
             // Read from frame buffer (word-aligned access only)
             let fb_offset = (offset - Self::FRAMEBUFFER_BASE) as usize;
             let fb = self.frame_buffer.borrow();
+            
+            // Bounds check before indexing
+            if fb_offset + 4 > fb.len() {
+                return Err(BusDeviceError::InvalidAddress { offset });
+            }
+            
             let word = u32::from_le_bytes([
                 fb[fb_offset],
                 fb[fb_offset + 1],
@@ -1419,6 +1408,12 @@ impl BusDevice for VideoDevice {
             let fb_offset = (offset - Self::FRAMEBUFFER_BASE) as usize;
             let bytes = value.to_le_bytes();
             let mut fb = self.frame_buffer.borrow_mut();
+            
+            // Bounds check before indexing
+            if fb_offset + 4 > fb.len() {
+                return Err(BusDeviceError::InvalidAddress { offset });
+            }
+            
             fb[fb_offset..fb_offset + 4].copy_from_slice(&bytes);
             Ok(())
         } else {
