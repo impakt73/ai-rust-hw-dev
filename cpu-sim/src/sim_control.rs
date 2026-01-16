@@ -1,4 +1,4 @@
-use crate::bus_device::{BusDevice, BusDeviceError};
+use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 
 /// Simulator control device
 ///
@@ -35,7 +35,7 @@ impl Default for SimControl {
 }
 
 impl BusDevice for SimControl {
-    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => {
                 // TOHOST register is write-only
@@ -45,7 +45,12 @@ impl BusDevice for SimControl {
         }
     }
 
-    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+    fn write_word(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        value: u32,
+    ) -> Result<(), BusDeviceError> {
         match offset {
             0x00 => {
                 // TOHOST register - write triggers termination
@@ -70,20 +75,27 @@ impl BusDevice for SimControl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Memory;
 
     #[test]
     fn test_sim_control_write_tohost() {
         let mut sim_control = SimControl::new();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
         assert_eq!(sim_control.termination_requested(), None);
 
-        sim_control.write_word(0, 42).unwrap();
+        sim_control.write_word(&mut ctx, 0, 42).unwrap();
         assert_eq!(sim_control.termination_requested(), Some(42));
     }
 
     #[test]
     fn test_sim_control_read_tohost_fails() {
         let mut sim_control = SimControl::new();
-        let result = sim_control.read_word(0);
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        let result = sim_control.read_word(&mut ctx, 0);
         assert!(matches!(
             result,
             Err(BusDeviceError::ReadFromWriteOnly { offset: 0 })
@@ -93,12 +105,15 @@ mod tests {
     #[test]
     fn test_sim_control_invalid_address() {
         let mut sim_control = SimControl::new();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
         assert!(matches!(
-            sim_control.read_word(4),
+            sim_control.read_word(&mut ctx, 4),
             Err(BusDeviceError::InvalidAddress { offset: 4 })
         ));
         assert!(matches!(
-            sim_control.write_word(4, 0),
+            sim_control.write_word(&mut ctx, 4, 0),
             Err(BusDeviceError::InvalidAddress { offset: 4 })
         ));
     }
@@ -106,7 +121,10 @@ mod tests {
     #[test]
     fn test_sim_control_clear_termination() {
         let mut sim_control = SimControl::new();
-        sim_control.write_word(0, 42).unwrap();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        sim_control.write_word(&mut ctx, 0, 42).unwrap();
         assert_eq!(sim_control.termination_requested(), Some(42));
 
         sim_control.clear_termination();

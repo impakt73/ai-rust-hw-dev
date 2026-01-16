@@ -1,5 +1,5 @@
 use super::*;
-use crate::bus_device::{BusDevice, BusDeviceError, RegistrationError};
+use crate::bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 use std::collections::HashMap;
 
 /// Mock device for testing device registration
@@ -20,14 +20,19 @@ impl MockDevice {
 }
 
 impl BusDevice for MockDevice {
-    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         if offset >= self.size || !offset.is_multiple_of(4) {
             return Err(BusDeviceError::InvalidAddress { offset });
         }
         Ok(*self.registers.get(&offset).unwrap_or(&0))
     }
 
-    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+    fn write_word(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        value: u32,
+    ) -> Result<(), BusDeviceError> {
         if offset >= self.size || !offset.is_multiple_of(4) {
             return Err(BusDeviceError::InvalidAddress { offset });
         }

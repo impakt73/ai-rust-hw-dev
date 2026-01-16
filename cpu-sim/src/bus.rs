@@ -1,6 +1,7 @@
-use crate::bus_device::{ranges_overlap, BusDevice, RegistrationError};
+use crate::bus_device::{ranges_overlap, BusDevice, RegistrationError, SystemContext};
 use crate::dram::Dram;
 use crate::fifo::Fifo;
+use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
 /// Base address for SimControl device (tohost register)
@@ -35,6 +36,9 @@ struct MemoryMapEntry {
 
 /// System bus that routes memory accesses to the correct device
 pub struct SystemBus {
+    // Shared memory accessible by all devices
+    pub memory: Memory,
+
     // Internal devices as concrete public fields (for SimulatorView access)
     pub dram: Dram,
     pub fifo: Fifo,
@@ -53,6 +57,7 @@ impl SystemBus {
     /// The bus owns DRAM, FIFO, and SimControl as concrete fields,
     /// pre-registered in the memory map. External devices can be added later.
     pub fn new() -> Self {
+        let memory = Memory::new();
         let dram = Dram::new();
         let fifo = Fifo::new();
         let sim_control = SimControl::new();
@@ -77,6 +82,7 @@ impl SystemBus {
         ];
 
         SystemBus {
+            memory,
             dram,
             fifo,
             sim_control,
@@ -193,11 +199,16 @@ impl SystemBus {
     /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::read_word(&mut self.dram, offset),
-                DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, offset),
-                DeviceId::SimControl => BusDevice::read_word(&mut self.sim_control, offset),
-                DeviceId::External(idx) => self.external_devices[idx].read_word(offset),
+                DeviceId::Dram => BusDevice::read_word(&mut self.dram, &mut ctx, offset),
+                DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, &mut ctx, offset),
+                DeviceId::SimControl => {
+                    BusDevice::read_word(&mut self.sim_control, &mut ctx, offset)
+                }
+                DeviceId::External(idx) => self.external_devices[idx].read_word(&mut ctx, offset),
             };
 
             match result {
@@ -222,11 +233,18 @@ impl SystemBus {
     /// If no device matches, logs a warning and discards the write.
     pub fn write_word(&mut self, addr: u32, value: u32) {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::write_word(&mut self.dram, offset, value),
-                DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, offset, value),
-                DeviceId::SimControl => BusDevice::write_word(&mut self.sim_control, offset, value),
-                DeviceId::External(idx) => self.external_devices[idx].write_word(offset, value),
+                DeviceId::Dram => BusDevice::write_word(&mut self.dram, &mut ctx, offset, value),
+                DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, &mut ctx, offset, value),
+                DeviceId::SimControl => {
+                    BusDevice::write_word(&mut self.sim_control, &mut ctx, offset, value)
+                }
+                DeviceId::External(idx) => {
+                    self.external_devices[idx].write_word(&mut ctx, offset, value)
+                }
             };
 
             if let Err(e) = result {
@@ -248,11 +266,18 @@ impl SystemBus {
     /// logs a warning and returns 0.
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, offset),
-                DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, offset),
-                DeviceId::SimControl => BusDevice::read_halfword(&mut self.sim_control, offset),
-                DeviceId::External(idx) => self.external_devices[idx].read_halfword(offset),
+                DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, &mut ctx, offset),
+                DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, &mut ctx, offset),
+                DeviceId::SimControl => {
+                    BusDevice::read_halfword(&mut self.sim_control, &mut ctx, offset)
+                }
+                DeviceId::External(idx) => {
+                    self.external_devices[idx].read_halfword(&mut ctx, offset)
+                }
             };
 
             match result {
@@ -278,13 +303,22 @@ impl SystemBus {
     /// logs a warning and discards the write.
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::write_halfword(&mut self.dram, offset, value),
-                DeviceId::Fifo => BusDevice::write_halfword(&mut self.fifo, offset, value),
-                DeviceId::SimControl => {
-                    BusDevice::write_halfword(&mut self.sim_control, offset, value)
+                DeviceId::Dram => {
+                    BusDevice::write_halfword(&mut self.dram, &mut ctx, offset, value)
                 }
-                DeviceId::External(idx) => self.external_devices[idx].write_halfword(offset, value),
+                DeviceId::Fifo => {
+                    BusDevice::write_halfword(&mut self.fifo, &mut ctx, offset, value)
+                }
+                DeviceId::SimControl => {
+                    BusDevice::write_halfword(&mut self.sim_control, &mut ctx, offset, value)
+                }
+                DeviceId::External(idx) => {
+                    self.external_devices[idx].write_halfword(&mut ctx, offset, value)
+                }
             };
 
             if let Err(e) = result {
@@ -306,11 +340,16 @@ impl SystemBus {
     /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::read_byte(&mut self.dram, offset),
-                DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, offset),
-                DeviceId::SimControl => BusDevice::read_byte(&mut self.sim_control, offset),
-                DeviceId::External(idx) => self.external_devices[idx].read_byte(offset),
+                DeviceId::Dram => BusDevice::read_byte(&mut self.dram, &mut ctx, offset),
+                DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, &mut ctx, offset),
+                DeviceId::SimControl => {
+                    BusDevice::read_byte(&mut self.sim_control, &mut ctx, offset)
+                }
+                DeviceId::External(idx) => self.external_devices[idx].read_byte(&mut ctx, offset),
             };
 
             match result {
@@ -336,11 +375,18 @@ impl SystemBus {
     /// logs a warning and discards the write.
     pub fn write_byte(&mut self, addr: u32, value: u8) {
         if let Some((id, offset)) = self.find_device_id(addr) {
+            // Create SystemContext for device access to memory
+            let mut ctx = SystemContext::new(&mut self.memory);
+
             let result = match id {
-                DeviceId::Dram => BusDevice::write_byte(&mut self.dram, offset, value),
-                DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, offset, value),
-                DeviceId::SimControl => BusDevice::write_byte(&mut self.sim_control, offset, value),
-                DeviceId::External(idx) => self.external_devices[idx].write_byte(offset, value),
+                DeviceId::Dram => BusDevice::write_byte(&mut self.dram, &mut ctx, offset, value),
+                DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, &mut ctx, offset, value),
+                DeviceId::SimControl => {
+                    BusDevice::write_byte(&mut self.sim_control, &mut ctx, offset, value)
+                }
+                DeviceId::External(idx) => {
+                    self.external_devices[idx].write_byte(&mut ctx, offset, value)
+                }
             };
 
             if let Err(e) = result {
@@ -358,19 +404,19 @@ impl SystemBus {
     /// Set LR/SC reservation (RV32A atomic extension)
     #[allow(dead_code)]
     pub fn set_reservation(&mut self, addr: u32) {
-        self.dram.set_reservation(addr);
+        self.memory.set_reservation(addr);
     }
 
     /// Clear LR/SC reservation (RV32A atomic extension)
     #[allow(dead_code)]
     pub fn clear_reservation(&mut self) {
-        self.dram.clear_reservation();
+        self.memory.clear_reservation();
     }
 
     /// Check if reservation is valid for the given address (RV32A atomic extension)
     #[allow(dead_code)]
     pub fn check_reservation(&self, addr: u32) -> bool {
-        self.dram.check_reservation(addr)
+        self.memory.check_reservation(addr)
     }
 }
 

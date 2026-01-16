@@ -1,4 +1,4 @@
-use crate::bus_device::{BusDevice, BusDeviceError};
+use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 use std::collections::VecDeque;
 
 /// Maximum capacity for TX FIFO buffer
@@ -70,7 +70,7 @@ impl Default for Fifo {
 }
 
 impl BusDevice for Fifo {
-    fn read_word(&mut self, offset: u32) -> Result<u32, BusDeviceError> {
+    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => Ok(self.read_data()),
             0x04 => Ok(self.read_status()),
@@ -78,7 +78,12 @@ impl BusDevice for Fifo {
         }
     }
 
-    fn write_word(&mut self, offset: u32, value: u32) -> Result<(), BusDeviceError> {
+    fn write_word(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        value: u32,
+    ) -> Result<(), BusDeviceError> {
         match offset {
             0x00 => {
                 self.write_data(value);
