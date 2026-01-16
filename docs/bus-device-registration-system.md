@@ -280,17 +280,17 @@ impl SystemBus {
         let memory_map = vec![
             MemoryMapEntry {
                 base: 0x1000_0000,
-                end: 0x1000_0004,  // SimControl: 4 bytes
+                end: 0x1000_0000_u32.saturating_add(sim_control.size()),
                 id: DeviceId::SimControl,
             },
             MemoryMapEntry {
                 base: 0x4000_0000,
-                end: 0x4000_0008,  // FIFO: 8 bytes
+                end: 0x4000_0000_u32.saturating_add(fifo.size()),
                 id: DeviceId::Fifo,
             },
             MemoryMapEntry {
                 base: 0x8000_0000,
-                end: 0xFFFF_FFFF + 1,  // DRAM: 2 GiB (wraps to 0)
+                end: 0x8000_0000_u32.saturating_add(dram.size()),
                 id: DeviceId::Dram,
             },
         ];
@@ -339,9 +339,9 @@ impl SystemBus {
         for entry in &self.memory_map {
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
-                    DeviceId::Dram => "DRAM",
-                    DeviceId::Fifo => "FIFO",
-                    DeviceId::SimControl => "SimControl",
+                    DeviceId::Dram => self.dram.name(),
+                    DeviceId::Fifo => self.fifo.name(),
+                    DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
                 return Err(RegistrationError::AddressOverlap {
@@ -809,46 +809,6 @@ impl Simulator {
 }
 ```
 
-**SimulatorView Access**: `SimulatorView` can access internal devices directly through public fields:
-
-```rust
-impl<'a> SimulatorView<'a> {
-    pub(crate) fn new(
-        bus: &'a mut SystemBus,
-        hung_detector: &'a mut Option<HungDetector>,
-    ) -> Self {
-        SimulatorView {
-            bus,
-            hung_detector,
-        }
-    }
-    
-    // Direct access to FIFO via bus.fifo field
-    pub fn fifo_read_tx(&mut self) -> Option<u32> {
-        self.bus.fifo.tx.pop_front()
-    }
-    
-    // Direct access to DRAM via bus.dram field
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
-        for (offset, &byte) in data.iter().enumerate() {
-            let addr = start_addr.wrapping_add(offset as u32);
-            self.bus.dram.write_byte(addr, byte);
-        }
-        // ... hung detector update
-    }
-    
-    // External device registration routes to bus
-    pub fn register_device(
-        &mut self,
-        base_addr: u32,
-        device: Box<dyn BusDevice>,
-    ) -> Result<(), String> {
-        self.bus.register_device(base_addr, device)
-            .map_err(|e| format!("{:?}", e))
-    }
-}
-```
-
 **Benefits of Handle-Based Architecture:**
 1. **100% Safe Rust**: No unsafe blocks, no raw pointers, no lifetime issues
 2. **Zero-cost Internal Access**: Direct field access to `bus.dram`, `bus.fifo`, `bus.sim_control`
@@ -874,12 +834,33 @@ The internal devices are pre-registered in `SystemBus::new()` with their fixed a
 
 ### 9. SimulatorView Updates
 
-The `SimulatorView` provides the public API for accessing the simulator during callbacks:
+The `SimulatorView` provides the public API for accessing the simulator during callbacks. It needs to support both backward-compatible direct device access and new device registration functionality.
 
 ```rust
 impl<'a> SimulatorView<'a> {
-    // Existing FIFO and DRAM methods remain unchanged
-    // ... fifo_read_tx, fifo_write_rx, write_memory_region, etc.
+    pub(crate) fn new(
+        bus: &'a mut SystemBus,
+        hung_detector: &'a mut Option<HungDetector>,
+    ) -> Self {
+        SimulatorView {
+            bus,
+            hung_detector,
+        }
+    }
+    
+    // Direct access to FIFO via bus.fifo field (backward compatible)
+    pub fn fifo_read_tx(&mut self) -> Option<u32> {
+        self.bus.fifo.tx.pop_front()
+    }
+    
+    // Direct access to DRAM via bus.dram field (backward compatible)
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
+        for (offset, &byte) in data.iter().enumerate() {
+            let addr = start_addr.wrapping_add(offset as u32);
+            self.bus.dram.write_byte(addr, byte);
+        }
+        // ... hung detector update
+    }
 
     /// Register a custom device on the system bus
     ///
@@ -923,15 +904,19 @@ impl<'a> SimulatorView<'a> {
         base_addr: u32,
         device: Box<dyn BusDevice>,
     ) -> Result<(), String> {
-        // Access to SystemBus needed - requires adding bus to SimulatorView
-        // See "Implementation Challenges" section
+        self.bus.register_device(base_addr, device)
+            .map_err(|e| format!("{:?}", e))
     }
 }
 ```
 
-**Note**: This requires adding a reference to `SystemBus` (or specifically its device registry) to `SimulatorView`. See implementation details below.
+**Key Points:**
+- `SimulatorView` holds a mutable reference to `SystemBus`
+- Direct device access via `bus.dram`, `bus.fifo`, `bus.sim_control` maintains backward compatibility
+- Device registration forwards to `bus.register_device()`
+- All existing FIFO and DRAM methods remain unchanged
 
-### 9. Lifetime Management
+### 10. Lifetime Management
 
 **Key Requirement**: Devices registered on the bus must have a lifetime that matches or exceeds the `Simulator` lifetime.
 
@@ -1212,60 +1197,6 @@ Document the reserved memory ranges:
        }
    }
    ```
-
-## Implementation Challenges and Solutions
-
-### Challenge 1: SimulatorView Lifetime
-
-**Problem**: `SimulatorView` needs mutable references to both individual components (FIFO, DRAM) AND the bus for device registration.
-
-**Solution**: Instead of passing `bus` to `SimulatorView`, pass only the device registry:
-
-```rust
-pub struct SimulatorView<'a> {
-    fifo: &'a mut Fifo,
-    dram: &'a mut Dram,
-    device_registry: &'a mut Vec<RegisteredDevice>,  // Just the registry
-    hung_detector: &'a mut Option<HungDetector>,
-}
-
-impl<'a> SimulatorView<'a> {
-    pub fn register_device(
-        &mut self,
-        base_addr: u32,
-        device: Box<dyn BusDevice>,
-    ) -> Result<(), String> {
-        // Validation logic here (check overlaps with FIFO and existing devices)
-        // Then push to device_registry
-    }
-}
-```
-
-This avoids the borrowing conflict while still allowing device registration.
-
-### Challenge 2: Device Ownership in Callbacks
-
-**Problem**: User callbacks receive `&mut SimulatorView`, but devices may need to be created in that scope and registered.
-
-**Solution**: This is already handled by `Box<dyn BusDevice>` - ownership transfers to the bus:
-
-```rust
-run_program(
-    1000,
-    // ... other params
-    |sim| {
-        // Create device in this scope
-        let my_device = MyDevice::new();
-        
-        // Transfer ownership to bus via Box
-        sim.register_device(0x5000_0000, Box::new(my_device))?;
-        
-        // Device now lives in SystemBus, not on the stack
-        Ok(0x8000_0000)
-    },
-    None
-)?;
-```
 
 ## Usage Examples
 
