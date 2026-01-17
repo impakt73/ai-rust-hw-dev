@@ -303,6 +303,34 @@ pub trait BusDevice {
     fn name(&self) -> &str {
         "Unknown Device"
     }
+
+    /// Reset the device to its initial state
+    ///
+    /// This method is called when the simulator is reset. Device implementations
+    /// should use this to clear any internal state that needs to be reset when
+    /// the simulation starts.
+    ///
+    /// # Arguments
+    /// * `_ctx` - System context providing access to system memory
+    ///
+    /// # Default Implementation
+    /// Does nothing, which is appropriate for devices with no internal state.
+    fn reset(&mut self, _ctx: &mut SystemContext) {}
+
+    /// Execute device logic for one clock cycle
+    ///
+    /// This method is called once per simulated clock cycle, allowing devices to
+    /// perform operations that span multiple cycles. This enables realistic
+    /// simulation of hardware peripherals that cannot complete operations
+    /// instantaneously (e.g., DMA controllers that transfer one word per cycle).
+    ///
+    /// # Arguments
+    /// * `_ctx` - System context providing access to system memory
+    ///
+    /// # Default Implementation
+    /// Does nothing, which is appropriate for devices that complete all operations
+    /// synchronously within read/write handlers.
+    fn clock_cycle(&mut self, _ctx: &mut SystemContext) {}
 }
 
 /// Error types for device registration

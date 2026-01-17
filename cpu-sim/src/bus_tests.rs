@@ -49,6 +49,71 @@ impl BusDevice for MockDevice {
     }
 }
 
+/// Mock device with reset and clock_cycle tracking for testing lifecycle hooks
+struct StatefulMockDevice {
+    size: u32,
+    name: String,
+    reset_count: u32,
+    clock_cycle_count: u32,
+    registers: HashMap<u32, u32>,
+}
+
+impl StatefulMockDevice {
+    fn new(size: u32, name: &str) -> Self {
+        StatefulMockDevice {
+            size,
+            name: name.to_string(),
+            reset_count: 0,
+            clock_cycle_count: 0,
+            registers: HashMap::new(),
+        }
+    }
+}
+
+impl BusDevice for StatefulMockDevice {
+    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
+        if offset >= self.size || !offset.is_multiple_of(4) {
+            return Err(BusDeviceError::InvalidAddress { offset });
+        }
+        // Special offsets to read internal state
+        match offset {
+            0x0 => Ok(self.reset_count),
+            0x4 => Ok(self.clock_cycle_count),
+            _ => Ok(*self.registers.get(&offset).unwrap_or(&0)),
+        }
+    }
+
+    fn write_word(
+        &mut self,
+        _ctx: &mut SystemContext,
+        offset: u32,
+        value: u32,
+    ) -> Result<(), BusDeviceError> {
+        if offset >= self.size || !offset.is_multiple_of(4) {
+            return Err(BusDeviceError::InvalidAddress { offset });
+        }
+        self.registers.insert(offset, value);
+        Ok(())
+    }
+
+    fn reset(&mut self, _ctx: &mut SystemContext) {
+        self.reset_count += 1;
+        self.registers.clear();
+    }
+
+    fn clock_cycle(&mut self, _ctx: &mut SystemContext) {
+        self.clock_cycle_count += 1;
+    }
+
+    fn size(&self) -> u32 {
+        self.size
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[test]
 fn test_device_registration_success() {
     let mut bus = SystemBus::new();
@@ -276,4 +341,137 @@ fn test_multiple_devices_independent() {
     // Verify each device has its own value
     assert_eq!(bus.read_word(0x5000_0000), 0x11111111);
     assert_eq!(bus.read_word(0x6000_0000), 0x22222222);
+}
+
+#[test]
+fn test_reset_all_devices_called() {
+    let mut bus = SystemBus::new();
+
+    // Register a stateful device
+    let dev = Box::new(StatefulMockDevice::new(256, "StatefulDevice"));
+    bus.register_device(0x5000_0000, dev).unwrap();
+
+    // Initially reset_count should be 0
+    assert_eq!(bus.read_word(0x5000_0000), 0);
+
+    // Call reset_all_devices
+    bus.reset_all_devices();
+
+    // reset_count should now be 1
+    assert_eq!(bus.read_word(0x5000_0000), 1);
+
+    // Call reset again
+    bus.reset_all_devices();
+
+    // reset_count should now be 2
+    assert_eq!(bus.read_word(0x5000_0000), 2);
+}
+
+#[test]
+fn test_clock_cycle_all_devices_called() {
+    let mut bus = SystemBus::new();
+
+    // Register a stateful device
+    let dev = Box::new(StatefulMockDevice::new(256, "StatefulDevice"));
+    bus.register_device(0x5000_0000, dev).unwrap();
+
+    // Initially clock_cycle_count should be 0
+    assert_eq!(bus.read_word(0x5000_0004), 0);
+
+    // Call clock_cycle_all_devices
+    bus.clock_cycle_all_devices();
+
+    // clock_cycle_count should now be 1
+    assert_eq!(bus.read_word(0x5000_0004), 1);
+
+    // Call clock_cycle multiple times
+    for _ in 0..10 {
+        bus.clock_cycle_all_devices();
+    }
+
+    // clock_cycle_count should now be 11
+    assert_eq!(bus.read_word(0x5000_0004), 11);
+}
+
+#[test]
+fn test_reset_clears_device_state() {
+    let mut bus = SystemBus::new();
+
+    // Register a stateful device
+    let dev = Box::new(StatefulMockDevice::new(256, "StatefulDevice"));
+    bus.register_device(0x5000_0000, dev).unwrap();
+
+    // Write some values to the device
+    bus.write_word(0x5000_0008, 0x12345678);
+    bus.write_word(0x5000_000C, 0xABCDEF00);
+
+    // Verify values are written
+    assert_eq!(bus.read_word(0x5000_0008), 0x12345678);
+    assert_eq!(bus.read_word(0x5000_000C), 0xABCDEF00);
+
+    // Call reset (which should clear registers in StatefulMockDevice)
+    bus.reset_all_devices();
+
+    // Verify registers are cleared
+    assert_eq!(bus.read_word(0x5000_0008), 0);
+    assert_eq!(bus.read_word(0x5000_000C), 0);
+
+    // But reset_count should be incremented
+    assert_eq!(bus.read_word(0x5000_0000), 1);
+}
+
+#[test]
+fn test_multiple_stateful_devices_independent() {
+    let mut bus = SystemBus::new();
+
+    // Register two stateful devices
+    let dev1 = Box::new(StatefulMockDevice::new(256, "Device1"));
+    bus.register_device(0x5000_0000, dev1).unwrap();
+
+    let dev2 = Box::new(StatefulMockDevice::new(256, "Device2"));
+    bus.register_device(0x6000_0000, dev2).unwrap();
+
+    // Call clock_cycle multiple times
+    for _ in 0..5 {
+        bus.clock_cycle_all_devices();
+    }
+
+    // Both devices should have same clock_cycle_count
+    assert_eq!(bus.read_word(0x5000_0004), 5);
+    assert_eq!(bus.read_word(0x6000_0004), 5);
+
+    // Call reset
+    bus.reset_all_devices();
+
+    // Both devices should have reset_count of 1
+    assert_eq!(bus.read_word(0x5000_0000), 1);
+    assert_eq!(bus.read_word(0x6000_0000), 1);
+
+    // Clock cycle counts should still be 5 (reset doesn't clear them in our mock)
+    assert_eq!(bus.read_word(0x5000_0004), 5);
+    assert_eq!(bus.read_word(0x6000_0004), 5);
+}
+
+#[test]
+fn test_device_with_default_reset_and_clock_cycle() {
+    let mut bus = SystemBus::new();
+
+    // Register a regular MockDevice (uses default reset/clock_cycle implementations)
+    let dev = Box::new(MockDevice::new(256, "RegularDevice"));
+    bus.register_device(0x5000_0000, dev).unwrap();
+
+    // Write a value
+    bus.write_word(0x5000_0000, 0x12345678);
+
+    // Call reset (should do nothing for default implementation)
+    bus.reset_all_devices();
+
+    // Value should still be there (default reset does nothing)
+    assert_eq!(bus.read_word(0x5000_0000), 0x12345678);
+
+    // Call clock_cycle (should do nothing for default implementation)
+    bus.clock_cycle_all_devices();
+
+    // Value should still be there
+    assert_eq!(bus.read_word(0x5000_0000), 0x12345678);
 }
