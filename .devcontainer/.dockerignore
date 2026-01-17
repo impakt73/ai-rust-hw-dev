@@ -1,0 +1,33 @@
+# Ignore build artifacts and caches
+target/
+.cargo/
+
+# Ignore Git files
+.git/
+.gitignore
+.github/
+
+# Ignore documentation (not needed in container)
+docs/
+*.md
+!README.md
+!.devcontainer/README.md
+
+# Ignore test programs and artifacts
+test_programs/
+*.vcd
+*.elf
+*.bin
+*.hex
+
+# Ignore IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore temporary files
+tmp/
+*.tmp
+*.log
