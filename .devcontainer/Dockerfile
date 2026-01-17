@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     wget \
-    # Verilator - SystemVerilog simulator (CRITICAL for this project)
-    verilator \
+    autoconf \
+    perl \
+    python3 \
     # RISC-V GCC cross-compiler toolchain
     gcc-riscv64-unknown-elf \
     # Additional development tools
@@ -20,11 +21,29 @@ RUN apt-get update && apt-get install -y \
     llvm \
     pkg-config \
     libssl-dev \
+    flex \
+    bison \
+    help2man \
     # Utilities
+    locales \
     vim \
     nano \
     htop \
+    && locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
+
+# Set locale environment variables
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+# Build and install a recent Verilator from source to ensure compatibility with
+# marlin / the --lib-create and -j 0 options used by the test harness.
+RUN git clone --depth 1 https://github.com/verilator/verilator /tmp/verilator \
+    && cd /tmp/verilator \
+    && autoconf \
+    && ./configure \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf /tmp/verilator
 
 # Create a non-root user for development
 ARG USERNAME=vscode
