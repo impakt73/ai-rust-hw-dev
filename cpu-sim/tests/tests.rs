@@ -74,7 +74,7 @@ fn test_comprehensive_elf() {
 
     let program = create_test_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -102,7 +102,7 @@ fn test_instruction_trace() {
 
     let program = create_test_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -150,7 +150,7 @@ fn test_register_trace_audit() {
 
     let program = create_register_trace_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -189,7 +189,7 @@ fn test_rust_bare_metal_elf() {
     let elf_path = test_program_path("rust_test.elf");
     let result = run_elf(
         &elf_path,
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -215,7 +215,7 @@ fn test_fp_math_elf() {
     let elf_path = test_program_path("test_fp_math.elf");
     let result = run_elf(
         &elf_path,
-        1000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -244,7 +244,7 @@ fn test_fifo_hello_world() {
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(callback),
@@ -290,7 +290,7 @@ fn test_trace_callback() {
     };
 
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -602,7 +602,7 @@ fn test_vcd_generation() {
     println!("Running simulation with VCD enabled...");
     let result = run_elf(
         &elf_path,
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -716,7 +716,7 @@ fn test_memory_dump() {
     // Run simulation and access memory in callback
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -800,7 +800,7 @@ fn test_image_dump() {
     // Run simulation and access memory in callback
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -917,7 +917,7 @@ fn test_panic_handler() {
     // Run the panic test program with sufficient cycles
     let result = run_elf(
         &elf_path,
-        5000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -961,7 +961,7 @@ fn test_hung_detection_with_elf_auto_range() {
 
     // This should succeed with hung detection enabled
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1013,7 +1013,7 @@ fn test_hung_detection_catches_infinite_loop() {
         .collect();
 
     let result = run_program(
-        10000, // max_cycles
+        GLOBAL_MAX_CYCLES, // max_cycles
         false, // Don't print instruction trace
         false, // Don't print FSM state
         None::<fn(&mut SimulatorView)>,
@@ -1067,7 +1067,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     // write_memory_region will set valid PC range to [start_addr, start_addr + 4)
     // The jump will go to start_addr + 0x10000, which is outside this range
     let result = run_program(
-        10000,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -1137,7 +1137,7 @@ fn test_hung_detection_catches_long_instruction() {
     let mem_latency_cycles = 15000;
 
     let result = run_program(
-        100000, // High max_cycles so we don't hit that limit first
+        GLOBAL_MAX_CYCLES, // High max_cycles so we don't hit that limit first
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -1186,7 +1186,7 @@ fn test_atomic_operations() {
     let simple_path = test_program_path("test_atomic_simple.elf");
     let result = run_elf(
         &simple_path,
-        1000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1205,7 +1205,7 @@ fn test_atomic_operations() {
     let full_path = test_program_path("test_atomic.elf");
     let result = run_elf(
         &full_path,
-        100000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1290,7 +1290,7 @@ fn test_packet_protocol_end_to_end() {
     // Run the simulation
     let result = run_elf(
         &elf_path,
-        50000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -1451,7 +1451,7 @@ fn test_println_macro() {
     // Run the simulation with inst_complete callback
     let result = run_elf(
         &elf_path,
-        25000,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),

@@ -37,7 +37,7 @@ fn test_write_memory_below_dram_range() {
     let program = create_termination_program(1);
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -78,7 +78,7 @@ fn test_write_memory_spanning_below_dram() {
     let program_bytes = create_termination_program(2);
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -119,7 +119,7 @@ fn test_write_memory_above_dram_range() {
     let program_bytes = create_termination_program(3);
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -164,7 +164,7 @@ fn test_write_memory_at_dram_start() {
     let program = common::instructions_to_bytes(&instructions);
 
     let result = run_program(
-        1000,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -198,7 +198,7 @@ fn test_write_memory_ending_at_dram_end() {
     let start_addr = DRAM_END - 3; // Write 4 bytes ending at DRAM_END
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -234,7 +234,7 @@ fn test_read_byte_below_dram_range() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -273,7 +273,7 @@ fn test_read_halfword_outside_dram_range() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -313,7 +313,7 @@ fn test_read_word_outside_dram_range() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -357,7 +357,7 @@ fn test_dump_memory_region_outside_dram() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -407,7 +407,7 @@ fn test_valid_dram_accesses() {
     let test_data = vec![0xAA, 0xBB, 0xCC, 0xDD];
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -462,7 +462,7 @@ fn test_boundary_at_dram_start() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -502,7 +502,7 @@ fn test_boundary_at_dram_end() {
         .ok();
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,

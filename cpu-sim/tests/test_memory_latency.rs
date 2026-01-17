@@ -27,7 +27,7 @@ fn test_zero_latency_default() {
     ];
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -74,7 +74,7 @@ fn test_multi_cycle_memory_latency() {
     ];
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -131,7 +131,7 @@ fn test_load_store_with_latency() {
     ];
 
     let result = run_program(
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -170,7 +170,7 @@ fn test_comprehensive_elf_with_latency() {
     let program = create_test_program();
 
     let result = run_program(
-        1000,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,

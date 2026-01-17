@@ -46,7 +46,7 @@ fn test_c_li() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -92,7 +92,7 @@ fn test_c_addi() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -140,7 +140,7 @@ fn test_c_add() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -189,7 +189,7 @@ fn test_c_mv() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -241,7 +241,7 @@ fn test_compressed_to_compressed_transition() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -294,7 +294,7 @@ fn test_compressed_to_uncompressed_transition() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -343,7 +343,7 @@ fn test_uncompressed_to_compressed_transition() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -392,7 +392,7 @@ fn test_uncompressed_to_uncompressed_regression() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -443,7 +443,7 @@ fn test_mixed_sequence_across_word_boundary() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,

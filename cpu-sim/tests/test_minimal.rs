@@ -25,7 +25,7 @@ fn test_minimal_postcard_byte_by_byte() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -71,7 +71,7 @@ fn test_minimal_postcard_word_packing() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -149,7 +149,7 @@ fn test_minimal_debug_double_write() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -222,7 +222,7 @@ fn test_allocator() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -290,7 +290,7 @@ fn test_heap_directly() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -355,7 +355,7 @@ fn test_stack_memory() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -448,7 +448,7 @@ fn test_static_heap() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),

@@ -90,7 +90,7 @@ fn test_cpu_flw_fsw_basic() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -143,7 +143,7 @@ fn test_cpu_flw_multiple_registers() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -194,7 +194,7 @@ fn test_cpu_fadd_basic() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -235,7 +235,7 @@ fn test_cpu_fmul_basic() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -275,7 +275,7 @@ fn test_cpu_fcvt_s_w() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -311,7 +311,7 @@ fn test_cpu_fcvt_w_s() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -358,7 +358,7 @@ fn test_cpu_feq_flt() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -403,7 +403,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -454,7 +454,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
 
     run_fp_program_with_options(
         &instructions,
-        300,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -499,7 +499,7 @@ fn test_cpu_fmin_fmax() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -543,7 +543,7 @@ fn test_cpu_fsgnj_ops() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -597,7 +597,7 @@ fn test_cpu_fle() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -640,7 +640,7 @@ fn test_cpu_fcvt_unsigned() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -689,7 +689,7 @@ fn test_cpu_fclass() {
 
     run_fp_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -756,7 +756,7 @@ fn test_cpu_fused_multiply_add_ops() {
 
     run_fp_program_with_options(
         &instructions,
-        300,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,

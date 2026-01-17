@@ -73,7 +73,7 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
 
     // Run a minimal program that just halts immediately
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -153,7 +153,7 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
 
     // Run a program that executes a known number of instructions
     let result = run_program(
-        1000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -240,7 +240,7 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
 
     // Run a minimal program
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
