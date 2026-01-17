@@ -113,3 +113,8 @@ name = "test_fp_math"
 path = "src/test_fp_math.rs"
 test = false
 
+[[bin]]
+name = "test_dma_copy"
+path = "src/test_dma_copy.rs"
+test = false
+
