@@ -1,5 +1,19 @@
 use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 
+/// Latched state for an active DMA transfer.
+/// This is a snapshot of the configuration registers when dispatch is triggered,
+/// ensuring that modifications to config registers during transfer don't corrupt
+/// the active transfer.
+#[derive(Debug, Clone, Copy)]
+struct ActiveTransfer {
+    /// Number of bytes remaining to transfer
+    bytes_remaining: u32,
+    /// Current source address (incremented during transfer)
+    current_src: u32,
+    /// Current destination address (incremented during transfer)
+    current_dst: u32,
+}
+
 /// Simple DMA controller for memory-to-memory transfers
 ///
 /// This device copies data from a source address to a destination address
@@ -14,19 +28,21 @@ use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 ///   Bit 0: BUSY (1 = transfer in progress, 0 = idle)
 /// - 0x10: DISPATCH    - Dispatch register (write-only)
 ///   Writing any value starts the transfer
+///
+/// The DMA controller latches the configuration registers (SRC_ADDR, DST_ADDR, SIZE)
+/// when a transfer is dispatched. This means that modifying these registers during
+/// an active transfer will not affect the current transfer, but will take effect
+/// on the next dispatch. Only one transfer can be active at a time.
 pub struct Dma {
-    /// Source address for DMA transfer
+    /// Source address configuration register (read/write)
     src_addr: u32,
-    /// Destination address for DMA transfer
+    /// Destination address configuration register (read/write)
     dst_addr: u32,
-    /// Total size of transfer in bytes
+    /// Transfer size configuration register in bytes (read/write)
     size: u32,
-    /// Number of bytes remaining to transfer (0 = idle)
-    bytes_remaining: u32,
-    /// Current source address (incremented during transfer)
-    current_src: u32,
-    /// Current destination address (incremented during transfer)
-    current_dst: u32,
+    /// Active transfer state (None = idle, Some = transfer in progress)
+    /// This is latched from the configuration registers on dispatch
+    active_transfer: Option<ActiveTransfer>,
 }
 
 impl Dma {
@@ -36,26 +52,25 @@ impl Dma {
             src_addr: 0,
             dst_addr: 0,
             size: 0,
-            bytes_remaining: 0,
-            current_src: 0,
-            current_dst: 0,
+            active_transfer: None,
         }
     }
 
     /// Check if a transfer is currently in progress
     fn is_busy(&self) -> bool {
-        self.bytes_remaining > 0
+        self.active_transfer.is_some()
     }
 
     /// Start a DMA transfer using the configured registers
+    /// This latches the current configuration into active_transfer state
     fn start_transfer(&mut self) {
         if self.is_busy() {
-            log::warn!("DMA: Dispatch attempted while transfer already in progress");
+            log::warn!("DMA: Dispatch attempted while transfer already in progress - ignoring");
             return;
         }
 
         if self.size == 0 {
-            log::warn!("DMA: Dispatch attempted with size = 0");
+            log::warn!("DMA: Dispatch attempted with size = 0 - ignoring");
             return;
         }
 
@@ -66,32 +81,39 @@ impl Dma {
             self.size
         );
 
-        self.bytes_remaining = self.size;
-        self.current_src = self.src_addr;
-        self.current_dst = self.dst_addr;
+        // Latch configuration registers into active transfer state
+        // This ensures modifications to config registers during transfer don't corrupt it
+        self.active_transfer = Some(ActiveTransfer {
+            bytes_remaining: self.size,
+            current_src: self.src_addr,
+            current_dst: self.dst_addr,
+        });
     }
 
     /// Transfer one byte (called each clock cycle)
+    /// Only uses the latched active_transfer state, not the config registers
     fn transfer_one_byte(&mut self, ctx: &mut SystemContext) {
-        if !self.is_busy() {
-            return;
-        }
+        let transfer = match self.active_transfer.as_mut() {
+            Some(t) => t,
+            None => return, // No active transfer
+        };
 
         // Read one byte from source
-        let byte = ctx.read_byte(self.current_src);
+        let byte = ctx.read_byte(transfer.current_src);
 
         // Write one byte to destination
-        ctx.write_byte(self.current_dst, byte);
+        ctx.write_byte(transfer.current_dst, byte);
 
         // Increment addresses
-        self.current_src = self.current_src.wrapping_add(1);
-        self.current_dst = self.current_dst.wrapping_add(1);
+        transfer.current_src = transfer.current_src.wrapping_add(1);
+        transfer.current_dst = transfer.current_dst.wrapping_add(1);
 
         // Decrement remaining bytes
-        self.bytes_remaining -= 1;
+        transfer.bytes_remaining -= 1;
 
-        if self.bytes_remaining == 0 {
+        if transfer.bytes_remaining == 0 {
             log::debug!("DMA: Transfer complete");
+            self.active_transfer = None;
         }
     }
 }
@@ -165,9 +187,7 @@ impl BusDevice for Dma {
         self.src_addr = 0;
         self.dst_addr = 0;
         self.size = 0;
-        self.bytes_remaining = 0;
-        self.current_src = 0;
-        self.current_dst = 0;
+        self.active_transfer = None;
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
@@ -306,5 +326,127 @@ mod tests {
         assert_eq!(dma.read_word(&mut ctx, 0x04).unwrap(), 0);
         assert_eq!(dma.read_word(&mut ctx, 0x08).unwrap(), 0);
         assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_dma_register_modification_during_transfer() {
+        let mut dma = Dma::new();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        // Set up source data in memory
+        let src_addr = 0x8000_1000;
+        let dst_addr = 0x8000_2000;
+        let test_data = [0xAAu8, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22];
+
+        for (i, &byte) in test_data.iter().enumerate() {
+            ctx.write_byte(src_addr + i as u32, byte);
+        }
+
+        // Configure DMA for initial transfer
+        dma.write_word(&mut ctx, 0x00, src_addr).unwrap();
+        dma.write_word(&mut ctx, 0x04, dst_addr).unwrap();
+        dma.write_word(&mut ctx, 0x08, test_data.len() as u32)
+            .unwrap();
+
+        // Dispatch transfer
+        dma.write_word(&mut ctx, 0x10, 1).unwrap();
+
+        // Check status is busy
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 1);
+
+        // Transfer 2 bytes
+        for _ in 0..2 {
+            dma.clock_cycle(&mut ctx);
+        }
+
+        // Modify configuration registers during transfer
+        // This should NOT affect the active transfer
+        let new_src = 0x8000_3000;
+        let new_dst = 0x8000_4000;
+        let new_size = 4;
+        dma.write_word(&mut ctx, 0x00, new_src).unwrap();
+        dma.write_word(&mut ctx, 0x04, new_dst).unwrap();
+        dma.write_word(&mut ctx, 0x08, new_size).unwrap();
+
+        // Verify config registers were modified
+        assert_eq!(dma.read_word(&mut ctx, 0x00).unwrap(), new_src);
+        assert_eq!(dma.read_word(&mut ctx, 0x04).unwrap(), new_dst);
+        assert_eq!(dma.read_word(&mut ctx, 0x08).unwrap(), new_size);
+
+        // Still busy - transfer should continue
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 1);
+
+        // Complete the original transfer (6 more bytes)
+        for _ in 0..6 {
+            dma.clock_cycle(&mut ctx);
+        }
+
+        // Check status is now idle
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 0);
+
+        // Verify destination data matches the ORIGINAL transfer parameters
+        // despite the config registers being modified mid-transfer
+        for (i, &expected) in test_data.iter().enumerate() {
+            let actual = ctx.read_byte(dst_addr + i as u32);
+            assert_eq!(
+                actual, expected,
+                "Mismatch at byte {} - transfer should have used original src/dst despite config modification",
+                i
+            );
+        }
+
+        // Verify that the NEW config is still set and can be used for next transfer
+        assert_eq!(dma.read_word(&mut ctx, 0x00).unwrap(), new_src);
+        assert_eq!(dma.read_word(&mut ctx, 0x04).unwrap(), new_dst);
+        assert_eq!(dma.read_word(&mut ctx, 0x08).unwrap(), new_size);
+    }
+
+    #[test]
+    fn test_dma_multiple_dispatch_rejected() {
+        let mut dma = Dma::new();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        // Set up source data in memory
+        let src_addr = 0x8000_1000;
+        let dst_addr = 0x8000_2000;
+        let test_data = [0x12u8, 0x34, 0x56, 0x78];
+
+        for (i, &byte) in test_data.iter().enumerate() {
+            ctx.write_byte(src_addr + i as u32, byte);
+        }
+
+        // Configure DMA
+        dma.write_word(&mut ctx, 0x00, src_addr).unwrap();
+        dma.write_word(&mut ctx, 0x04, dst_addr).unwrap();
+        dma.write_word(&mut ctx, 0x08, test_data.len() as u32)
+            .unwrap();
+
+        // Dispatch first transfer
+        dma.write_word(&mut ctx, 0x10, 1).unwrap();
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 1); // busy
+
+        // Attempt to dispatch second transfer (should be rejected)
+        dma.write_word(&mut ctx, 0x00, 0x8000_5000).unwrap();
+        dma.write_word(&mut ctx, 0x04, 0x8000_6000).unwrap();
+        dma.write_word(&mut ctx, 0x10, 1).unwrap(); // This should be ignored
+
+        // Should still be busy with first transfer
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 1);
+
+        // Complete the first transfer
+        for _ in 0..test_data.len() {
+            dma.clock_cycle(&mut ctx);
+        }
+
+        // Should be idle now
+        assert_eq!(dma.read_word(&mut ctx, 0x0C).unwrap(), 0);
+
+        // Verify the first transfer completed correctly
+        for (i, &expected) in test_data.iter().enumerate() {
+            let actual = ctx.read_byte(dst_addr + i as u32);
+            assert_eq!(actual, expected);
+        }
     }
 }
