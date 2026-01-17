@@ -15,11 +15,7 @@ struct LifecycleTestDevice {
 }
 
 impl LifecycleTestDevice {
-    fn new(
-        size: u32,
-        reset_count: Arc<AtomicU32>,
-        clock_cycle_count: Arc<AtomicU32>,
-    ) -> Self {
+    fn new(size: u32, reset_count: Arc<AtomicU32>, clock_cycle_count: Arc<AtomicU32>) -> Self {
         LifecycleTestDevice {
             size,
             reset_count,
