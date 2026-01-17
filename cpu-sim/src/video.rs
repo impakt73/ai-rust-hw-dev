@@ -83,7 +83,7 @@ impl VideoConfig {
         let width_minus_1 = self.width - 1;
         let height_minus_1 = self.height - 1;
         let format_field = self.format.to_u8() as u32;
-        
+
         width_minus_1 | (height_minus_1 << 12) | (format_field << 24)
     }
 
