@@ -32,3 +32,4 @@ test_programs/*.d
 
 # Intermediate build files
 *.o
+frame_*.png
