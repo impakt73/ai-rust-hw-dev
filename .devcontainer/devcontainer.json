@@ -1,0 +1,89 @@
+{
+	"name": "RISC-V Hardware Verification",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": ".."
+	},
+
+	// Configure VS Code settings
+	"customizations": {
+		"vscode": {
+			// Recommended extensions for RISC-V hardware development
+			"extensions": [
+				// Rust language support
+				"rust-lang.rust-analyzer",
+				"tamasfe.even-better-toml",
+				
+				// SystemVerilog/Verilog support
+				"mshr-h.veriloghdl",
+				"eirikpre.systemverilog",
+				
+				// Git integration
+				"eamodio.gitlens",
+				
+				// General development
+				"GitHub.copilot",
+				"GitHub.copilot-chat",
+				"ms-vscode.hexeditor",
+				"wayou.vscode-todo-highlight"
+			],
+			
+			// VS Code settings
+			"settings": {
+				// Rust-analyzer configuration
+				"rust-analyzer.cargo.features": "all",
+				"rust-analyzer.checkOnSave.command": "clippy",
+				"rust-analyzer.checkOnSave.extraArgs": ["--", "-D", "warnings"],
+				
+				// Editor settings
+				"editor.formatOnSave": true,
+				"editor.defaultFormatter": "rust-lang.rust-analyzer",
+				"[rust]": {
+					"editor.defaultFormatter": "rust-lang.rust-analyzer",
+					"editor.formatOnSave": true
+				},
+				"[systemverilog]": {
+					"editor.tabSize": 2
+				},
+				"[verilog]": {
+					"editor.tabSize": 2
+				},
+				
+				// File associations
+				"files.associations": {
+					"*.sv": "systemverilog",
+					"*.vh": "systemverilog"
+				},
+				
+				// Terminal settings
+				"terminal.integrated.defaultProfile.linux": "bash"
+			}
+		}
+	},
+
+	// Mount the workspace folder to /workspace
+	"workspaceFolder": "/workspace",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+	// Forward ports for potential web-based debugging tools
+	"forwardPorts": [],
+
+	// Run commands after container creation
+	"postCreateCommand": "echo '=== RISC-V Development Environment Ready ===' && verilator --version && rustc --version && cargo --version",
+
+	// Use 'postAttachCommand' to run commands after the container is attached
+	"postAttachCommand": {
+		"display-info": "echo '\n📦 RISC-V RV32IM CPU Project\n\n🔧 Quick Commands:\n  cargo test                    - Run all tests\n  cargo build                   - Build project\n  cargo fmt                     - Format Rust code\n  cargo clippy -- -D warnings   - Lint Rust code\n  verilator --lint-only rtl/*.sv - Lint SystemVerilog\n  cargo clean                   - Clean build artifacts\n\n📚 Documentation: See AGENTS.md for detailed project info\n'"
+	},
+
+	// Environment variables
+	"remoteEnv": {
+		"RUST_BACKTRACE": "1"
+	},
+
+	// Features to add (using dev container features)
+	"features": {},
+
+	// Uncomment to run as non-root user
+	"remoteUser": "vscode"
+}
