@@ -364,3 +364,37 @@ RUST_LOG=debug ./target/debug/cpu-sim program.elf
 - No system calls or I/O beyond the tohost mechanism and FIFO debug protocol
 - Memory is initialized only from the ELF LOAD segments
 - Multi-cycle non-pipelined execution model (no pipelining)
+
+## Testing Constants
+
+### GLOBAL_MAX_CYCLES
+
+The `GLOBAL_MAX_CYCLES` constant defines the maximum number of cycles any test should run before being considered a runaway or hung simulation. This constant serves as a safety backstop to prevent infinite loops in tests.
+
+**Current value:** 40,000 cycles
+
+**Rationale:**
+- Based on empirical measurement of all cpu-sim tests
+- Maximum observed cycles across all tests: 17,296 (test_println_macro)
+- Provides 2.3× safety margin above the maximum observed value
+- Acts as a global safety net while the per-instruction hung detector (10,000 cycles/instruction) remains the primary detection mechanism
+- Should never be reached by any legitimate test in normal operation
+
+**Usage in tests:**
+```rust
+use cpu_sim::*;
+
+let result = run_program(
+    GLOBAL_MAX_CYCLES,  // Use the global constant
+    false,
+    false,
+    // ...
+)?;
+```
+
+**Special cases:**
+Tests that intentionally test hung detection or long instruction scenarios may use higher limits with documented justification. See `test_hung_detection_catches_long_instruction` for an example.
+
+**Measurement data:**
+See `reports/max_cycles_report.csv` for detailed cycle measurements across all tests that informed this value.
+
