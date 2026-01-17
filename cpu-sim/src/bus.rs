@@ -445,6 +445,42 @@ impl SystemBus {
     pub fn check_reservation(&self, addr: u32) -> bool {
         self.memory.check_reservation(addr)
     }
+
+    /// Call reset() on all registered devices
+    ///
+    /// This should be called when the simulator is reset to allow devices
+    /// to clear their internal state.
+    pub fn reset_all_devices(&mut self) {
+        let mut ctx = SystemContext::new(&mut self.memory);
+
+        // Reset internal devices
+        self.dram.reset(&mut ctx);
+        self.fifo.reset(&mut ctx);
+        self.sim_control.reset(&mut ctx);
+
+        // Reset external devices
+        for device in &mut self.external_devices {
+            device.reset(&mut ctx);
+        }
+    }
+
+    /// Call clock_cycle() on all registered devices
+    ///
+    /// This should be called once per simulated clock cycle to allow devices
+    /// to perform multi-cycle operations.
+    pub fn clock_cycle_all_devices(&mut self) {
+        let mut ctx = SystemContext::new(&mut self.memory);
+
+        // Tick internal devices
+        self.dram.clock_cycle(&mut ctx);
+        self.fifo.clock_cycle(&mut ctx);
+        self.sim_control.clock_cycle(&mut ctx);
+
+        // Tick external devices
+        for device in &mut self.external_devices {
+            device.clock_cycle(&mut ctx);
+        }
+    }
 }
 
 impl Default for SystemBus {

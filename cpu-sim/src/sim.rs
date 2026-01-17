@@ -630,6 +630,9 @@ where
             detector.reset();
         }
 
+        // Reset all bus devices
+        self.bus.reset_all_devices();
+
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
     }
@@ -762,6 +765,9 @@ where
 
             // Dump VCD if enabled (after clock edge)
             self.dump_vcd();
+
+            // Call clock_cycle on all bus devices (after clock edge completes)
+            self.bus.clock_cycle_all_devices();
 
             // Check if instruction complete (AFTER clock edge)
             // With delayed instr_complete, values have already settled by the time we see the signal
