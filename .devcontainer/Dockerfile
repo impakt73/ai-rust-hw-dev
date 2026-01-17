@@ -43,24 +43,19 @@ RUN groupadd --gid $USER_GID $USERNAME \
 USER $USERNAME
 
 # Install Rust toolchain
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+    && . $HOME/.cargo/env \
+    && rustup target add riscv32imafc-unknown-none-elf \
+    && cargo install cargo-watch cargo-expand
 
 # Add Rust to PATH
 ENV PATH="/home/$USERNAME/.cargo/bin:${PATH}"
 
-# Install RISC-V Rust target for cross-compilation
-RUN /home/$USERNAME/.cargo/bin/rustup target add riscv32imafc-unknown-none-elf
-
-# Install Rust development tools
-RUN /home/$USERNAME/.cargo/bin/cargo install \
-    cargo-watch \
-    cargo-expand
-
 # Set working directory
 WORKDIR /workspace
 
-# Verify installations
-RUN echo "=== Installed Tools ===" && \
+# Verify installations (run as vscode user to check the full environment)
+RUN . $HOME/.cargo/env && echo "=== Installed Tools ===" && \
     verilator --version && \
     rustc --version && \
     cargo --version && \
