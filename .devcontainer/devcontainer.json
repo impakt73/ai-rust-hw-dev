@@ -76,3 +76,4 @@
 		// Uncomment to run as non-root user
 		"remoteUser": "vscode"
 	}
+}
