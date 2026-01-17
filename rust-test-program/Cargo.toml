@@ -118,3 +118,8 @@ name = "test_dma_copy"
 path = "src/test_dma_copy.rs"
 test = false
 
+[[bin]]
+name = "test_video_pattern"
+path = "src/test_video_pattern.rs"
+test = false
+

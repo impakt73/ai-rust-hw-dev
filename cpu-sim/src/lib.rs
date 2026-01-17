@@ -9,6 +9,7 @@ mod memory;
 pub mod packet_transport; // Public for integration tests
 mod sim;
 mod sim_control;
+mod video;
 
 // Public API exports - only what's needed for external use
 pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE};
@@ -16,6 +17,7 @@ pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};
+pub use video::Video;
 
 use bus::SystemBus;
 use hung_detector::HungDetectorConfig;
