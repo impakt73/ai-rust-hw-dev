@@ -117,7 +117,8 @@ to check alu_a and alu_b..."*
 
 **Memory Management:**
 - ❌ **FORBIDDEN:** Never use `Box::leak()` to avoid lifetime issues
-- ✅ **CORRECT:** Use callbacks, `Rc<RefCell<T>>`, or restructure ownership
+- ✅ **CORRECT:** Use callbacks or restructure ownership (best approach depends on the situation)
+- Consider proper ownership patterns: `Rc<T>`, `Arc<T>`, `RefCell<T>`, `Mutex<T>` as appropriate
 - Use `HashMap<u32, u32>` for memory arrays in tests
 - Memory reads: set `dmem_rdata` BEFORE `eval()`
 - Memory writes: read `dmem_addr` AFTER `eval()`

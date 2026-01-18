@@ -82,7 +82,7 @@ end
 *   **Error Handling:** Never `panic!` in library code. Return `Result<T, HardwareError>`. Define custom error enums for Bus Errors, Decode Errors, or Timeouts.
 
 ## 4. Forbidden Patterns (Anti-Patterns)
-*   ❌ **Box::leak() for Lifetime Issues:** Never use `Box::leak()` to circumvent Rust's lifetime system. This is a memory leak and bad practice. Instead, use callbacks, `Rc<RefCell<T>>`, or restructure your ownership model.
+*   ❌ **Box::leak() for Lifetime Issues:** Never use `Box::leak()` to circumvent Rust's lifetime system. This is a memory leak and bad practice. Instead, use callbacks or restructure your ownership model. The best solution depends on the situation—consider proper ownership patterns like `Rc<T>`, `Arc<T>`, `RefCell<T>`, or `Mutex<T>` as appropriate.
 *   ❌ **Implicit Casting:** Do not use `as` casting silently (e.g., `u64 as u32`). Use `try_into()` or explicit masking to acknowledge data loss.
 *   ❌ **Unwrapped Results:** Never use `.unwrap()` in production firmware or long-running simulations. Propagate errors up the stack.
 *   ❌ **Global Mutable State:** Avoid `static mut`. Use `RefCell`/`Mutex` (for simulation) or atomic primitives/peripheral access crates (PACs) for embedded.

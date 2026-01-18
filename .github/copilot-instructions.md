@@ -1,93 +1,40 @@
 # GitHub Copilot Instructions
 
-## Project Overview
+⚠️ **REQUIRED READING:** Before starting any work on this repository, you **MUST** read [AGENTS.md](../AGENTS.md).
 
-This is a **multi-cycle non-pipelined RISC-V RV32IM CPU** implementation in SystemVerilog with Rust-based verification using the `marlin` crate and Verilator.
+The AGENTS.md file contains all essential information for working on this RISC-V hardware verification project, including:
 
-## Critical Prerequisites
+- Custom agent selection guide (which specialized agent to use for your task)
+- Project architecture and design decisions
+- Build and test procedures
+- Coding conventions and standards
+- CI/CD requirements and PR readiness checklist
+- Debugging methodologies
+- Links to detailed sub-documentation
 
-⚠️ **IMPORTANT:** Verilator MUST be installed before running any tests. This is the most common cause of build failures.
+## Quick Reference
 
-```bash
-# Install Verilator on Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install -y verilator
-
-# Verify installation
-verilator --version
-```
-
-## Quick Start
-
-```bash
-# From repository root
-cargo test                    # Run all tests
-cargo build                   # Build only
-cargo fmt                     # Format code
-cargo clippy -- -D warnings   # Lint code
-verilator --lint-only rtl/*.sv # Lint SystemVerilog
-```
-
-## Tech Stack
-
-- **RTL:** SystemVerilog (in `rtl/` directory)
-- **Verification:** Rust with marlin + Verilator (in `testbench/` directory)
-- **Build System:** Cargo workspace with 6 members: cpu-sim, riscv_core, testbench, riscv_protocol, riscv_macros, vcd-mcp
-- **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
-
-## Coding Conventions
-
-### Rust Code
-- Follow standard Rust formatting (run `cargo fmt` before committing)
-- Address all clippy warnings (`cargo clippy -- -D warnings`)
-- Write tests for new functionality
-- Use meaningful test names prefixed with `test_`
-- **Testbench tests are integration tests** (in `testbench/tests/`, not unit tests)
-
-### SystemVerilog Code
-- Use `snake_case` for signal names
-- Prefix signals by purpose: `imem_`, `dmem_`, `alu_`, etc.
-- Lint with `verilator --lint-only` before committing
-- Keep ports consistent with RISC-V naming: `rs1`, `rs2`, `rd`, `funct3`, etc.
-
-## Testing Requirements
-
-- All tests must pass before marking PR ready for review
-- Run `cargo test --verbose` to verify
-- After RTL changes, run `cargo clean` to clear Verilator cache
-- Use `cargo test -- --nocapture` to see test output during debugging
-- **Note:** Testbench tests are integration tests (each file runs as a separate binary)
-
-## PR Readiness Checklist
-
-Before marking a PR as ready for review, verify:
-1. ✅ All tests pass: `cargo test --verbose`
-2. ✅ Code is formatted: `cargo fmt -- --check`
-3. ✅ No clippy warnings: `cargo clippy -- -D warnings`
-4. ✅ SystemVerilog is linted (if modified): `verilator --lint-only rtl/*.sv`
-5. ✅ All CI checks pass on GitHub Actions
-
-## Important: Skip CodeQL Scans
-
-**DO NOT run CodeQL security scans for this project.**
-
-- CodeQL scans often time out and waste time
-- Security scans are not necessary for this hardware verification project
-- This is a RISC-V CPU implementation project focused on RTL design and testing, not a production software system requiring security analysis
-- Skip any automated security scanning tools (CodeQL, etc.) when working on this repository
-
-## Detailed Documentation
-
-**For comprehensive information, always refer to [AGENTS.md](../AGENTS.md) which includes:**
-- Project architecture and design decisions (multi-cycle FSM with 11 states)
-- Complete build and test procedures
-- RTL module hierarchy and supported instructions (RV32IM + Zicsr)
-- Multi-cycle execution details and instruction cycle counts
-- Memory interface with ready/valid handshaking
+**Getting Started:** See [docs/agents/getting-started.md](../docs/agents/getting-started.md)
+- Prerequisites (Verilator installation, etc.)
+- Quick start commands
 - Common issues and solutions
-- Testing best practices and conventions
-- CI/CD pipeline details
-- Debugging tips and performance notes
-- Debug infrastructure (FIFO packet protocol, print macros)
 
-**Always consult AGENTS.md for project-specific conventions, dependencies, and workflows.**
+**For Your Specific Task, Consult:**
+- Custom agent selection: [AGENTS.md](../AGENTS.md) → Choose the right specialized agent
+- Testing work: [docs/agents/testing.md](../docs/agents/testing.md)
+- RTL development: [docs/agents/rtl-development.md](../docs/agents/rtl-development.md)
+- Rust development: [docs/agents/rust-development.md](../docs/agents/rust-development.md)
+- CI/CD and PR readiness: [docs/agents/ci-cd.md](../docs/agents/ci-cd.md)
+- Debugging: [docs/agents/debugging.md](../docs/agents/debugging.md)
+
+## Critical Requirements
+
+1. **Read AGENTS.md first** - Contains custom agent selection and project-wide conventions
+2. **Use specialized agents** - Delegate to appropriate custom agents (see AGENTS.md)
+3. **No CodeQL scans** - Skip security scanning (not needed for hardware verification)
+4. **Mandatory code quality for Rust:**
+   - Always run `cargo fmt` before committing
+   - Always run `cargo clippy -- -D warnings` before committing
+   - Zero tolerance for clippy warnings
+
+**→ Start by reading [AGENTS.md](../AGENTS.md) to understand the project and select the right agent for your task.**
