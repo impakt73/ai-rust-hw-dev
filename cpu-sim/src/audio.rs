@@ -195,8 +195,6 @@ where
     sample_callback: Option<S>,
     /// Optional callback invoked when configuration changes
     config_callback: Option<C>,
-    /// Previous config value to detect changes
-    previous_config: Option<AudioConfig>,
 }
 
 impl<S, C> Audio<S, C>
@@ -214,7 +212,6 @@ where
             active_read: None,
             sample_callback,
             config_callback,
-            previous_config: None,
         }
     }
 
@@ -330,7 +327,7 @@ where
     /// Handle configuration register write
     fn handle_config_write(&mut self, new_config: u32) {
         // If config changes during active read, abort the read
-        if self.audio_config != new_config && self.is_read_active() {
+        if self.is_read_active() {
             log::warn!("Audio: Configuration changed during active read, aborting read");
             self.active_read = None;
         }
@@ -350,8 +347,6 @@ where
             if let Some(ref mut callback) = self.config_callback {
                 callback(&config);
             }
-
-            self.previous_config = Some(config);
         }
     }
 
@@ -424,7 +419,6 @@ where
         self.read_ptr = 0;
         self.write_ptr = 0;
         self.active_read = None;
-        self.previous_config = None;
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {

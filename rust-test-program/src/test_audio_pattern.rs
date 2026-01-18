@@ -32,42 +32,6 @@ const fn make_audio_config(sample_rate: u32, channels: u32, log2_sample_count: u
     (sample_rate & 0x3) | ((channels & 0x1) << 2) | ((log2_sample_count & 0x1F) << 3)
 }
 
-/// Generate a sine wave sample
-/// Uses a simple approximation: sin(x) ≈ x for small x
-/// For a full sine wave, we'll use a lookup table approach
-fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
-    // Simple sine wave using lookup table approximation
-    // We'll use a 32-entry lookup table for a quarter wave
-    const QUARTER_WAVE_LEN: u32 = 32;
-    const FULL_WAVE_LEN: u32 = QUARTER_WAVE_LEN * 4;
-    
-    // Normalize index to position in full wave
-    let phase = (index / frequency_div) % FULL_WAVE_LEN;
-    
-    // Quarter wave lookup table (0 to pi/2, scaled to 0-32767)
-    const SINE_TABLE: [i16; 32] = [
-        0, 1608, 3212, 4808, 6393, 7962, 9512, 11039,
-        12539, 14010, 15446, 16846, 18204, 19519, 20787, 22005,
-        23170, 24279, 25329, 26319, 27245, 28105, 28898, 29621,
-        30273, 30852, 31356, 31785, 32137, 32412, 32609, 32728,
-    ];
-    
-    // Determine which quarter of the wave we're in and compute the value
-    if phase < QUARTER_WAVE_LEN {
-        // First quarter (0 to π/2): rising, positive
-        SINE_TABLE[phase as usize]
-    } else if phase < QUARTER_WAVE_LEN * 2 {
-        // Second quarter (π/2 to π): falling, positive
-        SINE_TABLE[(QUARTER_WAVE_LEN * 2 - 1 - phase) as usize]
-    } else if phase < QUARTER_WAVE_LEN * 3 {
-        // Third quarter (π to 3π/2): falling, negative
-        -SINE_TABLE[(phase - QUARTER_WAVE_LEN * 2) as usize]
-    } else {
-        // Fourth quarter (3π/2 to 2π): rising, negative
-        -SINE_TABLE[(QUARTER_WAVE_LEN * 4 - 1 - phase) as usize]
-    }
-}
-
 /// Write a stereo sample to the ring buffer
 /// For stereo: writes 4 bytes (2 × i16, one for left and one for right)
 fn write_stereo_sample(buffer_base: u32, offset: u32, left: i16, right: i16) {
@@ -160,9 +124,9 @@ fn main() -> ! {
             // Write the samples (stereo: left and right channels)
             for i in 0..samples_to_write {
                 let sample_index = samples_written + i;
-                let left_sample = generate_sine_sample(sample_index, FREQUENCY_DIV);
+                let left_sample = common::generate_sine_sample(sample_index, FREQUENCY_DIV);
                 // Right channel is phase-shifted by 90 degrees for stereo effect
-                let right_sample = generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
+                let right_sample = common::generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
                 
                 write_stereo_sample(RING_BUFFER_BASE, write_ptr, left_sample, right_sample);
                 

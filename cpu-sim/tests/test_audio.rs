@@ -84,18 +84,18 @@ fn test_audio_pattern() {
         println!("✓ Captured {} config changes", configs.len());
         println!("✓ Captured {} audio samples", samples.len());
 
-        // Verify we got at least one config change
-        assert!(
-            !configs.is_empty(),
-            "Should have received at least one config change"
+        // Verify we got exactly one config change
+        assert_eq!(
+            configs.len(),
+            1,
+            "Should have received exactly one config change"
         );
 
-        // Verify we received a reasonable number of samples
-        // The test program should produce enough samples to cause ring buffer wrapping
-        assert!(
-            samples.len() > 100,
-            "Should have received many samples (got {})",
-            samples.len()
+        // Verify we received exactly 500 samples (as per test program)
+        assert_eq!(
+            samples.len(),
+            500,
+            "Should have received exactly 500 samples"
         );
 
         // Verify the configuration
@@ -106,9 +106,9 @@ fn test_audio_pattern() {
             "Sample rate should be 48000Hz"
         );
         assert_eq!(config.channels, AudioChannels::Stereo, "Should be stereo");
-        assert!(
-            config.sample_count >= 16,
-            "Buffer should be at least 16 samples"
+        assert_eq!(
+            config.sample_count, 64,
+            "Buffer should be exactly 64 samples"
         );
 
         // Verify samples match expected sine wave pattern exactly
