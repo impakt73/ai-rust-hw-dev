@@ -68,14 +68,17 @@ fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
     }
 }
 
-/// Write a sample to the ring buffer
-/// For mono: writes 2 bytes (i16)
-fn write_mono_sample(buffer_base: u32, offset: u32, sample: i16) {
+/// Write a stereo sample to the ring buffer
+/// For stereo: writes 4 bytes (2 × i16, one for left and one for right)
+fn write_stereo_sample(buffer_base: u32, offset: u32, left: i16, right: i16) {
     unsafe {
         let addr = buffer_base + offset;
-        let bytes = sample.to_le_bytes();
-        write_volatile(addr as *mut u8, bytes[0]);
-        write_volatile((addr + 1) as *mut u8, bytes[1]);
+        let left_bytes = left.to_le_bytes();
+        let right_bytes = right.to_le_bytes();
+        write_volatile(addr as *mut u8, left_bytes[0]);
+        write_volatile((addr + 1) as *mut u8, left_bytes[1]);
+        write_volatile((addr + 2) as *mut u8, right_bytes[0]);
+        write_volatile((addr + 3) as *mut u8, right_bytes[1]);
     }
 }
 
@@ -94,8 +97,8 @@ fn write_write_ptr(offset: u32) {
 /// Wait until there's space in the ring buffer for more samples
 /// Returns true if space is available, false if we should stop
 fn wait_for_space(buffer_size: u32, current_write: u32, samples_to_write: u32) -> bool {
-    // Calculate required space (in bytes)
-    let bytes_to_write = samples_to_write * 2; // 2 bytes per mono sample
+    // Calculate required space (in bytes) - 4 bytes per stereo sample
+    let bytes_to_write = samples_to_write * 4;
     
     // Simple approach: wait until read pointer has moved past our intended write position
     // This is a simple producer-consumer pattern
@@ -126,12 +129,12 @@ fn main() -> ! {
         // Use a small buffer (64 samples = 2^6) to ensure wrapping happens quickly
         const LOG2_BUFFER_SIZE: u32 = 6; // 64 samples
         const BUFFER_SIZE_SAMPLES: u32 = 1 << LOG2_BUFFER_SIZE; // 64
-        const BUFFER_SIZE_BYTES: u32 = BUFFER_SIZE_SAMPLES * 2; // 128 bytes (mono, 2 bytes per sample)
+        const BUFFER_SIZE_BYTES: u32 = BUFFER_SIZE_SAMPLES * 4; // 256 bytes (stereo, 4 bytes per sample)
         
         write_volatile(AUDIO_ADDR as *mut u32, RING_BUFFER_BASE);
         write_volatile(
             AUDIO_CONFIG as *mut u32,
-            make_audio_config(0, 0, LOG2_BUFFER_SIZE), // 48000Hz, Mono, 64 samples
+            make_audio_config(0, 1, LOG2_BUFFER_SIZE), // 48000Hz, Stereo, 64 samples
         );
         
         // Generate and write audio samples
@@ -154,15 +157,17 @@ fn main() -> ! {
             // Wait for space in the buffer
             wait_for_space(BUFFER_SIZE_BYTES, write_ptr, samples_to_write);
             
-            // Write the samples
+            // Write the samples (stereo: left and right channels)
             for i in 0..samples_to_write {
                 let sample_index = samples_written + i;
-                let sample = generate_sine_sample(sample_index, FREQUENCY_DIV);
+                let left_sample = generate_sine_sample(sample_index, FREQUENCY_DIV);
+                // Right channel is phase-shifted by 90 degrees for stereo effect
+                let right_sample = generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
                 
-                write_mono_sample(RING_BUFFER_BASE, write_ptr, sample);
+                write_stereo_sample(RING_BUFFER_BASE, write_ptr, left_sample, right_sample);
                 
-                // Update write pointer (with wrapping)
-                write_ptr = (write_ptr + 2) % BUFFER_SIZE_BYTES;
+                // Update write pointer (with wrapping) - 4 bytes per stereo sample
+                write_ptr = (write_ptr + 4) % BUFFER_SIZE_BYTES;
             }
             
             // Update the device's write pointer

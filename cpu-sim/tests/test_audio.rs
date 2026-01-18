@@ -3,6 +3,9 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+mod audio_test_common;
+use audio_test_common::generate_stereo_sample;
+
 fn test_program_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -102,26 +105,33 @@ fn test_audio_pattern() {
             AudioSampleRate::Hz48000,
             "Sample rate should be 48000Hz"
         );
-        assert_eq!(config.channels, AudioChannels::Mono, "Should be mono");
+        assert_eq!(config.channels, AudioChannels::Stereo, "Should be stereo");
         assert!(
             config.sample_count >= 16,
             "Buffer should be at least 16 samples"
         );
 
-        // Verify samples are in the expected range for a sine wave
-        // (assuming sine wave with reasonable amplitude)
+        // Verify samples match expected sine wave pattern exactly
+        const FREQUENCY_DIV: u32 = 4; // Must match test program
         for (i, sample_vec) in samples.iter().enumerate() {
             assert_eq!(
                 sample_vec.len(),
-                1,
-                "Each sample should have 1 channel (mono)"
+                2,
+                "Each sample should have 2 channels (stereo)"
             );
-            let sample = sample_vec[0];
-            assert!(
-                sample.abs() <= i16::MAX,
-                "Sample {} out of range: {}",
-                i,
-                sample
+
+            // Generate expected values using same algorithm as test program
+            let (expected_left, expected_right) = generate_stereo_sample(i as u32, FREQUENCY_DIV);
+
+            assert_eq!(
+                sample_vec[0], expected_left,
+                "Sample {} left channel mismatch: expected {}, got {}",
+                i, expected_left, sample_vec[0]
+            );
+            assert_eq!(
+                sample_vec[1], expected_right,
+                "Sample {} right channel mismatch: expected {}, got {}",
+                i, expected_right, sample_vec[1]
             );
         }
 

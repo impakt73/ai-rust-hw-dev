@@ -145,8 +145,10 @@ impl AudioConfig {
 struct ActiveRead {
     /// Current configuration for this read operation
     config: AudioConfig,
-    /// Buffer collecting sample data bytes
-    sample_buffer: Vec<u8>,
+    /// Buffer collecting sample data bytes (max 4 bytes: 2 channels × 2 bytes/sample)
+    sample_buffer: [u8; 4],
+    /// Number of bytes currently in the buffer
+    bytes_in_buffer: usize,
     /// Current read address
     current_addr: u32,
 }
@@ -260,7 +262,8 @@ where
         // Start active read operation
         self.active_read = Some(ActiveRead {
             config,
-            sample_buffer: Vec::with_capacity(config.bytes_per_sample() as usize),
+            sample_buffer: [0u8; 4],
+            bytes_in_buffer: 0,
             current_addr: self.audio_addr.wrapping_add(self.read_ptr),
         });
     }
@@ -274,14 +277,15 @@ where
 
         // Read one byte from memory
         let byte = ctx.read_byte(read.current_addr);
-        read.sample_buffer.push(byte);
+        read.sample_buffer[read.bytes_in_buffer] = byte;
+        read.bytes_in_buffer += 1;
 
         // Update address for next byte
         read.current_addr = read.current_addr.wrapping_add(1);
 
         // Check if sample is complete
         let bytes_per_sample = read.config.bytes_per_sample();
-        if read.sample_buffer.len() >= bytes_per_sample as usize {
+        if read.bytes_in_buffer >= bytes_per_sample as usize {
             let read_data = self.active_read.take().unwrap();
             self.process_complete_sample(read_data);
         }
@@ -289,18 +293,19 @@ where
 
     /// Process a complete sample and invoke callback
     fn process_complete_sample(&mut self, read: ActiveRead) {
-        // Convert byte buffer to i16 samples
+        // Convert byte buffer to i16 samples using fixed-size array
         let channel_count = read.config.channels.count();
-        let mut samples = Vec::with_capacity(channel_count);
+        let mut samples = [0i16; 2]; // Max 2 channels
+        let mut sample_count = 0;
 
         for i in 0..channel_count {
             let offset = i * 2;
-            if offset + 1 < read.sample_buffer.len() {
-                let sample = i16::from_le_bytes([
+            if offset + 1 < read.bytes_in_buffer {
+                samples[sample_count] = i16::from_le_bytes([
                     read.sample_buffer[offset],
                     read.sample_buffer[offset + 1],
                 ]);
-                samples.push(sample);
+                sample_count += 1;
             }
         }
 
@@ -312,13 +317,13 @@ where
 
         log::debug!(
             "Audio: Sample complete ({} channels, read_ptr now 0x{:x})",
-            samples.len(),
+            sample_count,
             self.read_ptr
         );
 
-        // Invoke sample callback
+        // Invoke sample callback with slice of actual samples
         if let Some(ref mut callback) = self.sample_callback {
-            callback(&samples);
+            callback(&samples[..sample_count]);
         }
     }
 
@@ -332,32 +337,21 @@ where
 
         self.audio_config = new_config;
 
-        // Check if valid config and different from previous
+        // Always notify on config write (treat all writes as changes)
         if let Some(config) = AudioConfig::from_register(new_config) {
-            let should_notify = match self.previous_config {
-                Some(prev) => {
-                    prev.sample_rate != config.sample_rate
-                        || prev.channels != config.channels
-                        || prev.sample_count != config.sample_count
-                }
-                None => true,
-            };
+            log::info!(
+                "Audio: Config changed - {}Hz, {:?}, {} samples",
+                config.sample_rate.to_hz(),
+                config.channels,
+                config.sample_count
+            );
 
-            if should_notify {
-                log::info!(
-                    "Audio: Config changed - {}Hz, {:?}, {} samples",
-                    config.sample_rate.to_hz(),
-                    config.channels,
-                    config.sample_count
-                );
-
-                // Invoke config callback
-                if let Some(ref mut callback) = self.config_callback {
-                    callback(&config);
-                }
-
-                self.previous_config = Some(config);
+            // Invoke config callback
+            if let Some(ref mut callback) = self.config_callback {
+                callback(&config);
             }
+
+            self.previous_config = Some(config);
         }
     }
 
