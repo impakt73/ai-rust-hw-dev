@@ -85,7 +85,6 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
     }
 
     // PC range is automatically set by write_memory_region calls above for executable segments
-    log::info!("ELF loaded with entry point: 0x{:08x}", entry_point);
     Ok(entry_point)
 }
 
@@ -181,7 +180,6 @@ where
                 load_elf(sim, elf_path).map_err(|e| format!("Error loading ELF: {}", e))?;
 
             log::info!("ELF loaded successfully");
-            log::info!("Entry point: 0x{:08x}", entry_point);
 
             // Call optional setup callback for additional setup after ELF loading
             if let Some(callback) = setup_callback {
