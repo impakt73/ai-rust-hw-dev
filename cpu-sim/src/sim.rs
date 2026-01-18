@@ -803,18 +803,10 @@ where
             callback(&mut view);
         }
 
-        // Trace printing (simplified - only at instruction completion)
-        if self.print_inst_trace {
-            let pc = self.cpu.debug_pc;
-            let instruction = self.cpu.debug_instruction;
-            println!(
-                "Cycle {:6} | PC: 0x{:08x} | Instr: 0x{:08x}",
-                self.cycle_count, pc, instruction
-            );
-        }
-
-        // Call trace callback if provided (at instruction completion)
-        if let Some(ref mut callback) = self.trace_callback {
+        // Unified instruction trace handling
+        // Check if trace callback is valid or instruction trace printing is enabled
+        if self.trace_callback.is_some() || self.print_inst_trace {
+            // Assemble InstructionTrace structure using debug signals from CPU
             let pc = self.cpu.debug_pc;
             let instruction = self.cpu.debug_instruction;
             let rs1_value = self.cpu.debug_rs1_data;
@@ -823,7 +815,19 @@ where
 
             let trace =
                 InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
-            callback(&trace);
+
+            // Print the display version of the structure if printing is enabled
+            if self.print_inst_trace {
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | {}",
+                    self.cycle_count, pc, trace
+                );
+            }
+
+            // Call the trace callback with the structure if the callback is valid
+            if let Some(ref mut callback) = self.trace_callback {
+                callback(&trace);
+            }
         }
 
         // Check for termination via SimControl device
