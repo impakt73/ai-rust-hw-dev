@@ -1,5 +1,8 @@
 use cpu_sim::*;
+use image::{ImageBuffer, Rgba};
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 fn test_program_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -7,6 +10,74 @@ fn test_program_path(name: &str) -> PathBuf {
         .unwrap()
         .join("test_programs")
         .join(name)
+}
+
+/// Convert pixel data from the video format to RGBA8 and save as PNG
+fn save_video_frame_as_png(
+    pixel_data: &[u8],
+    config: &VideoConfig,
+    filename: &str,
+) -> Result<(), String> {
+    let width = config.width;
+    let height = config.height;
+
+    // Convert pixel data to RGBA8 format
+    let rgba_data = match config.format {
+        VideoFormat::Rgba8 => {
+            // Already in RGBA8 format
+            pixel_data.to_vec()
+        }
+        VideoFormat::Rgb8 => {
+            // Convert RGB8 to RGBA8 (add alpha channel)
+            let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+            for chunk in pixel_data.chunks_exact(3) {
+                rgba.push(chunk[0]); // R
+                rgba.push(chunk[1]); // G
+                rgba.push(chunk[2]); // B
+                rgba.push(255); // A (opaque)
+            }
+            rgba
+        }
+        VideoFormat::Rgb565 => {
+            // Convert RGB565 to RGBA8
+            let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+            for chunk in pixel_data.chunks_exact(2) {
+                let rgb565 = u16::from_le_bytes([chunk[0], chunk[1]]);
+                let r = ((rgb565 >> 11) & 0x1F) as u8;
+                let g = ((rgb565 >> 5) & 0x3F) as u8;
+                let b = (rgb565 & 0x1F) as u8;
+
+                // Scale to 8-bit
+                rgba.push((r << 3) | (r >> 2)); // R: 5-bit to 8-bit
+                rgba.push((g << 2) | (g >> 4)); // G: 6-bit to 8-bit
+                rgba.push((b << 3) | (b >> 2)); // B: 5-bit to 8-bit
+                rgba.push(255); // A: opaque
+            }
+            rgba
+        }
+        VideoFormat::R8 => {
+            // Convert grayscale to RGBA8
+            let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+            for &gray in pixel_data {
+                rgba.push(gray); // R
+                rgba.push(gray); // G
+                rgba.push(gray); // B
+                rgba.push(255); // A (opaque)
+            }
+            rgba
+        }
+    };
+
+    // Create image buffer from RGBA8 data
+    let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_data)
+        .ok_or_else(|| "Failed to create image buffer from pixel data".to_string())?;
+
+    // Save the image
+    img_buffer
+        .save(filename)
+        .map_err(|e| format!("Failed to save image: {}", e))?;
+
+    Ok(())
 }
 
 #[test]
@@ -18,11 +89,41 @@ fn test_video_pattern() {
     // Video device base address (must match test program)
     const VIDEO_BASE: u32 = 0x3000_0000;
 
+    // Track frame counter for generating filenames
+    let frame_counter = Rc::new(RefCell::new(0));
+
     // Setup callback to register Video device
-    let setup_callback = |view: &mut SimulatorView| {
+    let frame_counter_setup = frame_counter.clone();
+    let setup_callback = move |view: &mut SimulatorView| {
+        let frame_counter_present = frame_counter_setup.clone();
+
+        // Create callback that saves frames as PNG files
+        let present_callback = move |data: &[u8], config: &VideoConfig| {
+            let mut counter = frame_counter_present.borrow_mut();
+            let filename = format!("frame_{:04}.png", *counter);
+
+            match save_video_frame_as_png(data, config, &filename) {
+                Ok(()) => {
+                    log::info!(
+                        "Frame {} saved to {} ({}x{} {:?})",
+                        *counter,
+                        filename,
+                        config.width,
+                        config.height,
+                        config.format
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to save frame {}: {}", *counter, e);
+                }
+            }
+
+            *counter += 1;
+        };
+
         // Register Video device at 0x3000_0000 with very high FPS for testing
         // At 100MHz CPU, 10000 FPS = 10,000 cycles per frame
-        let video = Box::new(Video::with_fps(10000));
+        let video = Box::new(Video::with_fps(10000, present_callback));
         view.register_device(VIDEO_BASE, video)
             .expect("Failed to register Video device");
         log::info!("Video device registered at 0x{:08x}", VIDEO_BASE);
@@ -82,7 +183,7 @@ fn test_video_pattern() {
 
 /// Verify frame 0: Red/Green checkerboard pattern
 fn verify_frame_0_checkerboard() {
-    use image::{GenericImageView, Rgba};
+    use image::GenericImageView;
 
     let img = image::open("frame_0000.png").expect("Failed to open frame_0000.png");
     assert_eq!(img.width(), 64, "Frame 0 width should be 64");
@@ -114,7 +215,7 @@ fn verify_frame_0_checkerboard() {
 
 /// Verify frame 1: Blue/Yellow diagonal stripes
 fn verify_frame_1_diagonal_stripes() {
-    use image::{GenericImageView, Rgba};
+    use image::GenericImageView;
 
     let img = image::open("frame_0001.png").expect("Failed to open frame_0001.png");
     assert_eq!(img.width(), 64, "Frame 1 width should be 64");
@@ -153,7 +254,7 @@ fn verify_frame_1_diagonal_stripes() {
 
 /// Verify frame 2: Grayscale gradient
 fn verify_frame_2_gradient() {
-    use image::{GenericImageView, Rgba};
+    use image::GenericImageView;
 
     let img = image::open("frame_0002.png").expect("Failed to open frame_0002.png");
     assert_eq!(img.width(), 64, "Frame 2 width should be 64");

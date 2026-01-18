@@ -123,68 +123,6 @@ fn render_pattern_3() {
     }
 }
 
-/// Verify a pixel value at (x, y)
-fn verify_pixel(x: u32, y: u32, expected_r: u8, expected_g: u8, expected_b: u8, expected_a: u8) -> bool {
-    unsafe {
-        let offset = ((y * WIDTH + x) * 4) as u32;
-        let addr = FRAMEBUFFER_BASE + offset;
-        let r = read_volatile(addr as *const u8);
-        let g = read_volatile((addr + 1) as *const u8);
-        let b = read_volatile((addr + 2) as *const u8);
-        let a = read_volatile((addr + 3) as *const u8);
-        
-        r == expected_r && g == expected_g && b == expected_b && a == expected_a
-    }
-}
-
-/// Verify test pattern 1 at specific test points
-fn verify_pattern_1() -> bool {
-    // Check corner pixels
-    if !verify_pixel(0, 0, 255, 0, 0, 255) { return false; } // (0,0) even+even=even -> Red
-    if !verify_pixel(1, 0, 0, 255, 0, 255) { return false; } // (1,0) odd+even=odd -> Green
-    if !verify_pixel(0, 1, 0, 255, 0, 255) { return false; } // (0,1) even+odd=odd -> Green
-    if !verify_pixel(1, 1, 255, 0, 0, 255) { return false; } // (1,1) odd+odd=even -> Red
-    
-    // Check some middle pixels
-    if !verify_pixel(32, 32, 255, 0, 0, 255) { return false; } // even+even -> Red
-    if !verify_pixel(33, 32, 0, 255, 0, 255) { return false; } // odd+even -> Green
-    
-    true
-}
-
-/// Verify test pattern 2 at specific test points
-fn verify_pattern_2() -> bool {
-    // Check pattern at (0, 0): (0+0) % 16 = 0 < 8 -> Blue
-    if !verify_pixel(0, 0, 0, 0, 255, 255) { return false; }
-    
-    // Check pattern at (8, 0): (8+0) % 16 = 8 >= 8 -> Yellow
-    if !verify_pixel(8, 0, 255, 255, 0, 255) { return false; }
-    
-    // Check pattern at (0, 8): (0+8) % 16 = 8 >= 8 -> Yellow
-    if !verify_pixel(0, 8, 255, 255, 0, 255) { return false; }
-    
-    // Check pattern at (4, 4): (4+4) % 16 = 8 >= 8 -> Yellow
-    if !verify_pixel(4, 4, 255, 255, 0, 255) { return false; }
-    
-    true
-}
-
-/// Verify test pattern 3 at specific test points
-fn verify_pattern_3() -> bool {
-    // Check gradient at x=0: gray = 0
-    if !verify_pixel(0, 0, 0, 0, 0, 255) { return false; }
-    
-    // Check gradient at x=WIDTH-1: gray = 255
-    let gray_max = (((WIDTH - 1) * 255) / WIDTH) as u8;
-    if !verify_pixel(WIDTH - 1, 0, gray_max, gray_max, gray_max, 255) { return false; }
-    
-    // Check gradient at x=32: gray = (32 * 255) / 64 = 127.5 -> 127
-    let gray_mid = ((32 * 255) / WIDTH) as u8;
-    if !verify_pixel(32, 0, gray_mid, gray_mid, gray_mid, 255) { return false; }
-    
-    true
-}
-
 #[entry]
 fn main() -> ! {
     unsafe {
@@ -195,36 +133,18 @@ fn main() -> ! {
         // Frame 1: Red/Green checkerboard
         wait_for_frame_ready();
         render_pattern_1();
-        
-        // Verify pattern 1 was written correctly
-        if !verify_pattern_1() {
-            common::write_tohost(common::FAILURE_CODE);
-        }
-        
         wait_for_present_ready();
         trigger_present();
         
         // Frame 2: Blue/Yellow diagonal stripes
         wait_for_frame_ready();
         render_pattern_2();
-        
-        // Verify pattern 2 was written correctly
-        if !verify_pattern_2() {
-            common::write_tohost(common::FAILURE_CODE);
-        }
-        
         wait_for_present_ready();
         trigger_present();
         
         // Frame 3: Grayscale gradient
         wait_for_frame_ready();
         render_pattern_3();
-        
-        // Verify pattern 3 was written correctly
-        if !verify_pattern_3() {
-            common::write_tohost(common::FAILURE_CODE);
-        }
-        
         wait_for_present_ready();
         trigger_present();
         

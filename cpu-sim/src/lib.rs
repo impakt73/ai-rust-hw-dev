@@ -17,7 +17,7 @@ pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};
-pub use video::Video;
+pub use video::{Video, VideoConfig, VideoFormat};
 
 use bus::SystemBus;
 use hung_detector::HungDetectorConfig;
