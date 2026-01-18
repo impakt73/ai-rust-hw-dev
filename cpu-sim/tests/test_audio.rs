@@ -27,7 +27,7 @@ fn test_audio_pattern() {
     // Setup callback to register Audio device
     let samples_for_setup = captured_samples.clone();
     let configs_for_setup = captured_configs.clone();
-    
+
     let setup_callback = move |view: &mut SimulatorView| {
         let samples_for_callback = samples_for_setup.clone();
         let configs_for_callback = configs_for_setup.clone();
@@ -62,7 +62,7 @@ fn test_audio_pattern() {
     // Termination callback to verify captured data
     let samples_for_verify = captured_samples.clone();
     let configs_for_verify = captured_configs.clone();
-    
+
     let termination_callback = move |_view: &SimulatorView, result: &SimulationResult| {
         // Verify the program completed successfully
         assert_eq!(

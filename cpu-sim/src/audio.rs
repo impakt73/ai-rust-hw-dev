@@ -121,7 +121,7 @@ impl AudioConfig {
     fn to_register(self) -> u32 {
         let sample_rate_field = self.sample_rate.to_u8() as u32;
         let channels_field = self.channels.to_u8() as u32;
-        
+
         // Calculate log2 of sample_count
         let log2_sample_count = 31 - self.sample_count.leading_zeros();
 
@@ -440,7 +440,7 @@ where
         } else {
             // Try to start a new read if data is available
             self.start_read_if_available();
-            
+
             // If we just started a read, process one byte this cycle
             if self.is_read_active() {
                 self.read_one_byte(ctx);
@@ -497,31 +497,30 @@ mod tests {
 
     #[test]
     fn test_audio_register_access() {
-        let mut audio = Audio::new(
-            None::<fn(&[i16])>,
-            None::<fn(&AudioConfig)>,
-        );
+        let mut audio = Audio::new(None::<fn(&[i16])>, None::<fn(&AudioConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
         // Write to registers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio.write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3)).unwrap();
+        audio
+            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
+            .unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Read back registers
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0x8000_1000);
-        assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), 0 | (0 << 2) | (8 << 3));
+        assert_eq!(
+            audio.read_word(&mut ctx, 0x04).unwrap(),
+            0 | (0 << 2) | (8 << 3)
+        );
         assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0); // read_ptr starts at 0
         assert_eq!(audio.read_word(&mut ctx, 0x0C).unwrap(), 0x100);
     }
 
     #[test]
     fn test_audio_read_ptr_read_only() {
-        let mut audio = Audio::new(
-            None::<fn(&[i16])>,
-            None::<fn(&AudioConfig)>,
-        );
+        let mut audio = Audio::new(None::<fn(&[i16])>, None::<fn(&AudioConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -600,8 +599,8 @@ mod tests {
         // Set up test audio data in memory (stereo samples: left, right)
         let audio_addr = 0x8000_1000;
         let test_samples = [
-            (100i16, 200i16),   // Sample 0: left=100, right=200
-            (-500i16, 300i16),  // Sample 1: left=-500, right=300
+            (100i16, 200i16),  // Sample 0: left=100, right=200
+            (-500i16, 300i16), // Sample 1: left=-500, right=300
         ];
 
         for (i, &(left, right)) in test_samples.iter().enumerate() {
@@ -718,16 +717,15 @@ mod tests {
 
     #[test]
     fn test_audio_reset() {
-        let mut audio = Audio::new(
-            None::<fn(&[i16])>,
-            None::<fn(&AudioConfig)>,
-        );
+        let mut audio = Audio::new(None::<fn(&[i16])>, None::<fn(&AudioConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
         // Configure and set pointers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio.write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3)).unwrap();
+        audio
+            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
+            .unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Reset
