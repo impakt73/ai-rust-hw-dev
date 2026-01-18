@@ -15,7 +15,7 @@ pub enum VideoFormat {
 
 impl VideoFormat {
     /// Get the number of bytes per pixel for this format
-    fn bytes_per_pixel(&self) -> u32 {
+    pub fn bytes_per_pixel(&self) -> u32 {
         match self {
             VideoFormat::Rgba8 => 4,
             VideoFormat::Rgb8 => 3,
@@ -49,13 +49,13 @@ impl VideoFormat {
 
 /// Configuration parsed from VIDEO_CONFIG register
 #[derive(Debug, Clone, Copy)]
-struct VideoConfig {
+pub struct VideoConfig {
     /// Image width in pixels (1-4096, stored with +1 bias)
-    width: u32,
+    pub width: u32,
     /// Image height in pixels (1-4096, stored with +1 bias)
-    height: u32,
+    pub height: u32,
     /// Pixel format
-    format: VideoFormat,
+    pub format: VideoFormat,
 }
 
 impl VideoConfig {
@@ -109,8 +109,8 @@ struct ActivePresent {
 /// Video device providing display/graphics functionality
 ///
 /// This device simulates a simple video controller that can read framebuffer
-/// data from memory and save it as PNG images. It provides frame pacing to
-/// ensure consistent frame rates based on simulation cycles.
+/// data from memory and invoke a callback when the data is ready. It provides
+/// frame pacing to ensure consistent frame rates based on simulation cycles.
 ///
 /// Register Map (all word-aligned):
 /// - 0x00: VIDEO_ADDR    - Framebuffer address in memory (read/write)
@@ -130,9 +130,12 @@ struct ActivePresent {
 /// 4. CPU renders frame data to memory at VIDEO_ADDR
 /// 5. CPU polls VIDEO_STATUS until PRESENT_READY is set
 /// 6. CPU writes 0 to VIDEO_PRESENT to trigger present operation
-/// 7. Device reads memory one byte per cycle and saves as PNG
-/// 8. After save completes, FRAME_READY is set after frame pacing delay
-pub struct Video {
+/// 7. Device reads memory one byte per cycle and invokes callback when complete
+/// 8. After callback completes, FRAME_READY is set after frame pacing delay
+pub struct Video<F = fn(&[u8], &VideoConfig)>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     /// Framebuffer address configuration register
     video_addr: u32,
     /// Image configuration register
@@ -145,18 +148,21 @@ pub struct Video {
     last_frame_cycle: Option<u64>,
     /// Current cycle count
     current_cycle: u64,
-    /// Current frame index (for generating filenames)
-    frame_index: u32,
+    /// Optional callback invoked when present data is fully available
+    present_callback: Option<F>,
 }
 
-impl Video {
+impl<F> Video<F>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     /// Create a new Video device with default 60 FPS frame rate
-    pub fn new() -> Self {
-        Self::with_fps(60)
+    pub fn new(present_callback: Option<F>) -> Self {
+        Self::with_fps(60, present_callback)
     }
 
     /// Create a new Video device with specified frame rate
-    pub fn with_fps(fps: u32) -> Self {
+    pub fn with_fps(fps: u32, present_callback: Option<F>) -> Self {
         Video {
             video_addr: 0,
             video_config: 0,
@@ -164,7 +170,7 @@ impl Video {
             target_fps: fps,
             last_frame_cycle: None,
             current_cycle: 0,
-            frame_index: 0,
+            present_callback,
         }
     }
 
@@ -247,112 +253,34 @@ impl Video {
         // Check if present is complete
         if present.bytes_remaining == 0 {
             let present_data = self.active_present.take().unwrap();
-            self.save_frame_as_png(present_data);
+            self.invoke_present_callback(present_data);
         }
     }
 
-    /// Save the collected frame data as a PNG image
-    fn save_frame_as_png(&mut self, present: ActivePresent) {
-        let filename = format!("frame_{:04}.png", self.frame_index);
+    /// Invoke the present callback with the collected frame data
+    fn invoke_present_callback(&mut self, present: ActivePresent) {
+        log::info!(
+            "Video: Present complete ({}x{} {:?}, {} bytes)",
+            present.config.width,
+            present.config.height,
+            present.config.format,
+            present.pixel_data.len()
+        );
 
-        match self.convert_and_save_image(&present, &filename) {
-            Ok(()) => {
-                log::info!(
-                    "Video: Frame {} saved to {} ({}x{} {:?})",
-                    self.frame_index,
-                    filename,
-                    present.config.width,
-                    present.config.height,
-                    present.config.format
-                );
-                self.frame_index += 1;
-                self.last_frame_cycle = Some(self.current_cycle);
-            }
-            Err(e) => {
-                log::error!("Video: Failed to save frame {}: {}", self.frame_index, e);
-            }
+        // Invoke the callback with the pixel data and configuration if present
+        if let Some(ref mut callback) = self.present_callback {
+            callback(&present.pixel_data, &present.config);
         }
-    }
 
-    /// Convert pixel data from source format to RGBA8 and save as PNG
-    fn convert_and_save_image(
-        &self,
-        present: &ActivePresent,
-        filename: &str,
-    ) -> Result<(), String> {
-        use image::{ImageBuffer, Rgba};
-
-        let width = present.config.width;
-        let height = present.config.height;
-        let pixel_data = &present.pixel_data;
-
-        // Convert pixel data to RGBA8 format
-        let rgba_data = match present.config.format {
-            VideoFormat::Rgba8 => {
-                // Already in RGBA8 format
-                pixel_data.clone()
-            }
-            VideoFormat::Rgb8 => {
-                // Convert RGB8 to RGBA8 (add alpha channel)
-                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                for chunk in pixel_data.chunks_exact(3) {
-                    rgba.push(chunk[0]); // R
-                    rgba.push(chunk[1]); // G
-                    rgba.push(chunk[2]); // B
-                    rgba.push(255); // A (opaque)
-                }
-                rgba
-            }
-            VideoFormat::Rgb565 => {
-                // Convert RGB565 to RGBA8
-                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                for chunk in pixel_data.chunks_exact(2) {
-                    let rgb565 = u16::from_le_bytes([chunk[0], chunk[1]]);
-                    let r = ((rgb565 >> 11) & 0x1F) as u8;
-                    let g = ((rgb565 >> 5) & 0x3F) as u8;
-                    let b = (rgb565 & 0x1F) as u8;
-
-                    // Scale to 8-bit
-                    rgba.push((r << 3) | (r >> 2)); // R: 5-bit to 8-bit
-                    rgba.push((g << 2) | (g >> 4)); // G: 6-bit to 8-bit
-                    rgba.push((b << 3) | (b >> 2)); // B: 5-bit to 8-bit
-                    rgba.push(255); // A: opaque
-                }
-                rgba
-            }
-            VideoFormat::R8 => {
-                // Convert grayscale to RGBA8
-                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                for &gray in pixel_data {
-                    rgba.push(gray); // R
-                    rgba.push(gray); // G
-                    rgba.push(gray); // B
-                    rgba.push(255); // A (opaque)
-                }
-                rgba
-            }
-        };
-
-        // Create image buffer from RGBA8 data
-        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba_data)
-            .ok_or_else(|| "Failed to create image buffer from pixel data".to_string())?;
-
-        // Save the image
-        img_buffer
-            .save(filename)
-            .map_err(|e| format!("Failed to save image: {}", e))?;
-
-        Ok(())
+        // Update frame pacing state
+        self.last_frame_cycle = Some(self.current_cycle);
     }
 }
 
-impl Default for Video {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl BusDevice for Video {
+impl<F> BusDevice for Video<F>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => Ok(self.video_addr),
@@ -440,6 +368,8 @@ impl BusDevice for Video {
 mod tests {
     use super::*;
     use crate::memory::Memory;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn test_video_format_bytes_per_pixel() {
@@ -486,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_video_register_access() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -509,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_video_status_register_read_only() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -522,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_video_present_register_write_only() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -535,7 +465,14 @@ mod tests {
 
     #[test]
     fn test_video_present_operation() {
-        let mut video = Video::new();
+        // Use Rc<RefCell<>> to capture callback data
+        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
+            Rc::new(RefCell::new(None));
+        let callback_data_clone = callback_data.clone();
+
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
+            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -575,11 +512,19 @@ mod tests {
         // After completion, PRESENT_READY should be set again
         let status = video.read_word(&mut ctx, 0x08).unwrap();
         assert_eq!(status & 0b10, 0b10); // PRESENT_READY = 1
+
+        // Verify callback was invoked with correct data
+        let captured = callback_data.borrow();
+        let (data, cfg) = captured.as_ref().unwrap();
+        assert_eq!(data.as_slice(), &test_data);
+        assert_eq!(cfg.width, 2);
+        assert_eq!(cfg.height, 2);
+        assert_eq!(cfg.format, VideoFormat::Rgba8);
     }
 
     #[test]
     fn test_video_invalid_config() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -598,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_video_multiple_present_rejected() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -624,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_video_reset() {
-        let mut video = Video::new();
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -648,8 +593,14 @@ mod tests {
     }
 
     #[test]
-    fn test_video_format_conversion_rgb8() {
-        let mut video = Video::new();
+    fn test_video_callback_receives_rgb8_data() {
+        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
+            Rc::new(RefCell::new(None));
+        let callback_data_clone = callback_data.clone();
+
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
+            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -679,14 +630,24 @@ mod tests {
             video.clock_cycle(&mut ctx);
         }
 
-        // Verify the PNG was created (it will be frame_0000.png)
-        // Note: The file will be created in the current working directory
-        // The conversion should add alpha channel (255) to each pixel
+        // Verify callback was invoked with RGB8 data
+        let captured = callback_data.borrow();
+        let (data, cfg) = captured.as_ref().unwrap();
+        assert_eq!(data.as_slice(), &test_data);
+        assert_eq!(cfg.width, 2);
+        assert_eq!(cfg.height, 2);
+        assert_eq!(cfg.format, VideoFormat::Rgb8);
     }
 
     #[test]
-    fn test_video_format_conversion_rgb565() {
-        let mut video = Video::new();
+    fn test_video_callback_receives_rgb565_data() {
+        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
+            Rc::new(RefCell::new(None));
+        let callback_data_clone = callback_data.clone();
+
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
+            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -724,16 +685,24 @@ mod tests {
             video.clock_cycle(&mut ctx);
         }
 
-        // Verify conversion logic:
-        // Red (0xF800): R=31 -> (31<<3)|(31>>2) = 248+7 = 255
-        // Green (0x07E0): G=63 -> (63<<2)|(63>>4) = 252+3 = 255
-        // Blue (0x001F): B=31 -> (31<<3)|(31>>2) = 248+7 = 255
-        // All converted values should scale properly to 8-bit
+        // Verify callback was invoked with RGB565 data
+        let captured = callback_data.borrow();
+        let (data, cfg) = captured.as_ref().unwrap();
+        assert_eq!(data.len(), 8); // 4 pixels × 2 bytes
+        assert_eq!(cfg.width, 2);
+        assert_eq!(cfg.height, 2);
+        assert_eq!(cfg.format, VideoFormat::Rgb565);
     }
 
     #[test]
-    fn test_video_format_conversion_r8() {
-        let mut video = Video::new();
+    fn test_video_callback_receives_r8_data() {
+        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
+            Rc::new(RefCell::new(None));
+        let callback_data_clone = callback_data.clone();
+
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
+            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -763,8 +732,13 @@ mod tests {
             video.clock_cycle(&mut ctx);
         }
 
-        // Verify the grayscale conversion: each gray value should be replicated
-        // to R, G, B channels with alpha=255
+        // Verify callback was invoked with R8 data
+        let captured = callback_data.borrow();
+        let (data, cfg) = captured.as_ref().unwrap();
+        assert_eq!(data.as_slice(), &test_data);
+        assert_eq!(cfg.width, 2);
+        assert_eq!(cfg.height, 2);
+        assert_eq!(cfg.format, VideoFormat::R8);
     }
 
     #[test]
