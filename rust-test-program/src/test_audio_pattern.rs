@@ -59,8 +59,8 @@ fn write_write_ptr(offset: u32) {
 }
 
 /// Wait until there's space in the ring buffer for more samples
-/// Returns true if space is available, false if we should stop
-fn wait_for_space(buffer_size: u32, current_write: u32, samples_to_write: u32) -> bool {
+/// Blocks until the required space becomes available
+fn wait_for_space(buffer_size: u32, current_write: u32, samples_to_write: u32) {
     // Calculate required space (in bytes) - 4 bytes per stereo sample
     let bytes_to_write = samples_to_write * 4;
     
@@ -76,9 +76,9 @@ fn wait_for_space(buffer_size: u32, current_write: u32, samples_to_write: u32) -
             buffer_size - current_write + read_ptr
         };
         
-        // If we have enough space, return true
+        // If we have enough space, return
         if available >= bytes_to_write {
-            return true;
+            return;
         }
         
         // If read_ptr hasn't moved at all for a while, we might be done
