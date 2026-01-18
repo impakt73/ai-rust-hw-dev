@@ -8,6 +8,32 @@ use std::time::Instant;
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
+/// Configuration for the simulator
+pub struct SimulatorConfig {
+    /// Enable instruction trace printing
+    pub print_inst_trace: bool,
+    /// Enable FSM state printing
+    pub print_fsm_state: bool,
+    /// Optional path to VCD file for waveform tracing
+    pub vcd_path: Option<String>,
+    /// Number of cycles to delay memory operations
+    pub mem_latency_cycles: u32,
+    /// Optional hung state detector configuration
+    pub hung_detector_config: Option<HungDetectorConfig>,
+}
+
+impl Default for SimulatorConfig {
+    fn default() -> Self {
+        Self {
+            print_inst_trace: false,
+            print_fsm_state: false,
+            vcd_path: None,
+            mem_latency_cycles: 0,
+            hung_detector_config: Some(HungDetectorConfig::default()),
+        }
+    }
+}
+
 /// Result of a single simulation step
 #[derive(Debug)]
 pub struct SimulationStepResult {
@@ -483,39 +509,34 @@ where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
-    /// Create a new simulator with the given bus, runtime, and optional callbacks
+    /// Create a new simulator with the given runtime and configuration
+    ///
+    /// **Note:** This function creates the system bus and initializes the CPU model internally.
+    /// Users no longer need to create these components separately.
     ///
     /// # Arguments
     /// * `runtime` - Verilator runtime for creating CPU model
-    /// * `bus` - System bus with memory and peripherals
-    /// * `print_inst_trace` - Enable instruction trace printing
-    /// * `print_fsm_state` - Enable FSM state printing
-    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes, receives a mutable `SimulatorView` providing controlled FIFO access
+    /// * `config` - Simulator configuration
+    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
     /// * `trace_callback` - Optional callback for instruction traces
-    /// * `vcd_path` - Optional path to VCD file for waveform tracing
-    /// * `mem_latency_cycles` - Number of cycles to delay memory operations
-    /// * `hung_detector_config` - Optional hung state detector configuration
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         runtime: &'a riscv_core::VerilatorRuntime,
-        bus: SystemBus,
-        print_inst_trace: bool,
-        print_fsm_state: bool,
+        config: SimulatorConfig,
         inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
-        vcd_path: Option<&str>,
-        mem_latency_cycles: u32,
-        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
+        // Create system bus with internal DRAM
+        let bus = SystemBus::new();
+
         // Create CPU model - enable tracing if VCD path is provided
-        let (cpu, vcd) = if let Some(vcd_file_path) = vcd_path {
-            let config = VerilatedModelConfig {
+        let (cpu, vcd) = if let Some(ref vcd_file_path) = config.vcd_path {
+            let verilated_config = VerilatedModelConfig {
                 enable_tracing: true,
                 ..Default::default()
             };
 
             let mut cpu = runtime
-                .create_model::<Top>(&config)
+                .create_model::<Top>(&verilated_config)
                 .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
 
             // Open VCD file
@@ -531,21 +552,24 @@ where
             (cpu, None)
         };
 
-        log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
+        log::info!(
+            "Memory latency configured to {} cycles",
+            config.mem_latency_cycles
+        );
 
-        let hung_detector = hung_detector_config.map(HungDetector::new);
+        let hung_detector = config.hung_detector_config.map(HungDetector::new);
 
         Ok(Simulator {
             cpu,
             bus,
             cycle_count: 0,
-            print_inst_trace,
-            print_fsm_state,
+            print_inst_trace: config.print_inst_trace,
+            print_fsm_state: config.print_fsm_state,
             inst_complete_callback,
             trace_callback,
             vcd,
             vcd_time: 0,
-            mem_latency_cycles,
+            mem_latency_cycles: config.mem_latency_cycles,
             imem_delay_counter: 0,
             dmem_delay_counter: 0,
             hung_detector,

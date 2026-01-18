@@ -18,10 +18,9 @@ pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_B
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulatorView};
+pub use sim::{SimulationResult, SimulatorConfig, SimulatorView};
 pub use video::{Video, VideoConfig, VideoFormat};
 
-use bus::SystemBus;
 use hung_detector::HungDetectorConfig;
 use sim::Simulator;
 use std::path::Path;
@@ -259,24 +258,21 @@ where
     P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
-    // Create system bus with internal DRAM
-    let bus = SystemBus::new();
-
-    // Initialize CPU Simulator
+    // Initialize CPU Simulator runtime
     let runtime = riscv_core::create_cpu_runtime()
         .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
 
-    let mut sim = Simulator::new(
-        &runtime,
-        bus,
+    // Create simulator configuration
+    let config = SimulatorConfig {
         print_inst_trace,
         print_fsm_state,
-        inst_complete_callback,
-        trace_callback,
-        vcd_path,
+        vcd_path: vcd_path.map(|s| s.to_string()),
         mem_latency_cycles,
-        Some(HungDetectorConfig::default()),
-    )?;
+        hung_detector_config: Some(HungDetectorConfig::default()),
+    };
+
+    // Create simulator (bus and CPU are created internally)
+    let mut sim = Simulator::new(&runtime, config, inst_complete_callback, trace_callback)?;
 
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback
