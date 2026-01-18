@@ -15,7 +15,7 @@ pub enum VideoFormat {
 
 impl VideoFormat {
     /// Get the number of bytes per pixel for this format
-    fn bytes_per_pixel(&self) -> u32 {
+    pub fn bytes_per_pixel(&self) -> u32 {
         match self {
             VideoFormat::Rgba8 => 4,
             VideoFormat::Rgb8 => 3,
@@ -106,9 +106,6 @@ struct ActivePresent {
     config: VideoConfig,
 }
 
-/// Type alias for the present callback function
-type PresentCallback = Box<dyn Fn(&[u8], &VideoConfig)>;
-
 /// Video device providing display/graphics functionality
 ///
 /// This device simulates a simple video controller that can read framebuffer
@@ -135,7 +132,10 @@ type PresentCallback = Box<dyn Fn(&[u8], &VideoConfig)>;
 /// 6. CPU writes 0 to VIDEO_PRESENT to trigger present operation
 /// 7. Device reads memory one byte per cycle and invokes callback when complete
 /// 8. After callback completes, FRAME_READY is set after frame pacing delay
-pub struct Video {
+pub struct Video<F = fn(&[u8], &VideoConfig)>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     /// Framebuffer address configuration register
     video_addr: u32,
     /// Image configuration register
@@ -148,24 +148,21 @@ pub struct Video {
     last_frame_cycle: Option<u64>,
     /// Current cycle count
     current_cycle: u64,
-    /// Callback invoked when present data is fully available
-    present_callback: PresentCallback,
+    /// Optional callback invoked when present data is fully available
+    present_callback: Option<F>,
 }
 
-impl Video {
+impl<F> Video<F>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     /// Create a new Video device with default 60 FPS frame rate
-    pub fn new<F>(present_callback: F) -> Self
-    where
-        F: Fn(&[u8], &VideoConfig) + 'static,
-    {
+    pub fn new(present_callback: Option<F>) -> Self {
         Self::with_fps(60, present_callback)
     }
 
     /// Create a new Video device with specified frame rate
-    pub fn with_fps<F>(fps: u32, present_callback: F) -> Self
-    where
-        F: Fn(&[u8], &VideoConfig) + 'static,
-    {
+    pub fn with_fps(fps: u32, present_callback: Option<F>) -> Self {
         Video {
             video_addr: 0,
             video_config: 0,
@@ -173,7 +170,7 @@ impl Video {
             target_fps: fps,
             last_frame_cycle: None,
             current_cycle: 0,
-            present_callback: Box::new(present_callback),
+            present_callback,
         }
     }
 
@@ -270,15 +267,20 @@ impl Video {
             present.pixel_data.len()
         );
 
-        // Invoke the callback with the pixel data and configuration
-        (self.present_callback)(&present.pixel_data, &present.config);
+        // Invoke the callback with the pixel data and configuration if present
+        if let Some(ref mut callback) = self.present_callback {
+            callback(&present.pixel_data, &present.config);
+        }
 
         // Update frame pacing state
         self.last_frame_cycle = Some(self.current_cycle);
     }
 }
 
-impl BusDevice for Video {
+impl<F> BusDevice for Video<F>
+where
+    F: FnMut(&[u8], &VideoConfig),
+{
     fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => Ok(self.video_addr),
@@ -414,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_video_register_access() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -437,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_video_status_register_read_only() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -450,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_video_present_register_write_only() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -468,9 +470,9 @@ mod tests {
             Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
-        let mut video = Video::new(move |data, config| {
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
             *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
-        });
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -522,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_video_invalid_config() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -541,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_video_multiple_present_rejected() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -567,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_video_reset() {
-        let mut video = Video::new(|_data, _config| {});
+        let mut video = Video::new(None::<fn(&[u8], &VideoConfig)>);
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -596,9 +598,9 @@ mod tests {
             Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
-        let mut video = Video::new(move |data, config| {
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
             *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
-        });
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -643,9 +645,9 @@ mod tests {
             Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
-        let mut video = Video::new(move |data, config| {
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
             *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
-        });
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
@@ -698,9 +700,9 @@ mod tests {
             Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
-        let mut video = Video::new(move |data, config| {
+        let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
             *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
-        });
+        }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
