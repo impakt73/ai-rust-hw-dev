@@ -1,4 +1,5 @@
 // Internal modules - not part of public API
+mod audio;
 mod bus;
 mod bus_device;
 mod dma;
@@ -12,6 +13,7 @@ mod sim_control;
 mod video;
 
 // Public API exports - only what's needed for external use
+pub use audio::{Audio, AudioChannels, AudioConfig, AudioSampleRate};
 pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE};
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
