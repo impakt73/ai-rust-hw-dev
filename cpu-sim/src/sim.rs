@@ -510,6 +510,7 @@ where
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
+    /// * `verilator_optimization` - Verilator optimization level (0-3), higher values increase execution speed but slow compilation
     pub fn new(
         print_inst_trace: bool,
         print_fsm_state: bool,
@@ -517,6 +518,7 @@ where
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
+        verilator_optimization: usize,
     ) -> Result<Self, String> {
         // Create system bus with internal DRAM (always default)
         let bus = SystemBus::new();
@@ -543,6 +545,7 @@ where
             // Create CPU model with configuration
             let config = VerilatedModelConfig {
                 enable_tracing: vcd_path.is_some(),
+                verilator_optimization,
                 ..Default::default()
             };
 
