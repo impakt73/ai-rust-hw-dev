@@ -15,10 +15,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Cache and install Verilator
+    - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator
+        packages: verilator libasound2-dev
         # Bump version (v1 -> v2) to force cache refresh
         version: v1
     

@@ -20,7 +20,26 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 
 ## Installation
 
-This package is part of the ai-rust-hw-dev workspace. Build it with:
+This package is part of the ai-rust-hw-dev workspace.
+
+### Prerequisites
+
+On Linux, the ALSA development libraries are required for audio support:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+# Fedora/RHEL
+sudo dnf install alsa-lib-devel
+
+# Arch Linux
+sudo pacman -S alsa-lib
+```
+
+### Building
+
+Once prerequisites are installed, build the package:
 
 ```bash
 cargo build --package sim-view --release
