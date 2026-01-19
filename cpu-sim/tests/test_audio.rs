@@ -20,9 +20,6 @@ fn test_audio_pattern() {
 
     let elf_path = test_program_path("test_audio_pattern.elf");
 
-    // Audio device base address (must match test program)
-    const AUDIO_BASE: u32 = 0x3000_0000;
-
     // Storage for captured samples and config changes
     let captured_samples: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
     let captured_configs: Rc<RefCell<Vec<AudioConfig>>> = Rc::new(RefCell::new(Vec::new()));
@@ -55,7 +52,7 @@ fn test_audio_pattern() {
             );
         };
 
-        // Register Audio device at 0x4000_0000
+        // Register Audio device at AUDIO_BASE
         let audio = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
         view.register_device(AUDIO_BASE, audio)
             .expect("Failed to register Audio device");

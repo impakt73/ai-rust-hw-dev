@@ -56,9 +56,6 @@ fn test_video_pattern() {
 
     let elf_path = test_program_path("test_video_pattern.elf");
 
-    // Video device base address (must match test program)
-    const VIDEO_BASE: u32 = 0x3000_0000;
-
     // Storage for captured frames
     let captured_frames: Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>> =
         Rc::new(RefCell::new(Vec::new()));
@@ -83,7 +80,7 @@ fn test_video_pattern() {
             );
         };
 
-        // Register Video device at 0x3000_0000 with very high FPS for testing
+        // Register Video device at VIDEO_BASE with very high FPS for testing
         // At 100MHz CPU, 10000 FPS = 10,000 cycles per frame
         let video = Box::new(Video::with_fps(10000, Some(present_callback)));
         view.register_device(VIDEO_BASE, video)
