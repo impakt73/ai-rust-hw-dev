@@ -45,7 +45,7 @@ const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
 const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
 
 /// Ring buffer base address in DRAM (after framebuffer)
-/// Framebuffer is 64*64*3 = 12288 bytes, so start audio buffer at 0x8000_4000
+/// Framebuffer is 64*64*3 = 12288 bytes (0x3000), so start audio buffer at 0x8000_1000 + 0x3000 = 0x8000_4000
 const RING_BUFFER_BASE: u32 = 0x8000_4000;
 
 /// Helper to create VIDEO_CONFIG register value
@@ -198,11 +198,12 @@ fn needs_audio_fill(buffer_size: u32, write_ptr: u32) -> bool {
 fn fill_audio_buffer(buffer_size: u32, write_ptr: &mut u32, sample_index: &mut u32) {
     // Write a chunk of samples to refill the buffer
     const CHUNK_SIZE: u32 = 64; // Write 64 samples at a time
+    const AUDIO_FREQUENCY_DIV: u32 = 16; // Sine wave frequency divider
 
     for _ in 0..CHUNK_SIZE {
-        // Generate sine wave samples
-        let left_sample = common::generate_sine_sample(*sample_index, 16);
-        let right_sample = common::generate_sine_sample(*sample_index + 4, 16);
+        // Generate sine wave samples with phase shift for stereo effect
+        let left_sample = common::generate_sine_sample(*sample_index, AUDIO_FREQUENCY_DIV);
+        let right_sample = common::generate_sine_sample(*sample_index + 4, AUDIO_FREQUENCY_DIV);
 
         write_stereo_sample(RING_BUFFER_BASE, *write_ptr, left_sample, right_sample);
 
