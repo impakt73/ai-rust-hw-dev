@@ -63,24 +63,24 @@ fn write_write_ptr(offset: u32) {
 fn wait_for_space(buffer_size: u32, current_write: u32, samples_to_write: u32) {
     // Calculate required space (in bytes) - 4 bytes per stereo sample
     let bytes_to_write = samples_to_write * 4;
-    
+
     // Simple approach: wait until read pointer has moved past our intended write position
     // This is a simple producer-consumer pattern
     loop {
         let read_ptr = read_read_ptr();
-        
+
         // Calculate available space
         let available = if read_ptr > current_write {
             read_ptr - current_write
         } else {
             buffer_size - current_write + read_ptr
         };
-        
+
         // If we have enough space, return
         if available >= bytes_to_write {
             return;
         }
-        
+
         // If read_ptr hasn't moved at all for a while, we might be done
         // For simplicity, we'll just keep trying
     }
@@ -94,21 +94,21 @@ fn main() -> ! {
         const LOG2_BUFFER_SIZE: u32 = 6; // 64 samples
         const BUFFER_SIZE_SAMPLES: u32 = 1 << LOG2_BUFFER_SIZE; // 64
         const BUFFER_SIZE_BYTES: u32 = BUFFER_SIZE_SAMPLES * 4; // 256 bytes (stereo, 4 bytes per sample)
-        
+
         write_volatile(AUDIO_ADDR as *mut u32, RING_BUFFER_BASE);
         write_volatile(
             AUDIO_CONFIG as *mut u32,
             make_audio_config(0, 1, LOG2_BUFFER_SIZE), // 48000Hz, Stereo, 64 samples
         );
-        
+
         // Generate and write audio samples
         // We'll generate enough samples to cause multiple buffer wraps
         const TOTAL_SAMPLES: u32 = 500; // This will wrap the 64-sample buffer ~8 times
         const FREQUENCY_DIV: u32 = 4; // How many samples per sine wave cycle
-        
+
         let mut write_ptr: u32 = 0;
         let mut samples_written: u32 = 0;
-        
+
         while samples_written < TOTAL_SAMPLES {
             // How many samples can we write this iteration?
             const CHUNK_SIZE: u32 = 16; // Write 16 samples at a time
@@ -117,29 +117,30 @@ fn main() -> ! {
             } else {
                 TOTAL_SAMPLES - samples_written
             };
-            
+
             // Wait for space in the buffer
             wait_for_space(BUFFER_SIZE_BYTES, write_ptr, samples_to_write);
-            
+
             // Write the samples (stereo: left and right channels)
             for i in 0..samples_to_write {
                 let sample_index = samples_written + i;
                 let left_sample = common::generate_sine_sample(sample_index, FREQUENCY_DIV);
                 // Right channel is phase-shifted by 90 degrees for stereo effect
-                let right_sample = common::generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
-                
+                let right_sample =
+                    common::generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
+
                 write_stereo_sample(RING_BUFFER_BASE, write_ptr, left_sample, right_sample);
-                
+
                 // Update write pointer (with wrapping) - 4 bytes per stereo sample
                 write_ptr = (write_ptr + 4) % BUFFER_SIZE_BYTES;
             }
-            
+
             // Update the device's write pointer
             write_write_ptr(write_ptr);
-            
+
             samples_written += samples_to_write;
         }
-        
+
         // Wait for all samples to be consumed
         // When read_ptr == write_ptr, all data has been read
         loop {
@@ -148,7 +149,7 @@ fn main() -> ! {
                 break;
             }
         }
-        
+
         // Success!
         common::write_tohost(common::SUCCESS_CODE);
     }

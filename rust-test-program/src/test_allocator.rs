@@ -29,14 +29,14 @@ fn main() -> ! {
     v.push(0xBCu8);
     v.push(0xDEu8);
     v.push(0xF0u8);
-    
+
     // Write the vec length
     common::fifo_write_word(v.len() as u32).expect("Failed to write to FIFO");
-    
+
     // Write each byte
     for &byte in v.iter() {
         common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
     }
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }

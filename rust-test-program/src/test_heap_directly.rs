@@ -25,17 +25,17 @@ fn main() -> ! {
     unsafe {
         let layout = Layout::from_size_align(8, 1).unwrap();
         let ptr = ALLOCATOR.alloc(layout);
-        
+
         // Send the pointer address to FIFO for debugging
-        common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");  // Debug marker
-        common::fifo_write_word(ptr as u32).expect("Failed to write to FIFO");  // Pointer address
-        
+        common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO"); // Debug marker
+        common::fifo_write_word(ptr as u32).expect("Failed to write to FIFO"); // Pointer address
+
         // Write first byte
         core::ptr::write(ptr.add(0), 0x12u8);
         // Read it back immediately
         let val0 = core::ptr::read(ptr.add(0));
         common::fifo_write_word(val0 as u32).expect("Failed to write to FIFO");
-        
+
         // Write second byte
         core::ptr::write(ptr.add(1), 0x34u8);
         // Read both bytes back
@@ -43,7 +43,7 @@ fn main() -> ! {
         let val1 = core::ptr::read(ptr.add(1));
         common::fifo_write_word(val0_after as u32).expect("Failed to write to FIFO");
         common::fifo_write_word(val1 as u32).expect("Failed to write to FIFO");
-        
+
         // Write third byte
         core::ptr::write(ptr.add(2), 0x56u8);
         // Read all three bytes back
@@ -53,26 +53,26 @@ fn main() -> ! {
         common::fifo_write_word(val0_after2 as u32).expect("Failed to write to FIFO");
         common::fifo_write_word(val1_after as u32).expect("Failed to write to FIFO");
         common::fifo_write_word(val2 as u32).expect("Failed to write to FIFO");
-        
+
         // Now write the remaining bytes
         core::ptr::write(ptr.add(3), 0x78u8);
         core::ptr::write(ptr.add(4), 0x9Au8);
         core::ptr::write(ptr.add(5), 0xBCu8);
         core::ptr::write(ptr.add(6), 0xDEu8);
         core::ptr::write(ptr.add(7), 0xF0u8);
-        
+
         // Write marker
         common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
-        
+
         // Read back all and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
             common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
         }
-        
+
         // Write marker
         common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
     }
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }

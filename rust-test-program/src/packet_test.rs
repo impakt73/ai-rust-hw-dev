@@ -7,9 +7,9 @@ mod common;
 
 use alloc::string::String;
 use core::panic::PanicInfo;
+use postcard::to_allocvec;
 use riscv_protocol::*;
 use riscv_rt::entry;
-use postcard::to_allocvec;
 
 #[global_allocator]
 static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
@@ -56,7 +56,7 @@ fn main() -> ! {
     // CPU side requires additional complexity not included in this initial implementation.
     // Echo packet is approximately 5 words (20 bytes for header + sequence + timestamp)
     let _echo_words = common::read_fifo_words(10);
-    
+
     // Step 3: Send Echo response with known expected values
     // Since incoming packets are not parsed, we send hardcoded responses based on the test's
     // expected values (sequence 101 = 100 + 1 as if we parsed and incremented it)

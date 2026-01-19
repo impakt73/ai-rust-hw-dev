@@ -15,7 +15,7 @@ fn panic(info: &PanicInfo) -> ! {
 fn main() -> ! {
     // Test with stack memory (array)
     let mut stack_array: [u8; 8] = [0; 8];
-    
+
     // Write to stack array using ptr::write
     unsafe {
         let ptr = stack_array.as_mut_ptr();
@@ -28,29 +28,29 @@ fn main() -> ! {
         core::ptr::write(ptr.add(6), 0xDEu8);
         core::ptr::write(ptr.add(7), 0xF0u8);
     }
-    
+
     // Write marker
     common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
-    
+
     // Read and send to FIFO
     for i in 0..8 {
         let byte = stack_array[i];
         common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
     }
-    
+
     // Write marker
     common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
-    
+
     // Test 2: Direct assignment
     let stack_array2: [u8; 8] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-    
+
     // Write marker
     common::fifo_write_word(0xCCCCCCCC).expect("Failed to write to FIFO");
-    
+
     // Read and send to FIFO
     for &byte in &stack_array2 {
         common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
     }
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }

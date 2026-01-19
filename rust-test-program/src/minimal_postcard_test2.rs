@@ -6,8 +6,8 @@ extern crate alloc;
 mod common;
 
 use core::panic::PanicInfo;
-use riscv_rt::entry;
 use postcard::to_allocvec;
+use riscv_rt::entry;
 use serde::Serialize;
 
 #[global_allocator]
@@ -27,8 +27,11 @@ struct SimpleStruct {
 #[entry]
 fn main() -> ! {
     // Test 1: Serialize a simple struct and write it like packet_test.rs does
-    let simple = SimpleStruct { a: 0x12345678, b: 0xABCDEF00 };
-    
+    let simple = SimpleStruct {
+        a: 0x12345678,
+        b: 0xABCDEF00,
+    };
+
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write bytes in chunks of 4, just like packet_test.rs
         for chunk in bytes.chunks(4) {
@@ -39,9 +42,9 @@ fn main() -> ! {
             common::fifo_write_word(word).expect("Failed to write to FIFO");
         }
     }
-    
+
     // Write a known pattern to mark the end
     common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }

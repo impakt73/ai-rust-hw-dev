@@ -6,8 +6,8 @@ extern crate alloc;
 mod common;
 
 use core::panic::PanicInfo;
-use riscv_rt::entry;
 use postcard::to_allocvec;
+use riscv_rt::entry;
 use serde::Serialize;
 
 #[global_allocator]
@@ -27,17 +27,20 @@ struct SimpleStruct {
 #[entry]
 fn main() -> ! {
     // Test 1: Serialize a simple struct
-    let simple = SimpleStruct { a: 0x12345678, b: 0xABCDEF00 };
-    
+    let simple = SimpleStruct {
+        a: 0x12345678,
+        b: 0xABCDEF00,
+    };
+
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write each byte individually to FIFO to see if duplication happens
         for &byte in bytes.iter() {
             common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
         }
     }
-    
+
     // Test 2: Write a known pattern
     common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }
