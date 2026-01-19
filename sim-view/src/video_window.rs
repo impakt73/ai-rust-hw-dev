@@ -1,7 +1,6 @@
 use cpu_sim::{VideoConfig, VideoFormat};
 use minifb::{Key as MinifbKey, KeyRepeat, Scale, Window, WindowOptions};
 use std::collections::VecDeque;
-use std::path::PathBuf;
 
 pub struct VideoWindow {
     window: Window,
@@ -18,8 +17,6 @@ pub struct VideoWindow {
 /// Window event types
 pub enum WindowEvent {
     KeyPressed(Key, KeyModifiers),
-    #[allow(dead_code)]
-    FileDrop(PathBuf),
     Close,
 }
 
@@ -29,8 +26,6 @@ pub enum Key {
     Escape,
     Space,
     R,
-    #[allow(dead_code)]
-    Unknown,
 }
 
 /// Keyboard modifiers

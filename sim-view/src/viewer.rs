@@ -35,7 +35,6 @@ pub struct SimViewer {
     total_cycles: u64,
 
     /// FPS timing
-    _last_frame_time: Instant,
     target_frame_duration: Duration,
 }
 
@@ -77,7 +76,6 @@ impl SimViewer {
             state: ViewerState::Idle,
             last_elf_path: None,
             total_cycles: 0,
-            _last_frame_time: Instant::now(),
             target_frame_duration,
         })
     }
@@ -224,7 +222,7 @@ impl SimViewer {
         Ok(())
     }
 
-    /// Handle window events (keyboard, drag-and-drop, close)
+    /// Handle window events (keyboard, close)
     fn handle_events(&mut self) -> Result<(), String> {
         // Get events from window
         let events = self.video_window.get_events();
@@ -233,9 +231,6 @@ impl SimViewer {
             match event {
                 WindowEvent::KeyPressed(key, modifiers) => {
                     self.handle_key_press(key, modifiers)?;
-                }
-                WindowEvent::FileDrop(path) => {
-                    self.handle_file_drop(path)?;
                 }
                 WindowEvent::Close => {
                     log::info!("Window close requested");
@@ -264,19 +259,5 @@ impl SimViewer {
             _ => {}
         }
         Ok(())
-    }
-
-    /// Handle file drop event
-    fn handle_file_drop(&mut self, path: PathBuf) -> Result<(), String> {
-        log::info!("File dropped: {}", path.display());
-
-        // Check if file has .elf extension
-        if path.extension().and_then(|s| s.to_str()) != Some("elf") {
-            log::warn!("Dropped file is not an ELF file (expected .elf extension)");
-            return Ok(());
-        }
-
-        // Load the ELF file
-        self.load_elf(&path)
     }
 }

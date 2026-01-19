@@ -122,7 +122,8 @@ impl AudioStream {
                     for sample_slot in data.iter_mut() {
                         let sample_i16 = buf.pop_front().unwrap_or(0);
                         // Convert i16 to f32 in range [-1.0, 1.0]
-                        *sample_slot = sample_i16 as f32 / i16::MAX as f32;
+                        // Using 32768.0 ensures proper normalization for both positive and negative values
+                        *sample_slot = sample_i16 as f32 / 32768.0;
                     }
                 },
                 |err| eprintln!("Audio stream error: {}", err),

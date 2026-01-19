@@ -47,7 +47,6 @@ fn main() {
 
     log::info!("sim-view: RISC-V CPU Simulator Viewer");
     log::info!("Controls:");
-    log::info!("  - Drag & Drop ELF file to load (not yet implemented)");
     log::info!("  - Ctrl+R: Reload last ELF file");
     log::info!("  - Space: Pause/Resume simulation");
     log::info!("  - Escape: Exit");
