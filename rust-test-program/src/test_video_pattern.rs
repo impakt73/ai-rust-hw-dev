@@ -128,29 +128,32 @@ fn main() -> ! {
     unsafe {
         // Configure Video device
         write_volatile(VIDEO_ADDR as *mut u32, FRAMEBUFFER_BASE);
-        write_volatile(VIDEO_CONFIG as *mut u32, make_video_config(WIDTH, HEIGHT, FORMAT_RGBA8));
-        
+        write_volatile(
+            VIDEO_CONFIG as *mut u32,
+            make_video_config(WIDTH, HEIGHT, FORMAT_RGBA8),
+        );
+
         // Frame 1: Red/Green checkerboard
         wait_for_frame_ready();
         render_pattern_1();
         wait_for_present_ready();
         trigger_present();
-        
+
         // Frame 2: Blue/Yellow diagonal stripes
         wait_for_frame_ready();
         render_pattern_2();
         wait_for_present_ready();
         trigger_present();
-        
+
         // Frame 3: Grayscale gradient
         wait_for_frame_ready();
         render_pattern_3();
         wait_for_present_ready();
         trigger_present();
-        
+
         // Wait for final present to complete
         wait_for_present_ready();
-        
+
         // Success!
         common::write_tohost(common::SUCCESS_CODE);
     }

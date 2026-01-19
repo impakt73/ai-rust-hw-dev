@@ -128,3 +128,8 @@ name = "test_audio_pattern"
 path = "src/test_audio_pattern.rs"
 test = false
 
+[[bin]]
+name = "test_sim_view"
+path = "src/test_sim_view.rs"
+test = false
+
