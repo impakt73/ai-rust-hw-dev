@@ -13,7 +13,7 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 /// Video device base address
-const VIDEO_BASE: u32 = 0x3000_0000;
+const VIDEO_BASE: u32 = 0x2000_0000;
 
 /// Video register offsets
 const VIDEO_ADDR: u32 = VIDEO_BASE + 0x00;

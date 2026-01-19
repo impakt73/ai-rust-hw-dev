@@ -7,6 +7,14 @@ use crate::sim_control::SimControl;
 /// Base address for SimControl device (tohost register)
 pub const SIM_CONTROL_BASE: u32 = 0x1000_0000;
 
+/// Base address for Video device
+/// This is the recommended base address for external Video bus devices
+pub const VIDEO_BASE: u32 = 0x2000_0000;
+
+/// Base address for Audio device
+/// This is the recommended base address for external Audio bus devices
+pub const AUDIO_BASE: u32 = 0x3000_0000;
+
 /// Base address for FIFO device
 pub const FIFO_BASE: u32 = 0x4000_0000;
 

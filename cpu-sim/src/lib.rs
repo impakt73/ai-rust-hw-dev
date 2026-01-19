@@ -14,7 +14,9 @@ mod video;
 
 // Public API exports - only what's needed for external use
 pub use audio::{Audio, AudioChannels, AudioConfig, AudioSampleRate};
-pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE};
+pub use bus::{
+    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+};
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
@@ -138,6 +140,62 @@ impl InteractiveSimulator {
         self.elf_loaded = true;
 
         Ok(())
+    }
+
+    /// Register a custom bus device at the specified base address
+    ///
+    /// This allows you to register custom peripherals (like Video or Audio devices)
+    /// that will be accessible via memory-mapped I/O before loading an ELF file.
+    /// Devices must be registered before calling `load_elf()`.
+    ///
+    /// # Arguments
+    /// * `base_addr` - Base address for the device in the system memory map (must be word-aligned)
+    /// * `device` - The device to register (must implement BusDevice trait)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Device registered successfully
+    /// * `Err(String)` - Address range conflicts with existing device or invalid alignment
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use cpu_sim::{InteractiveSimulator, Video, VIDEO_BASE, VideoConfig};
+    /// use std::path::Path;
+    ///
+    /// fn frame_callback(_data: &[u8], config: &VideoConfig) {
+    ///     println!("Frame received: {}x{}", config.width, config.height);
+    /// }
+    ///
+    /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+    ///
+    /// // Register a video device with a callback
+    /// let video: Box<dyn cpu_sim::BusDevice> = Box::new(Video::new(Some(frame_callback)));
+    /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
+    ///
+    /// // Now load and run your ELF
+    /// sim.load_elf(Path::new("program.elf")).expect("Failed to load ELF");
+    /// loop {
+    ///     match sim.step_instruction() {
+    ///         Ok(result) => {
+    ///             if result.tohost_value.is_some() {
+    ///                 break;
+    ///             }
+    ///         }
+    ///         Err(e) => {
+    ///             eprintln!("Error: {}", e);
+    ///             break;
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn crate::BusDevice>,
+    ) -> Result<(), String> {
+        self.simulator
+            .bus
+            .register_device(base_addr, device)
+            .map_err(|e| format!("{}", e))
     }
 
     /// Execute a single instruction and return the result
