@@ -18,11 +18,176 @@ pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_B
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulatorView};
+pub use sim::{SimulationResult, SimulationStepResult as StepResult, SimulatorView};
 pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
 use std::path::Path;
+
+// Type alias for InteractiveSimulator's internal simulator type
+type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)>;
+
+/// Interactive wrapper around the Simulator for step-by-step execution
+///
+/// This structure provides a controlled interface for interactive use of the simulator,
+/// allowing users to load ELF files and step through execution instruction-by-instruction.
+/// Unlike the `run_elf` and `run_program` functions which run to completion,
+/// `InteractiveSimulator` gives you fine-grained control over execution.
+///
+/// # Examples
+/// ```no_run
+/// use cpu_sim::InteractiveSimulator;
+/// use std::path::Path;
+///
+/// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+/// sim.load_elf(Path::new("program.elf")).expect("Failed to load ELF");
+///
+/// // Step through instructions one at a time
+/// loop {
+///     match sim.step_instruction() {
+///         Ok(result) => {
+///             if let Some(tohost) = result.tohost_value {
+///                 println!("Program terminated with tohost: 0x{:08x}", tohost);
+///                 break;
+///             }
+///         }
+///         Err(e) => {
+///             eprintln!("Error: {}", e);
+///             break;
+///         }
+///     }
+/// }
+/// ```
+pub struct InteractiveSimulator {
+    /// Internal simulator instance with no callbacks
+    simulator: InteractiveSimulatorType,
+    /// Entry point from loaded ELF file
+    entry_point: Option<u32>,
+    /// Whether a valid ELF has been loaded
+    elf_loaded: bool,
+}
+
+impl InteractiveSimulator {
+    /// Create a new InteractiveSimulator with default configuration
+    ///
+    /// All optional parameters are set to None or disabled:
+    /// - No instruction tracing
+    /// - No FSM state printing
+    /// - No callbacks
+    /// - No VCD output
+    /// - Zero memory latency
+    ///
+    /// # Returns
+    /// A new `InteractiveSimulator` instance ready to load an ELF file
+    ///
+    /// # Errors
+    /// Returns an error if the simulator fails to initialize (e.g., Verilator not available)
+    pub fn new() -> Result<Self, String> {
+        let simulator = Simulator::new(
+            false, // print_inst_trace
+            false, // print_fsm_state
+            None,  // inst_complete_callback
+            None,  // trace_callback
+            None,  // vcd_path
+            0,     // mem_latency_cycles
+        )?;
+
+        Ok(InteractiveSimulator {
+            simulator,
+            entry_point: None,
+            elf_loaded: false,
+        })
+    }
+
+    /// Load an ELF file into the simulator and reset to the entry point
+    ///
+    /// This function loads the ELF file into simulator memory, extracts the entry point,
+    /// and resets the CPU to prepare for execution. After calling this function,
+    /// you can use `step_instruction()` to execute the program.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the RISC-V ELF executable file
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` if the ELF file cannot be loaded or is invalid
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::InteractiveSimulator;
+    /// # use std::path::Path;
+    /// let mut sim = InteractiveSimulator::new().unwrap();
+    /// sim.load_elf(Path::new("test.elf")).expect("Failed to load ELF");
+    /// ```
+    pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
+        // Load ELF into simulator memory using the helper function
+        let entry_point = {
+            let mut view =
+                SimulatorView::new(&mut self.simulator.bus, &mut self.simulator.hung_detector);
+            load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
+        };
+
+        log::info!(
+            "ELF loaded successfully, entry point: 0x{:08x}",
+            entry_point
+        );
+
+        // Reset the simulator to the entry point
+        self.simulator
+            .reset(entry_point)
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
+        // Mark ELF as loaded and store entry point
+        self.entry_point = Some(entry_point);
+        self.elf_loaded = true;
+
+        Ok(())
+    }
+
+    /// Execute a single instruction and return the result
+    ///
+    /// Steps the simulator forward by one instruction. This may take multiple clock cycles
+    /// depending on the instruction type and memory latency configuration.
+    ///
+    /// # Returns
+    /// * `Ok(StepResult)` containing execution information and optional tohost termination value
+    /// * `Err(String)` if no ELF is loaded or if an error occurs during execution
+    ///
+    /// # Errors
+    /// - Returns an error if `load_elf()` has not been called successfully
+    /// - Returns an error if the CPU enters a hung state
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::InteractiveSimulator;
+    /// # use std::path::Path;
+    /// let mut sim = InteractiveSimulator::new().unwrap();
+    /// sim.load_elf(Path::new("test.elf")).unwrap();
+    ///
+    /// // Execute one instruction
+    /// match sim.step_instruction() {
+    ///     Ok(result) => {
+    ///         if let Some(tohost) = result.tohost_value {
+    ///             println!("Program halted with value: 0x{:08x}", tohost);
+    ///         }
+    ///     }
+    ///     Err(e) => eprintln!("Error: {}", e),
+    /// }
+    /// ```
+    pub fn step_instruction(&mut self) -> Result<StepResult, String> {
+        // Check if ELF has been loaded
+        if !self.elf_loaded {
+            return Err(
+                "No ELF file loaded. Call load_elf() before stepping instructions.".to_string(),
+            );
+        }
+
+        // Step the simulator by one instruction
+        self.simulator
+            .step()
+            .map_err(|e| format!("Execution error: {}", e))
+    }
+}
 /// Load an ELF file into a simulator's memory
 ///
 /// This is a private helper function used by run_elf to load ELF files.
