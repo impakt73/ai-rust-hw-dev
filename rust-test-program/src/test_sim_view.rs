@@ -196,7 +196,7 @@ fn needs_audio_fill(buffer_size: u32, write_ptr: u32) -> bool {
 
 /// Fill audio buffer with samples
 fn fill_audio_buffer(buffer_size: u32, write_ptr: &mut u32, sample_index: &mut u32) {
-    // Fill up to 3/4 full to avoid buffer overrun
+    // Write a chunk of samples to refill the buffer
     const CHUNK_SIZE: u32 = 64; // Write 64 samples at a time
 
     for _ in 0..CHUNK_SIZE {
@@ -266,7 +266,7 @@ fn main() -> ! {
             trigger_present();
 
             // Increment frame index for next frame
-            frame_index = frame_index.wrapping_add(1);
+            frame_index += 1;
 
             // Check if audio buffer needs refilling
             if needs_audio_fill(BUFFER_SIZE_BYTES, audio_write_ptr) {
