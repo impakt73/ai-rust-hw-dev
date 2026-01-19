@@ -158,15 +158,17 @@ impl InteractiveSimulator {
     ///
     /// # Examples
     /// ```no_run
-    /// use cpu_sim::{InteractiveSimulator, Video, VIDEO_BASE};
+    /// use cpu_sim::{InteractiveSimulator, Video, VIDEO_BASE, VideoConfig};
     /// use std::path::Path;
+    ///
+    /// fn frame_callback(_data: &[u8], config: &VideoConfig) {
+    ///     println!("Frame received: {}x{}", config.width, config.height);
+    /// }
     ///
     /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
     ///
     /// // Register a video device with a callback
-    /// let video = Box::new(Video::new(Some(|data, config| {
-    ///     println!("Frame received: {}x{}", config.width, config.height);
-    /// })));
+    /// let video: Box<dyn cpu_sim::BusDevice> = Box::new(Video::new(Some(frame_callback)));
     /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
     ///
     /// // Now load and run your ELF
