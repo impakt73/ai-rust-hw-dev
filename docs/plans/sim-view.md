@@ -4,7 +4,7 @@
 **Crate Name:** `sim-view`  
 **Purpose:** GUI-based binary providing real-time video and audio output from programs running on the simulated RISC-V CPU
 
-**Status Update (January 2026):** The `InteractiveSimulator` API has been added to cpu-sim, providing `new()`, `load_elf()`, and `step_instruction()` methods. This plan has been updated to use the new API. The remaining requirement is to add device registration capability to `InteractiveSimulator` (see Challenge 1 for details).
+**Status Update (January 2026):** The `InteractiveSimulator` API has been added to cpu-sim, providing `new()`, `load_elf()`, `step_instruction()`, and `register_device()` methods. Public constants `VIDEO_BASE` (0x2000_0000) and `AUDIO_BASE` (0x3000_0000) are now available for device registration. The API is complete and ready for sim-view implementation.
 
 ---
 
@@ -26,6 +26,15 @@ This document provides a complete implementation plan for the `sim-view` crate, 
 ---
 
 ## 2. Architecture Overview
+
+**Memory Map:** The simulator uses the following base addresses for bus devices:
+- **0x1000_0000** - SimControl (tohost register) - Built-in, do not register
+- **0x2000_0000** - Video device (`VIDEO_BASE` constant)
+- **0x3000_0000** - Audio device (`AUDIO_BASE` constant)
+- **0x4000_0000** - FIFO device - Built-in, do not register
+- **0x8000_0000 - 0xFFFF_FFFF** - DRAM - Built-in, do not register
+
+**Note:** When registering Video and Audio devices, always use the `VIDEO_BASE` and `AUDIO_BASE` constants exported by cpu-sim to ensure consistency with test programs.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -134,9 +143,6 @@ cpal = "0.15"
 clap = { version = "4.4", features = ["derive"] }
 log = "0.4"
 env_logger = "0.10"
-
-# Threading and synchronization
-crossbeam-channel = "0.5"
 ```
 
 **Note:** Add `sim-view` to workspace members in root `Cargo.toml`:
@@ -971,6 +977,7 @@ impl Drop for AudioStream {
 ```rust
 use cpu_sim::{
     Audio, InteractiveSimulator, SimulationStepResult, Video, VideoConfig, AudioConfig,
+    VIDEO_BASE, AUDIO_BASE,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -992,10 +999,6 @@ pub struct SimulatorController {
 
 impl SimulatorController {
     /// Create a new simulator controller with video and audio support
-    ///
-    /// NOTE: This implementation assumes InteractiveSimulator will be extended
-    /// to support device registration. If not available, use the alternative
-    /// implementation shown in the "Fallback Implementation" section below.
     pub fn new() -> Result<Self, String> {
         // Create the interactive simulator
         let mut simulator = InteractiveSimulator::new()?;
@@ -1016,7 +1019,7 @@ impl SimulatorController {
                 frames.pop_front();
             }
         };
-        let video_device = Video::new(Some(video_callback));
+        let video_device = Box::new(Video::new(Some(video_callback)));
         
         // Create Audio device with callbacks
         let audio_samples_clone = Arc::clone(&audio_samples);
@@ -1037,13 +1040,11 @@ impl SimulatorController {
             let mut cfg = audio_config_clone.lock().unwrap();
             *cfg = Some(*config);
         };
-        let audio_device = Audio::new(Some(sample_callback), Some(config_callback));
+        let audio_device = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
         
-        // Register devices with simulator
-        // ASSUMPTION: InteractiveSimulator will provide register_device() method
-        // If not available yet, see "Fallback Implementation" below
-        simulator.register_device(0x10000000, Box::new(video_device))?;
-        simulator.register_device(0x10001000, Box::new(audio_device))?;
+        // Register devices with simulator at their standard base addresses
+        simulator.register_device(VIDEO_BASE, video_device)?;
+        simulator.register_device(AUDIO_BASE, audio_device)?;
         
         Ok(SimulatorController {
             simulator,
@@ -1105,64 +1106,6 @@ impl SimulatorController {
         *self.audio_config.lock().unwrap()
     }
 }
-
-// ============================================================================
-// FALLBACK IMPLEMENTATION (if InteractiveSimulator doesn't support devices)
-// ============================================================================
-//
-// If InteractiveSimulator.register_device() is not available, use this
-// alternative approach with run_program and background thread:
-//
-// ```rust
-// use std::thread;
-// use crossbeam_channel::{bounded, Sender, Receiver};
-// 
-// enum SimCommand {
-//     LoadElf(PathBuf),
-//     Step(u64),
-//     Stop,
-// }
-// 
-// enum SimResponse {
-//     Result(SimulationStepResult),
-//     Error(String),
-// }
-// 
-// pub struct SimulatorController {
-//     command_tx: Sender<SimCommand>,
-//     response_rx: Receiver<SimResponse>,
-//     sim_thread: Option<thread::JoinHandle<()>>,
-//     video_frames: Arc<Mutex<VecDeque<(Vec<u8>, VideoConfig)>>>,
-//     audio_samples: Arc<Mutex<VecDeque<i16>>>,
-// }
-// 
-// impl SimulatorController {
-//     pub fn new() -> Result<Self, String> {
-//         let (cmd_tx, cmd_rx) = bounded(10);
-//         let (resp_tx, resp_rx) = bounded(10);
-//         
-//         let video_frames = Arc::new(Mutex::new(VecDeque::new()));
-//         let audio_samples = Arc::new(Mutex::new(VecDeque::new()));
-//         
-//         // Clone for thread
-//         let video_frames_thread = Arc::clone(&video_frames);
-//         let audio_samples_thread = Arc::clone(&audio_samples);
-//         
-//         // Spawn simulation thread
-//         let sim_thread = thread::spawn(move || {
-//             // Thread implementation with run_program...
-//         });
-//         
-//         Ok(SimulatorController {
-//             command_tx: cmd_tx,
-//             response_rx: resp_rx,
-//             sim_thread: Some(sim_thread),
-//             video_frames,
-//             audio_samples,
-//         })
-//     }
-// }
-// ```
 ```
 
 ---
@@ -1173,52 +1116,45 @@ impl SimulatorController {
 
 **Problem:** The original `cpu-sim` API used `run_elf()` which runs to completion. We need to step the simulation incrementally while processing GUI events, and we need to register Video/Audio devices with callbacks for real-time output.
 
-**✅ PARTIALLY SOLVED:** The `InteractiveSimulator` API has been added to cpu-sim, providing:
+**✅ SOLVED:** The `InteractiveSimulator` API has been added to cpu-sim with full support for interactive simulation:
 - `InteractiveSimulator::new()` - Create simulator instance
 - `InteractiveSimulator::load_elf()` - Load ELF file and reset CPU
 - `InteractiveSimulator::step_instruction()` - Step execution by one instruction
+- `InteractiveSimulator::register_device()` - Register custom bus devices with callbacks
 
-**⚠️ REMAINING REQUIREMENT:** To complete sim-view, we need to register Video and Audio bus devices with callbacks. This requires ONE of the following:
-
-**Option A (Recommended):** Extend `InteractiveSimulator` to support device registration
+**Available Constants for Device Registration:**
 ```rust
-// In cpu-sim/src/lib.rs - extend InteractiveSimulator
-impl InteractiveSimulator {
-    /// Register a custom bus device before loading ELF
-    /// This must be called before load_elf()
-    pub fn register_device(
-        &mut self,
-        base_addr: u32,
-        device: Box<dyn BusDevice>,
-    ) -> Result<(), String> {
-        // Delegate to internal simulator's bus
-    }
-    
-    /// Alternative: Provide access to SimulatorView for device setup
-    pub fn with_setup<F>(&mut self, setup: F) -> Result<(), String>
-    where
-        F: FnOnce(&mut SimulatorView),
-    {
-        // Call setup function with access to SimulatorView
-        // This allows registering devices, writing to memory, etc.
+use cpu_sim::{VIDEO_BASE, AUDIO_BASE};
+
+// VIDEO_BASE = 0x2000_0000 - Base address for Video device
+// AUDIO_BASE = 0x3000_0000 - Base address for Audio device
+```
+
+**Example Usage:**
+```rust
+use cpu_sim::{InteractiveSimulator, Video, Audio, VIDEO_BASE, AUDIO_BASE};
+
+let mut sim = InteractiveSimulator::new()?;
+
+// Register Video device at VIDEO_BASE
+let video = Box::new(Video::new(Some(frame_callback)));
+sim.register_device(VIDEO_BASE, video)?;
+
+// Register Audio device at AUDIO_BASE
+let audio = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
+sim.register_device(AUDIO_BASE, audio)?;
+
+// Load ELF and run
+sim.load_elf(Path::new("program.elf"))?;
+loop {
+    let result = sim.step_instruction()?;
+    if result.tohost_value.is_some() {
+        break;
     }
 }
 ```
 
-**Option B:** Use `run_program` with background thread
-- Keep using existing `run_program()` API
-- Run simulation in background thread
-- Use `crossbeam-channel` for GUI ↔ simulation communication
-- More complex but works with current API
-
-**Option C:** Direct Simulator usage (requires making Simulator public)
-- Make `Simulator` struct public in cpu-sim
-- Construct with callbacks directly
-- More flexible but exposes internal complexity
-
-**Decision for Implementation:** 
-- **Short-term:** Use Option A with a PR to extend `InteractiveSimulator` API
-- **Alternative:** If API extension is not feasible, fall back to Option B (background thread)
+**Implementation Note:** Device registration must be called **before** `load_elf()`. The API enforces proper ordering and validates address ranges to prevent conflicts.
 
 ### Challenge 2: Drag-and-Drop Support
 
@@ -1263,20 +1199,22 @@ impl InteractiveSimulator {
 
 ### Phase 1: Extend InteractiveSimulator API (Prerequisite)
 
-**Status:** ✅ **PARTIALLY COMPLETE** - `InteractiveSimulator` exists with `new()`, `load_elf()`, and `step_instruction()`
+**Status:** ✅ **COMPLETE** - `InteractiveSimulator` has been fully implemented with all required functionality:
 
-**Remaining Work:**
+**Completed in PR #131:**
+1. ✅ Added `register_device(base_addr, device)` method to `InteractiveSimulator`
+2. ✅ Added public constants `VIDEO_BASE` (0x2000_0000) and `AUDIO_BASE` (0x3000_0000)
+3. ✅ Implemented full device registration with address validation and conflict detection
+4. ✅ Added comprehensive unit tests for device registration
+5. ✅ Updated cpu-sim documentation
 
-1. Add device registration capability to `InteractiveSimulator` - **Option A (Recommended)**:
-   - Add `register_device(base_addr, device)` method to `InteractiveSimulator`
-   - OR add `with_setup(callback)` method for one-time setup before loading ELF
-2. Alternatively, implement using background thread approach - **Option B**:
-   - Use existing `run_program()` with Video/Audio callbacks
-   - Run in background thread with message passing
-3. Write unit tests for device registration
-4. Update cpu-sim documentation
+**Available API:**
+- `InteractiveSimulator::new()` - Create simulator instance
+- `InteractiveSimulator::register_device(base_addr, device)` - Register bus devices
+- `InteractiveSimulator::load_elf(path)` - Load ELF and reset CPU
+- `InteractiveSimulator::step_instruction()` - Execute one instruction
 
-**Implementation Note:** The simulator controller code in this plan assumes Option A. If using Option B, refer to the "Fallback Implementation" comment in Section 4.5.
+**Next Steps:** Proceed with Phase 2 to create the sim-view crate structure.
 
 ### Phase 2: Create sim-view Structure (Week 1)
 
@@ -1304,11 +1242,13 @@ impl InteractiveSimulator {
 
 ### Phase 5: Implement Simulator Controller (Week 3)
 
-1. Implement device registration with Video/Audio devices
+1. Implement device registration with Video/Audio devices using `VIDEO_BASE` and `AUDIO_BASE` constants
 2. Implement ELF loading via `InteractiveSimulator::load_elf()`
 3. Implement `step_instructions()` wrapper around `InteractiveSimulator::step_instruction()`
 4. Implement frame/sample extraction methods (`get_video_frame()`, `get_audio_samples()`)
 5. Wire up thread-safe queues for Video and Audio data
+
+**Important:** Always use the public `VIDEO_BASE` and `AUDIO_BASE` constants from cpu-sim when calling `register_device()`. These constants ensure your code is compatible with test programs and future changes to the memory map.
 
 ### Phase 6: Implement Main Viewer Loop (Week 3)
 
@@ -1393,30 +1333,30 @@ Create test ELF programs:
 
 ### Key Points for AI Agent
 
-1. **InteractiveSimulator exists but needs extension** - The stepping API is available, but device registration is not yet exposed
-2. **Two implementation paths available** - Either extend `InteractiveSimulator` API (recommended) or use background thread with `run_program`
+1. **InteractiveSimulator API is complete** - All necessary methods are available including device registration
+2. **Use VIDEO_BASE and AUDIO_BASE constants** - These are publicly exposed for device registration (0x2000_0000 and 0x3000_0000 respectively)
 3. **Follow Rust best practices** - Use proper error handling, no `unwrap()` in production code
 4. **Thread safety** - Use `Arc<Mutex<>>` for shared state between callbacks and main loop
 5. **No Box::leak()** - Use proper ownership patterns (`Arc`, `Rc`, callbacks with lifetimes)
+6. **Device registration order** - Devices must be registered BEFORE calling `load_elf()`
 
 ### Critical Dependencies
 
-- `cpu-sim` with `InteractiveSimulator` (✅ available)
-- Device registration API extension (⚠️ needed - see Challenge 1)
+- `cpu-sim` with `InteractiveSimulator` (✅ complete and available)
+- Device registration API (✅ complete - `register_device()` method available)
+- Public base address constants (✅ complete - `VIDEO_BASE` and `AUDIO_BASE` exported)
 - `minifb` for video window
 - `cpal` for audio stream
-- `crossbeam-channel` for thread communication (only if using background thread fallback)
 
 ### Implementation Strategy
 
-**Recommended Approach:**
-1. First, extend `InteractiveSimulator` to support device registration (small PR to cpu-sim)
-2. Then implement sim-view using the extended API as shown in this plan
-
-**Alternative Approach (no cpu-sim changes):**
-1. Use the fallback implementation shown in Section 4.5
-2. Run simulation in background thread with `run_program`
-3. Use message passing for control and data flow
+**Recommended Approach (READY TO IMPLEMENT):**
+1. Create sim-view crate structure with all required modules
+2. Implement SimulatorController using `InteractiveSimulator::register_device()`
+3. Use `VIDEO_BASE` and `AUDIO_BASE` constants for device registration
+4. Implement video window using minifb for frame display
+5. Implement audio stream using cpal for audio playback
+6. Wire up main viewer loop with event handling and simulation stepping
 
 ### Common Pitfalls to Avoid
 
