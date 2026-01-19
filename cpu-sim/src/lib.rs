@@ -76,6 +76,7 @@ impl InteractiveSimulator {
     /// - No callbacks
     /// - No VCD output
     /// - Zero memory latency
+    /// - Verilator optimization level 3 (for interactive performance)
     ///
     /// # Returns
     /// A new `InteractiveSimulator` instance ready to load an ELF file
@@ -90,6 +91,7 @@ impl InteractiveSimulator {
             None,  // trace_callback
             None,  // vcd_path
             0,     // mem_latency_cycles
+            3,     // verilator_optimization (level 3 for interactive performance)
         )?;
 
         Ok(InteractiveSimulator {
@@ -484,6 +486,7 @@ where
         trace_callback,
         vcd_path,
         mem_latency_cycles,
+        0, // verilator_optimization (default 0 for compatibility)
     )?;
 
     // Execute pre-execution callback to load program and get entry point
