@@ -4,6 +4,8 @@
 **Crate Name:** `sim-view`  
 **Purpose:** GUI-based binary providing real-time video and audio output from programs running on the simulated RISC-V CPU
 
+**Status Update (January 2026):** The `InteractiveSimulator` API has been added to cpu-sim, providing `new()`, `load_elf()`, and `step_instruction()` methods. This plan has been updated to use the new API. The remaining requirement is to add device registration capability to `InteractiveSimulator` (see Challenge 1 for details).
+
 ---
 
 ## 1. Executive Summary
@@ -59,6 +61,12 @@ This document provides a complete implementation plan for the `sim-view` crate, 
                  │   cpu-sim crate      │
                  │                      │
                  │  ┌────────────────┐  │
+                 │  │ InteractiveSim │  │
+                 │  │  - step_inst() │  │
+                 │  │  - load_elf()  │  │
+                 │  └────────────────┘  │
+                 │                      │
+                 │  ┌────────────────┐  │
                  │  │  SystemBus     │  │
                  │  │  - Video       │  │  ← Video::new(callback)
                  │  │  - Audio       │  │  ← Audio::new(callback, callback)
@@ -76,11 +84,13 @@ This document provides a complete implementation plan for the `sim-view` crate, 
 
 ### Data Flow
 
-1. **ELF Loading**: User provides ELF via CLI or drag-and-drop → Load into simulator memory
-2. **Simulation Execution**: Main loop steps CPU cycles → CPU writes to Video/Audio bus devices
-3. **Video Output**: Video device invokes callback with frame data → Convert to minifb format → Update window
-4. **Audio Output**: Audio device invokes callback with audio samples → Push to cpal stream buffer
-5. **User Interaction**: Keyboard/window events → Control simulation (pause, reload, exit)
+1. **ELF Loading**: User provides ELF via CLI → `InteractiveSimulator::load_elf()` loads into memory
+2. **Simulation Execution**: Main loop calls `step_instruction()` repeatedly → CPU executes and writes to Video/Audio devices
+3. **Video Output**: Video device callback pushes frame to controller's queue → Viewer pulls frame → Convert to minifb format → Update window
+4. **Audio Output**: Audio device callback pushes samples to controller's queue → Viewer pulls samples → Push to cpal stream buffer
+5. **User Interaction**: Keyboard events → Control simulation (pause, reload, exit)
+
+**Note:** The callbacks run inside the simulation step, but data flows through thread-safe queues (`Arc<Mutex<VecDeque>>`) to decouple the simulation from the GUI rendering.
 
 ---
 
@@ -1383,23 +1393,35 @@ Create test ELF programs:
 
 ### Key Points for AI Agent
 
-1. **Start with cpu-sim API extension** - This is prerequisite for everything else
-2. **Follow Rust best practices** - Use proper error handling, no `unwrap()` in production code
-3. **Thread safety** - Use `Arc<Mutex<>>` for shared state between threads
-4. **Callbacks** - Use closures with `FnMut` traits for Video/Audio device callbacks
+1. **InteractiveSimulator exists but needs extension** - The stepping API is available, but device registration is not yet exposed
+2. **Two implementation paths available** - Either extend `InteractiveSimulator` API (recommended) or use background thread with `run_program`
+3. **Follow Rust best practices** - Use proper error handling, no `unwrap()` in production code
+4. **Thread safety** - Use `Arc<Mutex<>>` for shared state between callbacks and main loop
 5. **No Box::leak()** - Use proper ownership patterns (`Arc`, `Rc`, callbacks with lifetimes)
 
 ### Critical Dependencies
 
-- `cpu-sim` must expose `Simulator` and stepping API
+- `cpu-sim` with `InteractiveSimulator` (✅ available)
+- Device registration API extension (⚠️ needed - see Challenge 1)
 - `minifb` for video window
 - `cpal` for audio stream
-- `crossbeam-channel` for thread communication (if using background thread approach)
+- `crossbeam-channel` for thread communication (only if using background thread fallback)
+
+### Implementation Strategy
+
+**Recommended Approach:**
+1. First, extend `InteractiveSimulator` to support device registration (small PR to cpu-sim)
+2. Then implement sim-view using the extended API as shown in this plan
+
+**Alternative Approach (no cpu-sim changes):**
+1. Use the fallback implementation shown in Section 4.5
+2. Run simulation in background thread with `run_program`
+3. Use message passing for control and data flow
 
 ### Common Pitfalls to Avoid
 
 1. Don't use `unwrap()` or `expect()` in main loop - handle errors gracefully
-2. Don't let buffers grow unbounded - limit queue sizes
+2. Don't let buffers grow unbounded - limit queue sizes (implemented in the plan)
 3. Don't block GUI thread - keep operations fast
 4. Don't leak memory - use RAII and proper Drop implementations
 5. Don't forget to run `cargo fmt` and `cargo clippy` before committing
