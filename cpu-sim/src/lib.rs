@@ -262,12 +262,8 @@ where
     // Create system bus with internal DRAM
     let bus = SystemBus::new();
 
-    // Initialize CPU Simulator
-    let runtime = riscv_core::create_cpu_runtime()
-        .map_err(|e| format!("Error creating CPU runtime: {}", e))?;
-
+    // Initialize CPU Simulator (runtime is now created internally)
     let mut sim = Simulator::new(
-        &runtime,
         bus,
         print_inst_trace,
         print_fsm_state,
