@@ -18,7 +18,7 @@ pub use bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_B
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult as StepResult, SimulatorView};
+pub use sim::{SimulationResult, SimulationStepResult, SimulatorView};
 pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
@@ -61,8 +61,6 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 pub struct InteractiveSimulator {
     /// Internal simulator instance with no callbacks
     simulator: InteractiveSimulatorType,
-    /// Entry point from loaded ELF file
-    entry_point: Option<u32>,
     /// Whether a valid ELF has been loaded
     elf_loaded: bool,
 }
@@ -94,7 +92,6 @@ impl InteractiveSimulator {
 
         Ok(InteractiveSimulator {
             simulator,
-            entry_point: None,
             elf_loaded: false,
         })
     }
@@ -137,8 +134,7 @@ impl InteractiveSimulator {
             .reset(entry_point)
             .map_err(|e| format!("Reset failed: {}", e))?;
 
-        // Mark ELF as loaded and store entry point
-        self.entry_point = Some(entry_point);
+        // Mark ELF as loaded
         self.elf_loaded = true;
 
         Ok(())
@@ -150,7 +146,7 @@ impl InteractiveSimulator {
     /// depending on the instruction type and memory latency configuration.
     ///
     /// # Returns
-    /// * `Ok(StepResult)` containing execution information and optional tohost termination value
+    /// * `Ok(SimulationStepResult)` containing execution information and optional tohost termination value
     /// * `Err(String)` if no ELF is loaded or if an error occurs during execution
     ///
     /// # Errors
@@ -174,7 +170,7 @@ impl InteractiveSimulator {
     ///     Err(e) => eprintln!("Error: {}", e),
     /// }
     /// ```
-    pub fn step_instruction(&mut self) -> Result<StepResult, String> {
+    pub fn step_instruction(&mut self) -> Result<SimulationStepResult, String> {
         // Check if ELF has been loaded
         if !self.elf_loaded {
             return Err(
