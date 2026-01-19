@@ -6,6 +6,9 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+// Audio buffer size limit (0.5 seconds at 48kHz)
+const MAX_AUDIO_BUFFER_SAMPLES: usize = 48000;
+
 // Type aliases to simplify complex types
 type VideoFrameQueue = Arc<Mutex<VecDeque<(Vec<u8>, VideoConfig)>>>;
 type AudioSampleQueue = Arc<Mutex<VecDeque<i16>>>;
@@ -57,8 +60,8 @@ impl SimulatorController {
                 buf.push_back(sample);
             }
 
-            // Limit buffer size (0.5 seconds at 48kHz stereo)
-            while buf.len() > 48000 {
+            // Limit buffer size (0.5 seconds at 48kHz)
+            while buf.len() > MAX_AUDIO_BUFFER_SAMPLES {
                 buf.pop_front();
             }
         };

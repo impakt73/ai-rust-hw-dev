@@ -3,6 +3,9 @@ use cpal::{SampleFormat, StreamConfig};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+// Audio buffer size limit (0.5 seconds at 48kHz mono/stereo)
+const MAX_AUDIO_BUFFER_SAMPLES: usize = 48000;
+
 pub struct AudioStream {
     /// Active audio output stream
     _stream: cpal::Stream,
@@ -79,8 +82,7 @@ impl AudioStream {
         }
 
         // Limit buffer size to prevent unbounded growth
-        // Keep at most 0.5 seconds of audio (48000 Hz * 2 channels * 0.5 = 48000 samples)
-        while buf.len() > 48000 {
+        while buf.len() > MAX_AUDIO_BUFFER_SAMPLES {
             buf.pop_front();
         }
     }

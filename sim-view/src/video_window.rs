@@ -181,18 +181,22 @@ impl VideoWindow {
     }
 
     /// Convert R8 (8-bit grayscale) to ARGB8888 for minifb
-    #[allow(clippy::needless_range_loop)]
     fn convert_r8(&mut self, data: &[u8]) -> Result<(), String> {
         let pixel_count = self.width * self.height;
         if data.len() < pixel_count {
             return Err("Frame data too small for R8 format".to_string());
         }
 
-        for i in 0..pixel_count {
-            let gray = data[i] as u32;
-
+        // Iterate over both framebuffer and data simultaneously
+        for (fb_pixel, &gray) in self
+            .framebuffer
+            .iter_mut()
+            .zip(data.iter())
+            .take(pixel_count)
+        {
+            let gray32 = u32::from(gray);
             // Replicate gray value to R, G, B channels
-            self.framebuffer[i] = 0xFF000000 | (gray << 16) | (gray << 8) | gray;
+            *fb_pixel = 0xFF000000 | (gray32 << 16) | (gray32 << 8) | gray32;
         }
 
         Ok(())

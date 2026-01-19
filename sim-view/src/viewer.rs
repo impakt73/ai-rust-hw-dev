@@ -4,6 +4,10 @@ use crate::video_window::{Key, KeyModifiers, VideoWindow, WindowEvent};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+// Performance constants
+const TARGET_FPS: u64 = 60;
+const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
+
 pub struct ViewerConfig {
     pub initial_width: u32,
     pub initial_height: u32,
@@ -65,8 +69,8 @@ impl SimViewer {
         // Create audio stream
         let audio_stream = AudioStream::new()?;
 
-        // Target 60 FPS
-        let target_frame_duration = Duration::from_millis(16); // ~60 FPS
+        // Calculate target frame duration from FPS
+        let target_frame_duration = Duration::from_millis(1000 / TARGET_FPS);
 
         Ok(SimViewer {
             controller,
@@ -162,13 +166,10 @@ impl SimViewer {
             // Step simulation if running
             if self.state == ViewerState::Running {
                 // Step simulation by multiple instructions per frame for performance
-                // Adjust this value based on desired simulation speed
-                let instructions_per_frame = 10000; // ~10K instructions per frame
-
-                match self.controller.step_instructions(instructions_per_frame) {
+                match self.controller.step_instructions(INSTRUCTIONS_PER_FRAME) {
                     Ok(result) => {
                         // Increment instruction counter
-                        self.total_cycles += instructions_per_frame;
+                        self.total_cycles += INSTRUCTIONS_PER_FRAME;
 
                         // Check if simulation halted
                         if result.tohost_value.is_some() {
