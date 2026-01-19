@@ -1,8 +1,7 @@
 use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
-use ouroboros::self_referencing;
 use riscv_core::trace::InstructionTrace;
-use riscv_core::{Top, VerilatedModelConfig, VerilatorRuntime};
+use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::path::Path;
 use std::time::Instant;
 
@@ -456,25 +455,27 @@ impl<'a> SimulatorView<'a> {
     }
 }
 
-/// Inner self-referencing structure that owns the runtime and CPU
-#[self_referencing]
-struct SimulatorInner {
-    runtime: VerilatorRuntime,
-    #[borrows(runtime)]
-    #[covariant]
-    cpu: Top<'this>,
-}
-
 /// RISC-V CPU Simulator
 ///
-/// This structure now owns its runtime internally using the ouroboros crate,
-/// eliminating the need for external lifetime management.
+/// This structure owns its runtime internally using an unsafe self-referential pattern.
+/// The CPU model borrows from the runtime with a 'static lifetime, which is safe because:
+/// 1. The runtime is boxed (stable heap address)
+/// 2. Field drop order ensures CPU drops before runtime (fields drop in declaration order)
 pub struct Simulator<F, T>
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
-    inner: SimulatorInner,
+    // CRITICAL: Fields must be in this order for safe drop semantics
+    // 1. CPU (dependent) MUST be declared FIRST - drops first
+    cpu: Top<'static>,
+    vcd: Option<Vcd<'static>>,
+
+    // 2. Runtime (owner) MUST be declared AFTER cpu - drops last
+    // Box ensures stable heap address so moving Simulator doesn't invalidate cpu's reference
+    _runtime: Box<VerilatorRuntime>,
+
+    // Other fields can be in any order
     pub bus: SystemBus,
     cycle_count: u64,
     print_inst_trace: bool,
@@ -497,14 +498,16 @@ where
 {
     /// Create a new simulator with the given bus and optional callbacks
     ///
-    /// The runtime is now created and owned internally by the Simulator,
-    /// eliminating the need for external lifetime management.
+    /// The runtime is created and owned internally using an unsafe self-referential pattern.
+    /// This is safe because:
+    /// 1. The runtime is boxed (stable heap address)
+    /// 2. Field drop order ensures CPU drops before runtime
     ///
     /// # Arguments
     /// * `bus` - System bus with memory and peripherals
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
-    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes, receives a mutable `SimulatorView` providing controlled FIFO access
+    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
@@ -520,47 +523,57 @@ where
         mem_latency_cycles: u32,
         hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
-        // Create runtime
-        let runtime = riscv_core::create_cpu_runtime()
-            .map_err(|e| format!("Failed to create CPU runtime: {}", e))?;
+        // 1. Create and box the runtime immediately for stable heap address
+        let runtime = Box::new(
+            riscv_core::create_cpu_runtime()
+                .map_err(|e| format!("Failed to create CPU runtime: {}", e))?,
+        );
+
+        // 2. Create CPU model using unsafe lifetime extension
+        let (cpu, vcd) = unsafe {
+            // Get a raw pointer to the runtime on the heap
+            let runtime_ptr: *const VerilatorRuntime = &*runtime;
+
+            // Create an unbounded ('static) reference
+            // SAFETY: We guarantee the runtime will not be dropped while cpu exists
+            // because _runtime is declared after cpu in the struct, so cpu drops first
+            let runtime_ref: &'static VerilatorRuntime = &*runtime_ptr;
+
+            // Create CPU model - enable tracing if VCD path is provided
+            if let Some(vcd_file_path) = vcd_path {
+                let config = VerilatedModelConfig {
+                    enable_tracing: true,
+                    ..Default::default()
+                };
+
+                let mut cpu = runtime_ref
+                    .create_model::<Top>(&config)
+                    .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
+
+                // Open VCD file
+                let vcd = cpu.open_vcd(vcd_file_path);
+                log::info!("VCD tracing enabled, writing to: {}", vcd_file_path);
+
+                (cpu, Some(vcd))
+            } else {
+                let cpu = runtime_ref
+                    .create_model_simple::<Top>()
+                    .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+
+                (cpu, None)
+            }
+        };
 
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
 
         let hung_detector = hung_detector_config.map(HungDetector::new);
 
-        // Build the self-referencing structure (VCD initialized to None initially)
-        let vcd_path_owned = vcd_path.map(|s| s.to_string());
-        let inner = SimulatorInnerTryBuilder {
-            runtime,
-            cpu_builder: |runtime: &VerilatorRuntime| {
-                // Create CPU model - enable tracing if VCD path is provided
-                if vcd_path_owned.is_some() {
-                    let config = VerilatedModelConfig {
-                        enable_tracing: true,
-                        ..Default::default()
-                    };
-                    runtime
-                        .create_model::<Top>(&config)
-                        .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))
-                } else {
-                    runtime
-                        .create_model_simple::<Top>()
-                        .map_err(|e| format!("Failed to create CPU model: {}", e))
-                }
-            },
-        }
-        .try_build()?;
-
-        // Now open VCD if requested using with_cpu_mut
-        // Unfortunately, ouroboros doesn't allow us to easily store VCD which borrows from CPU
-        // We'll need to manage VCD differently - for now, skip VCD support with ouroboros
-        // or we need to use a more complex solution
-        if vcd_path_owned.is_some() {
-            log::warn!("VCD tracing is not yet supported with the new ouroboros-based simulator");
-        }
-
+        // 3. Bundle everything together
+        // CRITICAL: Field declaration order ensures safe drop - cpu drops before _runtime
         Ok(Simulator {
-            inner,
+            cpu,
+            vcd,
+            _runtime: runtime,
             bus,
             cycle_count: 0,
             print_inst_trace,
@@ -597,11 +610,11 @@ where
     ///
     /// This is a helper function that handles VCD dumping if VCD tracing is enabled.
     /// It automatically increments the VCD timestamp after dumping.
-    ///
-    /// Note: VCD support is currently disabled with the ouroboros-based implementation.
     fn dump_vcd(&mut self) {
-        // VCD tracing not yet supported with ouroboros
-        self.vcd_time += 1;
+        if let Some(ref mut vcd) = self.vcd {
+            vcd.dump(self.vcd_time);
+            self.vcd_time += 1;
+        }
     }
 
     /// Reset the CPU
@@ -621,39 +634,31 @@ where
             detector.validate_boot_addr(boot_pc)?;
         }
 
-        self.inner.with_cpu_mut(|cpu| {
-            // Set the boot address BEFORE asserting and during reset
-            // This is critical because the PC register uses an asynchronous reset that
-            // loads boot_addr whenever rst_n is low; boot_addr must be stable while
-            // reset is asserted so the PC will hold this value after reset is released.
-            cpu.boot_addr = boot_pc;
+        // Set the boot address BEFORE asserting and during reset
+        // This is critical because the PC register uses an asynchronous reset that
+        // loads boot_addr whenever rst_n is low; boot_addr must be stable while
+        // reset is asserted so the PC will hold this value after reset is released.
+        self.cpu.boot_addr = boot_pc;
 
-            // Drive reset low
-            cpu.rst_n = 0;
-            cpu.clk = 0;
-            cpu.eval();
-        });
+        // Drive reset low
+        self.cpu.rst_n = 0;
+        self.cpu.clk = 0;
+        self.cpu.eval();
         self.dump_vcd(); // Capture initial state with reset asserted, clk=0
 
         // First clock edge during reset
-        self.inner.with_cpu_mut(|cpu| {
-            cpu.clk = 1;
-            cpu.eval();
-        });
+        self.cpu.clk = 1;
+        self.cpu.eval();
         self.dump_vcd(); // Capture state after rising edge during reset
 
         // Second clock cycle during reset (falling edge)
-        self.inner.with_cpu_mut(|cpu| {
-            cpu.clk = 0;
-            cpu.eval();
-        });
+        self.cpu.clk = 0;
+        self.cpu.eval();
         self.dump_vcd(); // Capture state after falling edge during reset
 
         // Release reset (still at clk=0)
-        self.inner.with_cpu_mut(|cpu| {
-            cpu.rst_n = 1;
-            cpu.eval();
-        });
+        self.cpu.rst_n = 1;
+        self.cpu.eval();
         self.dump_vcd(); // Capture state with reset released
 
         // Reset the hung detector state
@@ -680,126 +685,116 @@ where
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
-            let (instruction_complete, pc, instruction, fsm_state) = self.inner.with_cpu_mut(|cpu| {
-                // Evaluate combinational logic
-                cpu.eval();
+            // Evaluate combinational logic
+            self.cpu.eval();
 
-                // Handle instruction memory with variable latency
-                if cpu.imem_req != 0 {
+            // Handle instruction memory with variable latency
+            if self.cpu.imem_req != 0 {
+                // Implement delay counter for variable latency
+                if self.imem_delay_counter <= self.mem_latency_cycles {
+                    if self.imem_delay_counter == self.mem_latency_cycles {
+                        // Perform read on the cycle when we reach the threshold
+                        let addr = self.cpu.imem_addr;
+                        let data = self.bus.read_word(addr);
+                        self.cpu.imem_data = data;
+                        self.cpu.imem_ready = 1; // Ready after delay
+                    } else {
+                        self.imem_delay_counter += 1;
+                        self.cpu.imem_ready = 0; // Not ready yet
+                    }
+                } else {
+                    // delay_counter > mem_latency_cycles: already completed, keep ready high
+                    self.cpu.imem_ready = 1;
+                }
+            } else {
+                self.cpu.imem_ready = 0;
+                self.imem_delay_counter = 0; // Reset counter when no request
+            }
+
+            // Handle data memory with variable latency
+            if self.cpu.dmem_req != 0 {
+                if self.cpu.dmem_we != 0 {
+                    // Data Memory Write
                     // Implement delay counter for variable latency
-                    if self.imem_delay_counter <= self.mem_latency_cycles {
-                        if self.imem_delay_counter == self.mem_latency_cycles {
-                            // Perform read on the cycle when we reach the threshold
-                            let addr = cpu.imem_addr;
-                            let data = self.bus.read_word(addr);
-                            cpu.imem_data = data;
-                            cpu.imem_ready = 1; // Ready after delay
+                    if self.dmem_delay_counter <= self.mem_latency_cycles {
+                        if self.dmem_delay_counter == self.mem_latency_cycles {
+                            // Perform write on the cycle when we reach the threshold
+                            let addr = self.cpu.dmem_addr;
+                            let size = self.cpu.dmem_size;
+                            let wdata = self.cpu.dmem_wdata;
+
+                            match size {
+                                0b00 => self.bus.write_byte(addr, wdata as u8),
+                                0b01 => self.bus.write_halfword(addr, wdata as u16),
+                                _ => self.bus.write_word(addr, wdata),
+                            }
+
+                            self.cpu.dmem_ready = 1; // Ready after delay
                         } else {
-                            self.imem_delay_counter += 1;
-                            cpu.imem_ready = 0; // Not ready yet
+                            self.dmem_delay_counter += 1;
+                            self.cpu.dmem_ready = 0; // Not ready yet
                         }
                     } else {
                         // delay_counter > mem_latency_cycles: already completed, keep ready high
-                        cpu.imem_ready = 1;
+                        self.cpu.dmem_ready = 1;
                     }
-                } else {
-                    cpu.imem_ready = 0;
-                    self.imem_delay_counter = 0; // Reset counter when no request
-                }
+                } else if self.cpu.dmem_re != 0 {
+                    // Data Memory Read
+                    // Implement delay counter for variable latency
+                    if self.dmem_delay_counter <= self.mem_latency_cycles {
+                        if self.dmem_delay_counter == self.mem_latency_cycles {
+                            // Perform read on the cycle when we reach the threshold
+                            let addr = self.cpu.dmem_addr;
+                            let size = self.cpu.dmem_size;
+                            let rdata = match size {
+                                0b00 => self.bus.read_byte(addr) as u32,
+                                0b01 => self.bus.read_halfword(addr) as u32,
+                                _ => self.bus.read_word(addr),
+                            };
 
-                // Handle data memory with variable latency
-                if cpu.dmem_req != 0 {
-                    if cpu.dmem_we != 0 {
-                        // Data Memory Write
-                        // Implement delay counter for variable latency
-                        if self.dmem_delay_counter <= self.mem_latency_cycles {
-                            if self.dmem_delay_counter == self.mem_latency_cycles {
-                                // Perform write on the cycle when we reach the threshold
-                                let addr = cpu.dmem_addr;
-                                let size = cpu.dmem_size;
-                                let wdata = cpu.dmem_wdata;
-
-                                match size {
-                                    0b00 => self.bus.write_byte(addr, wdata as u8),
-                                    0b01 => self.bus.write_halfword(addr, wdata as u16),
-                                    _ => self.bus.write_word(addr, wdata),
-                                }
-
-                                cpu.dmem_ready = 1; // Ready after delay
-                            } else {
-                                self.dmem_delay_counter += 1;
-                                cpu.dmem_ready = 0; // Not ready yet
-                            }
+                            self.cpu.dmem_rdata = rdata;
+                            self.cpu.dmem_ready = 1; // Ready after delay
                         } else {
-                            // delay_counter > mem_latency_cycles: already completed, keep ready high
-                            cpu.dmem_ready = 1;
-                        }
-                    } else if cpu.dmem_re != 0 {
-                        // Data Memory Read
-                        // Implement delay counter for variable latency
-                        if self.dmem_delay_counter <= self.mem_latency_cycles {
-                            if self.dmem_delay_counter == self.mem_latency_cycles {
-                                // Perform read on the cycle when we reach the threshold
-                                let addr = cpu.dmem_addr;
-                                let size = cpu.dmem_size;
-                                let rdata = match size {
-                                    0b00 => self.bus.read_byte(addr) as u32,
-                                    0b01 => self.bus.read_halfword(addr) as u32,
-                                    _ => self.bus.read_word(addr),
-                                };
-
-                                cpu.dmem_rdata = rdata;
-                                cpu.dmem_ready = 1; // Ready after delay
-                            } else {
-                                self.dmem_delay_counter += 1;
-                                cpu.dmem_ready = 0; // Not ready yet
-                            }
-                        } else {
-                            // delay_counter > mem_latency_cycles: already completed, keep ready high
-                            cpu.dmem_ready = 1;
+                            self.dmem_delay_counter += 1;
+                            self.cpu.dmem_ready = 0; // Not ready yet
                         }
                     } else {
-                        cpu.dmem_ready = 0;
+                        // delay_counter > mem_latency_cycles: already completed, keep ready high
+                        self.cpu.dmem_ready = 1;
                     }
                 } else {
-                    cpu.dmem_ready = 0;
-                    self.dmem_delay_counter = 0; // Reset counter when no request
+                    self.cpu.dmem_ready = 0;
                 }
+            } else {
+                self.cpu.dmem_ready = 0;
+                self.dmem_delay_counter = 0; // Reset counter when no request
+            }
 
-                // Re-evaluate after setting memory signals
-                cpu.eval();
+            // Re-evaluate after setting memory signals
+            self.cpu.eval();
 
-                // Print FSM state if enabled (before clock edge)
-                if self.print_fsm_state {
-                    let fsm_state = cpu.debug_fsm_state;
-                    let state_name = Self::fsm_state_name(fsm_state);
-                    println!(
-                        "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | dmem_req={} dmem_ready={} | instr_complete={}",
-                        self.cycle_count,
-                        state_name,
-                        cpu.imem_addr,
-                        cpu.imem_req,
-                        cpu.imem_ready,
-                        cpu.dmem_req,
-                        cpu.dmem_ready,
-                        cpu.instr_complete
-                    );
-                }
+            // Print FSM state if enabled (before clock edge)
+            if self.print_fsm_state {
+                let fsm_state = self.cpu.debug_fsm_state;
+                let state_name = Self::fsm_state_name(fsm_state);
+                println!(
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | dmem_req={} dmem_ready={} | instr_complete={}",
+                    self.cycle_count,
+                    state_name,
+                    self.cpu.imem_addr,
+                    self.cpu.imem_req,
+                    self.cpu.imem_ready,
+                    self.cpu.dmem_req,
+                    self.cpu.dmem_ready,
+                    self.cpu.instr_complete
+                );
+            }
 
-                // Clock edge
-                cpu.clk = 0;
-                cpu.eval();
-                cpu.clk = 1;
-                cpu.eval();
-
-                // Extract values needed for hung detection and trace
-                let instruction_complete = cpu.instr_complete != 0;
-                let pc = cpu.debug_current_pc;
-                let instruction = cpu.debug_current_instruction;
-                let fsm_state = cpu.debug_fsm_state;
-
-                (instruction_complete, pc, instruction, fsm_state)
-            });
+            // Clock edge
+            self.cpu.clk = 0;
+            self.cpu.eval();
+            self.cpu.clk = 1;
+            self.cpu.eval();
 
             // Increment cycle count
             self.cycle_count += 1;
@@ -810,12 +805,19 @@ where
             // Call clock_cycle on all bus devices (after clock edge completes)
             self.bus.clock_cycle_all_devices();
 
+            // Check if instruction complete (AFTER clock edge)
+            // With delayed instr_complete, values have already settled by the time we see the signal
+            let instruction_complete = self.cpu.instr_complete != 0;
+
             // Check for hung state on every cycle
             // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
             if let Some(ref mut detector) = self.hung_detector {
                 // Use current PC and instruction for hung detection (not completed ones)
                 // debug_current_pc: PC that was used to fetch the current instruction
                 // debug_current_instruction: The instruction currently being executed
+                let pc = self.cpu.debug_current_pc;
+                let instruction = self.cpu.debug_current_instruction;
+                let fsm_state = self.cpu.debug_fsm_state;
                 detector.check_cycle(
                     self.cycle_count,
                     pc,
@@ -841,15 +843,11 @@ where
         // Check if trace callback is valid or instruction trace printing is enabled
         if self.trace_callback.is_some() || self.print_inst_trace {
             // Assemble InstructionTrace structure using debug signals from CPU
-            let (pc, instruction, rs1_value, rs2_value, rd_value) = self.inner.with_cpu(|cpu| {
-                (
-                    cpu.debug_pc,
-                    cpu.debug_instruction,
-                    cpu.debug_rs1_data,
-                    cpu.debug_rs2_data,
-                    cpu.debug_rd_data,
-                )
-            });
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
 
             let trace =
                 InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
@@ -922,8 +920,11 @@ where
             if !self.print_inst_trace
                 && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
             {
-                let imem_addr = self.inner.with_cpu(|cpu| cpu.imem_addr);
-                log::debug!("Cycle {}: PC=0x{:08x}", self.cycle_count, imem_addr);
+                log::debug!(
+                    "Cycle {}: PC=0x{:08x}",
+                    self.cycle_count,
+                    self.cpu.imem_addr
+                );
             }
         }
 
