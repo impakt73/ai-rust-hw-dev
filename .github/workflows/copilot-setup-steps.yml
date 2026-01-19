@@ -27,7 +27,7 @@ jobs:
       - name: Cache and install apt packages
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          packages: verilator gcc-riscv64-unknown-elf
+          packages: verilator gcc-riscv64-unknown-elf libasound2-dev
           # Bump version (v1 -> v2) to force cache refresh
           version: v1
       
