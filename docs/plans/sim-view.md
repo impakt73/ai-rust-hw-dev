@@ -4,6 +4,8 @@
 **Crate Name:** `sim-view`  
 **Purpose:** GUI-based binary providing real-time video and audio output from programs running on the simulated RISC-V CPU
 
+**Status Update (January 2026):** The `InteractiveSimulator` API has been added to cpu-sim, providing `new()`, `load_elf()`, and `step_instruction()` methods. This plan has been updated to use the new API. The remaining requirement is to add device registration capability to `InteractiveSimulator` (see Challenge 1 for details).
+
 ---
 
 ## 1. Executive Summary
@@ -59,6 +61,12 @@ This document provides a complete implementation plan for the `sim-view` crate, 
                  │   cpu-sim crate      │
                  │                      │
                  │  ┌────────────────┐  │
+                 │  │ InteractiveSim │  │
+                 │  │  - step_inst() │  │
+                 │  │  - load_elf()  │  │
+                 │  └────────────────┘  │
+                 │                      │
+                 │  ┌────────────────┐  │
                  │  │  SystemBus     │  │
                  │  │  - Video       │  │  ← Video::new(callback)
                  │  │  - Audio       │  │  ← Audio::new(callback, callback)
@@ -76,11 +84,13 @@ This document provides a complete implementation plan for the `sim-view` crate, 
 
 ### Data Flow
 
-1. **ELF Loading**: User provides ELF via CLI or drag-and-drop → Load into simulator memory
-2. **Simulation Execution**: Main loop steps CPU cycles → CPU writes to Video/Audio bus devices
-3. **Video Output**: Video device invokes callback with frame data → Convert to minifb format → Update window
-4. **Audio Output**: Audio device invokes callback with audio samples → Push to cpal stream buffer
-5. **User Interaction**: Keyboard/window events → Control simulation (pause, reload, exit)
+1. **ELF Loading**: User provides ELF via CLI → `InteractiveSimulator::load_elf()` loads into memory
+2. **Simulation Execution**: Main loop calls `step_instruction()` repeatedly → CPU executes and writes to Video/Audio devices
+3. **Video Output**: Video device callback pushes frame to controller's queue → Viewer pulls frame → Convert to minifb format → Update window
+4. **Audio Output**: Audio device callback pushes samples to controller's queue → Viewer pulls samples → Push to cpal stream buffer
+5. **User Interaction**: Keyboard events → Control simulation (pause, reload, exit)
+
+**Note:** The callbacks run inside the simulation step, but data flows through thread-safe queues (`Arc<Mutex<VecDeque>>`) to decouple the simulation from the GUI rendering.
 
 ---
 
@@ -283,8 +293,8 @@ enum ViewerState {
 impl SimViewer {
     /// Create a new SimViewer with the given configuration
     pub fn new(config: ViewerConfig) -> Result<Self, String> {
-        // Create controller with callbacks for video and audio
-        let controller = SimulatorController::new(config.print_inst_trace)?;
+        // Create controller (handles simulator setup with Video/Audio devices)
+        let controller = SimulatorController::new()?;
         
         // Create video window with initial size
         let video_window = VideoWindow::new(
@@ -394,14 +404,14 @@ impl SimViewer {
             
             // Step simulation if running
             if self.state == ViewerState::Running {
-                // Calculate how many cycles to run this frame
-                // Assume 100 MHz CPU, 60 FPS → ~1.67M cycles/frame
-                // But limit to smaller chunks for responsiveness
-                let cycles_per_step = 10000; // Adjust for performance
+                // Step simulation by multiple instructions per frame for performance
+                // Adjust this value based on desired simulation speed
+                let instructions_per_frame = 10000; // ~10K instructions per frame
                 
-                match self.controller.step_cycles(cycles_per_step) {
+                match self.controller.step_instructions(instructions_per_frame) {
                     Ok(result) => {
-                        self.total_cycles += cycles_per_step;
+                        // Increment instruction counter
+                        self.total_cycles += instructions_per_frame;
                         
                         // Check if simulation halted
                         if result.tohost_value.is_some() {
@@ -430,7 +440,18 @@ impl SimViewer {
                 }
             }
             
-            // Update video window (processes callbacks from Video device)
+            // Pull video frames from controller and send to window
+            if let Some((frame_data, config)) = self.controller.get_video_frame() {
+                self.video_window.process_video_frame(&frame_data, &config)?;
+            }
+            
+            // Pull audio samples from controller and send to audio stream
+            let audio_samples = self.controller.get_audio_samples(4096);
+            if !audio_samples.is_empty() {
+                self.audio_stream.push_samples(&audio_samples);
+            }
+            
+            // Update video window display
             self.video_window.update()?;
             
             // Frame pacing to maintain target FPS
@@ -531,7 +552,6 @@ struct KeyModifiers {
 ```rust
 use minifb::{Window, WindowOptions, Key as MinifbKey, KeyRepeat, Scale};
 use cpu_sim::{VideoConfig, VideoFormat};
-use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
 pub struct VideoWindow {
@@ -541,9 +561,6 @@ pub struct VideoWindow {
     
     /// Frame buffer for minifb (ARGB8888 format)
     framebuffer: Vec<u32>,
-    
-    /// Pending video frames from Video device callback
-    pending_frames: Arc<Mutex<VecDeque<(Vec<u8>, VideoConfig)>>>,
     
     /// Event queue for communicating with main loop
     event_queue: VecDeque<crate::viewer::WindowEvent>,
@@ -569,57 +586,18 @@ impl VideoWindow {
         // Create black framebuffer
         let framebuffer = vec![0xFF000000u32; width * height];
         
-        let pending_frames = Arc::new(Mutex::new(VecDeque::new()));
-        
         Ok(VideoWindow {
             window,
             width,
             height,
             framebuffer,
-            pending_frames,
             event_queue: VecDeque::new(),
         })
     }
     
-    /// Get a callback for the Video bus device
-    pub fn get_video_callback(&self) -> impl FnMut(&[u8], &VideoConfig) {
-        let pending_frames = Arc::clone(&self.pending_frames);
-        
-        move |data: &[u8], config: &VideoConfig| {
-            // Push frame to queue for processing in update()
-            let mut queue = pending_frames.lock().unwrap();
-            queue.push_back((data.to_vec(), *config));
-            
-            // Keep only last 2 frames to prevent unbounded growth
-            while queue.len() > 2 {
-                queue.pop_front();
-            }
-        }
-    }
-    
-    /// Update the window (call once per frame in main loop)
-    pub fn update(&mut self) -> Result<(), String> {
-        // Process pending video frames
-        if let Some((frame_data, config)) = {
-            let mut queue = self.pending_frames.lock().unwrap();
-            queue.pop_front()
-        } {
-            self.process_video_frame(&frame_data, &config)?;
-        }
-        
-        // Update minifb window with current framebuffer
-        self.window
-            .update_with_buffer(&self.framebuffer, self.width, self.height)
-            .map_err(|e| format!("Failed to update window: {}", e))?;
-        
-        // Collect events
-        self.collect_events();
-        
-        Ok(())
-    }
-    
-    /// Process a video frame from the Video device
-    fn process_video_frame(
+    /// Process a video frame from the simulator controller
+    /// This is called by the main viewer loop when a new frame is available
+    pub fn process_video_frame(
         &mut self,
         data: &[u8],
         config: &VideoConfig,
@@ -650,6 +628,20 @@ impl VideoWindow {
                 self.convert_r8(data)?;
             }
         }
+        
+        Ok(())
+    }
+    
+    /// Update the window display (call once per frame in main loop)
+    pub fn update(&mut self) -> Result<(), String> {
+        
+        // Update minifb window with current framebuffer
+        self.window
+            .update_with_buffer(&self.framebuffer, self.width, self.height)
+            .map_err(|e| format!("Failed to update window: {}", e))?;
+        
+        // Collect events
+        self.collect_events();
         
         Ok(())
     }
@@ -877,40 +869,20 @@ impl AudioStream {
         })
     }
     
-    /// Get a callback for the Audio bus device (sample callback)
-    pub fn get_sample_callback(&self) -> impl FnMut(&[i16]) {
-        let buffer = Arc::clone(&self.sample_buffer);
+    /// Push audio samples to the buffer for playback
+    /// This is called by the main viewer loop with samples from the simulator
+    pub fn push_samples(&self, samples: &[i16]) {
+        let mut buf = self.sample_buffer.lock().unwrap();
         
-        move |samples: &[i16]| {
-            let mut buf = buffer.lock().unwrap();
-            
-            // Add samples to buffer
-            for &sample in samples {
-                buf.push_back(sample);
-            }
-            
-            // Limit buffer size to prevent unbounded growth
-            // Keep at most 0.5 seconds of audio (48000 Hz * 2 channels * 0.5 = 48000 samples)
-            while buf.len() > 48000 {
-                buf.pop_front();
-            }
+        // Add samples to buffer
+        for &sample in samples {
+            buf.push_back(sample);
         }
-    }
-    
-    /// Get a callback for the Audio bus device (config callback)
-    pub fn get_config_callback(&self) -> impl FnMut(&AudioConfig) {
-        let config = Arc::clone(&self.current_config);
         
-        move |new_config: &AudioConfig| {
-            let mut cfg = config.lock().unwrap();
-            *cfg = Some(*new_config);
-            
-            log::info!(
-                "Audio config changed: {} Hz, {:?}, {} samples",
-                new_config.sample_rate.to_hz(),
-                new_config.channels,
-                new_config.sample_count
-            );
+        // Limit buffer size to prevent unbounded growth
+        // Keep at most 0.5 seconds of audio (48000 Hz * 2 channels * 0.5 = 48000 samples)
+        while buf.len() > 48000 {
+            buf.pop_front();
         }
     }
     
@@ -997,78 +969,200 @@ impl Drop for AudioStream {
 ### 4.5 Simulator Controller (simulator_controller.rs)
 
 ```rust
-use cpu_sim::{run_elf, SimulationResult, SimulatorView, InstructionTrace};
+use cpu_sim::{
+    Audio, InteractiveSimulator, SimulationStepResult, Video, VideoConfig, AudioConfig,
+};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 
 pub struct SimulatorController {
-    /// Print instruction trace flag
-    print_inst_trace: bool,
+    /// Interactive simulator instance
+    simulator: InteractiveSimulator,
     
-    /// Callbacks for video and audio (stored for reset)
-    video_callback: Option<Box<dyn FnMut(&[u8], &cpu_sim::VideoConfig)>>,
-    audio_sample_callback: Option<Box<dyn FnMut(&[i16])>>,
-    audio_config_callback: Option<Box<dyn FnMut(&cpu_sim::AudioConfig)>>,
+    /// Video frame queue (shared with Video device callback)
+    video_frames: Arc<Mutex<VecDeque<(Vec<u8>, VideoConfig)>>>,
     
-    // TODO: This design needs rework - we can't easily "step" the existing run_elf API
-    // Need to expose Simulator internals or redesign cpu-sim public API
-    // For now, document the limitation
+    /// Audio sample queue (shared with Audio device callback)
+    audio_samples: Arc<Mutex<VecDeque<i16>>>,
+    
+    /// Audio config (shared with Audio device callback)
+    audio_config: Arc<Mutex<Option<AudioConfig>>>,
 }
 
 impl SimulatorController {
-    pub fn new(print_inst_trace: bool) -> Result<Self, String> {
+    /// Create a new simulator controller with video and audio support
+    ///
+    /// NOTE: This implementation assumes InteractiveSimulator will be extended
+    /// to support device registration. If not available, use the alternative
+    /// implementation shown in the "Fallback Implementation" section below.
+    pub fn new() -> Result<Self, String> {
+        // Create the interactive simulator
+        let mut simulator = InteractiveSimulator::new()?;
+        
+        // Create shared queues for video and audio data
+        let video_frames = Arc::new(Mutex::new(VecDeque::new()));
+        let audio_samples = Arc::new(Mutex::new(VecDeque::new()));
+        let audio_config = Arc::new(Mutex::new(None));
+        
+        // Create Video device with callback
+        let video_frames_clone = Arc::clone(&video_frames);
+        let video_callback = move |data: &[u8], config: &VideoConfig| {
+            let mut frames = video_frames_clone.lock().unwrap();
+            frames.push_back((data.to_vec(), *config));
+            
+            // Keep only last 2 frames to prevent unbounded growth
+            while frames.len() > 2 {
+                frames.pop_front();
+            }
+        };
+        let video_device = Video::new(Some(video_callback));
+        
+        // Create Audio device with callbacks
+        let audio_samples_clone = Arc::clone(&audio_samples);
+        let sample_callback = move |samples: &[i16]| {
+            let mut buf = audio_samples_clone.lock().unwrap();
+            for &sample in samples {
+                buf.push_back(sample);
+            }
+            
+            // Limit buffer size (0.5 seconds at 48kHz stereo)
+            while buf.len() > 48000 {
+                buf.pop_front();
+            }
+        };
+        
+        let audio_config_clone = Arc::clone(&audio_config);
+        let config_callback = move |config: &AudioConfig| {
+            let mut cfg = audio_config_clone.lock().unwrap();
+            *cfg = Some(*config);
+        };
+        let audio_device = Audio::new(Some(sample_callback), Some(config_callback));
+        
+        // Register devices with simulator
+        // ASSUMPTION: InteractiveSimulator will provide register_device() method
+        // If not available yet, see "Fallback Implementation" below
+        simulator.register_device(0x10000000, Box::new(video_device))?;
+        simulator.register_device(0x10001000, Box::new(audio_device))?;
+        
         Ok(SimulatorController {
-            print_inst_trace,
-            video_callback: None,
-            audio_sample_callback: None,
-            audio_config_callback: None,
+            simulator,
+            video_frames,
+            audio_samples,
+            audio_config,
         })
     }
     
-    /// Set video callback
-    pub fn set_video_callback<F>(&mut self, callback: F)
-    where
-        F: FnMut(&[u8], &cpu_sim::VideoConfig) + 'static,
-    {
-        self.video_callback = Some(Box::new(callback));
-    }
-    
-    /// Set audio callbacks
-    pub fn set_audio_callbacks<S, C>(&mut self, sample_callback: S, config_callback: C)
-    where
-        S: FnMut(&[i16]) + 'static,
-        C: FnMut(&cpu_sim::AudioConfig) + 'static,
-    {
-        self.audio_sample_callback = Some(Box::new(sample_callback));
-        self.audio_config_callback = Some(Box::new(config_callback));
-    }
-    
-    /// Load ELF file and reset simulation
+    /// Load an ELF file and reset the simulation
     pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
-        // NOTE: Current cpu-sim API doesn't support stepping
-        // This is a design challenge that needs to be addressed
+        // Clear any pending frames/samples from previous program
+        self.video_frames.lock().unwrap().clear();
+        self.audio_samples.lock().unwrap().clear();
+        *self.audio_config.lock().unwrap() = None;
         
-        // For MVP, we can run in a background thread and use callbacks
-        // But this requires significant API changes to cpu-sim
+        // Load ELF into simulator (this resets the CPU)
+        self.simulator.load_elf(path)?;
         
-        // DESIGN DECISION NEEDED:
-        // Option 1: Extend cpu-sim to expose Simulator::step() method
-        // Option 2: Run simulation in background thread with messaging
-        // Option 3: Redesign cpu-sim API for interactive use
-        
-        todo!("Need to extend cpu-sim API for interactive stepping")
+        Ok(())
     }
     
-    /// Step the simulation for N cycles
-    pub fn step_cycles(&mut self, cycles: u64) -> Result<SimulationStepResult, String> {
-        // This requires access to the internal Simulator
-        todo!("Need to extend cpu-sim API for interactive stepping")
+    /// Step the simulation for N instructions
+    ///
+    /// Returns the result of the last instruction executed, which may contain
+    /// a tohost termination value if the program halted.
+    pub fn step_instructions(&mut self, count: u64) -> Result<SimulationStepResult, String> {
+        let mut last_result = None;
+        
+        for _ in 0..count {
+            let result = self.simulator.step_instruction()?;
+            
+            // If program terminated, return early
+            if result.tohost_value.is_some() {
+                return Ok(result);
+            }
+            
+            last_result = Some(result);
+        }
+        
+        // Return last result (or error if no steps were taken)
+        last_result.ok_or_else(|| "No instructions executed".to_string())
+    }
+    
+    /// Get the next available video frame, if any
+    pub fn get_video_frame(&self) -> Option<(Vec<u8>, VideoConfig)> {
+        self.video_frames.lock().unwrap().pop_front()
+    }
+    
+    /// Get available audio samples (up to max_samples)
+    pub fn get_audio_samples(&self, max_samples: usize) -> Vec<i16> {
+        let mut samples = self.audio_samples.lock().unwrap();
+        let count = samples.len().min(max_samples);
+        samples.drain(..count).collect()
+    }
+    
+    /// Get current audio configuration, if set
+    pub fn get_audio_config(&self) -> Option<AudioConfig> {
+        *self.audio_config.lock().unwrap()
     }
 }
 
-pub struct SimulationStepResult {
-    pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
-}
+// ============================================================================
+// FALLBACK IMPLEMENTATION (if InteractiveSimulator doesn't support devices)
+// ============================================================================
+//
+// If InteractiveSimulator.register_device() is not available, use this
+// alternative approach with run_program and background thread:
+//
+// ```rust
+// use std::thread;
+// use crossbeam_channel::{bounded, Sender, Receiver};
+// 
+// enum SimCommand {
+//     LoadElf(PathBuf),
+//     Step(u64),
+//     Stop,
+// }
+// 
+// enum SimResponse {
+//     Result(SimulationStepResult),
+//     Error(String),
+// }
+// 
+// pub struct SimulatorController {
+//     command_tx: Sender<SimCommand>,
+//     response_rx: Receiver<SimResponse>,
+//     sim_thread: Option<thread::JoinHandle<()>>,
+//     video_frames: Arc<Mutex<VecDeque<(Vec<u8>, VideoConfig)>>>,
+//     audio_samples: Arc<Mutex<VecDeque<i16>>>,
+// }
+// 
+// impl SimulatorController {
+//     pub fn new() -> Result<Self, String> {
+//         let (cmd_tx, cmd_rx) = bounded(10);
+//         let (resp_tx, resp_rx) = bounded(10);
+//         
+//         let video_frames = Arc::new(Mutex::new(VecDeque::new()));
+//         let audio_samples = Arc::new(Mutex::new(VecDeque::new()));
+//         
+//         // Clone for thread
+//         let video_frames_thread = Arc::clone(&video_frames);
+//         let audio_samples_thread = Arc::clone(&audio_samples);
+//         
+//         // Spawn simulation thread
+//         let sim_thread = thread::spawn(move || {
+//             // Thread implementation with run_program...
+//         });
+//         
+//         Ok(SimulatorController {
+//             command_tx: cmd_tx,
+//             response_rx: resp_rx,
+//             sim_thread: Some(sim_thread),
+//             video_frames,
+//             audio_samples,
+//         })
+//     }
+// }
+// ```
 ```
 
 ---
@@ -1077,62 +1171,54 @@ pub struct SimulationStepResult {
 
 ### Challenge 1: cpu-sim API Not Designed for Interactive Use
 
-**Problem:** The current `cpu-sim` API uses `run_elf()` which runs to completion. We need to step the simulation incrementally while processing GUI events.
+**Problem:** The original `cpu-sim` API used `run_elf()` which runs to completion. We need to step the simulation incrementally while processing GUI events, and we need to register Video/Audio devices with callbacks for real-time output.
 
-**Solutions:**
+**✅ PARTIALLY SOLVED:** The `InteractiveSimulator` API has been added to cpu-sim, providing:
+- `InteractiveSimulator::new()` - Create simulator instance
+- `InteractiveSimulator::load_elf()` - Load ELF file and reset CPU
+- `InteractiveSimulator::step_instruction()` - Step execution by one instruction
 
-**Option A (Recommended):** Extend `cpu-sim` public API
-- Add `Simulator::new_with_callbacks()` to public API
-- Add `Simulator::step()` or `Simulator::step_cycles()` method
-- Add `Simulator::reset()` method
-- Keep existing `run_elf()` for backward compatibility
+**⚠️ REMAINING REQUIREMENT:** To complete sim-view, we need to register Video and Audio bus devices with callbacks. This requires ONE of the following:
 
+**Option A (Recommended):** Extend `InteractiveSimulator` to support device registration
 ```rust
-// In cpu-sim/src/lib.rs
-pub use sim::Simulator; // Make Simulator public
-
-// In cpu-sim/src/sim.rs
-impl Simulator {
-    /// Create a new simulator with custom callbacks (public API)
-    pub fn new_with_callbacks<F, T>(
-        print_inst_trace: bool,
-        print_fsm_state: bool,
-        inst_complete_callback: Option<F>,
-        trace_callback: Option<T>,
-        vcd_path: Option<&str>,
-        mem_latency_cycles: u32,
-    ) -> Result<Self, String>
+// In cpu-sim/src/lib.rs - extend InteractiveSimulator
+impl InteractiveSimulator {
+    /// Register a custom bus device before loading ELF
+    /// This must be called before load_elf()
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), String> {
+        // Delegate to internal simulator's bus
+    }
+    
+    /// Alternative: Provide access to SimulatorView for device setup
+    pub fn with_setup<F>(&mut self, setup: F) -> Result<(), String>
     where
-        F: FnMut(&mut SimulatorView),
-        T: FnMut(&InstructionTrace),
-    { ... }
-    
-    /// Step the simulation by one cycle
-    pub fn step(&mut self) -> Result<StepResult, String> { ... }
-    
-    /// Step the simulation by N cycles
-    pub fn step_cycles(&mut self, cycles: u64) -> Result<StepResult, String> { ... }
-    
-    /// Reset the CPU and simulator state
-    pub fn reset(&mut self) { ... }
-    
-    /// Load an ELF file into memory
-    pub fn load_elf(&mut self, path: &Path) -> Result<u32, String> { ... }
+        F: FnOnce(&mut SimulatorView),
+    {
+        // Call setup function with access to SimulatorView
+        // This allows registering devices, writing to memory, etc.
+    }
 }
 ```
 
-**Option B:** Background Thread with Message Passing
+**Option B:** Use `run_program` with background thread
+- Keep using existing `run_program()` API
 - Run simulation in background thread
-- Use `crossbeam-channel` for communication
-- GUI thread sends commands (load, pause, step, reset)
-- Simulation thread sends updates (video frames, audio samples, status)
-- More complex but doesn't require API changes
+- Use `crossbeam-channel` for GUI ↔ simulation communication
+- More complex but works with current API
 
-**Option C:** Fork cpu-sim for sim-view
-- Create a specialized version of cpu-sim
-- Not recommended (maintenance burden)
+**Option C:** Direct Simulator usage (requires making Simulator public)
+- Make `Simulator` struct public in cpu-sim
+- Construct with callbacks directly
+- More flexible but exposes internal complexity
 
-**Decision:** Go with Option A - extend the cpu-sim public API to support interactive use.
+**Decision for Implementation:** 
+- **Short-term:** Use Option A with a PR to extend `InteractiveSimulator` API
+- **Alternative:** If API extension is not feasible, fall back to Option B (background thread)
 
 ### Challenge 2: Drag-and-Drop Support
 
@@ -1175,15 +1261,22 @@ impl Simulator {
 
 ## 6. Implementation Sequence
 
-### Phase 1: Extend cpu-sim API (Week 1)
+### Phase 1: Extend InteractiveSimulator API (Prerequisite)
 
-1. Make `Simulator` struct public in `cpu-sim/src/lib.rs`
-2. Add `Simulator::new_with_callbacks()` public constructor
-3. Add `Simulator::step_cycles()` method
-4. Add `Simulator::reset()` method
-5. Add `Simulator::load_elf()` method
-6. Update `SimulatorView` to provide needed access
-7. Write unit tests for new API
+**Status:** ✅ **PARTIALLY COMPLETE** - `InteractiveSimulator` exists with `new()`, `load_elf()`, and `step_instruction()`
+
+**Remaining Work:**
+
+1. Add device registration capability to `InteractiveSimulator` - **Option A (Recommended)**:
+   - Add `register_device(base_addr, device)` method to `InteractiveSimulator`
+   - OR add `with_setup(callback)` method for one-time setup before loading ELF
+2. Alternatively, implement using background thread approach - **Option B**:
+   - Use existing `run_program()` with Video/Audio callbacks
+   - Run in background thread with message passing
+3. Write unit tests for device registration
+4. Update cpu-sim documentation
+
+**Implementation Note:** The simulator controller code in this plan assumes Option A. If using Option B, refer to the "Fallback Implementation" comment in Section 4.5.
 
 ### Phase 2: Create sim-view Structure (Week 1)
 
@@ -1196,32 +1289,35 @@ impl Simulator {
 ### Phase 3: Implement Audio Stream (Week 2)
 
 1. Implement `AudioStream::new()`
-2. Implement callback generation for Audio device
+2. Implement `push_samples()` for receiving samples from controller
 3. Test with simple tone program
 4. Handle different sample formats (i16, f32, u16)
 
 ### Phase 4: Implement Video Window (Week 2)
 
 1. Implement `VideoWindow::new()`
-2. Implement frame conversion (RGBA8, RGB8, RGB565, R8)
-3. Implement window resize on config change
-4. Implement keyboard event handling
-5. Test with simple color fill program
+2. Implement `process_video_frame()` for frame data from controller
+3. Implement frame conversion (RGBA8, RGB8, RGB565, R8)
+4. Implement window resize on config change
+5. Implement keyboard event handling
+6. Test with simple color fill program
 
 ### Phase 5: Implement Simulator Controller (Week 3)
 
-1. Implement ELF loading via extended API
-2. Implement reset functionality
-3. Implement cycle stepping
-4. Wire up callbacks to Audio and Video devices
+1. Implement device registration with Video/Audio devices
+2. Implement ELF loading via `InteractiveSimulator::load_elf()`
+3. Implement `step_instructions()` wrapper around `InteractiveSimulator::step_instruction()`
+4. Implement frame/sample extraction methods (`get_video_frame()`, `get_audio_samples()`)
+5. Wire up thread-safe queues for Video and Audio data
 
 ### Phase 6: Implement Main Viewer Loop (Week 3)
 
 1. Implement `SimViewer::new()`
-2. Implement `SimViewer::run()` main loop
+2. Implement `SimViewer::run()` main loop with frame pulling
 3. Implement state management (Idle, Running, Paused, Halted)
 4. Implement keyboard handlers (Escape, Space, Ctrl+R)
 5. Implement window title updates
+6. Wire up video frame and audio sample flow from controller to window/stream
 
 ### Phase 7: Integration and Testing (Week 4)
 
@@ -1297,23 +1393,35 @@ Create test ELF programs:
 
 ### Key Points for AI Agent
 
-1. **Start with cpu-sim API extension** - This is prerequisite for everything else
-2. **Follow Rust best practices** - Use proper error handling, no `unwrap()` in production code
-3. **Thread safety** - Use `Arc<Mutex<>>` for shared state between threads
-4. **Callbacks** - Use closures with `FnMut` traits for Video/Audio device callbacks
+1. **InteractiveSimulator exists but needs extension** - The stepping API is available, but device registration is not yet exposed
+2. **Two implementation paths available** - Either extend `InteractiveSimulator` API (recommended) or use background thread with `run_program`
+3. **Follow Rust best practices** - Use proper error handling, no `unwrap()` in production code
+4. **Thread safety** - Use `Arc<Mutex<>>` for shared state between callbacks and main loop
 5. **No Box::leak()** - Use proper ownership patterns (`Arc`, `Rc`, callbacks with lifetimes)
 
 ### Critical Dependencies
 
-- `cpu-sim` must expose `Simulator` and stepping API
+- `cpu-sim` with `InteractiveSimulator` (✅ available)
+- Device registration API extension (⚠️ needed - see Challenge 1)
 - `minifb` for video window
 - `cpal` for audio stream
-- `crossbeam-channel` for thread communication (if using background thread approach)
+- `crossbeam-channel` for thread communication (only if using background thread fallback)
+
+### Implementation Strategy
+
+**Recommended Approach:**
+1. First, extend `InteractiveSimulator` to support device registration (small PR to cpu-sim)
+2. Then implement sim-view using the extended API as shown in this plan
+
+**Alternative Approach (no cpu-sim changes):**
+1. Use the fallback implementation shown in Section 4.5
+2. Run simulation in background thread with `run_program`
+3. Use message passing for control and data flow
 
 ### Common Pitfalls to Avoid
 
 1. Don't use `unwrap()` or `expect()` in main loop - handle errors gracefully
-2. Don't let buffers grow unbounded - limit queue sizes
+2. Don't let buffers grow unbounded - limit queue sizes (implemented in the plan)
 3. Don't block GUI thread - keep operations fast
 4. Don't leak memory - use RAII and proper Drop implementations
 5. Don't forget to run `cargo fmt` and `cargo clippy` before committing
