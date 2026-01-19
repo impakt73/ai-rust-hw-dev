@@ -496,33 +496,34 @@ where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
-    /// Create a new simulator with the given bus and optional callbacks
+    /// Create a new simulator with optional callbacks
     ///
-    /// The runtime is created and owned internally using an unsafe self-referential pattern.
-    /// This is safe because:
+    /// The runtime, bus, and hung detector are created and owned internally using
+    /// an unsafe self-referential pattern. This is safe because:
     /// 1. The runtime is boxed (stable heap address)
     /// 2. Field drop order ensures CPU drops before runtime
     ///
     /// # Arguments
-    /// * `bus` - System bus with memory and peripherals
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
     /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
-    /// * `hung_detector_config` - Optional hung state detector configuration
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        bus: SystemBus,
         print_inst_trace: bool,
         print_fsm_state: bool,
         inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
-        hung_detector_config: Option<HungDetectorConfig>,
     ) -> Result<Self, String> {
+        // Create system bus with internal DRAM (always default)
+        let bus = SystemBus::new();
+
+        // Create hung detector config (always default)
+        let hung_detector = Some(HungDetector::new(HungDetectorConfig::default()));
+
         // 1. Create and box the runtime immediately for stable heap address
         let runtime = Box::new(
             riscv_core::create_cpu_runtime()
@@ -539,34 +540,29 @@ where
             // because _runtime is declared after cpu in the struct, so cpu drops first
             let runtime_ref: &'static VerilatorRuntime = &*runtime_ptr;
 
-            // Create CPU model - enable tracing if VCD path is provided
-            if let Some(vcd_file_path) = vcd_path {
-                let config = VerilatedModelConfig {
-                    enable_tracing: true,
-                    ..Default::default()
-                };
+            // Create CPU model with configuration
+            let config = VerilatedModelConfig {
+                enable_tracing: vcd_path.is_some(),
+                ..Default::default()
+            };
 
-                let mut cpu = runtime_ref
-                    .create_model::<Top>(&config)
-                    .map_err(|e| format!("Failed to create CPU model with tracing: {}", e))?;
+            let mut cpu = runtime_ref
+                .create_model::<Top>(&config)
+                .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
-                // Open VCD file
+            // Open VCD file if path is provided
+            let vcd = if let Some(vcd_file_path) = vcd_path {
                 let vcd = cpu.open_vcd(vcd_file_path);
                 log::info!("VCD tracing enabled, writing to: {}", vcd_file_path);
-
-                (cpu, Some(vcd))
+                Some(vcd)
             } else {
-                let cpu = runtime_ref
-                    .create_model_simple::<Top>()
-                    .map_err(|e| format!("Failed to create CPU model: {}", e))?;
+                None
+            };
 
-                (cpu, None)
-            }
+            (cpu, vcd)
         };
 
         log::info!("Memory latency configured to {} cycles", mem_latency_cycles);
-
-        let hung_detector = hung_detector_config.map(HungDetector::new);
 
         // 3. Bundle everything together
         // CRITICAL: Field declaration order ensures safe drop - cpu drops before _runtime

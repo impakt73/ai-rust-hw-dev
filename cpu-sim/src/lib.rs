@@ -21,8 +21,6 @@ pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulatorView};
 pub use video::{Video, VideoConfig, VideoFormat};
 
-use bus::SystemBus;
-use hung_detector::HungDetectorConfig;
 use sim::Simulator;
 use std::path::Path;
 /// Load an ELF file into a simulator's memory
@@ -259,19 +257,14 @@ where
     P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
-    // Create system bus with internal DRAM
-    let bus = SystemBus::new();
-
-    // Initialize CPU Simulator (runtime is now created internally)
+    // Initialize CPU Simulator (runtime, bus, and hung detector created internally)
     let mut sim = Simulator::new(
-        bus,
         print_inst_trace,
         print_fsm_state,
         inst_complete_callback,
         trace_callback,
         vcd_path,
         mem_latency_cycles,
-        Some(HungDetectorConfig::default()),
     )?;
 
     // Execute pre-execution callback to load program and get entry point
