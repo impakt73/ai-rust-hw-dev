@@ -80,9 +80,9 @@ fn test_video_pattern() {
             );
         };
 
-        // Register Video device at VIDEO_BASE with very high FPS for testing
-        // At 100MHz CPU, 10000 FPS = 10,000 cycles per frame
-        let video = Box::new(Video::with_fps(10000, Some(present_callback)));
+        // Register Video device at VIDEO_BASE with 60 FPS (real-time pacing)
+        // Frame pacing is now based on elapsed host time, not CPU cycles
+        let video = Box::new(Video::with_fps(60, Some(present_callback)));
         view.register_device(VIDEO_BASE, video)
             .expect("Failed to register Video device");
         log::info!("Video device registered at 0x{:08x}", VIDEO_BASE);

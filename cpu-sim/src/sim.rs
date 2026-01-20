@@ -903,6 +903,9 @@ where
                 .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
 
+            // Update bus with cumulative elapsed time for devices
+            self.bus.update_elapsed_time(total_elapsed_us);
+
             if let Some(tohost_value) = step_result.tohost_value {
                 log::info!(
                     "Halt signal detected via SimControl, value=0x{:08x}",

@@ -110,7 +110,7 @@ struct ActivePresent {
 ///
 /// This device simulates a simple video controller that can read framebuffer
 /// data from memory and invoke a callback when the data is ready. It provides
-/// frame pacing to ensure consistent frame rates based on simulation cycles.
+/// frame pacing to ensure consistent frame rates based on elapsed host time.
 ///
 /// Register Map (all word-aligned):
 /// - 0x00: VIDEO_ADDR    - Framebuffer address in memory (read/write)
@@ -144,10 +144,8 @@ where
     active_present: Option<ActivePresent>,
     /// Target frame rate in frames per second
     target_fps: u32,
-    /// Cycle count when last frame was completed (for frame pacing)
-    last_frame_cycle: Option<u64>,
-    /// Current cycle count
-    current_cycle: u64,
+    /// Elapsed time (microseconds) when last frame was completed (for frame pacing)
+    last_frame_time_us: Option<u64>,
     /// Optional callback invoked when present data is fully available
     present_callback: Option<F>,
 }
@@ -168,8 +166,7 @@ where
             video_config: 0,
             active_present: None,
             target_fps: fps,
-            last_frame_cycle: None,
-            current_cycle: 0,
+            last_frame_time_us: None,
             present_callback,
         }
     }
@@ -179,22 +176,26 @@ where
         self.active_present.is_some()
     }
 
-    /// Check if enough cycles have passed since last frame for frame pacing
+    /// Check if enough time has passed since last frame for frame pacing
     ///
-    /// Frame pacing is based on cycles. For a 100MHz CPU and 60 FPS:
-    /// - Cycles per frame = 100_000_000 / 60 = ~1,666,667 cycles
+    /// Frame pacing is based on elapsed host time (not simulation cycles).
+    /// For 60 FPS: frame_time = 1,000,000 / 60 = ~16,667 microseconds
     ///
-    /// This ensures FRAME_READY pacing even in simulation.
-    fn is_frame_ready(&self) -> bool {
-        match self.last_frame_cycle {
+    /// CRITICAL: If rendering takes longer than the frame time (simulation is slow),
+    /// we should render frames as fast as possible. Therefore, we return true when
+    /// elapsed time >= frame_time, but also if no time has elapsed yet (allowing
+    /// back-to-back frames when the simulation can't keep up with real-time).
+    fn is_frame_ready(&self, current_time_us: u64) -> bool {
+        match self.last_frame_time_us {
             None => true, // Always ready initially
-            Some(last_cycle) => {
-                // Calculate cycles per frame based on assumed 100MHz CPU
-                // At 100MHz, 60 FPS means 1,666,667 cycles per frame
-                const CPU_FREQ_HZ: u64 = 100_000_000;
-                let cycles_per_frame = CPU_FREQ_HZ / self.target_fps as u64;
-                let elapsed_cycles = self.current_cycle.saturating_sub(last_cycle);
-                elapsed_cycles >= cycles_per_frame
+            Some(last_time_us) => {
+                // Calculate microseconds per frame
+                let us_per_frame = 1_000_000 / self.target_fps as u64;
+                let elapsed_us = current_time_us.saturating_sub(last_time_us);
+
+                // Frame is ready if enough time has passed
+                // OR if current_time hasn't advanced (simulation running slower than real-time)
+                elapsed_us >= us_per_frame || current_time_us == last_time_us
             }
         }
     }
@@ -253,12 +254,13 @@ where
         // Check if present is complete
         if present.bytes_remaining == 0 {
             let present_data = self.active_present.take().unwrap();
-            self.invoke_present_callback(present_data);
+            let current_time_us = ctx.elapsed_time_us();
+            self.invoke_present_callback(present_data, current_time_us);
         }
     }
 
     /// Invoke the present callback with the collected frame data
-    fn invoke_present_callback(&mut self, present: ActivePresent) {
+    fn invoke_present_callback(&mut self, present: ActivePresent, current_time_us: u64) {
         log::info!(
             "Video: Present complete ({}x{} {:?}, {} bytes)",
             present.config.width,
@@ -273,7 +275,7 @@ where
         }
 
         // Update frame pacing state
-        self.last_frame_cycle = Some(self.current_cycle);
+        self.last_frame_time_us = Some(current_time_us);
     }
 }
 
@@ -281,7 +283,7 @@ impl<F> BusDevice for Video<F>
 where
     F: FnMut(&[u8], &VideoConfig),
 {
-    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
+    fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => Ok(self.video_addr),
             0x04 => Ok(self.video_config),
@@ -290,7 +292,7 @@ where
                 let mut status = 0u32;
 
                 // Bit 0: FRAME_READY
-                if self.is_frame_ready() {
+                if self.is_frame_ready(ctx.elapsed_time_us()) {
                     status |= 1 << 0;
                 }
 
@@ -350,15 +352,11 @@ where
         self.video_addr = 0;
         self.video_config = 0;
         self.active_present = None;
-        self.last_frame_cycle = None;
-        self.current_cycle = 0;
+        self.last_frame_time_us = None;
         // Note: frame_index is not reset so frames continue numbering across resets
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
-        // Increment cycle counter
-        self.current_cycle += 1;
-
         // Read one byte per clock cycle if a present operation is in progress
         self.present_one_byte(ctx);
     }
