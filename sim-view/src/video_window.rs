@@ -100,16 +100,20 @@ impl VideoWindow {
         Ok(())
     }
 
+    /// Update window events (call once per frame in main loop)
+    pub fn update_events(&mut self) -> Result<(), String> {
+        // Collect events
+        self.collect_events();
+
+        Ok(())
+    }
+
     /// Update the window display (call once per frame in main loop)
-    pub fn update(&mut self) -> Result<(), String> {
+    pub fn update_display(&mut self) -> Result<(), String> {
         // Update minifb window with current framebuffer
         self.window
             .update_with_buffer(&self.framebuffer, self.width, self.height)
             .map_err(|e| format!("Failed to update window: {}", e))?;
-
-        // Collect events
-        self.collect_events();
-
         Ok(())
     }
 
@@ -245,17 +249,6 @@ impl VideoWindow {
     /// Get pending events
     pub fn get_events(&mut self) -> Vec<WindowEvent> {
         self.event_queue.drain(..).collect()
-    }
-
-    /// Check if window is still open
-    pub fn is_open(&self) -> bool {
-        self.window.is_open()
-    }
-
-    /// Close the window
-    pub fn close(&mut self) {
-        // minifb windows close automatically when dropped
-        // This is a no-op but kept for API consistency
     }
 
     /// Set window title

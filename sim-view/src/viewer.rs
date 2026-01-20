@@ -40,6 +40,9 @@ pub struct SimViewer {
 
     /// FPS timing
     target_frame_duration: Duration,
+
+    /// Exit requested by user (e.g., Escape key)
+    exit_requested: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +84,7 @@ impl SimViewer {
             last_elf_path: None,
             total_cycles: 0,
             target_frame_duration,
+            exit_requested: false,
         })
     }
 
@@ -157,11 +161,20 @@ impl SimViewer {
     pub fn run(&mut self) -> Result<(), String> {
         log::info!("Starting viewer main loop");
 
-        while self.video_window.is_open() {
+        loop {
             let frame_start = Instant::now();
+
+            // Update video window events
+            self.video_window.update_events()?;
 
             // Handle window events (keyboard, drag-and-drop, close)
             self.handle_events()?;
+
+            // Terminate if an exit was requested
+            if self.exit_requested {
+                log::info!("Exit requested, terminating viewer loop");
+                break;
+            }
 
             // Step simulation if running
             if self.state == ViewerState::Running {
@@ -210,7 +223,7 @@ impl SimViewer {
             }
 
             // Update video window display
-            self.video_window.update()?;
+            self.video_window.update_display()?;
 
             // Frame pacing to maintain target FPS
             let elapsed = frame_start.elapsed();
@@ -234,8 +247,8 @@ impl SimViewer {
                     self.handle_key_press(key, modifiers)?;
                 }
                 WindowEvent::Close => {
-                    log::info!("Window close requested");
-                    self.video_window.close();
+                    log::info!("Window closed, exit requested");
+                    self.exit_requested = true;
                 }
             }
         }
@@ -247,8 +260,8 @@ impl SimViewer {
     fn handle_key_press(&mut self, key: Key, modifiers: KeyModifiers) -> Result<(), String> {
         match key {
             Key::Escape => {
-                log::info!("Escape pressed, exiting");
-                self.video_window.close();
+                log::info!("Escape pressed, exit requested");
+                self.exit_requested = true;
             }
             Key::Space => {
                 self.toggle_pause();
