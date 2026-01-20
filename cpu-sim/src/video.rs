@@ -243,20 +243,59 @@ where
         });
     }
 
-    /// Read one byte from memory during present operation
-    fn present_one_byte(&mut self, ctx: &mut SystemContext) {
+    /// Determine the optimal read size (word=4, halfword=2, or byte=1) based on:
+    /// 1. Bytes remaining to read
+    /// 2. Current address alignment
+    ///
+    /// This ensures we don't read outside the source memory region
+    fn optimal_read_size(addr: u32, bytes_remaining: u32) -> u32 {
+        // Can't read more than what's remaining
+        let max_size = bytes_remaining.min(4);
+
+        // Check alignment constraints
+        if max_size >= 4 && addr.is_multiple_of(4) {
+            4 // Word-aligned, can read 4 bytes
+        } else if max_size >= 2 && addr.is_multiple_of(2) {
+            2 // Halfword-aligned, can read 2 bytes
+        } else {
+            1 // Byte read (always possible)
+        }
+    }
+
+    /// Read the largest possible chunk from memory during present operation
+    fn present_chunk(&mut self, ctx: &mut SystemContext) {
         let present = match self.active_present.as_mut() {
             Some(p) => p,
             None => return,
         };
 
-        // Read one byte from memory
-        let byte = ctx.read_byte(present.current_addr);
-        present.pixel_data.push(byte);
+        // Determine optimal read size
+        let read_size = Self::optimal_read_size(present.current_addr, present.bytes_remaining);
 
-        // Update state
-        present.current_addr = present.current_addr.wrapping_add(1);
-        present.bytes_remaining -= 1;
+        // Read the chunk
+        match read_size {
+            4 => {
+                let word = ctx.read_word(present.current_addr);
+                let bytes = word.to_le_bytes();
+                present.pixel_data.extend_from_slice(&bytes);
+                present.current_addr = present.current_addr.wrapping_add(4);
+                present.bytes_remaining -= 4;
+            }
+            2 => {
+                let halfword = ctx.read_halfword(present.current_addr);
+                let bytes = halfword.to_le_bytes();
+                present.pixel_data.extend_from_slice(&bytes);
+                present.current_addr = present.current_addr.wrapping_add(2);
+                present.bytes_remaining -= 2;
+            }
+            1 => {
+                let byte = ctx.read_byte(present.current_addr);
+                present.pixel_data.push(byte);
+                present.current_addr = present.current_addr.wrapping_add(1);
+                present.bytes_remaining -= 1;
+            }
+            _ => unreachable!("Invalid read size"),
+        }
 
         // Check if present is complete
         if present.bytes_remaining == 0 {
@@ -364,8 +403,8 @@ where
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
-        // Read one byte per clock cycle if a present operation is in progress
-        self.present_one_byte(ctx);
+        // Read the largest possible chunk per clock cycle if a present operation is in progress
+        self.present_chunk(ctx);
     }
 }
 

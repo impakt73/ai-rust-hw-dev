@@ -265,24 +265,67 @@ where
         });
     }
 
-    /// Read one byte from memory during active read operation
-    fn read_one_byte(&mut self, ctx: &mut SystemContext) {
+    /// Determine the optimal read size (word=4, halfword=2, or byte=1) based on:
+    /// 1. Bytes remaining to read
+    /// 2. Current address alignment
+    ///
+    /// This ensures we don't read outside the source memory region
+    fn optimal_read_size(addr: u32, bytes_remaining: usize) -> usize {
+        // Can't read more than what's remaining
+        let max_size = bytes_remaining.min(4);
+
+        // Check alignment constraints
+        if max_size >= 4 && addr.is_multiple_of(4) {
+            4 // Word-aligned, can read 4 bytes
+        } else if max_size >= 2 && addr.is_multiple_of(2) {
+            2 // Halfword-aligned, can read 2 bytes
+        } else {
+            1 // Byte read (always possible)
+        }
+    }
+
+    /// Read the largest possible chunk from memory during active read operation
+    fn read_chunk(&mut self, ctx: &mut SystemContext) {
         let read = match self.active_read.as_mut() {
             Some(r) => r,
             None => return,
         };
 
-        // Read one byte from memory
-        let byte = ctx.read_byte(read.current_addr);
-        read.sample_buffer[read.bytes_in_buffer] = byte;
-        read.bytes_in_buffer += 1;
+        let bytes_per_sample = read.config.bytes_per_sample() as usize;
+        let bytes_remaining = bytes_per_sample - read.bytes_in_buffer;
 
-        // Update address for next byte
-        read.current_addr = read.current_addr.wrapping_add(1);
+        // Determine optimal read size
+        let read_size = Self::optimal_read_size(read.current_addr, bytes_remaining);
+
+        // Read the chunk
+        match read_size {
+            4 => {
+                let word = ctx.read_word(read.current_addr);
+                let bytes = word.to_le_bytes();
+                read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + 4]
+                    .copy_from_slice(&bytes);
+                read.bytes_in_buffer += 4;
+                read.current_addr = read.current_addr.wrapping_add(4);
+            }
+            2 => {
+                let halfword = ctx.read_halfword(read.current_addr);
+                let bytes = halfword.to_le_bytes();
+                read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + 2]
+                    .copy_from_slice(&bytes);
+                read.bytes_in_buffer += 2;
+                read.current_addr = read.current_addr.wrapping_add(2);
+            }
+            1 => {
+                let byte = ctx.read_byte(read.current_addr);
+                read.sample_buffer[read.bytes_in_buffer] = byte;
+                read.bytes_in_buffer += 1;
+                read.current_addr = read.current_addr.wrapping_add(1);
+            }
+            _ => unreachable!("Invalid read size"),
+        }
 
         // Check if sample is complete
-        let bytes_per_sample = read.config.bytes_per_sample();
-        if read.bytes_in_buffer >= bytes_per_sample as usize {
+        if read.bytes_in_buffer >= bytes_per_sample {
             let read_data = self.active_read.take().unwrap();
             self.process_complete_sample(read_data);
         }
@@ -422,16 +465,16 @@ where
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
-        // Read one byte per clock cycle if an active read is in progress
+        // Read the largest possible chunk per clock cycle if an active read is in progress
         if self.is_read_active() {
-            self.read_one_byte(ctx);
+            self.read_chunk(ctx);
         } else {
             // Try to start a new read if data is available
             self.start_read_if_available();
 
-            // If we just started a read, process one byte this cycle
+            // If we just started a read, process one chunk this cycle
             if self.is_read_active() {
-                self.read_one_byte(ctx);
+                self.read_chunk(ctx);
             }
         }
     }
@@ -553,8 +596,9 @@ mod tests {
         audio.write_word(&mut ctx, 0x0C, 8).unwrap();
 
         // Run clock cycles to read all samples
-        // Each sample takes 2 cycles (2 bytes per mono sample)
-        for _ in 0..(test_samples.len() * 2) {
+        // With optimization, each 2-byte mono sample can be read in 1 cycle (halfword)
+        // 4 samples = 4 cycles
+        for _ in 0..test_samples.len() {
             audio.clock_cycle(&mut ctx);
         }
 
@@ -610,8 +654,9 @@ mod tests {
         audio.write_word(&mut ctx, 0x0C, 8).unwrap();
 
         // Run clock cycles to read all samples
-        // Each stereo sample takes 4 cycles (4 bytes per stereo sample)
-        for _ in 0..(test_samples.len() * 4) {
+        // With optimization, each 4-byte stereo sample can be read in 1 cycle (word)
+        // 2 samples = 2 cycles
+        for _ in 0..test_samples.len() {
             audio.clock_cycle(&mut ctx);
         }
 
@@ -691,7 +736,8 @@ mod tests {
 
         // Read all 4 samples (should wrap read pointer to 0)
         audio.write_word(&mut ctx, 0x0C, ring_buffer_size).unwrap();
-        for _ in 0..(4 * 2) {
+        // With optimization, we need fewer cycles: 4 samples at 1 cycle each (halfword-aligned)
+        for _ in 0..4 {
             audio.clock_cycle(&mut ctx);
         }
 
