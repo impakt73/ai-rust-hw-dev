@@ -12,6 +12,7 @@ use std::rc::Rc;
 /// GUI video backend using minifb
 pub struct GuiVideoBackend {
     window: Rc<RefCell<VideoWindow>>,
+    is_active: Rc<RefCell<bool>>,
 }
 
 impl GuiVideoBackend {
@@ -19,12 +20,18 @@ impl GuiVideoBackend {
         let window = VideoWindow::new(width as usize, height as usize)?;
         Ok(Self {
             window: Rc::new(RefCell::new(window)),
+            is_active: Rc::new(RefCell::new(true)),
         })
     }
 
     /// Get a handle to the underlying window (for event source)
     pub fn get_window_handle(&self) -> Rc<RefCell<VideoWindow>> {
         Rc::clone(&self.window)
+    }
+
+    /// Get a handle to the active flag (for event source)
+    pub fn get_active_handle(&self) -> Rc<RefCell<bool>> {
+        Rc::clone(&self.is_active)
     }
 }
 
@@ -44,8 +51,7 @@ impl VideoBackend for GuiVideoBackend {
     }
 
     fn is_active(&self) -> bool {
-        // Window is active as long as it hasn't been closed
-        true
+        *self.is_active.borrow()
     }
 }
 
@@ -70,12 +76,13 @@ impl AudioBackend for GuiAudioBackend {
 /// GUI event source using VideoWindow events
 pub struct GuiEventSource {
     window: Rc<RefCell<VideoWindow>>,
+    is_active: Rc<RefCell<bool>>,
 }
 
 impl GuiEventSource {
     /// Create a new GUI event source from a video backend
-    pub fn new(window: Rc<RefCell<VideoWindow>>) -> Self {
-        Self { window }
+    pub fn new(window: Rc<RefCell<VideoWindow>>, is_active: Rc<RefCell<bool>>) -> Self {
+        Self { window, is_active }
     }
 }
 
@@ -95,7 +102,11 @@ impl EventSource for GuiEventSource {
                         alt: modifiers.alt,
                     },
                 ),
-                WindowEvent::Close => ViewerEvent::Close,
+                WindowEvent::Close => {
+                    // Mark window as inactive when close event received
+                    *self.is_active.borrow_mut() = false;
+                    ViewerEvent::Close
+                }
             })
             .collect()
     }

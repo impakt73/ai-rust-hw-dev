@@ -283,9 +283,10 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
                     self.update_window_title();
                 }
             }
-            TestCommand::StepFrames(_count) => {
-                log::info!("Test command: Step frames (not yet implemented)");
-                // TODO: Implement frame stepping
+            TestCommand::StepFrames(count) => {
+                log::info!("Test command: Step {} frames", count);
+                // Frame stepping not yet implemented - would require tracking frame count
+                // and pausing after N frames. For now, this is a no-op.
             }
             TestCommand::Terminate => {
                 log::info!("Test command: Terminate");

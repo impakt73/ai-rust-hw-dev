@@ -67,9 +67,6 @@ fn test_headless_basic_functionality() {
         "Headless mode ran successfully: {} frames, {} audio chunks",
         frame_count, chunk_count
     );
-
-    // Basic smoke test - no crashes
-    assert!(true);
 }
 
 #[test]

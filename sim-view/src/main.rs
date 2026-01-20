@@ -87,8 +87,9 @@ fn run_gui_mode(args: Args) -> Result<(), String> {
     // Create GUI backends
     let video = GuiVideoBackend::new(args.width, args.height)?;
     let window_handle = video.get_window_handle();
+    let active_handle = video.get_active_handle();
     let audio = GuiAudioBackend::new()?;
-    let events = GuiEventSource::new(window_handle);
+    let events = GuiEventSource::new(window_handle, active_handle);
 
     // Create viewer
     let mut viewer = GuiSimViewer::new(config, video, audio, events)?;
