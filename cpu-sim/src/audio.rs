@@ -313,9 +313,10 @@ where
         self.read_ptr = new_read_ptr % buffer_bytes;
 
         log::debug!(
-            "Audio: Sample complete ({} channels, read_ptr now 0x{:x})",
+            "Audio: Sample complete ({} channels, read_ptr now 0x{:x}), samples: {:?}",
             sample_count,
-            self.read_ptr
+            self.read_ptr,
+            &samples[..sample_count]
         );
 
         // Invoke sample callback with slice of actual samples

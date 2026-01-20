@@ -128,7 +128,19 @@ impl SimulatorController {
     /// Get available audio samples (up to max_samples)
     pub fn get_audio_samples(&self, max_samples: usize) -> Vec<i16> {
         let mut samples = self.audio_samples.lock().unwrap();
+        let available = samples.len();
         let count = samples.len().min(max_samples);
-        samples.drain(..count).collect()
+        let result: Vec<i16> = samples.drain(..count).collect();
+
+        if available > 0 {
+            log::debug!(
+                "Controller: get_audio_samples - available: {}, requested: {}, returning: {}",
+                available,
+                max_samples,
+                result.len()
+            );
+        }
+
+        result
     }
 }

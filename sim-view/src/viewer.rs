@@ -225,6 +225,11 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
         // Pull audio samples from controller and send to audio backend
         let audio_samples = self.controller.get_audio_samples(4096);
         if !audio_samples.is_empty() {
+            log::debug!(
+                "Pushing {} audio samples to backend (cycle: {})",
+                audio_samples.len(),
+                self.total_cycles
+            );
             self.audio_backend.push_samples(&audio_samples);
         }
 

@@ -76,6 +76,8 @@ impl AudioStream {
     pub fn push_samples(&self, samples: &[i16]) {
         let mut buf = self.sample_buffer.lock().unwrap();
 
+        let before_len = buf.len();
+
         // Add samples to buffer
         for &sample in samples {
             buf.push_back(sample);
@@ -85,6 +87,14 @@ impl AudioStream {
         while buf.len() > MAX_AUDIO_BUFFER_SAMPLES {
             buf.pop_front();
         }
+
+        log::debug!(
+            "Audio buffer: pushed {} samples, buffer size {} -> {} (max: {})",
+            samples.len(),
+            before_len,
+            buf.len(),
+            MAX_AUDIO_BUFFER_SAMPLES
+        );
     }
 
     /// Fill `data` from the shared sample `buffer`, invoking `conv` for each sample (or when the buffer is empty).
@@ -98,6 +108,7 @@ impl AudioStream {
         let mut underruns = 0usize;
 
         let mut buf = buffer.lock().unwrap();
+        let available_before = buf.len();
         for slot in data.iter_mut() {
             match buf.pop_front() {
                 Some(v) => *slot = conv(Some(v)),
@@ -111,9 +122,10 @@ impl AudioStream {
         if underruns > 0 {
             let available = total - underruns;
             log::warn!(
-                "Audio output buffer underrun: {}/{} samples available, injecting {} silent sample(s)",
+                "Audio output buffer underrun: {}/{} samples available (buffer had {} samples before read), injecting {} silent sample(s)",
                 available,
                 total,
+                available_before,
                 underruns
             );
         }
