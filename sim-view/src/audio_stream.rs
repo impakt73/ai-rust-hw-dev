@@ -87,6 +87,38 @@ impl AudioStream {
         }
     }
 
+    /// Fill `data` from the shared sample `buffer`, invoking `conv` for each sample (or when the buffer is empty).
+    ///
+    /// This helper centralizes underrun counting and logging so the callbacks remain small and consistent.
+    fn fill_from_buffer<T, F>(data: &mut [T], buffer: &Arc<Mutex<VecDeque<i16>>>, mut conv: F)
+    where
+        F: FnMut(Option<i16>) -> T,
+    {
+        let total = data.len();
+        let mut underruns = 0usize;
+
+        let mut buf = buffer.lock().unwrap();
+        for slot in data.iter_mut() {
+            match buf.pop_front() {
+                Some(v) => *slot = conv(Some(v)),
+                None => {
+                    *slot = conv(None);
+                    underruns += 1;
+                }
+            }
+        }
+
+        if underruns > 0 {
+            let available = total - underruns;
+            log::warn!(
+                "Audio output buffer underrun: {}/{} samples available, injecting {} silent sample(s)",
+                available,
+                total,
+                underruns
+            );
+        }
+    }
+
     /// Build i16 output stream
     fn build_i16_stream(
         device: &cpal::Device,
@@ -97,11 +129,7 @@ impl AudioStream {
             .build_output_stream(
                 config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    let mut buf = buffer.lock().unwrap();
-
-                    for sample_slot in data.iter_mut() {
-                        *sample_slot = buf.pop_front().unwrap_or(0);
-                    }
+                    Self::fill_from_buffer(data, &buffer, |opt| opt.unwrap_or(0));
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
@@ -119,14 +147,9 @@ impl AudioStream {
             .build_output_stream(
                 config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    let mut buf = buffer.lock().unwrap();
-
-                    for sample_slot in data.iter_mut() {
-                        let sample_i16 = buf.pop_front().unwrap_or(0);
-                        // Convert i16 to f32 in range [-1.0, 1.0]
-                        // Using 32768.0 ensures proper normalization for both positive and negative values
-                        *sample_slot = sample_i16 as f32 / 32768.0;
-                    }
+                    Self::fill_from_buffer(data, &buffer, |opt| {
+                        opt.map(|s| s as f32 / 32768.0).unwrap_or(0.0)
+                    });
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
@@ -144,14 +167,15 @@ impl AudioStream {
             .build_output_stream(
                 config,
                 move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                    let mut buf = buffer.lock().unwrap();
-
-                    for sample_slot in data.iter_mut() {
-                        let sample_i16 = buf.pop_front().unwrap_or(0);
-                        // Convert i16 to u16 (shift range)
-                        let shifted = (sample_i16 as i32) + (i16::MAX as i32) + 1;
-                        *sample_slot = shifted.clamp(0, u16::MAX as i32) as u16;
-                    }
+                    let center = ((i16::MAX as i32) + 1) as u16;
+                    Self::fill_from_buffer(data, &buffer, |opt| match opt {
+                        Some(sample_i16) => {
+                            // Convert i16 to u16 (shift range)
+                            let shifted = (sample_i16 as i32) + (i16::MAX as i32) + 1;
+                            shifted.clamp(0, u16::MAX as i32) as u16
+                        }
+                        None => center,
+                    });
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
