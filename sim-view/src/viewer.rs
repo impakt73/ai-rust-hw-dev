@@ -2,10 +2,9 @@ use crate::audio_stream::AudioStream;
 use crate::simulator_controller::SimulatorController;
 use crate::video_window::{Key, KeyModifiers, VideoWindow, WindowEvent};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // Performance constants
-const TARGET_FPS: u64 = 60;
 const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
 
 pub struct ViewerConfig {
@@ -38,9 +37,6 @@ pub struct SimViewer {
     /// Cycle counter
     total_cycles: u64,
 
-    /// FPS timing
-    target_frame_duration: Duration,
-
     /// Exit requested by user (e.g., Escape key)
     exit_requested: bool,
 }
@@ -72,9 +68,6 @@ impl SimViewer {
         // Create audio stream
         let audio_stream = AudioStream::new()?;
 
-        // Calculate target frame duration from FPS
-        let target_frame_duration = Duration::from_millis(1000 / TARGET_FPS);
-
         Ok(SimViewer {
             controller,
             video_window,
@@ -83,7 +76,6 @@ impl SimViewer {
             state: ViewerState::Idle,
             last_elf_path: None,
             total_cycles: 0,
-            target_frame_duration,
             exit_requested: false,
         })
     }
@@ -161,6 +153,9 @@ impl SimViewer {
     pub fn run(&mut self) -> Result<(), String> {
         log::info!("Starting viewer main loop");
 
+        // Record startup time to compute total elapsed time per iteration
+        let startup_time = Instant::now();
+
         loop {
             let frame_start = Instant::now();
 
@@ -225,11 +220,14 @@ impl SimViewer {
             // Update video window display
             self.video_window.update_display()?;
 
-            // Frame pacing to maintain target FPS
-            let elapsed = frame_start.elapsed();
-            if elapsed < self.target_frame_duration {
-                std::thread::sleep(self.target_frame_duration - elapsed);
-            }
+            // Print timing info: total elapsed since startup (s) and current iteration duration (ms)
+            let total_elapsed_s = startup_time.elapsed().as_secs_f64();
+            let iteration_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
+            log::info!(
+                "Elapsed: {:.2} s (iteration: {:.2} ms)",
+                total_elapsed_s,
+                iteration_ms
+            );
         }
 
         log::info!("Viewer loop ended");
