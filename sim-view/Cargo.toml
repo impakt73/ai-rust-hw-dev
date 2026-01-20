@@ -3,6 +3,10 @@ name = "sim-view"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "sim_view"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sim-view"
 path = "src/main.rs"

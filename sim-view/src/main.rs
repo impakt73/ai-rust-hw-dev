@@ -1,10 +1,5 @@
-mod audio_stream;
-mod backend_traits;
-mod gui_backends;
-mod headless_backends;
-mod simulator_controller;
-mod video_window;
-mod viewer;
+// Import modules from lib
+use sim_view::{gui_backends, headless_backends, viewer};
 
 use clap::Parser;
 use gui_backends::{GuiAudioBackend, GuiEventSource, GuiVideoBackend};

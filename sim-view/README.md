@@ -73,8 +73,38 @@ Options:
       --print-inst-trace           Print instruction trace (prints every instruction executed)
       --width <WIDTH>              Initial window width [default: 320]
       --height <HEIGHT>            Initial window height [default: 240]
+      --headless                   Run in headless mode (no GUI, for testing)
   -h, --help                       Print help
 ```
+
+### Headless Mode
+
+The viewer now supports a **headless mode** for automated testing and CI/CD environments. In headless mode:
+
+- No GUI window is created
+- Video frames and audio samples are captured in memory with timestamps
+- The viewer can be controlled programmatically via test commands
+- Perfect for integration tests and automated validation
+
+**Usage:**
+
+```bash
+# Run in headless mode
+cargo run --package sim-view -- --headless --max-cycles 100000 test_programs/test_video_pattern.elf
+
+# Run headless integration tests
+cargo test --package sim-view
+```
+
+**Example output:**
+
+```
+Headless mode completed:
+  Frames captured: 42
+  Audio samples captured: 3840
+```
+
+Headless mode is used by the integration tests in `tests/headless_integration.rs` to validate viewer functionality without requiring a GUI environment.
 
 ### Examples
 
@@ -96,28 +126,64 @@ cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.el
 
 ### Components
 
-1. **VideoWindow** (`video_window.rs`)
-   - Manages the minifb window
-   - Converts video frames from various formats to ARGB8888 for display
-   - Handles keyboard events
-   - Supports dynamic window resizing
+1. **VideoBackend Trait** (`backend_traits.rs`)
+   - Abstraction for video output (GUI or headless)
+   - Allows dependency injection for different rendering backends
 
-2. **AudioStream** (`audio_stream.rs`)
-   - Manages the cpal audio output stream
-   - Handles sample format conversions (i16, f32, u16)
-   - Implements thread-safe sample buffering
+2. **AudioBackend Trait** (`backend_traits.rs`)
+   - Abstraction for audio output (GUI or headless)
+   - Enables testing without audio hardware
 
-3. **SimulatorController** (`simulator_controller.rs`)
-   - Wraps the `InteractiveSimulator` from cpu-sim
-   - Registers Video and Audio devices at `VIDEO_BASE` and `AUDIO_BASE`
-   - Manages ELF loading and simulation stepping
-   - Provides thread-safe queues for video/audio data
+3. **EventSource Trait** (`backend_traits.rs`)
+   - Abstraction for input events (keyboard or programmatic)
+   - Supports test-driven event injection
 
-4. **SimViewer** (`viewer.rs`)
-   - Main application logic and event loop
-   - State management (Idle, Running, Paused, Halted)
-   - Coordinates between simulator, video window, and audio stream
-   - Implements keyboard controls and UI feedback
+4. **GuiVideoBackend** (`gui_backends.rs`)
+   - Wraps VideoWindow for GUI mode
+   - Uses minifb for cross-platform windowing
+
+5. **GuiAudioBackend** (`gui_backends.rs`)
+   - Wraps AudioStream for GUI mode
+   - Uses cpal for cross-platform audio
+
+6. **GuiEventSource** (`gui_backends.rs`)
+   - Provides keyboard events from the video window
+
+7. **HeadlessVideoBackend** (`headless_backends.rs`)
+   - Captures video frames with timestamps
+   - Used for automated testing
+
+8. **HeadlessAudioBackend** (`headless_backends.rs`)
+   - Captures audio samples with timestamps
+   - Used for automated testing
+
+9. **HeadlessEventSource** (`headless_backends.rs`)
+   - Allows programmatic event injection
+   - Used for test control
+
+10. **VideoWindow** (`video_window.rs`)
+    - Manages the minifb window
+    - Converts video frames from various formats to ARGB8888 for display
+    - Handles keyboard events
+    - Supports dynamic window resizing
+
+11. **AudioStream** (`audio_stream.rs`)
+    - Manages the cpal audio output stream
+    - Handles sample format conversions (i16, f32, u16)
+    - Implements thread-safe sample buffering
+
+12. **SimulatorController** (`simulator_controller.rs`)
+    - Wraps the `InteractiveSimulator` from cpu-sim
+    - Registers Video and Audio devices at `VIDEO_BASE` and `AUDIO_BASE`
+    - Manages ELF loading and simulation stepping
+    - Provides thread-safe queues for video/audio data
+
+13. **SimViewer<V, A, E>** (`viewer.rs`)
+    - Main application logic and event loop
+    - Generic over VideoBackend, AudioBackend, and EventSource traits
+    - State management (Idle, Running, Paused, Halted)
+    - Coordinates between simulator and backends
+    - Implements keyboard controls and UI feedback
 
 ### Memory Map
 
@@ -198,7 +264,8 @@ The following test programs in `test_programs/` demonstrate video and audio func
 ### Window doesn't open
 
 - Ensure you have a graphical environment (X11, Wayland, etc.)
-- On headless systems, sim-view cannot run (requires GUI)
+- On headless systems, use `--headless` flag to run without GUI
+- In CI/CD environments, always use `--headless` mode
 
 ### No audio output
 
