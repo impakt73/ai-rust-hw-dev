@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 // Performance constants
-const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
+// Increased from 10,000 to 50,000 to allow CPU to generate audio samples fast enough
+// At 48kHz stereo, audio requires ~192K cycles/sec for reads + ~1.9M instructions/sec for generation
+// At 60 FPS: need ~50K instructions/frame to keep up with real-time audio
+const INSTRUCTIONS_PER_FRAME: u64 = 50000;
 
 pub struct ViewerConfig {
     #[allow(dead_code)] // Used by main.rs to create backends
