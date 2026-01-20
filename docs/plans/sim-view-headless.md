@@ -184,7 +184,7 @@ pub struct CapturedFrame {
     /// Video configuration at capture time
     pub config: VideoConfig,
     
-    /// Timestamp when frame was presented (relative to start)
+    /// Timestamp when frame was presented
     pub timestamp: Instant,
     
     /// Frame sequence number (monotonic counter)
@@ -200,9 +200,6 @@ pub struct HeadlessVideoBackend {
     
     /// Frame sequence counter
     frame_count: u64,
-    
-    /// Start time for relative timestamps
-    start_time: Instant,
 }
 
 impl HeadlessVideoBackend {
@@ -211,7 +208,6 @@ impl HeadlessVideoBackend {
             captured_frames: Arc::new(Mutex::new(Vec::new())),
             current_frame: None,
             frame_count: 0,
-            start_time: Instant::now(),
         }
     }
     
@@ -268,7 +264,7 @@ pub struct CapturedAudioChunk {
     /// Audio samples (owned copy)
     pub samples: Vec<i16>,
     
-    /// Timestamp when samples were received (relative to start)
+    /// Timestamp when samples were received
     pub timestamp: Instant,
     
     /// Sample sequence number (cumulative sample count)
@@ -281,9 +277,6 @@ pub struct HeadlessAudioBackend {
     
     /// Cumulative sample counter
     sample_count: u64,
-    
-    /// Start time for relative timestamps
-    start_time: Instant,
 }
 
 impl HeadlessAudioBackend {
@@ -291,7 +284,6 @@ impl HeadlessAudioBackend {
         Self {
             captured_chunks: Arc::new(Mutex::new(Vec::new())),
             sample_count: 0,
-            start_time: Instant::now(),
         }
     }
     
@@ -881,8 +873,8 @@ mod tests {
 
 **Dependency Changes:**
 - No new dependencies required
-- `minifb` and `cpal` become optional in headless mode
-- Consider feature flags: `gui` (default), `headless`
+- `minifb` and `cpal` remain as dependencies for GUI mode
+- Both GUI and headless modes will always be available in the binary
 
 ### Error Handling
 
@@ -895,48 +887,6 @@ mod tests {
 - Headless backends are infallible (always succeed)
 - GUI backends can fail (window closed, audio device lost)
 - Tests should verify graceful degradation
-
-## Cargo Feature Flags
-
-### Optional Feature Structure
-
-```toml
-# Cargo.toml
-[features]
-default = ["gui"]
-gui = ["minifb", "cpal"]
-headless = []
-```
-
-### Conditional Compilation
-
-```rust
-// src/lib.rs
-
-#[cfg(feature = "gui")]
-pub mod gui_backends;
-
-#[cfg(feature = "headless")]
-pub mod headless_backends;
-
-pub mod backend_traits;
-pub mod viewer;
-
-// Re-exports
-#[cfg(feature = "gui")]
-pub use gui_backends::{GuiVideoBackend, GuiAudioBackend, GuiEventSource};
-
-#[cfg(feature = "headless")]
-pub use headless_backends::{
-    HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource,
-    CapturedFrame, CapturedAudioChunk
-};
-```
-
-**Benefits:**
-- Reduce binary size for headless-only builds
-- Avoid requiring GUI dependencies in CI
-- Enable pure headless Docker images
 
 ## AI Agent Integration
 
