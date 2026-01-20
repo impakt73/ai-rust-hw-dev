@@ -243,20 +243,26 @@ where
         });
     }
 
-    /// Read one byte from memory during present operation
-    fn present_one_byte(&mut self, ctx: &mut SystemContext) {
+    /// Read the largest possible chunk from memory during present operation
+    fn present_chunk(&mut self, ctx: &mut SystemContext) {
         let present = match self.active_present.as_mut() {
             Some(p) => p,
             None => return,
         };
 
-        // Read one byte from memory
-        let byte = ctx.read_byte(present.current_addr);
-        present.pixel_data.push(byte);
+        // Read chunk using shared helper
+        let (bytes, read_size) = crate::bus_device::read_memory_chunk(
+            ctx,
+            present.current_addr,
+            present.bytes_remaining,
+        );
 
-        // Update state
-        present.current_addr = present.current_addr.wrapping_add(1);
-        present.bytes_remaining -= 1;
+        // Append bytes to pixel data
+        present
+            .pixel_data
+            .extend_from_slice(&bytes[..read_size as usize]);
+        present.current_addr = present.current_addr.wrapping_add(read_size);
+        present.bytes_remaining -= read_size;
 
         // Check if present is complete
         if present.bytes_remaining == 0 {
@@ -364,8 +370,8 @@ where
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
-        // Read one byte per clock cycle if a present operation is in progress
-        self.present_one_byte(ctx);
+        // Read the largest possible chunk per clock cycle if a present operation is in progress
+        self.present_chunk(ctx);
     }
 }
 

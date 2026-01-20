@@ -265,24 +265,29 @@ where
         });
     }
 
-    /// Read one byte from memory during active read operation
-    fn read_one_byte(&mut self, ctx: &mut SystemContext) {
+    /// Read the largest possible chunk from memory during active read operation
+    fn read_chunk(&mut self, ctx: &mut SystemContext) {
         let read = match self.active_read.as_mut() {
             Some(r) => r,
             None => return,
         };
 
-        // Read one byte from memory
-        let byte = ctx.read_byte(read.current_addr);
-        read.sample_buffer[read.bytes_in_buffer] = byte;
-        read.bytes_in_buffer += 1;
+        let bytes_per_sample = read.config.bytes_per_sample() as usize;
+        let bytes_remaining = (bytes_per_sample - read.bytes_in_buffer) as u32;
 
-        // Update address for next byte
-        read.current_addr = read.current_addr.wrapping_add(1);
+        // Read chunk using shared helper
+        let (bytes, read_size) =
+            crate::bus_device::read_memory_chunk(ctx, read.current_addr, bytes_remaining);
+        let read_size = read_size as usize;
+
+        // Copy bytes to sample buffer
+        read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + read_size]
+            .copy_from_slice(&bytes[..read_size]);
+        read.bytes_in_buffer += read_size;
+        read.current_addr = read.current_addr.wrapping_add(read_size as u32);
 
         // Check if sample is complete
-        let bytes_per_sample = read.config.bytes_per_sample();
-        if read.bytes_in_buffer >= bytes_per_sample as usize {
+        if read.bytes_in_buffer >= bytes_per_sample {
             let read_data = self.active_read.take().unwrap();
             self.process_complete_sample(read_data);
         }
@@ -422,16 +427,16 @@ where
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
-        // Read one byte per clock cycle if an active read is in progress
+        // Read the largest possible chunk per clock cycle if an active read is in progress
         if self.is_read_active() {
-            self.read_one_byte(ctx);
+            self.read_chunk(ctx);
         } else {
             // Try to start a new read if data is available
             self.start_read_if_available();
 
-            // If we just started a read, process one byte this cycle
+            // If we just started a read, process one chunk this cycle
             if self.is_read_active() {
-                self.read_one_byte(ctx);
+                self.read_chunk(ctx);
             }
         }
     }
@@ -553,8 +558,9 @@ mod tests {
         audio.write_word(&mut ctx, 0x0C, 8).unwrap();
 
         // Run clock cycles to read all samples
-        // Each sample takes 2 cycles (2 bytes per mono sample)
-        for _ in 0..(test_samples.len() * 2) {
+        // With optimization, each 2-byte mono sample can be read in 1 cycle (halfword)
+        // 4 samples = 4 cycles
+        for _ in 0..test_samples.len() {
             audio.clock_cycle(&mut ctx);
         }
 
@@ -610,8 +616,9 @@ mod tests {
         audio.write_word(&mut ctx, 0x0C, 8).unwrap();
 
         // Run clock cycles to read all samples
-        // Each stereo sample takes 4 cycles (4 bytes per stereo sample)
-        for _ in 0..(test_samples.len() * 4) {
+        // With optimization, each 4-byte stereo sample can be read in 1 cycle (word)
+        // 2 samples = 2 cycles
+        for _ in 0..test_samples.len() {
             audio.clock_cycle(&mut ctx);
         }
 
@@ -691,7 +698,8 @@ mod tests {
 
         // Read all 4 samples (should wrap read pointer to 0)
         audio.write_word(&mut ctx, 0x0C, ring_buffer_size).unwrap();
-        for _ in 0..(4 * 2) {
+        // With optimization, we need fewer cycles: 4 samples at 1 cycle each (halfword-aligned)
+        for _ in 0..4 {
             audio.clock_cycle(&mut ctx);
         }
 
