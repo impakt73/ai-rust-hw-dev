@@ -478,6 +478,7 @@ where
     // Other fields can be in any order
     pub bus: SystemBus,
     cycle_count: u64,
+    total_elapsed_time_us: u64, // Cumulative elapsed time in microseconds
     print_inst_trace: bool,
     print_fsm_state: bool,
     inst_complete_callback: Option<F>,
@@ -575,6 +576,7 @@ where
             _runtime: runtime,
             bus,
             cycle_count: 0,
+            total_elapsed_time_us: 0,
             print_inst_trace,
             print_fsm_state,
             inst_complete_callback,
@@ -667,6 +669,9 @@ where
 
         // Reset all bus devices
         self.bus.reset_all_devices();
+
+        // Reset cumulative elapsed time
+        self.total_elapsed_time_us = 0;
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
@@ -869,6 +874,14 @@ where
         let halt_value = self.bus.sim_control.termination_requested();
 
         let elapsed_us = start_time.elapsed().as_micros() as u64;
+
+        // Accumulate elapsed time
+        self.total_elapsed_time_us = self.total_elapsed_time_us.saturating_add(elapsed_us);
+
+        // Update bus with cumulative elapsed time for devices
+        // This ensures Video and other time-sensitive devices get accurate cumulative time
+        self.bus.update_elapsed_time(self.total_elapsed_time_us);
+
         Ok(SimulationStepResult {
             tohost_value: halt_value,
             elapsed_cpu_time_us: elapsed_us,
@@ -902,9 +915,6 @@ where
                 .step()
                 .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
-
-            // Update bus with cumulative elapsed time for devices
-            self.bus.update_elapsed_time(total_elapsed_us);
 
             if let Some(tohost_value) = step_result.tohost_value {
                 log::info!(

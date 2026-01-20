@@ -179,12 +179,20 @@ where
     /// Check if enough time has passed since last frame for frame pacing
     ///
     /// Frame pacing is based on elapsed host time (not simulation cycles).
-    /// For 60 FPS: frame_time = 1,000,000 / 60 = ~16,667 microseconds
+    /// For 60 FPS: frame_time = 1,000,000 / 60 = ~16,667 microseconds.
     ///
-    /// CRITICAL: If rendering takes longer than the frame time (simulation is slow),
-    /// we should render frames as fast as possible. Therefore, we return true when
-    /// elapsed time >= frame_time, but also if no time has elapsed yet (allowing
-    /// back-to-back frames when the simulation can't keep up with real-time).
+    /// The frame time is computed as:
+    ///
+    ///   us_per_frame = 1_000_000 / target_fps
+    ///
+    /// This uses integer division and microsecond resolution, so:
+    ///   - The minimum non-zero frame time is 1 microsecond (target_fps ≈ 1,000,000).
+    ///   - For target_fps > 1_000,000, us_per_frame becomes 0, which effectively
+    ///     disables frame pacing and treats every frame as ready.
+    ///
+    /// In practice, very high target_fps values are limited by the host timer
+    /// granularity and should be treated as "uncapped" rather than precise frame
+    /// rates.
     fn is_frame_ready(&self, current_time_us: u64) -> bool {
         match self.last_frame_time_us {
             None => true, // Always ready initially
@@ -194,8 +202,7 @@ where
                 let elapsed_us = current_time_us.saturating_sub(last_time_us);
 
                 // Frame is ready if enough time has passed
-                // OR if current_time hasn't advanced (simulation running slower than real-time)
-                elapsed_us >= us_per_frame || current_time_us == last_time_us
+                elapsed_us >= us_per_frame
             }
         }
     }
