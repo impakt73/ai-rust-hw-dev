@@ -1,10 +1,15 @@
-mod audio_stream;
-mod simulator_controller;
-mod video_window;
-mod viewer;
+// Import modules from lib
+use sim_view::{gui_backends, headless_backends, viewer};
 
 use clap::Parser;
+use gui_backends::{GuiAudioBackend, GuiEventSource, GuiVideoBackend};
+use headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend};
 use std::path::PathBuf;
+
+// Type aliases for convenience
+type GuiSimViewer = viewer::SimViewer<GuiVideoBackend, GuiAudioBackend, GuiEventSource>;
+type HeadlessSimViewer =
+    viewer::SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource>;
 
 #[derive(Parser)]
 #[command(
@@ -36,6 +41,10 @@ struct Args {
     /// Initial window height (default: 240)
     #[arg(long, default_value_t = 240)]
     height: u32,
+
+    /// Run in headless mode (no GUI, for testing)
+    #[arg(long)]
+    headless: bool,
 }
 
 fn main() {
@@ -46,11 +55,27 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     log::info!("sim-view: RISC-V CPU Simulator Viewer");
-    log::info!("Controls:");
-    log::info!("  - Ctrl+R: Reload last ELF file");
-    log::info!("  - Space: Pause/Resume simulation");
-    log::info!("  - Escape: Exit");
 
+    // Run in headless or GUI mode
+    let result = if args.headless {
+        log::info!("Running in headless mode (no GUI)");
+        run_headless_mode(args)
+    } else {
+        log::info!("Controls:");
+        log::info!("  - Ctrl+R: Reload last ELF file");
+        log::info!("  - Space: Pause/Resume simulation");
+        log::info!("  - Escape: Exit");
+        run_gui_mode(args)
+    };
+
+    // Handle errors
+    if let Err(e) = result {
+        eprintln!("✗ Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run_gui_mode(args: Args) -> Result<(), String> {
     // Create viewer configuration
     let config = viewer::ViewerConfig {
         initial_width: args.width,
@@ -59,26 +84,59 @@ fn main() {
         print_inst_trace: args.print_inst_trace,
     };
 
-    // Create and run viewer
-    match viewer::SimViewer::new(config) {
-        Ok(mut viewer) => {
-            // Load initial ELF if provided
-            if let Some(elf_path) = args.elf {
-                if let Err(e) = viewer.load_elf(&elf_path) {
-                    eprintln!("✗ Failed to load ELF: {}", e);
-                    std::process::exit(1);
-                }
-            }
+    // Create GUI backends
+    let video = GuiVideoBackend::new(args.width, args.height)?;
+    let window_handle = video.get_window_handle();
+    let active_handle = video.get_active_handle();
+    let audio = GuiAudioBackend::new()?;
+    let events = GuiEventSource::new(window_handle, active_handle);
 
-            // Run main loop
-            if let Err(e) = viewer.run() {
-                eprintln!("✗ Viewer error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("✗ Failed to create viewer: {}", e);
-            std::process::exit(1);
-        }
+    // Create viewer
+    let mut viewer = GuiSimViewer::new(config, video, audio, events)?;
+
+    // Load initial ELF if provided
+    if let Some(elf_path) = args.elf {
+        viewer.load_elf(&elf_path)?;
     }
+
+    // Run main loop
+    viewer.run()
+}
+
+fn run_headless_mode(args: Args) -> Result<(), String> {
+    // Create viewer configuration
+    let config = viewer::ViewerConfig {
+        initial_width: args.width,
+        initial_height: args.height,
+        max_cycles: args.max_cycles,
+        print_inst_trace: args.print_inst_trace,
+    };
+
+    // Create headless backends
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
+
+    // Create viewer
+    let mut viewer = HeadlessSimViewer::new(config, video, audio, events)?;
+
+    // Load initial ELF if provided
+    if let Some(elf_path) = args.elf {
+        viewer.load_elf(&elf_path)?;
+    } else {
+        log::warn!("No ELF file specified for headless mode");
+    }
+
+    // Run main loop
+    viewer.run()?;
+
+    // Print summary
+    let frames = viewer.get_video_frames();
+    let frame_count = frames.len();
+
+    println!();
+    println!("Headless mode completed:");
+    println!("  Frames captured: {}", frame_count);
+
+    Ok(())
 }
