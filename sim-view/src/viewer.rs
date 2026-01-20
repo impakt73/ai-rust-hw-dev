@@ -9,9 +9,9 @@ use std::time::Instant;
 const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
 
 pub struct ViewerConfig {
-    #[allow(dead_code)] // Used during initialization
+    #[allow(dead_code)] // Used by main.rs to create backends
     pub initial_width: u32,
-    #[allow(dead_code)] // Used during initialization
+    #[allow(dead_code)] // Used by main.rs to create backends
     pub initial_height: u32,
     pub max_cycles: u64,
     #[allow(dead_code)]

@@ -67,14 +67,24 @@ fn test_headless_max_cycles_limit() {
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
-    // Run a few steps - should exit quickly due to max_cycles
-    for _ in 0..20 {
+    // Load test ELF to actually execute instructions
+    let elf_path = test_program_path("test_video_pattern.elf");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+
+    // Run steps - should exit quickly due to max_cycles
+    let mut steps = 0;
+    loop {
         if !viewer.step().expect("Step failed") {
+            break;
+        }
+        steps += 1;
+        if steps > 100 {
+            // Safety limit - shouldn't need this many steps with max_cycles=100
             break;
         }
     }
 
-    println!("Max cycles limit test passed");
+    println!("Max cycles limit test passed after {} steps", steps);
 }
 
 #[test]
@@ -137,16 +147,16 @@ fn test_frame_stepping() {
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
-    // Load test ELF
+    // Load test ELF (produces exactly 3 frames then exits)
     let elf_path = test_program_path("test_video_pattern.elf");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Step 3 frames (based on observed behavior)
+    // Step 3 frames (this ELF produces exactly 3 frames)
     viewer
         .push_event(ViewerEvent::TestCommand(TestCommand::StepFrames(3)))
         .expect("Failed to push event");
 
-    // Run until we have at least 3 frames (with safety limit)
+    // Run until exactly 3 frames are captured or safety limit
     let mut steps = 0;
     loop {
         // Run one step
@@ -156,38 +166,30 @@ fn test_frame_stepping() {
 
         steps += 1;
 
-        if steps > 2000 {
-            // Safety limit - check if we have enough frames
-            let frames = viewer.get_video_frames();
-            println!(
-                "Safety limit reached: {} frames captured after {} steps",
-                frames.len(),
-                steps
-            );
-            if frames.len() >= 3 {
-                println!("Test passes with {} frames", frames.len());
-                break;
-            }
-            panic!("Too many steps without reaching 3 frames, test may be stuck");
-        }
-
-        // Check if we have enough frames to exit early
+        // Check if we have exactly 3 frames
         let frames = viewer.get_video_frames();
         if frames.len() >= 3 {
-            println!(
-                "Captured {} frames after {} steps, exiting early",
+            println!("Captured {} frames after {} steps", frames.len(), steps);
+            break;
+        }
+
+        // Safety limit
+        if steps > 2000 {
+            let frames = viewer.get_video_frames();
+            panic!(
+                "Safety limit reached: only {} frames captured after {} steps",
                 frames.len(),
                 steps
             );
-            break;
         }
     }
 
-    // Verify we captured frames
+    // Verify we captured exactly 3 frames
     let frames = viewer.get_video_frames();
-    assert!(
-        frames.len() >= 3,
-        "Should have captured at least 3 frames, got {}",
+    assert_eq!(
+        frames.len(),
+        3,
+        "Test ELF should produce exactly 3 frames, got {}",
         frames.len()
     );
 
@@ -216,16 +218,12 @@ fn test_sequential_frames_differ() {
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
-    // Load test ELF that generates a video pattern
+    // Load test ELF that generates a video pattern (produces exactly 3 frames)
     let elf_path = test_program_path("test_video_pattern.elf");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Step 20 frames
-    viewer
-        .push_event(ViewerEvent::TestCommand(TestCommand::StepFrames(20)))
-        .expect("Failed to push event");
-
-    // Run until we have enough frames
+    // Don't use StepFrames - just run until we have at least 2 frames for comparison
+    // Run until we have at least 2 frames or safety limit
     let mut steps = 0;
     loop {
         if !viewer.step().expect("Step failed") {
@@ -233,27 +231,26 @@ fn test_sequential_frames_differ() {
         }
 
         steps += 1;
-        if steps > 2000 {
-            let frames = viewer.get_video_frames();
-            if frames.len() >= 2 {
-                println!(
-                    "Safety limit reached but got {} frames - continuing with test",
-                    frames.len()
-                );
-                break;
-            }
-            panic!("Too many steps without generating frames, test may be stuck");
+
+        // Check if we have at least 2 frames for comparison
+        let frames = viewer.get_video_frames();
+        if frames.len() >= 2 {
+            println!("Captured {} frames after {} steps", frames.len(), steps);
+            break;
         }
 
-        // Check if we have enough frames
-        let frames = viewer.get_video_frames();
-        if frames.len() >= 20 {
-            println!("Captured {} frames, exiting early", frames.len());
-            break;
+        // Safety limit
+        if steps > 2000 {
+            let frames = viewer.get_video_frames();
+            panic!(
+                "Safety limit reached: only {} frames captured after {} steps",
+                frames.len(),
+                steps
+            );
         }
     }
 
-    // Verify sequential frames are different
+    // Verify we have at least 2 frames for comparison
     let frames = viewer.get_video_frames();
     assert!(
         frames.len() >= 2,

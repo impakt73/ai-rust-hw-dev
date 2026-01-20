@@ -101,7 +101,6 @@ cargo test --package sim-view
 ```
 Headless mode completed:
   Frames captured: 42
-  Audio samples captured: 3840
 ```
 
 Headless mode is used by the integration tests in `tests/headless_integration.rs` to validate viewer functionality without requiring a GUI environment.
