@@ -133,3 +133,13 @@ name = "test_sim_view"
 path = "src/test_sim_view.rs"
 test = false
 
+[[bin]]
+name = "test_video_loop"
+path = "src/test_video_loop.rs"
+test = false
+
+[[bin]]
+name = "test_audio_loop"
+path = "src/test_audio_loop.rs"
+test = false
+
