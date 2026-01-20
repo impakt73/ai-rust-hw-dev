@@ -14,12 +14,30 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// warnings and return zero for reads or silently fail for writes.
 pub struct SystemContext<'a> {
     memory: &'a mut Memory,
+    /// Elapsed simulation time in microseconds (host CPU time, not simulated time)
+    elapsed_time_us: u64,
 }
 
 impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory
     pub fn new(memory: &'a mut Memory) -> Self {
-        SystemContext { memory }
+        SystemContext {
+            memory,
+            elapsed_time_us: 0,
+        }
+    }
+
+    /// Create a new SystemContext with access to system memory and elapsed time
+    pub fn with_elapsed_time(memory: &'a mut Memory, elapsed_time_us: u64) -> Self {
+        SystemContext {
+            memory,
+            elapsed_time_us,
+        }
+    }
+
+    /// Get the elapsed simulation time in microseconds (host CPU time)
+    pub fn elapsed_time_us(&self) -> u64 {
+        self.elapsed_time_us
     }
 
     /// Read a 32-bit word from memory at the given address

@@ -84,6 +84,9 @@ pub struct SystemBus {
 
     // Address map (lightweight handles, not device references)
     memory_map: Vec<MemoryMapEntry>,
+
+    // Accumulated elapsed time in microseconds (host CPU time)
+    elapsed_time_us: u64,
 }
 
 impl SystemBus {
@@ -123,7 +126,13 @@ impl SystemBus {
             sim_control,
             external_devices: Vec::new(),
             memory_map,
+            elapsed_time_us: 0,
         }
+    }
+
+    /// Update the elapsed time (called by simulator after each step)
+    pub fn update_elapsed_time(&mut self, elapsed_time_us: u64) {
+        self.elapsed_time_us = elapsed_time_us;
     }
 
     /// Register an external device at the specified base address
@@ -235,7 +244,7 @@ impl SystemBus {
     pub fn read_word(&mut self, addr: u32) -> u32 {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_word(&mut self.dram, &mut ctx, offset),
@@ -269,7 +278,7 @@ impl SystemBus {
     pub fn write_word(&mut self, addr: u32, value: u32) {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => BusDevice::write_word(&mut self.dram, &mut ctx, offset, value),
@@ -302,7 +311,7 @@ impl SystemBus {
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, &mut ctx, offset),
@@ -339,7 +348,7 @@ impl SystemBus {
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => {
@@ -376,7 +385,7 @@ impl SystemBus {
     pub fn read_byte(&mut self, addr: u32) -> u8 {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_byte(&mut self.dram, &mut ctx, offset),
@@ -411,7 +420,7 @@ impl SystemBus {
     pub fn write_byte(&mut self, addr: u32, value: u8) {
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
-            let mut ctx = SystemContext::new(&mut self.memory);
+            let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
             let result = match id {
                 DeviceId::Dram => BusDevice::write_byte(&mut self.dram, &mut ctx, offset, value),
@@ -459,7 +468,7 @@ impl SystemBus {
     /// This should be called when the simulator is reset to allow devices
     /// to clear their internal state.
     pub fn reset_all_devices(&mut self) {
-        let mut ctx = SystemContext::new(&mut self.memory);
+        let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
         // Reset internal devices
         self.dram.reset(&mut ctx);
@@ -477,7 +486,7 @@ impl SystemBus {
     /// This should be called once per simulated clock cycle to allow devices
     /// to perform multi-cycle operations.
     pub fn clock_cycle_all_devices(&mut self) {
-        let mut ctx = SystemContext::new(&mut self.memory);
+        let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
 
         // Tick internal devices
         self.dram.clock_cycle(&mut ctx);
