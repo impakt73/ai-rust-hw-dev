@@ -117,10 +117,6 @@ fn run_headless_mode(args: Args) -> Result<(), String> {
     let audio = HeadlessAudioBackend::new();
     let events = HeadlessEventSource::new();
 
-    // Get handles for inspection
-    let frames = video.get_frames_handle();
-    let chunks = audio.get_chunks_handle();
-
     // Create viewer
     let mut viewer = HeadlessSimViewer::new(config, video, audio, events)?;
 
@@ -135,13 +131,12 @@ fn run_headless_mode(args: Args) -> Result<(), String> {
     viewer.run()?;
 
     // Print summary
-    let frame_count = frames.lock().unwrap().len();
-    let sample_count: usize = chunks.lock().unwrap().iter().map(|c| c.samples.len()).sum();
+    let frames = viewer.get_video_frames();
+    let frame_count = frames.len();
 
     println!();
     println!("Headless mode completed:");
     println!("  Frames captured: {}", frame_count);
-    println!("  Audio samples captured: {}", sample_count);
 
     Ok(())
 }

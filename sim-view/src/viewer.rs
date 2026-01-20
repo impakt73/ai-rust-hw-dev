@@ -43,8 +43,14 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Cycle counter
     total_cycles: u64,
 
+    /// Frame counter (incremented each time a frame is presented)
+    frame_count: u64,
+
     /// Exit requested by user (e.g., Escape key)
     exit_requested: bool,
+
+    /// Frame step target (for StepFrames test command)
+    frame_step_target: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +85,9 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             state: ViewerState::Idle,
             last_elf_path: None,
             total_cycles: 0,
+            frame_count: 0,
             exit_requested: false,
+            frame_step_target: None,
         })
     }
 
@@ -152,6 +160,95 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
         self.video_backend.set_title(&title);
     }
 
+    /// Execute a single iteration of the viewer loop
+    ///
+    /// Returns `Ok(true)` if the viewer should continue running,
+    /// or `Ok(false)` if the viewer should terminate.
+    pub fn step(&mut self) -> Result<bool, String> {
+        // Handle window events (keyboard, close, test commands)
+        self.handle_events()?;
+
+        // Terminate if an exit was requested
+        if self.exit_requested {
+            log::info!("Exit requested, terminating viewer loop");
+            return Ok(false);
+        }
+
+        // Check if backend is still active (for GUI mode)
+        if !self.video_backend.is_active() {
+            log::info!("Backend inactive, terminating viewer loop");
+            return Ok(false);
+        }
+
+        // Step simulation if running
+        if self.state == ViewerState::Running {
+            // Step simulation by multiple instructions per frame for performance
+            match self.controller.step_instructions(INSTRUCTIONS_PER_FRAME) {
+                Ok(result) => {
+                    // Increment instruction counter
+                    self.total_cycles += INSTRUCTIONS_PER_FRAME;
+
+                    // Check if simulation halted
+                    if result.tohost_value.is_some() {
+                        log::info!(
+                            "Program halted with tohost value: 0x{:08x}",
+                            result.tohost_value.unwrap()
+                        );
+                        self.state = ViewerState::Halted;
+                        self.update_window_title();
+                    }
+
+                    // Check if max cycles reached
+                    if self.config.max_cycles > 0 && self.total_cycles >= self.config.max_cycles {
+                        log::info!("Max cycles reached: {}", self.total_cycles);
+                        self.state = ViewerState::Halted;
+                        self.update_window_title();
+                    }
+                }
+                Err(e) => {
+                    log::error!("Simulation error: {}", e);
+                    self.state = ViewerState::Halted;
+                    self.update_window_title();
+                }
+            }
+        }
+
+        // Pull video frames from controller and send to backend
+        let frame_presented = if let Some((frame_data, config)) = self.controller.get_video_frame()
+        {
+            self.video_backend.process_frame(&frame_data, &config)?;
+            true
+        } else {
+            false
+        };
+
+        // Pull audio samples from controller and send to audio backend
+        let audio_samples = self.controller.get_audio_samples(4096);
+        if !audio_samples.is_empty() {
+            self.audio_backend.push_samples(&audio_samples);
+        }
+
+        // Update video backend (display or capture)
+        self.video_backend.update()?;
+
+        // Increment frame counter only if a frame was actually presented
+        if frame_presented {
+            self.frame_count += 1;
+
+            // Check if frame step target reached
+            if let Some(target) = self.frame_step_target {
+                if self.frame_count >= target {
+                    log::info!("Frame step target reached: {} frames", self.frame_count);
+                    self.frame_step_target = None;
+                    self.state = ViewerState::Paused;
+                    self.update_window_title();
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Main viewer loop
     pub fn run(&mut self) -> Result<(), String> {
         log::info!("Starting viewer main loop");
@@ -162,68 +259,10 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
         loop {
             let frame_start = Instant::now();
 
-            // Handle window events (keyboard, close, test commands)
-            self.handle_events()?;
-
-            // Terminate if an exit was requested
-            if self.exit_requested {
-                log::info!("Exit requested, terminating viewer loop");
+            // Execute one step of the viewer loop
+            if !self.step()? {
                 break;
             }
-
-            // Check if backend is still active (for GUI mode)
-            if !self.video_backend.is_active() {
-                log::info!("Backend inactive, terminating viewer loop");
-                break;
-            }
-
-            // Step simulation if running
-            if self.state == ViewerState::Running {
-                // Step simulation by multiple instructions per frame for performance
-                match self.controller.step_instructions(INSTRUCTIONS_PER_FRAME) {
-                    Ok(result) => {
-                        // Increment instruction counter
-                        self.total_cycles += INSTRUCTIONS_PER_FRAME;
-
-                        // Check if simulation halted
-                        if result.tohost_value.is_some() {
-                            log::info!(
-                                "Program halted with tohost value: 0x{:08x}",
-                                result.tohost_value.unwrap()
-                            );
-                            self.state = ViewerState::Halted;
-                            self.update_window_title();
-                        }
-
-                        // Check if max cycles reached
-                        if self.config.max_cycles > 0 && self.total_cycles >= self.config.max_cycles
-                        {
-                            log::info!("Max cycles reached: {}", self.total_cycles);
-                            self.state = ViewerState::Halted;
-                            self.update_window_title();
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Simulation error: {}", e);
-                        self.state = ViewerState::Halted;
-                        self.update_window_title();
-                    }
-                }
-            }
-
-            // Pull video frames from controller and send to backend
-            if let Some((frame_data, config)) = self.controller.get_video_frame() {
-                self.video_backend.process_frame(&frame_data, &config)?;
-            }
-
-            // Pull audio samples from controller and send to audio backend
-            let audio_samples = self.controller.get_audio_samples(4096);
-            if !audio_samples.is_empty() {
-                self.audio_backend.push_samples(&audio_samples);
-            }
-
-            // Update video backend (display or capture)
-            self.video_backend.update()?;
 
             // Print timing info: total elapsed since startup (s) and current iteration duration (ms)
             let total_elapsed_s = startup_time.elapsed().as_secs_f64();
@@ -285,8 +324,12 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             }
             TestCommand::StepFrames(count) => {
                 log::info!("Test command: Step {} frames", count);
-                // Frame stepping not yet implemented - would require tracking frame count
-                // and pausing after N frames. For now, this is a no-op.
+                // Set frame step target and resume execution
+                self.frame_step_target = Some(self.frame_count + count);
+                if self.state == ViewerState::Paused || self.state == ViewerState::Idle {
+                    self.state = ViewerState::Running;
+                    self.update_window_title();
+                }
             }
             TestCommand::Terminate => {
                 log::info!("Test command: Terminate");
@@ -313,5 +356,23 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             _ => {}
         }
         Ok(())
+    }
+}
+
+// Specialized methods for HeadlessSimViewer
+use crate::headless_backends::{
+    CapturedFrame, HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend,
+};
+
+impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> {
+    /// Push an event into the headless event source
+    pub fn push_event(&mut self, event: ViewerEvent) -> Result<(), String> {
+        self.event_source.push_event(event);
+        Ok(())
+    }
+
+    /// Get captured video frames (for headless mode testing)
+    pub fn get_video_frames(&self) -> &[CapturedFrame] {
+        self.video_backend.get_frames()
     }
 }

@@ -6,12 +6,10 @@
 use crate::backend_traits::{AudioBackend, EventSource, VideoBackend, ViewerEvent};
 use cpu_sim::VideoConfig;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// Captured video frame with metadata
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields accessed by tests
 pub struct CapturedFrame {
     /// Frame data (owned copy for safety)
     pub data: Vec<u8>,
@@ -29,7 +27,7 @@ pub struct CapturedFrame {
 /// Headless video backend that captures frames
 pub struct HeadlessVideoBackend {
     /// All captured frames
-    captured_frames: Arc<Mutex<Vec<CapturedFrame>>>,
+    captured_frames: Vec<CapturedFrame>,
 
     /// Current frame buffer (before presentation)
     current_frame: Option<(Vec<u8>, VideoConfig)>,
@@ -41,15 +39,15 @@ pub struct HeadlessVideoBackend {
 impl HeadlessVideoBackend {
     pub fn new() -> Self {
         Self {
-            captured_frames: Arc::new(Mutex::new(Vec::new())),
+            captured_frames: Vec::new(),
             current_frame: None,
             frame_count: 0,
         }
     }
 
-    /// Get handle to captured frames (for tests)
-    pub fn get_frames_handle(&self) -> Arc<Mutex<Vec<CapturedFrame>>> {
-        Arc::clone(&self.captured_frames)
+    /// Get captured frames (for tests)
+    pub fn get_frames(&self) -> &[CapturedFrame] {
+        &self.captured_frames
     }
 }
 
@@ -84,7 +82,7 @@ impl VideoBackend for HeadlessVideoBackend {
                 config.format
             );
 
-            self.captured_frames.lock().unwrap().push(frame);
+            self.captured_frames.push(frame);
             self.frame_count += 1;
         }
 
@@ -102,7 +100,6 @@ impl VideoBackend for HeadlessVideoBackend {
 
 /// Captured audio chunk with metadata
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields accessed by tests
 pub struct CapturedAudioChunk {
     /// Audio samples (owned copy)
     pub samples: Vec<i16>,
@@ -117,7 +114,7 @@ pub struct CapturedAudioChunk {
 /// Headless audio backend that captures samples
 pub struct HeadlessAudioBackend {
     /// All captured audio chunks
-    captured_chunks: Arc<Mutex<Vec<CapturedAudioChunk>>>,
+    captured_chunks: Vec<CapturedAudioChunk>,
 
     /// Cumulative sample counter
     sample_count: u64,
@@ -126,14 +123,14 @@ pub struct HeadlessAudioBackend {
 impl HeadlessAudioBackend {
     pub fn new() -> Self {
         Self {
-            captured_chunks: Arc::new(Mutex::new(Vec::new())),
+            captured_chunks: Vec::new(),
             sample_count: 0,
         }
     }
 
-    /// Get handle to captured audio chunks (for tests)
-    pub fn get_chunks_handle(&self) -> Arc<Mutex<Vec<CapturedAudioChunk>>> {
-        Arc::clone(&self.captured_chunks)
+    /// Get captured audio chunks (for tests)
+    pub fn get_chunks(&self) -> &[CapturedAudioChunk] {
+        &self.captured_chunks
     }
 }
 
@@ -155,28 +152,27 @@ impl AudioBackend for HeadlessAudioBackend {
             sample_offset: self.sample_count,
         };
 
-        self.captured_chunks.lock().unwrap().push(chunk);
+        self.captured_chunks.push(chunk);
         self.sample_count += samples.len() as u64;
     }
 }
 
 /// Headless event source for programmatic control
 pub struct HeadlessEventSource {
-    /// Event queue (shared with test driver)
-    event_queue: Arc<Mutex<VecDeque<ViewerEvent>>>,
+    /// Event queue
+    event_queue: VecDeque<ViewerEvent>,
 }
 
 impl HeadlessEventSource {
     pub fn new() -> Self {
         Self {
-            event_queue: Arc::new(Mutex::new(VecDeque::new())),
+            event_queue: VecDeque::new(),
         }
     }
 
-    /// Get handle for injecting events (for tests)
-    #[allow(dead_code)] // Used by integration tests
-    pub fn get_event_handle(&self) -> Arc<Mutex<VecDeque<ViewerEvent>>> {
-        Arc::clone(&self.event_queue)
+    /// Push an event into the queue (for tests)
+    pub fn push_event(&mut self, event: ViewerEvent) {
+        self.event_queue.push_back(event);
     }
 }
 
@@ -188,7 +184,7 @@ impl Default for HeadlessEventSource {
 
 impl EventSource for HeadlessEventSource {
     fn get_events(&mut self) -> Vec<ViewerEvent> {
-        self.event_queue.lock().unwrap().drain(..).collect()
+        self.event_queue.drain(..).collect()
     }
 }
 
@@ -200,7 +196,6 @@ mod tests {
     #[test]
     fn test_headless_video_captures_frames() {
         let mut backend = HeadlessVideoBackend::new();
-        let frames = backend.get_frames_handle();
 
         let data = vec![0xFF; 320 * 240 * 4];
         let config = VideoConfig {
@@ -212,7 +207,7 @@ mod tests {
         backend.process_frame(&data, &config).unwrap();
         backend.update().unwrap();
 
-        let captured = frames.lock().unwrap();
+        let captured = backend.get_frames();
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].data.len(), data.len());
         assert_eq!(captured[0].sequence, 0);
@@ -221,12 +216,11 @@ mod tests {
     #[test]
     fn test_headless_audio_captures_samples() {
         let mut backend = HeadlessAudioBackend::new();
-        let chunks = backend.get_chunks_handle();
 
         let samples = vec![100i16, 200, 300];
         backend.push_samples(&samples);
 
-        let captured = chunks.lock().unwrap();
+        let captured = backend.get_chunks();
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].samples, samples);
         assert_eq!(captured[0].sample_offset, 0);
@@ -235,10 +229,9 @@ mod tests {
     #[test]
     fn test_headless_event_injection() {
         let mut backend = HeadlessEventSource::new();
-        let event_queue = backend.get_event_handle();
 
         // Inject a test event
-        event_queue.lock().unwrap().push_back(ViewerEvent::Close);
+        backend.push_event(ViewerEvent::Close);
 
         // Retrieve events
         let events = backend.get_events();
