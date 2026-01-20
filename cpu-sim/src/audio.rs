@@ -265,25 +265,6 @@ where
         });
     }
 
-    /// Determine the optimal read size (word=4, halfword=2, or byte=1) based on:
-    /// 1. Bytes remaining to read
-    /// 2. Current address alignment
-    ///
-    /// This ensures we don't read outside the source memory region
-    fn optimal_read_size(addr: u32, bytes_remaining: usize) -> usize {
-        // Can't read more than what's remaining
-        let max_size = bytes_remaining.min(4);
-
-        // Check alignment constraints
-        if max_size >= 4 && addr.is_multiple_of(4) {
-            4 // Word-aligned, can read 4 bytes
-        } else if max_size >= 2 && addr.is_multiple_of(2) {
-            2 // Halfword-aligned, can read 2 bytes
-        } else {
-            1 // Byte read (always possible)
-        }
-    }
-
     /// Read the largest possible chunk from memory during active read operation
     fn read_chunk(&mut self, ctx: &mut SystemContext) {
         let read = match self.active_read.as_mut() {
@@ -292,37 +273,18 @@ where
         };
 
         let bytes_per_sample = read.config.bytes_per_sample() as usize;
-        let bytes_remaining = bytes_per_sample - read.bytes_in_buffer;
+        let bytes_remaining = (bytes_per_sample - read.bytes_in_buffer) as u32;
 
-        // Determine optimal read size
-        let read_size = Self::optimal_read_size(read.current_addr, bytes_remaining);
+        // Read chunk using shared helper
+        let (bytes, read_size) =
+            crate::bus_device::read_memory_chunk(ctx, read.current_addr, bytes_remaining);
+        let read_size = read_size as usize;
 
-        // Read the chunk
-        match read_size {
-            4 => {
-                let word = ctx.read_word(read.current_addr);
-                let bytes = word.to_le_bytes();
-                read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + 4]
-                    .copy_from_slice(&bytes);
-                read.bytes_in_buffer += 4;
-                read.current_addr = read.current_addr.wrapping_add(4);
-            }
-            2 => {
-                let halfword = ctx.read_halfword(read.current_addr);
-                let bytes = halfword.to_le_bytes();
-                read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + 2]
-                    .copy_from_slice(&bytes);
-                read.bytes_in_buffer += 2;
-                read.current_addr = read.current_addr.wrapping_add(2);
-            }
-            1 => {
-                let byte = ctx.read_byte(read.current_addr);
-                read.sample_buffer[read.bytes_in_buffer] = byte;
-                read.bytes_in_buffer += 1;
-                read.current_addr = read.current_addr.wrapping_add(1);
-            }
-            _ => unreachable!("Invalid read size"),
-        }
+        // Copy bytes to sample buffer
+        read.sample_buffer[read.bytes_in_buffer..read.bytes_in_buffer + read_size]
+            .copy_from_slice(&bytes[..read_size]);
+        read.bytes_in_buffer += read_size;
+        read.current_addr = read.current_addr.wrapping_add(read_size as u32);
 
         // Check if sample is complete
         if read.bytes_in_buffer >= bytes_per_sample {
