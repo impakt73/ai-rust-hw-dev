@@ -1,6 +1,7 @@
-use crate::audio_stream::AudioStream;
+use crate::backend_traits::{
+    AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
+};
 use crate::simulator_controller::SimulatorController;
-use crate::video_window::{Key, KeyModifiers, VideoWindow, WindowEvent};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -8,22 +9,27 @@ use std::time::Instant;
 const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
 
 pub struct ViewerConfig {
+    #[allow(dead_code)] // Used during initialization
     pub initial_width: u32,
+    #[allow(dead_code)] // Used during initialization
     pub initial_height: u32,
     pub max_cycles: u64,
     #[allow(dead_code)]
     pub print_inst_trace: bool,
 }
 
-pub struct SimViewer {
+pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Simulation controller (manages CPU and bus)
     controller: SimulatorController,
 
-    /// Video window for display
-    video_window: VideoWindow,
+    /// Video backend (generic)
+    video_backend: V,
 
-    /// Audio output stream
-    audio_stream: AudioStream,
+    /// Audio backend (generic)
+    audio_backend: A,
+
+    /// Event source (generic)
+    event_source: E,
 
     /// Current configuration
     config: ViewerConfig,
@@ -53,25 +59,22 @@ enum ViewerState {
     Halted,
 }
 
-impl SimViewer {
-    /// Create a new SimViewer with the given configuration
-    pub fn new(config: ViewerConfig) -> Result<Self, String> {
+impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
+    /// Create a new SimViewer with dependency injection
+    pub fn new(
+        config: ViewerConfig,
+        video_backend: V,
+        audio_backend: A,
+        event_source: E,
+    ) -> Result<Self, String> {
         // Create controller (handles simulator setup with Video/Audio devices)
         let controller = SimulatorController::new()?;
 
-        // Create video window with initial size
-        let video_window = VideoWindow::new(
-            config.initial_width as usize,
-            config.initial_height as usize,
-        )?;
-
-        // Create audio stream
-        let audio_stream = AudioStream::new()?;
-
         Ok(SimViewer {
             controller,
-            video_window,
-            audio_stream,
+            video_backend,
+            audio_backend,
+            event_source,
             config,
             state: ViewerState::Idle,
             last_elf_path: None,
@@ -146,7 +149,7 @@ impl SimViewer {
             }
             (None, _) => "sim-view - No program loaded".to_string(),
         };
-        self.video_window.set_title(&title);
+        self.video_backend.set_title(&title);
     }
 
     /// Main viewer loop
@@ -159,15 +162,18 @@ impl SimViewer {
         loop {
             let frame_start = Instant::now();
 
-            // Update video window events
-            self.video_window.update_events()?;
-
-            // Handle window events (keyboard, drag-and-drop, close)
+            // Handle window events (keyboard, close, test commands)
             self.handle_events()?;
 
             // Terminate if an exit was requested
             if self.exit_requested {
                 log::info!("Exit requested, terminating viewer loop");
+                break;
+            }
+
+            // Check if backend is still active (for GUI mode)
+            if !self.video_backend.is_active() {
+                log::info!("Backend inactive, terminating viewer loop");
                 break;
             }
 
@@ -205,20 +211,19 @@ impl SimViewer {
                 }
             }
 
-            // Pull video frames from controller and send to window
+            // Pull video frames from controller and send to backend
             if let Some((frame_data, config)) = self.controller.get_video_frame() {
-                self.video_window
-                    .process_video_frame(&frame_data, &config)?;
+                self.video_backend.process_frame(&frame_data, &config)?;
             }
 
-            // Pull audio samples from controller and send to audio stream
+            // Pull audio samples from controller and send to audio backend
             let audio_samples = self.controller.get_audio_samples(4096);
             if !audio_samples.is_empty() {
-                self.audio_stream.push_samples(&audio_samples);
+                self.audio_backend.push_samples(&audio_samples);
             }
 
-            // Update video window display
-            self.video_window.update_display()?;
+            // Update video backend (display or capture)
+            self.video_backend.update()?;
 
             // Print timing info: total elapsed since startup (s) and current iteration duration (ms)
             let total_elapsed_s = startup_time.elapsed().as_secs_f64();
@@ -234,23 +239,59 @@ impl SimViewer {
         Ok(())
     }
 
-    /// Handle window events (keyboard, close)
+    /// Handle window events (keyboard, close, test commands)
     fn handle_events(&mut self) -> Result<(), String> {
-        // Get events from window
-        let events = self.video_window.get_events();
+        // Get events from event source
+        let events = self.event_source.get_events();
 
         for event in events {
             match event {
-                WindowEvent::KeyPressed(key, modifiers) => {
+                ViewerEvent::KeyPressed(key, modifiers) => {
                     self.handle_key_press(key, modifiers)?;
                 }
-                WindowEvent::Close => {
-                    log::info!("Window closed, exit requested");
+                ViewerEvent::Close => {
+                    log::info!("Close event received, exit requested");
                     self.exit_requested = true;
+                }
+                ViewerEvent::TestCommand(cmd) => {
+                    self.handle_test_command(cmd)?;
                 }
             }
         }
 
+        Ok(())
+    }
+
+    /// Handle test commands (for headless mode)
+    fn handle_test_command(&mut self, cmd: TestCommand) -> Result<(), String> {
+        match cmd {
+            TestCommand::LoadELF(path) => {
+                log::info!("Test command: Load ELF {:?}", path);
+                self.load_elf(&path)?;
+            }
+            TestCommand::Pause => {
+                log::info!("Test command: Pause");
+                if self.state == ViewerState::Running {
+                    self.state = ViewerState::Paused;
+                    self.update_window_title();
+                }
+            }
+            TestCommand::Resume => {
+                log::info!("Test command: Resume");
+                if self.state == ViewerState::Paused {
+                    self.state = ViewerState::Running;
+                    self.update_window_title();
+                }
+            }
+            TestCommand::StepFrames(_count) => {
+                log::info!("Test command: Step frames (not yet implemented)");
+                // TODO: Implement frame stepping
+            }
+            TestCommand::Terminate => {
+                log::info!("Test command: Terminate");
+                self.exit_requested = true;
+            }
+        }
         Ok(())
     }
 
