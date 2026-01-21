@@ -143,3 +143,8 @@ name = "test_audio_loop"
 path = "src/test_audio_loop.rs"
 test = false
 
+[[bin]]
+name = "test_audio_silence"
+path = "src/test_audio_silence.rs"
+test = false
+

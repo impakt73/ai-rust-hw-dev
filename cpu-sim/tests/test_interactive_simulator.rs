@@ -176,8 +176,8 @@ fn test_interactive_simulator_register_video_device() {
     let elf_path = test_program_path("test_video_pattern.elf");
 
     // Storage for captured frames
-    let captured_frames: Rc<RefCell<Vec<(Vec<u8>, cpu_sim::VideoConfig)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, cpu_sim::VideoConfig)>>>;
+    let captured_frames: CapturedFrames = Rc::new(RefCell::new(Vec::new()));
 
     let frames_clone = captured_frames.clone();
 

@@ -57,8 +57,8 @@ fn test_video_pattern() {
     let elf_path = test_program_path("test_video_pattern.elf");
 
     // Storage for captured frames
-    let captured_frames: Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>>;
+    let captured_frames: CapturedFrames = Rc::new(RefCell::new(Vec::new()));
 
     // Setup callback to register Video device
     let frames_for_setup = captured_frames.clone();

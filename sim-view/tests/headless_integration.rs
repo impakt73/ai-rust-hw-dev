@@ -400,3 +400,137 @@ fn test_audio_config_change_and_samples() {
         total_samples
     );
 }
+
+#[test]
+fn test_audio_underrun_detection() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    // Create headless backends
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
+
+    // Create viewer with high max_cycles to allow continuous audio generation
+    let config = ViewerConfig {
+        initial_width: 320,
+        initial_height: 240,
+        max_cycles: 50_000_000, // High limit for sustained audio generation
+        print_inst_trace: false,
+    };
+
+    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
+
+    // Load test_audio_silence.elf (generates silence samples in infinite loop)
+    // This is faster than test_audio_loop.elf which generates sine waves
+    let elf_path = test_program_path("test_audio_silence.elf");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+
+    // Step the viewer for a fixed number of iterations to allow audio to start
+    // We need to step enough times to:
+    // 1. Initialize audio config
+    // 2. Fill initial buffer
+    // 3. Establish steady state playback
+    const INITIAL_STEPS: usize = 200;
+    for _ in 0..INITIAL_STEPS {
+        if !viewer.step().expect("Step failed") {
+            panic!("Viewer terminated during initial steps");
+        }
+    }
+
+    // Wait for audio config to be set
+    let audio_config = viewer
+        .get_audio_config()
+        .expect("Audio config should be set after initial steps");
+
+    println!(
+        "Audio config: {} Hz, {:?}, {} samples",
+        audio_config.sample_rate.to_hz(),
+        audio_config.channels,
+        audio_config.sample_count
+    );
+
+    // For underrun detection, we check:
+    // 1. Are samples being generated consistently?
+    // 2. Is the sample count increasing at each measurement?
+    // An underrun would show up as the sample count not increasing between measurements
+
+    // Record initial sample count
+    let initial_chunks = viewer.get_audio_chunks();
+    let mut prev_samples: usize = initial_chunks.iter().map(|c| c.samples.len()).sum();
+
+    println!(
+        "Starting underrun detection with {} initial samples",
+        prev_samples
+    );
+
+    // Run test iterations and check for sample growth
+    // We'll measure samples at regular intervals
+    const MEASUREMENT_INTERVALS: usize = 5;
+    const STEPS_PER_INTERVAL: usize = 100;
+
+    let mut underrun_detected = false;
+    let mut stall_count = 0;
+    const MAX_STALLS: usize = 2; // Allow a couple stalls before declaring underrun
+
+    for interval in 0..MEASUREMENT_INTERVALS {
+        // Run steps for this interval
+        for _ in 0..STEPS_PER_INTERVAL {
+            if !viewer.step().expect("Step failed") {
+                // If the program exits, that's fine as long as we got samples
+                println!("Viewer terminated at interval {}", interval);
+                break;
+            }
+        }
+
+        // Measure current sample count
+        let current_chunks = viewer.get_audio_chunks();
+        let current_samples: usize = current_chunks.iter().map(|c| c.samples.len()).sum();
+        let samples_generated = current_samples - prev_samples;
+
+        println!(
+            "Interval {}: {} new samples (total: {})",
+            interval, samples_generated, current_samples
+        );
+
+        // Check if samples are being generated
+        if samples_generated == 0 {
+            stall_count += 1;
+            println!(
+                "Warning: No new samples in this interval (stall {} of {})",
+                stall_count, MAX_STALLS
+            );
+
+            if stall_count > MAX_STALLS {
+                underrun_detected = true;
+                break;
+            }
+        } else {
+            // Reset stall count if we got samples
+            stall_count = 0;
+        }
+
+        prev_samples = current_samples;
+    }
+
+    // Final sample count
+    let final_chunks = viewer.get_audio_chunks();
+    let final_samples: usize = final_chunks.iter().map(|c| c.samples.len()).sum();
+
+    println!("Test completed: {} total samples captured", final_samples);
+
+    // Verify we didn't detect an underrun
+    assert!(
+        !underrun_detected,
+        "Audio underrun detected: CPU stopped generating samples for {} consecutive intervals",
+        stall_count
+    );
+
+    // Also verify we actually received a reasonable number of samples
+    assert!(
+        final_samples > 1000,
+        "Too few samples generated: {} (expected > 1000)",
+        final_samples
+    );
+
+    println!("Audio underrun test passed: CPU generated samples consistently without stalls");
+}
