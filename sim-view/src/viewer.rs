@@ -1,8 +1,12 @@
 use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
 };
-use crate::simulator_controller::SimulatorController;
+use cpu_sim::{
+    Audio, AudioConfig, InteractiveSimulator, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE,
+};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Instant;
 
 // Performance constants
@@ -19,14 +23,14 @@ pub struct ViewerConfig {
 }
 
 pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
-    /// Simulation controller (manages CPU and bus)
-    controller: SimulatorController,
+    /// Interactive simulator instance
+    simulator: InteractiveSimulator,
 
-    /// Video backend (generic)
-    video_backend: V,
+    /// Video backend (wrapped in Rc<RefCell<>> for callback access)
+    video_backend: Rc<RefCell<V>>,
 
-    /// Audio backend (generic)
-    audio_backend: A,
+    /// Audio backend (wrapped in Rc<RefCell<>> for callback access)
+    audio_backend: Rc<RefCell<A>>,
 
     /// Event source (generic)
     event_source: E,
@@ -51,6 +55,9 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
 
     /// Frame step target (for StepFrames test command)
     frame_step_target: Option<u64>,
+
+    /// Flag to track if a frame was presented in the current step
+    frame_presented_this_step: Rc<RefCell<bool>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,19 +72,69 @@ enum ViewerState {
     Halted,
 }
 
-impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
+impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimViewer<V, A, E> {
     /// Create a new SimViewer with dependency injection
+    ///
+    /// This function sets up the simulator with Video and Audio devices that directly
+    /// write to the provided backends, eliminating intermediate data copies.
     pub fn new(
         config: ViewerConfig,
         video_backend: V,
         audio_backend: A,
         event_source: E,
     ) -> Result<Self, String> {
-        // Create controller (handles simulator setup with Video/Audio devices)
-        let controller = SimulatorController::new()?;
+        // Wrap backends in Rc<RefCell<>> for shared ownership with callbacks
+        let video_backend = Rc::new(RefCell::new(video_backend));
+        let audio_backend = Rc::new(RefCell::new(audio_backend));
+        let frame_presented_this_step = Rc::new(RefCell::new(false));
+
+        // Create the interactive simulator
+        let mut simulator = InteractiveSimulator::new()?;
+
+        // Create Video device with callback that writes directly to video backend
+        let video_backend_clone = Rc::clone(&video_backend);
+        let frame_presented_clone = Rc::clone(&frame_presented_this_step);
+        let video_callback = move |data: &[u8], video_config: &VideoConfig| {
+            // Directly call process_frame on the video backend
+            if let Err(e) = video_backend_clone
+                .borrow_mut()
+                .process_frame(data, video_config)
+            {
+                log::error!("Video backend process_frame error: {}", e);
+            }
+            // Mark that a frame was presented
+            *frame_presented_clone.borrow_mut() = true;
+        };
+        let video_device = Box::new(Video::new(Some(video_callback)));
+
+        // Create Audio device with callbacks that write directly to audio backend
+        let audio_backend_for_samples = Rc::clone(&audio_backend);
+        let sample_callback = move |samples: &[i16]| {
+            // Directly call push_samples on the audio backend
+            audio_backend_for_samples.borrow_mut().push_samples(samples);
+        };
+
+        let audio_backend_for_config = Rc::clone(&audio_backend);
+        let config_callback = move |audio_config: &AudioConfig| {
+            log::info!(
+                "Audio config changed: {} Hz, {:?}, {} samples",
+                audio_config.sample_rate.to_hz(),
+                audio_config.channels,
+                audio_config.sample_count
+            );
+            // Directly call set_config on the audio backend
+            audio_backend_for_config
+                .borrow_mut()
+                .set_config(audio_config);
+        };
+        let audio_device = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
+
+        // Register devices with simulator at their standard base addresses
+        simulator.register_device(VIDEO_BASE, video_device)?;
+        simulator.register_device(AUDIO_BASE, audio_device)?;
 
         Ok(SimViewer {
-            controller,
+            simulator,
             video_backend,
             audio_backend,
             event_source,
@@ -88,6 +145,7 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             frame_count: 0,
             exit_requested: false,
             frame_step_target: None,
+            frame_presented_this_step,
         })
     }
 
@@ -95,8 +153,8 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
     pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
         log::info!("Loading ELF: {}", path.display());
 
-        // Load ELF into controller (this resets the CPU)
-        self.controller.load_elf(path)?;
+        // Load ELF into simulator (this resets the CPU)
+        self.simulator.load_elf(path)?;
 
         // Update state
         self.state = ViewerState::Running;
@@ -157,7 +215,29 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             }
             (None, _) => "sim-view - No program loaded".to_string(),
         };
-        self.video_backend.set_title(&title);
+        self.video_backend.borrow_mut().set_title(&title);
+    }
+
+    /// Step the simulation for N instructions
+    ///
+    /// Returns the result of the last instruction executed, which may contain
+    /// a tohost termination value if the program halted.
+    fn step_instructions(&mut self, count: u64) -> Result<cpu_sim::SimulationStepResult, String> {
+        let mut last_result = None;
+
+        for _ in 0..count {
+            let result = self.simulator.step_instruction()?;
+
+            // If program terminated, return early
+            if result.tohost_value.is_some() {
+                return Ok(result);
+            }
+
+            last_result = Some(result);
+        }
+
+        // Return last result (or error if no steps were taken)
+        last_result.ok_or_else(|| "No instructions executed".to_string())
     }
 
     /// Execute a single iteration of the viewer loop
@@ -175,15 +255,19 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
         }
 
         // Check if backend is still active (for GUI mode)
-        if !self.video_backend.is_active() {
+        if !self.video_backend.borrow().is_active() {
             log::info!("Backend inactive, terminating viewer loop");
             return Ok(false);
         }
 
+        // Reset frame presented flag before stepping
+        *self.frame_presented_this_step.borrow_mut() = false;
+
         // Step simulation if running
         if self.state == ViewerState::Running {
             // Step simulation by multiple instructions per frame for performance
-            match self.controller.step_instructions(INSTRUCTIONS_PER_FRAME) {
+            // Note: Video and audio callbacks write directly to backends during step
+            match self.step_instructions(INSTRUCTIONS_PER_FRAME) {
                 Ok(result) => {
                     // Increment instruction counter
                     self.total_cycles += INSTRUCTIONS_PER_FRAME;
@@ -213,34 +297,11 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             }
         }
 
-        // Pull video frames from controller and send to backend
-        let frame_presented = if let Some((frame_data, config)) = self.controller.get_video_frame()
-        {
-            self.video_backend.process_frame(&frame_data, &config)?;
-            true
-        } else {
-            false
-        };
-
-        // Check for audio config changes and propagate to backend
-        if let Some(config) = self.controller.get_audio_config_change() {
-            log::info!(
-                "Audio config changed: {} Hz, {:?}, {} samples",
-                config.sample_rate.to_hz(),
-                config.channels,
-                config.sample_count
-            );
-            self.audio_backend.set_config(&config);
-        }
-
-        // Pull audio samples from controller and send to audio backend
-        let audio_samples = self.controller.get_audio_samples(4096);
-        if !audio_samples.is_empty() {
-            self.audio_backend.push_samples(&audio_samples);
-        }
+        // Check if a frame was presented during this step (set by video callback)
+        let frame_presented = *self.frame_presented_this_step.borrow();
 
         // Update video backend (display or capture)
-        self.video_backend.update()?;
+        self.video_backend.borrow_mut().update()?;
 
         // Increment frame counter only if a frame was actually presented
         if frame_presented {
@@ -375,7 +436,6 @@ use crate::headless_backends::{
     CapturedAudioChunk, CapturedFrame, HeadlessAudioBackend, HeadlessEventSource,
     HeadlessVideoBackend,
 };
-use cpu_sim::AudioConfig;
 
 impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> {
     /// Push an event into the headless event source
@@ -385,17 +445,17 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     }
 
     /// Get captured video frames (for headless mode testing)
-    pub fn get_video_frames(&self) -> &[CapturedFrame] {
-        self.video_backend.get_frames()
+    pub fn get_video_frames(&self) -> Vec<CapturedFrame> {
+        self.video_backend.borrow().get_frames().to_vec()
     }
 
     /// Get captured audio chunks (for headless mode testing)
-    pub fn get_audio_chunks(&self) -> &[CapturedAudioChunk] {
-        self.audio_backend.get_chunks()
+    pub fn get_audio_chunks(&self) -> Vec<CapturedAudioChunk> {
+        self.audio_backend.borrow().get_chunks().to_vec()
     }
 
     /// Get current audio configuration (for headless mode testing)
     pub fn get_audio_config(&self) -> Option<AudioConfig> {
-        self.audio_backend.get_current_config()
+        self.audio_backend.borrow().get_current_config()
     }
 }
