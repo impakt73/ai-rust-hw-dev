@@ -16,7 +16,7 @@ fn panic(info: &PanicInfo) -> ! {
 const AUDIO_BASE: u32 = 0x3000_0000;
 
 /// Audio register offsets
-const AUDIO_ADDR: u32 = AUDIO_BASE + 0x00;
+const AUDIO_ADDR: u32 = AUDIO_BASE;
 const AUDIO_CONFIG: u32 = AUDIO_BASE + 0x04;
 const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
 const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
