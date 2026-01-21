@@ -1,5 +1,5 @@
 // Import modules from lib
-use sim_view::{gui_backends, headless_backends, viewer};
+use sim_view::{gui_backends, headless_backends, viewer, ThreadedSimViewer, ThreadedViewerConfig};
 
 use clap::Parser;
 use gui_backends::{GuiAudioBackend, GuiEventSource, GuiVideoBackend};
@@ -7,7 +7,7 @@ use headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideo
 use std::path::PathBuf;
 
 // Type aliases for convenience
-type GuiSimViewer = viewer::SimViewer<GuiVideoBackend, GuiAudioBackend, GuiEventSource>;
+type ThreadedGuiViewer = ThreadedSimViewer<GuiVideoBackend, GuiAudioBackend, GuiEventSource>;
 type HeadlessSimViewer =
     viewer::SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource>;
 
@@ -22,7 +22,7 @@ struct Args {
     #[arg(value_name = "ELF_FILE")]
     elf: Option<PathBuf>,
 
-    /// Maximum cycles to run before auto-terminating (0 = unlimited)
+    /// Maximum cycles to run before auto-terminating (0 = unlimited, headless mode only)
     #[arg(short, long, default_value_t = 0)]
     max_cycles: u64,
 
@@ -30,7 +30,7 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Print instruction trace (prints every instruction executed)
+    /// Print instruction trace (prints every instruction executed, headless mode only)
     #[arg(long)]
     print_inst_trace: bool,
 
@@ -61,6 +61,7 @@ fn main() {
         log::info!("Running in headless mode (no GUI)");
         run_headless_mode(args)
     } else {
+        log::info!("Running in threaded GUI mode");
         log::info!("Controls:");
         log::info!("  - Ctrl+R: Reload last ELF file");
         log::info!("  - Space: Pause/Resume simulation");
@@ -76,11 +77,10 @@ fn main() {
 }
 
 fn run_gui_mode(args: Args) -> Result<(), String> {
-    // Create viewer configuration
-    let config = viewer::ViewerConfig {
+    // Create threaded viewer configuration
+    let config = ThreadedViewerConfig {
         initial_width: args.width,
         initial_height: args.height,
-        max_cycles: args.max_cycles,
         print_inst_trace: args.print_inst_trace,
     };
 
@@ -91,8 +91,8 @@ fn run_gui_mode(args: Args) -> Result<(), String> {
     let audio = GuiAudioBackend::new()?;
     let events = GuiEventSource::new(window_handle, active_handle);
 
-    // Create viewer
-    let mut viewer = GuiSimViewer::new(config, video, audio, events)?;
+    // Create threaded viewer
+    let mut viewer = ThreadedGuiViewer::new(config, video, audio, events)?;
 
     // Load initial ELF if provided
     if let Some(elf_path) = args.elf {
@@ -104,7 +104,7 @@ fn run_gui_mode(args: Args) -> Result<(), String> {
 }
 
 fn run_headless_mode(args: Args) -> Result<(), String> {
-    // Create viewer configuration
+    // Create viewer configuration (original SimViewer for headless mode)
     let config = viewer::ViewerConfig {
         initial_width: args.width,
         initial_height: args.height,
