@@ -222,6 +222,17 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
             false
         };
 
+        // Check for audio config changes and propagate to backend
+        if let Some(config) = self.controller.get_audio_config_change() {
+            log::info!(
+                "Audio config changed: {} Hz, {:?}, {} samples",
+                config.sample_rate.to_hz(),
+                config.channels,
+                config.sample_count
+            );
+            self.audio_backend.set_config(&config);
+        }
+
         // Pull audio samples from controller and send to audio backend
         let audio_samples = self.controller.get_audio_samples(4096);
         if !audio_samples.is_empty() {
@@ -361,8 +372,10 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
 
 // Specialized methods for HeadlessSimViewer
 use crate::headless_backends::{
-    CapturedFrame, HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend,
+    CapturedAudioChunk, CapturedFrame, HeadlessAudioBackend, HeadlessEventSource,
+    HeadlessVideoBackend,
 };
+use cpu_sim::AudioConfig;
 
 impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> {
     /// Push an event into the headless event source
@@ -374,5 +387,15 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     /// Get captured video frames (for headless mode testing)
     pub fn get_video_frames(&self) -> &[CapturedFrame] {
         self.video_backend.get_frames()
+    }
+
+    /// Get captured audio chunks (for headless mode testing)
+    pub fn get_audio_chunks(&self) -> &[CapturedAudioChunk] {
+        self.audio_backend.get_chunks()
+    }
+
+    /// Get current audio configuration (for headless mode testing)
+    pub fn get_audio_config(&self) -> Option<AudioConfig> {
+        self.audio_backend.get_current_config()
     }
 }
