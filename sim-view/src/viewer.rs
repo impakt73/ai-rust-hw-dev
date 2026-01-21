@@ -37,7 +37,7 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Event source (generic)
     event_source: E,
 
-    /// Current configuration
+    /// Current configuration (stored but only max_cycles is used for simulation thread)
     #[allow(dead_code)]
     config: ViewerConfig,
 
@@ -115,12 +115,12 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> SimViewer<V, A, E> {
         let current_state = self.sim_thread.state();
         match current_state {
             SimState::Running => {
-                log::info!("Simulation paused");
                 self.sim_thread.pause()?;
+                log::info!("Simulation paused");
             }
             SimState::Paused => {
-                log::info!("Simulation resumed");
                 self.sim_thread.resume()?;
+                log::info!("Simulation resumed");
             }
             _ => {} // Idle and Halted states don't change
         }
