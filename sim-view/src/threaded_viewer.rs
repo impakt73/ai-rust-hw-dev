@@ -217,8 +217,7 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> ThreadedSimViewer<V, A, E
         log::info!("Viewer loop ended");
 
         // Terminate simulation thread
-        self.sim_thread.shared_state().request_stop();
-        let _ = self.sim_thread.send_command(SimCommand::Terminate);
+        self.request_shutdown();
 
         Ok(())
     }
@@ -296,12 +295,17 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> ThreadedSimViewer<V, A, E
         }
         Ok(())
     }
+
+    /// Request the simulation thread to stop
+    fn request_shutdown(&self) {
+        self.sim_thread.shared_state().request_stop();
+        let _ = self.sim_thread.send_command(SimCommand::Terminate);
+    }
 }
 
 impl<V: VideoBackend, A: AudioBackend, E: EventSource> Drop for ThreadedSimViewer<V, A, E> {
     fn drop(&mut self) {
         // Ensure simulation thread is stopped
-        self.sim_thread.shared_state().request_stop();
-        let _ = self.sim_thread.send_command(SimCommand::Terminate);
+        self.request_shutdown();
     }
 }

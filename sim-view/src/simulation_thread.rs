@@ -156,10 +156,13 @@ impl SharedSimState {
     pub fn push_audio_samples(&self, samples: &[i16]) {
         let mut audio = self.audio_samples.lock().unwrap();
         audio.extend_from_slice(samples);
-        // Limit buffer size to prevent unbounded growth (0.5 seconds at 48kHz)
-        const MAX_SAMPLES: usize = 48000;
-        if audio.len() > MAX_SAMPLES {
-            let drain_count = audio.len() - MAX_SAMPLES;
+        // Limit buffer size to prevent unbounded growth.
+        // This is approximately 0.5 seconds of stereo audio at 48kHz (the highest supported rate).
+        // At lower sample rates or mono audio, this provides even more buffer time.
+        // If the main thread can't consume fast enough, older samples are dropped.
+        const MAX_AUDIO_SAMPLES: usize = 48000;
+        if audio.len() > MAX_AUDIO_SAMPLES {
+            let drain_count = audio.len() - MAX_AUDIO_SAMPLES;
             audio.drain(..drain_count);
         }
     }
@@ -213,7 +216,15 @@ pub struct SimulationThread {
 }
 
 /// Number of instructions to execute per batch before checking for commands.
-/// This balances responsiveness with performance.
+///
+/// This constant balances two competing concerns:
+/// - **Higher values** = Better throughput (fewer context switches and command checks)
+/// - **Lower values** = Better responsiveness (faster pause/terminate reaction)
+///
+/// At 1000 instructions per batch, the simulation thread can:
+/// - Check for commands ~1000 times per second (assuming ~1M instructions/second)
+/// - React to pause/terminate within ~1ms in typical scenarios
+/// - Maintain near-maximum throughput with minimal overhead
 const INSTRUCTIONS_PER_BATCH: u64 = 1000;
 
 impl SimulationThread {
