@@ -114,8 +114,14 @@ impl AudioStream {
                     && range.min_sample_rate().0 <= sample_rate.0
                     && range.max_sample_rate().0 >= sample_rate.0
                 {
-                    matching_range = Some(range);
-                    break;
+                    // Only accept ranges that use a sample format we support (f32, i16, u16)
+                    match range.sample_format() {
+                        SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16 => {
+                            matching_range = Some(range);
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
             }
 

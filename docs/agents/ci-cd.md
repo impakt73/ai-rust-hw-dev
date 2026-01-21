@@ -9,12 +9,15 @@ GitHub Actions automatically runs on:
 ### CI Workflow Steps
 
 The workflow executes the following checks:
-1. ✅ **Build:** `cargo build --verbose`
+1. ✅ **Build:** `cargo build --verbose` (main workspace)
 2. ✅ **Tests:** `cargo test --verbose` (all tests must pass)
 3. ✅ **Formatting:** `cargo fmt -- --check` (must pass - blocking)
 4. ✅ **Clippy:** `cargo clippy -- -D warnings` (must pass - blocking)
+5. ✅ **Build rust-test-program:** `cargo build --verbose` in `rust-test-program/` directory
+6. ✅ **Format rust-test-program:** `cargo fmt -- --check` in `rust-test-program/` directory (must pass - blocking)
+7. ✅ **Clippy rust-test-program:** `cargo clippy -- -D warnings` in `rust-test-program/` directory (must pass - blocking)
 
-**Note:** All checks including formatting and clippy are now blocking in CI. Your code must pass all checks before it can be merged.
+**Note:** All checks including formatting and clippy are now blocking in CI. Your code must pass all checks before it can be merged. This includes the separate `rust-test-program` project which builds for the RISC-V target platform.
 
 ## PR Readiness Checklist
 
@@ -57,13 +60,33 @@ No warnings or errors should appear after auto-fix and manual corrections.
 
 **Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
-#### 4. Lint SystemVerilog Files (if RTL was modified)
+#### 4. Check rust-test-program (if modified)
+
+If you modified code in the `rust-test-program/` directory:
+
+```bash
+cd rust-test-program
+cargo build --verbose
+cargo fmt -- --check
+cargo clippy --fix --allow-dirty
+cargo clippy -- -D warnings
+cd ..
+```
+
+All checks must pass. If formatting is needed:
+```bash
+cd rust-test-program
+cargo fmt
+cd ..
+```
+
+#### 5. Lint SystemVerilog Files (if RTL was modified)
 ```bash
 verilator --lint-only rtl/*.sv
 ```
 No lint errors should be reported.
 
-#### 5. Verify CI Pipeline Status
+#### 6. Verify CI Pipeline Status
 - Push your changes to the branch
 - Wait for GitHub Actions CI workflow to complete
 - Check that all CI jobs pass successfully (green checkmark ✓)
@@ -178,6 +201,15 @@ git push
 3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
 5. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
+6. If you modified `rust-test-program/`:
+   ```bash
+   cd rust-test-program
+   cargo build --verbose
+   cargo fmt
+   cargo clippy --fix --allow-dirty
+   cargo clippy -- -D warnings
+   cd ..
+   ```
 
 ### After Pushing
 

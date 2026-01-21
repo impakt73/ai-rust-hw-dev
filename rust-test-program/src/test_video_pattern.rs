@@ -16,7 +16,7 @@ fn panic(info: &PanicInfo) -> ! {
 const VIDEO_BASE: u32 = 0x2000_0000;
 
 /// Video register offsets
-const VIDEO_ADDR: u32 = VIDEO_BASE + 0x00;
+const VIDEO_ADDR: u32 = VIDEO_BASE;
 const VIDEO_CONFIG: u32 = VIDEO_BASE + 0x04;
 const VIDEO_STATUS: u32 = VIDEO_BASE + 0x08;
 const VIDEO_PRESENT: u32 = VIDEO_BASE + 0x0C;
@@ -78,7 +78,7 @@ fn trigger_present() {
 /// Pixel format is RGBA8 (4 bytes per pixel)
 fn write_pixel(x: u32, y: u32, r: u8, g: u8, b: u8, a: u8) {
     unsafe {
-        let offset = ((y * WIDTH + x) * 4) as u32;
+        let offset = (y * WIDTH + x) * 4;
         let addr = FRAMEBUFFER_BASE + offset;
         write_volatile(addr as *mut u8, r);
         write_volatile((addr + 1) as *mut u8, g);
