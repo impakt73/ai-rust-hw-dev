@@ -33,8 +33,7 @@ fn main() -> ! {
     common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
 
     // Read and send to FIFO
-    for i in 0..8 {
-        let byte = stack_array[i];
+    for &byte in &stack_array {
         common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
     }
 

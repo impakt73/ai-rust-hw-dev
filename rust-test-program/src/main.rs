@@ -103,13 +103,13 @@ fn main() -> ! {
     let mut array: [u32; ARRAY_SIZE] = [0; ARRAY_SIZE];
 
     // Initialize array
-    for i in 0..ARRAY_SIZE {
-        array[i] = (i as u32) * 2;
+    for (i, item) in array.iter_mut().enumerate() {
+        *item = (i as u32) * 2;
     }
 
     // Verify array contents
-    for i in 0..ARRAY_SIZE {
-        if array[i] != (i as u32) * 2 {
+    for (i, &item) in array.iter().enumerate() {
+        if item != (i as u32) * 2 {
             common::write_tohost(common::FAILURE_CODE);
         }
     }

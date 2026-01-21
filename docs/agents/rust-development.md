@@ -23,6 +23,13 @@
 cargo fmt
 ```
 
+For the `rust-test-program` (if modified):
+```bash
+cd rust-test-program
+cargo fmt
+cd ..
+```
+
 Check formatting without modifying:
 ```bash
 cargo fmt -- --check
@@ -31,6 +38,13 @@ cargo fmt -- --check
 ### 2. Run Clippy (Zero Tolerance for Warnings)
 ```bash
 cargo clippy -- -D warnings
+```
+
+For the `rust-test-program` (if modified):
+```bash
+cd rust-test-program
+cargo clippy -- -D warnings
+cd ..
 ```
 
 All clippy warnings must be addressed. Use auto-fix when possible:
@@ -44,6 +58,8 @@ cargo test --verbose
 ```
 
 All tests must pass before committing.
+
+**Note:** The `rust-test-program/` directory is a separate Rust project that builds for the RISC-V target platform (`riscv32imafc-unknown-none-elf`). If you modify any files in this directory, you MUST run the formatting and clippy checks in that directory as well, as it is checked separately in CI.
 
 ## Best Practices
 

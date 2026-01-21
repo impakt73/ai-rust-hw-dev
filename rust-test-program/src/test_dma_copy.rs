@@ -16,7 +16,7 @@ fn panic(info: &PanicInfo) -> ! {
 const DMA_BASE: u32 = 0x2000_0000;
 
 /// DMA register offsets
-const DMA_SRC_ADDR: u32 = DMA_BASE + 0x00;
+const DMA_SRC_ADDR: u32 = DMA_BASE;
 const DMA_DST_ADDR: u32 = DMA_BASE + 0x04;
 const DMA_SIZE: u32 = DMA_BASE + 0x08;
 const DMA_STATUS: u32 = DMA_BASE + 0x0C;
