@@ -71,6 +71,12 @@ impl AudioBackend for GuiAudioBackend {
     fn push_samples(&mut self, samples: &[i16]) {
         self.stream.push_samples(samples);
     }
+
+    fn set_config(&mut self, config: &cpu_sim::AudioConfig) {
+        if let Err(e) = self.stream.set_config(config) {
+            log::error!("Failed to reconfigure audio stream: {}", e);
+        }
+    }
 }
 
 /// GUI event source using VideoWindow events

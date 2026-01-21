@@ -4,7 +4,7 @@
 //! instead of rendering to hardware devices.
 
 use crate::backend_traits::{AudioBackend, EventSource, VideoBackend, ViewerEvent};
-use cpu_sim::VideoConfig;
+use cpu_sim::{AudioConfig, VideoConfig};
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -109,6 +109,9 @@ pub struct CapturedAudioChunk {
 
     /// Sample sequence number (cumulative sample count)
     pub sample_offset: u64,
+
+    /// Audio configuration when samples were captured (if known)
+    pub config: Option<AudioConfig>,
 }
 
 /// Headless audio backend that captures samples
@@ -118,6 +121,9 @@ pub struct HeadlessAudioBackend {
 
     /// Cumulative sample counter
     sample_count: u64,
+
+    /// Current audio configuration
+    current_config: Option<AudioConfig>,
 }
 
 impl HeadlessAudioBackend {
@@ -125,12 +131,18 @@ impl HeadlessAudioBackend {
         Self {
             captured_chunks: Vec::new(),
             sample_count: 0,
+            current_config: None,
         }
     }
 
     /// Get captured audio chunks (for tests)
     pub fn get_chunks(&self) -> &[CapturedAudioChunk] {
         &self.captured_chunks
+    }
+
+    /// Get the current audio configuration (for tests)
+    pub fn get_current_config(&self) -> Option<AudioConfig> {
+        self.current_config
     }
 }
 
@@ -150,10 +162,21 @@ impl AudioBackend for HeadlessAudioBackend {
             samples: samples.to_vec(),
             timestamp: Instant::now(),
             sample_offset: self.sample_count,
+            config: self.current_config,
         };
 
         self.captured_chunks.push(chunk);
         self.sample_count += samples.len() as u64;
+    }
+
+    fn set_config(&mut self, config: &AudioConfig) {
+        log::debug!(
+            "Audio config changed: {} Hz, {:?}, {} samples",
+            config.sample_rate.to_hz(),
+            config.channels,
+            config.sample_count
+        );
+        self.current_config = Some(*config);
     }
 }
 

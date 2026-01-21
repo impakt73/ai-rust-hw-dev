@@ -279,3 +279,124 @@ fn test_sequential_frames_differ() {
         frames.len()
     );
 }
+
+#[test]
+fn test_audio_config_change_and_samples() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    // Create headless backends
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
+
+    // Create viewer
+    let config = ViewerConfig {
+        initial_width: 320,
+        initial_height: 240,
+        max_cycles: 5000000, // Generous limit for audio test
+        print_inst_trace: false,
+    };
+
+    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
+
+    // Load test ELF that generates audio samples (sets audio config)
+    let elf_path = test_program_path("test_audio_pattern.elf");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+
+    // Run until program completes or we get sufficient audio data
+    let mut steps = 0;
+    loop {
+        if !viewer.step().expect("Step failed") {
+            break;
+        }
+
+        steps += 1;
+
+        // Safety limit - test_audio_pattern should complete within this
+        if steps > 50000 {
+            break;
+        }
+    }
+
+    // Get the audio backend to check results
+    let audio_chunks = viewer.get_audio_chunks();
+    let audio_config = viewer.get_audio_config();
+
+    println!(
+        "Audio config change test: {} steps, {} audio chunks captured",
+        steps,
+        audio_chunks.len()
+    );
+
+    // Verify that audio config was set
+    assert!(
+        audio_config.is_some(),
+        "Audio config should have been set by test program"
+    );
+
+    let config = audio_config.unwrap();
+    println!(
+        "Audio config: {} Hz, {:?}, {} samples",
+        config.sample_rate.to_hz(),
+        config.channels,
+        config.sample_count
+    );
+
+    // Verify expected config values from test_audio_pattern.elf
+    // The test sets: 48000Hz, Stereo, 64 samples (2^6)
+    assert_eq!(
+        config.sample_rate.to_hz(),
+        48000,
+        "Sample rate should be 48000 Hz"
+    );
+    assert_eq!(
+        config.channels,
+        cpu_sim::AudioChannels::Stereo,
+        "Should be stereo"
+    );
+    assert_eq!(config.sample_count, 64, "Buffer should be 64 samples (2^6)");
+
+    // Verify that audio samples were captured
+    assert!(
+        !audio_chunks.is_empty(),
+        "Audio chunks should have been captured"
+    );
+
+    // Verify that captured chunks have the config set
+    let chunks_with_config: Vec<_> = audio_chunks
+        .iter()
+        .filter(|chunk| chunk.config.is_some())
+        .collect();
+
+    assert!(
+        !chunks_with_config.is_empty(),
+        "At least some audio chunks should have config information"
+    );
+
+    // Verify that the config in chunks matches what we expect
+    for chunk in &chunks_with_config {
+        let chunk_config = chunk.config.as_ref().unwrap();
+        assert_eq!(
+            chunk_config.sample_rate.to_hz(),
+            48000,
+            "Chunk config should match expected sample rate"
+        );
+        assert_eq!(
+            chunk_config.channels,
+            cpu_sim::AudioChannels::Stereo,
+            "Chunk config should match expected channels"
+        );
+    }
+
+    // Verify total samples captured is reasonable
+    let total_samples: usize = audio_chunks.iter().map(|c| c.samples.len()).sum();
+    assert!(
+        total_samples > 0,
+        "Should have captured at least some audio samples"
+    );
+
+    println!(
+        "Successfully verified audio config change and {} total samples captured",
+        total_samples
+    );
+}

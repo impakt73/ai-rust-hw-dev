@@ -131,4 +131,10 @@ impl SimulatorController {
         let count = samples.len().min(max_samples);
         samples.drain(..count).collect()
     }
+
+    /// Get and clear any pending audio config change
+    /// Returns Some(config) if a new config was set since last call, None otherwise
+    pub fn get_audio_config_change(&self) -> Option<AudioConfig> {
+        self._audio_config.lock().unwrap().take()
+    }
 }

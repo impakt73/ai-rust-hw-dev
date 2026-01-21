@@ -4,7 +4,7 @@
 //! - GUI backends (using minifb and cpal) for interactive viewing
 //! - Headless backends (capturing data) for automated testing
 
-use cpu_sim::VideoConfig;
+use cpu_sim::{AudioConfig, VideoConfig};
 use std::path::PathBuf;
 
 /// Trait for video output backends (GUI or headless)
@@ -26,6 +26,10 @@ pub trait VideoBackend {
 pub trait AudioBackend {
     /// Push audio samples for playback/capture
     fn push_samples(&mut self, samples: &[i16]);
+
+    /// Update audio configuration (sample rate, channels, buffer size)
+    /// Called when the CPU writes to the AUDIO_CONFIG register
+    fn set_config(&mut self, config: &AudioConfig);
 }
 
 /// Trait for input event sources (keyboard, headless test driver)
