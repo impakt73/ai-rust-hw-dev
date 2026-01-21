@@ -445,11 +445,19 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     }
 
     /// Get captured video frames (for headless mode testing)
+    ///
+    /// Note: This clones the frame data. This is acceptable because this method is only
+    /// called infrequently (at test completion for verification). The hot path
+    /// (video callback during simulation) writes directly to the backend with zero copies.
     pub fn get_video_frames(&self) -> Vec<CapturedFrame> {
         self.video_backend.borrow().get_frames().to_vec()
     }
 
     /// Get captured audio chunks (for headless mode testing)
+    ///
+    /// Note: This clones the chunk data. This is acceptable because this method is only
+    /// called infrequently (at test completion for verification). The hot path
+    /// (audio callback during simulation) writes directly to the backend with zero copies.
     pub fn get_audio_chunks(&self) -> Vec<CapturedAudioChunk> {
         self.audio_backend.borrow().get_chunks().to_vec()
     }
