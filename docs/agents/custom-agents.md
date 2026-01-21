@@ -154,8 +154,11 @@ Use this agent for **documentation and agent configuration tasks**:
 
 **Code Quality (Mandatory):**
 - ✅ Always run `cargo fmt` before committing
+- ✅ Always run `cargo clippy --fix` to auto-fix warnings (do this FIRST!)
 - ✅ Always run `cargo clippy -- -D warnings` before committing
 - ✅ Address all clippy warnings (zero tolerance)
+
+**Key Principle:** Use `cargo clippy --fix` **BEFORE** manually addressing warnings to save time and avoid fixing issues that can be automatically resolved.
 
 ## Decision Guide Details
 

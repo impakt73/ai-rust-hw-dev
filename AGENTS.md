@@ -77,8 +77,11 @@ What files do you need to modify?
 
 **All Rust code changes MUST:**
 - ✅ Run `cargo fmt` before committing
+- ✅ Run `cargo clippy --fix` to auto-fix warnings (do this FIRST!)
 - ✅ Run `cargo clippy -- -D warnings` before committing  
 - ✅ Address all clippy warnings (zero tolerance)
+
+**Key Principle:** Use `cargo clippy --fix` **BEFORE** manually addressing warnings to save time and avoid fixing issues that can be automatically resolved.
 
 **Memory management:**
 - ❌ Never use `Box::leak()` to circumvent lifetime issues
@@ -155,6 +158,7 @@ Without Verilator, all tests fail. This is the #1 cause of build failures.
 cargo test                    # Run all tests (264 total)
 cargo build                   # Build only
 cargo fmt                     # Format Rust code (mandatory before commit)
+cargo clippy --fix            # Auto-fix clippy warnings (run FIRST!)
 cargo clippy -- -D warnings   # Lint Rust code (mandatory before commit)
 verilator --lint-only rtl/*.sv # Lint SystemVerilog
 cargo clean                   # Clear Verilator cache (after RTL changes)
@@ -166,9 +170,10 @@ Before marking PR ready for review:
 
 1. ✅ All tests pass: `cargo test --verbose`
 2. ✅ Code formatted: `cargo fmt -- --check`
-3. ✅ No clippy warnings: `cargo clippy -- -D warnings`
-4. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
-5. ✅ All CI checks pass on GitHub Actions
+3. ✅ Clippy auto-fix run: `cargo clippy --fix` (do this FIRST!)
+4. ✅ No clippy warnings: `cargo clippy -- -D warnings`
+5. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
+6. ✅ All CI checks pass on GitHub Actions
 
 **See [CI/CD Guide](docs/agents/ci-cd.md) for detailed verification steps.**
 
