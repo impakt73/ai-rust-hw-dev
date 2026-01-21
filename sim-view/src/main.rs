@@ -77,6 +77,14 @@ fn main() {
 }
 
 fn run_gui_mode(args: Args) -> Result<(), String> {
+    // Warn if print_inst_trace is enabled - not supported in threaded mode
+    if args.print_inst_trace {
+        log::warn!(
+            "--print-inst-trace is not supported in GUI mode (threaded execution). \
+             Use --headless mode for instruction tracing."
+        );
+    }
+
     // Create threaded viewer configuration
     let config = ThreadedViewerConfig {
         initial_width: args.width,

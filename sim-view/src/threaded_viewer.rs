@@ -299,7 +299,11 @@ impl<V: VideoBackend, A: AudioBackend, E: EventSource> ThreadedSimViewer<V, A, E
     /// Request the simulation thread to stop
     fn request_shutdown(&self) {
         self.sim_thread.shared_state().request_stop();
-        let _ = self.sim_thread.send_command(SimCommand::Terminate);
+        if let Err(e) = self.sim_thread.send_command(SimCommand::Terminate) {
+            log::debug!("Failed to send terminate command during shutdown: {}", e);
+            // This is not necessarily an error - the channel may be closed
+            // if the simulation thread has already exited
+        }
     }
 }
 

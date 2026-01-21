@@ -163,6 +163,11 @@ impl SharedSimState {
         const MAX_AUDIO_SAMPLES: usize = 48000;
         if audio.len() > MAX_AUDIO_SAMPLES {
             let drain_count = audio.len() - MAX_AUDIO_SAMPLES;
+            log::warn!(
+                "Audio buffer overflow: dropping {} samples (buffer at {} samples)",
+                drain_count,
+                audio.len()
+            );
             audio.drain(..drain_count);
         }
     }
