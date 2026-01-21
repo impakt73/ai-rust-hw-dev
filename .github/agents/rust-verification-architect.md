@@ -234,10 +234,10 @@ impl Drop for Simulation {
 
 2. **Auto-fix clippy warnings (saves time!):**
    ```bash
-   cargo clippy --fix
+   cargo clippy --fix --allow-dirty
    ```
 
-3. **Check for remaining warnings:**
+3. **Rerun clippy to check for remaining or newly introduced warnings:**
    ```bash
    cargo clippy -- -D warnings
    ```
@@ -255,16 +255,16 @@ impl Drop for Simulation {
 **Example workflow:**
 ```bash
 # After making code changes
-cargo fmt                          # Format code
-cargo clippy --fix                 # Auto-fix clippy warnings (FIRST!)
-cargo clippy -- -D warnings        # Check for remaining warnings (must be zero)
-cargo test --verbose               # Run tests
-cargo fmt -- --check               # Verify formatting is correct
-git add .                          # Stage changes
-git commit -m "Add feature X"      # Commit
+cargo fmt                                # Format code
+cargo clippy --fix --allow-dirty         # Auto-fix clippy warnings (FIRST!)
+cargo clippy -- -D warnings              # Rerun to check remaining warnings (must be zero)
+cargo test --verbose                     # Run tests
+cargo fmt -- --check                     # Verify formatting is correct
+git add .                                # Stage changes
+git commit -m "Add feature X"            # Commit
 ```
 
-**Key Principle:** Use `cargo clippy --fix` **BEFORE** manually addressing warnings. This avoids wasting time and context on issues that can be automatically resolved.
+**Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings. This avoids wasting time and context on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 ## 8. Anti-Pattern: Box::leak() for Lifetime Issues
 

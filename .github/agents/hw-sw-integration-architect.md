@@ -146,12 +146,12 @@ to check alu_a and alu_b..."*
 
 **Code Quality (MANDATORY):**
 - ✅ **ALWAYS** run `cargo fmt` before committing
-- ✅ **ALWAYS** run `cargo clippy --fix` to auto-fix warnings **BEFORE** manual fixes
-- ✅ **ALWAYS** run `cargo clippy -- -D warnings` to check remaining warnings
+- ✅ **ALWAYS** run `cargo clippy --fix --allow-dirty` to auto-fix warnings **BEFORE** manual fixes
+- ✅ **ALWAYS** rerun `cargo clippy -- -D warnings` to check remaining warnings
 - ✅ Address all clippy warnings (no exceptions)
 - ✅ Verify formatting with `cargo fmt -- --check`
 
-**Key Workflow:** Use `cargo clippy --fix` **FIRST** to automatically resolve common issues, then manually address any remaining warnings. This saves time and context.
+**Key Workflow:** Use `cargo clippy --fix --allow-dirty` **FIRST** to automatically resolve common issues, then rerun clippy to check for any remaining or newly introduced warnings. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. This saves time and context.
 
 ### Integration Verification Workflow
 
@@ -172,8 +172,8 @@ When implementing cross-layer changes:
    ```bash
    # Edit tests in tests/src/ or cpu-sim/src/
    cargo fmt
-   cargo clippy --fix                # Auto-fix warnings FIRST
-   cargo clippy -- -D warnings       # Then check remaining warnings
+   cargo clippy --fix --allow-dirty      # Auto-fix warnings FIRST
+   cargo clippy -- -D warnings           # Rerun to check remaining warnings
    ```
 
 4. **Verify Integration:**
@@ -184,7 +184,7 @@ When implementing cross-layer changes:
 5. **Final Checks:**
    ```bash
    cargo fmt -- --check
-   cargo clippy --fix                # Auto-fix any new warnings
+   cargo clippy --fix --allow-dirty  # Auto-fix any new warnings
    cargo clippy -- -D warnings       # Verify zero warnings
    verilator --lint-only rtl/*.sv
    ```
@@ -311,7 +311,7 @@ fn test_cpu_fence_i() {
 verilator --lint-only rtl/decoder.sv rtl/top.sv
 cargo clean
 cargo fmt
-cargo clippy --fix                # Auto-fix warnings
+cargo clippy --fix --allow-dirty  # Auto-fix warnings
 cargo clippy -- -D warnings       # Verify zero warnings
 cargo test test_cpu_fence_i --verbose
 ```
@@ -361,7 +361,8 @@ clock_cycle!(core);
 verilator --lint-only rtl/top.sv
 cargo clean
 cargo fmt
-cargo clippy --fix                # Auto-fix warnings
+cargo clippy --fix --allow-dirty  # Auto-fix warnings
+cargo clippy -- -D warnings       # Verify zero warnings
 cargo test test_cpu_store_word --verbose
 ```
 
@@ -425,8 +426,8 @@ Before marking work complete, verify:
 - [ ] RTL changes linted: `verilator --lint-only rtl/*.sv`
 - [ ] Verilator cache cleared: `cargo clean`
 - [ ] Rust code formatted: `cargo fmt`
-- [ ] Rust code auto-fixed: `cargo clippy --fix` (run FIRST!)
-- [ ] Rust code linted: `cargo clippy -- -D warnings` (zero warnings)
+- [ ] Rust code auto-fixed: `cargo clippy --fix --allow-dirty` (run FIRST!)
+- [ ] Rust code linted: `cargo clippy -- -D warnings` (zero warnings, rerun after auto-fix)
 - [ ] All tests pass: `cargo test --verbose` (146 tests)
 - [ ] Format verified: `cargo fmt -- --check`
 - [ ] Integration validated: Run end-to-end tests with modified components

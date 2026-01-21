@@ -45,17 +45,17 @@ cargo fmt
 
 **ALWAYS auto-fix first (saves time!):**
 ```bash
-cargo clippy --fix
+cargo clippy --fix --allow-dirty
 ```
 
-Then verify zero warnings remain:
+Then rerun clippy to verify zero warnings remain:
 ```bash
 cargo clippy -- -D warnings
 ```
 
 No warnings or errors should appear after auto-fix and manual corrections.
 
-**Key Principle:** Use `cargo clippy --fix` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved.
+**Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 #### 4. Lint SystemVerilog Files (if RTL was modified)
 ```bash
@@ -150,15 +150,15 @@ git push   # Push and wait for CI to re-run
 
 **Solutions:**
 ```bash
-cargo clippy --fix  # Auto-fix warnings FIRST
-cargo clippy -- -D warnings  # Check remaining warnings
+cargo clippy --fix --allow-dirty  # Auto-fix warnings FIRST
+cargo clippy -- -D warnings       # Rerun to check remaining warnings
 # Manually address remaining warnings that couldn't be auto-fixed
 git add .
 git commit -m "Fix clippy warnings"
 git push
 ```
 
-**Key Workflow:** Use `cargo clippy --fix` first to automatically resolve common issues, avoiding unnecessary manual work and context usage.
+**Key Workflow:** Use `cargo clippy --fix --allow-dirty` first to automatically resolve common issues, then rerun clippy to check for any remaining or newly introduced warnings. The `--allow-dirty` flag is required when you have uncommitted changes. This avoids unnecessary manual work and context usage.
 
 ## Security Scanning
 
@@ -175,8 +175,8 @@ git push
 
 1. Run tests locally: `cargo test`
 2. Format code: `cargo fmt`
-3. Auto-fix clippy warnings: `cargo clippy --fix` (do this FIRST!)
-4. Check remaining warnings: `cargo clippy -- -D warnings`
+3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
+4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
 5. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
 
 ### After Pushing
@@ -205,9 +205,9 @@ vim src/file.rs
 cargo fmt
 
 # 3. Auto-fix clippy warnings (FIRST!)
-cargo clippy --fix
+cargo clippy --fix --allow-dirty
 
-# 4. Check remaining warnings
+# 4. Rerun clippy to check remaining warnings
 cargo clippy -- -D warnings
 
 # 5. Run relevant tests

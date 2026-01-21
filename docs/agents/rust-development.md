@@ -32,15 +32,15 @@ cargo fmt -- --check
 
 **ALWAYS use auto-fix first to save time:**
 ```bash
-cargo clippy --fix
+cargo clippy --fix --allow-dirty
 ```
 
-Then check for remaining warnings:
+Then rerun clippy to check for any remaining or newly introduced warnings:
 ```bash
 cargo clippy -- -D warnings
 ```
 
-All clippy warnings must be addressed. The `--fix` flag automatically fixes many common issues, avoiding unnecessary manual work.
+All clippy warnings must be addressed. The `--fix --allow-dirty` flags automatically fix many common issues even with uncommitted changes, avoiding unnecessary manual work. Always rerun clippy after auto-fix to catch any new warnings introduced by the fixes.
 
 ### 3. Run Tests
 ```bash
@@ -202,8 +202,8 @@ dut.eval();
 
 1. **Global mutable state:** Avoid `static mut`
 2. **Unwrapped results:** Never use `.unwrap()` in long-running code
-3. **Skipping code quality checks:** Always run `cargo fmt` and `cargo clippy --fix` then `cargo clippy -- -D warnings`
-4. **Manual clippy fixes:** Don't manually fix warnings that `cargo clippy --fix` can handle automatically
+3. **Skipping code quality checks:** Always run `cargo fmt` and `cargo clippy --fix --allow-dirty` then `cargo clippy -- -D warnings`
+4. **Manual clippy fixes:** Don't manually fix warnings that `cargo clippy --fix --allow-dirty` can handle automatically
 5. **Implicit casting:** Use `try_into()` instead of `as`
 6. **Memory leaks:** Never use `Box::leak()` to solve lifetime issues
 

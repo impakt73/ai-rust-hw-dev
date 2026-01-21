@@ -154,11 +154,11 @@ Use this agent for **documentation and agent configuration tasks**:
 
 **Code Quality (Mandatory):**
 - ✅ Always run `cargo fmt` before committing
-- ✅ Always run `cargo clippy --fix` to auto-fix warnings (do this FIRST!)
-- ✅ Always run `cargo clippy -- -D warnings` before committing
+- ✅ Always run `cargo clippy --fix --allow-dirty` to auto-fix warnings (do this FIRST!)
+- ✅ Always rerun `cargo clippy -- -D warnings` to check remaining warnings
 - ✅ Address all clippy warnings (zero tolerance)
 
-**Key Principle:** Use `cargo clippy --fix` **BEFORE** manually addressing warnings to save time and avoid fixing issues that can be automatically resolved.
+**Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to save time and avoid fixing issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 ## Decision Guide Details
 
