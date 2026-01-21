@@ -95,15 +95,19 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         let video_backend_clone = Rc::clone(&video_backend);
         let frame_presented_clone = Rc::clone(&frame_presented_this_step);
         let video_callback = move |data: &[u8], video_config: &VideoConfig| {
-            // Directly call process_frame on the video backend
-            if let Err(e) = video_backend_clone
+            let result = video_backend_clone
                 .borrow_mut()
-                .process_frame(data, video_config)
-            {
-                log::error!("Video backend process_frame error: {}", e);
+                .process_frame(data, video_config);
+
+            match result {
+                Ok(()) => {
+                    // Mark that a frame was presented only on success
+                    *frame_presented_clone.borrow_mut() = true;
+                }
+                Err(e) => {
+                    log::error!("Video backend process_frame error: {}", e);
+                }
             }
-            // Mark that a frame was presented
-            *frame_presented_clone.borrow_mut() = true;
         };
         let video_device = Box::new(Video::new(Some(video_callback)));
 
@@ -266,7 +270,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Step simulation if running
         if self.state == ViewerState::Running {
             // Step simulation by multiple instructions per frame for performance
-            // Note: Video and audio callbacks write directly to backends during step
+            // Note: Video and audio callbacks may write directly to backends during instruction execution
             match self.step_instructions(INSTRUCTIONS_PER_FRAME) {
                 Ok(result) => {
                     // Increment instruction counter
