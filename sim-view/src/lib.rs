@@ -4,7 +4,6 @@
 //! programs with real-time video and audio output.
 
 mod audio_stream;
-mod simulator_controller;
 mod video_window;
 
 pub mod backend_traits;
