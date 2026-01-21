@@ -59,3 +59,6 @@ cpu-sim/tests/tests.rs,test_register_trace_audit,500,138,success,Success test (u
 cpu-sim/tests/tests.rs,test_rust_bare_metal_elf,500,368,success,Success test (uses .expect() or .unwrap())
 cpu-sim/tests/tests.rs,test_trace_callback,500,54,success,Success test (uses .expect() or .unwrap())
 cpu-sim/tests/tests.rs,test_vcd_generation,500,,success,Success test (uses .expect() or .unwrap())
+cpu-sim/tests/test_dma.rs,test_dma_copy,40000,2664,success,Uses GLOBAL_MAX_CYCLES
+cpu-sim/tests/test_audio.rs,test_audio_pattern,150000,61966,success,High limit for audio sample generation
+cpu-sim/tests/test_video.rs,test_video_pattern,1000000,505376,success,High limit for video frame rendering
