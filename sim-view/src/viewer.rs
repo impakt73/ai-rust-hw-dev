@@ -7,10 +7,57 @@ use cpu_sim::{
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 // Performance constants
-const INSTRUCTIONS_PER_FRAME: u64 = 10000; // Adjust this to control simulation speed
+const INSTRUCTIONS_PER_BATCH: u64 = 1000;
+const SIM_EVENT_WAIT_TIMEOUT: Duration = Duration::from_millis(1);
+
+enum SimCommand {
+    LoadElf {
+        path: PathBuf,
+        response: mpsc::Sender<Result<(), String>>,
+    },
+    Pause,
+    Resume,
+    Terminate,
+}
+
+enum SimEvent {
+    VideoFrame { data: Vec<u8>, config: VideoConfig },
+    AudioSamples(Vec<i16>),
+    AudioConfig(AudioConfig),
+    Halted(Option<u32>),
+    MaxCyclesReached(u64),
+    Error(String),
+    Terminated,
+}
+
+struct SimThreadHandle {
+    command_tx: Option<mpsc::Sender<SimCommand>>,
+    event_rx: mpsc::Receiver<SimEvent>,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+struct SimThreadState {
+    simulator: InteractiveSimulator,
+    is_running: bool,
+    total_cycles: u64,
+    max_cycles: u64,
+}
+
+impl SimThreadState {
+    fn new(simulator: InteractiveSimulator, max_cycles: u64) -> Self {
+        Self {
+            simulator,
+            is_running: false,
+            total_cycles: 0,
+            max_cycles,
+        }
+    }
+}
 
 pub struct ViewerConfig {
     #[allow(dead_code)] // Used by main.rs to create backends
@@ -23,8 +70,8 @@ pub struct ViewerConfig {
 }
 
 pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
-    /// Interactive simulator instance
-    simulator: InteractiveSimulator,
+    /// Background simulation thread handle
+    sim_thread: SimThreadHandle,
 
     /// Video backend (wrapped in Rc<RefCell<>> for callback access)
     video_backend: Rc<RefCell<V>>,
@@ -36,6 +83,7 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     event_source: E,
 
     /// Current configuration
+    #[allow(dead_code)]
     config: ViewerConfig,
 
     /// Current simulation state
@@ -43,9 +91,6 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
 
     /// Last loaded ELF file path (for reload)
     last_elf_path: Option<PathBuf>,
-
-    /// Cycle counter
-    total_cycles: u64,
 
     /// Frame counter (incremented each time a frame is presented)
     frame_count: u64,
@@ -56,8 +101,8 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Frame step target (for StepFrames test command)
     frame_step_target: Option<u64>,
 
-    /// Flag to track if a frame was presented in the current step
-    frame_presented_this_step: Rc<RefCell<bool>>,
+    /// Number of frames presented in the current step
+    frame_presented_this_step: Rc<RefCell<u64>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,66 +131,85 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Wrap backends in Rc<RefCell<>> for shared ownership with callbacks
         let video_backend = Rc::new(RefCell::new(video_backend));
         let audio_backend = Rc::new(RefCell::new(audio_backend));
-        let frame_presented_this_step = Rc::new(RefCell::new(false));
+        let frame_presented_this_step = Rc::new(RefCell::new(0_u64));
 
-        // Create the interactive simulator
-        let mut simulator = InteractiveSimulator::new()?;
+        let (command_tx, command_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
 
-        // Create Video device with callback that writes directly to video backend
-        let video_backend_clone = Rc::clone(&video_backend);
-        let frame_presented_clone = Rc::clone(&frame_presented_this_step);
-        let video_callback = move |data: &[u8], video_config: &VideoConfig| {
-            let result = video_backend_clone
-                .borrow_mut()
-                .process_frame(data, video_config);
+        let max_cycles = config.max_cycles;
+        let sim_thread = thread::Builder::new()
+            .name("sim-view-sim".to_string())
+            .spawn(move || {
+                let mut simulator = match InteractiveSimulator::new() {
+                    Ok(sim) => sim,
+                    Err(e) => {
+                        let _ = event_tx.send(SimEvent::Error(e));
+                        let _ = event_tx.send(SimEvent::Terminated);
+                        return;
+                    }
+                };
 
-            match result {
-                Ok(()) => {
-                    // Mark that a frame was presented only on success
-                    *frame_presented_clone.borrow_mut() = true;
+                let video_tx = event_tx.clone();
+                let video_callback = move |data: &[u8], video_config: &VideoConfig| {
+                    let event = SimEvent::VideoFrame {
+                        data: data.to_vec(),
+                        config: *video_config,
+                    };
+                    if video_tx.send(event).is_err() {
+                        log::warn!("Simulation video callback channel closed");
+                    }
+                };
+                let video_device = Box::new(Video::new(Some(video_callback)));
+
+                let audio_tx = event_tx.clone();
+                let sample_callback = move |samples: &[i16]| {
+                    if samples.is_empty() {
+                        return;
+                    }
+                    if audio_tx
+                        .send(SimEvent::AudioSamples(samples.to_vec()))
+                        .is_err()
+                    {
+                        log::warn!("Simulation audio sample channel closed");
+                    }
+                };
+
+                let audio_config_tx = event_tx.clone();
+                let config_callback = move |audio_config: &AudioConfig| {
+                    let event = SimEvent::AudioConfig(*audio_config);
+                    if audio_config_tx.send(event).is_err() {
+                        log::warn!("Simulation audio config channel closed");
+                    }
+                };
+                let audio_device =
+                    Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
+
+                if let Err(e) = simulator
+                    .register_device(VIDEO_BASE, video_device)
+                    .and_then(|_| simulator.register_device(AUDIO_BASE, audio_device))
+                {
+                    let _ = event_tx.send(SimEvent::Error(e));
+                    let _ = event_tx.send(SimEvent::Terminated);
+                    return;
                 }
-                Err(e) => {
-                    log::error!("Video backend process_frame error: {}", e);
-                }
-            }
-        };
-        let video_device = Box::new(Video::new(Some(video_callback)));
 
-        // Create Audio device with callbacks that write directly to audio backend
-        let audio_backend_for_samples = Rc::clone(&audio_backend);
-        let sample_callback = move |samples: &[i16]| {
-            // Directly call push_samples on the audio backend
-            audio_backend_for_samples.borrow_mut().push_samples(samples);
-        };
-
-        let audio_backend_for_config = Rc::clone(&audio_backend);
-        let config_callback = move |audio_config: &AudioConfig| {
-            log::info!(
-                "Audio config changed: {} Hz, {:?}, {} samples",
-                audio_config.sample_rate.to_hz(),
-                audio_config.channels,
-                audio_config.sample_count
-            );
-            // Directly call set_config on the audio backend
-            audio_backend_for_config
-                .borrow_mut()
-                .set_config(audio_config);
-        };
-        let audio_device = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
-
-        // Register devices with simulator at their standard base addresses
-        simulator.register_device(VIDEO_BASE, video_device)?;
-        simulator.register_device(AUDIO_BASE, audio_device)?;
+                let mut state = SimThreadState::new(simulator, max_cycles);
+                run_simulation_thread(&mut state, command_rx, event_tx);
+            })
+            .map_err(|e| e.to_string())?;
 
         Ok(SimViewer {
-            simulator,
+            sim_thread: SimThreadHandle {
+                command_tx: Some(command_tx),
+                event_rx,
+                join_handle: Some(sim_thread),
+            },
             video_backend,
             audio_backend,
             event_source,
             config,
             state: ViewerState::Idle,
             last_elf_path: None,
-            total_cycles: 0,
             frame_count: 0,
             exit_requested: false,
             frame_step_target: None,
@@ -153,23 +217,109 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         })
     }
 
+    fn send_command(&self, command: SimCommand) -> Result<(), String> {
+        match &self.sim_thread.command_tx {
+            Some(sender) => sender
+                .send(command)
+                .map_err(|_| "Simulation thread unavailable".to_string()),
+            None => Err("Simulation thread not running".to_string()),
+        }
+    }
+
+    fn handle_sim_events(&mut self, wait_for_event: bool) {
+        if wait_for_event {
+            match self
+                .sim_thread
+                .event_rx
+                .recv_timeout(SIM_EVENT_WAIT_TIMEOUT)
+            {
+                Ok(event) => self.handle_sim_event(event),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.exit_requested = true;
+                }
+            }
+        }
+
+        while let Ok(event) = self.sim_thread.event_rx.try_recv() {
+            self.handle_sim_event(event);
+        }
+    }
+
+    fn handle_sim_event(&mut self, event: SimEvent) {
+        match event {
+            SimEvent::VideoFrame { data, config } => {
+                let result = self
+                    .video_backend
+                    .borrow_mut()
+                    .process_frame(&data, &config);
+                match result {
+                    Ok(()) => {
+                        *self.frame_presented_this_step.borrow_mut() += 1;
+                    }
+                    Err(e) => {
+                        log::error!("Video backend process_frame error: {}", e);
+                    }
+                }
+            }
+            SimEvent::AudioSamples(samples) => {
+                self.audio_backend.borrow_mut().push_samples(&samples);
+            }
+            SimEvent::AudioConfig(config) => {
+                log::info!(
+                    "Audio config changed: {} Hz, {:?}, {} samples",
+                    config.sample_rate.to_hz(),
+                    config.channels,
+                    config.sample_count
+                );
+                self.audio_backend.borrow_mut().set_config(&config);
+            }
+            SimEvent::Halted(tohost) => {
+                if let Some(value) = tohost {
+                    log::info!("Program halted with tohost value: 0x{:08x}", value);
+                } else {
+                    log::info!("Program halted");
+                }
+                self.state = ViewerState::Halted;
+                self.update_window_title();
+            }
+            SimEvent::MaxCyclesReached(cycles) => {
+                log::info!("Max cycles reached: {}", cycles);
+                self.state = ViewerState::Halted;
+                self.update_window_title();
+            }
+            SimEvent::Error(message) => {
+                log::error!("Simulation error: {}", message);
+                self.state = ViewerState::Halted;
+                self.update_window_title();
+            }
+            SimEvent::Terminated => {
+                self.exit_requested = true;
+            }
+        }
+    }
+
     /// Load an ELF file and reset the simulation
     pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
         log::info!("Loading ELF: {}", path.display());
+        let (response_tx, response_rx) = mpsc::channel();
+        self.send_command(SimCommand::LoadElf {
+            path: path.to_path_buf(),
+            response: response_tx,
+        })?;
 
-        // Load ELF into simulator (this resets the CPU)
-        self.simulator.load_elf(path)?;
+        let result = response_rx
+            .recv()
+            .map_err(|_| "Simulation thread dropped ELF load response".to_string())?;
 
-        // Update state
-        self.state = ViewerState::Running;
-        self.last_elf_path = Some(path.to_path_buf());
-        self.total_cycles = 0;
+        if result.is_ok() {
+            self.state = ViewerState::Running;
+            self.last_elf_path = Some(path.to_path_buf());
+            self.update_window_title();
+            log::info!("ELF loaded successfully, simulation ready");
+        }
 
-        // Update window title
-        self.update_window_title();
-
-        log::info!("ELF loaded successfully, simulation ready");
-        Ok(())
+        result
     }
 
     /// Reload the last loaded ELF file (for Ctrl+R hotkey)
@@ -191,10 +341,12 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.state = match self.state {
             ViewerState::Running => {
                 log::info!("Simulation paused");
+                let _ = self.send_command(SimCommand::Pause);
                 ViewerState::Paused
             }
             ViewerState::Paused => {
                 log::info!("Simulation resumed");
+                let _ = self.send_command(SimCommand::Resume);
                 ViewerState::Running
             }
             other => other, // Idle and Halted states don't change
@@ -222,28 +374,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.video_backend.borrow_mut().set_title(&title);
     }
 
-    /// Step the simulation for N instructions
-    ///
-    /// Returns the result of the last instruction executed, which may contain
-    /// a tohost termination value if the program halted.
-    fn step_instructions(&mut self, count: u64) -> Result<cpu_sim::SimulationStepResult, String> {
-        let mut last_result = None;
-
-        for _ in 0..count {
-            let result = self.simulator.step_instruction()?;
-
-            // If program terminated, return early
-            if result.tohost_value.is_some() {
-                return Ok(result);
-            }
-
-            last_result = Some(result);
-        }
-
-        // Return last result (or error if no steps were taken)
-        last_result.ok_or_else(|| "No instructions executed".to_string())
-    }
-
     /// Execute a single iteration of the viewer loop
     ///
     /// Returns `Ok(true)` if the viewer should continue running,
@@ -251,6 +381,12 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
     pub fn step(&mut self) -> Result<bool, String> {
         // Handle window events (keyboard, close, test commands)
         self.handle_events()?;
+
+        // Reset frame presented flag before processing new simulation events
+        *self.frame_presented_this_step.borrow_mut() = 0;
+
+        let wait_for_event = self.state == ViewerState::Running;
+        self.handle_sim_events(wait_for_event);
 
         // Terminate if an exit was requested
         if self.exit_requested {
@@ -264,43 +400,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             return Ok(false);
         }
 
-        // Reset frame presented flag before stepping
-        *self.frame_presented_this_step.borrow_mut() = false;
-
-        // Step simulation if running
-        if self.state == ViewerState::Running {
-            // Step simulation by multiple instructions per frame for performance
-            // Note: Video and audio callbacks may write directly to backends during instruction execution
-            match self.step_instructions(INSTRUCTIONS_PER_FRAME) {
-                Ok(result) => {
-                    // Increment instruction counter
-                    self.total_cycles += INSTRUCTIONS_PER_FRAME;
-
-                    // Check if simulation halted
-                    if result.tohost_value.is_some() {
-                        log::info!(
-                            "Program halted with tohost value: 0x{:08x}",
-                            result.tohost_value.unwrap()
-                        );
-                        self.state = ViewerState::Halted;
-                        self.update_window_title();
-                    }
-
-                    // Check if max cycles reached
-                    if self.config.max_cycles > 0 && self.total_cycles >= self.config.max_cycles {
-                        log::info!("Max cycles reached: {}", self.total_cycles);
-                        self.state = ViewerState::Halted;
-                        self.update_window_title();
-                    }
-                }
-                Err(e) => {
-                    log::error!("Simulation error: {}", e);
-                    self.state = ViewerState::Halted;
-                    self.update_window_title();
-                }
-            }
-        }
-
         // Check if a frame was presented during this step (set by video callback)
         let frame_presented = *self.frame_presented_this_step.borrow();
 
@@ -308,8 +407,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.video_backend.borrow_mut().update()?;
 
         // Increment frame counter only if a frame was actually presented
-        if frame_presented {
-            self.frame_count += 1;
+        if frame_presented > 0 {
+            self.frame_count = self.frame_count.saturating_add(frame_presented);
 
             // Check if frame step target reached
             if let Some(target) = self.frame_step_target {
@@ -318,6 +417,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                     self.frame_step_target = None;
                     self.state = ViewerState::Paused;
                     self.update_window_title();
+                    let _ = self.send_command(SimCommand::Pause);
                 }
             }
         }
@@ -367,6 +467,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 ViewerEvent::Close => {
                     log::info!("Close event received, exit requested");
                     self.exit_requested = true;
+                    let _ = self.send_command(SimCommand::Terminate);
                 }
                 ViewerEvent::TestCommand(cmd) => {
                     self.handle_test_command(cmd)?;
@@ -389,6 +490,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 if self.state == ViewerState::Running {
                     self.state = ViewerState::Paused;
                     self.update_window_title();
+                    let _ = self.send_command(SimCommand::Pause);
                 }
             }
             TestCommand::Resume => {
@@ -396,6 +498,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 if self.state == ViewerState::Paused {
                     self.state = ViewerState::Running;
                     self.update_window_title();
+                    let _ = self.send_command(SimCommand::Resume);
                 }
             }
             TestCommand::StepFrames(count) => {
@@ -405,11 +508,13 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 if self.state == ViewerState::Paused || self.state == ViewerState::Idle {
                     self.state = ViewerState::Running;
                     self.update_window_title();
+                    let _ = self.send_command(SimCommand::Resume);
                 }
             }
             TestCommand::Terminate => {
                 log::info!("Test command: Terminate");
                 self.exit_requested = true;
+                let _ = self.send_command(SimCommand::Terminate);
             }
         }
         Ok(())
@@ -421,6 +526,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             Key::Escape => {
                 log::info!("Escape pressed, exit requested");
                 self.exit_requested = true;
+                let _ = self.send_command(SimCommand::Terminate);
             }
             Key::Space => {
                 self.toggle_pause();
@@ -469,5 +575,110 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     /// Get current audio configuration (for headless mode testing)
     pub fn get_audio_config(&self) -> Option<AudioConfig> {
         self.audio_backend.borrow().get_current_config()
+    }
+}
+
+impl<V: VideoBackend, A: AudioBackend, E: EventSource> Drop for SimViewer<V, A, E> {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sim_thread.command_tx.take() {
+            let _ = sender.send(SimCommand::Terminate);
+        }
+        if let Some(handle) = self.sim_thread.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn run_simulation_thread(
+    state: &mut SimThreadState,
+    command_rx: mpsc::Receiver<SimCommand>,
+    event_tx: mpsc::Sender<SimEvent>,
+) {
+    let mut should_run = true;
+    while should_run {
+        loop {
+            match command_rx.try_recv() {
+                Ok(command) => {
+                    if handle_sim_command(state, command) {
+                        should_run = false;
+                        break;
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    should_run = false;
+                    break;
+                }
+            }
+        }
+
+        if !should_run {
+            break;
+        }
+
+        if state.is_running {
+            let mut halted = None;
+            for _ in 0..INSTRUCTIONS_PER_BATCH {
+                match state.simulator.step_instruction() {
+                    Ok(result) => {
+                        state.total_cycles += 1;
+                        if result.tohost_value.is_some() {
+                            halted = result.tohost_value;
+                            state.is_running = false;
+                            break;
+                        }
+                        if state.max_cycles > 0 && state.total_cycles >= state.max_cycles {
+                            state.is_running = false;
+                            let _ = event_tx.send(SimEvent::MaxCyclesReached(state.total_cycles));
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        state.is_running = false;
+                        let _ = event_tx.send(SimEvent::Error(e));
+                        break;
+                    }
+                }
+            }
+
+            if let Some(value) = halted {
+                let _ = event_tx.send(SimEvent::Halted(Some(value)));
+            }
+        } else {
+            match command_rx.recv_timeout(SIM_EVENT_WAIT_TIMEOUT) {
+                Ok(command) => {
+                    if handle_sim_command(state, command) {
+                        should_run = false;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    should_run = false;
+                }
+            }
+        }
+    }
+
+    let _ = event_tx.send(SimEvent::Terminated);
+}
+
+fn handle_sim_command(state: &mut SimThreadState, command: SimCommand) -> bool {
+    match command {
+        SimCommand::LoadElf { path, response } => {
+            let result = state.simulator.load_elf(&path);
+            state.total_cycles = 0;
+            state.is_running = result.is_ok();
+            let _ = response.send(result);
+            false
+        }
+        SimCommand::Pause => {
+            state.is_running = false;
+            false
+        }
+        SimCommand::Resume => {
+            state.is_running = true;
+            false
+        }
+        SimCommand::Terminate => true,
     }
 }
