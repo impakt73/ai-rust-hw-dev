@@ -393,8 +393,5 @@ let result = run_program(
 ```
 
 **Special cases:**
-Tests that intentionally test hung detection or long instruction scenarios may use higher limits with documented justification. See `test_hung_detection_catches_long_instruction` for an example.
-
-**Measurement data:**
-See `reports/max_cycles_report.csv` for detailed cycle measurements across all tests that informed this value.
+Tests that intentionally test hung detection or long instruction scenarios may use higher limits with documented justification. See `test_audio_pattern` and `test_video_pattern` for examples.
 

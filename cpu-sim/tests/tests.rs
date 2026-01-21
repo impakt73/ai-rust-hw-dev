@@ -1137,7 +1137,7 @@ fn test_hung_detection_catches_long_instruction() {
     let mem_latency_cycles = 15000;
 
     let result = run_program(
-        GLOBAL_MAX_CYCLES, // High max_cycles so we don't hit that limit first
+        100_000, // High max_cycles so we don't hit that limit first
         false,
         false,
         None::<fn(&mut SimulatorView)>,
