@@ -14,12 +14,30 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// warnings and return zero for reads or silently fail for writes.
 pub struct SystemContext<'a> {
     memory: &'a mut Memory,
+    /// Elapsed simulation time in microseconds (host CPU time, not simulated time)
+    elapsed_time_us: u64,
 }
 
 impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory
     pub fn new(memory: &'a mut Memory) -> Self {
-        SystemContext { memory }
+        SystemContext {
+            memory,
+            elapsed_time_us: 0,
+        }
+    }
+
+    /// Create a new SystemContext with access to system memory and elapsed time
+    pub fn with_elapsed_time(memory: &'a mut Memory, elapsed_time_us: u64) -> Self {
+        SystemContext {
+            memory,
+            elapsed_time_us,
+        }
+    }
+
+    /// Get the elapsed simulation time in microseconds (host CPU time)
+    pub fn elapsed_time_us(&self) -> u64 {
+        self.elapsed_time_us
     }
 
     /// Read a 32-bit word from memory at the given address
@@ -132,6 +150,71 @@ impl<'a> SystemContext<'a> {
         }
         self.memory.write_byte(addr, data);
     }
+}
+
+/// Determine the optimal read size (word=4, halfword=2, or byte=1) for bulk memory reads.
+///
+/// This helper function selects the largest safe read size based on:
+/// 1. Bytes remaining to read (never exceeds this)
+/// 2. Current address alignment
+///
+/// This ensures we don't read outside the source memory region while maximizing
+/// read efficiency.
+///
+/// # Arguments
+/// * `addr` - Current read address
+/// * `bytes_remaining` - Number of bytes remaining to read
+///
+/// # Returns
+/// The optimal read size in bytes (1, 2, or 4)
+pub fn optimal_read_size(addr: u32, bytes_remaining: u32) -> u32 {
+    // Can't read more than what's remaining
+    let max_size = bytes_remaining.min(4);
+
+    // Check alignment constraints
+    if max_size >= 4 && addr.is_multiple_of(4) {
+        4 // Word-aligned, can read 4 bytes
+    } else if max_size >= 2 && addr.is_multiple_of(2) {
+        2 // Halfword-aligned, can read 2 bytes
+    } else {
+        1 // Byte read (always possible)
+    }
+}
+
+/// Read a chunk of data from memory using the optimal read size.
+///
+/// This helper function reads data from memory using the largest aligned chunk size
+/// (word, halfword, or byte) and returns the bytes read along with the read size.
+///
+/// # Arguments
+/// * `ctx` - System context for memory access
+/// * `addr` - Address to read from
+/// * `bytes_remaining` - Number of bytes remaining to read
+///
+/// # Returns
+/// A tuple of (bytes_read, read_size) where:
+/// - `bytes_read` is a fixed-size array containing the bytes read (up to 4)
+/// - `read_size` is the number of bytes actually read (1, 2, or 4)
+pub fn read_memory_chunk(ctx: &SystemContext, addr: u32, bytes_remaining: u32) -> ([u8; 4], u32) {
+    let read_size = optimal_read_size(addr, bytes_remaining);
+    let mut bytes = [0u8; 4];
+
+    match read_size {
+        4 => {
+            let word = ctx.read_word(addr);
+            bytes.copy_from_slice(&word.to_le_bytes());
+        }
+        2 => {
+            let halfword = ctx.read_halfword(addr);
+            bytes[..2].copy_from_slice(&halfword.to_le_bytes());
+        }
+        1 => {
+            bytes[0] = ctx.read_byte(addr);
+        }
+        _ => unreachable!("Invalid read size"),
+    }
+
+    (bytes, read_size)
 }
 
 /// Error types for bus device operations

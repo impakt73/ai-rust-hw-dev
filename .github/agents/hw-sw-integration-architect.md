@@ -7,6 +7,16 @@ infer: true
 
 # Hardware-Software Integration Architect Agent
 
+## Documentation Reference
+
+**Before starting work, familiarize yourself with the project documentation:**
+- **Main guide:** `AGENTS.md` (overview and navigation)
+- **RTL Development:** `docs/agents/rtl-development.md` (architecture, modules, conventions)
+- **Rust Development:** `docs/agents/rust-development.md` (conventions, code quality, best practices)
+- **Testing:** `docs/agents/testing.md` (test structure, running tests, debugging)
+- **Debugging:** `docs/agents/debugging.md` (debugging methodology and tools)
+- **CI/CD:** `docs/agents/ci-cd.md` (PR readiness checklist)
+
 ## 1. Role Definition
 You are a **Principal Hardware-Software Integration Engineer** specializing in RISC-V CPU design and verification. You bridge the gap between SystemVerilog RTL implementation and Rust-based verification harnesses.
 
@@ -117,7 +127,8 @@ to check alu_a and alu_b..."*
 
 **Memory Management:**
 - ❌ **FORBIDDEN:** Never use `Box::leak()` to avoid lifetime issues
-- ✅ **CORRECT:** Use callbacks, `Rc<RefCell<T>>`, or restructure ownership
+- ✅ **CORRECT:** Use callbacks or restructure ownership (best approach depends on the situation)
+- Consider proper ownership patterns: `Rc<T>`, `Arc<T>`, `RefCell<T>`, `Mutex<T>` as appropriate
 - Use `HashMap<u32, u32>` for memory arrays in tests
 - Memory reads: set `dmem_rdata` BEFORE `eval()`
 - Memory writes: read `dmem_addr` AFTER `eval()`
@@ -135,9 +146,12 @@ to check alu_a and alu_b..."*
 
 **Code Quality (MANDATORY):**
 - ✅ **ALWAYS** run `cargo fmt` before committing
-- ✅ **ALWAYS** run `cargo clippy -- -D warnings` before committing
+- ✅ **ALWAYS** run `cargo clippy --fix --allow-dirty` to auto-fix warnings **BEFORE** manual fixes
+- ✅ **ALWAYS** rerun `cargo clippy -- -D warnings` to check remaining warnings
 - ✅ Address all clippy warnings (no exceptions)
 - ✅ Verify formatting with `cargo fmt -- --check`
+
+**Key Workflow:** Use `cargo clippy --fix --allow-dirty` **FIRST** to automatically resolve common issues, then rerun clippy to check for any remaining or newly introduced warnings. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. This saves time and context.
 
 ### Integration Verification Workflow
 
@@ -158,7 +172,8 @@ When implementing cross-layer changes:
    ```bash
    # Edit tests in tests/src/ or cpu-sim/src/
    cargo fmt
-   cargo clippy -- -D warnings
+   cargo clippy --fix --allow-dirty      # Auto-fix warnings FIRST
+   cargo clippy -- -D warnings           # Rerun to check remaining warnings
    ```
 
 4. **Verify Integration:**
@@ -169,7 +184,8 @@ When implementing cross-layer changes:
 5. **Final Checks:**
    ```bash
    cargo fmt -- --check
-   cargo clippy -- -D warnings
+   cargo clippy --fix --allow-dirty  # Auto-fix any new warnings
+   cargo clippy -- -D warnings       # Verify zero warnings
    verilator --lint-only rtl/*.sv
    ```
 
@@ -295,7 +311,8 @@ fn test_cpu_fence_i() {
 verilator --lint-only rtl/decoder.sv rtl/top.sv
 cargo clean
 cargo fmt
-cargo clippy -- -D warnings
+cargo clippy --fix --allow-dirty  # Auto-fix warnings
+cargo clippy -- -D warnings       # Verify zero warnings
 cargo test test_cpu_fence_i --verbose
 ```
 
@@ -344,6 +361,8 @@ clock_cycle!(core);
 verilator --lint-only rtl/top.sv
 cargo clean
 cargo fmt
+cargo clippy --fix --allow-dirty  # Auto-fix warnings
+cargo clippy -- -D warnings       # Verify zero warnings
 cargo test test_cpu_store_word --verbose
 ```
 
@@ -407,7 +426,8 @@ Before marking work complete, verify:
 - [ ] RTL changes linted: `verilator --lint-only rtl/*.sv`
 - [ ] Verilator cache cleared: `cargo clean`
 - [ ] Rust code formatted: `cargo fmt`
-- [ ] Rust code linted: `cargo clippy -- -D warnings` (zero warnings)
+- [ ] Rust code auto-fixed: `cargo clippy --fix --allow-dirty` (run FIRST!)
+- [ ] Rust code linted: `cargo clippy -- -D warnings` (zero warnings, rerun after auto-fix)
 - [ ] All tests pass: `cargo test --verbose` (146 tests)
 - [ ] Format verified: `cargo fmt -- --check`
 - [ ] Integration validated: Run end-to-end tests with modified components

@@ -3,6 +3,7 @@
 /// These tests verify that the Simulator correctly calls reset() and clock_cycle()
 /// on registered devices at the appropriate times.
 use cpu_sim::*;
+use riscv_core::instruction::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -95,16 +96,19 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
             // lui x11, 0x10000000  - Load upper immediate for SimControl base
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
-            #[rustfmt::skip]
-            let instructions: Vec<u8> = vec![
-                0xb7, 0x07, 0x00, 0x80, // lui x15, 0x80000000
-                0x13, 0x05, 0x10, 0x00, // addi x10, x0, 1
-                0xb7, 0x05, 0x00, 0x10, // lui x11, 0x10000000
-                0x23, 0xa0, 0xa5, 0x00, // sw x10, 0(x11)
-                0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+            let instructions: Vec<u32> = vec![
+                lui(15, 0x80000000), // lui x15, 0x80000000
+                addi(10, 0, 1),      // addi x10, x0, 1
+                lui(11, 0x10000000), // lui x11, 0x10000000
+                sw(11, 10, 0),       // sw x10, 0(x11)
+                jal(0, 0),           // jal x0, 0
             ];
+            let program_bytes: Vec<u8> = instructions
+                .iter()
+                .flat_map(|inst| inst.to_le_bytes())
+                .collect();
 
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -178,19 +182,22 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
             // lui x11, 0x10000000  - Load upper immediate for SimControl base
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
-            #[rustfmt::skip]
-            let instructions: Vec<u8> = vec![
-                0xb7, 0x07, 0x00, 0x80, // lui x15, 0x80000000
-                0x13, 0x00, 0x00, 0x00, // nop
-                0x13, 0x00, 0x00, 0x00, // nop
-                0x13, 0x00, 0x00, 0x00, // nop
-                0x13, 0x05, 0xa0, 0x02, // addi x10, x0, 42
-                0xb7, 0x05, 0x00, 0x10, // lui x11, 0x10000000
-                0x23, 0xa0, 0xa5, 0x00, // sw x10, 0(x11)
-                0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+            let instructions: Vec<u32> = vec![
+                lui(15, 0x80000000), // lui x15, 0x80000000
+                addi(0, 0, 0),       // nop (addi x0, x0, 0)
+                addi(0, 0, 0),       // nop (addi x0, x0, 0)
+                addi(0, 0, 0),       // nop (addi x0, x0, 0)
+                addi(10, 0, 42),     // addi x10, x0, 42
+                lui(11, 0x10000000), // lui x11, 0x10000000
+                sw(11, 10, 0),       // sw x10, 0(x11)
+                jal(0, 0),           // jal x0, 0
             ];
+            let program_bytes: Vec<u8> = instructions
+                .iter()
+                .flat_map(|inst| inst.to_le_bytes())
+                .collect();
 
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -265,16 +272,19 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
             sim.register_device(0x6000_0000, device2)?;
 
             // Write a simple halt program
-            #[rustfmt::skip]
-            let instructions: Vec<u8> = vec![
-                0xb7, 0x07, 0x00, 0x80, // lui x15, 0x80000000
-                0x13, 0x05, 0x10, 0x00, // addi x10, x0, 1
-                0xb7, 0x05, 0x00, 0x10, // lui x11, 0x10000000
-                0x23, 0xa0, 0xa5, 0x00, // sw x10, 0(x11)
-                0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+            let instructions: Vec<u32> = vec![
+                lui(15, 0x80000000), // lui x15, 0x80000000
+                addi(10, 0, 1),      // addi x10, x0, 1
+                lui(11, 0x10000000), // lui x11, 0x10000000
+                sw(11, 10, 0),       // sw x10, 0(x11)
+                jal(0, 0),           // jal x0, 0
             ];
+            let program_bytes: Vec<u8> = instructions
+                .iter()
+                .flat_map(|inst| inst.to_le_bytes())
+                .collect();
 
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,

@@ -3,6 +3,7 @@ mod common;
 
 use common::create_test_program;
 use cpu_sim::*;
+use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
@@ -19,12 +20,16 @@ fn test_zero_latency_default() {
     // addi x1, x0, 42      - load value 42
     // sw x1, 0(x2)         - write to tohost (0x10000000)
     // jal x0, 0            - infinite loop
-    let instructions: Vec<u8> = vec![
-        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000 (0x10000137) - loads 0x10000000
-        0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42 (0x02a00093)
-        0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2) (0x00112023) - writes to 0x10000000
-        0x6f, 0x00, 0x00, 0x00, // jal x0, 0 (0x0000006f) - infinite loop
+    let instructions: Vec<u32> = vec![
+        lui(2, 0x10000000), // lui x2, 0x10000000
+        addi(1, 0, 42),     // addi x1, x0, 42
+        sw(2, 1, 0),        // sw x1, 0(x2)
+        jal(0, 0),          // jal x0, 0
     ];
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
@@ -35,7 +40,7 @@ fn test_zero_latency_default() {
         None,
         0, // Zero latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -66,12 +71,16 @@ fn test_multi_cycle_memory_latency() {
     // addi x1, x0, 42      - load value 42
     // sw x1, 0(x2)         - write to tohost
     // jal x0, 0            - infinite loop
-    let instructions: Vec<u8> = vec![
-        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000 - loads 0x10000000
-        0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42
-        0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2) - writes to 0x10000000
-        0x6f, 0x00, 0x00, 0x00, // jal x0, 0 - infinite loop
+    let instructions: Vec<u32> = vec![
+        lui(2, 0x10000000), // lui x2, 0x10000000
+        addi(1, 0, 42),     // addi x1, x0, 42
+        sw(2, 1, 0),        // sw x1, 0(x2)
+        jal(0, 0),          // jal x0, 0
     ];
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
@@ -82,7 +91,7 @@ fn test_multi_cycle_memory_latency() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -120,15 +129,19 @@ fn test_load_store_with_latency() {
     // 5. lui x3, 0x10000000  (load tohost address)
     // 6. sw x2, 0(x3)        (write to tohost 0x10000000 to halt)
     // 7. jal x0, 0           (infinite loop)
-    let instructions: Vec<u8> = vec![
-        0x37, 0x02, 0x00, 0x80, // lui x4, 0x80000 (x4 = 0x80000000)
-        0x93, 0x00, 0x40, 0x06, // addi x1, x0, 100
-        0x23, 0x20, 0x12, 0x00, // sw x1, 0(x4)
-        0x03, 0x21, 0x02, 0x00, // lw x2, 0(x4)
-        0xb7, 0x01, 0x00, 0x10, // lui x3, 0x10000 (x3 = 0x10000000)
-        0x23, 0xa0, 0x21, 0x00, // sw x2, 0(x3) - writes to tohost
-        0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+    let instructions: Vec<u32> = vec![
+        lui(4, 0x80000000), // lui x4, 0x80000000
+        addi(1, 0, 100),    // addi x1, x0, 100
+        sw(4, 1, 0),        // sw x1, 0(x4)
+        lw(2, 4, 0),        // lw x2, 0(x4)
+        lui(3, 0x10000000), // lui x3, 0x10000000
+        sw(3, 2, 0),        // sw x2, 0(x3)
+        jal(0, 0),          // jal x0, 0
     ];
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
@@ -139,7 +152,7 @@ fn test_load_store_with_latency() {
         None,
         2, // 2-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes, true);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

@@ -94,12 +94,13 @@ pub fn write_tohost(value: u32) -> ! {
     unsafe {
         write_volatile(TOHOST_ADDR as *mut u32, value);
     }
+    #[allow(clippy::empty_loop)]
     loop {}
 }
 
 /// FIFO memory-mapped I/O addresses and constants
 pub const FIFO_BASE: u32 = 0x4000_0000;
-pub const FIFO_DATA: u32 = FIFO_BASE + 0x0;
+pub const FIFO_DATA: u32 = FIFO_BASE;
 pub const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
 pub const RX_VALID: u32 = 1 << 0;
 pub const TX_READY: u32 = 1 << 1;
@@ -165,4 +166,39 @@ pub fn read_fifo_words(max_words: usize) -> usize {
         }
     }
     count
+}
+
+/// Audio test utilities for generating consistent test patterns
+/// Generate a sine wave sample at a given index
+/// Uses a lookup table approach for consistency between test and test program
+pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
+    // Simple sine wave using lookup table approximation
+    // We'll use a 32-entry lookup table for a quarter wave
+    const QUARTER_WAVE_LEN: u32 = 32;
+    const FULL_WAVE_LEN: u32 = QUARTER_WAVE_LEN * 4;
+
+    // Normalize index to position in full wave
+    let phase = (index / frequency_div) % FULL_WAVE_LEN;
+
+    // Quarter wave lookup table (0 to pi/2, scaled to 0-32767)
+    const SINE_TABLE: [i16; 32] = [
+        0, 1608, 3212, 4808, 6393, 7962, 9512, 11039, 12539, 14010, 15446, 16846, 18204, 19519,
+        20787, 22005, 23170, 24279, 25329, 26319, 27245, 28105, 28898, 29621, 30273, 30852, 31356,
+        31785, 32137, 32412, 32609, 32728,
+    ];
+
+    // Determine which quarter of the wave we're in and compute the value
+    if phase < QUARTER_WAVE_LEN {
+        // First quarter (0 to π/2): rising, positive
+        SINE_TABLE[phase as usize]
+    } else if phase < QUARTER_WAVE_LEN * 2 {
+        // Second quarter (π/2 to π): falling, positive
+        SINE_TABLE[(QUARTER_WAVE_LEN * 2 - 1 - phase) as usize]
+    } else if phase < QUARTER_WAVE_LEN * 3 {
+        // Third quarter (π to 3π/2): falling, negative
+        -SINE_TABLE[(phase - QUARTER_WAVE_LEN * 2) as usize]
+    } else {
+        // Fourth quarter (3π/2 to 2π): rising, negative
+        -SINE_TABLE[(FULL_WAVE_LEN - 1 - phase) as usize]
+    }
 }

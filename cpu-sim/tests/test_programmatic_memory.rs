@@ -1,4 +1,5 @@
 use cpu_sim::*;
+use riscv_core::instruction::*;
 
 /// Test that demonstrates writing programmatic instructions to memory without an ELF file
 #[test]
@@ -14,13 +15,16 @@ fn test_programmatic_instruction_loading() {
     //   lui x11, 0x10000000    ; x11 = tohost address (0x10000000)
     //   sw x10, 0(x11)         ; store to tohost (halt)
     //   jal x0, 0              ; infinite loop (stay here)
-    let program: Vec<u8> = vec![
-        // addi x10, x0, 42 (0x02a00513 in little-endian)
-        0x13, 0x05, 0xa0, 0x02, // lui x11, 0x10000000 (0x100005b7 in little-endian)
-        0xb7, 0x05, 0x00, 0x10, // sw x10, 0(x11) (0x00a5a023 in little-endian)
-        0x23, 0xa0, 0xa5, 0x00, // jal x0, 0 (0x0000006f in little-endian)
-        0x6f, 0x00, 0x00, 0x00,
+    let instructions: Vec<u32> = vec![
+        addi(10, 0, 42),     // addi x10, x0, 42
+        lui(11, 0x10000000), // lui x11, 0x10000000
+        sw(11, 10, 0),       // sw x10, 0(x11)
+        jal(0, 0),           // jal x0, 0
     ];
+    let program: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
 
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -146,12 +150,16 @@ fn test_write_memory_region_patterns() {
             println!("✓ Overwrite test passed");
 
             // Return a simple program to satisfy the prep callback
-            let program: Vec<u8> = vec![
-                0x13, 0x05, 0xa0, 0x02, // addi x10, x0, 42
-                0xb7, 0x05, 0x00, 0x10, // lui x11, 0x10000000
-                0x23, 0xa0, 0xa5, 0x00, // sw x10, 0(x11)
-                0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+            let instructions: Vec<u32> = vec![
+                addi(10, 0, 42),     // addi x10, x0, 42
+                lui(11, 0x10000000), // lui x11, 0x10000000
+                sw(11, 10, 0),       // sw x10, 0(x11)
+                jal(0, 0),           // jal x0, 0
             ];
+            let program: Vec<u8> = instructions
+                .iter()
+                .flat_map(|inst| inst.to_le_bytes())
+                .collect();
             sim.write_memory_region(0x8000_0000, &program, true);
             Ok(0x8000_0000)
         },

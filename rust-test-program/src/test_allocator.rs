@@ -5,7 +5,7 @@ extern crate alloc;
 
 mod common;
 
-use alloc::vec::Vec;
+use alloc::vec;
 use core::panic::PanicInfo;
 use riscv_rt::entry;
 
@@ -20,23 +20,18 @@ fn panic(info: &PanicInfo) -> ! {
 #[entry]
 fn main() -> ! {
     // Create a Vec with known data to test if the allocator works correctly
-    let mut v = Vec::new();
-    v.push(0x12u8);
-    v.push(0x34u8);
-    v.push(0x56u8);
-    v.push(0x78u8);
-    v.push(0x9Au8);
-    v.push(0xBCu8);
-    v.push(0xDEu8);
-    v.push(0xF0u8);
-    
+    #[allow(clippy::useless_vec)]
+    let v = vec![
+        0x12u8, 0x34u8, 0x56u8, 0x78u8, 0x9Au8, 0xBCu8, 0xDEu8, 0xF0u8,
+    ];
+
     // Write the vec length
     common::fifo_write_word(v.len() as u32).expect("Failed to write to FIFO");
-    
+
     // Write each byte
     for &byte in v.iter() {
         common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
     }
-    
+
     common::write_tohost(common::SUCCESS_CODE);
 }
