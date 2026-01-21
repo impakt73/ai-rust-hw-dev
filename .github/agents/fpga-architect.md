@@ -97,10 +97,13 @@ When working with Rust-based verification code (testbenches, simulation harnesse
 **Workflow for Rust Changes:**
 1. Make Rust code modifications (in `testbench/`, `cpu-sim/`, etc.)
 2. Format the code: `cargo fmt`
-3. Check for warnings: `cargo clippy -- -D warnings`
-4. Fix any warnings identified by clippy
-5. Verify formatting: `cargo fmt -- --check`
-6. Run tests: `cargo test --verbose`
+3. Auto-fix warnings: `cargo clippy --fix` (run FIRST to save time!)
+4. Check remaining warnings: `cargo clippy -- -D warnings`
+5. Manually fix any remaining warnings that couldn't be auto-fixed
+6. Verify formatting: `cargo fmt -- --check`
+7. Run tests: `cargo test --verbose`
+
+**Key Principle:** Always use `cargo clippy --fix` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved.
 
 **Note:** CI will reject any PR with formatting issues or clippy warnings. Always run these checks locally before committing.
 
