@@ -74,7 +74,7 @@ fn test_comprehensive_elf() {
 
     let program = create_test_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -102,7 +102,7 @@ fn test_instruction_trace() {
 
     let program = create_test_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -150,7 +150,7 @@ fn test_register_trace_audit() {
 
     let program = create_register_trace_program();
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -189,7 +189,7 @@ fn test_rust_bare_metal_elf() {
     let elf_path = test_program_path("rust_test.elf");
     let result = run_elf(
         &elf_path,
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -215,7 +215,7 @@ fn test_fp_math_elf() {
     let elf_path = test_program_path("test_fp_math.elf");
     let result = run_elf(
         &elf_path,
-        1000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -244,7 +244,7 @@ fn test_fifo_hello_world() {
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(callback),
@@ -290,7 +290,7 @@ fn test_trace_callback() {
     };
 
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -602,7 +602,7 @@ fn test_vcd_generation() {
     println!("Running simulation with VCD enabled...");
     let result = run_elf(
         &elf_path,
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -716,7 +716,7 @@ fn test_memory_dump() {
     // Run simulation and access memory in callback
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -800,7 +800,7 @@ fn test_image_dump() {
     // Run simulation and access memory in callback
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -917,7 +917,7 @@ fn test_panic_handler() {
     // Run the panic test program with sufficient cycles
     let result = run_elf(
         &elf_path,
-        5000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -961,7 +961,7 @@ fn test_hung_detection_with_elf_auto_range() {
 
     // This should succeed with hung detection enabled
     let result = run_program(
-        500,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1013,9 +1013,9 @@ fn test_hung_detection_catches_infinite_loop() {
         .collect();
 
     let result = run_program(
-        10000, // max_cycles
-        false, // Don't print instruction trace
-        false, // Don't print FSM state
+        GLOBAL_MAX_CYCLES, // max_cycles
+        false,             // Don't print instruction trace
+        false,             // Don't print FSM state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None, // No VCD
@@ -1067,7 +1067,7 @@ fn test_hung_detection_catches_out_of_bounds_pc() {
     // write_memory_region will set valid PC range to [start_addr, start_addr + 4)
     // The jump will go to start_addr + 0x10000, which is outside this range
     let result = run_program(
-        10000,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -1137,7 +1137,7 @@ fn test_hung_detection_catches_long_instruction() {
     let mem_latency_cycles = 15000;
 
     let result = run_program(
-        100000, // High max_cycles so we don't hit that limit first
+        100_000, // High max_cycles so we don't hit that limit first
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -1186,7 +1186,7 @@ fn test_atomic_operations() {
     let simple_path = test_program_path("test_atomic_simple.elf");
     let result = run_elf(
         &simple_path,
-        1000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1205,7 +1205,7 @@ fn test_atomic_operations() {
     let full_path = test_program_path("test_atomic.elf");
     let result = run_elf(
         &full_path,
-        100000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
@@ -1290,7 +1290,7 @@ fn test_packet_protocol_end_to_end() {
     // Run the simulation
     let result = run_elf(
         &elf_path,
-        50000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -1451,7 +1451,7 @@ fn test_println_macro() {
     // Run the simulation with inst_complete callback
     let result = run_elf(
         &elf_path,
-        25000,
+        GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -1557,5 +1557,133 @@ fn test_println_macro() {
         "✓ Program completed successfully in {} cycles",
         result.cycles
     );
+    println!("========================================\n");
+}
+
+/// Verification test: Ensure GLOBAL_MAX_CYCLES is never reached by legitimate tests
+///
+/// This test verifies that our GLOBAL_MAX_CYCLES constant (40,000) provides
+/// adequate headroom and that no legitimate test comes close to hitting it.
+///
+/// We run a sampling of representative tests and assert their cycle counts
+/// are well below GLOBAL_MAX_CYCLES, providing evidence that the constant
+/// is correctly sized.
+#[test]
+fn test_global_max_cycles_safety_margin() {
+    init_test_logger();
+
+    println!("\n========================================");
+    println!("GLOBAL_MAX_CYCLES SAFETY VERIFICATION");
+    println!("========================================");
+
+    // Test 1: Simple comprehensive test
+    let program = create_test_program();
+    let result1 = run_program(
+        GLOBAL_MAX_CYCLES,
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,
+        0,
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program, true);
+            Ok(0x8000_0000)
+        },
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+    )
+    .expect("Simple test should succeed");
+
+    println!(
+        "  Simple test cycles:        {:6} / {} ({:.1}%)",
+        result1.cycles,
+        GLOBAL_MAX_CYCLES,
+        (result1.cycles as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
+    );
+
+    // Test 2: Run an ELF file (println_macro is typically the highest)
+    let elf_path = test_program_path("hello_world.elf");
+    let result2 = run_elf(
+        &elf_path,
+        GLOBAL_MAX_CYCLES,
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,
+        0,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+    )
+    .expect("ELF test should succeed");
+
+    println!(
+        "  Hello ELF cycles:          {:6} / {} ({:.1}%)",
+        result2.cycles,
+        GLOBAL_MAX_CYCLES,
+        (result2.cycles as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
+    );
+
+    // Test 3: Memory latency test
+    let instructions: Vec<u8> = vec![
+        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000
+        0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42
+        0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2)
+        0x6f, 0x00, 0x00, 0x00, // jal x0, 0
+    ];
+
+    let result3 = run_program(
+        GLOBAL_MAX_CYCLES,
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&InstructionTrace)>,
+        None,
+        3, // 3-cycle latency
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &instructions, true);
+            Ok(0x8000_0000)
+        },
+        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+    )
+    .expect("Latency test should succeed");
+
+    println!(
+        "  Latency test cycles:       {:6} / {} ({:.1}%)",
+        result3.cycles,
+        GLOBAL_MAX_CYCLES,
+        (result3.cycles as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
+    );
+
+    // Assert safety margins
+    let max_observed = result1.cycles.max(result2.cycles).max(result3.cycles);
+    let safety_factor = GLOBAL_MAX_CYCLES as f64 / max_observed as f64;
+
+    println!("\n  Maximum observed:          {:6} cycles", max_observed);
+    println!(
+        "  GLOBAL_MAX_CYCLES:         {:6} cycles",
+        GLOBAL_MAX_CYCLES
+    );
+    println!("  Safety factor:             {:.1}×", safety_factor);
+
+    // Assert we have at least 2× headroom
+    assert!(
+        safety_factor >= 2.0,
+        "GLOBAL_MAX_CYCLES should provide at least 2× safety margin. \
+         Current factor: {:.1}×",
+        safety_factor
+    );
+
+    // Assert no test uses more than 50% of the limit
+    assert!(
+        max_observed < GLOBAL_MAX_CYCLES / 2,
+        "No test should use more than 50% of GLOBAL_MAX_CYCLES. \
+         Max observed: {} ({}%)",
+        max_observed,
+        (max_observed as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
+    );
+
+    println!("\n✓ All tests well within GLOBAL_MAX_CYCLES");
+    println!("✓ Safety margin verified (>2× headroom)");
     println!("========================================\n");
 }

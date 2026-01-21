@@ -24,7 +24,7 @@ fn test_byte_enable_heap_directly() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),
@@ -107,7 +107,7 @@ fn test_byte_enable_stack_memory() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),

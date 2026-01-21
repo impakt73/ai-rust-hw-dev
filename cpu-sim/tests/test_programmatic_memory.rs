@@ -29,7 +29,7 @@ fn test_programmatic_instruction_loading() {
     const START_ADDR: u32 = 0x8000_0000;
 
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,
@@ -98,7 +98,7 @@ fn test_write_memory_region_patterns() {
 
     // Test by writing patterns and then running a program that reads them
     let result = run_program(
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         false,
         None::<fn(&mut SimulatorView)>,

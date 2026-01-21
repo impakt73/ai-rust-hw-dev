@@ -25,7 +25,7 @@ fn test_alloc_only() {
 
     let result = run_elf(
         &elf_path,
-        10000,
+        GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         Some(inst_complete_callback),

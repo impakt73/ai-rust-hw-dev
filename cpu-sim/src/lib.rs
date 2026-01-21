@@ -2,6 +2,7 @@
 mod audio;
 mod bus;
 mod bus_device;
+mod constants;
 mod dma;
 mod dram;
 mod fifo;
@@ -18,6 +19,7 @@ pub use bus::{
     is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
+pub use constants::GLOBAL_MAX_CYCLES;
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{SimulationResult, SimulationStepResult, SimulatorView};

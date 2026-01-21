@@ -117,7 +117,7 @@ fn test_video_pattern() {
 
     let result = run_elf(
         &elf_path,
-        2_000_000, // Max cycles
+        1_000_000, // High limit for video frame rendering (observed ~505K cycles)
         false,     // print_inst_trace
         false,     // print_fsm_state
         None::<fn(&mut SimulatorView)>,

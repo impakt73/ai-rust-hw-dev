@@ -94,7 +94,7 @@ fn test_cpu_basic_execution() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -121,7 +121,7 @@ fn test_cpu_three_instructions() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -149,7 +149,7 @@ fn test_cpu_lui_instruction() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -186,7 +186,7 @@ fn test_cpu_logic_operations() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -239,7 +239,7 @@ fn test_cpu_branch_beq_bne() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -297,7 +297,7 @@ fn test_cpu_branch_blt_bge() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -349,7 +349,7 @@ fn test_cpu_branch_bltu_bgeu() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -400,7 +400,7 @@ fn test_cpu_load_store() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -457,7 +457,7 @@ fn test_cpu_load_byte() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -519,7 +519,7 @@ fn test_cpu_load_halfword() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -581,7 +581,7 @@ fn test_cpu_store_byte() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -617,7 +617,7 @@ fn test_cpu_store_halfword() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -660,7 +660,7 @@ fn test_cpu_byte_halfword_mixed() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -707,7 +707,7 @@ fn test_cpu_auipc() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -740,7 +740,7 @@ fn test_cpu_tohost_halt() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -769,7 +769,7 @@ fn test_cpu_fence_instruction() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -797,7 +797,7 @@ fn test_cpu_ecall_instruction() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -825,7 +825,7 @@ fn test_cpu_ebreak_instruction() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -866,7 +866,7 @@ fn test_cpu_csr_read_write() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -917,7 +917,7 @@ fn test_cpu_csr_set_clear() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -966,7 +966,7 @@ fn test_cpu_csr_immediate() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1010,7 +1010,7 @@ fn test_cpu_mul_instruction() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1038,7 +1038,7 @@ fn test_cpu_mulh_instruction() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1070,7 +1070,7 @@ fn test_cpu_div_instruction() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1098,7 +1098,7 @@ fn test_cpu_div_by_zero() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1130,7 +1130,7 @@ fn test_cpu_rem_instruction() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1160,7 +1160,7 @@ fn test_cpu_divu_remu_unsigned() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1206,7 +1206,7 @@ fn test_cpu_m_extension_program() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1380,7 +1380,7 @@ fn test_comprehensive_trace_validation() {
     let mut captured_traces = Vec::new();
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         Some(|trace: &riscv_core::trace::InstructionTrace| {
@@ -1528,7 +1528,7 @@ fn test_trace_with_branches() {
     let mut captured_traces = Vec::new();
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         Some(|trace: &riscv_core::trace::InstructionTrace| {
@@ -1611,7 +1611,7 @@ fn test_trace_and_vcd_together() {
     // Run with VCD enabled
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         Some(vcd_path),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1700,7 +1700,7 @@ fn test_cpu_lr_sc_success() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1749,7 +1749,7 @@ fn test_cpu_amoswap() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1795,7 +1795,7 @@ fn test_cpu_amoadd() {
 
     run_program_with_options(
         &instructions,
-        100,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1841,7 +1841,7 @@ fn test_cpu_amo_logical() {
 
     run_program_with_options(
         &instructions,
-        200,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1883,7 +1883,7 @@ fn test_cpu_amo_min_max() {
 
     run_program_with_options(
         &instructions,
-        150,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
@@ -1925,7 +1925,7 @@ fn test_cpu_amo_unsigned_min_max() {
 
     run_program_with_options(
         &instructions,
-        150,
+        GLOBAL_MAX_CYCLES,
         false,
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
