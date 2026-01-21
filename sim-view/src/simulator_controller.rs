@@ -132,8 +132,11 @@ impl SimulatorController {
         samples.drain(..count).collect()
     }
 
-    /// Get and clear any pending audio config change
-    /// Returns Some(config) if a new config was set since last call, None otherwise
+    /// Get and clear any pending audio config change.
+    ///
+    /// Calling this method consumes the pending config change (if any). The first call
+    /// after a new config is set will return `Some(config)` and clear it; subsequent calls
+    /// will return `None` until another config change occurs.
     pub fn get_audio_config_change(&self) -> Option<AudioConfig> {
         self._audio_config.lock().unwrap().take()
     }
