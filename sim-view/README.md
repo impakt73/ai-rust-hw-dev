@@ -123,66 +123,110 @@ cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.el
 
 ## Architecture
 
+The viewer uses a **threaded architecture** for GUI mode to achieve optimal performance:
+
+### GUI Mode (Threaded)
+
+In GUI mode, the simulation runs on a **background thread** while the main thread handles GUI events and display updates. This design provides:
+
+1. **Maximum simulation performance** - Simulation runs continuously without being blocked by GUI updates
+2. **Smooth GUI updates** - Display updates are not blocked by simulation execution
+3. **Immediate data delivery** - Video frames and audio samples are pushed directly to backends via callbacks
+
+**Data flow:**
+```
+Simulation Thread                    Main Thread
+    │                                    │
+    ├─ Execute instructions ─────────────┼──────────────────┐
+    ├─ Video callback pushes frame ──────┼─→ SharedState   │
+    ├─ Audio callback pushes samples ────┼─→ SharedState   │
+    │                                    │     ↓           │
+    │                                    ├─ Poll SharedState
+    │                                    ├─ Update Video Backend
+    │                                    └─ Update Audio Backend
+```
+
+**Command channel:** The main thread sends commands (LoadElf, Pause, Resume, Terminate) to the simulation thread, which processes them between instruction batches for responsiveness.
+
+### Headless Mode (Single-threaded)
+
+In headless mode (for testing), the original single-threaded `SimViewer` is used. This provides deterministic execution and easier testing while still using the same backend traits.
+
 ### Components
 
-1. **VideoBackend Trait** (`backend_traits.rs`)
+1. **SimulationThread** (`simulation_thread.rs`)
+   - Runs CPU simulation on a background thread
+   - Handles commands from main thread (LoadElf, Pause, Resume, Terminate)
+   - Sends notifications back (ElfLoaded, Paused, Resumed, Halted, Error)
+
+2. **SharedSimState** (`simulation_thread.rs`)
+   - Thread-safe shared state for video frames and audio samples
+   - Push model: callbacks push data directly to shared state
+   - Main thread polls for available data
+
+3. **ThreadedSimViewer<V, A, E>** (`threaded_viewer.rs`)
+   - Main viewer for GUI mode
+   - Polls simulation thread for notifications
+   - Polls SharedSimState for video/audio data
+   - Handles keyboard events and updates display
+
+4. **SimViewer<V, A, E>** (`viewer.rs`)
+   - Original viewer for headless mode
+   - Single-threaded execution with fixed instructions per iteration
+   - Used by integration tests
+
+5. **VideoBackend Trait** (`backend_traits.rs`)
    - Abstraction for video output (GUI or headless)
    - Allows dependency injection for different rendering backends
 
-2. **AudioBackend Trait** (`backend_traits.rs`)
+6. **AudioBackend Trait** (`backend_traits.rs`)
    - Abstraction for audio output (GUI or headless)
    - Enables testing without audio hardware
 
-3. **EventSource Trait** (`backend_traits.rs`)
+7. **EventSource Trait** (`backend_traits.rs`)
    - Abstraction for input events (keyboard or programmatic)
    - Supports test-driven event injection
 
-4. **GuiVideoBackend** (`gui_backends.rs`)
+8. **GuiVideoBackend** (`gui_backends.rs`)
    - Wraps VideoWindow for GUI mode
    - Uses minifb for cross-platform windowing
 
-5. **GuiAudioBackend** (`gui_backends.rs`)
+9. **GuiAudioBackend** (`gui_backends.rs`)
    - Wraps AudioStream for GUI mode
    - Uses cpal for cross-platform audio
 
-6. **GuiEventSource** (`gui_backends.rs`)
-   - Provides keyboard events from the video window
+10. **GuiEventSource** (`gui_backends.rs`)
+    - Provides keyboard events from the video window
 
-7. **HeadlessVideoBackend** (`headless_backends.rs`)
-   - Captures video frames with timestamps
-   - Used for automated testing
+11. **HeadlessVideoBackend** (`headless_backends.rs`)
+    - Captures video frames with timestamps
+    - Used for automated testing
 
-8. **HeadlessAudioBackend** (`headless_backends.rs`)
-   - Captures audio samples with timestamps
-   - Used for automated testing
+12. **HeadlessAudioBackend** (`headless_backends.rs`)
+    - Captures audio samples with timestamps
+    - Used for automated testing
 
-9. **HeadlessEventSource** (`headless_backends.rs`)
-   - Allows programmatic event injection
-   - Used for test control
+13. **HeadlessEventSource** (`headless_backends.rs`)
+    - Allows programmatic event injection
+    - Used for test control
 
-10. **VideoWindow** (`video_window.rs`)
+14. **VideoWindow** (`video_window.rs`)
     - Manages the minifb window
     - Converts video frames from various formats to ARGB8888 for display
     - Handles keyboard events
     - Supports dynamic window resizing
 
-11. **AudioStream** (`audio_stream.rs`)
+15. **AudioStream** (`audio_stream.rs`)
     - Manages the cpal audio output stream
     - Handles sample format conversions (i16, f32, u16)
     - Implements thread-safe sample buffering
 
-12. **SimulatorController** (`simulator_controller.rs`)
+16. **SimulatorController** (`simulator_controller.rs`)
     - Wraps the `InteractiveSimulator` from cpu-sim
     - Registers Video and Audio devices at `VIDEO_BASE` and `AUDIO_BASE`
     - Manages ELF loading and simulation stepping
     - Provides thread-safe queues for video/audio data
-
-13. **SimViewer<V, A, E>** (`viewer.rs`)
-    - Main application logic and event loop
-    - Generic over VideoBackend, AudioBackend, and EventSource traits
-    - State management (Idle, Running, Paused, Halted)
-    - Coordinates between simulator and backends
-    - Implements keyboard controls and UI feedback
+    - Used by headless mode
 
 ### Memory Map
 
@@ -243,12 +287,25 @@ The audio device in the simulator outputs i16 samples, which are automatically c
 
 ## Performance
 
-The viewer runs at approximately 60 FPS by default. Each frame, the simulator executes ~10,000 instructions. This provides a good balance between responsiveness and simulation speed.
+The viewer uses a **threaded architecture** in GUI mode that provides optimal performance:
 
-To adjust simulation speed:
-- Increase `instructions_per_frame` in `viewer.rs` for faster simulation
-- Decrease for slower, more interactive debugging
-- Use `--max-cycles` to limit execution time
+### GUI Mode
+- Simulation runs on a background thread at maximum speed
+- GUI updates are decoupled from simulation execution
+- Video frames and audio samples are delivered immediately via push model
+- No fixed "instructions per frame" - simulation runs continuously
+- Target 60 FPS display refresh (configurable via minifb)
+
+### Headless Mode
+- Single-threaded execution for deterministic testing
+- Runs at maximum speed (no display refresh delays)
+- Uses `--max-cycles` to limit execution time
+
+### Benefits of Threaded Architecture
+1. **No simulation stalls** - Simulation never waits for display updates
+2. **No display stalls** - Display updates never wait for simulation batches
+3. **Immediate data delivery** - Video/audio data is available as soon as generated
+4. **Better responsiveness** - GUI remains responsive even during heavy simulation
 
 ## Test Programs
 
@@ -272,11 +329,11 @@ The following test programs in `test_programs/` demonstrate video and audio func
 - The viewer will log the audio device being used
 - Use `-v` for verbose logging to see audio configuration details
 
-### Simulation runs too fast/slow
+### Simulation not running
 
-- Adjust the `instructions_per_frame` constant in `viewer.rs`
-- Use `--max-cycles` to limit execution
-- Use Space to pause and step through manually (requires code changes for single-step)
+- Ensure an ELF file is provided on the command line or dropped onto the window
+- Check the window title for the current state ([RUNNING], [PAUSED], [HALTED])
+- Use `-v` for verbose logging to see simulation activity
 
 ## Future Enhancements
 
