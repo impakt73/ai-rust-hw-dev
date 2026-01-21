@@ -232,16 +232,22 @@ impl Drop for Simulation {
    cargo fmt
    ```
 
-2. **Check linting:**
+2. **Auto-fix clippy warnings (saves time!):**
+   ```bash
+   cargo clippy --fix --allow-dirty
+   ```
+
+3. **Rerun clippy to check for remaining or newly introduced warnings:**
    ```bash
    cargo clippy -- -D warnings
    ```
 
-3. **Address ALL clippy warnings:**
-   - Fix warnings with suggested changes
+4. **Address ALL remaining clippy warnings:**
+   - Review auto-fixed changes to ensure they're correct
+   - Manually fix warnings that couldn't be auto-fixed
    - If a warning is a false positive, use `#[allow(clippy::warning_name)]` with a comment explaining why
 
-4. **Verify formatting:**
+5. **Verify formatting:**
    ```bash
    cargo fmt -- --check
    ```
@@ -249,15 +255,16 @@ impl Drop for Simulation {
 **Example workflow:**
 ```bash
 # After making code changes
-cargo fmt                          # Format code
-cargo clippy -- -D warnings        # Check for warnings (must be zero)
-cargo test --verbose               # Run tests
-cargo fmt -- --check               # Verify formatting is correct
-git add .                          # Stage changes
-git commit -m "Add feature X"      # Commit
+cargo fmt                                # Format code
+cargo clippy --fix --allow-dirty         # Auto-fix clippy warnings (FIRST!)
+cargo clippy -- -D warnings              # Rerun to check remaining warnings (must be zero)
+cargo test --verbose                     # Run tests
+cargo fmt -- --check                     # Verify formatting is correct
+git add .                                # Stage changes
+git commit -m "Add feature X"            # Commit
 ```
 
-**Note:** CI will reject any PR with formatting issues or clippy warnings. Always run these checks locally first.
+**Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings. This avoids wasting time and context on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 ## 8. Anti-Pattern: Box::leak() for Lifetime Issues
 

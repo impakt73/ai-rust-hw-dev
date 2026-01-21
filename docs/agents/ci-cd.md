@@ -45,15 +45,20 @@ cargo fmt
 ```
 
 #### 3. Check for Clippy Warnings
+
+**ALWAYS auto-fix first (saves time!):**
+```bash
+cargo clippy --fix --allow-dirty
+```
+
+Then rerun clippy to verify zero warnings remain:
 ```bash
 cargo clippy -- -D warnings
 ```
-No warnings or errors should appear.
 
-Auto-fix when possible:
-```bash
-cargo clippy --fix
-```
+No warnings or errors should appear after auto-fix and manual corrections.
+
+**Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 #### 4. Check rust-test-program (if modified)
 
@@ -63,6 +68,7 @@ If you modified code in the `rust-test-program/` directory:
 cd rust-test-program
 cargo build --verbose
 cargo fmt -- --check
+cargo clippy --fix --allow-dirty
 cargo clippy -- -D warnings
 cd ..
 ```
@@ -167,12 +173,15 @@ git push   # Push and wait for CI to re-run
 
 **Solutions:**
 ```bash
-cargo clippy --fix  # Auto-fix when possible
-# Manually address remaining warnings
+cargo clippy --fix --allow-dirty  # Auto-fix warnings FIRST
+cargo clippy -- -D warnings       # Rerun to check remaining warnings
+# Manually address remaining warnings that couldn't be auto-fixed
 git add .
 git commit -m "Fix clippy warnings"
 git push
 ```
+
+**Key Workflow:** Use `cargo clippy --fix --allow-dirty` first to automatically resolve common issues, then rerun clippy to check for any remaining or newly introduced warnings. The `--allow-dirty` flag is required when you have uncommitted changes. This avoids unnecessary manual work and context usage.
 
 ## Security Scanning
 
@@ -189,13 +198,15 @@ git push
 
 1. Run tests locally: `cargo test`
 2. Format code: `cargo fmt`
-3. Check clippy: `cargo clippy -- -D warnings`
-4. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
-5. If you modified `rust-test-program/`:
+3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
+4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
+5. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
+6. If you modified `rust-test-program/`:
    ```bash
    cd rust-test-program
    cargo build --verbose
    cargo fmt
+   cargo clippy --fix --allow-dirty
    cargo clippy -- -D warnings
    cd ..
    ```
@@ -225,21 +236,24 @@ vim src/file.rs
 # 2. Format
 cargo fmt
 
-# 3. Check clippy
+# 3. Auto-fix clippy warnings (FIRST!)
+cargo clippy --fix --allow-dirty
+
+# 4. Rerun clippy to check remaining warnings
 cargo clippy -- -D warnings
 
-# 4. Run relevant tests
+# 5. Run relevant tests
 cargo test --package package_name
 
-# 5. Run all tests
+# 6. Run all tests
 cargo test
 
-# 6. Commit and push
+# 7. Commit and push
 git add .
 git commit -m "Descriptive message"
 git push
 
-# 7. Verify CI passes
+# 8. Verify CI passes
 gh run list --branch your-branch --limit 1
 ```
 

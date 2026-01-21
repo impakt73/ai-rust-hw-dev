@@ -36,20 +36,25 @@ cargo fmt -- --check
 ```
 
 ### 2. Run Clippy (Zero Tolerance for Warnings)
+
+**ALWAYS use auto-fix first to save time:**
+```bash
+cargo clippy --fix --allow-dirty
+```
+
+Then rerun clippy to check for any remaining or newly introduced warnings:
 ```bash
 cargo clippy -- -D warnings
 ```
+
+All clippy warnings must be addressed. The `--fix --allow-dirty` flags automatically fix many common issues even with uncommitted changes, avoiding unnecessary manual work. Always rerun clippy after auto-fix to catch any new warnings introduced by the fixes.
 
 For the `rust-test-program` (if modified):
 ```bash
 cd rust-test-program
+cargo clippy --fix --allow-dirty
 cargo clippy -- -D warnings
 cd ..
-```
-
-All clippy warnings must be addressed. Use auto-fix when possible:
-```bash
-cargo clippy --fix
 ```
 
 ### 3. Run Tests
@@ -214,9 +219,10 @@ dut.eval();
 
 1. **Global mutable state:** Avoid `static mut`
 2. **Unwrapped results:** Never use `.unwrap()` in long-running code
-3. **Skipping code quality checks:** Always run `cargo fmt` and `cargo clippy`
-4. **Implicit casting:** Use `try_into()` instead of `as`
-5. **Memory leaks:** Never use `Box::leak()` to solve lifetime issues
+3. **Skipping code quality checks:** Always run `cargo fmt` and `cargo clippy --fix --allow-dirty` then `cargo clippy -- -D warnings`
+4. **Manual clippy fixes:** Don't manually fix warnings that `cargo clippy --fix --allow-dirty` can handle automatically
+5. **Implicit casting:** Use `try_into()` instead of `as`
+6. **Memory leaks:** Never use `Box::leak()` to solve lifetime issues
 
 ## Resources
 
