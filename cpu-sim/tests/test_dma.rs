@@ -38,9 +38,9 @@ fn test_dma_copy() {
 
     let result = run_elf(
         &elf_path,
-        100000, // Max cycles - DMA transfer takes time
-        false,  // print_inst_trace
-        false,  // print_fsm_state
+        GLOBAL_MAX_CYCLES, // Max cycles
+        false,             // print_inst_trace
+        false,             // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
         None,                 // vcd_path

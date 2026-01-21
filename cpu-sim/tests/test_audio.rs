@@ -137,9 +137,9 @@ fn test_audio_pattern() {
 
     let result = run_elf(
         &elf_path,
-        5_000_000, // Max cycles
-        false,     // print_inst_trace
-        false,     // print_fsm_state
+        150_000, // High limit for audio sample generation (observed ~62K cycles)
+        false,   // print_inst_trace
+        false,   // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None,                       // vcd_path
