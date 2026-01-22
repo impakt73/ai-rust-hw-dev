@@ -91,15 +91,48 @@ impl VideoWindowApp {
 
     /// Resize the softbuffer surface to match new dimensions
     fn resize_surface(&mut self, new_width: usize, new_height: usize) {
+        // Reject zero dimensions early and log the problem instead of silently skipping.
+        if new_width == 0 || new_height == 0 {
+            log::error!(
+                "Attempted to resize surface to invalid size {}x{} (dimensions must be non-zero)",
+                new_width,
+                new_height
+            );
+            return;
+        }
+
         if let Some(surface) = &mut self.surface {
-            if let (Some(w), Some(h)) = (
+            match (
                 NonZeroU32::new(new_width as u32),
                 NonZeroU32::new(new_height as u32),
             ) {
-                if let Err(e) = surface.resize(w, h) {
-                    log::error!("Failed to resize surface: {}", e);
+                (Some(w), Some(h)) => {
+                    if let Err(e) = surface.resize(w, h) {
+                        log::error!(
+                            "Failed to resize surface to {}x{}: {}",
+                            new_width,
+                            new_height,
+                            e
+                        );
+                    }
+                }
+                _ => {
+                    // This should be unreachable due to the explicit zero check above,
+                    // but log it defensively in case of unexpected conversion issues.
+                    log::error!(
+                        "Failed to convert requested surface size {}x{} to NonZeroU32",
+                        new_width,
+                        new_height
+                    );
                 }
             }
+        } else {
+            // Log when resize is requested but there is no surface yet.
+            log::warn!(
+                "resize_surface called with size {}x{} but no surface is initialized",
+                new_width,
+                new_height
+            );
         }
     }
 
@@ -118,6 +151,17 @@ impl VideoWindowApp {
         let surface_width = buffer.width().get() as usize;
         let surface_height = buffer.height().get() as usize;
         let surface_size = surface_width * surface_height;
+
+        // Log a warning if the surface is smaller than the framebuffer (truncation)
+        if self.framebuffer.len() > surface_size {
+            log::warn!(
+                "Video surface ({}, {} -> {} pixels) is smaller than framebuffer ({} pixels); frame will be truncated",
+                surface_width,
+                surface_height,
+                surface_size,
+                self.framebuffer.len()
+            );
+        }
 
         // Copy framebuffer to surface buffer, handling size mismatches
         let copy_len = self.framebuffer.len().min(surface_size);
@@ -178,6 +222,12 @@ impl ApplicationHandler for VideoWindowApp {
                     if let Err(e) = surface.resize(w, h) {
                         log::error!("Failed to set initial surface size: {}", e);
                     }
+                } else {
+                    log::error!(
+                        "Cannot set initial surface size: width ({}) and height ({}) must be non-zero",
+                        self.width,
+                        self.height
+                    );
                 }
 
                 self.window = Some(window);
@@ -206,6 +256,13 @@ impl ApplicationHandler for VideoWindowApp {
                 let new_width = size.width as usize;
                 let new_height = size.height as usize;
                 if new_width > 0 && new_height > 0 {
+                    // Only resize the window surface here. The internal framebuffer
+                    // dimensions (self.width/self.height) remain fixed at the video
+                    // resolution so that we preserve the intended aspect ratio and
+                    // avoid reallocating the framebuffer on every window resize.
+                    // The present() method is responsible for copying/clipping the
+                    // framebuffer into the current surface size (and would be the
+                    // appropriate place to add scaling or letterboxing in the future).
                     self.resize_surface(new_width, new_height);
                 }
             }
@@ -254,21 +311,37 @@ impl ApplicationHandler for VideoWindowApp {
 }
 
 impl VideoWindow {
+    /// Create a new video window.
+    ///
+    /// Note: This implementation uses `EventLoopExtPumpEvents::pump_app_events` which is
+    /// only available on desktop platforms (Windows, macOS, Linux). Mobile and web targets
+    /// are not supported.
     pub fn new(width: usize, height: usize) -> Result<Self, String> {
-        let event_loop =
+        let mut event_loop =
             EventLoop::new().map_err(|e| format!("Failed to create event loop: {}", e))?;
 
-        let app = VideoWindowApp::new(width, height);
+        let mut app = VideoWindowApp::new(width, height);
+
+        // Perform an initial non-blocking event pump so that the
+        // ApplicationHandler::resumed callback runs and the window
+        // is created before returning to the caller.
+        let status = event_loop.pump_app_events(Some(Duration::ZERO), &mut app);
+        Self::handle_pump_status_inner(&mut app, status);
 
         Ok(VideoWindow { event_loop, app })
     }
 
     /// Handle pump status from event loop, queueing a close event if exit was requested
     fn handle_pump_status(&mut self, status: PumpStatus) {
+        Self::handle_pump_status_inner(&mut self.app, status);
+    }
+
+    /// Internal helper to handle pump status against a VideoWindowApp instance.
+    fn handle_pump_status_inner(app: &mut VideoWindowApp, status: PumpStatus) {
         if let PumpStatus::Exit(_) = status {
-            if !self.app.closed {
-                self.app.closed = true;
-                self.app.event_queue.push_back(WindowEvent::Close);
+            if !app.closed {
+                app.closed = true;
+                app.event_queue.push_back(WindowEvent::Close);
             }
         }
     }
