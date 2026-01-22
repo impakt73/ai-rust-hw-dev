@@ -338,9 +338,22 @@ impl VideoWindow {
         }
 
         // Pump events to process the redraw request
-        let _ = self
+        let status = self
             .event_loop
             .pump_app_events(Some(Duration::ZERO), &mut self.app);
+
+        match status {
+            PumpStatus::Exit(_) => {
+                // Event loop requested exit
+                if !self.app.closed {
+                    self.app.closed = true;
+                    self.app.event_queue.push_back(WindowEvent::Close);
+                }
+            }
+            PumpStatus::Continue => {
+                // Normal operation
+            }
+        }
 
         Ok(())
     }
