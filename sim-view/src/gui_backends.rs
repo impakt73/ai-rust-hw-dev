@@ -9,7 +9,7 @@ use cpu_sim::VideoConfig;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// GUI video backend using minifb
+/// GUI video backend using softbuffer/winit
 pub struct GuiVideoBackend {
     window: Rc<RefCell<VideoWindow>>,
     is_active: Rc<RefCell<bool>>,
