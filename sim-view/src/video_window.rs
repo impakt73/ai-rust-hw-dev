@@ -241,7 +241,7 @@ impl ApplicationHandler for VideoWindowApp {
                         self.event_queue
                             .push_back(WindowEvent::KeyPressed(Key::Space, modifiers));
                     }
-                    WinitKey::Character(ref c) if c.eq_ignore_ascii_case("r") => {
+                    WinitKey::Character(ref c) if c == "r" || c == "R" => {
                         self.event_queue
                             .push_back(WindowEvent::KeyPressed(Key::R, modifiers));
                     }
@@ -263,6 +263,24 @@ impl VideoWindow {
         Ok(VideoWindow { event_loop, app })
     }
 
+    /// Handle pump status from event loop, queueing a close event if exit was requested
+    fn handle_pump_status(&mut self, status: PumpStatus) {
+        if let PumpStatus::Exit(_) = status {
+            if !self.app.closed {
+                self.app.closed = true;
+                self.app.event_queue.push_back(WindowEvent::Close);
+            }
+        }
+    }
+
+    /// Pump events from the event loop (non-blocking)
+    fn pump_events(&mut self) {
+        let status = self
+            .event_loop
+            .pump_app_events(Some(Duration::ZERO), &mut self.app);
+        self.handle_pump_status(status);
+    }
+
     /// Process a video frame from the simulator controller
     /// This is called by the main viewer loop when a new frame is available
     pub fn process_video_frame(&mut self, data: &[u8], config: &VideoConfig) -> Result<(), String> {
@@ -281,7 +299,11 @@ impl VideoWindow {
             // Resize the softbuffer surface
             self.app.resize_surface(new_width, new_height);
 
-            // Request window resize if window exists
+            // Request window resize if window exists.
+            // Note: The result is intentionally ignored because:
+            // 1. The window manager may choose not to honor the size request
+            // 2. The actual resize will be handled in the Resized event callback
+            // 3. We've already updated the internal framebuffer to the new size
             if let Some(window) = &self.app.window {
                 let _ = window
                     .request_inner_size(PhysicalSize::new(new_width as u32, new_height as u32));
@@ -309,24 +331,7 @@ impl VideoWindow {
 
     /// Update window events (call once per frame in main loop)
     pub fn update_events(&mut self) -> Result<(), String> {
-        // Pump events without blocking (timeout = 0)
-        let status = self
-            .event_loop
-            .pump_app_events(Some(Duration::ZERO), &mut self.app);
-
-        match status {
-            PumpStatus::Exit(_) => {
-                // Event loop requested exit
-                if !self.app.closed {
-                    self.app.closed = true;
-                    self.app.event_queue.push_back(WindowEvent::Close);
-                }
-            }
-            PumpStatus::Continue => {
-                // Normal operation
-            }
-        }
-
+        self.pump_events();
         Ok(())
     }
 
@@ -338,22 +343,7 @@ impl VideoWindow {
         }
 
         // Pump events to process the redraw request
-        let status = self
-            .event_loop
-            .pump_app_events(Some(Duration::ZERO), &mut self.app);
-
-        match status {
-            PumpStatus::Exit(_) => {
-                // Event loop requested exit
-                if !self.app.closed {
-                    self.app.closed = true;
-                    self.app.event_queue.push_back(WindowEvent::Close);
-                }
-            }
-            PumpStatus::Continue => {
-                // Normal operation
-            }
-        }
+        self.pump_events();
 
         Ok(())
     }
