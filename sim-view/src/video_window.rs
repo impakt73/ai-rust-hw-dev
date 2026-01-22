@@ -506,6 +506,7 @@ impl VideoWindow {
     }
 
     /// Get pending events
+    #[allow(dead_code)] // May be used in future for event handling
     pub fn get_events(&mut self) -> Vec<WindowEvent> {
         self.app.event_queue.drain(..).collect()
     }
