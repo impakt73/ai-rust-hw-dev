@@ -17,7 +17,8 @@ cpu-sim = { path = "../cpu-sim" }
 riscv_core = { path = "../riscv_core" }
 
 # GUI and Audio
-minifb = "0.27"
+softbuffer = "0.4"
+winit = "0.30"
 cpal = "0.15"
 
 # CLI and logging

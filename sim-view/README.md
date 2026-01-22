@@ -8,7 +8,7 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 
 ## Features
 
-- **Real-time video rendering** using minifb window (supports RGBA8, RGB8, RGB565, R8 formats)
+- **Real-time video rendering** using softbuffer/winit window (supports RGBA8, RGB8, RGB565, R8 formats)
 - **Real-time audio playback** using cpal audio stream (supports i16, f32, u16 sample formats)
 - **Interactive controls**:
   - **Escape**: Exit the viewer
@@ -139,7 +139,8 @@ cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.el
 
 4. **GuiVideoBackend** (`gui_backends.rs`)
    - Wraps VideoWindow for GUI mode
-   - Uses minifb for cross-platform windowing
+   - Uses softbuffer for cross-platform software rendering
+   - Uses winit for cross-platform windowing
 
 5. **GuiAudioBackend** (`gui_backends.rs`)
    - Wraps AudioStream for GUI mode
@@ -161,8 +162,8 @@ cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.el
    - Used for test control
 
 10. **VideoWindow** (`video_window.rs`)
-    - Manages the minifb window
-    - Converts video frames from various formats to ARGB8888 for display
+    - Manages the winit window and softbuffer surface
+    - Converts video frames from various formats to RGB for display
     - Handles keyboard events
     - Supports dynamic window resizing
 
@@ -229,7 +230,7 @@ The viewer supports the following video formats from the CPU simulator:
 - **RGB565**: 16-bit RGB (5-6-5 bit layout)
 - **R8**: 8-bit grayscale
 
-All formats are automatically converted to ARGB8888 for display in the minifb window.
+All formats are automatically converted to 0x00RRGGBB for display in the softbuffer/winit window.
 
 ### Audio Formats
 
@@ -295,7 +296,8 @@ Potential improvements for future versions:
 
 - **cpu-sim**: Core RISC-V CPU simulator with InteractiveSimulator API
 - **riscv_core**: RISC-V instruction definitions and trace structures
-- **minifb**: Cross-platform framebuffer window library
+- **softbuffer**: Cross-platform software framebuffer library
+- **winit**: Cross-platform window creation library
 - **cpal**: Cross-platform audio I/O library
 - **clap**: Command-line argument parsing
 - **log/env_logger**: Logging infrastructure

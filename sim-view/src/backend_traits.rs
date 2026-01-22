@@ -1,7 +1,7 @@
 //! Trait abstractions for video, audio, and event handling backends.
 //!
 //! These traits allow `SimViewer` to work with different backend implementations:
-//! - GUI backends (using minifb and cpal) for interactive viewing
+//! - GUI backends (using softbuffer/winit and cpal) for interactive viewing
 //! - Headless backends (capturing data) for automated testing
 
 use cpu_sim::{AudioConfig, VideoConfig};
