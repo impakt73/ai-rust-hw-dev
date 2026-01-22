@@ -9,4 +9,6 @@ mod video_window;
 pub mod backend_traits;
 pub mod gui_backends;
 pub mod headless_backends;
+pub mod sim_thread;
+pub mod threaded_viewer;
 pub mod viewer;

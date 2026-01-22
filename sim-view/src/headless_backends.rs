@@ -262,3 +262,124 @@ mod tests {
         matches!(events[0], ViewerEvent::Close);
     }
 }
+
+// ============================================================================
+// Thread-Safe Headless Backend Wrappers
+// ============================================================================
+//
+// These wrappers implement the ThreadSafeVideoBackend and ThreadSafeAudioBackend
+// traits for use with the background simulation thread.
+
+use crate::sim_thread::{ThreadSafeAudioBackend, ThreadSafeVideoBackend};
+use std::sync::Mutex;
+
+/// Thread-safe wrapper around HeadlessVideoBackend.
+///
+/// This wrapper allows the video backend to be safely accessed from both
+/// the simulation thread (process_frame) and the main thread (get_frames, update).
+pub struct ThreadSafeHeadlessVideoBackend {
+    inner: Mutex<HeadlessVideoBackend>,
+}
+
+impl ThreadSafeHeadlessVideoBackend {
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(HeadlessVideoBackend::new()),
+        }
+    }
+
+    /// Get captured frames (for tests) - clones the data
+    pub fn get_frames(&self) -> Vec<CapturedFrame> {
+        self.inner.lock().unwrap().get_frames().to_vec()
+    }
+}
+
+impl Default for ThreadSafeHeadlessVideoBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThreadSafeVideoBackend for ThreadSafeHeadlessVideoBackend {
+    fn process_frame(&self, data: &[u8], config: &VideoConfig) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        // Directly capture the frame (don't wait for update)
+        let frame = CapturedFrame {
+            data: data.to_vec(),
+            config: *config,
+            timestamp: Instant::now(),
+            sequence: inner.frame_count,
+        };
+
+        log::debug!(
+            "ThreadSafe: Captured frame {} ({}x{}, {:?})",
+            inner.frame_count,
+            config.width,
+            config.height,
+            config.format
+        );
+
+        inner.captured_frames.push(frame);
+        inner.frame_count += 1;
+        Ok(())
+    }
+
+    fn set_title(&self, _title: &str) {
+        // No-op in headless mode
+    }
+
+    fn is_active(&self) -> bool {
+        true // Always active in headless mode
+    }
+
+    fn update(&self) -> Result<(), String> {
+        // No-op for thread-safe version - frames are captured immediately in process_frame
+        Ok(())
+    }
+}
+
+/// Thread-safe wrapper around HeadlessAudioBackend.
+///
+/// This wrapper allows the audio backend to be safely accessed from both
+/// the simulation thread (push_samples, set_config) and the main thread (get_chunks).
+pub struct ThreadSafeHeadlessAudioBackend {
+    inner: Mutex<HeadlessAudioBackend>,
+}
+
+impl ThreadSafeHeadlessAudioBackend {
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(HeadlessAudioBackend::new()),
+        }
+    }
+
+    /// Get captured audio chunks (for tests) - clones the data
+    pub fn get_chunks(&self) -> Vec<CapturedAudioChunk> {
+        self.inner.lock().unwrap().get_chunks().to_vec()
+    }
+
+    /// Get the current audio configuration (for tests)
+    pub fn get_current_config(&self) -> Option<AudioConfig> {
+        self.inner.lock().unwrap().get_current_config()
+    }
+}
+
+impl Default for ThreadSafeHeadlessAudioBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThreadSafeAudioBackend for ThreadSafeHeadlessAudioBackend {
+    fn push_samples(&self, samples: &[i16]) {
+        let mut inner = self.inner.lock().unwrap();
+        // Delegate to the inner backend
+        AudioBackend::push_samples(&mut *inner, samples);
+    }
+
+    fn set_config(&self, config: &AudioConfig) {
+        let mut inner = self.inner.lock().unwrap();
+        // Delegate to the inner backend
+        AudioBackend::set_config(&mut *inner, config);
+    }
+}
