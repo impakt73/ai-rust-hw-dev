@@ -36,12 +36,6 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Event source (generic)
     event_source: E,
 
-    /// Shared video buffer (for pull-based data flow)
-    video_buffer: SharedVideoBuffer,
-
-    /// Shared audio buffer (for pull-based data flow)
-    audio_buffer: SharedAudioBuffer,
-
     /// Current configuration
     config: ViewerConfig,
 
@@ -151,8 +145,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             video_backend,
             audio_backend,
             event_source,
-            video_buffer,
-            audio_buffer,
             config,
             state: ViewerState::Idle,
             last_elf_path: None,
@@ -312,7 +304,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Check if a frame was presented during this step (set by video callback)
         let frame_presented = *self.frame_presented_this_step.borrow();
 
-        // Update video backend (display or capture)
+        // Update video backend (pull frames from shared buffer and display/capture)
         self.video_backend.borrow_mut().update()?;
 
         // Increment frame counter only if a frame was actually presented
@@ -456,85 +448,12 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
         Ok(())
     }
 
-    /// Override step method to also update audio backend (headless-specific)
+    /// Update audio backend to pull and capture samples (headless-specific)
     ///
-    /// Headless mode needs to explicitly pull audio samples for capture, whereas
-    /// GUI mode pulls samples automatically via the audio stream callback.
-    pub fn step(&mut self) -> Result<bool, String> {
-        // Handle window events (keyboard, close, test commands)
-        self.handle_events()?;
-
-        // Terminate if an exit was requested
-        if self.exit_requested {
-            log::info!("Exit requested, terminating viewer loop");
-            return Ok(false);
-        }
-
-        // Check if backend is still active (for GUI mode)
-        if !self.video_backend.borrow().is_active() {
-            log::info!("Backend inactive, terminating viewer loop");
-            return Ok(false);
-        }
-
-        // Reset frame presented flag before stepping
-        *self.frame_presented_this_step.borrow_mut() = false;
-
-        // Step simulation if running
-        if self.state == ViewerState::Running {
-            // Step simulation by multiple instructions per frame for performance
-            // Note: Video and audio callbacks push data to shared buffers during instruction execution
-            match self.step_instructions(INSTRUCTIONS_PER_FRAME) {
-                Ok(result) => {
-                    // Increment instruction counter
-                    self.total_cycles += INSTRUCTIONS_PER_FRAME;
-
-                    // Check if simulation halted
-                    if let Some(tohost_value) = result.tohost_value {
-                        log::info!("Program halted with tohost value: 0x{:08x}", tohost_value);
-                        self.state = ViewerState::Halted;
-                        self.update_window_title();
-                    }
-
-                    // Check if max cycles reached
-                    if self.config.max_cycles > 0 && self.total_cycles >= self.config.max_cycles {
-                        log::info!("Max cycles reached: {}", self.total_cycles);
-                        self.state = ViewerState::Halted;
-                        self.update_window_title();
-                    }
-                }
-                Err(e) => {
-                    log::error!("Simulation error: {}", e);
-                    self.state = ViewerState::Halted;
-                    self.update_window_title();
-                }
-            }
-        }
-
-        // Check if a frame was presented during this step (set by video callback)
-        let frame_presented = *self.frame_presented_this_step.borrow();
-
-        // Update video backend (pull frames from shared buffer and display/capture)
-        self.video_backend.borrow_mut().update()?;
-
-        // Pull audio samples for headless capture
+    /// This should be called periodically to capture audio samples in headless mode.
+    /// GUI mode doesn't need this as audio is pulled automatically via the stream callback.
+    pub fn update_audio_capture(&mut self) {
         self.audio_backend.borrow_mut().update();
-
-        // Increment frame counter only if a frame was actually presented
-        if frame_presented {
-            self.frame_count += 1;
-
-            // Check if frame step target reached
-            if let Some(target) = self.frame_step_target {
-                if self.frame_count >= target {
-                    log::info!("Frame step target reached: {} frames", self.frame_count);
-                    self.frame_step_target = None;
-                    self.state = ViewerState::Paused;
-                    self.update_window_title();
-                }
-            }
-        }
-
-        Ok(true)
     }
 
     /// Get captured video frames (for headless mode testing)

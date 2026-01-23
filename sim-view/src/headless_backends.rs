@@ -5,7 +5,7 @@
 //! data flow model by pulling from shared buffers.
 
 use crate::backend_traits::{AudioBackend, EventSource, VideoBackend, ViewerEvent};
-use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer, VideoFrame};
+use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
 use cpu_sim::AudioConfig;
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -306,5 +306,4 @@ mod tests {
         assert_eq!(events.len(), 1);
         matches!(events[0], ViewerEvent::Close);
     }
-}
 }

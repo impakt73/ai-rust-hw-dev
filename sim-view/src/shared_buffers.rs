@@ -156,9 +156,10 @@ impl SharedAudioBuffer {
             );
         }
 
+        let config = inner.current_config;
         inner.chunks.push_back(AudioChunk {
             samples,
-            config: inner.current_config,
+            config,
             timestamp: Instant::now(),
         });
     }

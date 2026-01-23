@@ -2,7 +2,6 @@ use crate::shared_buffers::SharedAudioBuffer;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use cpu_sim::AudioConfig;
-use std::sync::{Arc, Mutex};
 
 pub struct AudioStream {
     /// CPAL audio device
@@ -80,11 +79,8 @@ impl AudioStream {
         }
 
         // Create new stream with the specified configuration
-        let new_stream = Self::create_stream(
-            &self.device,
-            Some(config),
-            self.audio_source.clone(),
-        )?;
+        let new_stream =
+            Self::create_stream(&self.device, Some(config), self.audio_source.clone())?;
 
         // Start the new stream
         new_stream
