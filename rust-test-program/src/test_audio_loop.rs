@@ -17,8 +17,8 @@ fn panic(info: &PanicInfo) -> ! {
 const BUFFER_BASE: u32 = 0x8000_2000;
 
 /// Audio configuration
-/// Use a reasonable buffer size: 16384 samples (~0.34 seconds at 48kHz)
-const BUFFER_SIZE_SAMPLES: u32 = 16384;
+/// Use 1024 stereo samples as requested
+const BUFFER_SIZE_SAMPLES: u32 = 1024;
 
 /// Sine wave frequency divider
 /// Lower values = higher frequency
@@ -59,19 +59,16 @@ fn trigger_dma() {
     }
 }
 
-/// Fill the audio buffer with sine wave samples
-fn fill_audio_buffer(sample_index: &mut u32) {
-    // Write samples to fill the entire buffer
+/// Fill the audio buffer with sine wave samples (called once at startup)
+fn precompute_audio_buffer() {
+    // Precompute 1024 stereo samples
     for i in 0..BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
-        let left_sample = common::generate_sine_sample(*sample_index, FREQUENCY_DIV);
-        let right_sample =
-            common::generate_sine_sample(*sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
+        let left_sample = common::generate_sine_sample(i, FREQUENCY_DIV);
+        let right_sample = common::generate_sine_sample(i + FREQUENCY_DIV / 4, FREQUENCY_DIV);
 
         let offset = i * 4; // 4 bytes per stereo sample
         write_stereo_sample(BUFFER_BASE, offset, left_sample, right_sample);
-
-        *sample_index += 1;
     }
 }
 
@@ -79,15 +76,15 @@ fn fill_audio_buffer(sample_index: &mut u32) {
 fn main() -> ! {
     unsafe {
         // Configure Audio device
-        // 48000Hz, Stereo, 16384 samples
+        // 48000Hz, Stereo, 1024 samples
         write_volatile(AUDIO_ADDR as *mut u32, BUFFER_BASE);
         write_volatile(
             AUDIO_CONFIG as *mut u32,
             make_audio_config(0, 1, BUFFER_SIZE_SAMPLES),
         );
 
-        // Initialize counter
-        let mut audio_sample_index: u32 = 0;
+        // Precompute the audio buffer once at startup
+        precompute_audio_buffer();
 
         // Main infinite loop
         loop {
@@ -96,10 +93,7 @@ fn main() -> ! {
                 // Spin wait
             }
 
-            // Fill buffer with new audio samples
-            fill_audio_buffer(&mut audio_sample_index);
-
-            // Trigger DMA to read the buffer
+            // Trigger DMA to read the same precomputed buffer
             trigger_dma();
         }
     }
