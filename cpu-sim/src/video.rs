@@ -387,8 +387,8 @@ mod tests {
     #[test]
     fn test_video_present_operation() {
         // Use Rc<RefCell<>> to capture callback data
-        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
-            Rc::new(RefCell::new(None));
+        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
@@ -513,8 +513,8 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_rgb8_data() {
-        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
-            Rc::new(RefCell::new(None));
+        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
@@ -560,8 +560,8 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_rgb565_data() {
-        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
-            Rc::new(RefCell::new(None));
+        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
@@ -615,8 +615,8 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_r8_data() {
-        let callback_data: Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>> =
-            Rc::new(RefCell::new(None));
+        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Rc::new(RefCell::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {

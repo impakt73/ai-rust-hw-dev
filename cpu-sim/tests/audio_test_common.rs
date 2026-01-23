@@ -1,5 +1,4 @@
 /// Shared audio test utilities for generating and validating test patterns
-
 /// Generate a sine wave sample at a given index
 /// Uses a lookup table approach for consistency between test and test program
 pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
