@@ -1,3 +1,8 @@
+---
+name: rtl-development
+description: Guide for RTL design and SystemVerilog development on the RISC-V CPU. Use when asked about CPU architecture, instruction set, FSM states, memory interface, or SystemVerilog coding conventions.
+---
+
 # RTL Development Guide
 
 ## Project Overview

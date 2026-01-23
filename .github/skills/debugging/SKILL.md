@@ -1,3 +1,8 @@
+---
+name: debugging
+description: Comprehensive debugging guide for hardware and software issues. Use when debugging test failures, RTL bugs, or troubleshooting build/runtime problems.
+---
+
 # Debugging and Troubleshooting Guide
 
 ## General Debugging Philosophy
@@ -407,7 +412,6 @@ Provide:
 - **RISC-V Spec:** https://riscv.org/technical/specifications/
 - **Verilator Manual:** https://verilator.org/guide/latest/
 - **Marlin Docs:** https://docs.rs/marlin/
-- **Project Documentation:** Check other files in `docs/agents/`
 
 ## Summary
 
