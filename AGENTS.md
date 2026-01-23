@@ -117,6 +117,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### Quick Start Commands
 
+**Main Workspace (Root):**
 ```bash
 cargo test                             # Run all tests (264 total)
 cargo build                            # Build only
@@ -127,16 +128,33 @@ verilator --lint-only rtl/*.sv         # Lint SystemVerilog
 cargo clean                            # Clear Verilator cache (after RTL changes)
 ```
 
+**Separate rust-test-program Workspace:**
+```bash
+cd rust-test-program
+cargo fmt                              # Format Rust code
+cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings
+cargo clippy -- -D warnings            # Lint Rust code
+cd ..
+```
+
 ### PR Readiness Checklist
 
 Before marking PR ready for review:
 
+**Main Workspace (Root):**
 1. ✅ All tests pass: `cargo test --verbose`
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
-5. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
-6. ✅ All CI checks pass on GitHub Actions
+
+**rust-test-program Workspace:**
+5. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
+6. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
+7. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
+
+**Additional Checks:**
+8. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
+9. ✅ All CI checks pass on GitHub Actions
 
 ### Security Scanning
 
