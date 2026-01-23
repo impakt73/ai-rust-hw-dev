@@ -94,8 +94,15 @@ where
             return;
         };
 
-        // Calculate total bytes to read (sample_count * bytes_per_sample)
-        let total_bytes = config.sample_count * config.bytes_per_sample();
+        // Calculate total bytes to read (sample_count * bytes_per_sample), guarding against overflow
+        let Some(total_bytes) = config.sample_count.checked_mul(config.bytes_per_sample()) else {
+            log::warn!(
+                "Audio: DMA size overflow for sample_count={} bytes_per_sample={}",
+                config.sample_count,
+                config.bytes_per_sample()
+            );
+            return;
+        };
         if total_bytes == 0 {
             log::warn!("Audio: DMA attempted with zero size - ignoring");
             return;
@@ -110,11 +117,23 @@ where
             total_bytes
         );
 
+        // Pre-allocate buffer for DMA operation using fallible allocation
+        let total_bytes_usize = total_bytes as usize;
+        let mut sample_data = Vec::new();
+        if let Err(err) = sample_data.try_reserve_exact(total_bytes_usize) {
+            log::error!(
+                "Audio: Failed to allocate DMA buffer of {} bytes: {:?} - aborting DMA start",
+                total_bytes_usize,
+                err
+            );
+            return;
+        }
+
         // Start active DMA operation - capture all state now
         self.active_dma = Some(ActiveDma {
             current_addr: self.audio_addr,
             bytes_remaining: total_bytes,
-            sample_data: Vec::with_capacity(total_bytes as usize),
+            sample_data,
             config,
         });
     }
@@ -156,6 +175,17 @@ where
         // Convert byte buffer to i16 samples
         let channel_count = dma.config.channels.count();
         let sample_count = dma.config.sample_count as usize;
+        let expected_bytes = sample_count * channel_count * 2;
+
+        // Warn if buffer is incomplete
+        if dma.sample_data.len() < expected_bytes {
+            log::warn!(
+                "Audio: DMA buffer incomplete - expected {} bytes, got {} bytes. Some samples will be skipped.",
+                expected_bytes,
+                dma.sample_data.len()
+            );
+        }
+
         let mut samples = Vec::with_capacity(sample_count * channel_count);
 
         // Parse all samples from the byte buffer
@@ -168,6 +198,13 @@ where
                         dma.sample_data[byte_offset + 1],
                     ]);
                     samples.push(sample);
+                } else {
+                    // Log when samples are skipped due to incomplete buffer
+                    log::debug!(
+                        "Audio: Skipping sample at index {} (channel {}) due to incomplete buffer",
+                        sample_idx,
+                        channel_idx
+                    );
                 }
             }
         }

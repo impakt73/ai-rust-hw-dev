@@ -147,7 +147,7 @@ impl AudioConfig {
         sample_rate_field | (channels_field << 2) | (sample_count_minus_1 << 3)
     }
 
-    /// Calculate total number of bytes in the ring buffer
+    /// Calculate total number of bytes in the buffer for a DMA transfer
     /// Each sample is 2 bytes (i16) per channel
     ///
     /// # Panics
