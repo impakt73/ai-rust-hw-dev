@@ -1,3 +1,8 @@
+---
+name: rust-development
+description: Guide for Rust code development, testing, and verification harnesses. Use when asked about Rust coding standards, clippy, formatting, memory management, or debugging Rust code.
+---
+
 # Rust Development Guide
 
 ## Coding Conventions

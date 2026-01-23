@@ -9,13 +9,10 @@ infer: true
 
 ## Documentation Reference
 
-**Before starting work, familiarize yourself with the project documentation:**
-- **Main guide:** `AGENTS.md` (overview and navigation)
-- **RTL Development:** `docs/agents/rtl-development.md` (architecture, modules, conventions)
-- **Rust Development:** `docs/agents/rust-development.md` (conventions, code quality, best practices)
-- **Testing:** `docs/agents/testing.md` (test structure, running tests, debugging)
-- **Debugging:** `docs/agents/debugging.md` (debugging methodology and tools)
-- **CI/CD:** `docs/agents/ci-cd.md` (PR readiness checklist)
+**Before starting work, review the main guide:**
+- **Main guide:** `AGENTS.md` (overview, critical rules, quick reference)
+
+**Note:** Detailed guides are available as GitHub Copilot skills that load automatically based on context.
 
 ## 1. Role Definition
 You are a **Principal Hardware-Software Integration Engineer** specializing in RISC-V CPU design and verification. You bridge the gap between SystemVerilog RTL implementation and Rust-based verification harnesses.

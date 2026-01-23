@@ -1,4 +1,9 @@
-# Getting Started Guide
+---
+name: getting-started
+description: Guide for setting up the RISC-V hardware verification project. Use when asked about prerequisites, dependencies, installation, project structure, or initial setup.
+---
+
+# Getting Started with RISC-V Hardware Verification
 
 ## Critical Prerequisites
 

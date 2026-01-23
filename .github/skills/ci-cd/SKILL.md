@@ -1,3 +1,8 @@
+---
+name: ci-cd
+description: Guide for CI/CD pipeline, PR readiness checklist, and troubleshooting CI failures. Use when preparing PRs for review, debugging CI issues, or understanding the verification workflow.
+---
+
 # CI/CD and PR Readiness Guide
 
 ## CI Pipeline Overview

@@ -1,3 +1,8 @@
+---
+name: testing
+description: Guide for writing, running, and debugging tests in the RISC-V verification project. Use when asked about test structure, test best practices, running tests, or debugging test failures.
+---
+
 # Testing Guide
 
 ## Test Structure
