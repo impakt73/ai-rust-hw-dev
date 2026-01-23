@@ -11,8 +11,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 // Note: Some re-exports may be unused in this module but are used by test programs that import from common
 #[allow(unused_imports)]
 pub use riscv_shared::{
-    FAILURE_CODE, FIFO_DATA, FIFO_STATUS, PANIC_CODE, RX_VALID, SUCCESS_CODE, TOHOST_ADDR,
-    TX_READY,
+    FAILURE_CODE, FIFO_DATA, FIFO_STATUS, PANIC_CODE, RX_VALID, SUCCESS_CODE, TOHOST_ADDR, TX_READY,
 };
 
 // Re-export helper function
