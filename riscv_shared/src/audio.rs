@@ -130,8 +130,20 @@ impl AudioConfig {
         let sample_rate_field = self.sample_rate.to_u8() as u32;
         let channels_field = self.channels.to_u8() as u32;
 
-        // Compute log2 of sample_count
-        let log2_sample_count = 31 - self.sample_count.leading_zeros();
+        let sample_count = self.sample_count;
+        let valid = sample_count != 0 && sample_count.is_power_of_two();
+        debug_assert!(
+            valid,
+            "AudioConfig::to_register: sample_count must be non-zero power of 2, got {}",
+            sample_count
+        );
+
+        // Compute log2 of sample_count; fall back to 0 on invalid input in release builds
+        let log2_sample_count = if valid {
+            31 - sample_count.leading_zeros()
+        } else {
+            0
+        };
 
         sample_rate_field | (channels_field << 2) | (log2_sample_count << 3)
     }
@@ -150,7 +162,24 @@ impl AudioConfig {
 
 /// Generate a sine wave sample at a given index
 /// Uses a lookup table approach for consistency between test and test program
+///
+/// # Arguments
+/// * `index` - Sample index
+/// * `frequency_div` - Frequency divider (must be non-zero)
+///
+/// # Panics
+/// Panics in debug builds if `frequency_div` is 0
 pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
+    debug_assert!(
+        frequency_div != 0,
+        "generate_sine_sample: frequency_div must be non-zero"
+    );
+
+    // Return 0 if frequency_div is 0 in release builds (graceful degradation)
+    if frequency_div == 0 {
+        return 0;
+    }
+
     // Simple sine wave using lookup table approximation
     // We'll use a 32-entry lookup table for a quarter wave
     const QUARTER_WAVE_LEN: u32 = 32;

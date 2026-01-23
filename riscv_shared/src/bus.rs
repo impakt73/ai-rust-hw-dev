@@ -30,6 +30,11 @@ pub const DRAM_END: u32 = 0xFFFF_FFFF;
 /// # Returns
 /// `true` if the entire range [addr, addr+size-1] is within DRAM range
 pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
+    // A zero-sized access corresponds to an empty range and is not considered valid
+    if size == 0 {
+        return false;
+    }
+
     // Check for overflow when computing the inclusive end address
     let end_addr = addr.checked_add(size.saturating_sub(1));
     if end_addr.is_none() {

@@ -92,8 +92,27 @@ impl VideoConfig {
 
     /// Convert configuration to register value
     pub fn to_register(self) -> u32 {
-        let width_minus_1 = self.width - 1;
-        let height_minus_1 = self.height - 1;
+        debug_assert!(
+            (1..=4096).contains(&self.width),
+            "VideoConfig.width out of range: {}",
+            self.width
+        );
+        debug_assert!(
+            (1..=4096).contains(&self.height),
+            "VideoConfig.height out of range: {}",
+            self.height
+        );
+
+        let width_minus_1 = self
+            .width
+            .checked_sub(1)
+            .expect("VideoConfig.width must be at least 1")
+            & 0x0FFF;
+        let height_minus_1 = self
+            .height
+            .checked_sub(1)
+            .expect("VideoConfig.height must be at least 1")
+            & 0x0FFF;
         let format_field = self.format.to_u8() as u32;
 
         width_minus_1 | (height_minus_1 << 12) | (format_field << 24)

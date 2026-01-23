@@ -1,7 +1,6 @@
 // Common utilities for bare-metal test programs
 
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
@@ -9,12 +8,15 @@ use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // Re-export constants from riscv_shared
+// Note: Some re-exports may be unused in this module but are used by test programs that import from common
+#[allow(unused_imports)]
 pub use riscv_shared::{
     FAILURE_CODE, FIFO_DATA, FIFO_STATUS, PANIC_CODE, RX_VALID, SUCCESS_CODE, TOHOST_ADDR,
     TX_READY,
 };
 
 // Re-export helper function
+#[allow(unused_imports)]
 pub use riscv_shared::audio::generate_sine_sample;
 
 /// Simple bump allocator for bare-metal environment.
