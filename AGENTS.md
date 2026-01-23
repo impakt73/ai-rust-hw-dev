@@ -131,6 +131,7 @@ cargo clean                            # Clear Verilator cache (after RTL change
 **Separate rust-test-program Workspace:**
 ```bash
 cd rust-test-program
+cargo build                            # Build only
 cargo fmt                              # Format Rust code
 cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings
 cargo clippy -- -D warnings            # Lint Rust code
@@ -146,14 +147,14 @@ Before marking PR ready for review:
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
+5. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
 
 **rust-test-program Workspace:**
-5. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
-6. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
-7. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
+6. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
+7. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
+8. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
 
 **Additional Checks:**
-8. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
 9. ✅ All CI checks pass on GitHub Actions
 
 ### Security Scanning
