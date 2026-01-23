@@ -36,7 +36,10 @@ pub(crate) enum SimResponse {
     /// Error occurred
     Error(String),
     /// Run completed (program halted or max cycles reached)
-    RunCompleted { tohost_value: Option<u32> },
+    RunCompleted {
+        tohost_value: Option<u32>,
+        cycles_executed: u64,
+    },
     /// Step completed
     StepCompleted {
         tohost_value: Option<u32>,
@@ -120,7 +123,7 @@ impl SimulationThread {
                     }
                     SimRequest::Step => {
                         // Execute one batch and respond immediately
-                        // Preserve running state for next iteration
+                        // By default preserve the current running state; it may be cleared below on halt, max-cycles, or error
                         match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
                             Ok((cycles, tohost)) => {
                                 total_cycles += cycles;
@@ -171,14 +174,17 @@ impl SimulationThread {
                             running = false;
                             let _ = response_tx.send(SimResponse::RunCompleted {
                                 tohost_value: tohost,
+                                cycles_executed: total_cycles,
                             });
                         }
 
                         // Check if max cycles reached
                         if max_cycles > 0 && total_cycles >= max_cycles {
                             running = false;
-                            let _ =
-                                response_tx.send(SimResponse::RunCompleted { tohost_value: None });
+                            let _ = response_tx.send(SimResponse::RunCompleted {
+                                tohost_value: None,
+                                cycles_executed: total_cycles,
+                            });
                         }
                     }
                     Err(e) => {

@@ -262,6 +262,14 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
 
         // If running or paused, send step request to simulation thread and wait for response
         // When paused, stepping is equivalent to running for one iteration then pausing again
+        // When in the Idle state (no ELF loaded), calling step() will not send a Step
+        // request to the simulation thread. This is a documented no-op for simulation;
+        // callers that expect simulation to advance must first load a program and move
+        // the viewer into the Running or Paused state.
+        if self.state == ViewerState::Idle {
+            log::debug!("step() called while viewer is Idle: no simulation step will be executed");
+        }
+
         if self.state == ViewerState::Running || self.state == ViewerState::Paused {
             self.sim_thread.send_request(SimRequest::Step)?;
 
@@ -292,9 +300,13 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                     self.state = ViewerState::Halted;
                     self.update_window_title();
                 }
-                SimResponse::RunCompleted { tohost_value } => {
+                SimResponse::RunCompleted {
+                    tohost_value,
+                    cycles_executed,
+                } => {
                     // This can happen if the simulation was in running mode
                     // and completed before we sent a Step request
+                    self.total_cycles = cycles_executed;
                     if let Some(tohost) = tohost_value {
                         log::info!("Program halted with tohost value: 0x{:08x}", tohost);
                     } else {
@@ -376,7 +388,11 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             // Check for responses from simulation thread (non-blocking)
             if let Some(response) = self.sim_thread.try_recv_response()? {
                 match response {
-                    SimResponse::RunCompleted { tohost_value } => {
+                    SimResponse::RunCompleted {
+                        tohost_value,
+                        cycles_executed,
+                    } => {
+                        self.total_cycles = cycles_executed;
                         if let Some(tohost) = tohost_value {
                             log::info!("Program halted with tohost value: 0x{:08x}", tohost);
                         } else {
@@ -465,7 +481,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 log::info!("Test command: Step {} frames", count);
                 // Set frame step target and resume execution
                 self.frame_step_target = Some(self.frame_count + count);
-                if self.state == ViewerState::Paused || self.state == ViewerState::Idle {
+                // Only resume if in Paused state (not Idle - no ELF loaded)
+                if self.state == ViewerState::Paused {
                     self.sim_thread.send_request(SimRequest::Resume)?;
                     self.state = ViewerState::Running;
                     self.update_window_title();
