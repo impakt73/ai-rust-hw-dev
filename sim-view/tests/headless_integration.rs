@@ -222,11 +222,6 @@ fn test_sequential_frames_differ() {
     let elf_path = test_program_path("test_video_pattern.elf");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Explicitly resume the simulation
-    viewer
-        .push_event(ViewerEvent::TestCommand(TestCommand::Resume))
-        .expect("Failed to resume");
-
     // Don't use StepFrames - just run until we have at least 2 frames for comparison
     // Run until we have at least 2 frames or safety limit
     let mut steps = 0;
@@ -307,11 +302,6 @@ fn test_audio_config_change_and_samples() {
     // Load test ELF that generates audio samples (sets audio config)
     let elf_path = test_program_path("test_audio_pattern.elf");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
-
-    // Explicitly resume the simulation
-    viewer
-        .push_event(ViewerEvent::TestCommand(TestCommand::Resume))
-        .expect("Failed to resume");
 
     // Run until program completes or we get sufficient audio data
     let mut steps = 0;

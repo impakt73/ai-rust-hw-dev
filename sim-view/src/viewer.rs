@@ -2,53 +2,14 @@ use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
 };
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
+use crate::simulation_thread::{SimRequest, SimResponse, SimulationThread};
 use cpu_sim::{
     Audio, AudioConfig, InteractiveSimulator, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::{self, JoinHandle};
 use std::time::Instant;
-
-// Performance constants
-const INSTRUCTIONS_PER_BATCH: u64 = 10000; // Instructions per batch in background thread
-
-/// Messages sent from main thread to simulation thread
-#[derive(Debug)]
-enum SimRequest {
-    /// Load an ELF file into the simulator
-    LoadELF(PathBuf),
-    /// Start running the simulation continuously
-    Run,
-    /// Execute a single batch of instructions
-    Step,
-    /// Pause the simulation
-    Pause,
-    /// Resume the simulation
-    Resume,
-    /// Terminate the simulation thread
-    Terminate,
-}
-
-/// Messages sent from simulation thread to main thread
-#[derive(Debug)]
-enum SimResponse {
-    /// ELF loaded successfully
-    ELFLoaded,
-    /// Error occurred
-    Error(String),
-    /// Run completed (program halted or max cycles reached)
-    RunCompleted { tohost_value: Option<u32> },
-    /// Step completed
-    StepCompleted {
-        tohost_value: Option<u32>,
-        cycles_executed: u64,
-    },
-    /// Simulation thread terminated
-    Terminated,
-}
 
 pub struct ViewerConfig {
     #[allow(dead_code)] // Used by main.rs to create backends
@@ -58,205 +19,6 @@ pub struct ViewerConfig {
     pub max_cycles: u64,
     #[allow(dead_code)]
     pub print_inst_trace: bool,
-}
-
-/// Simulation thread handle and communication channels
-struct SimulationThread {
-    /// Handle to the background thread
-    thread_handle: Option<JoinHandle<()>>,
-    /// Channel to send requests to simulation thread
-    request_tx: Sender<SimRequest>,
-    /// Channel to receive responses from simulation thread
-    response_rx: Receiver<SimResponse>,
-}
-
-impl SimulationThread {
-    /// Create a new simulation thread with the given simulator
-    fn new(simulator: InteractiveSimulator, max_cycles: u64) -> Result<Self, String> {
-        let (request_tx, request_rx) = mpsc::channel();
-        let (response_tx, response_rx) = mpsc::channel();
-
-        let thread_handle = thread::spawn(move || {
-            Self::simulation_thread_main(simulator, request_rx, response_tx, max_cycles);
-        });
-
-        Ok(SimulationThread {
-            thread_handle: Some(thread_handle),
-            request_tx,
-            response_rx,
-        })
-    }
-
-    /// Main loop for the simulation thread
-    fn simulation_thread_main(
-        mut simulator: InteractiveSimulator,
-        request_rx: Receiver<SimRequest>,
-        response_tx: Sender<SimResponse>,
-        max_cycles: u64,
-    ) {
-        let mut total_cycles: u64 = 0;
-        let mut running = false;
-
-        loop {
-            // Check for requests from main thread
-            let request = if running {
-                // Non-blocking check when running
-                match request_rx.try_recv() {
-                    Ok(req) => Some(req),
-                    Err(mpsc::TryRecvError::Empty) => None,
-                    Err(mpsc::TryRecvError::Disconnected) => break,
-                }
-            } else {
-                // Blocking wait when paused/idle
-                match request_rx.recv() {
-                    Ok(req) => Some(req),
-                    Err(_) => break,
-                }
-            };
-
-            // Handle request if any
-            if let Some(request) = request {
-                match request {
-                    SimRequest::LoadELF(path) => {
-                        match simulator.load_elf(&path) {
-                            Ok(()) => {
-                                total_cycles = 0;
-                                running = false; // Don't auto-start
-                                let _ = response_tx.send(SimResponse::ELFLoaded);
-                            }
-                            Err(e) => {
-                                let _ = response_tx.send(SimResponse::Error(e));
-                            }
-                        }
-                    }
-                    SimRequest::Run => {
-                        running = true;
-                    }
-                    SimRequest::Step => {
-                        // Execute one batch and respond immediately
-                        // Preserve running state for next iteration
-                        match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
-                            Ok((cycles, tohost)) => {
-                                total_cycles += cycles;
-                                let _ = response_tx.send(SimResponse::StepCompleted {
-                                    tohost_value: tohost,
-                                    cycles_executed: cycles,
-                                });
-
-                                // If program halted, stop running
-                                if tohost.is_some() {
-                                    running = false;
-                                }
-
-                                // Check max cycles
-                                if max_cycles > 0 && total_cycles >= max_cycles {
-                                    running = false;
-                                }
-                            }
-                            Err(e) => {
-                                let _ = response_tx.send(SimResponse::Error(e));
-                                running = false;
-                            }
-                        }
-                        // Don't execute in continuous mode this iteration since we just stepped
-                        continue;
-                    }
-                    SimRequest::Pause => {
-                        running = false;
-                    }
-                    SimRequest::Resume => {
-                        running = true;
-                    }
-                    SimRequest::Terminate => {
-                        let _ = response_tx.send(SimResponse::Terminated);
-                        break;
-                    }
-                }
-            }
-
-            // Execute simulation if running (and no Step request was just handled)
-            if running {
-                match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
-                    Ok((cycles, tohost)) => {
-                        total_cycles += cycles;
-
-                        // Check if program halted
-                        if tohost.is_some() {
-                            running = false;
-                            let _ = response_tx.send(SimResponse::RunCompleted {
-                                tohost_value: tohost,
-                            });
-                        }
-
-                        // Check if max cycles reached
-                        if max_cycles > 0 && total_cycles >= max_cycles {
-                            running = false;
-                            let _ =
-                                response_tx.send(SimResponse::RunCompleted { tohost_value: None });
-                        }
-                    }
-                    Err(e) => {
-                        running = false;
-                        let _ = response_tx.send(SimResponse::Error(e));
-                    }
-                }
-            }
-        }
-    }
-
-    /// Execute a batch of instructions
-    fn execute_batch(
-        simulator: &mut InteractiveSimulator,
-        count: u64,
-    ) -> Result<(u64, Option<u32>), String> {
-        for i in 0..count {
-            let result = simulator.step_instruction()?;
-
-            // If program terminated, return early
-            if let Some(tohost) = result.tohost_value {
-                return Ok((i + 1, Some(tohost)));
-            }
-        }
-
-        Ok((count, None))
-    }
-
-    /// Send a request to the simulation thread
-    fn send_request(&self, request: SimRequest) -> Result<(), String> {
-        self.request_tx
-            .send(request)
-            .map_err(|e| format!("Failed to send request: {}", e))
-    }
-
-    /// Try to receive a response from the simulation thread (non-blocking)
-    fn try_recv_response(&self) -> Result<Option<SimResponse>, String> {
-        match self.response_rx.try_recv() {
-            Ok(response) => Ok(Some(response)),
-            Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => {
-                Err("Simulation thread disconnected".to_string())
-            }
-        }
-    }
-
-    /// Wait for a response from the simulation thread (blocking)
-    fn recv_response(&self) -> Result<SimResponse, String> {
-        self.response_rx
-            .recv()
-            .map_err(|e| format!("Failed to receive response: {}", e))
-    }
-}
-
-impl Drop for SimulationThread {
-    fn drop(&mut self) {
-        // Send terminate request
-        let _ = self.request_tx.send(SimRequest::Terminate);
-
-        // Wait for thread to finish
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
-    }
 }
 
 pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
@@ -437,21 +199,22 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
     }
 
     /// Toggle pause/resume state
-    pub fn toggle_pause(&mut self) {
+    pub fn toggle_pause(&mut self) -> Result<(), String> {
         self.state = match self.state {
             ViewerState::Running => {
                 log::info!("Simulation paused");
-                let _ = self.sim_thread.send_request(SimRequest::Pause);
+                self.sim_thread.send_request(SimRequest::Pause)?;
                 ViewerState::Paused
             }
             ViewerState::Paused => {
                 log::info!("Simulation resumed");
-                let _ = self.sim_thread.send_request(SimRequest::Resume);
+                self.sim_thread.send_request(SimRequest::Resume)?;
                 ViewerState::Running
             }
             other => other, // Idle and Halted states don't change
         };
         self.update_window_title();
+        Ok(())
     }
 
     /// Update window title to reflect current state
@@ -497,8 +260,9 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Reset frame presented flag before stepping
         *self.frame_presented_this_step.borrow_mut() = false;
 
-        // If running, send step request to simulation thread and wait for response
-        if self.state == ViewerState::Running {
+        // If running or paused, send step request to simulation thread and wait for response
+        // When paused, stepping is equivalent to running for one iteration then pausing again
+        if self.state == ViewerState::Running || self.state == ViewerState::Paused {
             self.sim_thread.send_request(SimRequest::Step)?;
 
             // Wait for step completion
@@ -723,7 +487,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 self.exit_requested = true;
             }
             Key::Space => {
-                self.toggle_pause();
+                self.toggle_pause()?;
             }
             Key::R if modifiers.ctrl => {
                 log::info!("Ctrl+R pressed, reloading ELF");

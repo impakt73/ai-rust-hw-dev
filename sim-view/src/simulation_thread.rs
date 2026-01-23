@@ -1,0 +1,246 @@
+//! Background simulation thread module
+//!
+//! This module contains the simulation thread implementation that runs the
+//! RISC-V simulator in a separate thread, decoupled from the UI thread.
+
+use cpu_sim::InteractiveSimulator;
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::{self, JoinHandle};
+
+// Performance constants
+const INSTRUCTIONS_PER_BATCH: u64 = 10000; // Instructions per batch in background thread
+
+/// Messages sent from main thread to simulation thread
+#[derive(Debug)]
+pub(crate) enum SimRequest {
+    /// Load an ELF file into the simulator
+    LoadELF(PathBuf),
+    /// Start running the simulation continuously
+    Run,
+    /// Execute a single batch of instructions
+    Step,
+    /// Pause the simulation
+    Pause,
+    /// Resume the simulation
+    Resume,
+    /// Terminate the simulation thread
+    Terminate,
+}
+
+/// Messages sent from simulation thread to main thread
+#[derive(Debug)]
+pub(crate) enum SimResponse {
+    /// ELF loaded successfully
+    ELFLoaded,
+    /// Error occurred
+    Error(String),
+    /// Run completed (program halted or max cycles reached)
+    RunCompleted { tohost_value: Option<u32> },
+    /// Step completed
+    StepCompleted {
+        tohost_value: Option<u32>,
+        cycles_executed: u64,
+    },
+    /// Simulation thread terminated
+    Terminated,
+}
+
+/// Simulation thread handle and communication channels
+pub(crate) struct SimulationThread {
+    /// Handle to the background thread
+    thread_handle: Option<JoinHandle<()>>,
+    /// Channel to send requests to simulation thread
+    request_tx: Sender<SimRequest>,
+    /// Channel to receive responses from simulation thread
+    response_rx: Receiver<SimResponse>,
+}
+
+impl SimulationThread {
+    /// Create a new simulation thread with the given simulator
+    pub(crate) fn new(simulator: InteractiveSimulator, max_cycles: u64) -> Result<Self, String> {
+        let (request_tx, request_rx) = mpsc::channel();
+        let (response_tx, response_rx) = mpsc::channel();
+
+        let thread_handle = thread::spawn(move || {
+            Self::simulation_thread_main(simulator, request_rx, response_tx, max_cycles);
+        });
+
+        Ok(SimulationThread {
+            thread_handle: Some(thread_handle),
+            request_tx,
+            response_rx,
+        })
+    }
+
+    /// Main loop for the simulation thread
+    fn simulation_thread_main(
+        mut simulator: InteractiveSimulator,
+        request_rx: Receiver<SimRequest>,
+        response_tx: Sender<SimResponse>,
+        max_cycles: u64,
+    ) {
+        let mut total_cycles: u64 = 0;
+        let mut running = false;
+
+        loop {
+            // Check for requests from main thread
+            let request = if running {
+                // Non-blocking check when running
+                match request_rx.try_recv() {
+                    Ok(req) => Some(req),
+                    Err(mpsc::TryRecvError::Empty) => None,
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            } else {
+                // Blocking wait when paused/idle
+                match request_rx.recv() {
+                    Ok(req) => Some(req),
+                    Err(_) => break,
+                }
+            };
+
+            // Handle request if any
+            if let Some(request) = request {
+                match request {
+                    SimRequest::LoadELF(path) => {
+                        match simulator.load_elf(&path) {
+                            Ok(()) => {
+                                total_cycles = 0;
+                                running = false; // Don't auto-start
+                                let _ = response_tx.send(SimResponse::ELFLoaded);
+                            }
+                            Err(e) => {
+                                let _ = response_tx.send(SimResponse::Error(e));
+                            }
+                        }
+                    }
+                    SimRequest::Run => {
+                        running = true;
+                    }
+                    SimRequest::Step => {
+                        // Execute one batch and respond immediately
+                        // Preserve running state for next iteration
+                        match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
+                            Ok((cycles, tohost)) => {
+                                total_cycles += cycles;
+                                let _ = response_tx.send(SimResponse::StepCompleted {
+                                    tohost_value: tohost,
+                                    cycles_executed: cycles,
+                                });
+
+                                // If program halted, stop running
+                                if tohost.is_some() {
+                                    running = false;
+                                }
+
+                                // Check max cycles
+                                if max_cycles > 0 && total_cycles >= max_cycles {
+                                    running = false;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = response_tx.send(SimResponse::Error(e));
+                                running = false;
+                            }
+                        }
+                        // Don't execute in continuous mode this iteration since we just stepped
+                        continue;
+                    }
+                    SimRequest::Pause => {
+                        running = false;
+                    }
+                    SimRequest::Resume => {
+                        running = true;
+                    }
+                    SimRequest::Terminate => {
+                        let _ = response_tx.send(SimResponse::Terminated);
+                        break;
+                    }
+                }
+            }
+
+            // Execute simulation if running (and no Step request was just handled)
+            if running {
+                match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
+                    Ok((cycles, tohost)) => {
+                        total_cycles += cycles;
+
+                        // Check if program halted
+                        if tohost.is_some() {
+                            running = false;
+                            let _ = response_tx.send(SimResponse::RunCompleted {
+                                tohost_value: tohost,
+                            });
+                        }
+
+                        // Check if max cycles reached
+                        if max_cycles > 0 && total_cycles >= max_cycles {
+                            running = false;
+                            let _ =
+                                response_tx.send(SimResponse::RunCompleted { tohost_value: None });
+                        }
+                    }
+                    Err(e) => {
+                        running = false;
+                        let _ = response_tx.send(SimResponse::Error(e));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute a batch of instructions
+    fn execute_batch(
+        simulator: &mut InteractiveSimulator,
+        count: u64,
+    ) -> Result<(u64, Option<u32>), String> {
+        for i in 0..count {
+            let result = simulator.step_instruction()?;
+
+            // If program terminated, return early
+            if let Some(tohost) = result.tohost_value {
+                return Ok((i + 1, Some(tohost)));
+            }
+        }
+
+        Ok((count, None))
+    }
+
+    /// Send a request to the simulation thread
+    pub(crate) fn send_request(&self, request: SimRequest) -> Result<(), String> {
+        self.request_tx
+            .send(request)
+            .map_err(|e| format!("Failed to send request: {}", e))
+    }
+
+    /// Try to receive a response from the simulation thread (non-blocking)
+    pub(crate) fn try_recv_response(&self) -> Result<Option<SimResponse>, String> {
+        match self.response_rx.try_recv() {
+            Ok(response) => Ok(Some(response)),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err("Simulation thread disconnected".to_string())
+            }
+        }
+    }
+
+    /// Wait for a response from the simulation thread (blocking)
+    pub(crate) fn recv_response(&self) -> Result<SimResponse, String> {
+        self.response_rx
+            .recv()
+            .map_err(|e| format!("Failed to receive response: {}", e))
+    }
+}
+
+impl Drop for SimulationThread {
+    fn drop(&mut self) {
+        // Send terminate request
+        let _ = self.request_tx.send(SimRequest::Terminate);
+
+        // Wait for thread to finish
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
