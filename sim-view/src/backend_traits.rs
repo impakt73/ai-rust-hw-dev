@@ -3,16 +3,27 @@
 //! These traits allow `SimViewer` to work with different backend implementations:
 //! - GUI backends (using softbuffer/winit and cpal) for interactive viewing
 //! - Headless backends (capturing data) for automated testing
+//!
+//! The traits support a **pull-based data flow model** where backends pull data
+//! from shared buffers when needed (e.g., during window presents or audio fills).
 
-use cpu_sim::{AudioConfig, VideoConfig};
+use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
+use cpu_sim::AudioConfig;
 use std::path::PathBuf;
 
 /// Trait for video output backends (GUI or headless)
+///
+/// Backends pull video frames from a shared buffer when they need to present/display.
 pub trait VideoBackend {
-    /// Process a video frame from the simulator
-    fn process_frame(&mut self, data: &[u8], config: &VideoConfig) -> Result<(), String>;
+    /// Set the shared video buffer for pull-based data flow
+    ///
+    /// Called once during initialization to connect the backend to the data source.
+    fn set_video_source(&mut self, buffer: SharedVideoBuffer);
 
     /// Update display/capture (called once per frame in main loop)
+    ///
+    /// Implementations should pull available frames from the shared buffer
+    /// and present/display them as appropriate.
     fn update(&mut self) -> Result<(), String>;
 
     /// Set window title (no-op for headless)
@@ -23,12 +34,18 @@ pub trait VideoBackend {
 }
 
 /// Trait for audio output backends (GUI or headless)
+///
+/// Backends pull audio samples from a shared buffer when they need to fill device buffers.
 pub trait AudioBackend {
-    /// Push audio samples for playback/capture
-    fn push_samples(&mut self, samples: &[i16]);
+    /// Set the shared audio buffer for pull-based data flow
+    ///
+    /// Called once during initialization to connect the backend to the data source.
+    fn set_audio_source(&mut self, buffer: SharedAudioBuffer);
 
     /// Update audio configuration (sample rate, channels, buffer size)
-    /// Called when the CPU writes to the AUDIO_CONFIG register
+    ///
+    /// Called when the CPU writes to the AUDIO_CONFIG register.
+    /// The backend should reconfigure itself to match the new parameters.
     fn set_config(&mut self, config: &AudioConfig);
 }
 

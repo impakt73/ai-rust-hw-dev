@@ -1,11 +1,14 @@
 //! GUI backend implementations wrapping existing VideoWindow and AudioStream.
+//!
+//! These backends implement the pull-based data flow model by pulling frames
+//! and samples from shared buffers when needed.
 
 use crate::audio_stream::AudioStream;
 use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, VideoBackend, ViewerEvent,
 };
+use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
 use crate::video_window::{Key as VwKey, VideoWindow, WindowEvent};
-use cpu_sim::VideoConfig;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -13,6 +16,7 @@ use std::rc::Rc;
 pub struct GuiVideoBackend {
     window: Rc<RefCell<VideoWindow>>,
     is_active: Rc<RefCell<bool>>,
+    video_source: Option<SharedVideoBuffer>,
 }
 
 impl GuiVideoBackend {
@@ -21,6 +25,7 @@ impl GuiVideoBackend {
         Ok(Self {
             window: Rc::new(RefCell::new(window)),
             is_active: Rc::new(RefCell::new(true)),
+            video_source: None,
         })
     }
 
@@ -36,12 +41,21 @@ impl GuiVideoBackend {
 }
 
 impl VideoBackend for GuiVideoBackend {
-    fn process_frame(&mut self, data: &[u8], config: &VideoConfig) -> Result<(), String> {
-        self.window.borrow_mut().process_video_frame(data, config)
+    fn set_video_source(&mut self, buffer: SharedVideoBuffer) {
+        self.video_source = Some(buffer);
     }
 
     fn update(&mut self) -> Result<(), String> {
         let mut window = self.window.borrow_mut();
+
+        // Pull all available frames from shared buffer and process them
+        if let Some(ref source) = self.video_source {
+            while let Some(frame) = source.pull_frame() {
+                window.process_video_frame(&frame.data, &frame.config)?;
+            }
+        }
+
+        // Update window events and display
         window.update_events()?;
         window.update_display()
     }
@@ -58,23 +72,34 @@ impl VideoBackend for GuiVideoBackend {
 /// GUI audio backend using cpal
 pub struct GuiAudioBackend {
     stream: AudioStream,
+    audio_source: Option<SharedAudioBuffer>,
 }
 
 impl GuiAudioBackend {
     pub fn new() -> Result<Self, String> {
         let stream = AudioStream::new()?;
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            audio_source: None,
+        })
     }
 }
 
 impl AudioBackend for GuiAudioBackend {
-    fn push_samples(&mut self, samples: &[i16]) {
-        self.stream.push_samples(samples);
+    fn set_audio_source(&mut self, buffer: SharedAudioBuffer) {
+        // Connect the audio stream to pull from the shared buffer
+        self.stream.set_audio_source(buffer.clone());
+        self.audio_source = Some(buffer);
     }
 
     fn set_config(&mut self, config: &cpu_sim::AudioConfig) {
         if let Err(e) = self.stream.set_config(config) {
             log::error!("Failed to reconfigure audio stream: {}", e);
+        }
+
+        // Update config in shared buffer if available
+        if let Some(ref source) = self.audio_source {
+            source.set_config(*config);
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
 };
+use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
 use cpu_sim::{
     Audio, AudioConfig, InteractiveSimulator, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE,
 };
@@ -26,14 +27,20 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Interactive simulator instance
     simulator: InteractiveSimulator,
 
-    /// Video backend (wrapped in Rc<RefCell<>> for callback access)
+    /// Video backend (wrapped in Rc<RefCell<>> for backward compatibility)
     video_backend: Rc<RefCell<V>>,
 
-    /// Audio backend (wrapped in Rc<RefCell<>> for callback access)
+    /// Audio backend (wrapped in Rc<RefCell<>> for backward compatibility)
     audio_backend: Rc<RefCell<A>>,
 
     /// Event source (generic)
     event_source: E,
+
+    /// Shared video buffer (for pull-based data flow)
+    video_buffer: SharedVideoBuffer,
+
+    /// Shared audio buffer (for pull-based data flow)
+    audio_buffer: SharedAudioBuffer,
 
     /// Current configuration
     config: ViewerConfig,
@@ -75,15 +82,23 @@ enum ViewerState {
 impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimViewer<V, A, E> {
     /// Create a new SimViewer with dependency injection
     ///
-    /// This function sets up the simulator with Video and Audio devices that directly
-    /// write to the provided backends, eliminating intermediate data copies.
+    /// This function sets up the simulator with Video and Audio devices that push data
+    /// to shared buffers, which backends can pull from when needed.
     pub fn new(
         config: ViewerConfig,
-        video_backend: V,
-        audio_backend: A,
+        mut video_backend: V,
+        mut audio_backend: A,
         event_source: E,
     ) -> Result<Self, String> {
-        // Wrap backends in Rc<RefCell<>> for shared ownership with callbacks
+        // Create shared buffers for pull-based data flow
+        let video_buffer = SharedVideoBuffer::new();
+        let audio_buffer = SharedAudioBuffer::new();
+
+        // Connect backends to shared buffers
+        video_backend.set_video_source(video_buffer.clone());
+        audio_backend.set_audio_source(audio_buffer.clone());
+
+        // Wrap backends in Rc<RefCell<>> for backward compatibility
         let video_backend = Rc::new(RefCell::new(video_backend));
         let audio_backend = Rc::new(RefCell::new(audio_backend));
         let frame_presented_this_step = Rc::new(RefCell::new(false));
@@ -91,33 +106,25 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Create the interactive simulator
         let mut simulator = InteractiveSimulator::new()?;
 
-        // Create Video device with callback that writes directly to video backend
-        let video_backend_clone = Rc::clone(&video_backend);
+        // Create Video device with callback that pushes to shared buffer
+        let video_buffer_for_callback = video_buffer.clone();
         let frame_presented_clone = Rc::clone(&frame_presented_this_step);
         let video_callback = move |data: &[u8], video_config: &VideoConfig| {
-            let result = video_backend_clone
-                .borrow_mut()
-                .process_frame(data, video_config);
-
-            match result {
-                Ok(()) => {
-                    // Mark that a frame was presented only on success
-                    *frame_presented_clone.borrow_mut() = true;
-                }
-                Err(e) => {
-                    log::error!("Video backend process_frame error: {}", e);
-                }
-            }
+            // Push frame data to shared buffer
+            video_buffer_for_callback.push_frame(data.to_vec(), *video_config);
+            // Mark that a frame was presented
+            *frame_presented_clone.borrow_mut() = true;
         };
         let video_device = Box::new(Video::new(Some(video_callback)));
 
-        // Create Audio device with callbacks that write directly to audio backend
-        let audio_backend_for_samples = Rc::clone(&audio_backend);
+        // Create Audio device with callbacks that push to shared buffer
+        let audio_buffer_for_samples = audio_buffer.clone();
         let sample_callback = move |samples: &[i16]| {
-            // Directly call push_samples on the audio backend
-            audio_backend_for_samples.borrow_mut().push_samples(samples);
+            // Push samples to shared buffer
+            audio_buffer_for_samples.push_samples(samples.to_vec());
         };
 
+        let audio_buffer_for_config = audio_buffer.clone();
         let audio_backend_for_config = Rc::clone(&audio_backend);
         let config_callback = move |audio_config: &AudioConfig| {
             log::info!(
@@ -126,7 +133,9 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 audio_config.channels,
                 audio_config.sample_count
             );
-            // Directly call set_config on the audio backend
+            // Update config in shared buffer
+            audio_buffer_for_config.set_config(*audio_config);
+            // Also notify backend directly (for stream reconfiguration)
             audio_backend_for_config
                 .borrow_mut()
                 .set_config(audio_config);
@@ -142,6 +151,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             video_backend,
             audio_backend,
             event_source,
+            video_buffer,
+            audio_buffer,
             config,
             state: ViewerState::Idle,
             last_elf_path: None,
@@ -445,11 +456,92 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
         Ok(())
     }
 
+    /// Override step method to also update audio backend (headless-specific)
+    ///
+    /// Headless mode needs to explicitly pull audio samples for capture, whereas
+    /// GUI mode pulls samples automatically via the audio stream callback.
+    pub fn step(&mut self) -> Result<bool, String> {
+        // Handle window events (keyboard, close, test commands)
+        self.handle_events()?;
+
+        // Terminate if an exit was requested
+        if self.exit_requested {
+            log::info!("Exit requested, terminating viewer loop");
+            return Ok(false);
+        }
+
+        // Check if backend is still active (for GUI mode)
+        if !self.video_backend.borrow().is_active() {
+            log::info!("Backend inactive, terminating viewer loop");
+            return Ok(false);
+        }
+
+        // Reset frame presented flag before stepping
+        *self.frame_presented_this_step.borrow_mut() = false;
+
+        // Step simulation if running
+        if self.state == ViewerState::Running {
+            // Step simulation by multiple instructions per frame for performance
+            // Note: Video and audio callbacks push data to shared buffers during instruction execution
+            match self.step_instructions(INSTRUCTIONS_PER_FRAME) {
+                Ok(result) => {
+                    // Increment instruction counter
+                    self.total_cycles += INSTRUCTIONS_PER_FRAME;
+
+                    // Check if simulation halted
+                    if let Some(tohost_value) = result.tohost_value {
+                        log::info!("Program halted with tohost value: 0x{:08x}", tohost_value);
+                        self.state = ViewerState::Halted;
+                        self.update_window_title();
+                    }
+
+                    // Check if max cycles reached
+                    if self.config.max_cycles > 0 && self.total_cycles >= self.config.max_cycles {
+                        log::info!("Max cycles reached: {}", self.total_cycles);
+                        self.state = ViewerState::Halted;
+                        self.update_window_title();
+                    }
+                }
+                Err(e) => {
+                    log::error!("Simulation error: {}", e);
+                    self.state = ViewerState::Halted;
+                    self.update_window_title();
+                }
+            }
+        }
+
+        // Check if a frame was presented during this step (set by video callback)
+        let frame_presented = *self.frame_presented_this_step.borrow();
+
+        // Update video backend (pull frames from shared buffer and display/capture)
+        self.video_backend.borrow_mut().update()?;
+
+        // Pull audio samples for headless capture
+        self.audio_backend.borrow_mut().update();
+
+        // Increment frame counter only if a frame was actually presented
+        if frame_presented {
+            self.frame_count += 1;
+
+            // Check if frame step target reached
+            if let Some(target) = self.frame_step_target {
+                if self.frame_count >= target {
+                    log::info!("Frame step target reached: {} frames", self.frame_count);
+                    self.frame_step_target = None;
+                    self.state = ViewerState::Paused;
+                    self.update_window_title();
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Get captured video frames (for headless mode testing)
     ///
     /// Note: This clones the frame data. This is acceptable because this method is only
     /// called infrequently (at test completion for verification). The hot path
-    /// (video callback during simulation) writes directly to the backend with zero copies.
+    /// (video callback during simulation) pushes to shared buffer with zero copies.
     pub fn get_video_frames(&self) -> Vec<CapturedFrame> {
         self.video_backend.borrow().get_frames().to_vec()
     }
@@ -458,6 +550,7 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     ///
     /// Note: This clones the chunk data. This is acceptable because this method is only
     /// called infrequently (at test completion for verification). The hot path
+    /// (audio callback during simulation) pushes to shared buffer with zero copies.
     /// (audio callback during simulation) writes directly to the backend with zero copies.
     pub fn get_audio_chunks(&self) -> Vec<CapturedAudioChunk> {
         self.audio_backend.borrow().get_chunks().to_vec()

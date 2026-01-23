@@ -1,11 +1,8 @@
+use crate::shared_buffers::SharedAudioBuffer;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use cpu_sim::AudioConfig;
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-
-// Audio buffer size limit (0.5 seconds at 48kHz mono/stereo)
-const MAX_AUDIO_BUFFER_SAMPLES: usize = 48000;
 
 pub struct AudioStream {
     /// CPAL audio device
@@ -14,8 +11,8 @@ pub struct AudioStream {
     /// Active audio output stream
     stream: cpal::Stream,
 
-    /// Sample buffer queue (thread-safe)
-    sample_buffer: Arc<Mutex<VecDeque<i16>>>,
+    /// Shared audio buffer (for pull-based data flow)
+    audio_source: Option<SharedAudioBuffer>,
 
     /// Current audio configuration
     current_config: Option<AudioConfig>,
@@ -33,11 +30,8 @@ impl AudioStream {
             device.name().unwrap_or_else(|_| "Unknown".to_string())
         );
 
-        // Shared buffer for audio samples
-        let sample_buffer = Arc::new(Mutex::new(VecDeque::new()));
-
-        // Create initial stream with default config
-        let stream = Self::create_stream(&device, None, Arc::clone(&sample_buffer))?;
+        // Create initial stream with default config (no audio source yet)
+        let stream = Self::create_stream(&device, None, None)?;
 
         // Start playback
         stream
@@ -47,9 +41,25 @@ impl AudioStream {
         Ok(AudioStream {
             device,
             stream,
-            sample_buffer,
+            audio_source: None,
             current_config: None,
         })
+    }
+
+    /// Set the shared audio buffer to pull samples from
+    pub fn set_audio_source(&mut self, buffer: SharedAudioBuffer) {
+        self.audio_source = Some(buffer.clone());
+
+        // Recreate stream with the new audio source
+        if let Ok(new_stream) =
+            Self::create_stream(&self.device, self.current_config.as_ref(), Some(buffer))
+        {
+            if let Err(e) = new_stream.play() {
+                log::error!("Failed to start audio stream with new source: {}", e);
+                return;
+            }
+            self.stream = new_stream;
+        }
     }
 
     /// Recreate the audio stream with a new configuration
@@ -69,15 +79,12 @@ impl AudioStream {
             log::warn!("Failed to pause audio stream during reconfiguration: {}", e);
         }
 
-        // Clear any samples remaining from the previous configuration to avoid
-        // playing data with mismatched parameters after reconfiguration.
-        if let Ok(mut buffer) = self.sample_buffer.lock() {
-            buffer.clear();
-        }
-
         // Create new stream with the specified configuration
-        let new_stream =
-            Self::create_stream(&self.device, Some(config), Arc::clone(&self.sample_buffer))?;
+        let new_stream = Self::create_stream(
+            &self.device,
+            Some(config),
+            self.audio_source.clone(),
+        )?;
 
         // Start the new stream
         new_stream
@@ -96,7 +103,7 @@ impl AudioStream {
     fn create_stream(
         device: &cpal::Device,
         config: Option<&AudioConfig>,
-        sample_buffer: Arc<Mutex<VecDeque<i16>>>,
+        audio_source: Option<SharedAudioBuffer>,
     ) -> Result<cpal::Stream, String> {
         let (stream_config, sample_format) = if let Some(cfg) = config {
             // Build desired configuration from AudioConfig
@@ -181,15 +188,9 @@ impl AudioStream {
 
         // Build output stream based on sample format
         let stream = match sample_format {
-            SampleFormat::I16 => {
-                Self::build_i16_stream(device, &stream_config, Arc::clone(&sample_buffer))?
-            }
-            SampleFormat::F32 => {
-                Self::build_f32_stream(device, &stream_config, Arc::clone(&sample_buffer))?
-            }
-            SampleFormat::U16 => {
-                Self::build_u16_stream(device, &stream_config, Arc::clone(&sample_buffer))?
-            }
+            SampleFormat::I16 => Self::build_i16_stream(device, &stream_config, audio_source)?,
+            SampleFormat::F32 => Self::build_f32_stream(device, &stream_config, audio_source)?,
+            SampleFormat::U16 => Self::build_u16_stream(device, &stream_config, audio_source)?,
             _ => {
                 return Err(format!("Unsupported sample format: {:?}", sample_format));
             }
@@ -198,43 +199,35 @@ impl AudioStream {
         Ok(stream)
     }
 
-    /// Push audio samples to the buffer for playback
-    /// This is called by the main viewer loop with samples from the simulator
-    pub fn push_samples(&self, samples: &[i16]) {
-        let mut buf = self.sample_buffer.lock().unwrap();
-
-        // Add samples to buffer
-        for &sample in samples {
-            buf.push_back(sample);
-        }
-
-        // Limit buffer size to prevent unbounded growth
-        while buf.len() > MAX_AUDIO_BUFFER_SAMPLES {
-            buf.pop_front();
-        }
-    }
-
-    /// Fill `data` from the shared sample `buffer`, invoking `conv` for each sample (or when the buffer is empty).
+    /// Fill `data` by pulling samples from the shared audio buffer.
     ///
     /// This helper centralizes underrun counting and logging so the callbacks remain small and consistent.
-    fn fill_from_buffer<T, F>(data: &mut [T], buffer: &Arc<Mutex<VecDeque<i16>>>, mut conv: F)
-    where
+    fn fill_from_shared_buffer<T, F>(
+        data: &mut [T],
+        audio_source: &Option<SharedAudioBuffer>,
+        mut conv: F,
+    ) where
         F: FnMut(Option<i16>) -> T,
     {
         let total = data.len();
-        let mut underruns = 0usize;
 
-        let mut buf = buffer.lock().unwrap();
+        // Pull samples from shared buffer
+        let samples = if let Some(source) = audio_source {
+            source.pull_samples(total)
+        } else {
+            Vec::new()
+        };
+
+        let mut samples_iter = samples.into_iter();
+
         for slot in data.iter_mut() {
-            match buf.pop_front() {
+            match samples_iter.next() {
                 Some(v) => *slot = conv(Some(v)),
-                None => {
-                    *slot = conv(None);
-                    underruns += 1;
-                }
+                None => *slot = conv(None),
             }
         }
 
+        let underruns = total.saturating_sub(samples_iter.len());
         if underruns > 0 {
             let available = total - underruns;
             log::warn!(
@@ -250,13 +243,13 @@ impl AudioStream {
     fn build_i16_stream(
         device: &cpal::Device,
         config: &StreamConfig,
-        buffer: Arc<Mutex<VecDeque<i16>>>,
+        audio_source: Option<SharedAudioBuffer>,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    Self::fill_from_buffer(data, &buffer, |opt| opt.unwrap_or(0));
+                    Self::fill_from_shared_buffer(data, &audio_source, |opt| opt.unwrap_or(0));
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
@@ -268,13 +261,13 @@ impl AudioStream {
     fn build_f32_stream(
         device: &cpal::Device,
         config: &StreamConfig,
-        buffer: Arc<Mutex<VecDeque<i16>>>,
+        audio_source: Option<SharedAudioBuffer>,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    Self::fill_from_buffer(data, &buffer, |opt| {
+                    Self::fill_from_shared_buffer(data, &audio_source, |opt| {
                         opt.map(|s| s as f32 / 32768.0).unwrap_or(0.0)
                     });
                 },
@@ -288,14 +281,14 @@ impl AudioStream {
     fn build_u16_stream(
         device: &cpal::Device,
         config: &StreamConfig,
-        buffer: Arc<Mutex<VecDeque<i16>>>,
+        audio_source: Option<SharedAudioBuffer>,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
                     let center = ((i16::MAX as i32) + 1) as u16;
-                    Self::fill_from_buffer(data, &buffer, |opt| match opt {
+                    Self::fill_from_shared_buffer(data, &audio_source, |opt| match opt {
                         Some(sample_i16) => {
                             // Convert i16 to u16 (shift range)
                             let shifted = (sample_i16 as i32) + (i16::MAX as i32) + 1;

@@ -1,10 +1,12 @@
 //! Headless backend implementations for automated testing.
 //!
 //! These backends capture all video frames and audio samples with timestamps
-//! instead of rendering to hardware devices.
+//! instead of rendering to hardware devices. They implement the pull-based
+//! data flow model by pulling from shared buffers.
 
 use crate::backend_traits::{AudioBackend, EventSource, VideoBackend, ViewerEvent};
-use cpu_sim::{AudioConfig, VideoConfig};
+use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer, VideoFrame};
+use cpu_sim::AudioConfig;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -15,7 +17,7 @@ pub struct CapturedFrame {
     pub data: Vec<u8>,
 
     /// Video configuration at capture time
-    pub config: VideoConfig,
+    pub config: cpu_sim::VideoConfig,
 
     /// Timestamp when frame was presented
     pub timestamp: Instant,
@@ -29,19 +31,19 @@ pub struct HeadlessVideoBackend {
     /// All captured frames
     captured_frames: Vec<CapturedFrame>,
 
-    /// Current frame buffer (before presentation)
-    current_frame: Option<(Vec<u8>, VideoConfig)>,
-
     /// Frame sequence counter
     frame_count: u64,
+
+    /// Shared video buffer (set via set_video_source)
+    video_source: Option<SharedVideoBuffer>,
 }
 
 impl HeadlessVideoBackend {
     pub fn new() -> Self {
         Self {
             captured_frames: Vec::new(),
-            current_frame: None,
             frame_count: 0,
+            video_source: None,
         }
     }
 
@@ -58,32 +60,32 @@ impl Default for HeadlessVideoBackend {
 }
 
 impl VideoBackend for HeadlessVideoBackend {
-    fn process_frame(&mut self, data: &[u8], config: &VideoConfig) -> Result<(), String> {
-        // Store frame data (will be presented in update())
-        self.current_frame = Some((data.to_vec(), *config));
-        Ok(())
+    fn set_video_source(&mut self, buffer: SharedVideoBuffer) {
+        self.video_source = Some(buffer);
     }
 
     fn update(&mut self) -> Result<(), String> {
-        // Present the current frame (capture with timestamp)
-        if let Some((data, config)) = self.current_frame.take() {
-            let frame = CapturedFrame {
-                data,
-                config,
-                timestamp: Instant::now(),
-                sequence: self.frame_count,
-            };
+        // Pull all available frames from shared buffer
+        if let Some(ref source) = self.video_source {
+            while let Some(frame) = source.pull_frame() {
+                let captured = CapturedFrame {
+                    data: frame.data,
+                    config: frame.config,
+                    timestamp: frame.timestamp,
+                    sequence: self.frame_count,
+                };
 
-            log::debug!(
-                "Captured frame {} ({}x{}, {:?})",
-                self.frame_count,
-                config.width,
-                config.height,
-                config.format
-            );
+                log::debug!(
+                    "Captured frame {} ({}x{}, {:?})",
+                    self.frame_count,
+                    captured.config.width,
+                    captured.config.height,
+                    captured.config.format
+                );
 
-            self.captured_frames.push(frame);
-            self.frame_count += 1;
+                self.captured_frames.push(captured);
+                self.frame_count += 1;
+            }
         }
 
         Ok(())
@@ -124,6 +126,9 @@ pub struct HeadlessAudioBackend {
 
     /// Current audio configuration
     current_config: Option<AudioConfig>,
+
+    /// Shared audio buffer (set via set_audio_source)
+    audio_source: Option<SharedAudioBuffer>,
 }
 
 impl HeadlessAudioBackend {
@@ -132,6 +137,7 @@ impl HeadlessAudioBackend {
             captured_chunks: Vec::new(),
             sample_count: 0,
             current_config: None,
+            audio_source: None,
         }
     }
 
@@ -144,6 +150,31 @@ impl HeadlessAudioBackend {
     pub fn get_current_config(&self) -> Option<AudioConfig> {
         self.current_config
     }
+
+    /// Update by pulling samples from shared buffer (call periodically to capture audio)
+    pub fn update(&mut self) {
+        // Pull all available samples from shared buffer
+        if let Some(ref source) = self.audio_source {
+            // Pull in chunks to preserve chunk boundaries
+            const CHUNK_SIZE: usize = 1024;
+            while source.has_samples() {
+                let samples = source.pull_samples(CHUNK_SIZE);
+                if samples.is_empty() {
+                    break;
+                }
+
+                let chunk = CapturedAudioChunk {
+                    samples,
+                    timestamp: Instant::now(),
+                    sample_offset: self.sample_count,
+                    config: self.current_config,
+                };
+
+                self.sample_count += chunk.samples.len() as u64;
+                self.captured_chunks.push(chunk);
+            }
+        }
+    }
 }
 
 impl Default for HeadlessAudioBackend {
@@ -153,20 +184,8 @@ impl Default for HeadlessAudioBackend {
 }
 
 impl AudioBackend for HeadlessAudioBackend {
-    fn push_samples(&mut self, samples: &[i16]) {
-        if samples.is_empty() {
-            return;
-        }
-
-        let chunk = CapturedAudioChunk {
-            samples: samples.to_vec(),
-            timestamp: Instant::now(),
-            sample_offset: self.sample_count,
-            config: self.current_config,
-        };
-
-        self.captured_chunks.push(chunk);
-        self.sample_count += samples.len() as u64;
+    fn set_audio_source(&mut self, buffer: SharedAudioBuffer) {
+        self.audio_source = Some(buffer);
     }
 
     fn set_config(&mut self, config: &AudioConfig) {
@@ -177,6 +196,11 @@ impl AudioBackend for HeadlessAudioBackend {
             config.sample_count
         );
         self.current_config = Some(*config);
+
+        // Update config in shared buffer if available
+        if let Some(ref source) = self.audio_source {
+            source.set_config(*config);
+        }
     }
 }
 
@@ -214,20 +238,26 @@ impl EventSource for HeadlessEventSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cpu_sim::VideoFormat;
+    use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
+    use cpu_sim::{AudioChannels, AudioSampleRate, VideoFormat};
 
     #[test]
     fn test_headless_video_captures_frames() {
         let mut backend = HeadlessVideoBackend::new();
+        let video_buffer = SharedVideoBuffer::new();
 
+        backend.set_video_source(video_buffer.clone());
+
+        // Push a frame to the shared buffer (simulating callback)
         let data = vec![0xFF; 320 * 240 * 4];
-        let config = VideoConfig {
+        let config = cpu_sim::VideoConfig {
             width: 320,
             height: 240,
             format: VideoFormat::Rgba8,
         };
+        video_buffer.push_frame(data.clone(), config);
 
-        backend.process_frame(&data, &config).unwrap();
+        // Pull and capture the frame
         backend.update().unwrap();
 
         let captured = backend.get_frames();
@@ -239,9 +269,24 @@ mod tests {
     #[test]
     fn test_headless_audio_captures_samples() {
         let mut backend = HeadlessAudioBackend::new();
+        let audio_buffer = SharedAudioBuffer::new();
 
+        backend.set_audio_source(audio_buffer.clone());
+
+        // Set config
+        let config = AudioConfig {
+            sample_rate: AudioSampleRate::Hz48000,
+            channels: AudioChannels::Mono,
+            sample_count: 1024,
+        };
+        backend.set_config(&config);
+
+        // Push samples to shared buffer (simulating callback)
         let samples = vec![100i16, 200, 300];
-        backend.push_samples(&samples);
+        audio_buffer.push_samples(samples.clone());
+
+        // Pull and capture samples
+        backend.update();
 
         let captured = backend.get_chunks();
         assert_eq!(captured.len(), 1);
@@ -261,4 +306,5 @@ mod tests {
         assert_eq!(events.len(), 1);
         matches!(events[0], ViewerEvent::Close);
     }
+}
 }

@@ -9,4 +9,5 @@ mod video_window;
 pub mod backend_traits;
 pub mod gui_backends;
 pub mod headless_backends;
+pub mod shared_buffers;
 pub mod viewer;
