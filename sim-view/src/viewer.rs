@@ -277,11 +277,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                     self.total_cycles += INSTRUCTIONS_PER_FRAME;
 
                     // Check if simulation halted
-                    if result.tohost_value.is_some() {
-                        log::info!(
-                            "Program halted with tohost value: 0x{:08x}",
-                            result.tohost_value.unwrap()
-                        );
+                    if let Some(tohost_value) = result.tohost_value {
+                        log::info!("Program halted with tohost value: 0x{:08x}", tohost_value);
                         self.state = ViewerState::Halted;
                         self.update_window_title();
                     }
