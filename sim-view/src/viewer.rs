@@ -470,7 +470,6 @@ impl SimViewer<HeadlessVideoBackend, HeadlessAudioBackend, HeadlessEventSource> 
     /// Note: This clones the chunk data. This is acceptable because this method is only
     /// called infrequently (at test completion for verification). The hot path
     /// (audio callback during simulation) pushes to shared buffer with zero copies.
-    /// (audio callback during simulation) writes directly to the backend with zero copies.
     pub fn get_audio_chunks(&self) -> Vec<CapturedAudioChunk> {
         self.audio_backend.borrow().get_chunks().to_vec()
     }
