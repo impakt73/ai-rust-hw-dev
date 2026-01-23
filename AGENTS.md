@@ -88,6 +88,33 @@ verilator --version  # Verify installation
 
 Without Verilator, all tests fail. This is the #1 cause of build failures.
 
+**Rust Toolchain** (tested with 1.92.0+):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Tech Stack
+
+- **RTL:** SystemVerilog (in `rtl/` directory)
+- **Verification:** Rust with marlin + Verilator (in `testbench/` directory)
+- **Build System:** Cargo workspace with 6 members: cpu-sim, riscv_core, testbench, riscv_protocol, riscv_macros, vcd-mcp
+- **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
+
+### Project Structure
+
+```
+.
+├── Cargo.toml              # Workspace root
+├── rtl/                    # SystemVerilog RTL modules
+│   ├── top.sv             # Top-level CPU (multi-cycle FSM control)
+│   ├── alu.sv, decoder.sv, regfile.sv, etc.
+├── testbench/              # Rust verification (integration tests)
+│   └── tests/             # Integration test files
+├── cpu-sim/               # CPU simulator
+├── riscv_core/            # Shared Verilator bindings
+└── test_programs/         # Example test programs (ELF binaries)
+```
+
 ### Quick Start Commands
 
 ```bash
@@ -127,6 +154,23 @@ Tests must use addresses in this range:
 lui(reg, 0x80000000);  // Load upper immediate
 sw(reg, val, offset);   // Store with offset
 ```
+
+### Common Setup Issues
+
+**Tests fail with "Verilator not found":**
+```bash
+sudo apt-get install -y verilator
+```
+
+**Tests fail after RTL changes:**
+```bash
+cargo clean  # Clear cached Verilator builds
+cargo test
+```
+
+**Performance Notes:**
+- First test run is slow (~15-30 seconds) due to Verilator compilation
+- Subsequent runs are fast (~1-2 seconds) due to caching
 
 ---
 
