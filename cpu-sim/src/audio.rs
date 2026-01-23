@@ -329,7 +329,7 @@ mod tests {
     fn test_audio_config_parsing() {
         // Test: 48000Hz, Mono, 256 samples (log2=8)
         // sample_rate=0, channels=0, log2_count=8
-        let config_value = 0 | (0 << 2) | (8 << 3);
+        let config_value = 8 << 3;
         let config = AudioConfig::from_register(config_value).unwrap();
         assert_eq!(config.sample_rate, AudioSampleRate::Hz48000);
         assert_eq!(config.channels, AudioChannels::Mono);
@@ -359,17 +359,12 @@ mod tests {
 
         // Write to registers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio
-            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
-            .unwrap();
+        audio.write_word(&mut ctx, 0x04, 8 << 3).unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Read back registers
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0x8000_1000);
-        assert_eq!(
-            audio.read_word(&mut ctx, 0x04).unwrap(),
-            0 | (0 << 2) | (8 << 3)
-        );
+        assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), (8 << 3));
         assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0); // read_ptr starts at 0
         assert_eq!(audio.read_word(&mut ctx, 0x0C).unwrap(), 0x100);
     }
@@ -414,7 +409,7 @@ mod tests {
 
         // Configure audio device for mono, 4 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (0 << 2) | (2 << 3); // 48000Hz, Mono, 4 samples (log2=2)
+        let config = 2 << 3; // 48000Hz, Mono, 4 samples (log2=2)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Set write pointer to indicate 4 samples available (4 samples × 2 bytes = 8 bytes)
@@ -472,7 +467,7 @@ mod tests {
 
         // Configure audio device for stereo, 2 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (log2=1)
+        let config = (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (log2=1)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Set write pointer to indicate 2 samples available (2 samples × 2 channels × 2 bytes = 8 bytes)
@@ -510,7 +505,7 @@ mod tests {
         let mut ctx = SystemContext::new(&mut memory);
 
         // Write first config
-        let config1 = 0 | (0 << 2) | (8 << 3); // 48000Hz, Mono, 256 samples
+        let config1 = 8 << 3; // 48000Hz, Mono, 256 samples
         audio.write_word(&mut ctx, 0x04, config1).unwrap();
 
         // Write different config
@@ -556,7 +551,7 @@ mod tests {
 
         // Configure audio device
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (0 << 2) | (2 << 3); // 48000Hz, Mono, 4 samples (log2=2)
+        let config = 2 << 3; // 48000Hz, Mono, 4 samples (log2=2)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Read all 4 samples (should wrap read pointer to 0)
@@ -582,9 +577,7 @@ mod tests {
 
         // Configure and set pointers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio
-            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
-            .unwrap();
+        audio.write_word(&mut ctx, 0x04, 8 << 3).unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Reset

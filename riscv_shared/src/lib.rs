@@ -18,12 +18,12 @@ pub mod video;
 
 // Re-exports for convenience
 pub use audio::{
-    generate_sine_sample, AudioChannels, AudioConfig, AudioSampleRate, AUDIO_ADDR, AUDIO_CONFIG,
-    AUDIO_READ_PTR, AUDIO_WRITE_PTR,
+    AUDIO_ADDR, AUDIO_CONFIG, AUDIO_READ_PTR, AUDIO_WRITE_PTR, AudioChannels, AudioConfig,
+    AudioSampleRate, generate_sine_sample,
 };
 pub use bus::{
-    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+    AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE, is_valid_dram_range,
 };
 pub use fifo::{FIFO_DATA, FIFO_STATUS, RX_VALID, TX_READY};
 pub use sim_control::{FAILURE_CODE, PANIC_CODE, SUCCESS_CODE, TOHOST_ADDR};
-pub use video::{VideoConfig, VideoFormat, VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS};
+pub use video::{VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS, VideoConfig, VideoFormat};

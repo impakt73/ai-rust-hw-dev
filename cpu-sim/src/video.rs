@@ -304,7 +304,7 @@ mod tests {
     fn test_video_config_parsing() {
         // Test: 640x480 RGBA8
         // width-1 = 639 (0x27F), height-1 = 479 (0x1DF), format = 0
-        let config_value = 0x27F | (0x1DF << 12) | (0 << 24);
+        let config_value = 0x27F | (0x1DF << 12);
         let config = VideoConfig::from_register(config_value).unwrap();
         assert_eq!(config.width, 640);
         assert_eq!(config.height, 480);
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn test_video_config_max_dimensions() {
         // Test: 4096x4096 RGBA8
-        let config_value = 0xFFF | (0xFFF << 12) | (0 << 24);
+        let config_value = 0xFFF | (0xFFF << 12);
         let config = VideoConfig::from_register(config_value).unwrap();
         assert_eq!(config.width, 4096);
         assert_eq!(config.height, 4096);
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn test_video_config_min_dimensions() {
         // Test: 1x1 RGB565
-        let config_value = 0x0 | (0x0 << 12) | (2 << 24);
+        let config_value = 2 << 24;
         let config = VideoConfig::from_register(config_value).unwrap();
         assert_eq!(config.width, 1);
         assert_eq!(config.height, 1);
@@ -412,7 +412,7 @@ mod tests {
 
         // Configure video device for 2x2 RGBA8
         video.write_word(&mut ctx, 0x00, img_addr).unwrap();
-        let config = 1 | (1 << 12) | (0 << 24); // 2x2 RGBA8
+        let config = 1 | (1 << 12); // 2x2 RGBA8
         video.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Check initial status: both FRAME_READY and PRESENT_READY
@@ -470,9 +470,7 @@ mod tests {
 
         // Configure for small image
         video.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        video
-            .write_word(&mut ctx, 0x04, 1 | (1 << 12) | (0 << 24))
-            .unwrap();
+        video.write_word(&mut ctx, 0x04, 1 | (1 << 12)).unwrap();
 
         // Trigger first present
         video.write_word(&mut ctx, 0x0C, 0).unwrap();
