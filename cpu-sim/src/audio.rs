@@ -27,7 +27,7 @@ struct ActiveDma {
 /// - 0x04: AUDIO_CONFIG     - Audio configuration (read/write)
 ///   Bits [1:0]   = sample_rate (0=48000Hz, 1=44100Hz, 2=22050Hz)
 ///   Bit 2        = channels (0=mono, 1=stereo)
-///   Bits [7:3]   = log2(sample_count) (5 bits, number of samples to read)
+///   Bits [18:3]  = sample_count - 1 (16 bits, allows 1-65536 samples with +1 bias)
 /// - 0x08: AUDIO_STATUS     - Status register (read-only)
 ///   Bit 0: DMA_READY (1 = can trigger new DMA operation)
 /// - 0x0C: AUDIO_DMA        - Trigger DMA (write-only, write any value to start)
@@ -300,9 +300,9 @@ mod tests {
 
     #[test]
     fn test_audio_config_parsing() {
-        // Test: 48000Hz, Mono, 256 samples (log2=8)
-        // sample_rate=0, channels=0, log2_count=8
-        let config_value = 8 << 3;
+        // Test: 48000Hz, Mono, 256 samples
+        // sample_rate=0, channels=0, sample_count=256 (stored as 255)
+        let config_value = 255 << 3;
         let config = AudioConfig::from_register(config_value).unwrap();
         assert_eq!(config.sample_rate, AudioSampleRate::Hz48000);
         assert_eq!(config.channels, AudioChannels::Mono);
@@ -315,8 +315,8 @@ mod tests {
 
     #[test]
     fn test_audio_config_stereo() {
-        // Test: 44100Hz, Stereo, 512 samples (log2=9)
-        let config_value = 1 | (1 << 2) | (9 << 3);
+        // Test: 44100Hz, Stereo, 512 samples
+        let config_value = 1 | (1 << 2) | (511 << 3);
         let config = AudioConfig::from_register(config_value).unwrap();
         assert_eq!(config.sample_rate, AudioSampleRate::Hz44100);
         assert_eq!(config.channels, AudioChannels::Stereo);
@@ -330,7 +330,7 @@ mod tests {
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
-        // Write to registers
+        // Write to registers (9 samples stored as 8)
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
         audio.write_word(&mut ctx, 0x04, 8 << 3).unwrap();
 
@@ -395,7 +395,7 @@ mod tests {
 
         // Configure audio device for mono, 4 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 2 << 3; // 48000Hz, Mono, 4 samples (log2=2)
+        let config = 3 << 3; // 48000Hz, Mono, 4 samples (stored as 3)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Check status: DMA should be ready
@@ -458,7 +458,7 @@ mod tests {
 
         // Configure audio device for stereo, 2 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (log2=1)
+        let config = (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (stored as 1)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Trigger DMA
@@ -498,11 +498,11 @@ mod tests {
         let mut ctx = SystemContext::new(&mut memory);
 
         // Write first config
-        let config1 = 8 << 3; // 48000Hz, Mono, 256 samples
+        let config1 = 255 << 3; // 48000Hz, Mono, 256 samples (stored as 255)
         audio.write_word(&mut ctx, 0x04, config1).unwrap();
 
         // Write different config
-        let config2 = 1 | (1 << 2) | (9 << 3); // 44100Hz, Stereo, 512 samples
+        let config2 = 1 | (1 << 2) | (511 << 3); // 44100Hz, Stereo, 512 samples (stored as 511)
         audio.write_word(&mut ctx, 0x04, config2).unwrap();
 
         // Verify callback was invoked twice
@@ -526,8 +526,8 @@ mod tests {
         // Use stereo, 8 samples = 8 × 2 channels × 2 bytes = 32 bytes
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
         audio
-            .write_word(&mut ctx, 0x04, (1 << 2) | (3 << 3))
-            .unwrap(); // Stereo, 8 samples (log2=3)
+            .write_word(&mut ctx, 0x04, (1 << 2) | (7 << 3))
+            .unwrap(); // Stereo, 8 samples (stored as 7)
 
         // Trigger first DMA
         audio.write_word(&mut ctx, 0x0C, 0).unwrap();

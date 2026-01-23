@@ -19,9 +19,10 @@ const BUFFER_BASE: u32 = 0x8000_2000;
 /// Helper to create AUDIO_CONFIG register value
 /// Bits [1:0]   = sample_rate (0=48000Hz, 1=44100Hz, 2=22050Hz)
 /// Bit 2        = channels (0=mono, 1=stereo)
-/// Bits [7:3]   = log2(sample_count)
-const fn make_audio_config(sample_rate: u32, channels: u32, log2_sample_count: u32) -> u32 {
-    (sample_rate & 0x3) | ((channels & 0x1) << 2) | ((log2_sample_count & 0x1F) << 3)
+/// Bits [18:3]  = sample_count - 1 (16 bits, allows 1-65536 samples with +1 bias)
+const fn make_audio_config(sample_rate: u32, channels: u32, sample_count: u32) -> u32 {
+    let sample_count_minus_1 = (sample_count - 1) & 0xFFFF;
+    (sample_rate & 0x3) | ((channels & 0x1) << 2) | (sample_count_minus_1 << 3)
 }
 
 /// Write a stereo sample to the buffer
@@ -54,16 +55,15 @@ fn trigger_dma() {
 fn main() -> ! {
     unsafe {
         // Configure Audio device
-        // Use a small buffer (64 samples = 2^6) for the test
-        const LOG2_BUFFER_SIZE: u32 = 6; // 64 samples
-        const BUFFER_SIZE_SAMPLES: u32 = 1 << LOG2_BUFFER_SIZE; // 64
-        const TOTAL_SAMPLES: u32 = 512; // Generate 512 total samples (8 batches of 64)
+        // Use a small buffer (64 samples) for the test
+        const BUFFER_SIZE_SAMPLES: u32 = 64;
+        const TOTAL_SAMPLES: u32 = 500; // Generate 500 total samples
         const FREQUENCY_DIV: u32 = 4; // Sine wave frequency divider
 
         write_volatile(AUDIO_ADDR as *mut u32, BUFFER_BASE);
         write_volatile(
             AUDIO_CONFIG as *mut u32,
-            make_audio_config(0, 1, LOG2_BUFFER_SIZE), // 48000Hz, Stereo, 64 samples
+            make_audio_config(0, 1, BUFFER_SIZE_SAMPLES), // 48000Hz, Stereo, 64 samples
         );
 
         let mut samples_written: u32 = 0;
@@ -91,10 +91,9 @@ fn main() -> ! {
             }
 
             // Update config to specify how many samples to read in this DMA operation
-            let log2_batch_size = 31 - batch_size.leading_zeros();
             write_volatile(
                 AUDIO_CONFIG as *mut u32,
-                make_audio_config(0, 1, log2_batch_size),
+                make_audio_config(0, 1, batch_size),
             );
 
             // Wait for DMA to be ready

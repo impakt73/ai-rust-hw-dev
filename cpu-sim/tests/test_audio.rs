@@ -92,7 +92,11 @@ fn test_audio_pattern() {
         println!("✓ Captured {} DMA batches", sample_batches.len());
 
         // Verify we got the expected number of config changes
-        // Test program writes AUDIO_CONFIG once initially, then once per batch (8 batches)
+        // Test program writes AUDIO_CONFIG once initially, then once per batch
+        // With 500 samples total and 64 samples per batch:
+        // - 7 batches of 64 = 448 samples
+        // - 1 batch of 52 = 52 samples
+        // Total: 8 batches
         assert_eq!(
             configs.len(),
             9,
@@ -109,10 +113,10 @@ fn test_audio_pattern() {
         let total_stereo_samples = all_samples.len() / 2;
         println!("✓ Total stereo samples captured: {}", total_stereo_samples);
 
-        // Verify we received exactly 512 stereo samples (as per test program)
+        // Verify we received exactly 500 stereo samples (as per test program)
         assert_eq!(
-            total_stereo_samples, 512,
-            "Should have received exactly 512 stereo samples"
+            total_stereo_samples, 500,
+            "Should have received exactly 500 stereo samples"
         );
 
         // Verify samples match expected sine wave pattern exactly
