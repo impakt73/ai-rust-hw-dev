@@ -6,20 +6,12 @@ mod common;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
+use riscv_shared::{AUDIO_ADDR, AUDIO_CONFIG, AUDIO_READ_PTR, AUDIO_WRITE_PTR};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
-
-/// Audio device base address
-const AUDIO_BASE: u32 = 0x3000_0000;
-
-/// Audio register offsets
-const AUDIO_ADDR: u32 = AUDIO_BASE;
-const AUDIO_CONFIG: u32 = AUDIO_BASE + 0x04;
-const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
-const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
 
 /// Ring buffer base address in DRAM
 const RING_BUFFER_BASE: u32 = 0x8000_2000;

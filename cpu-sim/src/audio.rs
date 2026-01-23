@@ -1,144 +1,7 @@
 use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 
-/// Audio sample rate enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioSampleRate {
-    /// 48000 Hz sample rate
-    Hz48000,
-    /// 44100 Hz sample rate
-    Hz44100,
-    /// 22050 Hz sample rate
-    Hz22050,
-}
-
-impl AudioSampleRate {
-    /// Get the numeric sample rate value
-    pub fn to_hz(&self) -> u32 {
-        match self {
-            AudioSampleRate::Hz48000 => 48000,
-            AudioSampleRate::Hz44100 => 44100,
-            AudioSampleRate::Hz22050 => 22050,
-        }
-    }
-
-    /// Parse sample rate from 2-bit field
-    fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(AudioSampleRate::Hz48000),
-            1 => Some(AudioSampleRate::Hz44100),
-            2 => Some(AudioSampleRate::Hz22050),
-            _ => None,
-        }
-    }
-
-    /// Convert sample rate to 2-bit field
-    #[allow(dead_code)]
-    fn to_u8(self) -> u8 {
-        match self {
-            AudioSampleRate::Hz48000 => 0,
-            AudioSampleRate::Hz44100 => 1,
-            AudioSampleRate::Hz22050 => 2,
-        }
-    }
-}
-
-/// Audio channel configuration
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioChannels {
-    /// Mono audio (1 channel, 1 × i16 per sample)
-    Mono,
-    /// Stereo audio (2 channels, 2 × i16 per sample)
-    Stereo,
-}
-
-impl AudioChannels {
-    /// Get the number of channels
-    pub fn count(&self) -> usize {
-        match self {
-            AudioChannels::Mono => 1,
-            AudioChannels::Stereo => 2,
-        }
-    }
-
-    /// Parse channel configuration from 1-bit field
-    fn from_u8(value: u8) -> Self {
-        match value {
-            0 => AudioChannels::Mono,
-            _ => AudioChannels::Stereo,
-        }
-    }
-
-    /// Convert channel configuration to 1-bit field
-    #[allow(dead_code)]
-    fn to_u8(self) -> u8 {
-        match self {
-            AudioChannels::Mono => 0,
-            AudioChannels::Stereo => 1,
-        }
-    }
-}
-
-/// Configuration parsed from AUDIO_CONFIG register
-#[derive(Debug, Clone, Copy)]
-pub struct AudioConfig {
-    /// Sample rate
-    pub sample_rate: AudioSampleRate,
-    /// Number of audio channels
-    pub channels: AudioChannels,
-    /// Number of samples in the ring buffer (must be power of 2)
-    pub sample_count: u32,
-}
-
-impl AudioConfig {
-    /// Parse configuration from register value
-    /// Bits [1:0]   = sample_rate (2 bits)
-    /// Bit 2        = channels (1 bit: 0=mono, 1=stereo)
-    /// Bits [7:3]   = log2(sample_count) (5 bits, allowing 1-32 bit values = 2^0 to 2^31 samples)
-    fn from_register(value: u32) -> Option<Self> {
-        let sample_rate_field = (value & 0x3) as u8;
-        let channels_field = ((value >> 2) & 0x1) as u8;
-        let log2_sample_count = ((value >> 3) & 0x1F) as u8;
-
-        let sample_rate = AudioSampleRate::from_u8(sample_rate_field)?;
-        let channels = AudioChannels::from_u8(channels_field);
-
-        // Calculate sample count as 2^log2_sample_count
-        // Limit to maximum of 2^31 to avoid overflow
-        if log2_sample_count >= 32 {
-            return None;
-        }
-        let sample_count = 1u32 << log2_sample_count;
-
-        Some(AudioConfig {
-            sample_rate,
-            channels,
-            sample_count,
-        })
-    }
-
-    /// Convert configuration to register value
-    #[allow(dead_code)]
-    fn to_register(self) -> u32 {
-        let sample_rate_field = self.sample_rate.to_u8() as u32;
-        let channels_field = self.channels.to_u8() as u32;
-
-        // Calculate log2 of sample_count
-        let log2_sample_count = 31 - self.sample_count.leading_zeros();
-
-        sample_rate_field | (channels_field << 2) | (log2_sample_count << 3)
-    }
-
-    /// Calculate total number of bytes in the ring buffer
-    /// Each sample is 2 bytes (i16) per channel
-    pub fn buffer_bytes(&self) -> u32 {
-        self.sample_count * 2 * self.channels.count() as u32
-    }
-
-    /// Calculate bytes per sample
-    pub fn bytes_per_sample(&self) -> u32 {
-        2 * self.channels.count() as u32
-    }
-}
+// Re-export types from riscv_shared for backward compatibility
+pub use riscv_shared::audio::{AudioChannels, AudioConfig, AudioSampleRate};
 
 /// Active read operation state
 #[derive(Debug, Clone)]
@@ -466,7 +329,7 @@ mod tests {
     fn test_audio_config_parsing() {
         // Test: 48000Hz, Mono, 256 samples (log2=8)
         // sample_rate=0, channels=0, log2_count=8
-        let config_value = 0 | (0 << 2) | (8 << 3);
+        let config_value = 8 << 3;
         let config = AudioConfig::from_register(config_value).unwrap();
         assert_eq!(config.sample_rate, AudioSampleRate::Hz48000);
         assert_eq!(config.channels, AudioChannels::Mono);
@@ -496,17 +359,12 @@ mod tests {
 
         // Write to registers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio
-            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
-            .unwrap();
+        audio.write_word(&mut ctx, 0x04, 8 << 3).unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Read back registers
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0x8000_1000);
-        assert_eq!(
-            audio.read_word(&mut ctx, 0x04).unwrap(),
-            0 | (0 << 2) | (8 << 3)
-        );
+        assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), (8 << 3));
         assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0); // read_ptr starts at 0
         assert_eq!(audio.read_word(&mut ctx, 0x0C).unwrap(), 0x100);
     }
@@ -551,7 +409,7 @@ mod tests {
 
         // Configure audio device for mono, 4 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (0 << 2) | (2 << 3); // 48000Hz, Mono, 4 samples (log2=2)
+        let config = 2 << 3; // 48000Hz, Mono, 4 samples (log2=2)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Set write pointer to indicate 4 samples available (4 samples × 2 bytes = 8 bytes)
@@ -609,7 +467,7 @@ mod tests {
 
         // Configure audio device for stereo, 2 samples
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (log2=1)
+        let config = (1 << 2) | (1 << 3); // 48000Hz, Stereo, 2 samples (log2=1)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Set write pointer to indicate 2 samples available (2 samples × 2 channels × 2 bytes = 8 bytes)
@@ -647,7 +505,7 @@ mod tests {
         let mut ctx = SystemContext::new(&mut memory);
 
         // Write first config
-        let config1 = 0 | (0 << 2) | (8 << 3); // 48000Hz, Mono, 256 samples
+        let config1 = 8 << 3; // 48000Hz, Mono, 256 samples
         audio.write_word(&mut ctx, 0x04, config1).unwrap();
 
         // Write different config
@@ -693,7 +551,7 @@ mod tests {
 
         // Configure audio device
         audio.write_word(&mut ctx, 0x00, audio_addr).unwrap();
-        let config = 0 | (0 << 2) | (2 << 3); // 48000Hz, Mono, 4 samples (log2=2)
+        let config = 2 << 3; // 48000Hz, Mono, 4 samples (log2=2)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
         // Read all 4 samples (should wrap read pointer to 0)
@@ -719,9 +577,7 @@ mod tests {
 
         // Configure and set pointers
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio
-            .write_word(&mut ctx, 0x04, 0 | (0 << 2) | (8 << 3))
-            .unwrap();
+        audio.write_word(&mut ctx, 0x04, 8 << 3).unwrap();
         audio.write_word(&mut ctx, 0x0C, 0x100).unwrap();
 
         // Reset

@@ -699,6 +699,7 @@ dependencies = [
  "postcard",
  "riscv_core",
  "riscv_protocol",
+ "riscv_shared",
  "serde",
 ]
 
@@ -2700,6 +2701,10 @@ dependencies = [
  "postcard",
  "serde",
 ]
+
+[[package]]
+name = "riscv_shared"
+version = "0.1.0"
 
 [[package]]
 name = "rmcp"

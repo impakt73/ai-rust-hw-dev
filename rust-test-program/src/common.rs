@@ -7,6 +7,17 @@ use core::panic::PanicInfo;
 use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+// Re-export constants from riscv_shared
+// Note: Some re-exports may be unused in this module but are used by test programs that import from common
+#[allow(unused_imports)]
+pub use riscv_shared::{
+    FAILURE_CODE, FIFO_DATA, FIFO_STATUS, PANIC_CODE, RX_VALID, SUCCESS_CODE, TOHOST_ADDR, TX_READY,
+};
+
+// Re-export helper function
+#[allow(unused_imports)]
+pub use riscv_shared::audio::generate_sine_sample;
+
 /// Simple bump allocator for bare-metal environment.
 ///
 /// This allocator uses a static 8KB heap placed in the .uninit section to avoid
@@ -69,25 +80,6 @@ pub fn default_panic_handler(_info: &PanicInfo) -> ! {
     write_tohost(PANIC_CODE)
 }
 
-/// TOHOST address for signaling halt to the simulator
-///
-/// This register is provided by the SimControl device and is used to signal
-/// program termination to the simulator. Writing any value to this address
-/// will cause the simulator to halt and capture the written value.
-///
-/// Note: The tohost register is write-only. Attempting to read from it will
-/// result in a bus error.
-pub const TOHOST_ADDR: u32 = 0x1000_0000;
-
-/// Standard success code for tests (expected by cpu-sim)
-pub const SUCCESS_CODE: u32 = 42;
-
-/// Standard failure code for tests (indicates test logic failure, not panic)
-pub const FAILURE_CODE: u32 = 1;
-
-/// Standard panic/failure code (different from success to aid debugging)
-pub const PANIC_CODE: u32 = 0xDEAD;
-
 /// Write to tohost to signal halt with the given value
 #[inline(never)]
 pub fn write_tohost(value: u32) -> ! {
@@ -97,13 +89,6 @@ pub fn write_tohost(value: u32) -> ! {
     #[allow(clippy::empty_loop)]
     loop {}
 }
-
-/// FIFO memory-mapped I/O addresses and constants
-pub const FIFO_BASE: u32 = 0x4000_0000;
-pub const FIFO_DATA: u32 = FIFO_BASE;
-pub const FIFO_STATUS: u32 = FIFO_BASE + 0x4;
-pub const RX_VALID: u32 = 1 << 0;
-pub const TX_READY: u32 = 1 << 1;
 
 /// FIFO read error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,39 +151,4 @@ pub fn read_fifo_words(max_words: usize) -> usize {
         }
     }
     count
-}
-
-/// Audio test utilities for generating consistent test patterns
-/// Generate a sine wave sample at a given index
-/// Uses a lookup table approach for consistency between test and test program
-pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
-    // Simple sine wave using lookup table approximation
-    // We'll use a 32-entry lookup table for a quarter wave
-    const QUARTER_WAVE_LEN: u32 = 32;
-    const FULL_WAVE_LEN: u32 = QUARTER_WAVE_LEN * 4;
-
-    // Normalize index to position in full wave
-    let phase = (index / frequency_div) % FULL_WAVE_LEN;
-
-    // Quarter wave lookup table (0 to pi/2, scaled to 0-32767)
-    const SINE_TABLE: [i16; 32] = [
-        0, 1608, 3212, 4808, 6393, 7962, 9512, 11039, 12539, 14010, 15446, 16846, 18204, 19519,
-        20787, 22005, 23170, 24279, 25329, 26319, 27245, 28105, 28898, 29621, 30273, 30852, 31356,
-        31785, 32137, 32412, 32609, 32728,
-    ];
-
-    // Determine which quarter of the wave we're in and compute the value
-    if phase < QUARTER_WAVE_LEN {
-        // First quarter (0 to π/2): rising, positive
-        SINE_TABLE[phase as usize]
-    } else if phase < QUARTER_WAVE_LEN * 2 {
-        // Second quarter (π/2 to π): falling, positive
-        SINE_TABLE[(QUARTER_WAVE_LEN * 2 - 1 - phase) as usize]
-    } else if phase < QUARTER_WAVE_LEN * 3 {
-        // Third quarter (π to 3π/2): falling, negative
-        -SINE_TABLE[(phase - QUARTER_WAVE_LEN * 2) as usize]
-    } else {
-        // Fourth quarter (3π/2 to 2π): rising, negative
-        -SINE_TABLE[(FULL_WAVE_LEN - 1 - phase) as usize]
-    }
 }

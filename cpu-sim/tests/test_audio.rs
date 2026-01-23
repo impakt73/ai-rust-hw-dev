@@ -36,7 +36,7 @@ fn test_audio_pattern() {
         let sample_callback = move |samples: &[i16]| {
             samples_for_callback.borrow_mut().push(samples.to_vec());
             let total = samples_for_callback.borrow().len();
-            if total <= 5 || total % 100 == 0 {
+            if total <= 5 || total.is_multiple_of(100) {
                 log::info!("Sample {} captured: {:?}", total - 1, samples);
             }
         };

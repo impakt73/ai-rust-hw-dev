@@ -6,20 +6,15 @@ mod common;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
+use riscv_shared::{
+    AUDIO_ADDR, AUDIO_CONFIG, AUDIO_READ_PTR, AUDIO_WRITE_PTR, VIDEO_ADDR, VIDEO_CONFIG,
+    VIDEO_PRESENT, VIDEO_STATUS,
+};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
-
-/// Video device base address
-const VIDEO_BASE: u32 = 0x2000_0000;
-
-/// Video register offsets
-const VIDEO_ADDR: u32 = VIDEO_BASE;
-const VIDEO_CONFIG: u32 = VIDEO_BASE + 0x04;
-const VIDEO_STATUS: u32 = VIDEO_BASE + 0x08;
-const VIDEO_PRESENT: u32 = VIDEO_BASE + 0x0C;
 
 /// Video status bits
 const FRAME_READY: u32 = 1 << 0;
@@ -34,15 +29,6 @@ const HEIGHT: u32 = 64;
 
 /// Framebuffer base address in DRAM
 const FRAMEBUFFER_BASE: u32 = 0x8000_1000;
-
-/// Audio device base address
-const AUDIO_BASE: u32 = 0x3000_0000;
-
-/// Audio register offsets
-const AUDIO_ADDR: u32 = AUDIO_BASE;
-const AUDIO_CONFIG: u32 = AUDIO_BASE + 0x04;
-const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
-const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
 
 /// Ring buffer base address in DRAM (after framebuffer)
 /// Framebuffer is 64*64*3 = 12288 bytes (0x3000), so start audio buffer at 0x8000_1000 + 0x3000 = 0x8000_4000
