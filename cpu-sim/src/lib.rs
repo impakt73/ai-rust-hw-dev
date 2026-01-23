@@ -69,6 +69,17 @@ pub struct InteractiveSimulator {
     elf_loaded: bool,
 }
 
+// SAFETY: InteractiveSimulator contains Verilator-generated C++ code which uses raw pointers
+// that are not inherently Send. However, we can safely mark it as Send because:
+// 1. The Verilator model is accessed from only one thread at a time
+// 2. There are no shared mutable references across threads
+// 3. The model is owned exclusively by this struct
+// 4. When moved to another thread, all access happens on that single thread
+//
+// This is safe as long as the simulator is not accessed concurrently from multiple threads,
+// which is enforced by Rust's ownership system.
+unsafe impl Send for InteractiveSimulator {}
+
 impl InteractiveSimulator {
     /// Create a new InteractiveSimulator with default configuration
     ///
