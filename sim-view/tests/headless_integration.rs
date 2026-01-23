@@ -346,7 +346,8 @@ fn test_audio_config_change_and_samples() {
     );
 
     // Verify expected config values from test_audio_pattern.elf
-    // The test sets: 48000Hz, Stereo, 64 samples (2^6)
+    // The test sets: 48000Hz, Stereo, with varying batch sizes
+    // Initial and most batches use 64 samples, final batch uses 52 samples (500 total = 7*64 + 52)
     assert_eq!(
         config.sample_rate.to_hz(),
         48000,
@@ -357,7 +358,12 @@ fn test_audio_config_change_and_samples() {
         cpu_sim::AudioChannels::Stereo,
         "Should be stereo"
     );
-    assert_eq!(config.sample_count, 64, "Buffer should be 64 samples (2^6)");
+    // Sample count can be either 64 (full batch) or 52 (final batch) depending on when config was captured
+    assert!(
+        config.sample_count == 64 || config.sample_count == 52,
+        "Sample count should be 64 (full batch) or 52 (final batch), got {}",
+        config.sample_count
+    );
 
     // Verify that audio samples were captured
     assert!(

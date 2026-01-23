@@ -33,12 +33,22 @@ fn test_audio_pattern() {
         let configs_for_callback = configs_for_setup.clone();
 
         // Create sample callback that captures sample data
+        // With DMA, we receive batches of samples in each callback
         let sample_callback = move |samples: &[i16]| {
             samples_for_callback.borrow_mut().push(samples.to_vec());
-            let total = samples_for_callback.borrow().len();
-            if total <= 5 || total.is_multiple_of(100) {
-                log::info!("Sample {} captured: {:?}", total - 1, samples);
-            }
+            let batch_count = samples_for_callback.borrow().len();
+            let total_samples: usize = samples_for_callback
+                .borrow()
+                .iter()
+                .map(|v| v.len() / 2) // Divide by 2 for stereo (2 channels per sample)
+                .sum();
+            log::info!(
+                "DMA batch {} captured: {} channel values ({} stereo samples), total samples so far: {}",
+                batch_count - 1,
+                samples.len(),
+                samples.len() / 2,
+                total_samples
+            );
         };
 
         // Create config callback that captures config changes
@@ -75,60 +85,58 @@ fn test_audio_pattern() {
         println!("Cycles: {}", result.cycles);
         println!("Test program completed successfully");
 
-        let samples = samples_for_verify.borrow();
+        let sample_batches = samples_for_verify.borrow();
         let configs = configs_for_verify.borrow();
 
         println!("✓ Captured {} config changes", configs.len());
-        println!("✓ Captured {} audio samples", samples.len());
+        println!("✓ Captured {} DMA batches", sample_batches.len());
 
-        // Verify we got exactly one config change
+        // Verify we got the expected number of config changes
+        // Test program writes AUDIO_CONFIG once initially, then once per batch
+        // With 500 samples total and 64 samples per batch:
+        // - 7 batches of 64 = 448 samples
+        // - 1 batch of 52 = 52 samples
+        // Total: 8 batches
         assert_eq!(
             configs.len(),
-            1,
-            "Should have received exactly one config change"
+            9,
+            "Should have received exactly 9 config changes (1 initial + 8 batch updates)"
         );
 
-        // Verify we received exactly 500 samples (as per test program)
-        assert_eq!(
-            samples.len(),
-            500,
-            "Should have received exactly 500 samples"
-        );
+        // Flatten all batches into a single list of samples
+        let mut all_samples = Vec::new();
+        for batch in sample_batches.iter() {
+            all_samples.extend_from_slice(batch);
+        }
 
-        // Verify the configuration
-        let config = &configs[0];
+        // Convert channel values to stereo samples (groups of 2)
+        let total_stereo_samples = all_samples.len() / 2;
+        println!("✓ Total stereo samples captured: {}", total_stereo_samples);
+
+        // Verify we received exactly 500 stereo samples (as per test program)
         assert_eq!(
-            config.sample_rate,
-            AudioSampleRate::Hz48000,
-            "Sample rate should be 48000Hz"
-        );
-        assert_eq!(config.channels, AudioChannels::Stereo, "Should be stereo");
-        assert_eq!(
-            config.sample_count, 64,
-            "Buffer should be exactly 64 samples"
+            total_stereo_samples, 500,
+            "Should have received exactly 500 stereo samples"
         );
 
         // Verify samples match expected sine wave pattern exactly
         const FREQUENCY_DIV: u32 = 4; // Must match test program
-        for (i, sample_vec) in samples.iter().enumerate() {
-            assert_eq!(
-                sample_vec.len(),
-                2,
-                "Each sample should have 2 channels (stereo)"
-            );
+        for i in 0..total_stereo_samples {
+            let left_idx = i * 2;
+            let right_idx = i * 2 + 1;
 
             // Generate expected values using same algorithm as test program
             let (expected_left, expected_right) = generate_stereo_sample(i as u32, FREQUENCY_DIV);
 
             assert_eq!(
-                sample_vec[0], expected_left,
+                all_samples[left_idx], expected_left,
                 "Sample {} left channel mismatch: expected {}, got {}",
-                i, expected_left, sample_vec[0]
+                i, expected_left, all_samples[left_idx]
             );
             assert_eq!(
-                sample_vec[1], expected_right,
+                all_samples[right_idx], expected_right,
                 "Sample {} right channel mismatch: expected {}, got {}",
-                i, expected_right, sample_vec[1]
+                i, expected_right, all_samples[right_idx]
             );
         }
 
@@ -137,7 +145,7 @@ fn test_audio_pattern() {
 
     let result = run_elf(
         &elf_path,
-        150_000, // High limit for audio sample generation (observed ~62K cycles)
+        150_000, // High limit for audio sample generation
         false,   // print_inst_trace
         false,   // print_fsm_state
         None::<fn(&mut SimulatorView)>,

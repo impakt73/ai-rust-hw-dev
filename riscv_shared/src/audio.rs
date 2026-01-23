@@ -8,11 +8,11 @@ pub const AUDIO_ADDR: u32 = AUDIO_BASE;
 /// Audio configuration register offset (0x04)
 pub const AUDIO_CONFIG: u32 = AUDIO_BASE + 0x04;
 
-/// Audio read pointer register offset (0x08)
-pub const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
+/// Audio status register offset (0x08)
+pub const AUDIO_STATUS: u32 = AUDIO_BASE + 0x08;
 
-/// Audio write pointer register offset (0x0C)
-pub const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
+/// Audio DMA trigger register offset (0x0C)
+pub const AUDIO_DMA: u32 = AUDIO_BASE + 0x0C;
 
 /// Audio sample rate enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +97,7 @@ pub struct AudioConfig {
     pub sample_rate: AudioSampleRate,
     /// Number of audio channels
     pub channels: AudioChannels,
-    /// Number of samples in the ring buffer (must be power of 2)
+    /// Number of samples (1 to 65536)
     pub sample_count: u32,
 }
 
@@ -105,18 +105,17 @@ impl AudioConfig {
     /// Parse configuration from register value
     /// Bits [1:0]   = sample_rate (2 bits)
     /// Bit 2        = channels (1 bit: 0=mono, 1=stereo)
-    /// Bits [7:3]   = log2(sample_count) (5 bits, allowing 1-32 bit values = 2^0 to 2^31 samples)
+    /// Bits [18:3]  = sample_count - 1 (16 bits, allowing 1-65536 samples with +1 bias)
     pub fn from_register(value: u32) -> Option<Self> {
         let sample_rate_field = (value & 0x3) as u8;
         let channels_field = ((value >> 2) & 0x1) as u8;
-        let log2_sample_count = ((value >> 3) & 0x1F) as u8;
+        let sample_count_minus_1 = (value >> 3) & 0xFFFF;
 
         let sample_rate = AudioSampleRate::from_u8(sample_rate_field)?;
         let channels = AudioChannels::from_u8(channels_field);
 
-        // Compute sample_count from log2 value
-        // log2_sample_count=0 means 2^0=1, log2_sample_count=10 means 2^10=1024
-        let sample_count = 1u32 << log2_sample_count;
+        // Add 1 bias to get actual sample count (0 in register = 1 sample, 65535 = 65536 samples)
+        let sample_count = sample_count_minus_1 + 1;
 
         Some(AudioConfig {
             sample_rate,
@@ -131,24 +130,24 @@ impl AudioConfig {
         let channels_field = self.channels.to_u8() as u32;
 
         let sample_count = self.sample_count;
-        let valid = sample_count != 0 && sample_count.is_power_of_two();
         debug_assert!(
-            valid,
-            "AudioConfig::to_register: sample_count must be non-zero power of 2, got {}",
+            sample_count > 0 && sample_count <= 65536,
+            "AudioConfig::to_register: sample_count must be 1-65536, got {}",
             sample_count
         );
 
-        // Compute log2 of sample_count; fall back to 0 on invalid input in release builds
-        let log2_sample_count = if valid {
-            31 - sample_count.leading_zeros()
+        // Apply -1 bias (1 sample = 0 in register, 65536 samples = 65535 in register)
+        // Clamp to valid range in release builds
+        let sample_count_minus_1 = if sample_count > 0 && sample_count <= 65536 {
+            (sample_count - 1) & 0xFFFF
         } else {
             0
         };
 
-        sample_rate_field | (channels_field << 2) | (log2_sample_count << 3)
+        sample_rate_field | (channels_field << 2) | (sample_count_minus_1 << 3)
     }
 
-    /// Calculate total number of bytes in the ring buffer
+    /// Calculate total number of bytes in the buffer for a DMA transfer
     /// Each sample is 2 bytes (i16) per channel
     ///
     /// # Panics
