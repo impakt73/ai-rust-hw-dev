@@ -8,11 +8,11 @@ pub const AUDIO_ADDR: u32 = AUDIO_BASE;
 /// Audio configuration register offset (0x04)
 pub const AUDIO_CONFIG: u32 = AUDIO_BASE + 0x04;
 
-/// Audio read pointer register offset (0x08)
-pub const AUDIO_READ_PTR: u32 = AUDIO_BASE + 0x08;
+/// Audio status register offset (0x08)
+pub const AUDIO_STATUS: u32 = AUDIO_BASE + 0x08;
 
-/// Audio write pointer register offset (0x0C)
-pub const AUDIO_WRITE_PTR: u32 = AUDIO_BASE + 0x0C;
+/// Audio DMA trigger register offset (0x0C)
+pub const AUDIO_DMA: u32 = AUDIO_BASE + 0x0C;
 
 /// Audio sample rate enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -19,7 +19,7 @@ pub mod video;
 // Re-exports for convenience
 pub use audio::{
     generate_sine_sample, AudioChannels, AudioConfig, AudioSampleRate, AUDIO_ADDR, AUDIO_CONFIG,
-    AUDIO_READ_PTR, AUDIO_WRITE_PTR,
+    AUDIO_DMA, AUDIO_STATUS,
 };
 pub use bus::{
     is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
