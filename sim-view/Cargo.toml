@@ -15,6 +15,7 @@ path = "src/main.rs"
 # Core simulation
 cpu-sim = { path = "../cpu-sim" }
 riscv_core = { path = "../riscv_core" }
+riscv_shared = { path = "../riscv_shared" }
 
 # GUI and Audio
 softbuffer = "0.4"

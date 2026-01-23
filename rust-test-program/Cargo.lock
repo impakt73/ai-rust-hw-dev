@@ -148,6 +148,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "riscv_shared"
+version = "0.1.0"
+
+[[package]]
 name = "rust-test-program"
 version = "0.1.0"
 dependencies = [
@@ -155,6 +159,7 @@ dependencies = [
  "riscv-rt",
  "riscv_macros",
  "riscv_protocol",
+ "riscv_shared",
  "serde",
 ]
 

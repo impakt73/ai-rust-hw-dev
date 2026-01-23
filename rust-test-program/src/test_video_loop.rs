@@ -6,20 +6,12 @@ mod common;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
+use riscv_shared::{VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
-
-/// Video device base address
-const VIDEO_BASE: u32 = 0x2000_0000;
-
-/// Video register offsets
-const VIDEO_ADDR: u32 = VIDEO_BASE;
-const VIDEO_CONFIG: u32 = VIDEO_BASE + 0x04;
-const VIDEO_STATUS: u32 = VIDEO_BASE + 0x08;
-const VIDEO_PRESENT: u32 = VIDEO_BASE + 0x0C;
 
 /// Video status bits
 const FRAME_READY: u32 = 1 << 0;

@@ -699,6 +699,7 @@ dependencies = [
  "postcard",
  "riscv_core",
  "riscv_protocol",
+ "riscv_shared",
  "serde",
 ]
 
@@ -2702,6 +2703,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "riscv_shared"
+version = "0.1.0"
+
+[[package]]
 name = "rmcp"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2929,6 +2934,7 @@ dependencies = [
  "env_logger",
  "log",
  "riscv_core",
+ "riscv_shared",
  "softbuffer",
  "winit",
 ]
