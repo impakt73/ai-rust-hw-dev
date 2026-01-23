@@ -68,7 +68,7 @@ fn fill_audio_buffer(sample_index: &mut u32) {
         let right_sample =
             common::generate_sine_sample(*sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
 
-        let offset = (i * 4) as u32; // 4 bytes per stereo sample
+        let offset = i * 4; // 4 bytes per stereo sample
         write_stereo_sample(BUFFER_BASE, offset, left_sample, right_sample);
 
         *sample_index += 1;

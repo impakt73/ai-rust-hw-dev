@@ -175,7 +175,7 @@ fn fill_audio_buffer_and_trigger(buffer_size_samples: u32, sample_index: &mut u3
         let left_sample = common::generate_sine_sample(*sample_index, AUDIO_FREQUENCY_DIV);
         let right_sample = common::generate_sine_sample(*sample_index + 4, AUDIO_FREQUENCY_DIV);
 
-        let offset = (i * 4) as u32; // 4 bytes per stereo sample
+        let offset = i * 4; // 4 bytes per stereo sample
         write_stereo_sample(AUDIO_BUFFER_BASE, offset, left_sample, right_sample);
 
         *sample_index += 1;
