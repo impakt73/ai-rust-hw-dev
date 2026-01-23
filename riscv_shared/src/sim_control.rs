@@ -1,5 +1,7 @@
 //! SimControl device constants
 
+use crate::bus::SIM_CONTROL_BASE;
+
 /// TOHOST address for signaling halt to the simulator
 ///
 /// This register is provided by the SimControl device and is used to signal
@@ -8,7 +10,7 @@
 ///
 /// Note: The tohost register is write-only. Attempting to read from it will
 /// result in a bus error.
-pub const TOHOST_ADDR: u32 = 0x1000_0000;
+pub const TOHOST_ADDR: u32 = SIM_CONTROL_BASE;
 
 /// Standard success code for tests (expected by cpu-sim)
 pub const SUCCESS_CODE: u32 = 42;

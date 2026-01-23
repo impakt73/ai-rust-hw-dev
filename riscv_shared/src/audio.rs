@@ -150,8 +150,17 @@ impl AudioConfig {
 
     /// Calculate total number of bytes in the ring buffer
     /// Each sample is 2 bytes (i16) per channel
+    ///
+    /// # Panics
+    /// Panics in debug mode if the calculation would overflow u32
     pub fn buffer_bytes(&self) -> u32 {
-        self.sample_count * 2 * self.channels.count() as u32
+        // Use checked arithmetic to detect overflow
+        let bytes_per_sample = 2u32
+            .checked_mul(self.channels.count() as u32)
+            .expect("overflow in bytes_per_sample");
+        self.sample_count
+            .checked_mul(bytes_per_sample)
+            .expect("AudioConfig::buffer_bytes overflow: buffer size exceeds u32::MAX")
     }
 
     /// Calculate bytes per sample
@@ -175,10 +184,8 @@ pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
         "generate_sine_sample: frequency_div must be non-zero"
     );
 
-    // Return 0 if frequency_div is 0 in release builds (graceful degradation)
-    if frequency_div == 0 {
-        return 0;
-    }
+    // Guard against division by zero: treat a zero divider as 1 to avoid traps
+    let div = if frequency_div == 0 { 1 } else { frequency_div };
 
     // Simple sine wave using lookup table approximation
     // We'll use a 32-entry lookup table for a quarter wave
@@ -186,7 +193,7 @@ pub fn generate_sine_sample(index: u32, frequency_div: u32) -> i16 {
     const FULL_WAVE_LEN: u32 = QUARTER_WAVE_LEN * 4;
 
     // Normalize index to position in full wave
-    let phase = (index / frequency_div) % FULL_WAVE_LEN;
+    let phase = (index / div) % FULL_WAVE_LEN;
 
     // Quarter wave lookup table (0 to pi/2, scaled to 0-32767)
     const SINE_TABLE: [i16; 32] = [

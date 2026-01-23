@@ -5,7 +5,7 @@
 //! - Bus device base addresses (DRAM, FIFO, Audio, Video, SimControl)
 //! - Memory-mapped register offsets and bit definitions
 //! - Configuration types for Audio and Video devices
-//! - Helper functions for FIFO operations and test pattern generation
+//! - Helper functions for test pattern generation
 
 #![cfg_attr(not(test), no_std)]
 
@@ -18,12 +18,12 @@ pub mod video;
 
 // Re-exports for convenience
 pub use audio::{
-    AUDIO_ADDR, AUDIO_CONFIG, AUDIO_READ_PTR, AUDIO_WRITE_PTR, AudioChannels, AudioConfig,
-    AudioSampleRate, generate_sine_sample,
+    generate_sine_sample, AudioChannels, AudioConfig, AudioSampleRate, AUDIO_ADDR, AUDIO_CONFIG,
+    AUDIO_READ_PTR, AUDIO_WRITE_PTR,
 };
 pub use bus::{
-    AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE, is_valid_dram_range,
+    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use fifo::{FIFO_DATA, FIFO_STATUS, RX_VALID, TX_READY};
 pub use sim_control::{FAILURE_CODE, PANIC_CODE, SUCCESS_CODE, TOHOST_ADDR};
-pub use video::{VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS, VideoConfig, VideoFormat};
+pub use video::{VideoConfig, VideoFormat, VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS};
