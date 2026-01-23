@@ -112,7 +112,7 @@ fn test_audio_pattern() {
         for i in 0..total_stereo_samples {
             let left_idx = i * 2;
             let right_idx = i * 2 + 1;
-            
+
             // Generate expected values using same algorithm as test program
             let (expected_left, expected_right) = generate_stereo_sample(i as u32, FREQUENCY_DIV);
 

@@ -337,7 +337,7 @@ mod tests {
         // Read back registers
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0x8000_1000);
         assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), (8 << 3));
-        
+
         // Status should show DMA_READY (no DMA active)
         assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 1);
     }
@@ -472,11 +472,15 @@ mod tests {
         // Verify callback was invoked once with all samples
         let captured = sample_data.borrow();
         assert_eq!(captured.len(), 1, "Should have received 1 callback");
-        assert_eq!(captured[0].len(), 4, "Should have 4 channel samples (2 stereo samples)");
-        assert_eq!(captured[0][0], 100);   // Sample 0 left
-        assert_eq!(captured[0][1], 200);   // Sample 0 right
-        assert_eq!(captured[0][2], -500);  // Sample 1 left
-        assert_eq!(captured[0][3], 300);   // Sample 1 right
+        assert_eq!(
+            captured[0].len(),
+            4,
+            "Should have 4 channel samples (2 stereo samples)"
+        );
+        assert_eq!(captured[0][0], 100); // Sample 0 left
+        assert_eq!(captured[0][1], 200); // Sample 0 right
+        assert_eq!(captured[0][2], -500); // Sample 1 left
+        assert_eq!(captured[0][3], 300); // Sample 1 right
     }
 
     #[test]
@@ -521,7 +525,9 @@ mod tests {
         // Configure for buffer that will take multiple cycles to complete
         // Use stereo, 8 samples = 8 × 2 channels × 2 bytes = 32 bytes
         audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
-        audio.write_word(&mut ctx, 0x04, (1 << 2) | (3 << 3)).unwrap(); // Stereo, 8 samples (log2=3)
+        audio
+            .write_word(&mut ctx, 0x04, (1 << 2) | (3 << 3))
+            .unwrap(); // Stereo, 8 samples (log2=3)
 
         // Trigger first DMA
         audio.write_word(&mut ctx, 0x0C, 0).unwrap();
