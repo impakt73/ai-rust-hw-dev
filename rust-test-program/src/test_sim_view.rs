@@ -34,6 +34,12 @@ const FRAMEBUFFER_BASE: u32 = 0x8000_1000;
 /// Framebuffer is 64*64*3 = 12288 bytes (0x3000), so start audio buffer at 0x8000_1000 + 0x3000 = 0x8000_4000
 const AUDIO_BUFFER_BASE: u32 = 0x8000_4000;
 
+/// Audio buffer size: 1024 stereo samples as requested
+const AUDIO_BUFFER_SIZE_SAMPLES: u32 = 1024;
+
+/// Sine wave frequency divider for audio
+const AUDIO_FREQUENCY_DIV: u32 = 16;
+
 /// Helper to create VIDEO_CONFIG register value
 /// Bits [11:0]   = width - 1
 /// Bits [23:12]  = height - 1
@@ -165,29 +171,18 @@ fn trigger_audio_dma() {
     }
 }
 
-/// Fill audio buffer with samples and trigger DMA
-fn fill_audio_buffer_and_trigger(buffer_size_samples: u32, sample_index: &mut u32) {
-    const AUDIO_FREQUENCY_DIV: u32 = 16; // Sine wave frequency divider
-
-    // Fill buffer with samples
-    for i in 0..buffer_size_samples {
+/// Precompute audio buffer with sine wave samples (called once at startup)
+fn precompute_audio_buffer() {
+    // Precompute 1024 stereo samples
+    for i in 0..AUDIO_BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
-        let left_sample = common::generate_sine_sample(*sample_index, AUDIO_FREQUENCY_DIV);
-        let right_sample = common::generate_sine_sample(*sample_index + 4, AUDIO_FREQUENCY_DIV);
+        let left_sample = common::generate_sine_sample(i, AUDIO_FREQUENCY_DIV);
+        let right_sample =
+            common::generate_sine_sample(i + AUDIO_FREQUENCY_DIV / 4, AUDIO_FREQUENCY_DIV);
 
         let offset = i * 4; // 4 bytes per stereo sample
         write_stereo_sample(AUDIO_BUFFER_BASE, offset, left_sample, right_sample);
-
-        *sample_index += 1;
     }
-
-    // Wait for DMA to be ready
-    while !is_audio_dma_ready() {
-        // Spin wait
-    }
-
-    // Trigger DMA to read the buffer
-    trigger_audio_dma();
 }
 
 #[entry]
@@ -201,23 +196,18 @@ fn main() -> ! {
         );
 
         // Configure Audio device
-        // Use ~0.5 second buffer at 48kHz stereo
-        // 48000 samples/sec * 0.5 sec = 24000 samples
-        // Round to 16384 samples (~0.34 seconds)
-        const BUFFER_SIZE_SAMPLES: u32 = 16384;
-
+        // 48000Hz, Stereo, 1024 samples
         write_volatile(AUDIO_ADDR as *mut u32, AUDIO_BUFFER_BASE);
         write_volatile(
             AUDIO_CONFIG as *mut u32,
-            make_audio_config(0, 1, BUFFER_SIZE_SAMPLES), // 48000Hz, Stereo, 16384 samples
+            make_audio_config(0, 1, AUDIO_BUFFER_SIZE_SAMPLES),
         );
 
-        // Initialize counters
-        let mut frame_index: u32 = 0;
-        let mut audio_sample_index: u32 = 0;
+        // Precompute the audio buffer once at startup
+        precompute_audio_buffer();
 
-        // Pre-fill audio buffer and trigger initial DMA
-        fill_audio_buffer_and_trigger(BUFFER_SIZE_SAMPLES, &mut audio_sample_index);
+        // Initialize frame counter
+        let mut frame_index: u32 = 0;
 
         // Main infinite loop
         loop {
@@ -236,9 +226,9 @@ fn main() -> ! {
             // Increment frame index for next frame
             frame_index += 1;
 
-            // Check if audio DMA is ready and refill buffer
+            // Check if audio DMA is ready and trigger with precomputed buffer
             if is_audio_dma_ready() {
-                fill_audio_buffer_and_trigger(BUFFER_SIZE_SAMPLES, &mut audio_sample_index);
+                trigger_audio_dma();
             }
         }
     }
