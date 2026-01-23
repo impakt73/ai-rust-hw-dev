@@ -91,6 +91,14 @@ fn test_audio_pattern() {
         println!("✓ Captured {} config changes", configs.len());
         println!("✓ Captured {} DMA batches", sample_batches.len());
 
+        // Verify we got the expected number of config changes
+        // Test program writes AUDIO_CONFIG once initially, then once per batch (8 batches)
+        assert_eq!(
+            configs.len(),
+            9,
+            "Should have received exactly 9 config changes (1 initial + 8 batch updates)"
+        );
+
         // Flatten all batches into a single list of samples
         let mut all_samples = Vec::new();
         for batch in sample_batches.iter() {
