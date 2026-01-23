@@ -310,6 +310,9 @@ fn test_audio_config_change_and_samples() {
             break;
         }
 
+        // Pull audio samples for headless capture
+        viewer.update_audio_capture();
+
         steps += 1;
 
         // Safety limit - test_audio_pattern should complete within this
