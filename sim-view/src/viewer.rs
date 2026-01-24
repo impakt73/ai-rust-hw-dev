@@ -9,7 +9,7 @@ use cpu_sim::{
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct ViewerConfig {
     #[allow(dead_code)] // Used by main.rs to create backends
@@ -19,6 +19,22 @@ pub struct ViewerConfig {
     pub max_cycles: u64,
     #[allow(dead_code)]
     pub print_inst_trace: bool,
+}
+
+/// Performance tracking for logging and window title
+struct PerformanceMetrics {
+    /// Time of last log message
+    last_log_time: Instant,
+    /// Number of frames presented since last log
+    frames_since_last_log: u64,
+    /// Total frame time since last log (for averaging)
+    total_frame_time_since_last_log: Duration,
+    /// Cycles executed since last log
+    cycles_since_last_log: u64,
+    /// Last cycles count (to compute delta)
+    last_cycles: u64,
+    /// Current performance string (for window title)
+    current_perf_string: String,
 }
 
 pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
@@ -57,6 +73,9 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
 
     /// Flag to track if a frame was presented in the current step
     frame_presented_this_step: Rc<RefCell<bool>>,
+
+    /// Performance metrics for logging
+    perf_metrics: PerformanceMetrics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +173,14 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             exit_requested: false,
             frame_step_target: None,
             frame_presented_this_step,
+            perf_metrics: PerformanceMetrics {
+                last_log_time: Instant::now(),
+                frames_since_last_log: 0,
+                total_frame_time_since_last_log: Duration::ZERO,
+                cycles_since_last_log: 0,
+                last_cycles: 0,
+                current_perf_string: String::new(),
+            },
         })
     }
 
@@ -219,7 +246,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
 
     /// Update window title to reflect current state
     fn update_window_title(&mut self) {
-        let title = match (&self.last_elf_path, self.state) {
+        let base_title = match (&self.last_elf_path, self.state) {
             (Some(path), ViewerState::Running) => {
                 format!("sim-view - {} [RUNNING]", path.display())
             }
@@ -234,7 +261,82 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             }
             (None, _) => "sim-view - No program loaded".to_string(),
         };
+
+        // Append performance metrics if available
+        let title = if !self.perf_metrics.current_perf_string.is_empty() {
+            format!("{} - {}", base_title, self.perf_metrics.current_perf_string)
+        } else {
+            base_title
+        };
+
         self.video_backend.borrow_mut().set_title(&title);
+    }
+
+    /// Format a cycle count in a human-friendly way (e.g., "1.5M", "234K")
+    fn format_cycles(cycles: u64) -> String {
+        if cycles >= 1_000_000 {
+            format!("{:.1}M", cycles as f64 / 1_000_000.0)
+        } else if cycles >= 1_000 {
+            format!("{:.1}K", cycles as f64 / 1_000.0)
+        } else {
+            format!("{}", cycles)
+        }
+    }
+
+    /// Update performance metrics and log if one second has elapsed
+    fn update_performance_metrics(&mut self, frame_time: Duration) {
+        // Update cycles delta
+        let cycles_delta = self
+            .total_cycles
+            .saturating_sub(self.perf_metrics.last_cycles);
+        self.perf_metrics.cycles_since_last_log += cycles_delta;
+        self.perf_metrics.last_cycles = self.total_cycles;
+
+        // Check if a frame was presented
+        let frame_presented = *self.frame_presented_this_step.borrow();
+        if frame_presented {
+            self.perf_metrics.frames_since_last_log += 1;
+            self.perf_metrics.total_frame_time_since_last_log += frame_time;
+        }
+
+        // Check if one second has elapsed
+        let elapsed = self.perf_metrics.last_log_time.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            // Format the performance string
+            let cycles_formatted = Self::format_cycles(self.perf_metrics.cycles_since_last_log);
+
+            let perf_string = if self.perf_metrics.frames_since_last_log > 0 {
+                // Calculate average frame time in milliseconds
+                let avg_frame_time_ms = self
+                    .perf_metrics
+                    .total_frame_time_since_last_log
+                    .as_secs_f64()
+                    * 1000.0
+                    / self.perf_metrics.frames_since_last_log as f64;
+                format!(
+                    "{:.2} ms/frame, {} cycles/s",
+                    avg_frame_time_ms, cycles_formatted
+                )
+            } else {
+                // No frames presented
+                format!("{} cycles/s", cycles_formatted)
+            };
+
+            // Log the performance info
+            log::info!("{}", perf_string);
+
+            // Update the current performance string for window title
+            self.perf_metrics.current_perf_string = perf_string;
+
+            // Update window title with new performance info
+            self.update_window_title();
+
+            // Reset the metrics for the next interval
+            self.perf_metrics.last_log_time = Instant::now();
+            self.perf_metrics.frames_since_last_log = 0;
+            self.perf_metrics.total_frame_time_since_last_log = Duration::ZERO;
+            self.perf_metrics.cycles_since_last_log = 0;
+        }
     }
 
     /// Execute a single iteration of the viewer loop
@@ -362,9 +464,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.state = ViewerState::Running;
         self.update_window_title();
 
-        // Record startup time to compute total elapsed time per iteration
-        let startup_time = Instant::now();
-
         loop {
             let frame_start = Instant::now();
 
@@ -417,14 +516,9 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             // Update video backend (pull frames from shared buffer and display/capture)
             self.video_backend.borrow_mut().update()?;
 
-            // Print timing info: total elapsed since startup (s) and current iteration duration (ms)
-            let total_elapsed_s = startup_time.elapsed().as_secs_f64();
-            let iteration_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
-            log::info!(
-                "Elapsed: {:.2} s (iteration: {:.2} ms)",
-                total_elapsed_s,
-                iteration_ms
-            );
+            // Update performance metrics and log once per second
+            let frame_time = frame_start.elapsed();
+            self.update_performance_metrics(frame_time);
         }
 
         log::info!("Viewer loop ended");
