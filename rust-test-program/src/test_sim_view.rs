@@ -200,6 +200,9 @@ fn main() -> ! {
             make_video_config(WIDTH, HEIGHT, FORMAT_RGB8),
         );
 
+        // Precompute the audio buffer once at startup
+        precompute_audio_buffer();
+
         // Configure Audio device
         // 48000Hz, Stereo, 1024 samples
         write_volatile(AUDIO_ADDR as *mut u32, AUDIO_BUFFER_BASE);
@@ -207,9 +210,6 @@ fn main() -> ! {
             AUDIO_CONFIG as *mut u32,
             make_audio_config(0, 1, AUDIO_BUFFER_SIZE_SAMPLES),
         );
-
-        // Precompute the audio buffer once at startup
-        precompute_audio_buffer();
 
         // Initialize frame counter
         let mut frame_index: u32 = 0;

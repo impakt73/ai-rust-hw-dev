@@ -231,7 +231,7 @@ where
 
     /// Invoke the sample callback with the collected audio data
     fn invoke_sample_callback(&mut self, dma: ActiveDma, current_time_us: u64) {
-        log::info!(
+        log::debug!(
             "Audio: DMA complete ({} samples, {}Hz, {:?}, {} bytes)",
             dma.config.sample_count,
             dma.config.sample_rate.to_hz(),

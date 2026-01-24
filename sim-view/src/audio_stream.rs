@@ -182,11 +182,20 @@ impl AudioStream {
             (config, sample_format)
         };
 
+        // Whether this stream was created with an explicit AudioConfig (controls underrun logging)
+        let log_underrun = config.is_some();
+
         // Build output stream based on sample format
         let stream = match sample_format {
-            SampleFormat::I16 => Self::build_i16_stream(device, &stream_config, audio_source)?,
-            SampleFormat::F32 => Self::build_f32_stream(device, &stream_config, audio_source)?,
-            SampleFormat::U16 => Self::build_u16_stream(device, &stream_config, audio_source)?,
+            SampleFormat::I16 => {
+                Self::build_i16_stream(device, &stream_config, audio_source, log_underrun)?
+            }
+            SampleFormat::F32 => {
+                Self::build_f32_stream(device, &stream_config, audio_source, log_underrun)?
+            }
+            SampleFormat::U16 => {
+                Self::build_u16_stream(device, &stream_config, audio_source, log_underrun)?
+            }
             _ => {
                 return Err(format!("Unsupported sample format: {:?}", sample_format));
             }
@@ -202,6 +211,7 @@ impl AudioStream {
         data: &mut [T],
         audio_source: &Option<SharedAudioBuffer>,
         mut conv: F,
+        log_underrun: bool,
     ) where
         F: FnMut(Option<i16>) -> T,
     {
@@ -214,6 +224,7 @@ impl AudioStream {
             Vec::new()
         };
 
+        let available = samples.len();
         let mut samples_iter = samples.into_iter();
 
         for slot in data.iter_mut() {
@@ -223,9 +234,9 @@ impl AudioStream {
             }
         }
 
-        let underruns = total.saturating_sub(samples_iter.len());
-        if underruns > 0 {
-            let available = total - underruns;
+        // Only warn about underruns if the stream was created with a specific AudioConfig
+        if log_underrun && available < total {
+            let underruns = total - available;
             log::warn!(
                 "Audio output buffer underrun: {}/{} samples available, injecting {} silent sample(s)",
                 available,
@@ -240,12 +251,18 @@ impl AudioStream {
         device: &cpal::Device,
         config: &StreamConfig,
         audio_source: Option<SharedAudioBuffer>,
+        log_underrun: bool,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    Self::fill_from_shared_buffer(data, &audio_source, |opt| opt.unwrap_or(0));
+                    Self::fill_from_shared_buffer(
+                        data,
+                        &audio_source,
+                        |opt| opt.unwrap_or(0),
+                        log_underrun,
+                    );
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
@@ -258,14 +275,18 @@ impl AudioStream {
         device: &cpal::Device,
         config: &StreamConfig,
         audio_source: Option<SharedAudioBuffer>,
+        log_underrun: bool,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    Self::fill_from_shared_buffer(data, &audio_source, |opt| {
-                        opt.map(|s| s as f32 / 32768.0).unwrap_or(0.0)
-                    });
+                    Self::fill_from_shared_buffer(
+                        data,
+                        &audio_source,
+                        |opt| opt.map(|s| s as f32 / 32768.0).unwrap_or(0.0),
+                        log_underrun,
+                    );
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
@@ -278,20 +299,26 @@ impl AudioStream {
         device: &cpal::Device,
         config: &StreamConfig,
         audio_source: Option<SharedAudioBuffer>,
+        log_underrun: bool,
     ) -> Result<cpal::Stream, String> {
         device
             .build_output_stream(
                 config,
                 move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
                     let center = ((i16::MAX as i32) + 1) as u16;
-                    Self::fill_from_shared_buffer(data, &audio_source, |opt| match opt {
-                        Some(sample_i16) => {
-                            // Convert i16 to u16 (shift range)
-                            let shifted = (sample_i16 as i32) + (i16::MAX as i32) + 1;
-                            shifted.clamp(0, u16::MAX as i32) as u16
-                        }
-                        None => center,
-                    });
+                    Self::fill_from_shared_buffer(
+                        data,
+                        &audio_source,
+                        |opt| match opt {
+                            Some(sample_i16) => {
+                                // Convert i16 to u16 (shift range)
+                                let shifted = (sample_i16 as i32) + (i16::MAX as i32) + 1;
+                                shifted.clamp(0, u16::MAX as i32) as u16
+                            }
+                            None => center,
+                        },
+                        log_underrun,
+                    );
                 },
                 |err| eprintln!("Audio stream error: {}", err),
                 None,
