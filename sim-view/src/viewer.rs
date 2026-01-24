@@ -296,6 +296,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         let frame_presented = *self.frame_presented_this_step.borrow();
         if frame_presented {
             self.perf_metrics.frames_since_last_log += 1;
+            // Only accumulate iteration time when frames are presented to measure "time per frame"
             self.perf_metrics.total_frame_time_since_last_log += frame_time;
         }
 
@@ -310,8 +311,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 let avg_frame_time_ms = self
                     .perf_metrics
                     .total_frame_time_since_last_log
-                    .as_secs_f64()
-                    * 1000.0
+                    .as_millis() as f64
                     / self.perf_metrics.frames_since_last_log as f64;
                 format!(
                     "{:.2} ms/frame, {} cycles/s",
@@ -332,7 +332,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             self.update_window_title();
 
             // Reset the metrics for the next interval
-            self.perf_metrics.last_log_time = Instant::now();
+            // Add elapsed time to maintain accurate intervals and avoid drift
+            self.perf_metrics.last_log_time += Duration::from_secs(1);
             self.perf_metrics.frames_since_last_log = 0;
             self.perf_metrics.total_frame_time_since_last_log = Duration::ZERO;
             self.perf_metrics.cycles_since_last_log = 0;
