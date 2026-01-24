@@ -3,25 +3,22 @@
 
 mod common;
 
+use common::{
+    generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, trigger_present,
+    wait_for_frame_ready, wait_for_present_ready, write_stereo_sample,
+};
 use core::panic::PanicInfo;
-use core::ptr::{read_volatile, write_volatile};
+use core::ptr::write_volatile;
 use riscv_rt::entry;
 use riscv_shared::{
-    AUDIO_ADDR, AUDIO_CONFIG, AUDIO_DMA, AUDIO_STATUS, VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT,
-    VIDEO_STATUS,
+    AudioChannels, AudioConfig, AudioSampleRate, VideoConfig, VideoFormat, AUDIO_ADDR,
+    AUDIO_CONFIG, VIDEO_ADDR, VIDEO_CONFIG,
 };
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
-
-/// Video status bits
-const FRAME_READY: u32 = 1 << 0;
-const PRESENT_READY: u32 = 1 << 1;
-
-/// Video formats
-const FORMAT_RGB8: u32 = 1;
 
 /// Test image dimensions
 const WIDTH: u32 = 64;
@@ -40,64 +37,10 @@ const AUDIO_BUFFER_SIZE_SAMPLES: u32 = 1024;
 /// Sine wave frequency divider for audio
 const AUDIO_FREQUENCY_DIV: u32 = 16;
 
-/// Helper to create VIDEO_CONFIG register value
-/// Bits [11:0]   = width - 1
-/// Bits [23:12]  = height - 1
-/// Bits [31:24]  = format
-const fn make_video_config(width: u32, height: u32, format: u32) -> u32 {
-    ((width - 1) & 0xFFF) | (((height - 1) & 0xFFF) << 12) | ((format & 0xFF) << 24)
-}
-
-/// Helper to create AUDIO_CONFIG register value
-/// Bits [1:0]   = sample_rate (0=48000Hz, 1=44100Hz, 2=22050Hz)
-/// Bit 2        = channels (0=mono, 1=stereo)
-/// Bits [18:3]  = sample_count - 1 (16 bits, allows 1-65536 samples with +1 bias)
-const fn make_audio_config(sample_rate: u32, channels: u32, sample_count: u32) -> u32 {
-    let sample_count_minus_1 = (sample_count - 1) & 0xFFFF;
-    (sample_rate & 0x3) | ((channels & 0x1) << 2) | (sample_count_minus_1 << 3)
-}
-
-/// Wait for FRAME_READY bit to be set
-fn wait_for_frame_ready() {
-    unsafe {
-        loop {
-            let status = read_volatile(VIDEO_STATUS as *const u32);
-            if (status & FRAME_READY) != 0 {
-                break;
-            }
-        }
-    }
-}
-
-/// Wait for PRESENT_READY bit to be set
-fn wait_for_present_ready() {
-    unsafe {
-        loop {
-            let status = read_volatile(VIDEO_STATUS as *const u32);
-            if (status & PRESENT_READY) != 0 {
-                break;
-            }
-        }
-    }
-}
-
-/// Trigger a present operation
-fn trigger_present() {
-    unsafe {
-        write_volatile(VIDEO_PRESENT as *mut u32, 0);
-    }
-}
-
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGB8 (3 bytes per pixel)
 fn write_pixel(x: u32, y: u32, r: u8, g: u8, b: u8) {
-    unsafe {
-        let offset = (y * WIDTH + x) * 3;
-        let addr = FRAMEBUFFER_BASE + offset;
-        write_volatile(addr as *mut u8, r);
-        write_volatile((addr + 1) as *mut u8, g);
-        write_volatile((addr + 2) as *mut u8, b);
-    }
+    riscv_shared::write_pixel_rgb8(FRAMEBUFFER_BASE, WIDTH, x, y, r, g, b);
 }
 
 /// Color palette for the scrolling checkerboard
@@ -145,45 +88,13 @@ fn render_scrolling_checkerboard(frame_index: u32) {
     }
 }
 
-/// Write a stereo sample to the buffer
-/// For stereo: writes 4 bytes (2 × i16, one for left and one for right)
-fn write_stereo_sample(buffer_base: u32, offset: u32, left: i16, right: i16) {
-    unsafe {
-        let addr = buffer_base + offset;
-        let left_bytes = left.to_le_bytes();
-        let right_bytes = right.to_le_bytes();
-        write_volatile(addr as *mut u8, left_bytes[0]);
-        write_volatile((addr + 1) as *mut u8, left_bytes[1]);
-        write_volatile((addr + 2) as *mut u8, right_bytes[0]);
-        write_volatile((addr + 3) as *mut u8, right_bytes[1]);
-    }
-}
-
-/// Check if DMA is ready (bit 0 of AUDIO_STATUS)
-fn is_audio_dma_ready() -> bool {
-    unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 1) != 0 }
-}
-
-/// Check if sample buffer is ready (bit 1 of AUDIO_STATUS)
-fn is_sample_buffer_ready() -> bool {
-    unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 2) != 0 }
-}
-
-/// Trigger audio DMA operation
-fn trigger_audio_dma() {
-    unsafe {
-        write_volatile(AUDIO_DMA as *mut u32, 0);
-    }
-}
-
 /// Precompute audio buffer with sine wave samples (called once at startup)
 fn precompute_audio_buffer() {
     // Precompute 1024 stereo samples
     for i in 0..AUDIO_BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
-        let left_sample = common::generate_sine_sample(i, AUDIO_FREQUENCY_DIV);
-        let right_sample =
-            common::generate_sine_sample(i + AUDIO_FREQUENCY_DIV / 4, AUDIO_FREQUENCY_DIV);
+        let left_sample = generate_sine_sample(i, AUDIO_FREQUENCY_DIV);
+        let right_sample = generate_sine_sample(i + AUDIO_FREQUENCY_DIV / 4, AUDIO_FREQUENCY_DIV);
 
         let offset = i * 4; // 4 bytes per stereo sample
         write_stereo_sample(AUDIO_BUFFER_BASE, offset, left_sample, right_sample);
@@ -194,22 +105,26 @@ fn precompute_audio_buffer() {
 fn main() -> ! {
     unsafe {
         // Configure Video device
+        let video_config = VideoConfig {
+            width: WIDTH,
+            height: HEIGHT,
+            format: VideoFormat::Rgb8,
+        };
         write_volatile(VIDEO_ADDR as *mut u32, FRAMEBUFFER_BASE);
-        write_volatile(
-            VIDEO_CONFIG as *mut u32,
-            make_video_config(WIDTH, HEIGHT, FORMAT_RGB8),
-        );
+        write_volatile(VIDEO_CONFIG as *mut u32, video_config.to_register());
 
         // Precompute the audio buffer once at startup
         precompute_audio_buffer();
 
         // Configure Audio device
         // 48000Hz, Stereo, 1024 samples
+        let audio_config = AudioConfig {
+            sample_rate: AudioSampleRate::Hz48000,
+            channels: AudioChannels::Stereo,
+            sample_count: AUDIO_BUFFER_SIZE_SAMPLES,
+        };
         write_volatile(AUDIO_ADDR as *mut u32, AUDIO_BUFFER_BASE);
-        write_volatile(
-            AUDIO_CONFIG as *mut u32,
-            make_audio_config(0, 1, AUDIO_BUFFER_SIZE_SAMPLES),
-        );
+        write_volatile(AUDIO_CONFIG as *mut u32, audio_config.to_register());
 
         // Initialize frame counter
         let mut frame_index: u32 = 0;
@@ -232,8 +147,8 @@ fn main() -> ! {
             frame_index += 1;
 
             // Check if audio DMA is ready and sample buffer is ready, then trigger with precomputed buffer
-            if is_audio_dma_ready() && is_sample_buffer_ready() {
-                trigger_audio_dma();
+            if is_dma_ready() && is_sample_buffer_ready() {
+                trigger_dma();
             }
         }
     }
