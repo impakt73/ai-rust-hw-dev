@@ -60,10 +60,12 @@ where
     sample_callback: Option<S>,
     /// Optional callback invoked when configuration changes
     config_callback: Option<C>,
-    /// Total number of samples returned through callback since last config change
-    samples_returned: u32,
+    /// Number of samples returned by callback within the current time window
+    samples_in_current_window: u32,
+    /// Elapsed time (microseconds) when the current time window started
+    window_start_time_us: Option<u64>,
     /// Multiplier for buffer ahead threshold (default 2.0)
-    /// Max samples = sample_rate * buffer_ahead_multiplier
+    /// Max samples per second = sample_rate * buffer_ahead_multiplier
     buffer_ahead_multiplier: f32,
 }
 
@@ -80,8 +82,10 @@ where
     /// Create a new Audio device with custom buffer ahead multiplier
     ///
     /// The buffer ahead multiplier controls the back pressure mechanism. The SAMPLE_BUFFER_READY
-    /// status bit is set when the number of samples returned is below:
-    /// max_samples = sample_rate * buffer_ahead_multiplier
+    /// status bit is set when the number of samples returned in the last second is below:
+    /// max_samples_per_second = sample_rate * buffer_ahead_multiplier
+    ///
+    /// The sample count resets every time a new second begins (based on elapsed time).
     ///
     /// # Arguments
     /// * `buffer_ahead_multiplier` - Multiplier for buffer ahead threshold (typically 1.0-4.0)
@@ -98,7 +102,8 @@ where
             active_dma: None,
             sample_callback,
             config_callback,
-            samples_returned: 0,
+            samples_in_current_window: 0,
+            window_start_time_us: None,
             buffer_ahead_multiplier,
         }
     }
@@ -109,17 +114,36 @@ where
     }
 
     /// Check if sample buffer has space for more samples
-    /// Returns true when samples_returned < (sample_rate * buffer_ahead_multiplier)
-    fn is_sample_buffer_ready(&self) -> bool {
+    ///
+    /// Sample buffer pacing is based on elapsed host time (not simulation cycles).
+    /// The buffer is ready when samples returned in the current 1-second window is below:
+    ///   max_samples_per_second = sample_rate * buffer_ahead_multiplier
+    ///
+    /// The time window resets every second based on elapsed time.
+    fn is_sample_buffer_ready(&self, current_time_us: u64) -> bool {
         let Some(config) = AudioConfig::from_register(self.audio_config) else {
             // No valid config, return true to allow initial setup
             return true;
         };
 
-        let sample_rate_hz = config.sample_rate.to_hz();
-        let max_samples = (sample_rate_hz as f32 * self.buffer_ahead_multiplier) as u32;
+        // Check if we've moved into a new time window (1 second = 1,000,000 microseconds)
+        let window_elapsed = match self.window_start_time_us {
+            None => 0, // No window started yet, treat as new window
+            Some(start_time) => current_time_us.saturating_sub(start_time),
+        };
 
-        self.samples_returned < max_samples
+        // If we've passed 1 second, the window has reset (will be handled in callback)
+        // For now, check against samples in current window
+        if window_elapsed >= 1_000_000 {
+            // New window has started, so buffer is ready
+            return true;
+        }
+
+        // Calculate max samples allowed in current window
+        let sample_rate_hz = config.sample_rate.to_hz();
+        let max_samples_per_second = (sample_rate_hz as f32 * self.buffer_ahead_multiplier) as u32;
+
+        self.samples_in_current_window < max_samples_per_second
     }
 
     /// Start a DMA read operation using the configured registers
@@ -198,12 +222,13 @@ where
         // Check if DMA is complete
         if dma.bytes_remaining == 0 {
             let dma_data = self.active_dma.take().unwrap();
-            self.invoke_sample_callback(dma_data);
+            let current_time_us = ctx.elapsed_time_us();
+            self.invoke_sample_callback(dma_data, current_time_us);
         }
     }
 
     /// Invoke the sample callback with the collected audio data
-    fn invoke_sample_callback(&mut self, dma: ActiveDma) {
+    fn invoke_sample_callback(&mut self, dma: ActiveDma, current_time_us: u64) {
         log::info!(
             "Audio: DMA complete ({} samples, {}Hz, {:?}, {} bytes)",
             dma.config.sample_count,
@@ -249,13 +274,30 @@ where
             }
         }
 
-        // Update samples_returned count (count actual samples, not channel values)
-        self.samples_returned += sample_count as u32;
+        // Check if we need to reset the time window (every 1 second)
+        let window_elapsed = match self.window_start_time_us {
+            None => u64::MAX, // Force window reset on first callback
+            Some(start_time) => current_time_us.saturating_sub(start_time),
+        };
 
-        log::debug!(
-            "Audio: Total samples returned since config change: {}",
-            self.samples_returned
-        );
+        if window_elapsed >= 1_000_000 {
+            // New second has begun, reset the window
+            self.window_start_time_us = Some(current_time_us);
+            self.samples_in_current_window = sample_count as u32;
+            log::debug!(
+                "Audio: New time window started at {}us, samples in window reset to {}",
+                current_time_us,
+                sample_count
+            );
+        } else {
+            // Same window, increment sample count
+            self.samples_in_current_window += sample_count as u32;
+            log::debug!(
+                "Audio: Samples in current window: {} (window started at {}us)",
+                self.samples_in_current_window,
+                self.window_start_time_us.unwrap_or(0)
+            );
+        }
 
         // Invoke callback with full buffer
         if let Some(ref mut callback) = self.sample_callback {
@@ -268,13 +310,14 @@ where
         // Configuration changes do not affect in-flight DMA operations
         self.audio_config = new_config;
 
-        // Reset sample count when config changes (indicates new audio stream)
-        self.samples_returned = 0;
+        // Reset sample window when config changes (indicates new audio stream)
+        self.samples_in_current_window = 0;
+        self.window_start_time_us = None;
 
         // Notify on config write (treat all writes as changes)
         if let Some(config) = AudioConfig::from_register(new_config) {
             log::info!(
-                "Audio: Config changed - {}Hz, {:?}, {} samples (samples_returned reset to 0)",
+                "Audio: Config changed - {}Hz, {:?}, {} samples (window reset)",
                 config.sample_rate.to_hz(),
                 config.channels,
                 config.sample_count
@@ -293,7 +336,7 @@ where
     S: FnMut(&[i16]),
     C: FnMut(&AudioConfig),
 {
-    fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
+    fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
             0x00 => Ok(self.audio_addr),
             0x04 => Ok(self.audio_config),
@@ -307,7 +350,7 @@ where
                 }
 
                 // Bit 1: SAMPLE_BUFFER_READY
-                if self.is_sample_buffer_ready() {
+                if self.is_sample_buffer_ready(ctx.elapsed_time_us()) {
                     status |= 1 << 1;
                 }
 
@@ -363,7 +406,8 @@ where
         self.audio_addr = 0;
         self.audio_config = 0;
         self.active_dma = None;
-        self.samples_returned = 0;
+        self.samples_in_current_window = 0;
+        self.window_start_time_us = None;
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
