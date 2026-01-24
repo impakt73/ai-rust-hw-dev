@@ -218,9 +218,8 @@ pub fn write_pixel(
         VideoFormat::Rgb8 => write_pixel_rgb8(framebuffer_base, width, x, y, r, g, b),
         VideoFormat::Rgb565 => write_pixel_rgb565(framebuffer_base, width, x, y, r, g, b),
         VideoFormat::R8 => {
-            // For grayscale, use a simple average of RGB components
-            let gray = ((r as u16 + g as u16 + b as u16) / 3) as u8;
-            write_pixel_r8(framebuffer_base, width, x, y, gray);
+            // Pass through the r value unchanged
+            write_pixel_r8(framebuffer_base, width, x, y, r);
         }
     }
 }
