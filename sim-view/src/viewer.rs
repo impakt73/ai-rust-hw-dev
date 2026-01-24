@@ -303,8 +303,11 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Check if one second has elapsed
         let elapsed = self.perf_metrics.last_log_time.elapsed();
         if elapsed >= Duration::from_secs(1) {
-            // Format the performance string
-            let cycles_formatted = Self::format_cycles(self.perf_metrics.cycles_since_last_log);
+            // Normalize cycles to cycles per second based on actual elapsed time
+            let elapsed_secs = elapsed.as_secs_f64();
+            let cycles_per_sec =
+                (self.perf_metrics.cycles_since_last_log as f64 / elapsed_secs) as u64;
+            let cycles_formatted = Self::format_cycles(cycles_per_sec);
 
             let perf_string = if self.perf_metrics.frames_since_last_log > 0 {
                 // Calculate average frame time in milliseconds
@@ -332,7 +335,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             self.update_window_title();
 
             // Reset the metrics for the next interval
-            // Add elapsed time to maintain accurate intervals and avoid drift
+            // Add the target duration to maintain consistent intervals
             self.perf_metrics.last_log_time += Duration::from_secs(1);
             self.perf_metrics.frames_since_last_log = 0;
             self.perf_metrics.total_frame_time_since_last_log = Duration::ZERO;
