@@ -141,7 +141,9 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 if let Some(last_time) = metrics.last_frame_time {
                     // Add time since last frame
                     let frame_time = now.duration_since(last_time);
-                    metrics.total_frame_time_ns += frame_time.as_nanos() as u64;
+                    // Use saturating conversion to avoid silent truncation
+                    metrics.total_frame_time_ns +=
+                        frame_time.as_nanos().min(u64::MAX as u128) as u64;
                 }
                 metrics.last_frame_time = Some(now);
                 metrics.frames_presented += 1;

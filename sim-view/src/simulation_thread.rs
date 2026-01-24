@@ -144,6 +144,12 @@ impl SimulationThread {
                                 total_cycles = 0;
                                 batch_count = 0;
                                 running = false; // Don't auto-start
+
+                                // Reset frame timing metrics for the new program
+                                if let Ok(mut timing) = frame_timing.lock() {
+                                    *timing = FrameTimingMetrics::default();
+                                }
+
                                 let _ = response_tx.send(SimResponse::ELFLoaded);
                             }
                             Err(e) => {
@@ -154,6 +160,11 @@ impl SimulationThread {
                     SimRequest::Run => {
                         running = true;
                         batch_count = 0; // Reset batch counter when starting
+
+                        // Reset frame timing metrics so measurements start fresh for this run
+                        if let Ok(mut timing) = frame_timing.lock() {
+                            *timing = FrameTimingMetrics::default();
+                        }
                     }
                     SimRequest::Step => {
                         // Execute one batch and respond immediately
