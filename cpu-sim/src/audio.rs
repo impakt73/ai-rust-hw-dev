@@ -82,10 +82,12 @@ where
     /// Create a new Audio device with custom buffer ahead multiplier
     ///
     /// The buffer ahead multiplier controls the back pressure mechanism. The SAMPLE_BUFFER_READY
-    /// status bit is set when the number of samples returned in the last second is below:
+    /// status bit is set when the number of samples returned within the current 1-second time
+    /// window is below:
     /// max_samples_per_second = sample_rate * buffer_ahead_multiplier
     ///
-    /// The sample count resets every time a new second begins (based on elapsed time).
+    /// Each time window spans 1 second, and the sample count resets when a new window begins
+    /// (based on elapsed time).
     ///
     /// # Arguments
     /// * `buffer_ahead_multiplier` - Multiplier for buffer ahead threshold (typically 1.0-4.0)

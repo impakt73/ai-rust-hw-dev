@@ -164,6 +164,11 @@ fn is_audio_dma_ready() -> bool {
     unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 1) != 0 }
 }
 
+/// Check if sample buffer is ready (bit 1 of AUDIO_STATUS)
+fn is_sample_buffer_ready() -> bool {
+    unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 2) != 0 }
+}
+
 /// Trigger audio DMA operation
 fn trigger_audio_dma() {
     unsafe {
@@ -226,8 +231,8 @@ fn main() -> ! {
             // Increment frame index for next frame
             frame_index += 1;
 
-            // Check if audio DMA is ready and trigger with precomputed buffer
-            if is_audio_dma_ready() {
+            // Check if audio DMA is ready and sample buffer is ready, then trigger with precomputed buffer
+            if is_audio_dma_ready() && is_sample_buffer_ready() {
                 trigger_audio_dma();
             }
         }
