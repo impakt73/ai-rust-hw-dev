@@ -30,6 +30,7 @@ struct ActiveDma {
 ///   Bits [18:3]  = sample_count - 1 (16 bits, allows 1-65536 samples with +1 bias)
 /// - 0x08: AUDIO_STATUS     - Status register (read-only)
 ///   Bit 0: DMA_READY (1 = can trigger new DMA operation)
+///   Bit 1: SAMPLE_BUFFER_READY (1 = sample buffer has space for more samples)
 /// - 0x0C: AUDIO_DMA        - Trigger DMA (write-only, write any value to start)
 ///
 /// The device operates as follows:
@@ -59,6 +60,11 @@ where
     sample_callback: Option<S>,
     /// Optional callback invoked when configuration changes
     config_callback: Option<C>,
+    /// Total number of samples returned through callback since last config change
+    samples_returned: u32,
+    /// Multiplier for buffer ahead threshold (default 2.0)
+    /// Max samples = sample_rate * buffer_ahead_multiplier
+    buffer_ahead_multiplier: f32,
 }
 
 impl<S, C> Audio<S, C>
@@ -66,20 +72,54 @@ where
     S: FnMut(&[i16]),
     C: FnMut(&AudioConfig),
 {
-    /// Create a new Audio device with optional callbacks
+    /// Create a new Audio device with optional callbacks and default buffer ahead multiplier (2.0)
     pub fn new(sample_callback: Option<S>, config_callback: Option<C>) -> Self {
+        Self::with_buffer_ahead_multiplier(2.0, sample_callback, config_callback)
+    }
+
+    /// Create a new Audio device with custom buffer ahead multiplier
+    ///
+    /// The buffer ahead multiplier controls the back pressure mechanism. The SAMPLE_BUFFER_READY
+    /// status bit is set when the number of samples returned is below:
+    /// max_samples = sample_rate * buffer_ahead_multiplier
+    ///
+    /// # Arguments
+    /// * `buffer_ahead_multiplier` - Multiplier for buffer ahead threshold (typically 1.0-4.0)
+    /// * `sample_callback` - Optional callback invoked when DMA completes
+    /// * `config_callback` - Optional callback invoked when config changes
+    pub fn with_buffer_ahead_multiplier(
+        buffer_ahead_multiplier: f32,
+        sample_callback: Option<S>,
+        config_callback: Option<C>,
+    ) -> Self {
         Audio {
             audio_addr: 0,
             audio_config: 0,
             active_dma: None,
             sample_callback,
             config_callback,
+            samples_returned: 0,
+            buffer_ahead_multiplier,
         }
     }
 
     /// Check if a DMA operation is currently in progress
     fn is_dma_active(&self) -> bool {
         self.active_dma.is_some()
+    }
+
+    /// Check if sample buffer has space for more samples
+    /// Returns true when samples_returned < (sample_rate * buffer_ahead_multiplier)
+    fn is_sample_buffer_ready(&self) -> bool {
+        let Some(config) = AudioConfig::from_register(self.audio_config) else {
+            // No valid config, return true to allow initial setup
+            return true;
+        };
+
+        let sample_rate_hz = config.sample_rate.to_hz();
+        let max_samples = (sample_rate_hz as f32 * self.buffer_ahead_multiplier) as u32;
+
+        self.samples_returned < max_samples
     }
 
     /// Start a DMA read operation using the configured registers
@@ -209,6 +249,14 @@ where
             }
         }
 
+        // Update samples_returned count (count actual samples, not channel values)
+        self.samples_returned += sample_count as u32;
+
+        log::debug!(
+            "Audio: Total samples returned since config change: {}",
+            self.samples_returned
+        );
+
         // Invoke callback with full buffer
         if let Some(ref mut callback) = self.sample_callback {
             callback(&samples);
@@ -220,10 +268,13 @@ where
         // Configuration changes do not affect in-flight DMA operations
         self.audio_config = new_config;
 
+        // Reset sample count when config changes (indicates new audio stream)
+        self.samples_returned = 0;
+
         // Notify on config write (treat all writes as changes)
         if let Some(config) = AudioConfig::from_register(new_config) {
             log::info!(
-                "Audio: Config changed - {}Hz, {:?}, {} samples",
+                "Audio: Config changed - {}Hz, {:?}, {} samples (samples_returned reset to 0)",
                 config.sample_rate.to_hz(),
                 config.channels,
                 config.sample_count
@@ -253,6 +304,11 @@ where
                 // Bit 0: DMA_READY (inverse of DMA active)
                 if !self.is_dma_active() {
                     status |= 1 << 0;
+                }
+
+                // Bit 1: SAMPLE_BUFFER_READY
+                if self.is_sample_buffer_ready() {
+                    status |= 1 << 1;
                 }
 
                 Ok(status)
@@ -307,6 +363,7 @@ where
         self.audio_addr = 0;
         self.audio_config = 0;
         self.active_dma = None;
+        self.samples_returned = 0;
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
@@ -375,8 +432,8 @@ mod tests {
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0x8000_1000);
         assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), (8 << 3));
 
-        // Status should show DMA_READY (no DMA active)
-        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 1);
+        // Status should show DMA_READY and SAMPLE_BUFFER_READY (bits 0 and 1)
+        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b11);
     }
 
     #[test]
@@ -435,22 +492,22 @@ mod tests {
         let config = 3 << 3; // 48000Hz, Mono, 4 samples (stored as 3)
         audio.write_word(&mut ctx, 0x04, config).unwrap();
 
-        // Check status: DMA should be ready
-        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 1);
+        // Check status: DMA should be ready and buffer ready
+        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b11);
 
         // Trigger DMA
         audio.write_word(&mut ctx, 0x0C, 0).unwrap();
 
-        // Check status: DMA should not be ready (operation in progress)
-        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0);
+        // Check status: DMA should not be ready (operation in progress), but buffer is ready
+        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b10);
 
         // Run clock cycles to complete DMA (4 samples × 2 bytes = 8 bytes)
         for _ in 0..8 {
             audio.clock_cycle(&mut ctx);
         }
 
-        // Check status: DMA should be ready again
-        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 1);
+        // Check status: DMA should be ready again (and buffer ready)
+        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b11);
 
         // Verify callback was invoked once with all samples
         let captured = sample_data.borrow();
@@ -600,10 +657,153 @@ mod tests {
         assert_eq!(audio.read_word(&mut ctx, 0x00).unwrap(), 0);
         assert_eq!(audio.read_word(&mut ctx, 0x04).unwrap(), 0);
 
-        // Status should show DMA_READY
-        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 1);
+        // Status should show DMA_READY and SAMPLE_BUFFER_READY
+        assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b11);
 
         // Active DMA should be cleared
         assert!(!audio.is_dma_active());
+    }
+
+    #[test]
+    fn test_audio_buffer_ready_status() {
+        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data_clone = sample_data.clone();
+
+        let mut audio = Audio::with_buffer_ahead_multiplier(
+            2.0,
+            Some(move |samples: &[i16]| {
+                sample_data_clone.borrow_mut().push(samples.to_vec());
+            }),
+            None::<fn(&AudioConfig)>,
+        );
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        // Configure for 48000Hz, mono, 10 samples per batch
+        // With multiplier 2.0: max = 48000 * 2.0 = 96000 samples
+        audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
+        audio.write_word(&mut ctx, 0x04, 9 << 3).unwrap(); // 10 samples
+
+        // Initially buffer should be ready (bit 1 set)
+        let status = audio.read_word(&mut ctx, 0x08).unwrap();
+        assert_eq!(
+            status & 0b10,
+            0b10,
+            "SAMPLE_BUFFER_READY should be set initially"
+        );
+
+        // Fill memory with test data
+        for i in 0..10 {
+            let sample = (i * 100) as i16;
+            let bytes = sample.to_le_bytes();
+            ctx.write_byte(0x8000_1000 + i * 2, bytes[0]);
+            ctx.write_byte(0x8000_1000 + i * 2 + 1, bytes[1]);
+        }
+
+        // Trigger DMA and complete it
+        audio.write_word(&mut ctx, 0x0C, 0).unwrap();
+        for _ in 0..20 {
+            audio.clock_cycle(&mut ctx);
+        }
+
+        // Buffer should still be ready (only 10 samples out of 96000)
+        let status = audio.read_word(&mut ctx, 0x08).unwrap();
+        assert_eq!(
+            status & 0b10,
+            0b10,
+            "SAMPLE_BUFFER_READY should still be set"
+        );
+    }
+
+    #[test]
+    fn test_audio_buffer_ready_threshold() {
+        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data_clone = sample_data.clone();
+
+        // Use small multiplier to test threshold
+        let mut audio = Audio::with_buffer_ahead_multiplier(
+            0.0001, // Very small multiplier: 48000 * 0.0001 = 4.8 samples (rounds to 4)
+            Some(move |samples: &[i16]| {
+                sample_data_clone.borrow_mut().push(samples.to_vec());
+            }),
+            None::<fn(&AudioConfig)>,
+        );
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        // Configure for 48000Hz, mono, 10 samples per batch
+        audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
+        audio.write_word(&mut ctx, 0x04, 9 << 3).unwrap(); // 10 samples
+
+        // Fill memory with test data
+        for i in 0..10 {
+            let sample = (i * 100) as i16;
+            let bytes = sample.to_le_bytes();
+            ctx.write_byte(0x8000_1000 + i * 2, bytes[0]);
+            ctx.write_byte(0x8000_1000 + i * 2 + 1, bytes[1]);
+        }
+
+        // Trigger DMA and complete it
+        audio.write_word(&mut ctx, 0x0C, 0).unwrap();
+        for _ in 0..20 {
+            audio.clock_cycle(&mut ctx);
+        }
+
+        // After 10 samples, should exceed threshold (4.8), so buffer not ready
+        let status = audio.read_word(&mut ctx, 0x08).unwrap();
+        assert_eq!(
+            status & 0b10,
+            0,
+            "SAMPLE_BUFFER_READY should be clear after exceeding threshold"
+        );
+    }
+
+    #[test]
+    fn test_audio_buffer_ready_reset_on_config_change() {
+        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data_clone = sample_data.clone();
+
+        let mut audio = Audio::with_buffer_ahead_multiplier(
+            0.0001, // Small threshold to trigger quickly
+            Some(move |samples: &[i16]| {
+                sample_data_clone.borrow_mut().push(samples.to_vec());
+            }),
+            None::<fn(&AudioConfig)>,
+        );
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        // Configure and generate samples to exceed threshold
+        audio.write_word(&mut ctx, 0x00, 0x8000_1000).unwrap();
+        audio.write_word(&mut ctx, 0x04, 9 << 3).unwrap(); // 10 samples
+
+        // Fill memory and trigger DMA
+        for i in 0..10 {
+            let sample = (i * 100) as i16;
+            let bytes = sample.to_le_bytes();
+            ctx.write_byte(0x8000_1000 + i * 2, bytes[0]);
+            ctx.write_byte(0x8000_1000 + i * 2 + 1, bytes[1]);
+        }
+        audio.write_word(&mut ctx, 0x0C, 0).unwrap();
+        for _ in 0..20 {
+            audio.clock_cycle(&mut ctx);
+        }
+
+        // Verify buffer not ready
+        let status = audio.read_word(&mut ctx, 0x08).unwrap();
+        assert_eq!(status & 0b10, 0, "SAMPLE_BUFFER_READY should be clear");
+
+        // Change config (should reset sample count)
+        audio
+            .write_word(&mut ctx, 0x04, (1 << 2) | (9 << 3))
+            .unwrap(); // Change to stereo
+
+        // Buffer should be ready again
+        let status = audio.read_word(&mut ctx, 0x08).unwrap();
+        assert_eq!(
+            status & 0b10,
+            0b10,
+            "SAMPLE_BUFFER_READY should be set after config change"
+        );
     }
 }
