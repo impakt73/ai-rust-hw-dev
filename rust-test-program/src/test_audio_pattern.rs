@@ -44,6 +44,11 @@ fn is_dma_ready() -> bool {
     unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 1) != 0 }
 }
 
+/// Check if sample buffer is ready (bit 1 of AUDIO_STATUS)
+fn is_sample_buffer_ready() -> bool {
+    unsafe { (read_volatile(AUDIO_STATUS as *const u32) & 2) != 0 }
+}
+
 /// Trigger DMA operation
 fn trigger_dma() {
     unsafe {
@@ -98,6 +103,11 @@ fn main() -> ! {
 
             // Wait for DMA to be ready
             while !is_dma_ready() {
+                // Spin wait
+            }
+
+            // Wait for sample buffer to be ready (back pressure)
+            while !is_sample_buffer_ready() {
                 // Spin wait
             }
 
