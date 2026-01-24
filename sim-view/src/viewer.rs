@@ -284,7 +284,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
     }
 
     /// Update performance metrics and log if one second has elapsed
-    fn update_performance_metrics(&mut self, frame_time: Duration) {
+    fn update_performance_metrics(&mut self, frame_time: Duration, frame_presented: bool) {
         // Update cycles delta
         let cycles_delta = self
             .total_cycles
@@ -292,8 +292,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.perf_metrics.cycles_since_last_log += cycles_delta;
         self.perf_metrics.last_cycles = self.total_cycles;
 
-        // Check if a frame was presented
-        let frame_presented = *self.frame_presented_this_step.borrow();
+        // Accumulate frame metrics if a frame was presented
         if frame_presented {
             self.perf_metrics.frames_since_last_log += 1;
             // Only accumulate iteration time when frames are presented to measure "time per frame"
@@ -511,6 +510,10 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                         self.update_window_title();
                         break;
                     }
+                    SimResponse::Progress { cycles_executed } => {
+                        // Update total cycles from periodic progress updates
+                        self.total_cycles = cycles_executed;
+                    }
                     _ => {
                         // Ignore other responses
                     }
@@ -520,9 +523,12 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             // Update video backend (pull frames from shared buffer and display/capture)
             self.video_backend.borrow_mut().update()?;
 
+            // Check if a frame was presented (must be done after update() completes)
+            let frame_presented = *self.frame_presented_this_step.borrow();
+
             // Update performance metrics and log once per second
             let frame_time = frame_start.elapsed();
-            self.update_performance_metrics(frame_time);
+            self.update_performance_metrics(frame_time, frame_presented);
         }
 
         log::info!("Viewer loop ended");

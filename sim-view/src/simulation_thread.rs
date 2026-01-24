@@ -10,6 +10,7 @@ use std::thread::{self, JoinHandle};
 
 // Performance constants
 const INSTRUCTIONS_PER_BATCH: u64 = 10000; // Instructions per batch in background thread
+const BATCHES_PER_PROGRESS_UPDATE: u64 = 10; // Send progress update every 10 batches (~100K instructions)
 
 /// Messages sent from main thread to simulation thread
 #[derive(Debug)]
@@ -45,6 +46,8 @@ pub(crate) enum SimResponse {
         tohost_value: Option<u32>,
         cycles_executed: u64,
     },
+    /// Progress update during continuous run (sent periodically)
+    Progress { cycles_executed: u64 },
     /// Simulation thread terminated
     Terminated,
 }
@@ -85,6 +88,7 @@ impl SimulationThread {
     ) {
         let mut total_cycles: u64 = 0;
         let mut running = false;
+        let mut batch_count: u64 = 0; // Track batches for progress updates
 
         loop {
             // Check for requests from main thread
@@ -110,6 +114,7 @@ impl SimulationThread {
                         match simulator.load_elf(&path) {
                             Ok(()) => {
                                 total_cycles = 0;
+                                batch_count = 0;
                                 running = false; // Don't auto-start
                                 let _ = response_tx.send(SimResponse::ELFLoaded);
                             }
@@ -120,6 +125,7 @@ impl SimulationThread {
                     }
                     SimRequest::Run => {
                         running = true;
+                        batch_count = 0; // Reset batch counter when starting
                     }
                     SimRequest::Step => {
                         // Execute one batch and respond immediately
@@ -168,6 +174,15 @@ impl SimulationThread {
                 match Self::execute_batch(&mut simulator, INSTRUCTIONS_PER_BATCH) {
                     Ok((cycles, tohost)) => {
                         total_cycles += cycles;
+                        batch_count += 1;
+
+                        // Send periodic progress updates
+                        if batch_count >= BATCHES_PER_PROGRESS_UPDATE {
+                            let _ = response_tx.send(SimResponse::Progress {
+                                cycles_executed: total_cycles,
+                            });
+                            batch_count = 0;
+                        }
 
                         // Check if program halted
                         if tohost.is_some() {
