@@ -18,9 +18,9 @@ pub use riscv_shared::{
 #[allow(unused_imports)]
 pub use riscv_shared::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, trigger_present,
-    wait_for_frame_ready, wait_for_present_ready, write_mono_sample, write_pixel, write_pixel_rgb8,
-    write_pixel_rgba8, write_stereo_sample, DMA_READY, FRAME_READY, PRESENT_READY,
-    SAMPLE_BUFFER_READY,
+    wait_for_frame_ready, wait_for_present_ready, write_mono_sample, write_pixel, write_pixel_r8,
+    write_pixel_rgb565, write_pixel_rgb8, write_pixel_rgba8, write_stereo_sample, DMA_READY,
+    FRAME_READY, PRESENT_READY, SAMPLE_BUFFER_READY,
 };
 
 // Re-export video and audio format types for backward compatibility

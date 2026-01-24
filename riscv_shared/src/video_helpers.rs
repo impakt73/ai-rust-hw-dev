@@ -94,10 +94,9 @@ pub fn write_pixel_rgba8(
     unsafe {
         let offset = (y * width + x) * 4;
         let addr = framebuffer_base + offset;
-        write_volatile(addr as *mut u8, r);
-        write_volatile((addr + 1) as *mut u8, g);
-        write_volatile((addr + 2) as *mut u8, b);
-        write_volatile((addr + 3) as *mut u8, a);
+        // Pack RGBA into a single u32 for better performance
+        let packed = r as u32 | (g as u32) << 8 | (b as u32) << 16 | (a as u32) << 24;
+        write_volatile(addr as *mut u32, packed);
     }
 }
 
@@ -121,9 +120,63 @@ pub fn write_pixel_rgb8(framebuffer_base: u32, width: u32, x: u32, y: u32, r: u8
     unsafe {
         let offset = (y * width + x) * 3;
         let addr = framebuffer_base + offset;
-        write_volatile(addr as *mut u8, r);
-        write_volatile((addr + 1) as *mut u8, g);
+        // Pack r and g into a single u16 for better performance
+        let rg_packed = r as u16 | (g as u16) << 8;
+        write_volatile(addr as *mut u16, rg_packed);
         write_volatile((addr + 2) as *mut u8, b);
+    }
+}
+
+/// Write a pixel to a framebuffer in RGB565 format (2 bytes per pixel)
+///
+/// RGB565 format packs colors as: 5 bits red, 6 bits green, 5 bits blue
+///
+/// # Arguments
+/// * `framebuffer_base` - Base address of the framebuffer in memory
+/// * `width` - Width of the framebuffer in pixels
+/// * `x` - X coordinate of the pixel (0-based)
+/// * `y` - Y coordinate of the pixel (0-based)
+/// * `r` - Red component (0-255, scaled to 5 bits)
+/// * `g` - Green component (0-255, scaled to 6 bits)
+/// * `b` - Blue component (0-255, scaled to 5 bits)
+///
+/// # Safety
+/// This function performs volatile memory writes. The caller must ensure:
+/// - `framebuffer_base` points to valid, writable memory
+/// - The coordinates (x, y) are within the framebuffer dimensions
+/// - The framebuffer has sufficient space for (y * width + x) * 2 bytes
+pub fn write_pixel_rgb565(framebuffer_base: u32, width: u32, x: u32, y: u32, r: u8, g: u8, b: u8) {
+    unsafe {
+        let offset = (y * width + x) * 2;
+        let addr = framebuffer_base + offset;
+        // Convert 8-bit RGB to RGB565 format and pack into single u16
+        let r5 = (r >> 3) as u16; // 5 bits red
+        let g6 = (g >> 2) as u16; // 6 bits green
+        let b5 = (b >> 3) as u16; // 5 bits blue
+        let packed = (r5 << 11) | (g6 << 5) | b5;
+        write_volatile(addr as *mut u16, packed);
+    }
+}
+
+/// Write a pixel to a framebuffer in R8 (grayscale) format (1 byte per pixel)
+///
+/// # Arguments
+/// * `framebuffer_base` - Base address of the framebuffer in memory
+/// * `width` - Width of the framebuffer in pixels
+/// * `x` - X coordinate of the pixel (0-based)
+/// * `y` - Y coordinate of the pixel (0-based)
+/// * `gray` - Grayscale value (0-255)
+///
+/// # Safety
+/// This function performs volatile memory writes. The caller must ensure:
+/// - `framebuffer_base` points to valid, writable memory
+/// - The coordinates (x, y) are within the framebuffer dimensions
+/// - The framebuffer has sufficient space for (y * width + x) bytes
+pub fn write_pixel_r8(framebuffer_base: u32, width: u32, x: u32, y: u32, gray: u8) {
+    unsafe {
+        let offset = y * width + x;
+        let addr = framebuffer_base + offset;
+        write_volatile(addr as *mut u8, gray);
     }
 }
 
@@ -137,11 +190,11 @@ pub fn write_pixel_rgb8(framebuffer_base: u32, width: u32, x: u32, y: u32, r: u8
 /// * `width` - Width of the framebuffer in pixels
 /// * `x` - X coordinate of the pixel (0-based)
 /// * `y` - Y coordinate of the pixel (0-based)
-/// * `format` - Pixel format (only RGBA8 and RGB8 are supported)
+/// * `format` - Pixel format
 /// * `r` - Red component (0-255)
 /// * `g` - Green component (0-255)
 /// * `b` - Blue component (0-255)
-/// * `a` - Alpha component (0-255, ignored for RGB8)
+/// * `a` - Alpha component (0-255, ignored for formats without alpha)
 ///
 /// # Safety
 /// This function performs volatile memory writes. The caller must ensure:
@@ -163,9 +216,11 @@ pub fn write_pixel(
     match format {
         VideoFormat::Rgba8 => write_pixel_rgba8(framebuffer_base, width, x, y, r, g, b, a),
         VideoFormat::Rgb8 => write_pixel_rgb8(framebuffer_base, width, x, y, r, g, b),
-        _ => {
-            // For other formats, we don't have a simple implementation
-            // This could be extended in the future
+        VideoFormat::Rgb565 => write_pixel_rgb565(framebuffer_base, width, x, y, r, g, b),
+        VideoFormat::R8 => {
+            // For grayscale, use a simple average of RGB components
+            let gray = ((r as u16 + g as u16 + b as u16) / 3) as u8;
+            write_pixel_r8(framebuffer_base, width, x, y, gray);
         }
     }
 }

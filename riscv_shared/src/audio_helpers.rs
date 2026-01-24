@@ -67,12 +67,9 @@ pub fn trigger_dma() {
 pub fn write_stereo_sample(buffer_base: u32, offset: u32, left: i16, right: i16) {
     unsafe {
         let addr = buffer_base + offset;
-        let left_bytes = left.to_le_bytes();
-        let right_bytes = right.to_le_bytes();
-        write_volatile(addr as *mut u8, left_bytes[0]);
-        write_volatile((addr + 1) as *mut u8, left_bytes[1]);
-        write_volatile((addr + 2) as *mut u8, right_bytes[0]);
-        write_volatile((addr + 3) as *mut u8, right_bytes[1]);
+        // Pack left and right samples into a single u32 for better performance
+        let packed = (left as u16) as u32 | ((right as u16) as u32) << 16;
+        write_volatile(addr as *mut u32, packed);
     }
 }
 
@@ -92,8 +89,7 @@ pub fn write_stereo_sample(buffer_base: u32, offset: u32, left: i16, right: i16)
 pub fn write_mono_sample(buffer_base: u32, offset: u32, sample: i16) {
     unsafe {
         let addr = buffer_base + offset;
-        let bytes = sample.to_le_bytes();
-        write_volatile(addr as *mut u8, bytes[0]);
-        write_volatile((addr + 1) as *mut u8, bytes[1]);
+        // Write as u16 for better performance
+        write_volatile(addr as *mut u16, sample as u16);
     }
 }

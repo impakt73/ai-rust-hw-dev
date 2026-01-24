@@ -39,6 +39,6 @@ pub use fifo::{FIFO_DATA, FIFO_STATUS, RX_VALID, TX_READY};
 pub use sim_control::{FAILURE_CODE, PANIC_CODE, SUCCESS_CODE, TOHOST_ADDR};
 pub use video::{VideoConfig, VideoFormat, VIDEO_ADDR, VIDEO_CONFIG, VIDEO_PRESENT, VIDEO_STATUS};
 pub use video_helpers::{
-    trigger_present, wait_for_frame_ready, wait_for_present_ready, write_pixel, write_pixel_rgb8,
-    write_pixel_rgba8, FRAME_READY, PRESENT_READY,
+    trigger_present, wait_for_frame_ready, wait_for_present_ready, write_pixel, write_pixel_r8,
+    write_pixel_rgb565, write_pixel_rgb8, write_pixel_rgba8, FRAME_READY, PRESENT_READY,
 };
