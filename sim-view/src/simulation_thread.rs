@@ -6,11 +6,24 @@
 use cpu_sim::InteractiveSimulator;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 // Performance constants
 const INSTRUCTIONS_PER_BATCH: u64 = 10000; // Instructions per batch in background thread
 const BATCHES_PER_PROGRESS_UPDATE: u64 = 10; // Send progress update every 10 batches (~100K instructions)
+
+/// Shared frame timing metrics tracked across simulation thread and video callback
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FrameTimingMetrics {
+    /// Total number of frames presented
+    pub frames_presented: u64,
+    /// Total time between frame presentations (nanoseconds)
+    pub total_frame_time_ns: u64,
+    /// Timestamp of last frame presentation
+    pub last_frame_time: Option<Instant>,
+}
 
 /// Messages sent from main thread to simulation thread
 #[derive(Debug)]
@@ -47,7 +60,11 @@ pub(crate) enum SimResponse {
         cycles_executed: u64,
     },
     /// Progress update during continuous run (sent periodically)
-    Progress { cycles_executed: u64 },
+    Progress {
+        cycles_executed: u64,
+        frames_presented: u64,
+        total_frame_time_ns: u64,
+    },
     /// Simulation thread terminated
     Terminated,
 }
@@ -64,12 +81,22 @@ pub(crate) struct SimulationThread {
 
 impl SimulationThread {
     /// Create a new simulation thread with the given simulator
-    pub(crate) fn new(simulator: InteractiveSimulator, max_cycles: u64) -> Result<Self, String> {
+    pub(crate) fn new(
+        simulator: InteractiveSimulator,
+        max_cycles: u64,
+        frame_timing: Arc<Mutex<FrameTimingMetrics>>,
+    ) -> Result<Self, String> {
         let (request_tx, request_rx) = mpsc::channel();
         let (response_tx, response_rx) = mpsc::channel();
 
         let thread_handle = thread::spawn(move || {
-            Self::simulation_thread_main(simulator, request_rx, response_tx, max_cycles);
+            Self::simulation_thread_main(
+                simulator,
+                request_rx,
+                response_tx,
+                max_cycles,
+                frame_timing,
+            );
         });
 
         Ok(SimulationThread {
@@ -85,6 +112,7 @@ impl SimulationThread {
         request_rx: Receiver<SimRequest>,
         response_tx: Sender<SimResponse>,
         max_cycles: u64,
+        frame_timing: Arc<Mutex<FrameTimingMetrics>>,
     ) {
         let mut total_cycles: u64 = 0;
         let mut running = false;
@@ -178,8 +206,17 @@ impl SimulationThread {
 
                         // Send periodic progress updates
                         if batch_count >= BATCHES_PER_PROGRESS_UPDATE {
+                            // Get current frame timing metrics
+                            let (frames, frame_time_ns) = if let Ok(metrics) = frame_timing.lock() {
+                                (metrics.frames_presented, metrics.total_frame_time_ns)
+                            } else {
+                                (0, 0)
+                            };
+
                             let _ = response_tx.send(SimResponse::Progress {
                                 cycles_executed: total_cycles,
+                                frames_presented: frames,
+                                total_frame_time_ns: frame_time_ns,
                             });
                             batch_count = 0;
                         }

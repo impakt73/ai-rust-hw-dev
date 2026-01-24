@@ -2,13 +2,14 @@ use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
 };
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
-use crate::simulation_thread::{SimRequest, SimResponse, SimulationThread};
+use crate::simulation_thread::{FrameTimingMetrics, SimRequest, SimResponse, SimulationThread};
 use cpu_sim::{
     Audio, AudioConfig, InteractiveSimulator, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct ViewerConfig {
@@ -25,14 +26,18 @@ pub struct ViewerConfig {
 struct PerformanceMetrics {
     /// Time of last log message
     last_log_time: Instant,
-    /// Number of frames presented since last log
+    /// Number of frames presented since last log (from sim thread)
     frames_since_last_log: u64,
-    /// Total frame time since last log (for averaging)
-    total_frame_time_since_last_log: Duration,
+    /// Total frame time since last log in nanoseconds (from sim thread)
+    total_frame_time_ns_since_last_log: u64,
     /// Cycles executed since last log
     cycles_since_last_log: u64,
     /// Last cycles count (to compute delta)
     last_cycles: u64,
+    /// Last frame count (to compute delta)
+    last_frames: u64,
+    /// Last frame time total (to compute delta)
+    last_frame_time_ns: u64,
     /// Current performance string (for window title)
     current_perf_string: String,
 }
@@ -114,17 +119,33 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         let audio_backend = Rc::new(RefCell::new(audio_backend));
         let frame_presented_this_step = Rc::new(RefCell::new(false));
 
+        // Create shared frame timing metrics for simulation thread
+        let frame_timing = Arc::new(Mutex::new(FrameTimingMetrics::default()));
+
         // Create the interactive simulator
         let mut simulator = InteractiveSimulator::new()?;
 
         // Create Video device with callback that pushes to shared buffer
         let video_buffer_for_callback = video_buffer.clone();
         let frame_presented_clone = Rc::clone(&frame_presented_this_step);
+        let frame_timing_clone = Arc::clone(&frame_timing);
         let video_callback = move |data: &[u8], video_config: &VideoConfig| {
             // Push frame data to shared buffer
             video_buffer_for_callback.push_frame(data.to_vec(), *video_config);
             // Mark that a frame was presented
             *frame_presented_clone.borrow_mut() = true;
+
+            // Track frame timing in simulation thread context
+            if let Ok(mut metrics) = frame_timing_clone.lock() {
+                let now = Instant::now();
+                if let Some(last_time) = metrics.last_frame_time {
+                    // Add time since last frame
+                    let frame_time = now.duration_since(last_time);
+                    metrics.total_frame_time_ns += frame_time.as_nanos() as u64;
+                }
+                metrics.last_frame_time = Some(now);
+                metrics.frames_presented += 1;
+            }
         };
         let video_device = Box::new(Video::new(Some(video_callback)));
 
@@ -157,8 +178,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         simulator.register_device(VIDEO_BASE, video_device)?;
         simulator.register_device(AUDIO_BASE, audio_device)?;
 
-        // Create simulation thread
-        let sim_thread = SimulationThread::new(simulator, config.max_cycles)?;
+        // Create simulation thread with frame timing metrics
+        let sim_thread = SimulationThread::new(simulator, config.max_cycles, frame_timing)?;
 
         Ok(SimViewer {
             sim_thread,
@@ -176,9 +197,11 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             perf_metrics: PerformanceMetrics {
                 last_log_time: Instant::now(),
                 frames_since_last_log: 0,
-                total_frame_time_since_last_log: Duration::ZERO,
+                total_frame_time_ns_since_last_log: 0,
                 cycles_since_last_log: 0,
                 last_cycles: 0,
+                last_frames: 0,
+                last_frame_time_ns: 0,
                 current_perf_string: String::new(),
             },
         })
@@ -284,20 +307,25 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
     }
 
     /// Update performance metrics and log if one second has elapsed
-    fn update_performance_metrics(&mut self, frame_time: Duration, frame_presented: bool) {
-        // Update cycles delta
+    /// Now receives frame timing data from simulation thread progress updates
+    fn update_performance_metrics(&mut self, frames_presented: u64, total_frame_time_ns: u64) {
+        // Calculate deltas from last progress update
+        let frames_delta = frames_presented.saturating_sub(self.perf_metrics.last_frames);
+        let frame_time_ns_delta =
+            total_frame_time_ns.saturating_sub(self.perf_metrics.last_frame_time_ns);
         let cycles_delta = self
             .total_cycles
             .saturating_sub(self.perf_metrics.last_cycles);
-        self.perf_metrics.cycles_since_last_log += cycles_delta;
-        self.perf_metrics.last_cycles = self.total_cycles;
 
-        // Accumulate frame metrics if a frame was presented
-        if frame_presented {
-            self.perf_metrics.frames_since_last_log += 1;
-            // Only accumulate iteration time when frames are presented to measure "time per frame"
-            self.perf_metrics.total_frame_time_since_last_log += frame_time;
-        }
+        // Accumulate for this logging interval
+        self.perf_metrics.frames_since_last_log += frames_delta;
+        self.perf_metrics.total_frame_time_ns_since_last_log += frame_time_ns_delta;
+        self.perf_metrics.cycles_since_last_log += cycles_delta;
+
+        // Update last values
+        self.perf_metrics.last_frames = frames_presented;
+        self.perf_metrics.last_frame_time_ns = total_frame_time_ns;
+        self.perf_metrics.last_cycles = self.total_cycles;
 
         // Check if one second has elapsed
         let elapsed = self.perf_metrics.last_log_time.elapsed();
@@ -309,12 +337,10 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             let cycles_formatted = Self::format_cycles(cycles_per_sec);
 
             let perf_string = if self.perf_metrics.frames_since_last_log > 0 {
-                // Calculate average frame time in milliseconds
-                let avg_frame_time_ms = self
-                    .perf_metrics
-                    .total_frame_time_since_last_log
-                    .as_millis() as f64
-                    / self.perf_metrics.frames_since_last_log as f64;
+                // Calculate average frame time in milliseconds from simulation thread data
+                let avg_frame_time_ms =
+                    (self.perf_metrics.total_frame_time_ns_since_last_log as f64 / 1_000_000.0)
+                        / self.perf_metrics.frames_since_last_log as f64;
                 format!(
                     "{:.2} ms/frame, {} cycles/s",
                     avg_frame_time_ms, cycles_formatted
@@ -337,7 +363,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             // Add the target duration to maintain consistent intervals
             self.perf_metrics.last_log_time += Duration::from_secs(1);
             self.perf_metrics.frames_since_last_log = 0;
-            self.perf_metrics.total_frame_time_since_last_log = Duration::ZERO;
+            self.perf_metrics.total_frame_time_ns_since_last_log = 0;
             self.perf_metrics.cycles_since_last_log = 0;
         }
     }
@@ -468,8 +494,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.update_window_title();
 
         loop {
-            let frame_start = Instant::now();
-
             // Handle events
             self.handle_events()?;
 
@@ -510,9 +534,15 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                         self.update_window_title();
                         break;
                     }
-                    SimResponse::Progress { cycles_executed } => {
+                    SimResponse::Progress {
+                        cycles_executed,
+                        frames_presented,
+                        total_frame_time_ns,
+                    } => {
                         // Update total cycles from periodic progress updates
                         self.total_cycles = cycles_executed;
+                        // Update performance metrics with simulation thread data
+                        self.update_performance_metrics(frames_presented, total_frame_time_ns);
                     }
                     _ => {
                         // Ignore other responses
@@ -522,13 +552,6 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
 
             // Update video backend (pull frames from shared buffer and display/capture)
             self.video_backend.borrow_mut().update()?;
-
-            // Check if a frame was presented (must be done after update() completes)
-            let frame_presented = *self.frame_presented_this_step.borrow();
-
-            // Update performance metrics and log once per second
-            let frame_time = frame_start.elapsed();
-            self.update_performance_metrics(frame_time, frame_presented);
         }
 
         log::info!("Viewer loop ended");
