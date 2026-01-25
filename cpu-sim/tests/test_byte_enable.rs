@@ -1,17 +1,12 @@
 use cpu_sim::*;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-fn test_program_path(name: &str) -> PathBuf {
-    sim_tests::test_program_path(name)
-        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
-}
 
 #[test]
 fn test_byte_enable_heap_directly() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_heap_directly.elf");
+    let elf_path = sim_tests::test_program_path("test_heap_directly")
+        .expect("Failed to find test_heap_directly");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -94,7 +89,8 @@ fn test_byte_enable_heap_directly() {
 fn test_byte_enable_stack_memory() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_stack_memory.elf");
+    let elf_path = sim_tests::test_program_path("test_stack_memory")
+        .expect("Failed to find test_stack_memory");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();

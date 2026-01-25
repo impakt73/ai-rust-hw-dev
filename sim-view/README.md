@@ -52,20 +52,12 @@ cargo build --package sim-view --release
 Run an ELF program on the simulator with video/audio output:
 
 ```bash
-# First, build the test programs (automatically happens when running tests)
-cargo build --package sim-tests
+# Run with your own ELF file
+cargo run --package sim-view -- path/to/your/program.elf
 
-# Run with an ELF file from the automatically built test programs
-# The test programs are built from rust-test-program/ and stored in cargo's build directory
-cargo run --package sim-view -- $(cargo build -p sim-tests 2>&1 | grep "test_video_pattern.elf" | awk '{print $NF}')
-
-# Alternatively, provide your own ELF file path
+# Or use the built binary
 ./target/debug/sim-view path/to/your/program.elf
 ```
-
-**Note:** Test programs are now built automatically from the `rust-test-program/` directory 
-when you build or test packages that depend on `sim-tests`. The precompiled `test_programs/` 
-folder has been removed in favor of this cargo-native workflow.
 
 ### Command-Line Options
 
@@ -116,7 +108,7 @@ Headless mode is used by the integration tests in `tests/headless_integration.rs
 ### Examples
 
 ```bash
-# Run with verbose logging (provide path to your ELF file)
+# Run with verbose logging
 cargo run --package sim-view -- -v path/to/program.elf
 
 # Run with custom window size
@@ -127,12 +119,6 @@ cargo run --package sim-view -- --print-inst-trace path/to/program.elf
 
 # Run with maximum cycle limit
 cargo run --package sim-view -- --max-cycles 100000 path/to/program.elf
-```
-
-**Note:** Test programs from `rust-test-program/` are automatically built when you run 
-tests. To use them interactively, you can find the built ELF files in the cargo build 
-output directory (typically under `target/debug/build/sim-tests-*/out/`).
-cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.elf
 ```
 
 ## Architecture
@@ -274,8 +260,7 @@ Test programs are located in the `rust-test-program/` directory and demonstrate 
 - `test_audio_pattern` - Plays an audio pattern  
 - `test_image_data` - Displays image data
 
-These programs are automatically built from source when you run tests. They are no longer 
-stored as precompiled binaries in the repository.
+These programs are automatically built from source when you run tests.
 
 ## Troubleshooting
 

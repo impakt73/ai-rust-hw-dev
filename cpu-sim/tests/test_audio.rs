@@ -1,21 +1,16 @@
 use cpu_sim::*;
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 mod audio_test_common;
 use audio_test_common::generate_stereo_sample;
 
-fn test_program_path(name: &str) -> PathBuf {
-    sim_tests::test_program_path(name)
-        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
-}
-
 #[test]
 fn test_audio_pattern() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_audio_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_audio_pattern")
+        .expect("Failed to find test_audio_pattern");
 
     // Storage for captured samples and config changes
     let captured_samples: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));

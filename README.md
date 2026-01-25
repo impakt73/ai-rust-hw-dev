@@ -59,13 +59,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ### Build and Test
 
 ```bash
-# Run all tests (test programs are automatically built from source)
+# Run all tests
 cargo test
-
-# Run CPU simulator with a test program (built automatically when tests run)
-# You can find built ELF files in target/debug/build/sim-tests-*/out/
-cargo test --package sim-tests  # This builds the test programs
-# Then use the path from the build output
 ```
 
 ## Architecture

@@ -1,16 +1,12 @@
 use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
-fn test_program_path(name: &str) -> std::path::PathBuf {
-    sim_tests::test_program_path(name)
-        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
-}
-
 #[test]
 fn test_dma_copy() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_dma_copy.elf");
+    let elf_path =
+        sim_tests::test_program_path("test_dma_copy").expect("Failed to find test_dma_copy");
 
     // DMA device base address (must match test program)
     const DMA_BASE: u32 = 0x2000_0000;

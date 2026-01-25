@@ -8,13 +8,6 @@ use sim_view::{
     headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend},
     viewer::{SimViewer, ViewerConfig},
 };
-use std::path::PathBuf;
-
-/// Helper to get path to test programs
-fn test_program_path(name: &str) -> PathBuf {
-    sim_tests::test_program_path(name)
-        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
-}
 
 #[test]
 fn test_headless_basic_functionality() {
@@ -65,7 +58,8 @@ fn test_headless_max_cycles_limit() {
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
     // Load test ELF to actually execute instructions
-    let elf_path = test_program_path("test_video_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
     // Run steps - should exit quickly due to max_cycles
@@ -145,7 +139,8 @@ fn test_frame_stepping() {
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
     // Load test ELF (produces exactly 3 frames then exits)
-    let elf_path = test_program_path("test_video_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
     // Step 3 frames (this ELF produces exactly 3 frames)
@@ -216,7 +211,8 @@ fn test_sequential_frames_differ() {
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
     // Load test ELF that generates a video pattern (produces exactly 3 frames)
-    let elf_path = test_program_path("test_video_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
     // Don't use StepFrames - just run until we have at least 2 frames for comparison
@@ -297,7 +293,8 @@ fn test_audio_config_change_and_samples() {
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
     // Load test ELF that generates audio samples (sets audio config)
-    let elf_path = test_program_path("test_audio_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_audio_pattern")
+        .expect("Failed to find test_audio_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
     // Run until program completes or we get sufficient audio data

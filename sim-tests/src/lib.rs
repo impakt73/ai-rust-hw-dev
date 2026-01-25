@@ -9,7 +9,7 @@ use std::path::PathBuf;
 ///
 /// # Arguments
 ///
-/// * `filename` - The name of the ELF file (e.g., "test_video_pattern.elf")
+/// * `filename` - The name of the ELF file (e.g., "test_video_pattern")
 ///
 /// # Returns
 ///
@@ -20,8 +20,8 @@ use std::path::PathBuf;
 ///
 /// ```no_run
 /// # use sim_tests::test_program_path;
-/// let path = test_program_path("test_video_pattern.elf")
-///     .expect("Failed to find test_video_pattern.elf");
+/// let path = test_program_path("test_video_pattern")
+///     .expect("Failed to find test_video_pattern");
 /// ```
 pub fn test_program_path(filename: &str) -> Result<PathBuf, String> {
     let out_dir = env!("OUT_DIR");
@@ -31,17 +31,9 @@ pub fn test_program_path(filename: &str) -> Result<PathBuf, String> {
         Ok(path)
     } else {
         Err(format!(
-            "Test program '{}' not found at {}. Available files: {:?}",
+            "Test program '{}' not found at {}",
             filename,
-            path.display(),
-            std::fs::read_dir(out_dir)
-                .ok()
-                .map(|entries| entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "elf"))
-                    .map(|e| e.file_name().to_string_lossy().to_string())
-                    .collect::<Vec<_>>())
-                .unwrap_or_default()
+            path.display()
         ))
     }
 }
