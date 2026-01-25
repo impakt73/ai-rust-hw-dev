@@ -17,7 +17,7 @@ fn main() {
 
     // Build rust-test-program using cargo
     println!("cargo:warning=Building rust-test-program in release mode...");
-    
+
     let status = Command::new("cargo")
         .arg("build")
         .arg("--release")
@@ -70,10 +70,16 @@ fn main() {
     for binary in &binaries {
         let src = target_dir.join(binary);
         let dst = out_dir.join(format!("{}.elf", binary));
-        
+
         if src.exists() {
-            std::fs::copy(&src, &dst)
-                .unwrap_or_else(|e| panic!("Failed to copy {} to {}: {}", src.display(), dst.display(), e));
+            std::fs::copy(&src, &dst).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to copy {} to {}: {}",
+                    src.display(),
+                    dst.display(),
+                    e
+                )
+            });
             println!("cargo:warning=Copied {} -> {}", binary, dst.display());
         } else {
             println!("cargo:warning=Binary not found: {}", src.display());
@@ -81,8 +87,20 @@ fn main() {
     }
 
     // Tell cargo to rerun if rust-test-program source files change
-    println!("cargo:rerun-if-changed={}", rust_test_program_dir.join("src").display());
-    println!("cargo:rerun-if-changed={}", rust_test_program_dir.join("Cargo.toml").display());
-    println!("cargo:rerun-if-changed={}", rust_test_program_dir.join("build.rs").display());
-    println!("cargo:rerun-if-changed={}", rust_test_program_dir.join("memory.x").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir.join("src").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir.join("Cargo.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir.join("build.rs").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir.join("memory.x").display()
+    );
 }
