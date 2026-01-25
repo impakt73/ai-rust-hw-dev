@@ -4,11 +4,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 fn test_program_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_programs")
-        .join(name)
+    sim_tests::test_program_path(name)
+        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
 }
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison

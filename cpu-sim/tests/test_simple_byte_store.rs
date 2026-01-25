@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 fn test_program_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_programs")
-        .join(name)
+    sim_tests::test_program_path(name)
+        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
 }
 
 #[test]

@@ -12,11 +12,8 @@ fn init_test_logger() {
 
 /// Helper function to get path to a test program ELF file
 fn test_program_path(filename: &str) -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .expect("CARGO_MANIFEST_DIR should have a parent directory (workspace root)");
-    workspace_root.join("test_programs").join(filename)
+    sim_tests::test_program_path(filename)
+        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", filename, e))
 }
 
 /// Helper function to assert tohost value matches expected

@@ -2,11 +2,8 @@ use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
 fn test_program_path(name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_programs")
-        .join(name)
+    sim_tests::test_program_path(name)
+        .unwrap_or_else(|e| panic!("Failed to find test program {}: {}", name, e))
 }
 
 #[test]

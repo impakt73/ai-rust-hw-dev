@@ -701,6 +701,7 @@ dependencies = [
  "riscv_protocol",
  "riscv_shared",
  "serde",
+ "sim-tests",
 ]
 
 [[package]]
@@ -2925,6 +2926,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-tests"
+version = "0.1.0"
+
+[[package]]
 name = "sim-view"
 version = "0.1.0"
 dependencies = [
@@ -2934,6 +2939,7 @@ dependencies = [
  "env_logger",
  "log",
  "riscv_core",
+ "sim-tests",
  "softbuffer",
  "winit",
 ]
