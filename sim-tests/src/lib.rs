@@ -35,11 +35,12 @@ pub fn test_program_path(filename: &str) -> Result<PathBuf, String> {
             filename,
             path.display(),
             std::fs::read_dir(out_dir)
-                .ok().map(|entries| entries
-                            .filter_map(|e| e.ok())
-                            .filter(|e| e.path().extension().is_some_and(|ext| ext == "elf"))
-                            .map(|e| e.file_name().to_string_lossy().to_string())
-                            .collect::<Vec<_>>())
+                .ok()
+                .map(|entries| entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "elf"))
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect::<Vec<_>>())
                 .unwrap_or_default()
         ))
     }
