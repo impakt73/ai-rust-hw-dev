@@ -52,12 +52,20 @@ cargo build --package sim-view --release
 Run an ELF program on the simulator with video/audio output:
 
 ```bash
-# Run with an ELF file
-cargo run --package sim-view -- test_programs/test_video_pattern.elf
+# First, build the test programs (automatically happens when running tests)
+cargo build --package sim-tests
 
-# Or use the built binary
-./target/debug/sim-view test_programs/test_audio_pattern.elf
+# Run with an ELF file from the automatically built test programs
+# The test programs are built from rust-test-program/ and stored in cargo's build directory
+cargo run --package sim-view -- $(cargo build -p sim-tests 2>&1 | grep "test_video_pattern.elf" | awk '{print $NF}')
+
+# Alternatively, provide your own ELF file path
+./target/debug/sim-view path/to/your/program.elf
 ```
+
+**Note:** Test programs are now built automatically from the `rust-test-program/` directory 
+when you build or test packages that depend on `sim-tests`. The precompiled `test_programs/` 
+folder has been removed in favor of this cargo-native workflow.
 
 ### Command-Line Options
 
@@ -89,10 +97,10 @@ The viewer now supports a **headless mode** for automated testing and CI/CD envi
 **Usage:**
 
 ```bash
-# Run in headless mode
-cargo run --package sim-view -- --headless --max-cycles 100000 test_programs/test_video_pattern.elf
+# Run in headless mode with a test program
+cargo run --package sim-view -- --headless --max-cycles 100000 <path-to-elf>
 
-# Run headless integration tests
+# Run headless integration tests (test programs are built automatically)
 cargo test --package sim-view
 ```
 
@@ -108,16 +116,22 @@ Headless mode is used by the integration tests in `tests/headless_integration.rs
 ### Examples
 
 ```bash
-# Run with verbose logging
-cargo run --package sim-view -- -v test_programs/test_video_pattern.elf
+# Run with verbose logging (provide path to your ELF file)
+cargo run --package sim-view -- -v path/to/program.elf
 
 # Run with custom window size
-cargo run --package sim-view -- --width 640 --height 480 test_programs/test_image_data.elf
+cargo run --package sim-view -- --width 640 --height 480 path/to/program.elf
 
 # Run with instruction trace (for debugging)
-cargo run --package sim-view -- --print-inst-trace test_programs/simple_test.elf
+cargo run --package sim-view -- --print-inst-trace path/to/program.elf
 
 # Run with maximum cycle limit
+cargo run --package sim-view -- --max-cycles 100000 path/to/program.elf
+```
+
+**Note:** Test programs from `rust-test-program/` are automatically built when you run 
+tests. To use them interactively, you can find the built ELF files in the cargo build 
+output directory (typically under `target/debug/build/sim-tests-*/out/`).
 cargo run --package sim-view -- --max-cycles 100000 test_programs/hello_world.elf
 ```
 
@@ -195,7 +209,8 @@ The simulator uses the following memory-mapped I/O addresses:
 - `0x4000_0000` - FIFO device - Built-in
 - `0x8000_0000 - 0xFFFF_FFFF` - DRAM - Built-in
 
-Programs can write to the Video and Audio devices using these base addresses. See the test programs in `test_programs/` for examples.
+Programs can write to the Video and Audio devices using these base addresses. 
+See the test programs in the `rust-test-program/` directory for examples.
 
 ## Controls
 
@@ -253,11 +268,14 @@ To adjust simulation speed:
 
 ## Test Programs
 
-The following test programs in `test_programs/` demonstrate video and audio functionality:
+Test programs are located in the `rust-test-program/` directory and demonstrate video and audio functionality:
 
-- `test_video_pattern.elf` - Displays a video pattern
-- `test_audio_pattern.elf` - Plays an audio pattern
-- `test_image_data.elf` - Displays image data
+- `test_video_pattern` - Displays a video pattern
+- `test_audio_pattern` - Plays an audio pattern  
+- `test_image_data` - Displays image data
+
+These programs are automatically built from source when you run tests. They are no longer 
+stored as precompiled binaries in the repository.
 
 ## Troubleshooting
 
