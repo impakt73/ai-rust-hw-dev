@@ -6,7 +6,7 @@ extern crate alloc;
 mod common;
 
 use core::panic::PanicInfo;
-use riscv_macros::rvprintln;
+use riscv_shared::rvprintln;
 use riscv_rt::entry;
 
 #[global_allocator]

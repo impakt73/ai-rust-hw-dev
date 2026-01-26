@@ -6,10 +6,19 @@
 //! - Memory-mapped register offsets and bit definitions
 //! - Configuration types for Audio and Video devices
 //! - Helper functions for test pattern generation
+//! - FIFO protocol definitions for host-CPU communication
+//! - Formatted print macros for bare-metal programs
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 
-// Modules
+// Protocol and macros modules (no_std compatible)
+pub mod protocol;
+pub mod macros;
+
+// Re-export alloc for macro usage
+pub extern crate alloc;
+
+// Hardware peripheral modules
 pub mod audio;
 pub mod audio_helpers;
 pub mod bus;

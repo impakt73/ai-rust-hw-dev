@@ -467,7 +467,7 @@ fn test_trace_callback() {
 
 #[test]
 fn test_packet_protocol_infrastructure() {
-    use riscv_protocol::*;
+    use riscv_shared::protocol::*;
 
     init_test_logger();
 
@@ -1226,7 +1226,7 @@ fn test_atomic_operations() {
 
 #[test]
 fn test_packet_protocol_end_to_end() {
-    use riscv_protocol::*;
+    use riscv_shared::protocol::*;
 
     init_test_logger();
 

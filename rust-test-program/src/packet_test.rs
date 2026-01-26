@@ -8,7 +8,7 @@ mod common;
 use alloc::string::String;
 use core::panic::PanicInfo;
 use postcard::to_allocvec;
-use riscv_protocol::*;
+use riscv_shared::protocol::*;
 use riscv_rt::entry;
 
 #[global_allocator]
