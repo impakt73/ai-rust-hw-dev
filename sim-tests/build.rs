@@ -31,14 +31,26 @@ fn main() {
     // Build rust-test-program using cargo
     println!("cargo:warning=Building rust-test-program in release mode...");
 
-    let status = Command::new("cargo")
+    let output = Command::new("cargo")
         .arg("build")
         .arg("--release")
         .current_dir(&rust_test_program_dir)
-        .status()
+        .output()
         .expect("Failed to execute cargo build for rust-test-program");
 
-    if !status.success() {
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!(
+            "cargo:warning=Failed to build rust-test-program. Status: {}",
+            output.status
+        );
+        if !stdout.is_empty() {
+            println!("cargo:warning=rust-test-program stdout:\n{}", stdout);
+        }
+        if !stderr.is_empty() {
+            println!("cargo:warning=rust-test-program stderr:\n{}", stderr);
+        }
         panic!("Failed to build rust-test-program");
     }
 
@@ -79,7 +91,13 @@ fn main() {
             });
             println!("cargo:warning=Copied {} -> {}", binary_name, dst.display());
         } else {
-            println!("cargo:warning=Binary not found: {}", src.display());
+            panic!(
+                "Expected test binary not found at path: {}. \
+                 Ensure the binary '{}' is defined in rust-test-program/Cargo.toml \
+                 and builds successfully.",
+                src.display(),
+                binary_name
+            );
         }
     }
 
@@ -99,5 +117,12 @@ fn main() {
     println!(
         "cargo:rerun-if-changed={}",
         rust_test_program_dir.join("memory.x").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir
+            .join(".cargo")
+            .join("config.toml")
+            .display()
     );
 }
