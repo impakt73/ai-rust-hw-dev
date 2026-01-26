@@ -25,10 +25,9 @@ obj_dir/
 *.vcd
 *.fst
 
-# Test programs and scripts
+# Test program artifacts (legacy - test_programs/ folder removed)
 test_program.elf
 create_test_elf.py
-test_programs/*.d
 
 # Intermediate build files
 *.o

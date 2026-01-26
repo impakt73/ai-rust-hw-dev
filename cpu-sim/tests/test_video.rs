@@ -1,15 +1,6 @@
 use cpu_sim::*;
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::rc::Rc;
-
-fn test_program_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_programs")
-        .join(name)
-}
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison
 fn pixel_to_rgba8(pixel_data: &[u8], format: VideoFormat) -> [u8; 4] {
@@ -54,7 +45,8 @@ fn get_pixel_rgba8(
 fn test_video_pattern() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_video_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
 
     // Storage for captured frames
     type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>>;

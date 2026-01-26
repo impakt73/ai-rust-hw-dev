@@ -1,18 +1,12 @@
 use cpu_sim::*;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-fn test_program_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_programs")
-        .join(name)
-}
 
 #[test]
 fn test_simple_byte_store() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_byte_store_simple.elf");
+    let elf_path = sim_tests::test_program_path("test_byte_store_simple")
+        .expect("Failed to find test_byte_store_simple");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();

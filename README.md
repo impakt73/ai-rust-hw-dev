@@ -61,9 +61,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```bash
 # Run all tests
 cargo test
-
-# Run CPU simulator with example program
-cargo run --package cpu-sim -- test_programs/test.elf --verbose
 ```
 
 ## Architecture
@@ -85,14 +82,14 @@ This design enables higher clock frequencies and more realistic hardware impleme
 - **`riscv_core/`** - Shared Verilator bindings and utilities
 - **`riscv_protocol/`** - Debug packet protocol definitions
 - **`riscv_macros/`** - Formatted print macros for bare-metal RISC-V programs
-- **`test_programs/`** - Example RISC-V assembly and Rust test programs
-- **`rust-test-program/`** - Bare-metal Rust test programs (separate workspace)
+- **`sim-tests/`** - Helper crate that builds test programs from `rust-test-program/` automatically
+- **`rust-test-program/`** - Bare-metal Rust test programs (separate workspace, automatically built when tests run)
 
 ## Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
-- **[test_programs/README.md](test_programs/README.md)** - Information about test programs
+- **[rust-test-program/README.md](rust-test-program/README.md)** - Information about test programs (automatically built when tests run)
 - **[riscv_macros/README.md](riscv_macros/README.md)** - Formatted print macros for bare-metal programs
 - **[docs/multi-cycle-implementation/](docs/multi-cycle-implementation/)** - Historical: Multi-cycle architecture implementation plan (completed)
 

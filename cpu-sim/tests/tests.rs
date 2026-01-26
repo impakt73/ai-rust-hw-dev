@@ -2,21 +2,11 @@ mod common;
 
 use common::{create_register_trace_program, create_test_program, create_trace_test_program};
 use cpu_sim::*;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Helper function to get path to a test program ELF file
-fn test_program_path(filename: &str) -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
-        .parent()
-        .expect("CARGO_MANIFEST_DIR should have a parent directory (workspace root)");
-    workspace_root.join("test_programs").join(filename)
 }
 
 /// Helper function to assert tohost value matches expected
@@ -186,7 +176,7 @@ fn test_register_trace_audit() {
 fn test_rust_bare_metal_elf() {
     init_test_logger();
 
-    let elf_path = test_program_path("rust_test.elf");
+    let elf_path = sim_tests::test_program_path("rust_test").expect("Failed to find rust_test");
     let result = run_elf(
         &elf_path,
         GLOBAL_MAX_CYCLES,
@@ -212,7 +202,8 @@ fn test_rust_bare_metal_elf() {
 fn test_fp_math_elf() {
     init_test_logger();
 
-    let elf_path = test_program_path("test_fp_math.elf");
+    let elf_path =
+        sim_tests::test_program_path("test_fp_math").expect("Failed to find test_fp_math");
     let result = run_elf(
         &elf_path,
         GLOBAL_MAX_CYCLES,
@@ -238,7 +229,7 @@ fn test_fp_math_elf() {
 fn test_fifo_hello_world() {
     init_test_logger();
 
-    let elf_path = test_program_path("hello_world.elf");
+    let elf_path = sim_tests::test_program_path("hello_world").expect("Failed to find hello_world");
     let (fifo_data, callback) = create_fifo_collector();
 
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
@@ -587,7 +578,7 @@ fn test_vcd_generation() {
     println!("========================================");
     println!("Testing VCD file creation and basic validation...\n");
 
-    let elf_path = test_program_path("simple_test.elf");
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
     // Create a temporary VCD file path in the target directory
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -711,7 +702,8 @@ fn test_memory_dump() {
     println!("MEMORY DUMP TEST");
     println!("========================================");
 
-    let elf_path = test_program_path("test_memory_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_memory_pattern")
+        .expect("Failed to find test_memory_pattern");
 
     // Run simulation and access memory in callback
     let result = run_elf(
@@ -795,7 +787,8 @@ fn test_image_dump() {
     println!("IMAGE DUMP TEST");
     println!("========================================");
 
-    let elf_path = test_program_path("test_image_data.elf");
+    let elf_path =
+        sim_tests::test_program_path("test_image_data").expect("Failed to find test_image_data");
 
     // Run simulation and access memory in callback
     let result = run_elf(
@@ -912,7 +905,7 @@ fn test_panic_handler() {
     println!("PANIC HANDLER TEST");
     println!("========================================");
 
-    let elf_path = test_program_path("test_panic.elf");
+    let elf_path = sim_tests::test_program_path("test_panic").expect("Failed to find test_panic");
 
     // Run the panic test program with sufficient cycles
     let result = run_elf(
@@ -1183,7 +1176,8 @@ fn test_atomic_operations() {
 
     // Test 1: Simple atomic operations (AMOADD, AMOSWAP)
     println!("Running test_atomic_simple.elf...");
-    let simple_path = test_program_path("test_atomic_simple.elf");
+    let simple_path = sim_tests::test_program_path("test_atomic_simple")
+        .expect("Failed to find test_atomic_simple");
     let result = run_elf(
         &simple_path,
         GLOBAL_MAX_CYCLES,
@@ -1202,7 +1196,8 @@ fn test_atomic_operations() {
 
     // Test 2: Comprehensive atomic operations (all AMO ops, LR/SC, compare_exchange)
     println!("\nRunning test_atomic.elf...");
-    let full_path = test_program_path("test_atomic.elf");
+    let full_path =
+        sim_tests::test_program_path("test_atomic").expect("Failed to find test_atomic");
     let result = run_elf(
         &full_path,
         GLOBAL_MAX_CYCLES,
@@ -1240,7 +1235,7 @@ fn test_packet_protocol_end_to_end() {
     println!("========================================");
     println!("Testing bidirectional CPU↔Host packet communication...\n");
 
-    let elf_path = test_program_path("packet_test.elf");
+    let elf_path = sim_tests::test_program_path("packet_test").expect("Failed to find packet_test");
 
     // Shared state for collecting FIFO TX data
     let fifo_tx_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1436,7 +1431,8 @@ fn test_println_macro() {
     println!("========================================");
     println!("Testing rvprintln! macro functionality...\n");
 
-    let elf_path = test_program_path("println_test.elf");
+    let elf_path =
+        sim_tests::test_program_path("println_test").expect("Failed to find println_test");
 
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1602,7 +1598,7 @@ fn test_global_max_cycles_safety_margin() {
     );
 
     // Test 2: Run an ELF file (println_macro is typically the highest)
-    let elf_path = test_program_path("hello_world.elf");
+    let elf_path = sim_tests::test_program_path("hello_world").expect("Failed to find hello_world");
     let result2 = run_elf(
         &elf_path,
         GLOBAL_MAX_CYCLES,

@@ -1,19 +1,12 @@
 use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
-fn test_program_path(name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_programs")
-        .join(name)
-}
-
 #[test]
 fn test_minimal_postcard_byte_by_byte() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("minimal_postcard_test.elf");
+    let elf_path = sim_tests::test_program_path("minimal_postcard_test")
+        .expect("Failed to find minimal_postcard_test");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -59,7 +52,8 @@ fn test_minimal_postcard_byte_by_byte() {
 fn test_minimal_postcard_word_packing() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("minimal_postcard_test2.elf");
+    let elf_path = sim_tests::test_program_path("minimal_postcard_test2")
+        .expect("Failed to find minimal_postcard_test2");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -137,7 +131,8 @@ fn test_minimal_postcard_word_packing() {
 fn test_minimal_debug_double_write() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("minimal_debug_test.elf");
+    let elf_path = sim_tests::test_program_path("minimal_debug_test")
+        .expect("Failed to find minimal_debug_test");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -210,7 +205,8 @@ fn test_minimal_debug_double_write() {
 fn test_allocator() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_allocator.elf");
+    let elf_path =
+        sim_tests::test_program_path("test_allocator").expect("Failed to find test_allocator");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -278,7 +274,8 @@ fn test_allocator() {
 fn test_heap_directly() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_heap_directly.elf");
+    let elf_path = sim_tests::test_program_path("test_heap_directly")
+        .expect("Failed to find test_heap_directly");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -343,7 +340,8 @@ fn test_heap_directly() {
 fn test_stack_memory() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_stack_memory.elf");
+    let elf_path = sim_tests::test_program_path("test_stack_memory")
+        .expect("Failed to find test_stack_memory");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
@@ -436,7 +434,8 @@ fn test_stack_memory() {
 fn test_static_heap() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_static_heap.elf");
+    let elf_path =
+        sim_tests::test_program_path("test_static_heap").expect("Failed to find test_static_heap");
 
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();

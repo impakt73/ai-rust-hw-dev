@@ -112,7 +112,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 │   └── tests/             # Integration test files
 ├── cpu-sim/               # CPU simulator
 ├── riscv_core/            # Shared Verilator bindings
-└── test_programs/         # Example test programs (ELF binaries)
+├── sim-tests/             # Helper crate to build test programs from rust-test-program/
+└── rust-test-program/     # Bare-metal Rust test programs (auto-built when tests run)
 ```
 
 ### Quick Start Commands

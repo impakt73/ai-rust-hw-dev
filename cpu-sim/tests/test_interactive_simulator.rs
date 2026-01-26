@@ -3,19 +3,11 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-fn test_program_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_programs")
-        .join(name)
-}
-
 #[test]
 fn test_interactive_simulator_load_elf() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("simple_test.elf");
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
@@ -46,7 +38,7 @@ fn test_interactive_simulator_step_without_elf() {
 fn test_interactive_simulator_simple_program() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("simple_test.elf");
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
     sim.load_elf(&elf_path).expect("Failed to load ELF");
@@ -88,7 +80,7 @@ fn test_interactive_simulator_multiple_programs() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Test that we can load multiple programs sequentially
-    let elf_path = test_program_path("simple_test.elf");
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
@@ -129,7 +121,7 @@ fn test_interactive_simulator_multiple_programs() {
 fn test_interactive_simulator_step_result() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("simple_test.elf");
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
     sim.load_elf(&elf_path).expect("Failed to load ELF");
@@ -173,7 +165,8 @@ fn test_interactive_simulator_load_nonexistent_file() {
 fn test_interactive_simulator_register_video_device() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_video_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
 
     // Storage for captured frames
     type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, cpu_sim::VideoConfig)>>>;
@@ -266,7 +259,8 @@ fn test_interactive_simulator_register_video_device() {
 fn test_interactive_simulator_register_audio_device() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = test_program_path("test_audio_pattern.elf");
+    let elf_path = sim_tests::test_program_path("test_audio_pattern")
+        .expect("Failed to find test_audio_pattern");
 
     // Storage for captured samples
     let captured_samples: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
