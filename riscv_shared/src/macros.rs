@@ -3,6 +3,9 @@
 //! This module provides println-like macros that send messages from the
 //! simulated RISC-V CPU to the host via the MMIO FIFO.
 
+// Re-export alloc for macros
+pub extern crate alloc;
+
 use crate::protocol::{DebugLevel, DebugPacket, PacketHeader, PacketType};
 use alloc::string::String;
 use core::ptr::write_volatile;
@@ -55,7 +58,7 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
 #[macro_export]
 macro_rules! rvprint {
     ($($arg:tt)*) => {{
-        let msg = ::alloc::format!($($arg)*);
+        let msg = $crate::alloc::format!($($arg)*);
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Info, msg);
     }};
 }
@@ -69,7 +72,7 @@ macro_rules! rvprint {
 #[macro_export]
 macro_rules! rvprintln {
     ($($arg:tt)*) => {{
-        let mut msg = ::alloc::format!($($arg)*);
+        let mut msg = $crate::alloc::format!($($arg)*);
         msg.push('\n');
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Info, msg);
     }};
@@ -79,7 +82,7 @@ macro_rules! rvprintln {
 #[macro_export]
 macro_rules! rvdebug {
     ($($arg:tt)*) => {{
-        let msg = ::alloc::format!($($arg)*);
+        let msg = $crate::alloc::format!($($arg)*);
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Debug, msg);
     }};
 }
@@ -88,7 +91,7 @@ macro_rules! rvdebug {
 #[macro_export]
 macro_rules! rvdebugln {
     ($($arg:tt)*) => {{
-        let mut msg = ::alloc::format!($($arg)*);
+        let mut msg = $crate::alloc::format!($($arg)*);
         msg.push('\n');
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Debug, msg);
     }};
@@ -98,7 +101,7 @@ macro_rules! rvdebugln {
 #[macro_export]
 macro_rules! rverror {
     ($($arg:tt)*) => {{
-        let msg = ::alloc::format!($($arg)*);
+        let msg = $crate::alloc::format!($($arg)*);
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Error, msg);
     }};
 }
@@ -107,7 +110,7 @@ macro_rules! rverror {
 #[macro_export]
 macro_rules! rverrorln {
     ($($arg:tt)*) => {{
-        let mut msg = ::alloc::format!($($arg)*);
+        let mut msg = $crate::alloc::format!($($arg)*);
         msg.push('\n');
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Error, msg);
     }};

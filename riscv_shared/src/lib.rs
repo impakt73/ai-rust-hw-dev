@@ -11,9 +11,9 @@
 
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 
-// Import alloc when the alloc feature is enabled (not public re-export)
+// Re-export alloc when the alloc feature is enabled
 #[cfg(feature = "alloc")]
-extern crate alloc;
+pub extern crate alloc;
 
 // Protocol and macros modules (no_std compatible with alloc feature)
 #[cfg(feature = "alloc")]

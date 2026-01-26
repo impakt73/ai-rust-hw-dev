@@ -1,21 +1,16 @@
 #![no_std]
 #![no_main]
 
-#[cfg(feature = "protocol_macros")]
 extern crate alloc;
 
 mod common;
 
-#[cfg(feature = "protocol_macros")]
 use alloc::string::String;
 use core::panic::PanicInfo;
-#[cfg(feature = "protocol_macros")]
 use postcard::to_allocvec;
 use riscv_rt::entry;
-#[cfg(feature = "protocol_macros")]
 use riscv_shared::protocol::*;
 
-#[cfg(feature = "protocol_macros")]
 #[global_allocator]
 static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
 
@@ -24,7 +19,6 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-#[cfg(feature = "protocol_macros")]
 fn send_packet<T>(packet: &T) -> Result<(), &'static str>
 where
     T: serde::Serialize,
@@ -42,7 +36,6 @@ where
     Ok(())
 }
 
-#[cfg(feature = "protocol_macros")]
 #[entry]
 fn main() -> ! {
     // Step 1: Send initial Debug packet to host
@@ -109,13 +102,5 @@ fn main() -> ! {
         common::write_tohost(common::FAILURE_CODE);
     }
 
-    common::write_tohost(common::SUCCESS_CODE);
-}
-
-#[cfg(not(feature = "protocol_macros"))]
-#[entry]
-fn main() -> ! {
-    // This binary requires the protocol_macros feature to be enabled
-    // Skip test when feature is not enabled
     common::write_tohost(common::SUCCESS_CODE);
 }

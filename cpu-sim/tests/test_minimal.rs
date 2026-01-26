@@ -127,11 +127,7 @@ fn test_minimal_postcard_word_packing() {
     }
 }
 
-// Note: This test is ignored because minimal_debug_test requires the protocol_macros feature
-// to be enabled in rust-test-program, but sim-tests builds without that feature by default
-// to avoid requiring allocators in all test programs.
 #[test]
-#[ignore]
 fn test_minimal_debug_double_write() {
     let _ = env_logger::builder().is_test(true).try_init();
 

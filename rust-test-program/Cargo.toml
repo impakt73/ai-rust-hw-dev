@@ -28,13 +28,9 @@ test = false
 
 [dependencies]
 riscv-rt = "0.17.0"
-riscv_shared = { path = "../riscv_shared", default-features = false }
+riscv_shared = { path = "../riscv_shared", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-postcard = { version = "1.0", default-features = false, optional = true }
-
-[features]
-# Feature to enable alloc-dependent functionality (protocol and macros)
-protocol_macros = ["riscv_shared/alloc", "postcard", "postcard?/alloc"]
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [[bin]]
 name = "minimal_postcard_test"

@@ -1,19 +1,15 @@
 #![no_std]
 #![no_main]
 
-#[cfg(feature = "protocol_macros")]
 extern crate alloc;
 
 mod common;
 
 use core::panic::PanicInfo;
-#[cfg(feature = "protocol_macros")]
 use postcard::to_allocvec;
 use riscv_rt::entry;
-#[cfg(feature = "protocol_macros")]
 use serde::Serialize;
 
-#[cfg(feature = "protocol_macros")]
 #[global_allocator]
 static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
 
@@ -22,14 +18,12 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-#[cfg(feature = "protocol_macros")]
 #[derive(Serialize)]
 struct SimpleStruct {
     a: u32,
     b: u32,
 }
 
-#[cfg(feature = "protocol_macros")]
 #[entry]
 fn main() -> ! {
     let simple = SimpleStruct {
@@ -59,13 +53,5 @@ fn main() -> ! {
         }
     }
 
-    common::write_tohost(common::SUCCESS_CODE);
-}
-
-#[cfg(not(feature = "protocol_macros"))]
-#[entry]
-fn main() -> ! {
-    // This binary requires the protocol_macros feature to be enabled
-    // Skip test when feature is not enabled
     common::write_tohost(common::SUCCESS_CODE);
 }
