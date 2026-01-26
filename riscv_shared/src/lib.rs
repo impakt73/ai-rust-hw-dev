@@ -11,12 +11,15 @@
 
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 
-// Protocol and macros modules (no_std compatible)
-pub mod protocol;
-pub mod macros;
-
-// Re-export alloc for macro usage
+// Re-export alloc when the alloc feature is enabled
+#[cfg(feature = "alloc")]
 pub extern crate alloc;
+
+// Protocol and macros modules (no_std compatible with alloc feature)
+#[cfg(feature = "alloc")]
+pub mod macros;
+#[cfg(feature = "alloc")]
+pub mod protocol;
 
 // Hardware peripheral modules
 pub mod audio;

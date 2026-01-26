@@ -115,4 +115,3 @@ macro_rules! rverrorln {
         $crate::macros::send_debug_message($crate::protocol::DebugLevel::Error, msg);
     }};
 }
-

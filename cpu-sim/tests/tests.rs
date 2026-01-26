@@ -1471,9 +1471,18 @@ fn test_println_macro() {
 
     // Expected messages from the test program
     let expected_messages = [
-        ("Hello from RISC-V CPU!\n", riscv_protocol::DebugLevel::Info),
-        ("The answer is 42\n", riscv_protocol::DebugLevel::Info),
-        ("Testing println macro\n", riscv_protocol::DebugLevel::Info),
+        (
+            "Hello from RISC-V CPU!\n",
+            riscv_shared::protocol::DebugLevel::Info,
+        ),
+        (
+            "The answer is 42\n",
+            riscv_shared::protocol::DebugLevel::Info,
+        ),
+        (
+            "Testing println macro\n",
+            riscv_shared::protocol::DebugLevel::Info,
+        ),
     ];
 
     // Try to receive and validate DebugPackets
@@ -1507,18 +1516,18 @@ fn test_println_macro() {
                 // Validate packet type
                 assert_eq!(
                     debug_pkt.header.packet_type,
-                    riscv_protocol::PacketType::Debug,
+                    riscv_shared::protocol::PacketType::Debug,
                     "Packet {} should be a Debug packet",
                     packet_count
                 );
 
                 // Print for visibility
                 let level_str = match debug_pkt.level {
-                    riscv_protocol::DebugLevel::Trace => "[TRACE]",
-                    riscv_protocol::DebugLevel::Debug => "[DEBUG]",
-                    riscv_protocol::DebugLevel::Info => "[INFO]",
-                    riscv_protocol::DebugLevel::Warning => "[WARN]",
-                    riscv_protocol::DebugLevel::Error => "[ERROR]",
+                    riscv_shared::protocol::DebugLevel::Trace => "[TRACE]",
+                    riscv_shared::protocol::DebugLevel::Debug => "[DEBUG]",
+                    riscv_shared::protocol::DebugLevel::Info => "[INFO]",
+                    riscv_shared::protocol::DebugLevel::Warning => "[WARN]",
+                    riscv_shared::protocol::DebugLevel::Error => "[ERROR]",
                 };
                 print!("{} {}", level_str, debug_pkt.message);
             }

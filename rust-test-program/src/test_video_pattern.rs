@@ -3,6 +3,9 @@
 
 mod common;
 
+#[global_allocator]
+static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+
 use common::{trigger_present, wait_for_frame_ready, wait_for_present_ready};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;

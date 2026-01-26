@@ -3,6 +3,9 @@
 
 mod common;
 
+#[global_allocator]
+static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+
 use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, trigger_present,
     wait_for_frame_ready, wait_for_present_ready, write_stereo_sample,
