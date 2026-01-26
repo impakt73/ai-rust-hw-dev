@@ -3,9 +3,6 @@
 
 mod common;
 
-#[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
-
 use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicU32, Ordering};
 use riscv_rt::entry;

@@ -3,9 +3,6 @@
 
 mod common;
 
-#[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
-
 use core::panic::PanicInfo;
 use riscv_rt::entry;
 
