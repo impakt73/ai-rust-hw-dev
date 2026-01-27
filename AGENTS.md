@@ -167,12 +167,49 @@ Before marking PR ready for review:
 
 ### Important Memory Addresses
 
-From repository memory: DRAM range is **0x80000000 - 0xFFFFFFFF**
+**Complete Memory Map:**
 
-Tests must use addresses in this range:
+```
+Address Range          | Device           | Type | Description
+-----------------------|------------------|------|----------------------------
+0x10000000-0x100000FF | SimControl       | Rust | Simulation control
+0x20000000-0x2000000F | Video            | Rust | Video frame buffer
+0x30000000-0x3000000F | Audio            | Rust | Audio buffer
+0x40000000-0x40000007 | FIFO             | Rust | Host communication FIFO
+0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
+0x51000000-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
+0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
+```
+
+**LED Controller Peripheral:**
+- **Address:** 0x50000000
+- **Register:** LED_OUT (read/write)
+  - Bits [7:0]: LED output data
+  - Bits [31:8]: Reserved (read as 0, writes ignored)
+- **Access sizes:** Byte, halfword, word
+- **Latency:** Single-cycle (ready = 1'b1)
+
+**RTL vs Rust Peripherals:**
+- **RTL peripherals** (0x50000000-0x5FFFFFFF): Handled by Verilator, synthesizable to FPGA
+- **Rust peripherals** (0x10000000-0x4FFFFFFF): Handled by SystemBus, simulation only
+
+**DRAM range:** 0x80000000 - 0xFFFFFFFF
+
+Tests must use addresses in the DRAM range:
 ```rust
 lui(reg, 0x80000000);  // Load upper immediate
 sw(reg, val, offset);   // Store with offset
+```
+
+**LED Controller Usage Example:**
+```rust
+// Write pattern to LED
+lui(15, 0x50000000);  // Load LED base address
+addi(14, 0, 0xAA);    // Load pattern 0xAA
+sw(15, 14, 0);        // Write to LED_OUT register
+
+// Read back LED value
+lw(13, 15, 0);        // Read LED_OUT into register x13
 ```
 
 ### Common Setup Issues
