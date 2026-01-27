@@ -1,9 +1,7 @@
 use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "alloc")]
 use alloc::string::String;
 
 /// Error code enumeration
@@ -22,7 +20,6 @@ pub enum ErrorCode {
 }
 
 /// Report errors in packet processing
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ErrorPacket {
     pub header: PacketHeader,

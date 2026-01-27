@@ -3,9 +3,6 @@
 //! This module provides println-like macros that send messages from the
 //! simulated RISC-V CPU to the host via the MMIO FIFO.
 
-// Re-export alloc for macros
-pub extern crate alloc;
-
 use crate::protocol::{DebugLevel, DebugPacket, PacketHeader, PacketType};
 use alloc::string::String;
 use core::ptr::write_volatile;

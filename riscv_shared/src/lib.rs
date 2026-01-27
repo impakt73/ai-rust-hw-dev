@@ -8,17 +8,16 @@
 //! - Helper functions for test pattern generation
 //! - FIFO protocol definitions for host-CPU communication
 //! - Formatted print macros for bare-metal programs
+//!
+//! This crate is `no_std` compatible and requires `alloc`.
 
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![no_std]
 
-// Re-export alloc when the alloc feature is enabled
-#[cfg(feature = "alloc")]
+// Re-export alloc for macro use
 pub extern crate alloc;
 
-// Protocol and macros modules (no_std compatible with alloc feature)
-#[cfg(feature = "alloc")]
+// Protocol and macros modules (no_std compatible, requires alloc)
 pub mod macros;
-#[cfg(feature = "alloc")]
 pub mod protocol;
 
 // Hardware peripheral modules

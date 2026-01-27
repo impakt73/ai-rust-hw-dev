@@ -1,13 +1,10 @@
 use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 /// Read one or more CPU registers
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegisterReadPacket {
     pub header: PacketHeader,
@@ -15,7 +12,6 @@ pub struct RegisterReadPacket {
 }
 
 /// Response packet for register read
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegisterReadResponsePacket {
     pub header: PacketHeader,
@@ -31,7 +27,6 @@ pub struct RegisterWrite {
 }
 
 /// Write one or more CPU registers
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegisterWritePacket {
     pub header: PacketHeader,
