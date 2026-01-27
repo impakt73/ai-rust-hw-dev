@@ -58,23 +58,23 @@ module fpu (
 
     // Helper functions
     function automatic logic is_nan(input logic [31:0] val);
-        is_nan = (val[30:23] == 8'hFF) & (val[22:0] != 23'h0);
+        return (val[30:23] == 8'hFF) && (val[22:0] != 23'h0);
     endfunction
 
     function automatic logic is_snan(input logic [31:0] val);
-        is_snan = (val[30:23] == 8'hFF) & (val[22:0] != 23'h0) & (val[22] == 1'b0);
+        return (val[30:23] == 8'hFF) && (val[22:0] != 23'h0) && (val[22] == 1'b0);
     endfunction
 
     function automatic logic is_inf(input logic [31:0] val);
-        is_inf = (val[30:23] == 8'hFF) & (val[22:0] == 23'h0);
+        return (val[30:23] == 8'hFF) && (val[22:0] == 23'h0);
     endfunction
 
     function automatic logic is_zero(input logic [31:0] val);
-        is_zero = (val[30:0] == 31'h0);
+        return (val[30:0] == 31'h0);
     endfunction
 
     function automatic logic is_subnormal(input logic [31:0] val);
-        is_subnormal = (val[30:23] == 8'h00) & (val[22:0] != 23'h0);
+        return (val[30:23] == 8'h00) && (val[22:0] != 23'h0);
     endfunction
 
     // FP comparison
@@ -102,7 +102,6 @@ module fpu (
         logic [7:0] exp;
         logic [22:0] mant;
         integer lz;
-        integer i;
         
         if (val == 32'h0) return POS_ZERO;
         
@@ -116,7 +115,7 @@ module fpu (
         
         // Count leading zeros
         lz = 0;
-        for (i = 31; i >= 0; i--) begin
+        for (int i = 31; i >= 0; i--) begin
             if (abs_val[i]) begin
                 lz = i;  // Position of MSB, not leading zeros!
                 break;

@@ -1,17 +1,22 @@
 // Simplified FPU stub for Yosys 0.33 compatibility
 // This module provides the same interface as the full FPU but with minimal functionality
 // Only implements operations that don't require complex floating-point arithmetic
+//
+// NOTE: This stub is for Yosys 0.33 synthesis compatibility only.
+//       For functional verification, use the full fpu.sv with Verilator.
+//
+// Unsupported operations return +0.0 or 0 as appropriate.
 
 module fpu (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        fpu_start,
+    input  logic        clk,        // Unused in this stub (no multi-cycle ops)
+    input  logic        rst_n,      // Unused in this stub (no state)
+    input  logic        fpu_start,  // Unused in this stub (always ready)
     input  logic [31:0] fs1,
     input  logic [31:0] fs2,
-    input  logic [31:0] fs3,
+    input  logic [31:0] fs3,        // Unused in this stub (no FMA ops)
     input  logic [31:0] int_src,
     input  logic [4:0]  fpu_op,
-    input  logic [2:0]  rm,
+    input  logic [2:0]  rm,         // Unused in this stub (no rounding needed)
     output logic [31:0] fp_result,
     output logic [31:0] int_result,
     output logic [4:0]  fflags,
