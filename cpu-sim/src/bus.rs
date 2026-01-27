@@ -6,7 +6,8 @@ use crate::sim_control::SimControl;
 
 // Re-export constants from riscv_shared for backward compatibility
 pub use riscv_shared::bus::{
-    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, RTL_PERIPH_BASE,
+    RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 
 /// Lightweight handle identifying which device owns an address range
@@ -89,6 +90,14 @@ impl SystemBus {
             memory_map,
             elapsed_time_us: 0,
         }
+    }
+
+    /// Check if an address is in the RTL peripheral address space
+    ///
+    /// RTL peripherals are handled directly by the Verilator top_with_peripherals module,
+    /// not by the Rust SystemBus. This method helps identify such addresses.
+    pub fn is_rtl_peripheral(&self, addr: u32) -> bool {
+        addr >= RTL_PERIPH_BASE && addr < RTL_PERIPH_LIMIT
     }
 
     /// Update the elapsed time (called by simulator after each step)
@@ -203,6 +212,14 @@ impl SystemBus {
     /// Routes the request to the appropriate device based on address.
     /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -237,6 +254,14 @@ impl SystemBus {
     /// Routes the request to the appropriate device based on address.
     /// If no device matches, logs a warning and discards the write.
     pub fn write_word(&mut self, addr: u32, value: u32) {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);

@@ -14,6 +14,27 @@ pub const AUDIO_BASE: u32 = 0x3000_0000;
 /// Base address for FIFO device
 pub const FIFO_BASE: u32 = 0x4000_0000;
 
+/// RTL Peripheral Address Space
+/// Base address for RTL peripherals (synthesizable peripherals in Verilog)
+pub const RTL_PERIPH_BASE: u32 = 0x5000_0000;
+
+/// Limit address for RTL peripherals (exclusive)
+pub const RTL_PERIPH_LIMIT: u32 = 0x6000_0000;
+
+/// LED Controller Peripheral (RTL)
+pub const LED_BASE: u32 = 0x5000_0000;
+
+/// LED Controller size (16 bytes)
+pub const LED_SIZE: u32 = 0x0000_0010;
+
+/// LED register offset: LED_OUT (output data register)
+pub const LED_OUT_OFFSET: u32 = 0x00;
+
+/// Helper function to get LED_OUT register address
+pub const fn led_out_addr() -> u32 {
+    LED_BASE + LED_OUT_OFFSET
+}
+
 /// Base address for DRAM
 pub const DRAM_BASE: u32 = 0x8000_0000;
 

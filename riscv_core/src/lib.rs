@@ -16,6 +16,10 @@ pub mod instruction;
 #[verilog(src = "../rtl/top.sv", name = "top")]
 pub struct Top;
 
+// Define the TopWithPeripherals module (wrapper with RTL peripherals)
+#[verilog(src = "../rtl/top_with_peripherals.sv", name = "top_with_peripherals")]
+pub struct TopWithPeripherals;
+
 // Define ALU module
 #[verilog(src = "../rtl/alu.sv", name = "alu")]
 pub struct Alu;
@@ -69,9 +73,11 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top.sv",
-        "fetch_buffer.sv", // RV32C fetch buffer
-        "decompress.sv",   // RV32C decompressor
+        "top_with_peripherals.sv",       // Top-level wrapper with RTL peripherals
+        "top.sv",                        // CPU core
+        "peripherals/led_controller.sv", // LED controller peripheral
+        "fetch_buffer.sv",               // RV32C fetch buffer
+        "decompress.sv",                 // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
         "regfile.sv",

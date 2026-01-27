@@ -1,7 +1,7 @@
 use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
-use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
+use riscv_core::{TopWithPeripherals, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::path::Path;
 use std::time::Instant;
 
@@ -468,7 +468,7 @@ where
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
     // 1. CPU (dependent) MUST be declared FIRST - drops first
-    cpu: Top<'static>,
+    cpu: TopWithPeripherals<'static>,
     vcd: Option<Vcd<'static>>,
 
     // 2. Runtime (owner) MUST be declared AFTER cpu - drops last
@@ -551,7 +551,7 @@ where
             };
 
             let mut cpu = runtime_ref
-                .create_model::<Top>(&config)
+                .create_model::<TopWithPeripherals>(&config)
                 .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
             // Open VCD file if path is provided
@@ -677,6 +677,14 @@ where
         Ok(())
     }
 
+    /// Get the current LED output value
+    ///
+    /// Returns the 8-bit LED output value from the LED controller peripheral.
+    #[allow(dead_code)]
+    pub fn led_out(&self) -> u8 {
+        self.cpu.led_out
+    }
+
     /// Execute a single simulation step (one instruction - may take multiple cycles)
     /// Returns SimulationStepResult containing:
     /// - tohost_value: Some(value) if halt detected, None otherwise
@@ -716,16 +724,16 @@ where
             }
 
             // Handle data memory with variable latency
-            if self.cpu.dmem_req != 0 {
-                if self.cpu.dmem_we != 0 {
+            if self.cpu.ext_mem_req != 0 {
+                if self.cpu.ext_mem_we != 0 {
                     // Data Memory Write
                     // Implement delay counter for variable latency
                     if self.dmem_delay_counter <= self.mem_latency_cycles {
                         if self.dmem_delay_counter == self.mem_latency_cycles {
                             // Perform write on the cycle when we reach the threshold
-                            let addr = self.cpu.dmem_addr;
-                            let size = self.cpu.dmem_size;
-                            let wdata = self.cpu.dmem_wdata;
+                            let addr = self.cpu.ext_mem_addr;
+                            let size = self.cpu.ext_mem_size;
+                            let wdata = self.cpu.ext_mem_wdata;
 
                             match size {
                                 0b00 => self.bus.write_byte(addr, wdata as u8),
@@ -733,44 +741,44 @@ where
                                 _ => self.bus.write_word(addr, wdata),
                             }
 
-                            self.cpu.dmem_ready = 1; // Ready after delay
+                            self.cpu.ext_mem_ready = 1; // Ready after delay
                         } else {
                             self.dmem_delay_counter += 1;
-                            self.cpu.dmem_ready = 0; // Not ready yet
+                            self.cpu.ext_mem_ready = 0; // Not ready yet
                         }
                     } else {
                         // delay_counter > mem_latency_cycles: already completed, keep ready high
-                        self.cpu.dmem_ready = 1;
+                        self.cpu.ext_mem_ready = 1;
                     }
-                } else if self.cpu.dmem_re != 0 {
+                } else if self.cpu.ext_mem_re != 0 {
                     // Data Memory Read
                     // Implement delay counter for variable latency
                     if self.dmem_delay_counter <= self.mem_latency_cycles {
                         if self.dmem_delay_counter == self.mem_latency_cycles {
                             // Perform read on the cycle when we reach the threshold
-                            let addr = self.cpu.dmem_addr;
-                            let size = self.cpu.dmem_size;
+                            let addr = self.cpu.ext_mem_addr;
+                            let size = self.cpu.ext_mem_size;
                             let rdata = match size {
                                 0b00 => self.bus.read_byte(addr) as u32,
                                 0b01 => self.bus.read_halfword(addr) as u32,
                                 _ => self.bus.read_word(addr),
                             };
 
-                            self.cpu.dmem_rdata = rdata;
-                            self.cpu.dmem_ready = 1; // Ready after delay
+                            self.cpu.ext_mem_rdata = rdata;
+                            self.cpu.ext_mem_ready = 1; // Ready after delay
                         } else {
                             self.dmem_delay_counter += 1;
-                            self.cpu.dmem_ready = 0; // Not ready yet
+                            self.cpu.ext_mem_ready = 0; // Not ready yet
                         }
                     } else {
                         // delay_counter > mem_latency_cycles: already completed, keep ready high
-                        self.cpu.dmem_ready = 1;
+                        self.cpu.ext_mem_ready = 1;
                     }
                 } else {
-                    self.cpu.dmem_ready = 0;
+                    self.cpu.ext_mem_ready = 0;
                 }
             } else {
-                self.cpu.dmem_ready = 0;
+                self.cpu.ext_mem_ready = 0;
                 self.dmem_delay_counter = 0; // Reset counter when no request
             }
 
@@ -782,14 +790,14 @@ where
                 let fsm_state = self.cpu.debug_fsm_state;
                 let state_name = Self::fsm_state_name(fsm_state);
                 println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | dmem_req={} dmem_ready={} | instr_complete={}",
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | ext_mem_req={} ext_mem_ready={} | instr_complete={}",
                     self.cycle_count,
                     state_name,
                     self.cpu.imem_addr,
                     self.cpu.imem_req,
                     self.cpu.imem_ready,
-                    self.cpu.dmem_req,
-                    self.cpu.dmem_ready,
+                    self.cpu.ext_mem_req,
+                    self.cpu.ext_mem_ready,
                     self.cpu.instr_complete
                 );
             }
