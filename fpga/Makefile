@@ -1,41 +1,23 @@
 # Makefile for RISC-V FPGA Synthesis
-# Targets iCE40-HX8K using open-source tools (Yosys + nextpnr + icestorm)
+# Targets Alchitry Cu v1 (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + icestorm)
 
 # Project configuration
 PROJECT = riscv_fpga
-TOP_MODULE = fpga_top
+TOP_MODULE = fpga_top_simple
 DEVICE = hx8k
-PACKAGE = ct256
+PACKAGE = cb132
 
 # File paths
 RTL_DIR = ../rtl
 FPGA_DIR = .
 BUILD_DIR = build
 
-# Source files
-RTL_SOURCES = \
-	$(RTL_DIR)/alu.sv \
-	$(RTL_DIR)/branch_unit.sv \
-	$(RTL_DIR)/csr_file.sv \
-	$(RTL_DIR)/decoder.sv \
-	$(RTL_DIR)/decompress.sv \
-	$(RTL_DIR)/div_unit.sv \
-	$(RTL_DIR)/fetch_buffer.sv \
-	$(RTL_DIR)/fp_regfile.sv \
-	$(RTL_DIR)/fpu.sv \
-	$(RTL_DIR)/mem_interface.sv \
-	$(RTL_DIR)/regfile.sv \
-	$(RTL_DIR)/writeback_mux.sv \
-	$(RTL_DIR)/top.sv \
-	$(RTL_DIR)/peripherals/led_controller.sv \
-	$(RTL_DIR)/top_with_peripherals.sv
-
+# Source files - Simple version for initial synthesis testing
+# Note: Using simplified top module due to FPU synthesis issues with Yosys 0.33
 FPGA_SOURCES = \
-	$(FPGA_DIR)/bram_imem.sv \
-	$(FPGA_DIR)/bram_dmem.sv \
-	$(FPGA_DIR)/fpga_top.sv
+	$(FPGA_DIR)/fpga_top_simple.sv
 
-ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
+ALL_SOURCES = $(FPGA_SOURCES)
 
 # Constraint file
 PCF = $(FPGA_DIR)/ice40hx8k.pcf
@@ -74,7 +56,7 @@ $(ASC): $(JSON) $(PCF)
 	           --json $(JSON) \
 	           --pcf $(PCF) \
 	           --asc $(ASC) \
-	           --freq 12 \
+	           --freq 100 \
 	           2>&1 | tee $(BUILD_DIR)/nextpnr.log
 
 # Generate bitstream

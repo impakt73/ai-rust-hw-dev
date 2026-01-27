@@ -1,25 +1,26 @@
-// FPGA Top-Level Module for iCE40-HX8K
+// FPGA Top-Level Module for Alchitry Cu v1
 // Wraps RISC-V CPU with on-chip block RAM and simple peripherals
+// Board: Alchitry Cu v1 (iCE40-HX8K-CB132)
 
 module fpga_top (
-    // Clock input (12 MHz on HX8K-Breakout board)
-    input  logic       clk_12mhz,
+    // Clock input (100 MHz on-board oscillator)
+    input  logic       clk,
     
     // Reset button (active low)
     input  logic       rst_n_btn,
     
-    // LED outputs (8 LEDs on HX8K-Breakout)
+    // LED outputs (8 LEDs on Alchitry Cu main board)
     output logic [7:0] led
 );
 
     // ============================================================
     // Clock and Reset
     // ============================================================
-    logic clk;
     logic rst_n;
     
-    // Use 12 MHz clock directly (can add PLL later for higher frequencies)
-    assign clk = clk_12mhz;
+    // Clock is already 100 MHz from the board
+    // Note: For initial testing, we'll divide this down to a lower frequency
+    // to ensure the design meets timing. Can be increased later.
     
     // Synchronize reset button (2-FF synchronizer)
     logic rst_n_sync1, rst_n_sync2;

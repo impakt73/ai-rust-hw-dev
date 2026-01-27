@@ -1,20 +1,19 @@
-# Pin Constraint File for iCE40-HX8K Breakout Board
-# Lattice HX8K-B-EVN board pinout
+# Pin Constraint File for Alchitry Cu v1 Board
+# Lattice iCE40-HX8K-CB132 FPGA
+# Reference: https://github.com/r1cebank/alchitry-cu-utils/blob/main/alchitry_cu.pcf
 
-# 12 MHz Clock Input
-set_io clk_12mhz J3
+# 100 MHz Clock Input (on-board oscillator)
+set_io clk P7
 
 # Reset Button (active low)
-# Using one of the buttons on the board
-set_io rst_n_btn P16
+set_io rst_n_btn P8
 
-# LED Outputs (8 LEDs)
-# D1-D8 on the HX8K breakout board
-set_io led[0] B5
-set_io led[1] B4
-set_io led[2] A2
-set_io led[3] A1
-set_io led[4] C5
-set_io led[5] C4
-set_io led[6] B3
-set_io led[7] C3
+# LED Outputs (8 LEDs on main board)
+set_io led[0] J11
+set_io led[1] K11
+set_io led[2] K12
+set_io led[3] K14
+set_io led[4] L12
+set_io led[5] L14
+set_io led[6] M12
+set_io led[7] N14
