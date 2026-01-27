@@ -97,7 +97,7 @@ impl SystemBus {
     /// RTL peripherals are handled directly by the Verilator top_with_peripherals module,
     /// not by the Rust SystemBus. This method helps identify such addresses.
     pub fn is_rtl_peripheral(&self, addr: u32) -> bool {
-        addr >= RTL_PERIPH_BASE && addr < RTL_PERIPH_LIMIT
+        (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&addr)
     }
 
     /// Update the elapsed time (called by simulator after each step)
