@@ -25,6 +25,14 @@ obj_dir/
 *.vcd
 *.fst
 
+# FPGA build artifacts
+fpga/build/
+fpga/*.json
+fpga/*.asc
+fpga/*.bin
+fpga/*.rpt
+fpga/*.log
+
 # Test program artifacts (legacy - test_programs/ folder removed)
 test_program.elf
 create_test_elf.py
