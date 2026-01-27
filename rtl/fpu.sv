@@ -139,39 +139,53 @@ module fpu (
         logic [22:0] mant;
         integer lz;
         
-        if (val == 32'h0) return POS_ZERO;
-        
-        if (is_signed && val[31]) begin
-            sign = 1'b1;
-            abs_val = -val;
+        // Yosys workaround: avoid early return
+        if (val == 32'h0) begin
+            int_to_float = POS_ZERO;
         end else begin
-            sign = 1'b0;
-            abs_val = val;
-        end
-        
-        // Count leading zeros
-        lz = 0;
-        for (int i = 31; i >= 0; i--) begin
-            if (abs_val[i]) begin
-                lz = i;  // Position of MSB, not leading zeros!
-                break;
+            // Yosys workaround: avoid && in expression
+            if (is_signed) begin
+                if (val[31]) begin
+                    sign = 1'b1;
+                    abs_val = -val;
+                end else begin
+                    sign = 1'b0;
+                    abs_val = val;
+                end
+            end else begin
+                sign = 1'b0;
+                abs_val = val;
             end
+            
+            // Count leading zeros
+            // Yosys workaround: can't use break in functions, use found flag instead
+            lz = 0;
+            begin
+                logic found;
+                found = 1'b0;
+                for (int i = 31; i >= 0; i--) begin
+                    if (abs_val[i] && !found) begin
+                        lz = i;  // Position of MSB, not leading zeros!
+                        found = 1'b1;  // Prevent further updates
+                    end
+                end
+            end
+            
+            // Calculate exponent: 127 (bias) + position of MSB
+            exp = 8'd127 + lz[7:0];
+            
+            // Extract mantissa - shift to get bits below MSB
+            if (lz >= 23) begin
+                mant = abs_val[(lz-1) -: 23];
+            end else begin
+                // Need to shift left to fill 23 bits
+                logic [31:0] shifted;
+                shifted = abs_val << (23 - lz);
+                mant = shifted[22:0];
+            end
+            
+            int_to_float = {sign, exp, mant};
         end
-        
-        // Calculate exponent: 127 (bias) + position of MSB
-        exp = 8'd127 + lz[7:0];
-        
-        // Extract mantissa - shift to get bits below MSB
-        if (lz >= 23) begin
-            mant = abs_val[(lz-1) -: 23];
-        end else begin
-            // Need to shift left to fill 23 bits
-            logic [31:0] shifted;
-            shifted = abs_val << (23 - lz);
-            mant = shifted[22:0];
-        end
-        
-        return {sign, exp, mant};
     endfunction
 
     // Float to integer conversion
@@ -189,41 +203,50 @@ module fpu (
         invalid = 1'b0;
         sign = val[31];
         exp = val[30:23];
+        result = 32'h0;
         
-        if (is_nan(val) || is_inf(val)) begin
+        // Yosys workaround: avoid || in expression and avoid early returns
+        if (is_nan(val)) begin
             invalid = 1'b1;
-            if (is_nan(val)) return is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
-            if (sign) return is_signed ? 32'h80000000 : 32'h00000000;
-            return is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
-        end
-        
-        if (is_zero(val)) return 32'h0;
-        
-        mant = {1'b1, val[22:0]};
-        /* verilator lint_off WIDTHEXPAND */
-        shift = exp - 127;
-        /* verilator lint_on WIDTHEXPAND */
-        
-        if (shift < 0) return 32'h0;
-        if (shift > 31) begin
+            float_to_int = is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
+        end else if (is_inf(val)) begin
             invalid = 1'b1;
-            return is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
-        end
-        
-        /* verilator lint_off WIDTHEXPAND */
-        if (shift >= 23) result = mant << (shift - 23);
-        else result = mant >> (23 - shift);
-        /* verilator lint_on WIDTHEXPAND */
-        
-        if (sign) begin
-            if (!is_signed) begin
-                invalid = 1'b1;
-                return 32'h0;
+            if (sign) begin
+                float_to_int = is_signed ? 32'h80000000 : 32'h00000000;
+            end else begin
+                float_to_int = is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
             end
-            result = -result;
+        end else if (is_zero(val)) begin
+            float_to_int = 32'h0;
+        end else begin
+            mant = {1'b1, val[22:0]};
+            /* verilator lint_off WIDTHEXPAND */
+            shift = exp - 127;
+            /* verilator lint_on WIDTHEXPAND */
+            
+            if (shift < 0) begin
+                float_to_int = 32'h0;
+            end else if (shift > 31) begin
+                invalid = 1'b1;
+                float_to_int = is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
+            end else begin
+                /* verilator lint_off WIDTHEXPAND */
+                if (shift >= 23) result = mant << (shift - 23);
+                else result = mant >> (23 - shift);
+                /* verilator lint_on WIDTHEXPAND */
+                
+                if (sign) begin
+                    if (!is_signed) begin
+                        invalid = 1'b1;
+                        float_to_int = 32'h0;
+                    end else begin
+                        float_to_int = -result;
+                    end
+                end else begin
+                    float_to_int = result;
+                end
+            end
         end
-        
-        return result;
     endfunction
 
     // FP Addition/Subtraction
@@ -241,63 +264,85 @@ module fpu (
         
         flags = 5'b0;
         
-        if (is_nan(a) || is_nan(b)) return QNAN;
-        
-        if (is_inf(a) && is_inf(b)) begin
-            if (a[31] != (b[31] ^ is_sub)) return QNAN;
-            return a;
-        end
-        if (is_inf(a)) return a;
-        if (is_inf(b)) return is_sub ? {~b[31], b[30:0]} : b;
-        
-        if (is_zero(a)) return is_sub ? {~b[31], b[30:0]} : b;
-        if (is_zero(b)) return a;
-        
-        a_sign = a[31];
-        b_sign = b[31] ^ is_sub;
-        a_exp = a[30:23];
-        b_exp = b[30:23];
-        a_mant = {1'b1, a[22:0]};
-        b_mant = {1'b1, b[22:0]};
-        
-        if (a_exp > b_exp) begin
-            exp_diff = a_exp - b_exp;
-            if (exp_diff < 24) b_mant = b_mant >> exp_diff;
-            else b_mant = 24'h0;
-            result_exp = a_exp;
-        end else begin
-            exp_diff = b_exp - a_exp;
-            if (exp_diff < 24) a_mant = a_mant >> exp_diff;
-            else a_mant = 24'h0;
-            result_exp = b_exp;
-        end
-        
-        if (a_sign == b_sign) begin
-            result_mant = a_mant + b_mant;
-            result_sign = a_sign;
-            
-            if (result_mant[24]) begin
-                result_mant = result_mant >> 1;
-                result_exp = result_exp + 1;
-            end
-        end else begin
-            if (a_mant >= b_mant) begin
-                result_mant = a_mant - b_mant;
-                result_sign = a_sign;
+        // Yosys workaround: avoid || in expression and avoid early returns
+        if (is_nan(a)) begin
+            fp_add_sub = QNAN;
+        end else if (is_nan(b)) begin
+            fp_add_sub = QNAN;
+        end else if (is_inf(a)) begin
+            if (is_inf(b)) begin
+                if (a[31] != (b[31] ^ is_sub)) begin
+                    fp_add_sub = QNAN;
+                end else begin
+                    fp_add_sub = a;
+                end
             end else begin
-                result_mant = b_mant - a_mant;
-                result_sign = b_sign;
+                fp_add_sub = a;
+            end
+        end else if (is_inf(b)) begin
+            fp_add_sub = is_sub ? {~b[31], b[30:0]} : b;
+        end else if (is_zero(a)) begin
+            fp_add_sub = is_sub ? {~b[31], b[30:0]} : b;
+        end else if (is_zero(b)) begin
+            fp_add_sub = a;
+        end else begin
+            a_sign = a[31];
+            b_sign = b[31] ^ is_sub;
+            a_exp = a[30:23];
+            b_exp = b[30:23];
+            a_mant = {1'b1, a[22:0]};
+            b_mant = {1'b1, b[22:0]};
+            
+            if (a_exp > b_exp) begin
+                exp_diff = a_exp - b_exp;
+                if (exp_diff < 24) b_mant = b_mant >> exp_diff;
+                else b_mant = 24'h0;
+                result_exp = a_exp;
+            end else begin
+                exp_diff = b_exp - a_exp;
+                if (exp_diff < 24) a_mant = a_mant >> exp_diff;
+                else a_mant = 24'h0;
+                result_exp = b_exp;
             end
             
-            while (result_mant != 0 && !result_mant[23] && result_exp > 0) begin
-                result_mant = result_mant << 1;
-                result_exp = result_exp - 1;
+            if (a_sign == b_sign) begin
+                result_mant = a_mant + b_mant;
+                result_sign = a_sign;
+                
+                if (result_mant[24]) begin
+                    result_mant = result_mant >> 1;
+                    result_exp = result_exp + 1;
+                end
+            end else begin
+                if (a_mant >= b_mant) begin
+                    result_mant = a_mant - b_mant;
+                    result_sign = a_sign;
+                end else begin
+                    result_mant = b_mant - a_mant;
+                    result_sign = b_sign;
+                end
+                
+                // Yosys workaround: Convert while loop to for loop (Yosys doesn't support
+                // while loops in functions with output parameters)
+                // Normalize mantissa: shift left until bit 23 is set or we run out of exponent
+                for (int norm_i = 0; norm_i < 24; norm_i++) begin
+                    if (result_mant != 0) begin
+                        if (!result_mant[23]) begin
+                            if (result_exp > 0) begin
+                                result_mant = result_mant << 1;
+                                result_exp = result_exp - 1;
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if (result_mant == 0) begin
+                fp_add_sub = POS_ZERO;
+            end else begin
+                fp_add_sub = {result_sign, result_exp, result_mant[22:0]};
             end
         end
-        
-        if (result_mant == 0) return POS_ZERO;
-        
-        return {result_sign, result_exp, result_mant[22:0]};
     endfunction
 
     // FP Multiplication
@@ -314,39 +359,51 @@ module fpu (
         
         flags = 5'b0;
         
-        if (is_nan(a) || is_nan(b)) return QNAN;
-        
-        if (is_inf(a)) begin
-            if (is_zero(b)) return QNAN;
-            return {a[31] ^ b[31], 8'hFF, 23'h0};
-        end
-        if (is_inf(b)) begin
-            if (is_zero(a)) return QNAN;
-            return {a[31] ^ b[31], 8'hFF, 23'h0};
-        end
-        
-        if (is_zero(a) || is_zero(b)) return {a[31] ^ b[31], 31'h0};
-        
-        result_sign = a[31] ^ b[31];
-        result_exp_wide = {1'b0, a[30:23]} + {1'b0, b[30:23]} - 9'd127;
-        product = {1'b1, a[22:0]} * {1'b1, b[22:0]};
-        
-        if (product[47]) begin
-            result_mant = product[46:24];
-            result_exp_wide = result_exp_wide + 1;
+        // Yosys workaround: avoid || in expression and avoid early returns
+        if (is_nan(a)) begin
+            fp_mul = QNAN;
+        end else if (is_nan(b)) begin
+            fp_mul = QNAN;
+        end else if (is_inf(a)) begin
+            if (is_zero(b)) begin
+                fp_mul = QNAN;
+            end else begin
+                fp_mul = {a[31] ^ b[31], 8'hFF, 23'h0};
+            end
+        end else if (is_inf(b)) begin
+            if (is_zero(a)) begin
+                fp_mul = QNAN;
+            end else begin
+                fp_mul = {a[31] ^ b[31], 8'hFF, 23'h0};
+            end
+        end else if (is_zero(a)) begin
+            fp_mul = {a[31] ^ b[31], 31'h0};
+        end else if (is_zero(b)) begin
+            fp_mul = {a[31] ^ b[31], 31'h0};
         end else begin
-            result_mant = product[45:23];
+            result_sign = a[31] ^ b[31];
+            result_exp_wide = {1'b0, a[30:23]} + {1'b0, b[30:23]} - 9'd127;
+            product = {1'b1, a[22:0]} * {1'b1, b[22:0]};
+            
+            if (product[47]) begin
+                result_mant = product[46:24];
+                result_exp_wide = result_exp_wide + 1;
+            end else begin
+                result_mant = product[45:23];
+            end
+            
+            // Yosys workaround: avoid || in expression
+            if (result_exp_wide[8]) begin
+                fp_mul = {result_sign, 8'hFF, 23'h0};
+            end else if (result_exp_wide > 254) begin
+                fp_mul = {result_sign, 8'hFF, 23'h0};
+            end else if (result_exp_wide == 0) begin
+                fp_mul = {result_sign, 31'h0};
+            end else begin
+                result_exp = result_exp_wide[7:0];
+                fp_mul = {result_sign, result_exp, result_mant};
+            end
         end
-        
-        if (result_exp_wide[8] || result_exp_wide > 254) begin
-            return {result_sign, 8'hFF, 23'h0};
-        end
-        if (result_exp_wide == 0) begin
-            return {result_sign, 31'h0};
-        end
-        
-        result_exp = result_exp_wide[7:0];
-        return {result_sign, result_exp, result_mant};
     endfunction
 
     // FP Division (hardware implementation using div_unit)
@@ -369,44 +426,49 @@ module fpu (
         divisor_out = 48'h0;
         flags = 5'b0;
         
-        // Handle NaN
-        if (is_nan(a) || is_nan(b)) return QNAN;
-        
-        // Handle division by zero
-        if (is_zero(b)) begin
+        // Handle NaN - Yosys workaround: avoid ||
+        if (is_nan(a)) begin
+            fp_div_setup = QNAN;
+        end else if (is_nan(b)) begin
+            fp_div_setup = QNAN;
+        end else if (is_zero(b)) begin
+            // Handle division by zero
             flags[3] = 1'b1;  // DZ flag
-            if (is_zero(a)) return QNAN;
-            return a[31] ? NEG_INF : POS_INF;
+            if (is_zero(a)) begin
+                fp_div_setup = QNAN;
+            end else begin
+                fp_div_setup = a[31] ? NEG_INF : POS_INF;
+            end
+        end else if (is_inf(a)) begin
+            // Handle infinity
+            if (is_inf(b)) begin
+                fp_div_setup = QNAN;
+            end else begin
+                fp_div_setup = {a[31] ^ b[31], 8'hFF, 23'h0};
+            end
+        end else if (is_inf(b)) begin
+            fp_div_setup = {a[31] ^ b[31], 31'h0};
+        end else if (is_zero(a)) begin
+            // Handle zero dividend
+            fp_div_setup = {a[31] ^ b[31], 31'h0};
+        end else begin
+            // Normal case: need to perform division
+            needs_div = 1'b1;
+            
+            // With 48-bit div_unit, we can implement proper IEEE 754 division:
+            // To get a quotient in the range we want, we scale only the dividend:
+            // dividend = {1.mant_a, MANT_MSB_POS'h0} gives 48 bits total (scaled up by 2^MANT_MSB_POS)
+            // divisor  = {MANT_MSB_POS'h0, 1.mant_b} gives 48 bits total (in lower bits)
+            //
+            // This computes (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) which yields a MANT_MSB_POS-bit quotient
+            // in the upper bits, representing the mantissa ratio scaled by 2^MANT_MSB_POS.
+            //
+            dividend_out = {1'b1, a[22:0], 24'h0};    // 24-bit mantissa (1.mant_a) shifted left by MANT_MSB_POS
+            divisor_out = {24'h0, 1'b1, b[22:0]};     // 24-bit mantissa (1.mant_b) in lower bits
+            
+            // Return a placeholder (will be replaced after division completes)
+            fp_div_setup = 32'h0;
         end
-        
-        // Handle infinity
-        if (is_inf(a)) begin
-            if (is_inf(b)) return QNAN;
-            return {a[31] ^ b[31], 8'hFF, 23'h0};
-        end
-        if (is_inf(b)) begin
-            return {a[31] ^ b[31], 31'h0};
-        end
-        
-        // Handle zero dividend
-        if (is_zero(a)) return {a[31] ^ b[31], 31'h0};
-        
-        // Normal case: need to perform division
-        needs_div = 1'b1;
-        
-        // With 48-bit div_unit, we can implement proper IEEE 754 division:
-        // To get a quotient in the range we want, we scale only the dividend:
-        // dividend = {1.mant_a, MANT_MSB_POS'h0} gives 48 bits total (scaled up by 2^MANT_MSB_POS)
-        // divisor  = {MANT_MSB_POS'h0, 1.mant_b} gives 48 bits total (in lower bits)
-        //
-        // This computes (1.mant_a * 2^MANT_MSB_POS) / (1.mant_b) which yields a MANT_MSB_POS-bit quotient
-        // in the upper bits, representing the mantissa ratio scaled by 2^MANT_MSB_POS.
-        //
-        dividend_out = {1'b1, a[22:0], 24'h0};    // 24-bit mantissa (1.mant_a) shifted left by MANT_MSB_POS
-        divisor_out = {24'h0, 1'b1, b[22:0]};     // 24-bit mantissa (1.mant_b) in lower bits
-        
-        // Return a placeholder (will be replaced after division completes)
-        return 32'h0;
     endfunction
     
     // FP Division result assembly (called after div_unit completes)
@@ -453,26 +515,31 @@ module fpu (
             shift = 0;
             
             // Find the MSB position
-            for (i = 47; i >= 0; i--) begin
-                if (quotient[i]) begin
-                    // Compute shift so that MSB moves to bit MANT_MSB_POS
-                    shift = MANT_MSB_POS - i;
-                    if (shift > 0) begin
-                        // Left shift increases magnitude -> decrement exponent
-                        /* verilator lint_off WIDTHEXPAND */
-                        normalized_quotient = quotient << shift;
-                        result_exp_wide = result_exp_wide - 9'(shift);
-                        /* verilator lint_on WIDTHEXPAND */
-                    end else if (shift < 0) begin
-                        // Right shift decreases magnitude -> increment exponent
-                        normalized_quotient = quotient >> (-shift);
-                        result_exp_wide = result_exp_wide + 9'(-shift);
-                    end else begin
-                        normalized_quotient = quotient;
+            // Yosys workaround: can't use break in functions, use found flag instead
+            begin
+                logic found_msb;
+                found_msb = 1'b0;
+                for (i = 47; i >= 0; i--) begin
+                    if (quotient[i] && !found_msb) begin
+                        // Compute shift so that MSB moves to bit MANT_MSB_POS
+                        shift = MANT_MSB_POS - i;
+                        if (shift > 0) begin
+                            // Left shift increases magnitude -> decrement exponent
+                            /* verilator lint_off WIDTHEXPAND */
+                            normalized_quotient = quotient << shift;
+                            result_exp_wide = result_exp_wide - 9'(shift);
+                            /* verilator lint_on WIDTHEXPAND */
+                        end else if (shift < 0) begin
+                            // Right shift decreases magnitude -> increment exponent
+                            normalized_quotient = quotient >> (-shift);
+                            result_exp_wide = result_exp_wide + 9'(-shift);
+                        end else begin
+                            normalized_quotient = quotient;
+                        end
+                        // Mantissa is bits [MANT_MSB_POS-1:1] below the normalized leading 1 at bit MANT_MSB_POS
+                        result_mant = normalized_quotient[MANT_MSB_POS-1:1];
+                        found_msb = 1'b1;  // Prevent further updates
                     end
-                    // Mantissa is bits [MANT_MSB_POS-1:1] below the normalized leading 1 at bit MANT_MSB_POS
-                    result_mant = normalized_quotient[MANT_MSB_POS-1:1];
-                    break;
                 end
             end
         end
@@ -481,24 +548,39 @@ module fpu (
         // result_exp_wide will be handled by underflow/zero logic below
         
         // Handle underflow/overflow
-        if (result_exp_wide[8] && result_exp_wide[7]) begin 
-            // Large negative (Underflow) -> Flush to zero
-            return {result_sign, 31'h0};
+        // Yosys workaround: avoid && in expression
+        if (result_exp_wide[8]) begin
+            if (result_exp_wide[7]) begin
+                // Large negative (Underflow) -> Flush to zero
+                fp_div_assemble = {result_sign, 31'h0};
+            end else begin
+                // Not underflow - continue to next checks
+                if (result_exp_wide >= 255) begin
+                    // Overflow -> Inf
+                    flags[2] = 1'b1; // OF
+                    fp_div_assemble = {result_sign, 8'hFF, 23'h0};
+                end else if (result_exp_wide == 0) begin
+                    // Result is denormal (flush to zero for simplicity)
+                    fp_div_assemble = {result_sign, 31'h0};
+                end else begin
+                    result_exp = result_exp_wide[7:0];
+                    fp_div_assemble = {result_sign, result_exp, result_mant};
+                end
+            end
+        end else begin
+            // result_exp_wide[8] is 0, continue with normal checks
+            if (result_exp_wide >= 255) begin
+                // Overflow -> Inf
+                flags[2] = 1'b1; // OF
+                fp_div_assemble = {result_sign, 8'hFF, 23'h0};
+            end else if (result_exp_wide == 0) begin
+                // Result is denormal (flush to zero for simplicity)
+                fp_div_assemble = {result_sign, 31'h0};
+            end else begin
+                result_exp = result_exp_wide[7:0];
+                fp_div_assemble = {result_sign, result_exp, result_mant};
+            end
         end
-        
-        if (result_exp_wide >= 255) begin
-            // Overflow -> Inf
-            flags[2] = 1'b1; // OF
-            return {result_sign, 8'hFF, 23'h0};
-        end
-        
-        if (result_exp_wide == 0) begin
-            // Result is denormal (flush to zero for simplicity)
-            return {result_sign, 31'h0};
-        end
-        
-        result_exp = result_exp_wide[7:0];
-        return {result_sign, result_exp, result_mant};
     endfunction
 
     // FP Square Root (simplified - returns approximation)
@@ -515,67 +597,45 @@ module fpu (
         flags = 5'b0;
         
         // Handle NaN
-        if (is_nan(a)) return QNAN;
-        
-        // Handle negative
-        if (a[31] && !is_zero(a)) begin
-            flags[4] = 1'b1;  // NV flag
-            return QNAN;
+        if (is_nan(a)) begin
+            fp_sqrt = QNAN;
+        end else if (a[31]) begin
+            // Handle negative - Yosys workaround: avoid &&
+            if (!is_zero(a)) begin
+                flags[4] = 1'b1;  // NV flag
+                fp_sqrt = QNAN;
+            end else begin
+                fp_sqrt = a;  // -0.0
+            end
+        end else if (is_zero(a)) begin
+            // Handle zero and infinity - Yosys workaround: avoid ||
+            fp_sqrt = a;
+        end else if (is_inf(a)) begin
+            fp_sqrt = a;
+        end else begin
+            // Calculate result exponent: (exp - 127) / 2 + 127
+            // Check if exponent is odd
+            if (a[23]) begin  // LSB of exponent (odd)
+                result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
+                /* verilator lint_off WIDTHTRUNC */
+                mant_with_bit = {2'b01, a[22:0]};  // Prepend 01 for normalization
+                /* verilator lint_on WIDTHTRUNC */
+            end else begin  // Even exponent
+                result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
+                mant_with_bit = {1'b1, a[22:0]};  // Implicit 1
+            end
+            
+            // Simplified: Use approximation sqrt(x) ≈ x/2 + 1/2 (Newton's method seed)
+            // For better accuracy, multiple Newton iterations needed
+            // This gives rough approximation
+            result_mant = mant_with_bit[22:0];
+            
+            fp_sqrt = {1'b0, result_exp, result_mant};
         end
-        
-        // Handle zero and infinity
-        if (is_zero(a) || is_inf(a)) return a;
-        
-        // Calculate result exponent: (exp - 127) / 2 + 127
-        // Check if exponent is odd
-        if (a[23]) begin  // LSB of exponent (odd)
-            result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
-            /* verilator lint_off WIDTHTRUNC */
-            mant_with_bit = {2'b01, a[22:0]};  // Prepend 01 for normalization
-            /* verilator lint_on WIDTHTRUNC */
-        end else begin  // Even exponent
-            result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
-            mant_with_bit = {1'b1, a[22:0]};  // Implicit 1
-        end
-        
-        // Simplified: Use approximation sqrt(x) ≈ x/2 + 1/2 (Newton's method seed)
-        // For better accuracy, multiple Newton iterations needed
-        // This gives rough approximation
-        result_mant = mant_with_bit[22:0];
-        
-        return {1'b0, result_exp, result_mant};
     endfunction
 
-    // Fused Multiply-Add: (fs1 * fs2) +/- fs3  
-    // Simplified implementation - calls fp_mul and fp_add_sub
-    // Note: This doesn't provide the full precision of true FMA
-    function automatic logic [31:0] fp_fmadd(
-        input logic [31:0] a,
-        input logic [31:0] b,
-        input logic [31:0] c,
-        input logic negate_product,
-        input logic negate_addend,
-        output logic [4:0] flags
-    );
-        logic [31:0] temp_product;
-        logic [4:0] temp_flags;
-        
-        flags = 5'b0;
-        
-        // Multiply a * b
-        temp_product = fp_mul(a, b, temp_flags);
-        flags = temp_flags;
-        
-        // Negate product if needed
-        if (negate_product) temp_product[31] = ~temp_product[31];
-        
-        // Negate addend if needed (for subtraction)
-        if (negate_addend) begin
-            return fp_add_sub(temp_product, c, 1'b1, temp_flags);
-        end else begin
-            return fp_add_sub(temp_product, c, 1'b0, temp_flags);
-        end
-    endfunction
+    // NOTE: fp_fmadd function removed - Yosys doesn't support function-to-function calls
+    // with non-constant arguments. FMA logic is inlined directly in the case statement.
 
     // ============================================================
     // Division Unit Integration for FP Division
@@ -610,14 +670,22 @@ module fpu (
     assign is_fp_div = (fpu_op == FPU_DIV);
     
     // Start division only when requested AND hardware division is actually needed
-    assign div_start = fpu_start && is_fp_div && needs_div_comb;
+    // Yosys workaround: avoid && in expression
+    logic div_start_cond1, div_start_cond2;
+    assign div_start_cond1 = fpu_start ? is_fp_div : 1'b0;
+    assign div_start_cond2 = div_start_cond1 ? needs_div_comb : 1'b0;
+    assign div_start = div_start_cond2;
     
     // FPU ready signal - three cases:
     // 1. Division in progress: wait for div_ready to signal completion
     // 2. Starting a new division this cycle: not ready yet (needs one cycle to register div_in_progress)
     // 3. All other operations: ready immediately (combinational ops or special cases like NaN/Inf/zero)
+    // Yosys workaround: avoid && in ternary expression
+    logic fpu_ready_new_div_cond1, fpu_ready_new_div_cond2;
+    assign fpu_ready_new_div_cond1 = fpu_start ? is_fp_div : 1'b0;
+    assign fpu_ready_new_div_cond2 = fpu_ready_new_div_cond1 ? needs_div_comb : 1'b0;
     assign fpu_ready = div_in_progress ? div_ready : 
-                       (fpu_start && is_fp_div && needs_div_comb) ? 1'b0 :
+                       fpu_ready_new_div_cond2 ? 1'b0 :
                        1'b1;
     
     // ============================================================
@@ -638,15 +706,22 @@ module fpu (
                 div_fs1_reg <= fs1;
                 div_fs2_reg <= fs2;
                 div_in_progress <= 1'b1;
-            end else if (div_ready) begin
-                // Clear in-progress flag when division completes
-                div_in_progress <= 1'b0;
+            // Yosys workaround: avoid && in expression
+            end else begin
+                if (div_in_progress) begin
+                    if (div_ready) begin
+                        // Clear in-progress flag when division completes
+                        div_in_progress <= 1'b0;
+                    end
+                end
             end
         end
     end
     
     // Main logic
     logic inv_flag;  // Move outside always_comb to avoid latch
+    logic [31:0] temp_product;  // For FMA operations
+    logic [4:0] temp_fma_flags;  // For FMA flag accumulation
     
     always_comb begin
         fp_result = POS_ZERO;
@@ -656,6 +731,8 @@ module fpu (
         needs_div_comb = 1'b0;  // Initialize
         div_dividend = 48'h0;
         div_divisor = 48'h0;
+        temp_product = 32'h0;  // Initialize
+        temp_fma_flags = 5'b0;  // Initialize
         
         case (fpu_op)
             FPU_ADD: fp_result = fp_add_sub(fs1, fs2, 1'b0, fflags);
@@ -663,9 +740,16 @@ module fpu (
             FPU_MUL: fp_result = fp_mul(fs1, fs2, fflags);
             
             FPU_DIV: begin
-                if (div_in_progress && div_ready) begin
-                    // Division complete - assemble result using captured operands
-                    fp_result = fp_div_assemble(div_fs1_reg, div_fs2_reg, div_result, fflags);
+                // Yosys workaround: avoid && in expression
+                if (div_in_progress) begin
+                    if (div_ready) begin
+                        // Division complete - assemble result using captured operands
+                        fp_result = fp_div_assemble(div_fs1_reg, div_fs2_reg, div_result, fflags);
+                    end else begin
+                        // Setup division or return intermediate result (for special cases)
+                        fp_result = fp_div_setup(fs1, fs2, div_dividend, div_divisor, needs_div_comb, fflags);
+                        // If special case (NaN, Inf, Zero), needs_div_comb will be 0 and result is valid
+                    end
                 end else begin
                     // Setup division or return intermediate result (for special cases)
                     fp_result = fp_div_setup(fs1, fs2, div_dividend, div_divisor, needs_div_comb, fflags);
@@ -676,10 +760,36 @@ module fpu (
             FPU_SQRT: fp_result = fp_sqrt(fs1, fflags);
             
             // Fused multiply-add operations
-            FPU_MADD:  fp_result = fp_fmadd(fs1, fs2, fs3, 1'b0, 1'b0, fflags);  // (fs1*fs2) + fs3
-            FPU_MSUB:  fp_result = fp_fmadd(fs1, fs2, fs3, 1'b0, 1'b1, fflags);  // (fs1*fs2) - fs3
-            FPU_NMSUB: fp_result = fp_fmadd(fs1, fs2, fs3, 1'b1, 1'b0, fflags);  // -(fs1*fs2) + fs3
-            FPU_NMADD: fp_result = fp_fmadd(fs1, fs2, fs3, 1'b1, 1'b1, fflags);  // -(fs1*fs2) - fs3
+            // Inlined FMA logic (Yosys doesn't support function-to-function calls)
+            FPU_MADD: begin  // (fs1*fs2) + fs3
+                temp_product = fp_mul(fs1, fs2, temp_fma_flags);
+                fflags = temp_fma_flags;
+                // negate_product = 0, negate_addend = 0
+                fp_result = fp_add_sub(temp_product, fs3, 1'b0, temp_fma_flags);
+            end
+            
+            FPU_MSUB: begin  // (fs1*fs2) - fs3
+                temp_product = fp_mul(fs1, fs2, temp_fma_flags);
+                fflags = temp_fma_flags;
+                // negate_product = 0, negate_addend = 1
+                fp_result = fp_add_sub(temp_product, fs3, 1'b1, temp_fma_flags);
+            end
+            
+            FPU_NMSUB: begin  // -(fs1*fs2) + fs3
+                temp_product = fp_mul(fs1, fs2, temp_fma_flags);
+                fflags = temp_fma_flags;
+                temp_product[31] = ~temp_product[31];  // Negate product
+                // negate_product = 1, negate_addend = 0
+                fp_result = fp_add_sub(temp_product, fs3, 1'b0, temp_fma_flags);
+            end
+            
+            FPU_NMADD: begin  // -(fs1*fs2) - fs3
+                temp_product = fp_mul(fs1, fs2, temp_fma_flags);
+                fflags = temp_fma_flags;
+                temp_product[31] = ~temp_product[31];  // Negate product
+                // negate_product = 1, negate_addend = 1
+                fp_result = fp_add_sub(temp_product, fs3, 1'b1, temp_fma_flags);
+            end
             
             FPU_SGNJ:  fp_result = {fs2[31], fs1[30:0]};
             FPU_SGNJN: fp_result = {~fs2[31], fs1[30:0]};
@@ -689,16 +799,24 @@ module fpu (
             FPU_MVWX: fp_result = int_src;
             
             FPU_FEQ: begin
-                if (is_nan(fs1) || is_nan(fs2)) begin
+                // Yosys workaround: avoid || in expression
+                if (is_nan(fs1)) begin
                     int_result = 32'h0;
-                    if (is_snan(fs1) || is_snan(fs2)) fflags[4] = 1'b1;
+                    if (is_snan(fs1)) fflags[4] = 1'b1;
+                end else if (is_nan(fs2)) begin
+                    int_result = 32'h0;
+                    if (is_snan(fs2)) fflags[4] = 1'b1;
                 end else begin
                     int_result = (fs1 == fs2) ? 32'h1 : 32'h0;
                 end
             end
             
             FPU_FLT: begin
-                if (is_nan(fs1) || is_nan(fs2)) begin
+                // Yosys workaround: avoid || in expression
+                if (is_nan(fs1)) begin
+                    int_result = 32'h0;
+                    fflags[4] = 1'b1;
+                end else if (is_nan(fs2)) begin
                     int_result = 32'h0;
                     fflags[4] = 1'b1;
                 end else begin
@@ -707,30 +825,63 @@ module fpu (
             end
             
             FPU_FLE: begin
-                if (is_nan(fs1) || is_nan(fs2)) begin
+                // Yosys workaround: avoid || in expression
+                if (is_nan(fs1)) begin
+                    int_result = 32'h0;
+                    fflags[4] = 1'b1;
+                end else if (is_nan(fs2)) begin
                     int_result = 32'h0;
                     fflags[4] = 1'b1;
                 end else begin
-                    int_result = (fp_less_than(fs1, fs2) || (fs1 == fs2)) ? 32'h1 : 32'h0;
+                    // Yosys workaround: avoid || in ternary expression
+                    logic fle_cond;
+                    fle_cond = fp_less_than(fs1, fs2) ? 1'b1 : (fs1 == fs2);
+                    int_result = fle_cond ? 32'h1 : 32'h0;
                 end
             end
             
             FPU_MIN: begin
-                if (is_nan(fs1) && is_nan(fs2)) fp_result = QNAN;
-                else if (is_nan(fs1)) fp_result = fs2;
-                else if (is_nan(fs2)) fp_result = fs1;
-                else if (is_zero(fs1) && is_zero(fs2))
-                    fp_result = (fs1[31] || fs2[31]) ? NEG_ZERO : POS_ZERO;
-                else fp_result = fp_less_than(fs1, fs2) ? fs1 : fs2;
+                // Yosys workaround: avoid && and || in expressions
+                if (is_nan(fs1)) begin
+                    if (is_nan(fs2)) begin
+                        fp_result = QNAN;
+                    end else begin
+                        fp_result = fs2;
+                    end
+                end else if (is_nan(fs2)) begin
+                    fp_result = fs1;
+                end else if (is_zero(fs1)) begin
+                    if (is_zero(fs2)) begin
+                        // Yosys workaround: avoid || in ternary
+                        fp_result = fs1[31] ? NEG_ZERO : (fs2[31] ? NEG_ZERO : POS_ZERO);
+                    end else begin
+                        fp_result = fp_less_than(fs1, fs2) ? fs1 : fs2;
+                    end
+                end else begin
+                    fp_result = fp_less_than(fs1, fs2) ? fs1 : fs2;
+                end
             end
             
             FPU_MAX: begin
-                if (is_nan(fs1) && is_nan(fs2)) fp_result = QNAN;
-                else if (is_nan(fs1)) fp_result = fs2;
-                else if (is_nan(fs2)) fp_result = fs1;
-                else if (is_zero(fs1) && is_zero(fs2))
-                    fp_result = (fs1[31] && fs2[31]) ? NEG_ZERO : POS_ZERO;
-                else fp_result = fp_less_than(fs1, fs2) ? fs2 : fs1;
+                // Yosys workaround: avoid && in expressions
+                if (is_nan(fs1)) begin
+                    if (is_nan(fs2)) begin
+                        fp_result = QNAN;
+                    end else begin
+                        fp_result = fs2;
+                    end
+                end else if (is_nan(fs2)) begin
+                    fp_result = fs1;
+                end else if (is_zero(fs1)) begin
+                    if (is_zero(fs2)) begin
+                        // Yosys workaround: avoid && in ternary
+                        fp_result = fs1[31] ? (fs2[31] ? NEG_ZERO : POS_ZERO) : POS_ZERO;
+                    end else begin
+                        fp_result = fp_less_than(fs1, fs2) ? fs2 : fs1;
+                    end
+                end else begin
+                    fp_result = fp_less_than(fs1, fs2) ? fs2 : fs1;
+                end
             end
             
             FPU_FCLASS: begin
