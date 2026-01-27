@@ -136,8 +136,11 @@ impl InteractiveSimulator {
     pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
         // Load ELF into simulator memory using the helper function
         let entry_point = {
-            let mut view =
-                SimulatorView::new(&mut self.simulator.bus, &mut self.simulator.hung_detector);
+            let mut view = SimulatorView::new(
+                &mut self.simulator.bus,
+                &mut self.simulator.hung_detector,
+                &self.simulator.cpu,
+            );
             load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
         };
 
@@ -505,7 +508,7 @@ where
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback
     let entry_point = {
-        let mut view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector);
+        let mut view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector, &sim.cpu);
         setup_callback(&mut view)?
     };
 
@@ -517,7 +520,7 @@ where
 
     // Execute optional post-execution callback with read-only SimulatorView and result
     if let Some(callback) = termination_callback {
-        let view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector);
+        let view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector, &sim.cpu);
         callback(&view, &result);
     }
 
