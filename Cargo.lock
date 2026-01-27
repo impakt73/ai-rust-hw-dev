@@ -698,7 +698,6 @@ dependencies = [
  "log",
  "postcard",
  "riscv_core",
- "riscv_protocol",
  "riscv_shared",
  "serde",
  "sim-tests",
@@ -2687,25 +2686,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "riscv_macros"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "riscv_protocol",
- "serde",
-]
-
-[[package]]
-name = "riscv_protocol"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "serde",
-]
-
-[[package]]
 name = "riscv_shared"
 version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+]
 
 [[package]]
 name = "rmcp"

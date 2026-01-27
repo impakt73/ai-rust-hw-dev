@@ -131,25 +131,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3f2ad9f15a07f4a0e1677124f9120ce7e83ab7e1ca7186af0ca9da529b62e80"
 
 [[package]]
-name = "riscv_macros"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "riscv_protocol",
- "serde",
-]
-
-[[package]]
-name = "riscv_protocol"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "serde",
-]
-
-[[package]]
 name = "riscv_shared"
 version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+]
 
 [[package]]
 name = "rust-test-program"
@@ -157,8 +144,6 @@ version = "0.1.0"
 dependencies = [
  "postcard",
  "riscv-rt",
- "riscv_macros",
- "riscv_protocol",
  "riscv_shared",
  "serde",
 ]

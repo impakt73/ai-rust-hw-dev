@@ -1,9 +1,7 @@
-use crate::header::PacketHeader;
+use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "alloc")]
 use alloc::string::String;
 
 /// Debug level enumeration
@@ -18,7 +16,6 @@ pub enum DebugLevel {
 }
 
 /// General debug messages from CPU to host
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DebugPacket {
     pub header: PacketHeader,
@@ -28,7 +25,6 @@ pub struct DebugPacket {
 }
 
 /// Report test assertion results
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssertPacket {
     pub header: PacketHeader,

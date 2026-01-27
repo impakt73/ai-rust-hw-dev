@@ -1,6 +1,6 @@
 use postcard::to_allocvec;
 /// Packet transport utilities for FIFO-based communication
-use riscv_protocol::*;
+use riscv_shared::protocol::*;
 use std::collections::VecDeque;
 
 /// Helper macro to send any packet type

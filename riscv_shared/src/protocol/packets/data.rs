@@ -1,9 +1,7 @@
-use crate::header::PacketHeader;
+use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
 /// Transfer a single unsigned 32-bit value
@@ -23,7 +21,6 @@ pub struct DataI32Packet {
 }
 
 /// Transfer arbitrary binary data
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DataBufferPacket {
     pub header: PacketHeader,
@@ -33,7 +30,6 @@ pub struct DataBufferPacket {
 }
 
 /// Transfer UTF-8 text strings
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DataStringPacket {
     pub header: PacketHeader,

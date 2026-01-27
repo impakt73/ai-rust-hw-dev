@@ -1,4 +1,4 @@
-use crate::header::PacketHeader;
+use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
 /// Reset type enumeration

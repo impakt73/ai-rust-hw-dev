@@ -28,9 +28,7 @@ test = false
 
 [dependencies]
 riscv-rt = "0.17.0"
-riscv_protocol = { path = "../riscv_protocol", default-features = false, features = ["alloc"] }
-riscv_macros = { path = "../riscv_macros", default-features = false }
-riscv_shared = { path = "../riscv_shared" }
+riscv_shared = { path = "../riscv_shared", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 

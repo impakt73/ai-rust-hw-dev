@@ -1,9 +1,7 @@
-use crate::header::PacketHeader;
+use crate::protocol::header::PacketHeader;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 /// Read a contiguous memory region
@@ -15,7 +13,6 @@ pub struct MemoryReadPacket {
 }
 
 /// Response packet for memory read
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryReadResponsePacket {
     pub header: PacketHeader,
@@ -24,7 +21,6 @@ pub struct MemoryReadResponsePacket {
 }
 
 /// Write to a contiguous memory region
-#[cfg(feature = "alloc")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemoryWritePacket {
     pub header: PacketHeader,
