@@ -1,14 +1,27 @@
-# FPGA Synthesis Files
+# FPGA Synthesis for Alchitry Cu v1
 
-This directory contains files for synthesizing the RISC-V CPU to an iCE40-HX8K FPGA using open-source tools.
+This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu v1 board (iCE40-HX8K-CB132) using open-source tools.
 
 ## Quick Start
 
 ```bash
-# Install prerequisites (Ubuntu/Debian)
-sudo apt-get install -y yosys fpga-icestorm nextpnr-ice40
+# Install prerequisites - Build Yosys from source (REQUIRED)
+# Yosys 0.33 from apt has known issues. Version 0.61+ from source is required.
+cd /tmp
+git clone https://github.com/YosysHQ/yosys
+cd yosys
+git submodule update --init
+sudo apt-get install -y build-essential clang bison flex libreadline-dev \
+    gawk tcl-dev libffi-dev git graphviz xdot pkg-config python3 \
+    libboost-system-dev libboost-python-dev libboost-filesystem-dev \
+    zlib1g-dev libfl-dev
+make config-gcc && make -j$(nproc) && sudo make install
+
+# Install nextpnr and icestorm
+sudo apt-get install -y fpga-icestorm nextpnr-ice40
 
 # Synthesize design
+cd /path/to/repo/fpga
 make
 
 # Program FPGA (if hardware is connected)
@@ -20,7 +33,7 @@ sudo make program
 - **`fpga_top.sv`**: Top-level FPGA wrapper module
 - **`bram_imem.sv`**: Block RAM instruction memory (4 KB)
 - **`bram_dmem.sv`**: Block RAM data memory (4 KB)
-- **`ice40hx8k.pcf`**: Pin constraint file for HX8K-Breakout board
+- **`ice40hx8k.pcf`**: Pin constraint file for Alchitry Cu v1 board
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -45,10 +58,14 @@ See **[docs/fpga-synthesis.md](../docs/fpga-synthesis.md)** for:
 
 ## Hardware Requirements
 
-- **Board**: Lattice iCE40-HX8K Breakout (HX8K-B-EVN)
-- **Resources Used**: ~6,500 LUTs, ~2,500 FFs, 2 BRAMs
-- **Clock**: 12 MHz (from on-board oscillator)
-- **Peripherals**: 8 LEDs
+- **Board**: Alchitry Cu v1 (Lattice iCE40-HX8K-CB132)
+- **Resources Used**: ~6,500 LUTs, ~2,500 FFs, 2 BRAMs (estimated)
+- **Clock**: 100 MHz (from on-board oscillator)
+- **Peripherals**: 8 LEDs on main board
+
+## Known Limitations
+
+**FPU Synthesis**: Even with Yosys 0.61+, the FPU module has partial SystemVerilog compatibility issues. Work is in progress to resolve these. The base RV32IMAC (without F extension) synthesizes successfully.
 
 ## Default Test Program
 

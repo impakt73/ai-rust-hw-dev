@@ -1,6 +1,6 @@
 # FPGA Synthesis Guide
 
-This guide explains how to synthesize the RISC-V RV32IMACF CPU for the **Lattice iCE40-HX8K** FPGA using open-source tools.
+This guide explains how to synthesize the RISC-V RV32IMACF CPU for the **Alchitry Cu v1** board using open-source tools.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ The FPGA synthesis flow converts the SystemVerilog RTL into a bitstream that can
 - **Yosys**: Open-source synthesis tool for converting RTL to a netlist
 - **nextpnr**: Open-source place-and-route tool for FPGA implementation
 - **IceStorm**: Open-source toolchain for Lattice iCE40 FPGAs
-- **Target Device**: Lattice iCE40-HX8K (8K LUTs, CT256 package)
+- **Target Device**: Lattice iCE40-HX8K-CB132 (on Alchitry Cu v1 board)
 
 ### What's Included
 
@@ -30,15 +30,14 @@ The FPGA implementation includes:
 - ✅ **4 KB Instruction Memory**: On-chip block RAM (BRAM)
 - ✅ **4 KB Data Memory**: On-chip block RAM (BRAM)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
-- ✅ **Clock & Reset**: 12 MHz clock with synchronized reset
+- ✅ **Clock & Reset**: 100 MHz clock with synchronized reset
 - ✅ **Test Program**: Simple LED pattern program pre-loaded in instruction memory
 
 ### What's NOT Included (Future Work)
 
 - ❌ **UART/Serial**: No serial communication yet
 - ❌ **Large Memory**: Limited to 8 KB total (4 KB instruction + 4 KB data)
-- ❌ **Floating-Point Unit**: FPU is included in RTL but may not fit in HX8K
-- ❌ **High Clock Frequencies**: Currently runs at 12 MHz (PLL for higher speeds is future work)
+- ❌ **High Clock Frequencies**: Currently runs at 100 MHz (PLL for even higher speeds is future work)
 
 ## Prerequisites
 
@@ -108,8 +107,8 @@ You should see: `All required tools found!`
 
 To actually program the FPGA, you need:
 
-- **iCE40-HX8K Breakout Board** (Lattice HX8K-B-EVN or compatible)
-- **USB Cable** for programming (usually USB Mini-B)
+- **Alchitry Cu v1 Board** (Lattice iCE40-HX8K-CB132)
+- **USB Cable** for programming
 - **Linux system** with USB access (or Windows with FTDI drivers)
 
 **Note:** You can run synthesis and place-and-route **without** the physical board. The tools will generate a bitstream that you can program later.
@@ -345,11 +344,11 @@ sudo usermod -a -G plugdev $USER
 # Log out and log back in for group change to take effect
 ```
 
-### "ERROR: Max frequency only 8 MHz (target was 12 MHz)"
+### "ERROR: Max frequency only 8 MHz (target was 100 MHz)"
 
-**Solution:** The design doesn't meet timing at 12 MHz. Options:
+**Solution:** The design doesn't meet timing at 100 MHz. Options:
 
-1. **Accept the lower frequency**: Edit `Makefile` and change `--freq 12` to `--freq 8`
+1. **Accept the lower frequency**: Edit `Makefile` and change `--freq 100` to `--freq 8`
 2. **Simplify the design**: Disable FPU or reduce complexity
 3. **Add pipeline registers**: This requires RTL changes (advanced)
 

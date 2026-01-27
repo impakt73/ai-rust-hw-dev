@@ -56,43 +56,79 @@ module fpu (
     // This represents where the implicit '1' should be positioned
     localparam MANT_MSB_POS = 24;
 
-    // Helper functions
+    // Helper functions - Rewritten for Yosys compatibility (no && or || in expressions)
     function automatic logic is_nan(input logic [31:0] val);
-        return (val[30:23] == 8'hFF) && (val[22:0] != 23'h0);
+        logic exp_all_ones, frac_nonzero;
+        exp_all_ones = (val[30:23] == 8'hFF);
+        frac_nonzero = (val[22:0] != 23'h0);
+        is_nan = exp_all_ones ? frac_nonzero : 1'b0;
     endfunction
 
     function automatic logic is_snan(input logic [31:0] val);
-        return (val[30:23] == 8'hFF) && (val[22:0] != 23'h0) && (val[22] == 1'b0);
+        logic exp_all_ones, frac_nonzero, msb_zero, temp;
+        exp_all_ones = (val[30:23] == 8'hFF);
+        frac_nonzero = (val[22:0] != 23'h0);
+        msb_zero = (val[22] == 1'b0);
+        temp = exp_all_ones ? frac_nonzero : 1'b0;
+        is_snan = temp ? msb_zero : 1'b0;
     endfunction
 
     function automatic logic is_inf(input logic [31:0] val);
-        return (val[30:23] == 8'hFF) && (val[22:0] == 23'h0);
+        logic exp_all_ones, frac_zero;
+        exp_all_ones = (val[30:23] == 8'hFF);
+        frac_zero = (val[22:0] == 23'h0);
+        is_inf = exp_all_ones ? frac_zero : 1'b0;
     endfunction
 
     function automatic logic is_zero(input logic [31:0] val);
-        return (val[30:0] == 31'h0);
+        is_zero = (val[30:0] == 31'h0);
     endfunction
 
     function automatic logic is_subnormal(input logic [31:0] val);
-        return (val[30:23] == 8'h00) && (val[22:0] != 23'h0);
+        logic exp_all_zeros, frac_nonzero;
+        exp_all_zeros = (val[30:23] == 8'h00);
+        frac_nonzero = (val[22:0] != 23'h0);
+        is_subnormal = exp_all_zeros ? frac_nonzero : 1'b0;
     endfunction
 
-    // FP comparison
+    // FP comparison - Rewritten for Yosys compatibility
     function automatic logic fp_less_than(input logic [31:0] a, input logic [31:0] b);
         logic a_sign, b_sign;
         logic [30:0] a_mag, b_mag;
+        logic a_nan, b_nan, a_z, b_z;
         
-        if (is_nan(a) || is_nan(b)) return 1'b0;
-        
-        a_sign = a[31];
-        b_sign = b[31];
-        a_mag = a[30:0];
-        b_mag = b[30:0];
-        
-        if (is_zero(a) && is_zero(b)) return 1'b0;
-        if (a_sign != b_sign) return a_sign;
-        if (!a_sign) return a_mag < b_mag;
-        else return a_mag > b_mag;
+        a_nan = is_nan(a);
+        b_nan = is_nan(b);
+        if (a_nan) begin
+            fp_less_than = 1'b0;
+        end else if (b_nan) begin
+            fp_less_than = 1'b0;
+        end else begin
+            a_sign = a[31];
+            b_sign = b[31];
+            a_mag = a[30:0];
+            b_mag = b[30:0];
+            
+            a_z = is_zero(a);
+            b_z = is_zero(b);
+            if (a_z) begin
+                if (b_z) begin
+                    fp_less_than = 1'b0;
+                end else if (a_sign != b_sign) begin
+                    fp_less_than = a_sign;
+                end else if (!a_sign) begin
+                    fp_less_than = a_mag < b_mag;
+                end else begin
+                    fp_less_than = a_mag > b_mag;
+                end
+            end else if (a_sign != b_sign) begin
+                fp_less_than = a_sign;
+            end else if (!a_sign) begin
+                fp_less_than = a_mag < b_mag;
+            end else begin
+                fp_less_than = a_mag > b_mag;
+            end
+        end
     endfunction
 
     // Integer to float conversion
