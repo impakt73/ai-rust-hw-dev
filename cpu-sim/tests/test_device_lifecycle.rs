@@ -88,7 +88,7 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
                 reset_count_clone,
                 clock_cycle_count_clone,
             ));
-            sim.register_device(0x5000_0000, device)?;
+            sim.register_device(0x7000_0000, device)?;
 
             // Write a simple program that halts via SimControl
             // lui x15, 0x80000000  - Load upper immediate for DRAM base
@@ -171,7 +171,7 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
                 reset_count_clone,
                 clock_cycle_count_clone,
             ));
-            sim.register_device(0x5000_0000, device)?;
+            sim.register_device(0x7000_0000, device)?;
 
             // Write a simple program with a few NOPs followed by halt
             // lui x15, 0x80000000  - Load upper immediate for DRAM base
@@ -261,7 +261,7 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
                 reset_count_1_clone,
                 clock_cycle_count_1_clone,
             ));
-            sim.register_device(0x5000_0000, device1)?;
+            sim.register_device(0x7000_0000, device1)?;
 
             // Register second device
             let device2 = Box::new(LifecycleTestDevice::new(

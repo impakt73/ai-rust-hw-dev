@@ -23,46 +23,6 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     ]
 }
 
-/// Helper to run programmatic instructions and access LED output
-#[allow(dead_code)]
-fn run_led_program(
-    instructions: &[u32],
-    max_cycles: u64,
-) -> Result<(SimulationResult, u8), String> {
-    const START_ADDR: u32 = 0x8000_0000;
-
-    let program_bytes: Vec<u8> = instructions
-        .iter()
-        .flat_map(|inst| inst.to_le_bytes())
-        .collect();
-
-    let led_value = std::cell::Cell::new(0u8);
-
-    let result = run_program(
-        max_cycles,
-        false, // Don't print inst trace
-        false, // Don't print FSM state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&riscv_core::trace::InstructionTrace)>,
-        None, // No VCD
-        0,    // Zero latency
-        |sim| {
-            sim.write_memory_region(START_ADDR, &program_bytes, true);
-            Ok(START_ADDR)
-        },
-        Some(|_sim: &SimulatorView, _result: &SimulationResult| {
-            // Capture LED output value after program completion
-            // Note: We can't directly access sim.led_out() here due to lifetime constraints
-            // This will be accessed via a different mechanism
-        }),
-    )?;
-
-    // Since we can't access the LED value from the callback due to lifetime issues,
-    // we'll need to run the simulation differently. Let me create a custom runner.
-    // For now, return a placeholder
-    Ok((result, led_value.get()))
-}
-
 // ============================================================================
 // LED Controller Tests
 // ============================================================================
@@ -111,15 +71,9 @@ fn test_led_basic_write_word() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        Some(move |_sim: &SimulatorView, _result: &SimulationResult| {
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
             // Read LED output after program completion
-            // We'll access it through the simulator's public interface
-            // For now, we can't directly access led_out() from SimulatorView
-            // This is a known limitation - we'll need to add LED access to SimulatorView
-            // or create a different test structure
-
-            // Placeholder for now - actual LED verification would happen here
-            *led_value_clone.lock().unwrap() = 0xAA;
+            *led_value_clone.lock().unwrap() = sim.led_out();
         }),
     )
     .expect("Simulation should succeed");
@@ -130,8 +84,9 @@ fn test_led_basic_write_word() {
         "Program should exit with success code"
     );
 
-    // For now, we verify the program ran successfully
-    // Full LED verification will be added when SimulatorView is extended
+    // Verify LED output value
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(final_led_value, 0xAA, "LED output should be 0xAA");
 }
 
 #[test]
@@ -152,6 +107,9 @@ fn test_led_byte_access() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    let led_value = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+    let led_value_clone = led_value.clone();
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false,
@@ -164,7 +122,9 @@ fn test_led_byte_access() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
+            *led_value_clone.lock().unwrap() = sim.led_out();
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -173,6 +133,10 @@ fn test_led_byte_access() {
         Some(1),
         "Program should exit with success code"
     );
+
+    // Verify LED output value
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(final_led_value, 0x55, "LED output should be 0x55");
 }
 
 #[test]
@@ -193,6 +157,9 @@ fn test_led_halfword_access() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    let led_value = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+    let led_value_clone = led_value.clone();
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false,
@@ -205,7 +172,9 @@ fn test_led_halfword_access() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
+            *led_value_clone.lock().unwrap() = sim.led_out();
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -214,6 +183,10 @@ fn test_led_halfword_access() {
         Some(1),
         "Program should exit with success code"
     );
+
+    // Verify LED output value
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(final_led_value, 0xFF, "LED output should be 0xFF");
 }
 
 #[test]
@@ -240,6 +213,9 @@ fn test_led_read_back() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    let led_value = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+    let led_value_clone = led_value.clone();
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false,
@@ -252,7 +228,9 @@ fn test_led_read_back() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
+            *led_value_clone.lock().unwrap() = sim.led_out();
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -261,6 +239,10 @@ fn test_led_read_back() {
         Some(1),
         "Program should exit with success code"
     );
+
+    // Verify LED output value
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(final_led_value, 0xCC, "LED output should be 0xCC");
 }
 
 #[test]
@@ -291,6 +273,9 @@ fn test_led_pattern_sequence() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    let led_value = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+    let led_value_clone = led_value.clone();
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false,
@@ -303,7 +288,9 @@ fn test_led_pattern_sequence() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
+            *led_value_clone.lock().unwrap() = sim.led_out();
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -311,6 +298,13 @@ fn test_led_pattern_sequence() {
         result.tohost_value,
         Some(1),
         "Program should exit with success code"
+    );
+
+    // Verify final LED output value is 0x55 (last pattern written)
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(
+        final_led_value, 0x55,
+        "LED output should be 0x55 (last pattern)"
     );
 }
 
@@ -337,6 +331,9 @@ fn test_led_upper_bits_ignored() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
+    let led_value = std::sync::Arc::new(std::sync::Mutex::new(0u8));
+    let led_value_clone = led_value.clone();
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false,
@@ -349,7 +346,9 @@ fn test_led_upper_bits_ignored() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(move |sim: &SimulatorView, _result: &SimulationResult| {
+            *led_value_clone.lock().unwrap() = sim.led_out();
+        }),
     )
     .expect("Simulation should succeed");
 
@@ -357,5 +356,12 @@ fn test_led_upper_bits_ignored() {
         result.tohost_value,
         Some(1),
         "Program should exit with success code"
+    );
+
+    // Verify LED output value (only lower 8 bits should be set)
+    let final_led_value = *led_value.lock().unwrap();
+    assert_eq!(
+        final_led_value, 0xAA,
+        "LED output should be 0xAA (upper bits ignored)"
     );
 }

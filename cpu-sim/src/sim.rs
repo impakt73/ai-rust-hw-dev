@@ -31,6 +31,7 @@ pub struct SimulationResult {
 pub struct SimulatorView<'a> {
     bus: &'a mut crate::bus::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
+    cpu: &'a TopWithPeripherals<'static>,
 }
 
 impl<'a> SimulatorView<'a> {
@@ -38,8 +39,13 @@ impl<'a> SimulatorView<'a> {
     pub(crate) fn new(
         bus: &'a mut crate::bus::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
+        cpu: &'a TopWithPeripherals<'static>,
     ) -> Self {
-        SimulatorView { bus, hung_detector }
+        SimulatorView {
+            bus,
+            hung_detector,
+            cpu,
+        }
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
@@ -453,6 +459,39 @@ impl<'a> SimulatorView<'a> {
             .register_device(base_addr, device)
             .map_err(|e| format!("{}", e))
     }
+
+    /// Get the current LED output value from the LED controller peripheral
+    ///
+    /// Returns the 8-bit LED output value from the LED controller peripheral
+    /// at address 0x50000000.
+    ///
+    /// # Returns
+    /// The current 8-bit LED output value
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::*;
+    /// # fn main() -> Result<(), String> {
+    /// run_program(
+    ///     100,
+    ///     false, // print_inst_trace
+    ///     false, // print_fsm_state
+    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&InstructionTrace)>,
+    ///     None, // vcd_path
+    ///     0, // mem_latency_cycles
+    ///     |_sim| Ok(0x8000_0000),
+    ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
+    ///         let led_value = sim.led_out();
+    ///         println!("LED output: 0x{:02x}", led_value);
+    ///     }),
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn led_out(&self) -> u8 {
+        self.cpu.led_out
+    }
 }
 
 /// RISC-V CPU Simulator
@@ -468,7 +507,7 @@ where
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
     // 1. CPU (dependent) MUST be declared FIRST - drops first
-    cpu: TopWithPeripherals<'static>,
+    pub(crate) cpu: TopWithPeripherals<'static>,
     vcd: Option<Vcd<'static>>,
 
     // 2. Runtime (owner) MUST be declared AFTER cpu - drops last
@@ -847,7 +886,7 @@ where
         // Call inst_complete callback if provided (after instruction completion)
         // This callback receives restricted access to the Simulator via SimulatorView
         if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(&mut self.bus, &mut self.hung_detector);
+            let mut view = SimulatorView::new(&mut self.bus, &mut self.hung_detector, &self.cpu);
             callback(&mut view);
         }
 

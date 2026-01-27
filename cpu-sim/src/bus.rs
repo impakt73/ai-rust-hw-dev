@@ -295,6 +295,14 @@ impl SystemBus {
     /// If no device matches or device doesn't support halfword access,
     /// logs a warning and returns 0.
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -332,6 +340,14 @@ impl SystemBus {
     /// If no device matches or device doesn't support halfword access,
     /// logs a warning and discards the write.
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -369,6 +385,14 @@ impl SystemBus {
     /// If no device matches or device doesn't support byte access,
     /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -404,6 +428,14 @@ impl SystemBus {
     /// If no device matches or device doesn't support byte access,
     /// logs a warning and discards the write.
     pub fn write_byte(&mut self, addr: u32, value: u8) {
+        // RTL peripherals should never reach Rust - they're handled by Verilator
+        if self.is_rtl_peripheral(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
+        }
+
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
