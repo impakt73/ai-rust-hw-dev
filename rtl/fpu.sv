@@ -57,53 +57,46 @@ module fpu (
     localparam MANT_MSB_POS = 24;
 
     // Helper functions
-    function logic is_nan(input logic [31:0] val);
+    function automatic logic is_nan(input logic [31:0] val);
         is_nan = (val[30:23] == 8'hFF) & (val[22:0] != 23'h0);
     endfunction
 
-    function logic is_snan(input logic [31:0] val);
+    function automatic logic is_snan(input logic [31:0] val);
         is_snan = (val[30:23] == 8'hFF) & (val[22:0] != 23'h0) & (val[22] == 1'b0);
     endfunction
 
-    function logic is_inf(input logic [31:0] val);
+    function automatic logic is_inf(input logic [31:0] val);
         is_inf = (val[30:23] == 8'hFF) & (val[22:0] == 23'h0);
     endfunction
 
-    function logic is_zero(input logic [31:0] val);
+    function automatic logic is_zero(input logic [31:0] val);
         is_zero = (val[30:0] == 31'h0);
     endfunction
 
-    function logic is_subnormal(input logic [31:0] val);
+    function automatic logic is_subnormal(input logic [31:0] val);
         is_subnormal = (val[30:23] == 8'h00) & (val[22:0] != 23'h0);
     endfunction
 
     // FP comparison
-    function logic fp_less_than(input logic [31:0] a, input logic [31:0] b);
+    function automatic logic fp_less_than(input logic [31:0] a, input logic [31:0] b);
         logic a_sign, b_sign;
         logic [30:0] a_mag, b_mag;
         
-        if (is_nan(a) | is_nan(b)) begin
-            fp_less_than = 1'b0;
-        end else begin
-            a_sign = a[31];
-            b_sign = b[31];
-            a_mag = a[30:0];
-            b_mag = b[30:0];
-            
-            if (is_zero(a) & is_zero(b)) begin
-                fp_less_than = 1'b0;
-            end else if (a_sign != b_sign) begin
-                fp_less_than = a_sign;
-            end else if (!a_sign) begin
-                fp_less_than = a_mag < b_mag;
-            end else begin
-                fp_less_than = a_mag > b_mag;
-            end
-        end
+        if (is_nan(a) || is_nan(b)) return 1'b0;
+        
+        a_sign = a[31];
+        b_sign = b[31];
+        a_mag = a[30:0];
+        b_mag = b[30:0];
+        
+        if (is_zero(a) && is_zero(b)) return 1'b0;
+        if (a_sign != b_sign) return a_sign;
+        if (!a_sign) return a_mag < b_mag;
+        else return a_mag > b_mag;
     endfunction
 
     // Integer to float conversion
-    function logic [31:0] int_to_float(input logic [31:0] val, input logic is_signed);
+    function automatic logic [31:0] int_to_float(input logic [31:0] val, input logic is_signed);
         logic sign;
         logic [31:0] abs_val;
         logic [7:0] exp;
@@ -111,45 +104,43 @@ module fpu (
         integer lz;
         integer i;
         
-        if (val == 32'h0) begin
-            int_to_float = POS_ZERO;
+        if (val == 32'h0) return POS_ZERO;
+        
+        if (is_signed && val[31]) begin
+            sign = 1'b1;
+            abs_val = -val;
         end else begin
-            if (is_signed & val[31]) begin
-                sign = 1'b1;
-                abs_val = -val;
-            end else begin
-                sign = 1'b0;
-                abs_val = val;
-            end
-            
-            // Count leading zeros
-            lz = 0;
-            for (i = 31; i >= 0; i=i-1) begin
-                if (abs_val[i]) begin
-                    lz = i;  // Position of MSB, not leading zeros!
-                    i = -1;  // Break out of loop
-                end
-            end
-            
-            // Calculate exponent: 127 (bias) + position of MSB
-            exp = 8'd127 + lz[7:0];
-            
-            // Extract mantissa - shift to get bits below MSB
-            if (lz >= 23) begin
-                mant = abs_val[(lz-1) -: 23];
-            end else begin
-                // Need to shift left to fill 23 bits
-                logic [31:0] shifted;
-                shifted = abs_val << (23 - lz);
-                mant = shifted[22:0];
-            end
-            
-            int_to_float = {sign, exp, mant};
+            sign = 1'b0;
+            abs_val = val;
         end
+        
+        // Count leading zeros
+        lz = 0;
+        for (i = 31; i >= 0; i--) begin
+            if (abs_val[i]) begin
+                lz = i;  // Position of MSB, not leading zeros!
+                break;
+            end
+        end
+        
+        // Calculate exponent: 127 (bias) + position of MSB
+        exp = 8'd127 + lz[7:0];
+        
+        // Extract mantissa - shift to get bits below MSB
+        if (lz >= 23) begin
+            mant = abs_val[(lz-1) -: 23];
+        end else begin
+            // Need to shift left to fill 23 bits
+            logic [31:0] shifted;
+            shifted = abs_val << (23 - lz);
+            mant = shifted[22:0];
+        end
+        
+        return {sign, exp, mant};
     endfunction
 
     // Float to integer conversion
-    function logic [31:0] float_to_int(
+    function automatic logic [31:0] float_to_int(
         input logic [31:0] val,
         input logic is_signed,
         output logic invalid
@@ -164,7 +155,7 @@ module fpu (
         sign = val[31];
         exp = val[30:23];
         
-        if (is_nan(val) | is_inf(val)) begin
+        if (is_nan(val) || is_inf(val)) begin
             invalid = 1'b1;
             if (is_nan(val)) return is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
             if (sign) return is_signed ? 32'h80000000 : 32'h00000000;
@@ -201,7 +192,7 @@ module fpu (
     endfunction
 
     // FP Addition/Subtraction
-    function logic [31:0] fp_add_sub(
+    function automatic logic [31:0] fp_add_sub(
         input logic [31:0] a,
         input logic [31:0] b,
         input logic is_sub,
@@ -215,9 +206,9 @@ module fpu (
         
         flags = 5'b0;
         
-        if (is_nan(a) | is_nan(b)) return QNAN;
+        if (is_nan(a) || is_nan(b)) return QNAN;
         
-        if (is_inf(a) & is_inf(b)) begin
+        if (is_inf(a) && is_inf(b)) begin
             if (a[31] != (b[31] ^ is_sub)) return QNAN;
             return a;
         end
@@ -263,7 +254,7 @@ module fpu (
                 result_sign = b_sign;
             end
             
-            while (result_mant != 0 & !result_mant[23] & result_exp > 0) begin
+            while (result_mant != 0 && !result_mant[23] && result_exp > 0) begin
                 result_mant = result_mant << 1;
                 result_exp = result_exp - 1;
             end
@@ -275,7 +266,7 @@ module fpu (
     endfunction
 
     // FP Multiplication
-    function logic [31:0] fp_mul(
+    function automatic logic [31:0] fp_mul(
         input logic [31:0] a,
         input logic [31:0] b,
         output logic [4:0] flags
@@ -288,7 +279,7 @@ module fpu (
         
         flags = 5'b0;
         
-        if (is_nan(a) | is_nan(b)) return QNAN;
+        if (is_nan(a) || is_nan(b)) return QNAN;
         
         if (is_inf(a)) begin
             if (is_zero(b)) return QNAN;
@@ -299,7 +290,7 @@ module fpu (
             return {a[31] ^ b[31], 8'hFF, 23'h0};
         end
         
-        if (is_zero(a) | is_zero(b)) return {a[31] ^ b[31], 31'h0};
+        if (is_zero(a) || is_zero(b)) return {a[31] ^ b[31], 31'h0};
         
         result_sign = a[31] ^ b[31];
         result_exp_wide = {1'b0, a[30:23]} + {1'b0, b[30:23]} - 9'd127;
@@ -312,7 +303,7 @@ module fpu (
             result_mant = product[45:23];
         end
         
-        if (result_exp_wide[8] | result_exp_wide > 254) begin
+        if (result_exp_wide[8] || result_exp_wide > 254) begin
             return {result_sign, 8'hFF, 23'h0};
         end
         if (result_exp_wide == 0) begin
@@ -326,7 +317,7 @@ module fpu (
     // FP Division (hardware implementation using div_unit)
     // Multi-cycle operation that uses a 48-bit division unit
     // The div_unit handles the mantissa division in hardware with full precision
-    function logic [31:0] fp_div_setup(
+    function automatic logic [31:0] fp_div_setup(
         input logic [31:0] a,
         input logic [31:0] b,
         output logic [47:0] dividend_out,
@@ -344,7 +335,7 @@ module fpu (
         flags = 5'b0;
         
         // Handle NaN
-        if (is_nan(a) | is_nan(b)) return QNAN;
+        if (is_nan(a) || is_nan(b)) return QNAN;
         
         // Handle division by zero
         if (is_zero(b)) begin
@@ -384,7 +375,7 @@ module fpu (
     endfunction
     
     // FP Division result assembly (called after div_unit completes)
-    function logic [31:0] fp_div_assemble(
+    function automatic logic [31:0] fp_div_assemble(
         input logic [31:0] a,
         input logic [31:0] b,
         input logic [47:0] quotient_raw,
@@ -455,7 +446,7 @@ module fpu (
         // result_exp_wide will be handled by underflow/zero logic below
         
         // Handle underflow/overflow
-        if (result_exp_wide[8] & result_exp_wide[7]) begin 
+        if (result_exp_wide[8] && result_exp_wide[7]) begin 
             // Large negative (Underflow) -> Flush to zero
             return {result_sign, 31'h0};
         end
@@ -477,7 +468,7 @@ module fpu (
 
     // FP Square Root (simplified - returns approximation)
     // For full accuracy, this should be a multi-cycle operation
-    function logic [31:0] fp_sqrt(
+    function automatic logic [31:0] fp_sqrt(
         input logic [31:0] a,
         output logic [4:0] flags
     );
@@ -492,13 +483,13 @@ module fpu (
         if (is_nan(a)) return QNAN;
         
         // Handle negative
-        if (a[31] & !is_zero(a)) begin
+        if (a[31] && !is_zero(a)) begin
             flags[4] = 1'b1;  // NV flag
             return QNAN;
         end
         
         // Handle zero and infinity
-        if (is_zero(a) | is_inf(a)) return a;
+        if (is_zero(a) || is_inf(a)) return a;
         
         // Calculate result exponent: (exp - 127) / 2 + 127
         // Check if exponent is odd
@@ -523,7 +514,7 @@ module fpu (
     // Fused Multiply-Add: (fs1 * fs2) +/- fs3  
     // Simplified implementation - calls fp_mul and fp_add_sub
     // Note: This doesn't provide the full precision of true FMA
-    function logic [31:0] fp_fmadd(
+    function automatic logic [31:0] fp_fmadd(
         input logic [31:0] a,
         input logic [31:0] b,
         input logic [31:0] c,
@@ -584,14 +575,14 @@ module fpu (
     assign is_fp_div = (fpu_op == FPU_DIV);
     
     // Start division only when requested AND hardware division is actually needed
-    assign div_start = fpu_start & is_fp_div & needs_div_comb;
+    assign div_start = fpu_start && is_fp_div && needs_div_comb;
     
     // FPU ready signal - three cases:
     // 1. Division in progress: wait for div_ready to signal completion
     // 2. Starting a new division this cycle: not ready yet (needs one cycle to register div_in_progress)
     // 3. All other operations: ready immediately (combinational ops or special cases like NaN/Inf/zero)
     assign fpu_ready = div_in_progress ? div_ready : 
-                       (fpu_start & is_fp_div & needs_div_comb) ? 1'b0 :
+                       (fpu_start && is_fp_div && needs_div_comb) ? 1'b0 :
                        1'b1;
     
     // ============================================================
@@ -637,7 +628,7 @@ module fpu (
             FPU_MUL: fp_result = fp_mul(fs1, fs2, fflags);
             
             FPU_DIV: begin
-                if (div_in_progress & div_ready) begin
+                if (div_in_progress && div_ready) begin
                     // Division complete - assemble result using captured operands
                     fp_result = fp_div_assemble(div_fs1_reg, div_fs2_reg, div_result, fflags);
                 end else begin
@@ -663,16 +654,16 @@ module fpu (
             FPU_MVWX: fp_result = int_src;
             
             FPU_FEQ: begin
-                if (is_nan(fs1) | is_nan(fs2)) begin
+                if (is_nan(fs1) || is_nan(fs2)) begin
                     int_result = 32'h0;
-                    if (is_snan(fs1) | is_snan(fs2)) fflags[4] = 1'b1;
+                    if (is_snan(fs1) || is_snan(fs2)) fflags[4] = 1'b1;
                 end else begin
                     int_result = (fs1 == fs2) ? 32'h1 : 32'h0;
                 end
             end
             
             FPU_FLT: begin
-                if (is_nan(fs1) | is_nan(fs2)) begin
+                if (is_nan(fs1) || is_nan(fs2)) begin
                     int_result = 32'h0;
                     fflags[4] = 1'b1;
                 end else begin
@@ -681,29 +672,29 @@ module fpu (
             end
             
             FPU_FLE: begin
-                if (is_nan(fs1) | is_nan(fs2)) begin
+                if (is_nan(fs1) || is_nan(fs2)) begin
                     int_result = 32'h0;
                     fflags[4] = 1'b1;
                 end else begin
-                    int_result = (fp_less_than(fs1, fs2) | (fs1 == fs2)) ? 32'h1 : 32'h0;
+                    int_result = (fp_less_than(fs1, fs2) || (fs1 == fs2)) ? 32'h1 : 32'h0;
                 end
             end
             
             FPU_MIN: begin
-                if (is_nan(fs1) & is_nan(fs2)) fp_result = QNAN;
+                if (is_nan(fs1) && is_nan(fs2)) fp_result = QNAN;
                 else if (is_nan(fs1)) fp_result = fs2;
                 else if (is_nan(fs2)) fp_result = fs1;
-                else if (is_zero(fs1) & is_zero(fs2))
-                    fp_result = (fs1[31] | fs2[31]) ? NEG_ZERO : POS_ZERO;
+                else if (is_zero(fs1) && is_zero(fs2))
+                    fp_result = (fs1[31] || fs2[31]) ? NEG_ZERO : POS_ZERO;
                 else fp_result = fp_less_than(fs1, fs2) ? fs1 : fs2;
             end
             
             FPU_MAX: begin
-                if (is_nan(fs1) & is_nan(fs2)) fp_result = QNAN;
+                if (is_nan(fs1) && is_nan(fs2)) fp_result = QNAN;
                 else if (is_nan(fs1)) fp_result = fs2;
                 else if (is_nan(fs2)) fp_result = fs1;
-                else if (is_zero(fs1) & is_zero(fs2))
-                    fp_result = (fs1[31] & fs2[31]) ? NEG_ZERO : POS_ZERO;
+                else if (is_zero(fs1) && is_zero(fs2))
+                    fp_result = (fs1[31] && fs2[31]) ? NEG_ZERO : POS_ZERO;
                 else fp_result = fp_less_than(fs1, fs2) ? fs2 : fs1;
             end
             
