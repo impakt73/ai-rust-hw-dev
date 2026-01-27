@@ -1,5 +1,5 @@
 # RTL Peripheral Implementation Plan
-## Hybrid/Split Address Space Approach with GPIO Example
+## Hybrid/Split Address Space Approach with LED Controller Example
 
 **Author:** GitHub Copilot Hardware-Software Integration Architect  
 **Date:** January 27, 2026  
@@ -15,12 +15,12 @@ This document provides a detailed technical implementation plan for adding RTL-b
 
 1. **Architecture changes** to support RTL peripherals alongside existing Rust peripherals
 2. **Memory map partitioning** to separate RTL and Rust peripheral spaces
-3. **Concrete implementation** of a GPIO peripheral as a reference example
+3. **Concrete implementation** of a LED controller as a reference example
 4. **Integration strategy** for future RTL peripherals
 
 **Key Decision:** Use **Split Bus (Mechanism 3)** approach with:
-- RTL peripherals in address range **0x30000000 - 0x3FFFFFFF**
-- Rust peripherals remain in **0x40000000 - 0x7FFFFFFF**
+- RTL peripherals in address range **0x50000000 - 0x5FFFFFFF**
+- Rust peripherals remain at existing addresses (SimControl: 0x10000000, Video: 0x20000000, Audio: 0x30000000, FIFO: 0x40000000)
 - DRAM unchanged at **0x80000000 - 0xFFFFFFFF**
 
 ---
@@ -30,7 +30,7 @@ This document provides a detailed technical implementation plan for adding RTL-b
 1. [Architecture Overview](#1-architecture-overview)
 2. [Memory Map Design](#2-memory-map-design)
 3. [RTL Implementation Plan](#3-rtl-implementation-plan)
-4. [GPIO Peripheral Specification](#4-gpio-peripheral-specification)
+4. [LED Controller Specification](#4-gpio-peripheral-specification)
 5. [Top-Level Integration](#5-top-level-integration)
 6. [Rust Integration Layer](#6-rust-integration-layer)
 7. [Testing Strategy](#7-testing-strategy)
@@ -101,7 +101,7 @@ The existing system uses a **Rust-only peripheral approach**:
 │           │                   │                        │
 │  ┌────────▼──────────┐  ┌────▼──────────────────┐     │
 │  │   RISC-V CPU      │  │  RTL Peripherals      │     │
-│  │   (top.sv)        │  │  - gpio.sv            │     │
+│  │   (top.sv)        │  │  - led_controller.sv            │     │
 │  │   (Unchanged)     │  │  - timer.sv (future)  │     │
 │  └───────────────────┘  │  - uart.sv (future)   │     │
 │                         └───────────────────────┘     │
@@ -139,22 +139,27 @@ The existing system uses a **Rust-only peripheral approach**:
 ```
 Address Range          | Device           | Type | Size    | Description
 -----------------------|------------------|------|---------|----------------------------
-0x00000000-0x2FFFFFFF | Reserved         | -    | 768 MiB | Reserved for future use
-0x30000000-0x300000FF | SimControl*      | RTL? | 256 B   | Simulation control (TBD)
-0x31000000-0x3100000F | GPIO             | RTL  | 16 B    | 8-bit GPIO controller
-0x32000000-0x320000FF | Timer (future)   | RTL  | 256 B   | Programmable timer
-0x33000000-0x330000FF | UART (future)    | RTL  | 256 B   | UART controller
-0x34000000-0x340000FF | SPI (future)     | RTL  | 256 B   | SPI master
-0x35000000-0x350000FF | I2C (future)     | RTL  | 256 B   | I2C master
-0x36000000-0x3FFFFFFF | Reserved (RTL)   | RTL  | ~250 MB | Reserved for future RTL
-0x40000000-0x40000007 | FIFO             | Rust | 8 B     | Host communication FIFO
-0x50000000-0x50000013 | DMA              | Rust | 20 B    | DMA controller
-0x60000000-0x6000000F | Video            | Rust | 16 B    | Video frame buffer
-0x70000000-0x7000000F | Audio            | Rust | 16 B    | Audio buffer
-0x71000000-0x7FFFFFFF | Reserved (Rust)  | Rust | ~250 MB | Reserved for future Rust
+0x00000000-0x0FFFFFFF | Reserved         | -    | 256 MiB | Reserved for future use
+0x10000000-0x100000FF | SimControl       | Rust | 256 B   | Simulation control (existing)
+0x11000000-0x1FFFFFFF | Reserved         | -    | ~240 MB | Reserved for future use
+0x20000000-0x2000000F | Video            | Rust | 16 B    | Video frame buffer (existing)
+0x21000000-0x2FFFFFFF | Reserved         | -    | ~240 MB | Reserved for future use
+0x30000000-0x3000000F | Audio            | Rust | 16 B    | Audio buffer (existing)
+0x31000000-0x3FFFFFFF | Reserved         | -    | ~240 MB | Reserved for future use
+0x40000000-0x40000007 | FIFO             | Rust | 8 B     | Host communication FIFO (existing)
+0x41000000-0x4FFFFFFF | Reserved (Rust)  | Rust | ~240 MB | Reserved for future Rust
+0x50000000-0x5000000F | LED Controller   | RTL  | 16 B    | 8-bit LED output controller
+0x51000000-0x510000FF | Timer (future)   | RTL  | 256 B   | Programmable timer
+0x52000000-0x520000FF | UART (future)    | RTL  | 256 B   | UART controller
+0x53000000-0x530000FF | SPI (future)     | RTL  | 256 B   | SPI master
+0x54000000-0x540000FF | I2C (future)     | RTL  | 256 B   | I2C master
+0x55000000-0x5FFFFFFF | Reserved (RTL)   | RTL  | ~176 MB | Reserved for future RTL
+0x60000000-0x7FFFFFFF | Reserved         | -    | 512 MiB | Reserved for future use
 0x80000000-0xFFFFFFFF | DRAM             | Both | 2 GiB   | System memory
 
-* SimControl could stay in Rust (0x30000000) or move to RTL - TBD during implementation
+Note: SimControl remains a Rust peripheral at its existing address (0x10000000).
+The simulator detects program termination via self.bus.sim_control.termination_requested(),
+so SimControl must stay in the Rust bus to maintain this functionality.
 ```
 
 ### 2.2 Address Decoding Strategy
@@ -163,31 +168,34 @@ Address Range          | Device           | Type | Size    | Description
 
 ```systemverilog
 // Address range definitions
-localparam RTL_PERIPH_BASE  = 32'h30000000;
-localparam RTL_PERIPH_LIMIT = 32'h40000000;
+localparam RTL_PERIPH_BASE  = 32'h50000000;
+localparam RTL_PERIPH_LIMIT = 32'h60000000;
 
-localparam GPIO_BASE = 32'h31000000;
-localparam GPIO_SIZE = 32'h00000010;  // 16 bytes
+localparam LED_BASE = 32'h50000000;
+localparam LED_SIZE = 32'h00000010;  // 16 bytes
 
 // Decode address to peripheral select
-logic sel_gpio;
+logic sel_led;
 logic sel_external;  // For Rust peripherals + DRAM
+logic sel_unmapped_rtl;  // Unmapped RTL peripheral space
 
-assign sel_gpio     = (cpu_dmem_addr >= GPIO_BASE) && 
-                      (cpu_dmem_addr < GPIO_BASE + GPIO_SIZE);
-assign sel_external = (cpu_dmem_addr < RTL_PERIPH_BASE) || 
-                      (cpu_dmem_addr >= RTL_PERIPH_LIMIT);
+assign sel_led          = (cpu_dmem_addr >= LED_BASE) && 
+                          (cpu_dmem_addr < LED_BASE + LED_SIZE);
+assign sel_unmapped_rtl = (cpu_dmem_addr >= RTL_PERIPH_BASE) && 
+                          (cpu_dmem_addr < RTL_PERIPH_LIMIT) && !sel_led;
+assign sel_external     = (cpu_dmem_addr < RTL_PERIPH_BASE) || 
+                          (cpu_dmem_addr >= RTL_PERIPH_LIMIT);
 ```
 
 **In Rust (cpu-sim/src/bus.rs):**
 
 ```rust
 // Constants in riscv_shared/src/bus.rs
-pub const RTL_PERIPH_BASE: u32  = 0x30000000;
-pub const RTL_PERIPH_LIMIT: u32 = 0x40000000;
+pub const RTL_PERIPH_BASE: u32  = 0x50000000;
+pub const RTL_PERIPH_LIMIT: u32 = 0x60000000;
 
-pub const GPIO_BASE: u32 = 0x31000000;
-pub const GPIO_SIZE: u32 = 0x00000010;
+pub const LED_BASE: u32 = 0x50000000;
+pub const LED_SIZE: u32 = 0x00000010;
 
 // In SystemBus routing logic
 fn route_address(&self, addr: u32) -> RoutingTarget {
@@ -196,7 +204,7 @@ fn route_address(&self, addr: u32) -> RoutingTarget {
     } else if addr >= DRAM_BASE {
         RoutingTarget::Dram
     } else {
-        RoutingTarget::RustPeripheral  // FIFO, DMA, Video, etc.
+        RoutingTarget::RustPeripheral  // SimControl, FIFO, Video, Audio, etc.
     }
 }
 ```
@@ -226,15 +234,15 @@ rtl/
 ├── alu.sv, decoder.sv, ...         # Existing CPU modules (UNCHANGED)
 ├── top_with_peripherals.sv         # NEW: Wrapper with peripheral integration
 └── peripherals/                    # NEW: Directory for RTL peripherals
-    ├── gpio.sv                     # NEW: GPIO peripheral
+    ├── led_controller.sv                     # NEW: LED controller
     ├── timer.sv                    # FUTURE
     └── uart.sv                     # FUTURE
 ```
 
 ### 3.2 Implementation Phases
 
-**Phase 1: GPIO Peripheral (This Plan)**
-- ✅ Create `rtl/peripherals/gpio.sv`
+**Phase 1: LED Controller Peripheral (This Plan)**
+- ✅ Create `rtl/peripherals/led_controller.sv`
 - ✅ Create `rtl/top_with_peripherals.sv`
 - ✅ Update Rust integration
 - ✅ Add tests
@@ -249,7 +257,7 @@ rtl/
 The wrapper module `top_with_peripherals.sv` will:
 
 1. **Instantiate CPU core** (top.sv) - no changes to CPU
-2. **Instantiate RTL peripherals** (gpio.sv, etc.)
+2. **Instantiate RTL peripherals** (led_controller.sv, etc.)
 3. **Decode addresses** to select peripheral or external bus
 4. **Multiplex responses** from peripherals back to CPU
 5. **Forward non-RTL addresses** to external Rust bus
@@ -279,10 +287,10 @@ module top_with_peripherals (
     output logic        ext_mem_req,
     input  logic        ext_mem_ready,
     
-    // GPIO pins (exposed to top level for FPGA synthesis)
-    output logic [7:0]  gpio_out,
-    input  logic [7:0]  gpio_in,
-    output logic [7:0]  gpio_dir,  // 1=output, 0=input
+    // LED pins (exposed to top level for FPGA synthesis)
+    output logic [7:0]  led_out,
+    input  logic [7:0]  led_in,
+    output logic [7:0]  led_dir,  // 1=output, 0=input
     
     // ... debug signals same as top.sv ...
 );
@@ -290,58 +298,53 @@ module top_with_peripherals (
 
 ---
 
-## 4. GPIO Peripheral Specification
+## 4. LED Controller Specification
 
 ### 4.1 Overview
 
-**Purpose:** Control 8 external GPIO pins for LED control, button input, or general I/O.
+**Purpose:** Control 8 external LED outputs when the RTL is synthesized on an FPGA.
 
 **Features:**
-- 8 bidirectional GPIO pins
-- Individually configurable direction (input/output)
-- Output data register
-- Input data register (read-only, reflects pin state)
-- Direction control register
+- 8 output-only LED control signals
+- Single control register
+- Simple write-only interface
+- No input capability (simplified design)
+
+**Design Philosophy:**
+This is a basic peripheral to demonstrate RTL peripheral integration. It is intentionally simple - just an 8-bit output register that drives LEDs. No input pins, no direction control, no complex features.
 
 ### 4.2 Register Map
 
 ```
 Offset | Name      | Access | Reset  | Description
 -------|-----------|--------|--------|---------------------------------------
-0x00   | GPIO_OUT  | RW     | 0x00   | Output data register (write to pins)
-0x04   | GPIO_IN   | RO     | 0x00   | Input data register (read from pins)
-0x08   | GPIO_DIR  | RW     | 0x00   | Direction: 1=output, 0=input
+0x00   | LED_OUT   | RW     | 0x00   | LED output data register
+0x04   | Reserved  | -      | -      | Reserved for future use
+0x08   | Reserved  | -      | -      | Reserved for future use
 0x0C   | Reserved  | -      | -      | Reserved for future use
 ```
 
 **Address Calculation:**
 ```
-GPIO_OUT_ADDR = 0x31000000 + 0x00 = 0x31000000
-GPIO_IN_ADDR  = 0x31000000 + 0x04 = 0x31000004
-GPIO_DIR_ADDR = 0x31000000 + 0x08 = 0x31000008
+LED_OUT_ADDR = 0x50000000 + 0x00 = 0x50000000
 ```
 
-### 4.3 Register Descriptions
+### 4.3 Register Description
 
-**GPIO_OUT (0x31000000):**
-- **Bits [7:0]**: Output data for GPIO pins
+**LED_OUT (0x50000000):**
+- **Bits [7:0]**: Output data for LED signals
 - **Bits [31:8]**: Reserved (read as 0, writes ignored)
-- **Behavior**: When GPIO_DIR[n] = 1, GPIO_OUT[n] drives the pin
-- **Reset value**: 0x00000000
+- **Behavior**: LED outputs directly driven by LED_OUT[7:0]
+- **Reset value**: 0x00000000 (all LEDs off)
+- **Read behavior**: Reads back the last written value
+- **Write behavior**: Updates LED outputs on next clock cycle
 
-**GPIO_IN (0x31000004):**
-- **Bits [7:0]**: Current state of GPIO pins (sampled)
-- **Bits [31:8]**: Reserved (read as 0)
-- **Behavior**: Always reflects pin state, regardless of direction
-- **Reset value**: 0x00000000
-- **Note**: Read-only register
+**Access Size Support (Required):**
+- **Word (32-bit)**: Full 32-bit write/read
+- **Halfword (16-bit)**: Writes/reads lower 16 bits, upper bits unchanged on write
+- **Byte (8-bit)**: Writes/reads specific byte, other bytes unchanged on write
 
-**GPIO_DIR (0x31000008):**
-- **Bits [7:0]**: Direction control
-  - 1 = Output (pin driven by GPIO_OUT)
-  - 0 = Input (pin high-impedance, read via GPIO_IN)
-- **Bits [31:8]**: Reserved (read as 0, writes ignored)
-- **Reset value**: 0x00000000 (all inputs by default)
+Byte/halfword accesses must use proper byte lane masking to avoid affecting unintended bits.
 
 ### 4.4 Timing Characteristics
 
@@ -353,17 +356,16 @@ GPIO_DIR_ADDR = 0x31000000 + 0x08 = 0x31000008
 - **Latency**: 1 cycle (ready = 1'b1)
 - **Behavior**: Register update on next clock edge
 
-**Pin Update Timing:**
-- **Output propagation**: Output pins updated 1 clock cycle after write
-- **Input sampling**: Input pins sampled continuously (asynchronous)
-- **Metastability**: Input pins synchronized with 2-FF synchronizer (optional, not in initial version)
+**LED Update Timing:**
+- **Output propagation**: LED outputs updated 1 clock cycle after write
+- **No input**: This is an output-only peripheral
 
 ### 4.5 Interface Signals
 
 **Module Interface:**
 
 ```systemverilog
-module gpio (
+module led_controller (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
@@ -377,19 +379,14 @@ module gpio (
     input  logic [1:0]  size,      // Access size (00=byte, 01=half, 10=word)
     output logic        ready,     // Operation complete
     
-    // GPIO pins (bidirectional)
-    output logic [7:0]  gpio_out,  // Output data to pins
-    input  logic [7:0]  gpio_in,   // Input data from pins
-    output logic [7:0]  gpio_dir   // Direction: 1=output, 0=input
+    // LED outputs
+    output logic [7:0]  led_out    // LED outputs (to FPGA pins)
 );
 ```
 
 **Pin Mapping (for FPGA):**
 
-On FPGA, these signals would be connected to:
-- `gpio_out[7:0]` → LED outputs or external pins
-- `gpio_in[7:0]` → Button inputs or external pins
-- `gpio_dir[7:0]` → Tri-state buffer control
+On FPGA, `led_out[7:0]` would be connected directly to 8 LED outputs.
 
 **Example FPGA Top-Level:**
 
@@ -399,63 +396,56 @@ module fpga_top (
     input  logic       rst_btn_n,
     
     // LED outputs
-    output logic [7:0] led,
-    
-    // External I/O (if bidirectional)
-    inout  wire  [7:0] gpio_pins
+    output logic [7:0] led
 );
     // CPU and peripheral logic
-    logic [7:0] gpio_out, gpio_in, gpio_dir;
+    logic [7:0] led_out;
     
     top_with_peripherals cpu_system (
         .clk(clk_100mhz),
         .rst_n(rst_btn_n),
-        .gpio_out(gpio_out),
-        .gpio_in(gpio_in),
-        .gpio_dir(gpio_dir),
+        .led_out(led_out),
         // ... other connections ...
     );
     
-    // Simple: Direct LED output (ignore bidirectional for now)
-    assign led = gpio_out;
-    
-    // Advanced: Bidirectional with tri-state (for future FPGA deployment)
-    // genvar i;
-    // generate
-    //     for (i = 0; i < 8; i++) begin
-    //         assign gpio_pins[i] = gpio_dir[i] ? gpio_out[i] : 1'bz;
-    //         assign gpio_in[i]   = gpio_pins[i];
-    //     end
-    // endgenerate
+    // Direct connection to LEDs
+    assign led = led_out;
 endmodule
 ```
 
 ### 4.6 Functional Behavior
 
-**Operation Modes:**
-
-1. **Output Mode** (GPIO_DIR[n] = 1):
-   - Pin driven by GPIO_OUT[n]
-   - Writes to GPIO_OUT[n] update pin after 1 clock cycle
-   - GPIO_IN[n] reads back the output value
-
-2. **Input Mode** (GPIO_DIR[n] = 0):
-   - Pin is high-impedance (tri-state)
-   - GPIO_IN[n] reflects external pin state
-   - Writes to GPIO_OUT[n] stored but not driven to pin
+**Simple Output Mode:**
+- LEDs are always driven by LED_OUT[7:0]
+- Writing to LED_OUT updates the LED outputs
+- Reading from LED_OUT returns the last written value
+- No input capability - this is output-only
 
 **Example Usage:**
 
 ```c
-// Set GPIO[7:4] as outputs, GPIO[3:0] as inputs
-*(volatile uint32_t *)0x31000008 = 0xF0;
+// Turn on all LEDs
+*(volatile uint32_t *)0x50000000 = 0xFF;
 
-// Set outputs high
-*(volatile uint32_t *)0x31000000 = 0xF0;
+// Turn off all LEDs
+*(volatile uint32_t *)0x50000000 = 0x00;
 
-// Read inputs
-uint32_t inputs = *(volatile uint32_t *)0x31000004;
-uint8_t button_state = inputs & 0x0F;
+// Set a pattern (alternating LEDs)
+*(volatile uint32_t *)0x50000000 = 0xAA;
+
+// Read back current state
+uint32_t led_state = *(volatile uint32_t *)0x50000000;
+uint8_t leds = led_state & 0xFF;
+```
+
+**Byte Access Example:**
+
+```c
+// Write only LED[7:0] using byte access
+*(volatile uint8_t *)0x50000000 = 0x55;
+
+// Write only LED[7:0] using halfword access (lower 8 bits affected)
+*(volatile uint16_t *)0x50000000 = 0x00AA;
 ```
 
 ---
@@ -479,28 +469,37 @@ uint8_t button_state = inputs & 0x0F;
 
 ```systemverilog
 // Address range checking
-logic sel_gpio;
+logic sel_led;
 logic sel_external;
+logic sel_unmapped_rtl;
 
-// GPIO range: 0x31000000 - 0x3100000F
-assign sel_gpio = (cpu_dmem_addr[31:4] == 28'h3100000);
+// LED range: 0x50000000 - 0x5000000F
+assign sel_led = (cpu_dmem_addr[31:4] == 28'h5000000);
+
+// Unmapped RTL peripheral space
+assign sel_unmapped_rtl = (cpu_dmem_addr >= 32'h50000000) && 
+                          (cpu_dmem_addr < 32'h60000000) && !sel_led;
 
 // External: anything not in RTL peripheral space
-// RTL peripheral space: 0x30000000 - 0x3FFFFFFF (top 8 bits = 0x30-0x3F)
-assign sel_external = (cpu_dmem_addr[31:28] < 4'h3) || 
-                      (cpu_dmem_addr[31:28] > 4'h3);
+assign sel_external = (cpu_dmem_addr < 32'h50000000) || 
+                      (cpu_dmem_addr >= 32'h60000000);
 ```
 
 **Alternative (more explicit):**
 
 ```systemverilog
 always_comb begin
-    sel_gpio     = 1'b0;
-    sel_external = 1'b0;
+    sel_led          = 1'b0;
+    sel_unmapped_rtl = 1'b0;
+    sel_external     = 1'b0;
     
-    // Check if address is in GPIO range
-    if (cpu_dmem_addr >= 32'h31000000 && cpu_dmem_addr < 32'h31000010) begin
-        sel_gpio = 1'b1;
+    // Check if address is in LED range
+    if (cpu_dmem_addr >= 32'h50000000 && cpu_dmem_addr < 32'h50000010) begin
+        sel_led = 1'b1;
+    end
+    // Check if address is in unmapped RTL peripheral space
+    else if (cpu_dmem_addr >= 32'h50000000 && cpu_dmem_addr < 32'h60000000) begin
+        sel_unmapped_rtl = 1'b1;
     end
     // Otherwise route to external bus
     else begin
@@ -520,14 +519,20 @@ always_comb begin
     cpu_dmem_ready = 1'b0;
     
     // Select response source
-    if (sel_gpio) begin
-        cpu_dmem_rdata = gpio_rdata;
-        cpu_dmem_ready = gpio_ready;
+    if (sel_led) begin
+        cpu_dmem_rdata = led_rdata;
+        cpu_dmem_ready = led_ready;
+    end else if (sel_unmapped_rtl) begin
+        // Unmapped RTL peripheral address - return zero and ready immediately
+        // Issue warning via $display for debugging
+        $display("WARNING: Access to unmapped RTL peripheral address 0x%08x", cpu_dmem_addr);
+        cpu_dmem_rdata = 32'h0;
+        cpu_dmem_ready = 1'b1;
     end else if (sel_external) begin
         cpu_dmem_rdata = ext_mem_rdata;
         cpu_dmem_ready = ext_mem_ready;
     end else begin
-        // Invalid address - return zero and ready immediately
+        // Should never reach here if decoder logic is correct
         cpu_dmem_rdata = 32'h0;
         cpu_dmem_ready = 1'b1;
     end
@@ -576,10 +581,8 @@ module top_with_peripherals (
     output logic        ext_mem_req,
     input  logic        ext_mem_ready,
     
-    // GPIO pins
-    output logic [7:0]  gpio_out,
-    input  logic [7:0]  gpio_in,
-    output logic [7:0]  gpio_dir,
+    // LED pins
+    output logic [7:0]  led_out,
     
     // Debug/control signals (passed through from CPU)
     output logic        halted,
@@ -605,11 +608,12 @@ module top_with_peripherals (
     logic        cpu_dmem_ready;
     
     // Peripheral response signals
-    logic [31:0] gpio_rdata;
-    logic        gpio_ready;
+    logic [31:0] led_rdata;
+    logic        led_ready;
     
     // Address decoder
-    logic sel_gpio;
+    logic sel_led;
+    logic sel_unmapped_rtl;
     logic sel_external;
     
     // Instantiate CPU core
@@ -647,32 +651,37 @@ module top_with_peripherals (
         .debug_rd_data(debug_rd_data)
     );
     
-    // Instantiate GPIO peripheral
-    gpio gpio_peripheral (
+    // Instantiate LED controller peripheral
+    led_controller led_periph (
         .clk(clk),
         .rst_n(rst_n),
         .addr(cpu_dmem_addr),
         .wdata(cpu_dmem_wdata),
-        .rdata(gpio_rdata),
-        .we(cpu_dmem_we && sel_gpio),
-        .re(cpu_dmem_re && sel_gpio),
+        .rdata(led_rdata),
+        .we(cpu_dmem_we && sel_led),
+        .re(cpu_dmem_re && sel_led),
         .size(cpu_dmem_size),
-        .ready(gpio_ready),
-        .gpio_out(gpio_out),
-        .gpio_in(gpio_in),
-        .gpio_dir(gpio_dir)
+        .ready(led_ready),
+        .led_out(led_out)
     );
     
     // Address decoder
-    assign sel_gpio = (cpu_dmem_addr[31:4] == 28'h3100000);  // 0x31000000 - 0x3100000F
-    assign sel_external = !sel_gpio && (cpu_dmem_addr[31:28] != 4'h3 || 
-                                        cpu_dmem_addr[31:24] == 8'h30);
+    assign sel_led = (cpu_dmem_addr[31:4] == 28'h5000000);  // 0x50000000 - 0x5000000F
+    assign sel_unmapped_rtl = (cpu_dmem_addr >= 32'h50000000) && 
+                              (cpu_dmem_addr < 32'h60000000) && !sel_led;
+    assign sel_external = (cpu_dmem_addr < 32'h50000000) || 
+                          (cpu_dmem_addr >= 32'h60000000);
     
     // Response multiplexer
     always_comb begin
-        if (sel_gpio) begin
-            cpu_dmem_rdata = gpio_rdata;
-            cpu_dmem_ready = gpio_ready;
+        if (sel_led) begin
+            cpu_dmem_rdata = led_rdata;
+            cpu_dmem_ready = led_ready;
+        end else if (sel_unmapped_rtl) begin
+            // Unmapped RTL peripheral - return zero and issue warning
+            $display("WARNING: Access to unmapped RTL peripheral address 0x%08x", cpu_dmem_addr);
+            cpu_dmem_rdata = 32'h0;
+            cpu_dmem_ready = 1'b1;
         end else begin
             cpu_dmem_rdata = ext_mem_rdata;
             cpu_dmem_ready = ext_mem_ready;
@@ -697,10 +706,10 @@ endmodule
 ### 6.1 Required Changes to cpu-sim
 
 **Files to Modify:**
-1. `riscv_shared/src/bus.rs` - Add GPIO address constants
+1. `riscv_shared/src/bus.rs` - Add LED address constants
 2. `cpu-sim/src/lib.rs` - Update Verilator bindings to use new wrapper
 3. `cpu-sim/src/bus.rs` - Add routing logic for RTL peripheral range
-4. Integration tests - Add GPIO tests
+4. Integration tests - Add LED tests
 
 ### 6.2 Address Constants
 
@@ -708,22 +717,18 @@ endmodule
 
 ```rust
 // RTL Peripheral Address Space
-pub const RTL_PERIPH_BASE: u32  = 0x30000000;
-pub const RTL_PERIPH_LIMIT: u32 = 0x40000000;
+pub const RTL_PERIPH_BASE: u32  = 0x50000000;
+pub const RTL_PERIPH_LIMIT: u32 = 0x60000000;
 
-// GPIO Peripheral
-pub const GPIO_BASE: u32 = 0x31000000;
-pub const GPIO_SIZE: u32 = 0x00000010;  // 16 bytes
+// LED Controller Peripheral
+pub const LED_BASE: u32 = 0x50000000;
+pub const LED_SIZE: u32 = 0x00000010;  // 16 bytes
 
-// GPIO Register Offsets
-pub const GPIO_OUT_OFFSET: u32 = 0x00;
-pub const GPIO_IN_OFFSET: u32  = 0x04;
-pub const GPIO_DIR_OFFSET: u32 = 0x08;
+// LED Register Offsets
+pub const LED_OUT_OFFSET: u32 = 0x00;
 
 // Helper functions
-pub fn gpio_out_addr() -> u32 { GPIO_BASE + GPIO_OUT_OFFSET }
-pub fn gpio_in_addr() -> u32  { GPIO_BASE + GPIO_IN_OFFSET }
-pub fn gpio_dir_addr() -> u32 { GPIO_BASE + GPIO_DIR_OFFSET }
+pub fn led_out_addr() -> u32 { LED_BASE + LED_OUT_OFFSET }
 ```
 
 ### 6.3 SystemBus Routing Logic
@@ -771,7 +776,7 @@ impl SystemBus {
 The simulator now needs to:
 1. Use `top_with_peripherals` instead of `top`
 2. Connect external memory interface (ext_mem_*) instead of dmem_*
-3. Expose GPIO pin signals for testing
+3. Expose LED pin signals for testing
 
 **Conceptual Change:**
 
@@ -781,7 +786,7 @@ The simulator now needs to:
 
 // NEW: Connection to top_with_peripherals.sv
 // self.core.ext_mem_addr, ext_mem_rdata, etc.
-// GPIO signals: self.core.gpio_out, gpio_in, gpio_dir
+// LED signals: self.core.led_out
 ```
 
 **Note:** The exact implementation depends on how Marlin generates bindings. The wrapper module should expose the same interface pattern, just with `ext_mem_*` prefix instead of `dmem_*`.
@@ -792,8 +797,8 @@ The simulator now needs to:
 
 1. **Include new files** in Verilator compilation:
    ```
-   rtl/top_with_peripherals.sv  (new top-level)
-   rtl/peripherals/gpio.sv      (new peripheral)
+   rtl/top_with_peripherals.sv      (new top-level)
+   rtl/peripherals/led_controller.sv (new peripheral)
    ```
 
 2. **Update marlin configuration** (if needed):
@@ -815,13 +820,13 @@ The simulator now needs to:
 ```
 ┌────────────────────────────────────┐
 │  Integration Tests (Rust)          │  ← Full system test
-│  - GPIO read/write from CPU        │
-│  - LED control program              │
+│  - LED read/write from CPU         │
+│  - LED control program             │
 └────────────────────────────────────┘
 ┌────────────────────────────────────┐
 │  Unit Tests (RTL Testbench)        │  ← Optional Verilator tests
-│  - GPIO register access            │
-│  - Pin control behavior            │
+│  - LED register access             │
+│  - Output control behavior         │
 └────────────────────────────────────┘
 ┌────────────────────────────────────┐
 │  Linting (Verilator)               │  ← Mandatory before testing
@@ -835,8 +840,8 @@ The simulator now needs to:
 **Verify RTL quality:**
 
 ```bash
-# Lint GPIO module
-verilator --lint-only rtl/peripherals/gpio.sv
+# Lint LED controller module
+verilator --lint-only rtl/peripherals/led_controller.sv
 
 # Lint wrapper module
 verilator --lint-only rtl/top_with_peripherals.sv \
@@ -859,16 +864,17 @@ verilator --lint-only rtl/top_with_peripherals.sv \
 **Example structure (if implemented):**
 
 ```systemverilog
-// rtl/peripherals/gpio_tb.sv
-module gpio_tb;
+// rtl/peripherals/led_controller_tb.sv
+module led_controller_tb;
     // Test signals
     logic clk, rst_n;
     logic [31:0] addr, wdata, rdata;
     logic we, re, ready;
-    logic [7:0] gpio_out, gpio_in, gpio_dir;
+    logic [1:0] size;
+    logic [7:0] led_out;
     
     // Instantiate DUT
-    gpio dut (.*);
+    led_controller dut (.*);
     
     // Clock generation
     initial clk = 0;
@@ -879,19 +885,25 @@ module gpio_tb;
         // Reset
         rst_n = 0; #20; rst_n = 1;
         
-        // Test 1: Write to GPIO_OUT
+        // Test 1: Write to LED_OUT (word access)
         @(posedge clk);
-        addr = 32'h31000000; wdata = 32'hAA; we = 1; re = 0;
+        addr = 32'h50000000; wdata = 32'hAA; we = 1; re = 0; size = 2'b10;
         @(posedge clk);
         we = 0;
+        assert(led_out == 8'hAA);
         
-        // Test 2: Read GPIO_IN
+        // Test 2: Read back LED_OUT
         @(posedge clk);
-        addr = 32'h31000004; we = 0; re = 1;
+        addr = 32'h50000000; we = 0; re = 1; size = 2'b10;
         @(posedge clk);
-        assert(rdata[7:0] == gpio_in);
+        assert(rdata[7:0] == 8'hAA);
         
-        // ... more tests ...
+        // Test 3: Byte access
+        @(posedge clk);
+        addr = 32'h50000000; wdata = 32'h55; we = 1; re = 0; size = 2'b00;
+        @(posedge clk);
+        we = 0;
+        assert(led_out == 8'h55);
         
         $display("All tests passed!");
         $finish;
@@ -903,93 +915,117 @@ endmodule
 
 **Primary testing approach for this project.**
 
-**Test File:** `testbench/tests/gpio_test.rs`
+**Test File:** `testbench/tests/led_test.rs`
 
 **Test Cases:**
 
 1. **Basic Register Access**
-   - Write to GPIO_OUT, verify via direct signal inspection
-   - Read from GPIO_IN after setting input
-   - Configure GPIO_DIR and verify behavior
+   - Write to LED_OUT, verify via direct signal inspection
+   - Read back LED_OUT value
 
 2. **LED Control Pattern**
-   - Write sequence to GPIO_OUT
+   - Write sequence to LED_OUT
    - Verify output pattern matches
 
-3. **Direction Control**
-   - Set GPIO_DIR to various patterns
-   - Verify output enable behavior
+3. **Access Size Testing (Required)**
+   - Word (32-bit) access
+   - Halfword (16-bit) access with proper byte lane masking
+   - Byte (8-bit) access with proper byte lane masking
 
 4. **Edge Cases**
-   - Write to invalid offsets (should not crash)
-   - Read from reserved registers
-   - Byte/halfword access (if supported)
+   - Write to invalid offsets (should return ready with warning)
+   - Read from reserved registers (should return 0)
+   - Unmapped RTL peripheral addresses (should warn and return 0)
 
 **Example Test Structure:**
 
 ```rust
 #[test]
-fn test_gpio_basic_write_read() {
+fn test_led_basic_write_read() {
     // Create simulator with new wrapper
     let mut sim = create_simulator();
     
     // Reset
     sim.reset();
     
-    // Write 0xAA to GPIO_OUT (0x31000000)
-    sim.write_word(gpio_out_addr(), 0xAA);
+    // Write 0xAA to LED_OUT (0x50000000)
+    sim.write_word(led_out_addr(), 0xAA);
     sim.step();
     
-    // Verify gpio_out signal
-    assert_eq!(sim.core.gpio_out, 0xAA, "GPIO output mismatch");
+    // Verify led_out signal
+    assert_eq!(sim.core.led_out, 0xAA, "LED output mismatch");
     
-    // Set gpio_dir to all outputs
-    sim.write_word(gpio_dir_addr(), 0xFF);
-    sim.step();
-    assert_eq!(sim.core.gpio_dir, 0xFF);
-    
-    // Simulate external input
-    sim.core.gpio_in = 0x55;
-    sim.step();
-    
-    // Read GPIO_IN (0x31000004)
-    let input_val = sim.read_word(gpio_in_addr());
-    assert_eq!(input_val & 0xFF, 0x55, "GPIO input mismatch");
+    // Read back LED_OUT
+    let readback = sim.read_word(led_out_addr());
+    assert_eq!(readback & 0xFF, 0xAA, "LED readback mismatch");
 }
 
 #[test]
-fn test_gpio_led_pattern() {
+fn test_led_pattern() {
     let mut sim = create_simulator();
     sim.reset();
-    
-    // Configure all as outputs
-    sim.write_word(gpio_dir_addr(), 0xFF);
     
     // Test LED patterns
     let patterns = [0x00, 0xFF, 0xAA, 0x55, 0x0F, 0xF0];
     for pattern in patterns {
-        sim.write_word(gpio_out_addr(), pattern);
+        sim.write_word(led_out_addr(), pattern);
         sim.step();
-        assert_eq!(sim.core.gpio_out, pattern, 
+        assert_eq!(sim.core.led_out, pattern, 
                    "LED pattern 0x{:02X} failed", pattern);
     }
 }
 
 #[test]
-fn test_gpio_direction_control() {
+fn test_led_byte_access() {
+    let mut sim = create_simulator();
+    sim.reset();
+    
+    // Byte write to LED_OUT
+    sim.write_byte(led_out_addr(), 0x55);
+    sim.step();
+    assert_eq!(sim.core.led_out, 0x55);
+    
+    // Byte read from LED_OUT
+    let val = sim.read_byte(led_out_addr());
+    assert_eq!(val, 0x55);
+}
+    let input_val = sim.read_word(led_in_addr());
+    assert_eq!(input_val & 0xFF, 0x55, "LED input mismatch");
+}
+
+#[test]
+fn test_led_led_pattern() {
+    let mut sim = create_simulator();
+    sim.reset();
+    
+    // Configure all as outputs
+    sim.write_word(led_dir_addr(), 0xFF);
+    
+    // Test LED patterns
+    let patterns = [0x00, 0xFF, 0xAA, 0x55, 0x0F, 0xF0];
+    for pattern in patterns {
+        sim.write_word(led_out_addr(), pattern);
+        sim.step();
+        assert_eq!(sim.core.led_out, pattern, 
+                   "LED pattern 0x{:02X} failed", pattern);
+    }
+}
+
+#[test]
+fn test_led_direction_control() {
     let mut sim = create_simulator();
     sim.reset();
     
     // Test: Outputs disabled by default (dir = 0)
-    sim.write_word(gpio_out_addr(), 0xFF);
+    sim.write_word(led_out_addr(), 0xFF);
     sim.step();
-    assert_eq!(sim.core.gpio_dir, 0x00, "Should default to inputs");
+    assert_eq!(sim.core.led_dir, 0x00, "Should default to inputs");
     
     // Enable outputs
-    sim.write_word(gpio_dir_addr(), 0xFF);
+    sim.write_word(led_dir_addr(), 0xFF);
     sim.step();
-    assert_eq!(sim.core.gpio_out, 0xFF);
-    assert_eq!(sim.core.gpio_dir, 0xFF);
+    assert_eq!(sim.core.led_out, 0xFF);
+    assert_eq!(sim.core.led_dir, 0xFF);
 }
 ```
 
@@ -999,7 +1035,7 @@ fn test_gpio_direction_control() {
 
 1. **Lint RTL** - Verify no syntax/style issues
    ```bash
-   verilator --lint-only rtl/peripherals/gpio.sv
+   verilator --lint-only rtl/peripherals/led_controller.sv
    verilator --lint-only rtl/top_with_peripherals.sv
    ```
 
@@ -1015,7 +1051,7 @@ fn test_gpio_direction_control() {
 
 4. **Run tests** - Execute integration tests
    ```bash
-   cargo test gpio  # Run GPIO-specific tests
+   cargo test gpio  # Run LED-specific tests
    cargo test       # Run all tests (verify no regressions)
    ```
 
@@ -1032,18 +1068,18 @@ fn test_gpio_direction_control() {
 
 ### Phase 1: RTL Implementation
 
-- [ ] **Create GPIO module** (`rtl/peripherals/gpio.sv`)
+- [ ] **Create LED controller module** (`rtl/peripherals/led_controller.sv`)
   - [ ] Define module interface
-  - [ ] Implement register file (GPIO_OUT, GPIO_IN, GPIO_DIR)
+  - [ ] Implement register file (LED_OUT only)
   - [ ] Implement address decoder
-  - [ ] Implement read/write logic
+  - [ ] Implement read/write logic with byte/halfword support
   - [ ] Add proper reset behavior
   - [ ] Lint with Verilator
 
 - [ ] **Create wrapper module** (`rtl/top_with_peripherals.sv`)
   - [ ] Define module interface with ext_mem_* signals
   - [ ] Instantiate CPU core (top.sv)
-  - [ ] Instantiate GPIO peripheral
+  - [ ] Instantiate LED controller
   - [ ] Implement address decoder
   - [ ] Implement response multiplexer
   - [ ] Connect external bus forwarding
@@ -1053,8 +1089,8 @@ fn test_gpio_direction_control() {
 
 - [ ] **Update address constants** (`riscv_shared/src/bus.rs`)
   - [ ] Add RTL_PERIPH_BASE, RTL_PERIPH_LIMIT
-  - [ ] Add GPIO_BASE, GPIO_SIZE
-  - [ ] Add GPIO register offset constants
+  - [ ] Add LED_BASE, LED_SIZE
+  - [ ] Add LED register offset constants
   - [ ] Add helper functions
 
 - [ ] **Update SystemBus** (`cpu-sim/src/bus.rs`)
@@ -1066,7 +1102,7 @@ fn test_gpio_direction_control() {
 - [ ] **Update simulator** (`cpu-sim/src/lib.rs` or equivalent)
   - [ ] Change Verilator module to top_with_peripherals
   - [ ] Update memory interface signals (dmem → ext_mem)
-  - [ ] Expose GPIO pin signals
+  - [ ] Expose LED pin signals
   - [ ] Update tests helper functions if needed
 
 - [ ] **Build configuration**
@@ -1077,16 +1113,16 @@ fn test_gpio_direction_control() {
 ### Phase 3: Testing
 
 - [ ] **Linting**
-  - [ ] `verilator --lint-only rtl/peripherals/gpio.sv` → Pass
+  - [ ] `verilator --lint-only rtl/peripherals/led_controller.sv` → Pass
   - [ ] `verilator --lint-only rtl/top_with_peripherals.sv` → Pass
 
-- [ ] **Integration tests** (`testbench/tests/gpio_test.rs`)
+- [ ] **Integration tests** (`testbench/tests/led_test.rs`)
   - [ ] Test: Basic register read/write
-  - [ ] Test: GPIO_OUT updates output pins
-  - [ ] Test: GPIO_IN reads input pins
-  - [ ] Test: GPIO_DIR controls direction
+  - [ ] Test: LED_OUT updates output pins
+  - [ ] Test: Byte/halfword access with proper masking
   - [ ] Test: LED pattern sequence
-  - [ ] Test: Invalid address handling
+  - [ ] Test: Invalid address handling (unmapped RTL space)
+  - [ ] Test: Read back LED_OUT value
 
 - [ ] **Regression tests**
   - [ ] `cargo test` → All existing tests still pass
@@ -1100,13 +1136,13 @@ fn test_gpio_direction_control() {
 ### Phase 4: Documentation
 
 - [ ] **Update AGENTS.md**
-  - [ ] Add memory map with GPIO peripheral
+  - [ ] Add memory map with LED controller
   - [ ] Document RTL peripheral integration process
-  - [ ] Add GPIO usage examples
+  - [ ] Add LED usage examples
 
 - [ ] **Create peripheral documentation**
-  - [ ] GPIO register map reference
-  - [ ] GPIO usage examples (C/Rust)
+  - [ ] LED register map reference
+  - [ ] LED usage examples (C/Rust)
   - [ ] FPGA synthesis notes
 
 - [ ] **Update README** (if applicable)
@@ -1117,7 +1153,7 @@ fn test_gpio_direction_control() {
 
 - [ ] **Simulation validation**
   - [ ] Run full test suite: `cargo test --verbose`
-  - [ ] Verify GPIO behavior in longer programs
+  - [ ] Verify LED behavior in longer programs
   - [ ] Check performance impact (should be minimal)
 
 - [ ] **Code review readiness**
@@ -1159,9 +1195,9 @@ fn test_gpio_direction_control() {
    - Priority encoding
    - Integration with RISC-V CSRs
 
-### 9.2 Enhanced GPIO Features
+### 9.2 Enhanced LED Features (Future)
 
-**Future GPIO improvements:**
+**Future LED controller improvements:**
 
 - **Interrupt support**: Edge-triggered interrupts on input pins
 - **Pin configuration**: Pull-up/pull-down resistors
@@ -1173,9 +1209,9 @@ fn test_gpio_direction_control() {
 **Example enhanced register map:**
 
 ```
-0x00  GPIO_OUT       Output data
-0x04  GPIO_IN        Input data
-0x08  GPIO_DIR       Direction control
+0x00  LED_OUT       Output data
+0x04  LED_IN        Input data
+0x08  LED_DIR       Direction control
 0x0C  GPIO_SET       Atomic set (write 1 to set)
 0x10  GPIO_CLR       Atomic clear (write 1 to clear)
 0x14  GPIO_TOG       Atomic toggle (write 1 to toggle)
@@ -1192,7 +1228,7 @@ fn test_gpio_direction_control() {
 2. **Create FPGA top-level** wrapping top_with_peripherals
 3. **Add clock management** (PLL for CPU clock)
 4. **Add reset logic** (button debouncing)
-5. **Constrain GPIO pins** (XDC constraints file)
+5. **Constrain LED pins** (XDC constraints file)
 6. **Synthesize with Vivado/Quartus**
 7. **Test on hardware**
 
@@ -1230,7 +1266,7 @@ set_property IOSTANDARD LVCMOS33 [get_ports led[*]]
 ### 10.1 Key Files
 
 **RTL Files (New):**
-- `rtl/peripherals/gpio.sv` - GPIO peripheral module
+- `rtl/peripherals/led_controller.sv` - LED controller module
 - `rtl/top_with_peripherals.sv` - Wrapper with peripheral integration
 
 **RTL Files (Unchanged):**
@@ -1241,25 +1277,26 @@ set_property IOSTANDARD LVCMOS33 [get_ports led[*]]
 - `riscv_shared/src/bus.rs` - Address constants
 - `cpu-sim/src/bus.rs` - Bus routing logic
 - `cpu-sim/src/lib.rs` - Verilator bindings
-- `testbench/tests/gpio_test.rs` - New test file
+- `testbench/tests/led_test.rs` - New test file
 
 ### 10.2 Memory Map Quick Reference
 
 ```
-Address       | Device      | Registers
---------------|-------------|------------------------------------
-0x31000000    | GPIO        | OUT (RW)
-0x31000004    | GPIO        | IN (RO)
-0x31000008    | GPIO        | DIR (RW)
-0x40000000    | FIFO        | DATA, STATUS (Rust)
-0x80000000+   | DRAM        | System memory (Rust)
+Address       | Device           | Registers
+--------------|------------------|------------------------------------
+0x10000000    | SimControl       | Tohost (Rust)
+0x20000000    | Video            | Frame buffer (Rust)
+0x30000000    | Audio            | Audio buffer (Rust)
+0x40000000    | FIFO             | DATA, STATUS (Rust)
+0x50000000    | LED Controller   | OUT (RW, RTL)
+0x80000000+   | DRAM             | System memory (Rust)
 ```
 
 ### 10.3 Command Reference
 
 ```bash
 # Lint RTL
-verilator --lint-only rtl/peripherals/gpio.sv
+verilator --lint-only rtl/peripherals/led_controller.sv
 verilator --lint-only rtl/top_with_peripherals.sv
 
 # Build system
@@ -1268,7 +1305,7 @@ cargo build             # Build with new RTL
 cargo build --release   # Optimized build
 
 # Test
-cargo test gpio         # GPIO-specific tests
+cargo test led          # LED-specific tests
 cargo test --verbose    # All tests with output
 
 # Code quality
@@ -1316,34 +1353,27 @@ cargo clippy -- -D warnings      # Verify zero warnings
 
 ---
 
-## Appendix A: Complete GPIO Register Map
+## Appendix A: Complete LED Controller Register Map
 
 ```
 Register   | Offset | Access | Reset      | Description
 -----------|--------|--------|------------|----------------------------------
-GPIO_OUT   | 0x00   | RW     | 0x00000000 | Output data register
-           |        |        |            |   [7:0]   - Output data
+LED_OUT    | 0x00   | RW     | 0x00000000 | LED output data register
+           |        |        |            |   [7:0]   - LED output data
            |        |        |            |   [31:8]  - Reserved (0)
 -----------|--------|--------|------------|----------------------------------
-GPIO_IN    | 0x04   | RO     | 0x00000000 | Input data register
-           |        |        |            |   [7:0]   - Input data (pin state)
-           |        |        |            |   [31:8]  - Reserved (0)
+Reserved   | 0x04   | -      | -          | Reserved for future use
 -----------|--------|--------|------------|----------------------------------
-GPIO_DIR   | 0x08   | RW     | 0x00000000 | Direction control register
-           |        |        |            |   [7:0]   - Direction (1=out, 0=in)
-           |        |        |            |   [31:8]  - Reserved (0)
+Reserved   | 0x08   | -      | -          | Reserved for future use
 -----------|--------|--------|------------|----------------------------------
 Reserved   | 0x0C   | -      | -          | Reserved for future use
 ```
 
 **Access:**
 - **RW** = Read/Write
-- **RO** = Read-Only
 
 **Addresses:**
-- GPIO_OUT: 0x31000000
-- GPIO_IN:  0x31000004
-- GPIO_DIR: 0x31000008
+- LED_OUT: 0x50000000
 
 ---
 
@@ -1352,26 +1382,21 @@ Reserved   | 0x0C   | -      | -          | Reserved for future use
 ### B.1 C Program - Blink LED
 
 ```c
-// GPIO register addresses
-#define GPIO_BASE 0x31000000
-#define GPIO_OUT  (*(volatile uint32_t *)(GPIO_BASE + 0x00))
-#define GPIO_IN   (*(volatile uint32_t *)(GPIO_BASE + 0x04))
-#define GPIO_DIR  (*(volatile uint32_t *)(GPIO_BASE + 0x08))
+// LED register addresses
+#define LED_BASE 0x50000000
+#define LED_OUT  (*(volatile uint32_t *)(LED_BASE + 0x00))
 
 void delay(int cycles) {
     for (volatile int i = 0; i < cycles; i++);
 }
 
 int main() {
-    // Configure all GPIO as outputs
-    GPIO_DIR = 0xFF;
-    
     // Blink pattern
     while (1) {
-        GPIO_OUT = 0xAA;  // Pattern 1
+        LED_OUT = 0xAA;  // Pattern 1
         delay(100000);
         
-        GPIO_OUT = 0x55;  // Pattern 2
+        LED_OUT = 0x55;  // Pattern 2
         delay(100000);
     }
     
@@ -1379,27 +1404,34 @@ int main() {
 }
 ```
 
-### B.2 Rust Program - Button + LED
+### B.2 Rust Program - LED Patterns
 
 ```rust
-// GPIO register addresses
-const GPIO_OUT: *mut u32 = 0x31000000 as *mut u32;
-const GPIO_IN:  *mut u32 = 0x31000004 as *mut u32;
-const GPIO_DIR: *mut u32 = 0x31000008 as *mut u32;
+// LED register address
+const LED_OUT: *mut u32 = 0x50000000 as *mut u32;
+
+fn delay(cycles: usize) {
+    for _ in 0..cycles {
+        unsafe { core::ptr::read_volatile(&0 as *const i32); }
+    }
+}
 
 fn main() {
     unsafe {
-        // Configure GPIO[7:4] as outputs (LEDs)
-        // Configure GPIO[3:0] as inputs (buttons)
-        GPIO_DIR.write_volatile(0xF0);
-        
         loop {
-            // Read button state
-            let buttons = GPIO_IN.read_volatile() & 0x0F;
+            // Light up all LEDs
+            LED_OUT.write_volatile(0xFF);
+            delay(100000);
             
-            // Echo buttons to LEDs (shifted up)
-            let leds = buttons << 4;
-            GPIO_OUT.write_volatile(leds);
+            // Turn off all LEDs
+            LED_OUT.write_volatile(0x00);
+            delay(100000);
+            
+            // Alternating pattern
+            LED_OUT.write_volatile(0xAA);
+            delay(100000);
+            LED_OUT.write_volatile(0x55);
+            delay(100000);
         }
     }
 }
@@ -1412,18 +1444,14 @@ fn main() {
 .global _start
 
 _start:
-    # Load GPIO base address
-    lui  t0, 0x31000      # GPIO_BASE = 0x31000000
-    
-    # Configure GPIO[0] as output
-    li   t1, 0x01
-    sw   t1, 8(t0)        # GPIO_DIR = 0x01
+    # Load LED base address
+    lui  t0, 0x50000      # LED_BASE = 0x50000000
     
 loop:
-    # Toggle GPIO[0]
-    lw   t2, 0(t0)        # Read GPIO_OUT
+    # Toggle LED[0]
+    lw   t2, 0(t0)        # Read LED_OUT
     xori t2, t2, 0x01     # Toggle bit 0
-    sw   t2, 0(t0)        # Write GPIO_OUT
+    sw   t2, 0(t0)        # Write LED_OUT
     
     # Delay
     li   t3, 100000
@@ -1446,9 +1474,9 @@ delay_loop:
 - [x] Interface specifications complete
 
 **RTL Implementation:**
-- [ ] GPIO module created
+- [ ] LED module created
 - [ ] Wrapper module created
-- [ ] Verilator lint passes (gpio.sv)
+- [ ] Verilator lint passes (led_controller.sv)
 - [ ] Verilator lint passes (top_with_peripherals.sv)
 - [ ] No synthesis warnings
 
@@ -1461,7 +1489,7 @@ delay_loop:
 **Testing:**
 - [ ] Basic register read/write test passes
 - [ ] GPIO output control test passes
-- [ ] GPIO input read test passes
+- [ ] LED input read test passes
 - [ ] Direction control test passes
 - [ ] All existing tests still pass
 - [ ] No clippy warnings
@@ -1479,11 +1507,11 @@ delay_loop:
 - [ ] RTL style consistent with existing code
 
 **Deliverables:**
-- [ ] `rtl/peripherals/gpio.sv`
+- [ ] `rtl/peripherals/led_controller.sv`
 - [ ] `rtl/top_with_peripherals.sv`
 - [ ] Updated `riscv_shared/src/bus.rs`
 - [ ] Updated `cpu-sim/src/bus.rs`
-- [ ] Test file `testbench/tests/gpio_test.rs`
+- [ ] Test file `testbench/tests/led_test.rs`
 - [ ] This implementation plan document
 
 ---
