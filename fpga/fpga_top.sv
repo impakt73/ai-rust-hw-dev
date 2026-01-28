@@ -1,8 +1,12 @@
 // FPGA Top-Level Module for Alchitry Cu v1
 // Wraps RISC-V CPU with on-chip block RAM and simple peripherals
 // Board: Alchitry Cu v1 (iCE40-HX8K-CB132)
+// Configurable extension support for resource-constrained FPGA targets
 
-module fpga_top (
+module fpga_top #(
+    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+) (
     // Clock input (100 MHz on-board oscillator)
     input  logic       clk,
     
@@ -72,7 +76,10 @@ module fpga_top (
     // ============================================================
     // CPU Core with Peripherals
     // ============================================================
-    top_with_peripherals cpu (
+    top_with_peripherals #(
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .ENABLE_F_EXT(ENABLE_F_EXT)
+    ) cpu (
         .clk(clk),
         .rst_n(rst_n),
         .boot_addr(BOOT_ADDR),

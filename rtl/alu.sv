@@ -1,8 +1,11 @@
 // ALU Module - Arithmetic Logic Unit
 // Implements RISC-V RV32I ALU operations
 // Multi-cycle support for division operations
+// Configurable M extension support for resource-constrained FPGAs
 
-module alu (
+module alu #(
+    parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
+) (
     input  logic        clk,          // Clock for division unit
     input  logic        rst_n,        // Reset for division unit
     input  logic [31:0] a,
@@ -42,63 +45,78 @@ module alu (
     localparam logic [4:0] ALU_MINU   = 5'b10100;  // Minimum (unsigned)
     localparam logic [4:0] ALU_MAXU   = 5'b10101;  // Maximum (unsigned)
 
+    // ============================================================
+    // M Extension: Division Unit (Conditional Generation)
+    // ============================================================
     // Division unit signals
     logic        div_start;
     logic        div_is_signed;
     logic        div_rem_sel;
     logic [31:0] div_result;
     logic        div_ready;
+    logic        is_div_op;
     
-    // Instantiate division unit with default 32-bit width for integer operations
-    div_unit #(
-        .WIDTH(32)
-    ) u_div (
-        .clk(clk),
-        .rst_n(rst_n),
-        .start(div_start),
-        .is_signed(div_is_signed),
-        .rem_sel(div_rem_sel),
-        .dividend(a),
-        .divisor(b),
-        .result(div_result),
-        .ready(div_ready)
-    );
-    
-    // Detect division operations
-    logic is_div_op;
-    assign is_div_op = (alu_op == ALU_DIV)  || 
-                       (alu_op == ALU_DIVU) || 
-                       (alu_op == ALU_REM)  || 
-                       (alu_op == ALU_REMU);
-    
-    // Start division when requested
-    assign div_start = alu_start && is_div_op;
-    
-    // Configure division unit based on operation
-    always_comb begin
-        case (alu_op)
-            ALU_DIV: begin
-                div_is_signed = 1'b1;
-                div_rem_sel = 1'b0;  // Quotient
+    generate
+        if (ENABLE_M_EXT) begin : gen_m_ext
+            // Instantiate division unit with default 32-bit width for integer operations
+            div_unit #(
+                .WIDTH(32)
+            ) u_div (
+                .clk(clk),
+                .rst_n(rst_n),
+                .start(div_start),
+                .is_signed(div_is_signed),
+                .rem_sel(div_rem_sel),
+                .dividend(a),
+                .divisor(b),
+                .result(div_result),
+                .ready(div_ready)
+            );
+            
+            // Detect division operations
+            assign is_div_op = (alu_op == ALU_DIV)  || 
+                               (alu_op == ALU_DIVU) || 
+                               (alu_op == ALU_REM)  || 
+                               (alu_op == ALU_REMU);
+            
+            // Start division when requested
+            assign div_start = alu_start && is_div_op;
+            
+            // Configure division unit based on operation
+            always_comb begin
+                case (alu_op)
+                    ALU_DIV: begin
+                        div_is_signed = 1'b1;
+                        div_rem_sel = 1'b0;  // Quotient
+                    end
+                    ALU_DIVU: begin
+                        div_is_signed = 1'b0;
+                        div_rem_sel = 1'b0;  // Quotient
+                    end
+                    ALU_REM: begin
+                        div_is_signed = 1'b1;
+                        div_rem_sel = 1'b1;  // Remainder
+                    end
+                    ALU_REMU: begin
+                        div_is_signed = 1'b0;
+                        div_rem_sel = 1'b1;  // Remainder
+                    end
+                    default: begin
+                        div_is_signed = 1'b0;
+                        div_rem_sel = 1'b0;
+                    end
+                endcase
             end
-            ALU_DIVU: begin
-                div_is_signed = 1'b0;
-                div_rem_sel = 1'b0;  // Quotient
-            end
-            ALU_REM: begin
-                div_is_signed = 1'b1;
-                div_rem_sel = 1'b1;  // Remainder
-            end
-            ALU_REMU: begin
-                div_is_signed = 1'b0;
-                div_rem_sel = 1'b1;  // Remainder
-            end
-            default: begin
-                div_is_signed = 1'b0;
-                div_rem_sel = 1'b0;
-            end
-        endcase
-    end
+        end else begin : gen_no_m_ext
+            // M extension disabled: No division unit
+            assign div_result = 32'd0;
+            assign div_ready = 1'b1;
+            assign is_div_op = 1'b0;
+            assign div_start = 1'b0;
+            assign div_is_signed = 1'b0;
+            assign div_rem_sel = 1'b0;
+        end
+    endgenerate
     
     // ALU ready signal: immediate for non-div ops, waits for div_ready for division
     assign alu_ready = is_div_op ? div_ready : 1'b1;
@@ -130,24 +148,40 @@ module alu (
             
             // M Extension - Multiplication operations
             ALU_MUL: begin
-                mul_result = $signed(a) * $signed(b);
-                result = mul_result[31:0];  // Lower 32 bits
+                if (ENABLE_M_EXT) begin
+                    mul_result = $signed(a) * $signed(b);
+                    result = mul_result[31:0];  // Lower 32 bits
+                end else begin
+                    result = 32'd0;  // M extension disabled
+                end
             end
             ALU_MULH: begin
-                mul_result = $signed(a) * $signed(b);
-                result = mul_result[63:32];  // Upper 32 bits (signed×signed)
+                if (ENABLE_M_EXT) begin
+                    mul_result = $signed(a) * $signed(b);
+                    result = mul_result[63:32];  // Upper 32 bits (signed×signed)
+                end else begin
+                    result = 32'd0;  // M extension disabled
+                end
             end
             ALU_MULHSU: begin
-                // MULHSU: signed(rs1) × unsigned(rs2), upper 32 bits
-                // Sign-extend a to 64-bit, zero-extend b to 64-bit, then multiply
-                mulhsu_a_ext = {{32{a[31]}}, a};  // Sign-extend 32-bit to 64-bit
-                mulhsu_b_ext = {32'b0, b};  // Zero-extend 32-bit to 64-bit
-                mul_result = $signed(mulhsu_a_ext) * $signed(mulhsu_b_ext);  // Multiply as signed
-                result = mul_result[63:32];  // Upper 32 bits
+                if (ENABLE_M_EXT) begin
+                    // MULHSU: signed(rs1) × unsigned(rs2), upper 32 bits
+                    // Sign-extend a to 64-bit, zero-extend b to 64-bit, then multiply
+                    mulhsu_a_ext = {{32{a[31]}}, a};  // Sign-extend 32-bit to 64-bit
+                    mulhsu_b_ext = {32'b0, b};  // Zero-extend 32-bit to 64-bit
+                    mul_result = $signed(mulhsu_a_ext) * $signed(mulhsu_b_ext);  // Multiply as signed
+                    result = mul_result[63:32];  // Upper 32 bits
+                end else begin
+                    result = 32'd0;  // M extension disabled
+                end
             end
             ALU_MULHU: begin
-                mul_result = $unsigned(a) * $unsigned(b);
-                result = mul_result[63:32];  // Upper 32 bits (unsigned×unsigned)
+                if (ENABLE_M_EXT) begin
+                    mul_result = $unsigned(a) * $unsigned(b);
+                    result = mul_result[63:32];  // Upper 32 bits (unsigned×unsigned)
+                end else begin
+                    result = 32'd0;  // M extension disabled
+                end
             end
             
             // M Extension - Division operations (multi-cycle via division unit)
@@ -155,7 +189,11 @@ module alu (
             ALU_DIVU,
             ALU_REM,
             ALU_REMU: begin
-                result = div_result;  // Comes from division unit
+                if (ENABLE_M_EXT) begin
+                    result = div_result;  // Comes from division unit
+                end else begin
+                    result = 32'd0;  // M extension disabled
+                end
             end
             
             // A Extension - MIN/MAX operations (for atomic instructions)
