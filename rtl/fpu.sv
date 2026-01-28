@@ -53,6 +53,7 @@ module fpu (
     localparam [31:0] POS_INF  = 32'h7F800000;
     localparam [31:0] NEG_INF  = 32'hFF800000;
     localparam [31:0] QNAN     = 32'h7FC00000;
+    localparam [31:0] FP_ONE   = 32'h3F800000;  // 1.0f in IEEE 754
 
     // ============================================================
     // Submodule Wiring
@@ -65,18 +66,20 @@ module fpu (
     // Comparator output
     logic fs1_less_than_fs2;
     
-    // Arithmetic operation outputs
-    logic [31:0] add_result, sub_result, mul_result, sqrt_result;
-    logic [4:0]  add_flags, sub_flags, mul_flags, sqrt_flags;
+    // Shared FMA inputs and outputs (consolidated from 4+2+1 units to 1 unit)
+    logic [31:0] fma_a, fma_b, fma_c;
+    logic        fma_negate_product, fma_negate_addend;
+    logic [31:0] fma_result;
+    logic [4:0]  fma_flags;
+    
+    // Sqrt output
+    logic [31:0] sqrt_result;
+    logic [4:0]  sqrt_flags;
     
     // Conversion outputs
     logic [31:0] int_to_float_signed, int_to_float_unsigned;
     logic [31:0] float_to_int_signed, float_to_int_unsigned;
     logic        float_to_int_signed_invalid, float_to_int_unsigned_invalid;
-    
-    // FMA outputs  
-    logic [31:0] fma_madd_result, fma_msub_result, fma_nmsub_result, fma_nmadd_result;
-    logic [4:0]  fma_madd_flags, fma_msub_flags, fma_nmsub_flags, fma_nmadd_flags;
     
     // Division signals
     logic [47:0] div_dividend, div_divisor;
@@ -116,30 +119,100 @@ module fpu (
         .less_than(fs1_less_than_fs2)
     );
     
-    // Arithmetic operations
-    fpu_adder u_adder (
-        .a(fs1),
-        .b(fs2),
-        .is_sub(1'b0),
-        .result(add_result),
-        .flags(add_flags)
+    // ============================================================
+    // CONSOLIDATED FMA Unit (Replaces 4 FMA + 2 Adder + 1 Multiplier)
+    // ============================================================
+    // Routes all arithmetic operations through single FMA:
+    // - ADD: (fs1 * 1.0) + fs2
+    // - SUB: (fs1 * 1.0) - fs2
+    // - MUL: (fs1 * fs2) + 0.0
+    // - MADD/MSUB/NMSUB/NMADD: Direct FMA operations
+    
+    // FMA input multiplexing logic
+    always_comb begin
+        // Default: Pass-through for FMA operations
+        fma_a = fs1;
+        fma_b = fs2;
+        fma_c = fs3;
+        fma_negate_product = 1'b0;
+        fma_negate_addend = 1'b0;
+        
+        case (fpu_op)
+            FPU_ADD: begin
+                // (fs1 * 1.0) + fs2
+                fma_a = fs1;
+                fma_b = FP_ONE;
+                fma_c = fs2;
+                fma_negate_product = 1'b0;
+                fma_negate_addend = 1'b0;
+            end
+            
+            FPU_SUB: begin
+                // (fs1 * 1.0) - fs2
+                fma_a = fs1;
+                fma_b = FP_ONE;
+                fma_c = fs2;
+                fma_negate_product = 1'b0;
+                fma_negate_addend = 1'b1;
+            end
+            
+            FPU_MUL: begin
+                // (fs1 * fs2) + 0.0
+                fma_a = fs1;
+                fma_b = fs2;
+                fma_c = POS_ZERO;
+                fma_negate_product = 1'b0;
+                fma_negate_addend = 1'b0;
+            end
+            
+            // FPU_MADD case omitted - uses default values (same as explicit case)
+            
+            FPU_MSUB: begin
+                // (fs1 * fs2) - fs3
+                fma_a = fs1;
+                fma_b = fs2;
+                fma_c = fs3;
+                fma_negate_product = 1'b0;
+                fma_negate_addend = 1'b1;
+            end
+            
+            FPU_NMSUB: begin
+                // -(fs1 * fs2) + fs3
+                fma_a = fs1;
+                fma_b = fs2;
+                fma_c = fs3;
+                fma_negate_product = 1'b1;
+                fma_negate_addend = 1'b0;
+            end
+            
+            FPU_NMADD: begin
+                // -(fs1 * fs2) - fs3
+                fma_a = fs1;
+                fma_b = fs2;
+                fma_c = fs3;
+                fma_negate_product = 1'b1;
+                fma_negate_addend = 1'b1;
+            end
+            
+            default: begin
+                // Default: use initialized values (handles FPU_MADD and other ops)
+                // Values already set at lines 134-138
+            end
+        endcase
+    end
+    
+    // Single shared FMA instance
+    fpu_fma u_fma (
+        .a(fma_a),
+        .b(fma_b),
+        .c(fma_c),
+        .negate_product(fma_negate_product),
+        .negate_addend(fma_negate_addend),
+        .result(fma_result),
+        .flags(fma_flags)
     );
     
-    fpu_adder u_subtractor (
-        .a(fs1),
-        .b(fs2),
-        .is_sub(1'b1),
-        .result(sub_result),
-        .flags(sub_flags)
-    );
-    
-    fpu_multiplier u_multiplier (
-        .a(fs1),
-        .b(fs2),
-        .result(mul_result),
-        .flags(mul_flags)
-    );
-    
+    // Sqrt unit (cannot be emulated via FMA)
     fpu_sqrt u_sqrt (
         .a(fs1),
         .result(sqrt_result),
@@ -182,47 +255,6 @@ module fpu (
         .needs_div(div_needs_hw),
         .special_result(div_special_result),
         .flags(div_setup_flags)
-    );
-    
-    // FMA operations
-    fpu_fma u_fma_madd (
-        .a(fs1),
-        .b(fs2),
-        .c(fs3),
-        .negate_product(1'b0),
-        .negate_addend(1'b0),
-        .result(fma_madd_result),
-        .flags(fma_madd_flags)
-    );
-    
-    fpu_fma u_fma_msub (
-        .a(fs1),
-        .b(fs2),
-        .c(fs3),
-        .negate_product(1'b0),
-        .negate_addend(1'b1),
-        .result(fma_msub_result),
-        .flags(fma_msub_flags)
-    );
-    
-    fpu_fma u_fma_nmsub (
-        .a(fs1),
-        .b(fs2),
-        .c(fs3),
-        .negate_product(1'b1),
-        .negate_addend(1'b0),
-        .result(fma_nmsub_result),
-        .flags(fma_nmsub_flags)
-    );
-    
-    fpu_fma u_fma_nmadd (
-        .a(fs1),
-        .b(fs2),
-        .c(fs3),
-        .negate_product(1'b1),
-        .negate_addend(1'b1),
-        .result(fma_nmadd_result),
-        .flags(fma_nmadd_flags)
     );
 
     
@@ -309,20 +341,12 @@ module fpu (
         inv_flag = 1'b0;
         
         case (fpu_op)
-            // ========== Arithmetic Operations ==========
-            FPU_ADD: begin
-                fp_result = add_result;
-                fflags = add_flags;
-            end
-            
-            FPU_SUB: begin
-                fp_result = sub_result;
-                fflags = sub_flags;
-            end
-            
+            // ========== Arithmetic Operations (via Shared FMA) ==========
+            FPU_ADD,
+            FPU_SUB,
             FPU_MUL: begin
-                fp_result = mul_result;
-                fflags = mul_flags;
+                fp_result = fma_result;
+                fflags = fma_flags;
             end
             
             FPU_DIV: begin
@@ -340,29 +364,13 @@ module fpu (
                 fflags = sqrt_flags;
             end
             
-            // ========== FMA Operations ==========
-            FPU_MADD: begin
-                // (fs1*fs2) + fs3
-                fp_result = fma_madd_result;
-                fflags = fma_madd_flags;
-            end
-            
-            FPU_MSUB: begin
-                // (fs1*fs2) - fs3
-                fp_result = fma_msub_result;
-                fflags = fma_msub_flags;
-            end
-            
-            FPU_NMSUB: begin
-                // -(fs1*fs2) + fs3
-                fp_result = fma_nmsub_result;
-                fflags = fma_nmsub_flags;
-            end
-            
+            // ========== FMA Operations (via Shared FMA) ==========
+            FPU_MADD,
+            FPU_MSUB,
+            FPU_NMSUB,
             FPU_NMADD: begin
-                // -(fs1*fs2) - fs3
-                fp_result = fma_nmadd_result;
-                fflags = fma_nmadd_flags;
+                fp_result = fma_result;
+                fflags = fma_flags;
             end
             
             // ========== Sign Injection ==========

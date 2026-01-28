@@ -121,17 +121,56 @@ module alu #(
     // ALU ready signal: immediate for non-div ops, waits for div_ready for division
     assign alu_ready = is_div_op ? div_ready : 1'b1;
     
-    // Multiplication intermediate results (64-bit)
-    logic [63:0] mul_result;
-    logic signed [63:0] mulhsu_a_ext;
-    logic [63:0] mulhsu_b_ext;
+    // ============================================================
+    // M Extension: Shared Multiplier (Conditional Generation)
+    // ============================================================
+    // Consolidated multiplier for MUL, MULH, MULHSU, MULHU
+    // Uses single 64x64 signed multiplication with proper operand extension
+    logic signed [63:0] mul_a_ext;
+    logic signed [63:0] mul_b_ext;
+    logic signed [63:0] mul_result;
+    
+    generate
+        if (ENABLE_M_EXT) begin : gen_multiplier
+            // Operand preparation: Extend operands based on operation type
+            always_comb begin
+                case (alu_op)
+                    ALU_MUL, ALU_MULH: begin
+                        // Signed × Signed
+                        mul_a_ext = {{32{a[31]}}, a};  // Sign-extend
+                        mul_b_ext = {{32{b[31]}}, b};  // Sign-extend
+                    end
+                    ALU_MULHSU: begin
+                        // Signed × Unsigned
+                        mul_a_ext = {{32{a[31]}}, a};  // Sign-extend
+                        mul_b_ext = {32'b0, b};        // Zero-extend
+                    end
+                    ALU_MULHU: begin
+                        // Unsigned × Unsigned
+                        mul_a_ext = {32'b0, a};        // Zero-extend
+                        mul_b_ext = {32'b0, b};        // Zero-extend
+                    end
+                    default: begin
+                        mul_a_ext = 64'sd0;
+                        mul_b_ext = 64'sd0;
+                    end
+                endcase
+            end
+            
+            // Single shared 64x64 multiplier
+            assign mul_result = mul_a_ext * mul_b_ext;
+            
+        end else begin : gen_no_multiplier
+            // M extension disabled: No multiplier
+            assign mul_a_ext = 64'sd0;
+            assign mul_b_ext = 64'sd0;
+            assign mul_result = 64'sd0;
+        end
+    endgenerate
 
     always_comb begin
         // Default initialization to avoid latches
-        mul_result = 64'd0;
         result = 32'd0;
-        mulhsu_a_ext = 64'sd0;
-        mulhsu_b_ext = 64'd0;
         
         case (alu_op)
             // RV32I operations
@@ -146,39 +185,19 @@ module alu #(
             ALU_SLT:  result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
             ALU_SLTU: result = (a < b) ? 32'd1 : 32'd0;
             
-            // M Extension - Multiplication operations
+            // M Extension - Multiplication operations (using shared multiplier)
             ALU_MUL: begin
                 if (ENABLE_M_EXT) begin
-                    mul_result = $signed(a) * $signed(b);
                     result = mul_result[31:0];  // Lower 32 bits
                 end else begin
                     result = 32'd0;  // M extension disabled
                 end
             end
-            ALU_MULH: begin
-                if (ENABLE_M_EXT) begin
-                    mul_result = $signed(a) * $signed(b);
-                    result = mul_result[63:32];  // Upper 32 bits (signed×signed)
-                end else begin
-                    result = 32'd0;  // M extension disabled
-                end
-            end
-            ALU_MULHSU: begin
-                if (ENABLE_M_EXT) begin
-                    // MULHSU: signed(rs1) × unsigned(rs2), upper 32 bits
-                    // Sign-extend a to 64-bit, zero-extend b to 64-bit, then multiply
-                    mulhsu_a_ext = {{32{a[31]}}, a};  // Sign-extend 32-bit to 64-bit
-                    mulhsu_b_ext = {32'b0, b};  // Zero-extend 32-bit to 64-bit
-                    mul_result = $signed(mulhsu_a_ext) * $signed(mulhsu_b_ext);  // Multiply as signed
-                    result = mul_result[63:32];  // Upper 32 bits
-                end else begin
-                    result = 32'd0;  // M extension disabled
-                end
-            end
+            ALU_MULH,
+            ALU_MULHSU,
             ALU_MULHU: begin
                 if (ENABLE_M_EXT) begin
-                    mul_result = $unsigned(a) * $unsigned(b);
-                    result = mul_result[63:32];  // Upper 32 bits (unsigned×unsigned)
+                    result = mul_result[63:32];  // Upper 32 bits
                 end else begin
                     result = 32'd0;  // M extension disabled
                 end
