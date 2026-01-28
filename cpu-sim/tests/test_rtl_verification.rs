@@ -991,6 +991,55 @@ fn test_cpu_csr_immediate() {
     println!("Successfully executed CSR immediate operations");
 }
 
+#[test]
+fn test_cpu_csr_instret() {
+    init_test_logger();
+
+    // Test INSTRET CSR counter (0xC02)
+    // This test verifies that the instruction retired counter increments correctly
+    //
+    // Program flow:
+    // 1. Execute a known number of instructions (NOP, ADDI, etc.)
+    // 2. Read INSTRET CSR using CSRRS (rd=dest, rs1=0 means read-only)
+    // 3. Store result to memory
+    // 4. Verify the count matches expected number of retired instructions
+    //
+    // Memory base: 0x80000000
+    let mut instructions = vec![
+        addi(1, 0, 0),      // Instr #1: NOP equivalent (x1 = 0)
+        addi(2, 0, 0),      // Instr #2: NOP equivalent (x2 = 0)
+        addi(3, 0, 0),      // Instr #3: NOP equivalent (x3 = 0)
+        csrrs(4, 0, 0xC02), // Instr #4: Read INSTRET (x4 = CSR[0xC02], no write)
+        lui(8, 0x80000000), // Instr #5: Load base address
+        sw(8, 4, 0),        // Instr #6: Store INSTRET value to memory
+    ];
+    instructions.extend(tohost_termination(7, 9)); // Instr #7-10: Termination sequence
+
+    // Expected instruction count at the CSRRS:
+    // Before CSRRS executes, 3 instructions have completed (the 3 ADDIs)
+    // CSRRS reads the current value (3) and then completes, making it 4
+    // But CSRRS captures the value BEFORE it increments, so we expect 3
+
+    run_program_with_options(
+        &instructions,
+        GLOBAL_MAX_CYCLES,
+        false,
+        None,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
+            let instret_value = sim.read_word(0x80000000);
+            // INSTRET should be 3 when CSRRS reads it (3 ADDI instructions completed)
+            assert_eq!(
+                instret_value, 3,
+                "INSTRET should be 3 after 3 ADDI instructions"
+            );
+        }),
+    )
+    .expect("Program should run");
+
+    println!("Successfully verified INSTRET CSR counter");
+}
+
 // ============================================================================
 // M Extension Tests
 // ============================================================================

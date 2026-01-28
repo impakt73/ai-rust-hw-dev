@@ -11,6 +11,7 @@ module csr_file (
     
     // Control signals
     input  logic        is_csr,
+    input  logic        instr_complete,  // Signal when instruction completes
     input  logic [2:0]  funct3,
     input  logic [4:0]  rs1,
     
@@ -76,7 +77,7 @@ module csr_file (
     
     // Performance counters (64-bit)
     // Note: CYCLE increments every clock cycle
-    // INSTRET is simplified - always returns 0 (would need instr_complete signal to implement)
+    // INSTRET increments when instr_complete signal is asserted
     logic [63:0] csr_cycle;
     logic [63:0] csr_instret;
     
@@ -171,6 +172,11 @@ module csr_file (
         end else begin
             // Cycle counter always increments
             csr_cycle <= csr_cycle + 64'd1;
+            
+            // Instruction retired counter increments when instruction completes
+            if (instr_complete) begin
+                csr_instret <= csr_instret + 64'd1;
+            end
             
             // CSR writes
             if (is_csr && csr_write_en) begin
