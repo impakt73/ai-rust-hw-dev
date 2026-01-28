@@ -41,10 +41,13 @@ module led_pattern_top (
     logic [COUNTER_WIDTH-1:0] counter;
     logic shift_pulse;
     
+    // Counter threshold with proper width
+    localparam logic [COUNTER_WIDTH-1:0] COUNTER_MAX = COUNTER_WIDTH'(SHIFT_COUNT - 1);
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             counter <= '0;
-        end else if (counter >= SHIFT_COUNT - 1) begin
+        end else if (counter >= COUNTER_MAX) begin
             counter <= '0;
         end else begin
             counter <= counter + 1'b1;
@@ -52,7 +55,7 @@ module led_pattern_top (
     end
     
     // Generate pulse when counter wraps (every second)
-    assign shift_pulse = (counter == SHIFT_COUNT - 1);
+    assign shift_pulse = (counter == COUNTER_MAX);
 
     // ============================================================
     // LED Pattern Register with Rotating Shift

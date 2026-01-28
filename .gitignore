@@ -33,6 +33,9 @@ fpga/*.bin
 fpga/*.rpt
 fpga/*.log
 
+# LED demo build artifacts
+fpga/led_demo/build/
+
 # Test program artifacts (legacy - test_programs/ folder removed)
 test_program.elf
 create_test_elf.py
