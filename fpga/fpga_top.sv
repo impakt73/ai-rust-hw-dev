@@ -65,7 +65,7 @@ module fpga_top #(
     assign sys_clk = pll_clk_global;
     
     // ============================================================
-    // Reset Synchronization
+    // Reset Synchronization and Power-On Reset Controller
     // ============================================================
     logic rst_n;
     
@@ -76,7 +76,26 @@ module fpga_top #(
         rst_n_sync1 <= rst_n_btn & pll_locked;
         rst_n_sync2 <= rst_n_sync1;
     end
-    assign rst_n = rst_n_sync2;
+    
+    // Reset controller for robust power-on reset
+    // Holds reset asserted for RESET_CYCLES after input reset deasserts
+    // Also supports soft reset requests from on-board logic
+    logic reset_request;  // Soft reset request (active high) - currently unused
+    assign reset_request = 1'b0;  // No soft reset source connected yet
+    
+    logic rst_out;  // Active-high reset output from controller
+    
+    reset_controller #(
+        .RESET_CYCLES(8)
+    ) reset_ctrl (
+        .clk(sys_clk),
+        .rst_n_in(rst_n_sync2),
+        .reset_request(reset_request),
+        .rst_out(rst_out)
+    );
+    
+    // Invert active-high reset to active-low for downstream modules
+    assign rst_n = ~rst_out;
     
     // ============================================================
     // Memory Configuration
