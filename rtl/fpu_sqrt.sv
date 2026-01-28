@@ -20,7 +20,12 @@ module fpu_sqrt (
         is_zero = (a[30:0] == 31'h0);
         is_inf = (a[30:23] == 8'hFF) && (a[22:0] == 23'h0);
         
+        // Initialize all signals to avoid latches
         flags = 5'b0;
+        result = 32'h0;
+        result_exp = 8'b0;
+        result_mant = 23'h0;
+        mant_with_bit = 24'h0;
         
         // Handle special cases
         if (is_nan) begin

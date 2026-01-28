@@ -30,7 +30,20 @@ module fpu_adder (
         a_is_zero = (a[30:0] == 31'h0);
         b_is_zero = (b[30:0] == 31'h0);
         
+        // Initialize all signals to avoid latches
         flags = 5'b0;
+        result = POS_ZERO;
+        a_sign = 1'b0;
+        b_sign = 1'b0;
+        result_sign = 1'b0;
+        a_exp = 8'b0;
+        b_exp = 8'b0;
+        result_exp = 8'b0;
+        a_mant = 24'b0;
+        b_mant = 24'b0;
+        result_mant = 25'b0;
+        exp_diff = 8'b0;
+        norm_shift = 0;
         
         // Handle special cases
         if (a_is_nan || b_is_nan) begin
@@ -124,7 +137,7 @@ module fpu_adder (
                         // Apply normalization
                         if (norm_shift <= result_exp) begin
                             result_mant = result_mant << norm_shift;
-                            result_exp = result_exp - norm_shift;
+                            result_exp = result_exp - 8'(norm_shift);
                         end else begin
                             // Underflow to zero
                             result_mant = 0;

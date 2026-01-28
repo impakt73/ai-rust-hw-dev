@@ -20,6 +20,12 @@ module fpu_comparator (
         a_is_zero = (a[30:0] == 31'h0);
         b_is_zero = (b[30:0] == 31'h0);
         
+        // Initialize to avoid latches
+        a_sign = a[31];
+        b_sign = b[31];
+        a_mag = a[30:0];
+        b_mag = b[30:0];
+        
         // Default
         less_than = 1'b0;
         
@@ -28,11 +34,6 @@ module fpu_comparator (
         end else if (a_is_zero && b_is_zero) begin
             less_than = 1'b0;
         end else begin
-            a_sign = a[31];
-            b_sign = b[31];
-            a_mag = a[30:0];
-            b_mag = b[30:0];
-            
             if (a_sign != b_sign) begin
                 less_than = a_sign;  // Negative < Positive
             end else if (!a_sign) begin

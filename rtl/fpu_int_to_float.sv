@@ -16,6 +16,14 @@ module fpu_int_to_float (
     integer msb_pos;
     
     always_comb begin
+        // Initialize all signals to avoid latches
+        result = POS_ZERO;
+        sign = 1'b0;
+        abs_val = 32'h0;
+        exp = 8'b0;
+        mant = 23'h0;
+        msb_pos = 0;
+        
         if (val == 32'h0) begin
             result = POS_ZERO;
         end else begin

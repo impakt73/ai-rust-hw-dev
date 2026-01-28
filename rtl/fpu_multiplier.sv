@@ -27,7 +27,14 @@ module fpu_multiplier (
         a_is_zero = (a[30:0] == 31'h0);
         b_is_zero = (b[30:0] == 31'h0);
         
+        // Initialize all signals to avoid latches
         flags = 5'b0;
+        result = 32'h0;
+        result_sign = 1'b0;
+        result_exp_wide = 9'b0;
+        result_exp = 8'b0;
+        product = 48'h0;
+        result_mant = 23'h0;
         
         // Handle special cases
         if (a_is_nan || b_is_nan) begin

@@ -21,9 +21,14 @@ module fpu_float_to_int (
         is_inf = (val[30:23] == 8'hFF) && (val[22:0] == 23'h0);
         is_zero = (val[30:0] == 31'h0);
         
+        // Initialize all signals to avoid latches
         sign = val[31];
         exp = val[30:23];
         invalid = 1'b0;
+        mant = 24'h0;
+        shift = 0;
+        temp_result = 32'h0;
+        result = 32'h0;
         
         if (is_nan || is_inf) begin
             invalid = 1'b1;
@@ -38,7 +43,7 @@ module fpu_float_to_int (
             result = 32'h0;
         end else begin
             mant = {1'b1, val[22:0]};
-            shift = exp - 127;
+            shift = $signed({24'b0, exp}) - 127;
             
             if (shift < 0) begin
                 result = 32'h0;
@@ -47,9 +52,9 @@ module fpu_float_to_int (
                 result = is_signed ? 32'h7FFFFFFF : 32'hFFFFFFFF;
             end else begin
                 if (shift >= 23) begin
-                    temp_result = mant << (shift - 23);
+                    temp_result = {8'h0, mant} << (shift - 23);
                 end else begin
-                    temp_result = mant >> (23 - shift);
+                    temp_result = {8'h0, mant} >> (23 - shift);
                 end
                 
                 if (sign) begin
