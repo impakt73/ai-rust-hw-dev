@@ -542,10 +542,12 @@ always_ff @(posedge clk or negedge rst_n) begin
         rx_wr_ptr <= '0;
         rx_busy <= 1'b0;
         rx_error <= 1'b0;
+        rx_fifo_write_int <= 1'b0;
     end else begin
         case (rx_state)
             RX_IDLE: begin
                 rx_busy <= 1'b0;
+                rx_fifo_write_int <= 1'b0;  // Ensure pulse is cleared
                 if (rx_sync_1 == 1'b0) begin  // Falling edge detected (start bit)
                     rx_state <= RX_START_BIT;
                     rx_sample_count <= 4'd0;
@@ -555,6 +557,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             end
             
             RX_START_BIT: begin
+                rx_fifo_write_int <= 1'b0;  // Ensure pulse is cleared
                 if (rx_baud_counter == 0) begin
                     rx_baud_counter <= CLKS_PER_SAMPLE - 1;
                     if (rx_sample_count == 4'd7) begin
@@ -577,10 +580,15 @@ always_ff @(posedge clk or negedge rst_n) begin
             end
             
             RX_DATA_BITS: begin
+                rx_fifo_write_int <= 1'b0;  // Ensure pulse is cleared
                 if (rx_baud_counter == 0) begin
                     rx_baud_counter <= CLKS_PER_SAMPLE - 1;
                     if (rx_sample_count == 4'd15) begin
-                        // Sample at middle of data bit (16 samples per bit)
+                        // Sample at bit boundary (after 16 samples = 1 bit period)
+                        // Note: With 16x oversampling, we count 16 samples per bit.
+                        // The actual sample occurs at count 15 which is the end of the
+                        // bit period. For mid-bit sampling, use count 7/8 instead.
+                        // This design samples at bit boundary for simplicity.
                         rx_shift_reg <= {rx_sync_1, rx_shift_reg[7:1]};  // LSB first
                         rx_sample_count <= 4'd0;
                         if (rx_bit_index == 3'd7) begin
@@ -597,7 +605,7 @@ always_ff @(posedge clk or negedge rst_n) begin
             end
             
             RX_STOP_BIT: begin
-                rx_fifo_write_int <= 1'b0;  // Default: no write
+                rx_fifo_write_int <= 1'b0;  // Default: no write (ensures single-cycle pulse)
                 if (rx_baud_counter == 0) begin
                     rx_baud_counter <= CLKS_PER_SAMPLE - 1;
                     if (rx_sample_count == 4'd15) begin
@@ -639,9 +647,9 @@ end
 // UART is single-cycle - always ready
 assign ready = 1'b1;
 
-// Register offset decode (lower bits of address)
-logic [3:0] reg_offset;
-assign reg_offset = addr[3:0];
+// Register offset decode (byte offset within 256B UART window)
+logic [7:0] reg_offset;
+assign reg_offset = addr[7:0];
 
 // ============================================================
 // TX FIFO Management
@@ -649,7 +657,7 @@ assign reg_offset = addr[3:0];
 
 // TX FIFO write signal (CPU writes to TXDATA register)
 logic tx_fifo_write;
-assign tx_fifo_write = we && (reg_offset == 4'h0) && !tx_fifo_full;
+assign tx_fifo_write = we && (reg_offset == 8'h00) && !tx_fifo_full;
 
 // TX FIFO read signal (TX state machine reads from FIFO)
 // This is set when transitioning from TX_IDLE and loading byte
@@ -692,13 +700,11 @@ end
 
 // RX FIFO read signal (CPU reads from RXDATA register)
 logic rx_fifo_read;
-assign rx_fifo_read = re && (reg_offset == 4'h4) && !rx_fifo_empty;
+assign rx_fifo_read = re && (reg_offset == 8'h04) && !rx_fifo_empty;
 
-// RX FIFO write signal (RX state machine writes received byte)
-// This is set in RX_STOP_BIT state when a valid byte is received
-logic rx_fifo_write_int;
-// Note: This signal is set by the RX state machine when transitioning
-// from RX_STOP_BIT to RX_IDLE with a valid stop bit
+// Note: rx_fifo_write_int is declared in the RX block definition section (5.4)
+// and is driven by the RX state machine when transitioning from RX_STOP_BIT
+// to RX_IDLE with a valid stop bit. It pulses high for one cycle.
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -744,9 +750,9 @@ always_comb begin
     
     if (re) begin
         case (reg_offset)
-            4'h0: rdata = 32'h0;  // TXDATA is write-only
-            4'h4: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo[rx_rd_ptr]};  // RXDATA
-            4'h8: rdata = {24'h0,                      // STATUS
+            8'h00: rdata = 32'h0;  // TXDATA is write-only
+            8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo[rx_rd_ptr]};  // RXDATA
+            8'h08: rdata = {24'h0,                      // STATUS
                           rx_error,
                           rx_busy,
                           rx_fifo_empty,
@@ -755,7 +761,7 @@ always_comb begin
                           tx_busy,
                           tx_empty_status,             // TX_EMPTY (FIFO empty AND idle)
                           tx_fifo_full};
-            4'hC: rdata = 32'h0;  // CTRL (reserved)
+            8'h0C: rdata = 32'h0;  // CTRL (reserved)
             default: rdata = 32'h0;
         endcase
     end
@@ -770,7 +776,7 @@ end
 // It is cleared when the STATUS register is read
 
 logic clear_rx_error;
-assign clear_rx_error = re && (reg_offset == 4'h8);
+assign clear_rx_error = re && (reg_offset == 8'h08);
 
 // rx_error update logic is integrated into RX state machine:
 // - Set when rx_sync_1 != 1'b1 at stop bit sample time
@@ -994,6 +1000,72 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 }
 ```
 
+### 6.3 Update fpga/fpga_top.sv
+
+Update the FPGA top module to connect UART external pins and disable loopback:
+
+```systemverilog
+module fpga_top #(
+    parameter bit ENABLE_M_EXT = 1'b0,
+    parameter bit ENABLE_F_EXT = 1'b0
+) (
+    // Clock input (100 MHz on-board oscillator)
+    input  logic       clk,
+    
+    // Reset button (active low)
+    input  logic       rst_n_btn,
+    
+    // LED outputs
+    output logic [7:0] led,
+    
+    // UART external pins (NEW)
+    output logic       uart_tx,
+    input  logic       uart_rx
+);
+    // ... existing code ...
+    
+    // ============================================================
+    // CPU Core with Peripherals
+    // ============================================================
+    top_with_peripherals #(
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .ENABLE_F_EXT(ENABLE_F_EXT),
+        .ENABLE_UART_LOOPBACK(1'b0)  // Disable loopback for FPGA - use external pins
+    ) cpu (
+        .clk(sys_clk),
+        .rst_n(rst_n),
+        .boot_addr(BOOT_ADDR),
+        
+        // ... existing memory and debug connections ...
+        
+        // LED peripheral
+        .led_out(led_out),
+        
+        // UART peripheral (NEW)
+        .uart_tx(uart_tx),
+        .uart_rx(uart_rx),
+        
+        // System control
+        .halted(halted),
+        .instr_complete(instr_complete),
+        
+        // ... debug outputs ...
+    );
+    
+    // ... rest of module ...
+endmodule
+```
+
+### 6.4 Update fpga/ice40hx8k.pcf
+
+Add UART pin constraints (pin numbers are examples - update for actual board):
+
+```
+# UART Pins (update pin numbers for specific board)
+set_io uart_tx P12    # UART transmit output
+set_io uart_rx P13    # UART receive input
+```
+
 ---
 
 ## 7. Rust Integration Layer
@@ -1100,7 +1172,9 @@ fn wait_cycles(dut: &mut Uart, cycles: u32) {
 #[test]
 fn test_uart_reset_state() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Apply reset
     dut.rst_n = 0;
@@ -1122,7 +1196,9 @@ fn test_uart_reset_state() {
 #[test]
 fn test_uart_tx_idle_high() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset and initialize
     dut.rst_n = 0;
@@ -1139,7 +1215,9 @@ fn test_uart_tx_idle_high() {
 #[test]
 fn test_uart_status_register_initial() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset
     dut.rst_n = 0;
@@ -1167,7 +1245,9 @@ fn test_uart_status_register_initial() {
 #[test]
 fn test_uart_tx_fifo_write() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset
     dut.rst_n = 0;
@@ -1195,7 +1275,9 @@ fn test_uart_tx_fifo_write() {
 #[test]
 fn test_uart_tx_start_bit() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset
     dut.rst_n = 0;
@@ -1227,7 +1309,9 @@ fn test_uart_tx_start_bit() {
 #[test]
 fn test_uart_loopback_single_byte() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset
     dut.rst_n = 0;
@@ -1281,7 +1365,9 @@ fn test_uart_loopback_single_byte() {
 #[test]
 fn test_uart_tx_fifo_full() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
-    let mut dut = Uart::new(&runtime);
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
     
     // Reset
     dut.rst_n = 0;
@@ -1418,7 +1504,7 @@ fn test_uart_tx_write_byte() {
 
     // Write a byte to TX FIFO
     let mut instructions = vec![
-        lui(15, UART_BASE >> 12),     // Load UART base address
+        lui(15, UART_BASE),           // Load UART base address (full 32-bit, low 12 bits zero)
         addi(14, 0, 0x55),            // Load byte to transmit
         sw(15, 14, UART_TXDATA_OFFSET as i32),  // Write to TXDATA
     ];
@@ -1459,10 +1545,10 @@ fn test_uart_status_initial_state() {
 
     // Read STATUS register - should show TX_EMPTY and RX_EMPTY
     let mut instructions = vec![
-        lui(15, UART_BASE >> 12),     // Load UART base address
+        lui(15, UART_BASE),           // Load UART base address (full 32-bit, low 12 bits zero)
         lw(14, 15, UART_STATUS_OFFSET as i32),  // Read STATUS
         // Store STATUS value to memory for verification
-        lui(13, 0x80000),             // Load DRAM base
+        lui(13, 0x80000000),          // Load DRAM base
         sw(13, 14, 0x100),            // Store STATUS to 0x80000100
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1532,7 +1618,7 @@ fn test_uart_loopback_single_byte() {
     
     let mut instructions = vec![
         // x15 = UART base address
-        lui(15, UART_BASE >> 12),
+        lui(15, UART_BASE),           // Load UART base address (full 32-bit, low 12 bits zero)
         
         // x14 = test byte (0xA5)
         addi(14, 0, 0xA5),
@@ -1556,10 +1642,10 @@ fn test_uart_loopback_single_byte() {
         
         // Compare with sent byte (x14 = 0xA5)
         // If equal, write 1 to tohost; else write 0
-        lui(10, 0x10000000 >> 12),  // x10 = tohost address
+        lui(10, 0x10000000),          // x10 = tohost address (full 32-bit, low 12 bits zero)
         beq(11, 14, 8),  // If received == sent, skip to success
         sw(10, 0, 0),    // Write 0 (failure) to tohost
-        jal(0, 4),       // Jump over success
+        jal(0, 8),       // Jump over success (skip 2 instructions = 8 bytes)
         addi(9, 0, 1),   // x9 = 1 (success)
         sw(10, 9, 0),    // Write 1 (success) to tohost
         jal(0, 0),       // Infinite loop
@@ -1703,7 +1789,23 @@ fn test_uart_loopback_single_byte() {
 - [ ] Run all tests
   - [ ] `cargo test --verbose`
 
-### Phase 5: Documentation
+### Phase 5: FPGA Integration
+
+- [ ] Update `fpga/fpga_top.sv`
+  - [ ] Add UART external pins (uart_tx, uart_rx) to module ports
+  - [ ] Update `top_with_peripherals` instantiation with `ENABLE_UART_LOOPBACK = 0`
+  - [ ] Connect UART pins to external I/O
+
+- [ ] Update `fpga/ice40hx8k.pcf`
+  - [ ] Add UART TX pin assignment
+  - [ ] Add UART RX pin assignment
+
+- [ ] Verify FPGA synthesis still works
+  - [ ] `cd fpga && make`
+  - [ ] Check for timing violations or resource overflow
+  - [ ] Review synthesis report for UART resource usage
+
+### Phase 6: Documentation
 
 - [ ] Update `AGENTS.md`
   - [ ] Add UART to memory map table
