@@ -42,7 +42,7 @@ module fpu_sqrt (
             if (a[23]) begin  // LSB of exponent (odd)
                 result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
                 /* verilator lint_off WIDTHTRUNC */
-                mant_with_bit = {2'b01, a[22:0]};  // Prepend 01 for odd exponent (25 bits truncated to 24)
+                mant_with_bit = {2'b01, a[22:0]};  // 25-bit value assigned to 24-bit mant_with_bit; LSB is intentionally truncated for simplified sqrt
                 /* verilator lint_on WIDTHTRUNC */
             end else begin  // Even exponent
                 result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;

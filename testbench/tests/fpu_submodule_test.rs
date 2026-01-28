@@ -17,7 +17,7 @@ const NEG_TWO: u32 = 0xC0000000; // -2.0
 const POS_INF: u32 = 0x7F800000;
 const NEG_INF: u32 = 0xFF800000;
 const QNAN: u32 = 0x7FC00000;
-const SNAN: u32 = 0x7F800001; // Signaling NaN (mantissa non-zero, bit 22 = 0)
+const SNAN: u32 = 0x7FA00000; // Signaling NaN (exponent=0xFF, mantissa non-zero with bit 22 = 0)
 const SUBNORMAL: u32 = 0x00000001; // Smallest positive subnormal
 
 // Additional test constants

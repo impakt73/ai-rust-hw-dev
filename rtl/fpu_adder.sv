@@ -19,7 +19,7 @@ module fpu_adder (
     logic [23:0] a_mant, b_mant;
     logic [24:0] result_mant;
     logic [7:0] exp_diff;
-    integer norm_shift;
+    logic [7:0] norm_shift;  // Needs to be 8 bits to avoid width issues in comparisons with result_exp
     
     always_comb begin
         // Classification
@@ -117,19 +117,19 @@ module fpu_adder (
                         if (result_mant[22:16] != 0) begin
                             for (int i = 22; i >= 16; i--) begin
                                 if (result_mant[i] && norm_shift == 0) begin
-                                    norm_shift = 23 - i;
+                                    norm_shift = 8'(23 - i);  // Explicit cast to avoid width truncation
                                 end
                             end
                         end else if (result_mant[15:8] != 0) begin
                             for (int i = 15; i >= 8; i--) begin
                                 if (result_mant[i] && norm_shift == 0) begin
-                                    norm_shift = 23 - i;
+                                    norm_shift = 8'(23 - i);  // Explicit cast to avoid width truncation
                                 end
                             end
                         end else begin
                             for (int i = 7; i >= 0; i--) begin
                                 if (result_mant[i] && norm_shift == 0) begin
-                                    norm_shift = 23 - i;
+                                    norm_shift = 8'(23 - i);  // Explicit cast to avoid width truncation
                                 end
                             end
                         end

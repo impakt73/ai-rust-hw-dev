@@ -13,7 +13,7 @@ module fpu_int_to_float (
     logic [31:0] abs_val;
     logic [7:0] exp;
     logic [22:0] mant;
-    integer msb_pos;
+    logic [7:0] msb_pos;  // 8 bits to hold values 0-31 and avoid bit selection warnings
     
     always_comb begin
         // Initialize all signals to avoid latches
@@ -40,12 +40,12 @@ module fpu_int_to_float (
             msb_pos = 0;
             for (int i = 31; i >= 0; i--) begin
                 if (abs_val[i] && msb_pos == 0) begin
-                    msb_pos = i;
+                    msb_pos = 8'(i);  // Explicit cast to avoid width truncation
                 end
             end
             
             // Calculate exponent: 127 (bias) + position of MSB
-            exp = 8'd127 + msb_pos[7:0];
+            exp = 8'd127 + msb_pos;
             
             // Extract mantissa - get bits below MSB
             if (msb_pos >= 23) begin

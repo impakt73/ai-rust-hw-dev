@@ -17,8 +17,8 @@ module fpu_div_assemble (
     logic [47:0] quotient;
     logic [22:0] result_mant;
     logic [47:0] normalized_quotient;
-    integer msb_pos;
-    integer shift;
+    logic [7:0] msb_pos;  // 8 bits to hold values 0-47 and avoid truncation warnings
+    logic signed [8:0] shift;  // 9 bits to handle negative values and proper width
     
     always_comb begin
         // Initialize all variables to avoid latches
@@ -46,18 +46,18 @@ module fpu_div_assemble (
             // Find MSB position
             for (int i = 47; i >= 0; i--) begin
                 if (quotient[i] && msb_pos == 0) begin
-                    msb_pos = i;
+                    msb_pos = 8'(i);  // Explicit cast to avoid width truncation
                 end
             end
             
             if (msb_pos > 0) begin
-                shift = MANT_MSB_POS - msb_pos;
+                shift = 9'(MANT_MSB_POS) - 9'(msb_pos);  // Explicit width for calculation
                 
                 if (shift > 0) begin
                     normalized_quotient = quotient << shift;
                     result_exp_wide = result_exp_wide - 9'(shift);
                 end else if (shift < 0) begin
-                    normalized_quotient = quotient >> (-shift);
+                    normalized_quotient = quotient >> 9'(-shift);
                     result_exp_wide = result_exp_wide + 9'(-shift);
                 end else begin
                     normalized_quotient = quotient;

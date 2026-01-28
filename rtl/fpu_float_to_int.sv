@@ -12,7 +12,7 @@ module fpu_float_to_int (
     logic [7:0] exp;
     logic [23:0] mant;
     logic [31:0] temp_result;
-    integer shift;
+    logic signed [8:0] shift;  // Explicit bit width for synthesis (exp range 0-255, shift = exp - 127)
     logic is_nan, is_inf, is_zero;
     
     always_comb begin
@@ -43,7 +43,7 @@ module fpu_float_to_int (
             result = 32'h0;
         end else begin
             mant = {1'b1, val[22:0]};
-            shift = $signed({24'b0, exp}) - 127;
+            shift = 9'(exp) - 9'd127;  // Explicit width for calculation
             
             if (shift < 0) begin
                 result = 32'h0;
