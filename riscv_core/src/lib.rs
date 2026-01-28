@@ -47,12 +47,6 @@ pub struct FpuClassifier;
 #[verilog(src = "../rtl/fpu_comparator.sv", name = "fpu_comparator")]
 pub struct FpuComparator;
 
-#[verilog(src = "../rtl/fpu_adder.sv", name = "fpu_adder")]
-pub struct FpuAdder;
-
-#[verilog(src = "../rtl/fpu_multiplier.sv", name = "fpu_multiplier")]
-pub struct FpuMultiplier;
-
 #[verilog(src = "../rtl/fpu_int_to_float.sv", name = "fpu_int_to_float")]
 pub struct FpuIntToFloat;
 
@@ -147,8 +141,6 @@ pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "div_unit.sv",
         "fpu_classifier.sv",
         "fpu_comparator.sv",
-        "fpu_adder.sv",
-        "fpu_multiplier.sv",
         "fpu_int_to_float.sv",
         "fpu_float_to_int.sv",
         "fpu_sqrt.sv",
@@ -165,14 +157,6 @@ pub fn create_fpu_classifier_runtime() -> Result<VerilatorRuntime, Box<dyn std::
 
 pub fn create_fpu_comparator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fpu_comparator.sv"])
-}
-
-pub fn create_fpu_adder_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_adder.sv"])
-}
-
-pub fn create_fpu_multiplier_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_multiplier.sv"])
 }
 
 pub fn create_fpu_int_to_float_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {

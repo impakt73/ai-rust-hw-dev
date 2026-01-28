@@ -292,25 +292,6 @@ module synth_harness (
         result_reg <= fp_result ^ int_result ^ {27'h0, fflags} ^ {31'h0, fpu_ready};
     end
 
-`elsif SYNTH_FPU_ADDER
-    // ============================================================
-    // FPU Adder Test
-    // ============================================================
-    logic [31:0] add_result;
-    logic [4:0] add_flags;
-    
-    fpu_adder u_fpu_adder (
-        .a(stim_reg[0]),
-        .b(stim_reg[1]),
-        .is_sub(stim_sel[0]),
-        .result(add_result),
-        .flags(add_flags)
-    );
-    
-    always_ff @(posedge clk) begin
-        result_reg <= add_result ^ {27'h0, add_flags};
-    end
-
 `elsif SYNTH_FPU_CLASSIFIER
     // ============================================================
     // FPU Classifier Test
@@ -442,24 +423,6 @@ module synth_harness (
     
     always_ff @(posedge clk) begin
         result_reg <= itf_result;
-    end
-
-`elsif SYNTH_FPU_MULTIPLIER
-    // ============================================================
-    // FPU Multiplier Test
-    // ============================================================
-    logic [31:0] mul_result;
-    logic [4:0] mul_flags;
-    
-    fpu_multiplier u_fpu_multiplier (
-        .a(stim_reg[0]),
-        .b(stim_reg[1]),
-        .result(mul_result),
-        .flags(mul_flags)
-    );
-    
-    always_ff @(posedge clk) begin
-        result_reg <= mul_result ^ {27'h0, mul_flags};
     end
 
 `elsif SYNTH_FPU_SQRT
