@@ -83,19 +83,14 @@ module fpga_top #(
     logic reset_request;  // Soft reset request (active high) - currently unused
     assign reset_request = 1'b0;  // No soft reset source connected yet
     
-    logic rst_out;  // Active-high reset output from controller
-    
     reset_controller #(
         .RESET_CYCLES(8)
     ) reset_ctrl (
         .clk(sys_clk),
         .rst_n_in(rst_n_sync2),
         .reset_request(reset_request),
-        .rst_out(rst_out)
+        .rst_n_out(rst_n)
     );
-    
-    // Invert active-high reset to active-low for downstream modules
-    assign rst_n = ~rst_out;
     
     // ============================================================
     // Memory Configuration
