@@ -22,7 +22,7 @@ Synthesis completed with **Yosys 0.33** for iCE40-HX8K target.
 | Resource | Used | Available | Utilization |
 |----------|------|-----------|-------------|
 | SB_LUT4 (Logic Cells) | 64 | 7,680 | 0.83% |
-| SB_DFF* (Flip-Flops) | 37 | 7,680 | 0.48% |
+| SB_DFF (all variants) | 37 | 7,680 | 0.48% |
 | SB_CARRY (Carry Logic) | 51 | 7,680 | 0.66% |
 
 ### Detailed Cell Usage
