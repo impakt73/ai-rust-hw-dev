@@ -54,7 +54,7 @@ This report analyzes the resource consumption of each RTL module in the RISC-V C
 | fpu_fma | 2,293 | 268 | 0 | 29.9% | ⚠️ HIGH |
 | fpu (full) | 4,535 | 442 | 0 | 59.0% | 🔴 CRITICAL |
 | alu (with div) | 4,738 | 411 | 0 | 61.7% | 🔴 CRITICAL |
-| csr_file | TIMEOUT | N/A | N/A | >100% | 🔴 CRITICAL |
+| csr_file | 193 | 231 | 0 | 2.5% | ✅ OK (FIXED!) |
 
 ---
 
@@ -90,19 +90,21 @@ This report analyzes the resource consumption of each RTL module in the RISC-V C
 3. **Use sequential FP operations** instead of parallel
 4. **Make F extension configurable** via parameter
 
-### 3. CSR File (Synthesis Timeout - >100%)
+### 3. CSR File (Fixed! Was: Synthesis Timeout - >100%)
 
-**Problem:** The CSR file declares a 4096x32-bit register array:
+**Original Problem:** The CSR file declared a 4096x32-bit register array:
 ```systemverilog
 logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 ```
 
-**Impact:** This requires 131,072 flip-flops, but the iCE40-HX8K only has 7,680. The synthesis tool attempts to optimize but times out.
+**Impact:** This required 131,072 flip-flops, but the iCE40-HX8K only has 7,680.
 
-**Recommendation:**
-1. **Reduce CSR address space** to only implemented CSRs (~10-20 registers)
-2. **Use sparse implementation** with case statements
-3. **Use BRAM** for CSR storage if many registers needed
+**Fix Applied:** Replaced with sparse implementation using individual registers for only the CSRs actually needed:
+- MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL
+- Performance counters: CYCLE, INSTRET (64-bit)
+- Read-only values: MVENDORID, MARCHID, MIMPID, MHARTID
+
+**Result:** 193 LUTs (2.5% of device) - synthesis completes in ~1 second!
 
 ### 4. Register Files (409 + 680 = 1,089 LUTs)
 
@@ -116,12 +118,16 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 
 ## Recommendations Summary
 
-### Immediate Fixes (Easy)
+### Fixes Applied ✅
 
-1. **Fix CSR File** - Replace 4096-entry array with sparse implementation
-   - Expected savings: Synthesis will complete, ~100-200 LUTs
+1. **CSR File** - Replaced 4096-entry array with sparse implementation
+   - Before: Synthesis timeout (>100% resources)
+   - After: 193 LUTs (2.5% of device)
+   - Status: **FIXED and tested**
 
-2. **Use BRAM for register files**
+### Immediate Fixes Needed (Easy)
+
+1. **Use BRAM for register files**
    - Expected savings: ~1,000 LUTs
 
 ### Architecture Changes (Medium)
