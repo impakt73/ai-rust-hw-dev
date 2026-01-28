@@ -14,7 +14,24 @@ module fpga_top #(
     input  logic       rst_n_btn,
     
     // LED outputs (8 LEDs on Alchitry Cu main board)
-    output logic [7:0] led
+    output logic [7:0] led,
+    
+    // USB Serial
+    input  logic       usb_rx,
+    output logic       usb_tx,
+    
+    // IO Shield - LEDs (24 LEDs in 3 groups of 8)
+    output logic [23:0] io_led,
+    
+    // IO Shield - DIP Switches (24 switches in 3 groups of 8)
+    input  logic [23:0] io_dip,
+    
+    // IO Shield - Buttons (5 buttons, directly active high)
+    input  logic [4:0]  io_button,
+    
+    // IO Shield - Seven-Segment Display (active low signals)
+    output logic [3:0]  io_sel,   // Digit selection (active low: 0=enabled)
+    output logic [7:0]  io_seg    // Segment outputs (active low: 0=lit)
 );
 
     // ============================================================
@@ -238,5 +255,94 @@ module fpga_top #(
     // LED Output Assignment
     // ============================================================
     assign led = led_out;
+    
+    // Assign 8-bit LED pattern to all 3 IO Shield LED groups
+    assign io_led[7:0]   = led_out;
+    assign io_led[15:8]  = led_out;
+    assign io_led[23:16] = led_out;
+    
+    // ============================================================
+    // USB Serial Loopback
+    // ============================================================
+    assign usb_tx = usb_rx;
+    
+    // ============================================================
+    // Button Counter Logic
+    // ============================================================
+    // Synchronize buttons to system clock domain (2-FF synchronizer)
+    // Note: This is a simple demo implementation without debouncing.
+    // For production use, add a debounce timer (~10-20ms stable period).
+    logic [4:0] io_button_sync1, io_button_sync2;
+    logic [4:0] io_button_prev;
+    logic [7:0] button_counter;
+    
+    always_ff @(posedge sys_clk) begin
+        if (!rst_n) begin
+            io_button_sync1 <= 5'b0;
+            io_button_sync2 <= 5'b0;
+            io_button_prev  <= 5'b0;
+            button_counter  <= 8'b0;
+        end else begin
+            // 2-FF synchronizer for buttons
+            io_button_sync1 <= io_button;
+            io_button_sync2 <= io_button_sync1;
+            
+            // Edge detection: increment on any rising edge of any button
+            io_button_prev <= io_button_sync2;
+            
+            // If any button has a rising edge (was 0, now 1), increment counter
+            if (|(io_button_sync2 & ~io_button_prev)) begin
+                button_counter <= button_counter + 8'd1;
+            end
+        end
+    end
+    
+    // ============================================================
+    // Seven-Segment Display - Rotating Segment Pattern
+    // ============================================================
+    // Hardware uses active-low signals:
+    //   io_sel: 0 = digit enabled, 1 = digit disabled
+    //   io_seg: 0 = segment lit, 1 = segment off
+    // Segment layout:
+    //       a(0)
+    //      -----
+    //  f(5)|     |b(1)
+    //      --g(6)--
+    //  e(4)|     |c(2)
+    //      -----
+    //       d(3)   .dp(7)
+    //
+    // The outer ring pattern (traveling around the edge clockwise):
+    // Position 0: a, Position 1: b, Position 2: c,
+    // Position 3: d, Position 4: e, Position 5: f
+    
+    // Enable all digits (active-low: output 0 to enable)
+    assign io_sel = 4'b0000;
+    
+    // Rotating segment pattern - lights one outer segment at a time
+    // Use lower 3 bits of counter, wrap at 6 for the 6 outer segments
+    logic [2:0] seg_position;
+    logic [7:0] seg_pattern;
+    
+    // Calculate position (0-5) for the 6 outer segments
+    always_comb begin
+        // Use modulo to wrap counter to 0-5 range for 6 outer segments
+        seg_position = button_counter[2:0] % 3'd6;
+        
+        // Generate pattern: only one segment lit (active-high internally)
+        // Segments: a=0, b=1, c=2, d=3, e=4, f=5
+        case (seg_position)
+            3'd0: seg_pattern = 8'b00000001;  // a lit
+            3'd1: seg_pattern = 8'b00000010;  // b lit
+            3'd2: seg_pattern = 8'b00000100;  // c lit
+            3'd3: seg_pattern = 8'b00001000;  // d lit
+            3'd4: seg_pattern = 8'b00010000;  // e lit
+            3'd5: seg_pattern = 8'b00100000;  // f lit
+            default: seg_pattern = 8'b00000001;  // a lit (fallback)
+        endcase
+    end
+    
+    // Output inverted pattern (active-low: 0 = segment lit)
+    assign io_seg = ~seg_pattern;
 
 endmodule
