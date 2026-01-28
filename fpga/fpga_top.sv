@@ -29,9 +29,9 @@ module fpga_top #(
     // IO Shield - Buttons (5 buttons, directly active high)
     input  logic [4:0]  io_button,
     
-    // IO Shield - Seven-Segment Display
-    output logic [3:0]  io_sel,   // Digit selection (active high)
-    output logic [7:0]  io_seg    // Segment outputs
+    // IO Shield - Seven-Segment Display (active low signals)
+    output logic [3:0]  io_sel,   // Digit selection (active low: 0=enabled)
+    output logic [7:0]  io_seg    // Segment outputs (active low: 0=lit)
 );
 
     // ============================================================
@@ -298,14 +298,51 @@ module fpga_top #(
     end
     
     // ============================================================
-    // Seven-Segment Display - Show Counter
+    // Seven-Segment Display - Rotating Segment Pattern
     // ============================================================
-    // Enable all digit selections simultaneously (per requirements)
-    // Note: For multiplexed displays, only one digit would be enabled at a time.
-    // The raw counter value is output directly (no BCD-to-7seg decoding per requirements).
-    assign io_sel = 4'b1111;
+    // Hardware uses active-low signals:
+    //   io_sel: 0 = digit enabled, 1 = digit disabled
+    //   io_seg: 0 = segment lit, 1 = segment off
+    // Segment layout:
+    //       a(0)
+    //      -----
+    //  f(5)|     |b(1)
+    //      --g(6)--
+    //  e(4)|     |c(2)
+    //      -----
+    //       d(3)   .dp(7)
+    //
+    // The outer ring pattern (traveling around the edge clockwise):
+    // Position 0: a, Position 1: b, Position 2: c,
+    // Position 3: d, Position 4: e, Position 5: f
     
-    // Display counter value on all segments
-    assign io_seg = button_counter;
+    // Enable all digits (active-low: output 0 to enable)
+    assign io_sel = 4'b0000;
+    
+    // Rotating segment pattern - lights one outer segment at a time
+    // Use lower 3 bits of counter, wrap at 6 for the 6 outer segments
+    logic [2:0] seg_position;
+    logic [7:0] seg_pattern;
+    
+    // Calculate position (0-5) for the 6 outer segments
+    always_comb begin
+        // Use modulo to wrap counter to 0-5 range for 6 outer segments
+        seg_position = button_counter[2:0] % 3'd6;
+        
+        // Generate pattern: only one segment lit (active-high internally)
+        // Segments: a=0, b=1, c=2, d=3, e=4, f=5
+        case (seg_position)
+            3'd0: seg_pattern = 8'b00000001;  // a lit
+            3'd1: seg_pattern = 8'b00000010;  // b lit
+            3'd2: seg_pattern = 8'b00000100;  // c lit
+            3'd3: seg_pattern = 8'b00001000;  // d lit
+            3'd4: seg_pattern = 8'b00010000;  // e lit
+            3'd5: seg_pattern = 8'b00100000;  // f lit
+            default: seg_pattern = 8'b00000001;  // a lit (fallback)
+        endcase
+    end
+    
+    // Output inverted pattern (active-low: 0 = segment lit)
+    assign io_seg = ~seg_pattern;
 
 endmodule

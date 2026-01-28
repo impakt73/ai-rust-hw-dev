@@ -93,13 +93,16 @@ set_io io_button[2] H12
 set_io io_button[3] J12
 set_io io_button[4] P2
 
-# IO Shield Seven-Segment Display - Digit Selection
+# IO Shield Seven-Segment Display - Digit Selection (active low)
+# Active low: 0 = digit enabled, 1 = digit disabled
 set_io io_sel[0] G3
 set_io io_sel[1] G1
 set_io io_sel[2] H1
 set_io io_sel[3] H3
 
-# IO Shield Seven-Segment Display - Segment Outputs
+# IO Shield Seven-Segment Display - Segment Outputs (active low)
+# Active low: 0 = segment lit, 1 = segment off
+# Segment mapping: [0]=a, [1]=b, [2]=c, [3]=d, [4]=e, [5]=f, [6]=g, [7]=dp
 set_io io_seg[0] J1
 set_io io_seg[1] J3
 set_io io_seg[2] N1
