@@ -4,8 +4,8 @@
 // Configurable extension support for resource-constrained FPGA targets
 
 module fpga_top #(
-    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+    parameter bit ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled for iCE40 resources)
+    parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
 ) (
     // Clock input (100 MHz on-board oscillator)
     input  logic       clk,
@@ -18,18 +18,44 @@ module fpga_top #(
 );
 
     // ============================================================
-    // Clock and Reset
+    // PLL Configuration - Generate 25 MHz from 100 MHz input
+    // ============================================================
+    // Using iCE40 PLL to divide 100 MHz input to 25 MHz for timing closure
+    // PLL parameters calculated for: 100 MHz input -> 25 MHz output
+    // DIVR = 0, DIVF = 7, DIVQ = 5 gives: 100 * (7+1) / (2^5) = 100 * 8 / 32 = 25 MHz
+    
+    logic pll_clk;       // PLL output clock (25 MHz)
+    logic pll_locked;    // PLL lock indicator
+    
+    SB_PLL40_CORE #(
+        .FEEDBACK_PATH("SIMPLE"),
+        .DIVR(4'b0000),        // DIVR = 0
+        .DIVF(7'b0000111),     // DIVF = 7
+        .DIVQ(3'b101),         // DIVQ = 5 (divide by 32)
+        .FILTER_RANGE(3'b001)  // Filter range for 100 MHz input
+    ) pll_inst (
+        .REFERENCECLK(clk),
+        .PLLOUTCORE(pll_clk),
+        .PLLOUTGLOBAL(),
+        .LOCK(pll_locked),
+        .BYPASS(1'b0),
+        .RESETB(1'b1)
+    );
+    
+    // Use PLL clock for all internal logic
+    logic sys_clk;
+    assign sys_clk = pll_clk;
+    
+    // ============================================================
+    // Reset Synchronization
     // ============================================================
     logic rst_n;
     
-    // Clock is already 100 MHz from the board
-    // Note: For initial testing, we'll divide this down to a lower frequency
-    // to ensure the design meets timing. Can be increased later.
-    
-    // Synchronize reset button (2-FF synchronizer)
+    // Synchronize reset button to PLL clock domain (2-FF synchronizer)
+    // Also incorporate PLL lock status into reset
     logic rst_n_sync1, rst_n_sync2;
-    always_ff @(posedge clk) begin
-        rst_n_sync1 <= rst_n_btn;
+    always_ff @(posedge sys_clk) begin
+        rst_n_sync1 <= rst_n_btn & pll_locked;
         rst_n_sync2 <= rst_n_sync1;
     end
     assign rst_n = rst_n_sync2;
@@ -37,8 +63,9 @@ module fpga_top #(
     // ============================================================
     // Memory Configuration
     // ============================================================
-    // Boot address: Start of instruction memory
+    // Boot address: Start of instruction memory (DRAM base)
     localparam logic [31:0] BOOT_ADDR = 32'h80000000;
+    localparam logic [31:0] DRAM_BASE = 32'h80000000;
     
     // Instruction memory interface
     logic [31:0] imem_addr;
@@ -55,6 +82,15 @@ module fpga_top #(
     logic [1:0]  ext_mem_size;
     logic        ext_mem_req;
     logic        ext_mem_ready;
+    
+    // BRAM word addresses (properly mapped from CPU addresses)
+    logic [9:0] imem_bram_addr;  // Word address for 4KB = 1024 words
+    logic [9:0] dmem_bram_addr;  // Word address for 4KB = 1024 words
+    
+    // Calculate word offset within BRAM (subtract DRAM base, then word-align)
+    // This maps CPU address 0x80000000 -> BRAM offset 0, 0x80000004 -> offset 1, etc.
+    assign imem_bram_addr = (imem_addr - DRAM_BASE) >> 2;
+    assign dmem_bram_addr = (ext_mem_addr - DRAM_BASE) >> 2;
     
     // LED controller output
     logic [7:0]  led_out;
@@ -80,7 +116,7 @@ module fpga_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) cpu (
-        .clk(clk),
+        .clk(sys_clk),
         .rst_n(rst_n),
         .boot_addr(BOOT_ADDR),
         
@@ -127,8 +163,8 @@ module fpga_top #(
         .ADDR_WIDTH(10),  // 2^10 = 1024 words = 4 KB
         .DATA_WIDTH(32)
     ) imem (
-        .clk(clk),
-        .addr(imem_addr[11:2]),  // Word-aligned (drop lower 2 bits)
+        .clk(sys_clk),
+        .addr(imem_bram_addr),  // Use properly mapped BRAM address
         .rdata(imem_data),
         .req(imem_req),
         .ready(imem_ready)
@@ -142,8 +178,8 @@ module fpga_top #(
         .ADDR_WIDTH(10),  // 2^10 = 1024 words = 4 KB
         .DATA_WIDTH(32)
     ) dmem (
-        .clk(clk),
-        .addr(ext_mem_addr[11:2]),  // Word-aligned (drop lower 2 bits)
+        .clk(sys_clk),
+        .addr(dmem_bram_addr),  // Use properly mapped BRAM address
         .wdata(ext_mem_wdata),
         .rdata(ext_mem_rdata),
         .we(ext_mem_we),

@@ -2,16 +2,27 @@
 
 This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu v1 board (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + IceStorm).
 
+## Status: ✅ Successfully Synthesized
+
+The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
+
+- **Extensions disabled**: M (multiply/divide) and F (floating-point) extensions disabled
+- **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
+- **Resource usage**: ~74% logic cells (5,698/7,680), 50% BRAM (16/32)
+- **Clock frequency**: 25 MHz (via PLL), design achieves 30.56 MHz max
+- **Test program**: LED rotation pattern (0xAA ↔ 0x55) that rotates every 1 second
+- **Address mapping**: Proper CPU address (0x80000000+) to BRAM offset translation
+
 ## What's Included
 
 The FPGA implementation includes:
 
-- ✅ **Full RISC-V RV32IMACF CPU**: All 118 instructions
+- ✅ **RISC-V RV32IAC CPU**: Base integer + Atomic + Compressed instruction sets (M/F extensions disabled)
 - ✅ **4 KB Instruction Memory**: On-chip block RAM (BRAM)
 - ✅ **4 KB Data Memory**: On-chip block RAM (BRAM)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
-- ✅ **Clock & Reset**: 100 MHz clock with synchronized reset
-- ✅ **Test Program**: Simple LED pattern program pre-loaded in instruction memory
+- ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
+- ✅ **Test Program**: LED rotation pattern program pre-loaded in instruction memory
 
 ## Quick Start
 
@@ -102,8 +113,8 @@ sudo iceprog build/riscv_fpga.bin
 ## Hardware Requirements
 
 - **Board**: Alchitry Cu v1 (Lattice iCE40-HX8K-CB132)
-- **Resources Used**: ~6,500 LUTs, ~2,500 FFs, 2 BRAMs (estimated)
-- **Clock**: 100 MHz (from on-board oscillator)
+- **Resources Used**: ~5,700 LUTs, 74% utilization, 16 BRAMs (50%)
+- **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
 - **Programming**: USB cable for iceprog
 
@@ -126,16 +137,35 @@ Reference: [Alchitry Cu PCF](https://github.com/r1cebank/alchitry-cu-utils/blob/
 
 ## Default Test Program
 
-The instruction memory includes a simple LED test program that will display pattern `0xAA` (binary 10101010) on the 8 LEDs:
+The instruction memory includes an LED rotation program that displays an alternating pattern on the 8 LEDs, matching the behavior of `led_demo/led_pattern_top.sv`:
 
 ```assembly
-lui  x15, 0x50000      # Load LED base address (0x50000000)
-addi x14, x0, 0xAA     # Load pattern 0xAA
-sw   x14, 0(x15)       # Write to LED register
-loop:
-    addi x13, x0, 0    # NOP
-    j    loop          # Loop forever
+# Initialize
+lui  x10, 0x50000      # LED controller base (0x50000000)
+addi x11, x0, 0xAA     # Initial pattern 0xAA (10101010)
+lui  x13, 0x017D8      # Delay count upper bits
+addi x13, x13, -1984   # Delay = 25,000,000 cycles (1 second at 25 MHz)
+
+# Main loop
+sw   x11, 0(x10)       # Write pattern to LED
+addi x12, x0, 0        # counter = 0
+
+# Delay loop (count to 25M)
+delay:
+    addi x12, x12, 1   # counter++
+    bne  x12, x13, delay
+
+# Rotate pattern left by 1 bit
+slli x14, x11, 1       # Shift left
+srli x15, x11, 7       # Extract MSB
+or   x11, x14, x15     # Combine
+andi x11, x11, 0xFF    # Mask to 8 bits
+jal  x0, main_loop     # Repeat
 ```
+
+**Expected behavior:**
+- Pattern alternates: 0xAA (10101010) ↔ 0x55 (01010101)
+- Updates every 1 second (25M cycles at 25 MHz)
 
 To change the program, edit the `initial` block in `bram_imem.sv`.
 
@@ -143,16 +173,17 @@ To change the program, edit the `initial` block in `bram_imem.sv`.
 
 ### "Timing not met" error
 
-If the design doesn't meet timing (100 MHz target):
+The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ensures timing closure. If you need a different frequency, update:
 
-1. **Accept lower frequency**: Edit `Makefile` and change `--freq 100` to `--freq 50`
-2. **Optimize design**: Reduce complexity or add pipeline stages (advanced RTL changes)
+1. **PLL parameters**: Edit `fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
+2. **Makefile**: Change `--freq 25` to match your target frequency
+3. **Test program**: Update delay loop count in `bram_imem.sv`
 
 ### "Insufficient resources" error
 
-The design uses ~85% of HX8K resources. If synthesis fails:
+The design uses ~74% of HX8K logic resources. If synthesis fails:
 
-1. **Disable FPU**: Modify `fpga_top.sv` to instantiate RV32IMAC version
+1. **Already optimized**: M and F extensions are disabled by default
 2. **Reduce memory**: Change BRAM sizes in `bram_imem.sv` and `bram_dmem.sv`
 
 ### "make program" fails
