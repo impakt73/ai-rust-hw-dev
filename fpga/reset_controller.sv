@@ -25,17 +25,17 @@ module reset_controller #(
 );
 
     // Calculate counter width based on RESET_CYCLES parameter
-    // Need enough bits to count from 0 to RESET_CYCLES-1
+    // Need enough bits to count from 0 up to RESET_CYCLES
     // Minimum width of 1 to handle edge case of RESET_CYCLES = 0 or 1
-    localparam COUNTER_WIDTH = (RESET_CYCLES <= 1) ? 1 : $clog2(RESET_CYCLES);
+    localparam COUNTER_WIDTH = (RESET_CYCLES < 2) ? 1 : $clog2(RESET_CYCLES + 1);
     
     // Internal counter to track reset duration
     logic [COUNTER_WIDTH-1:0] counter;
     
     // Reset complete flag - set when counter reaches target
-    // Counter counts from 0 to RESET_CYCLES-1, so reset is held for exactly RESET_CYCLES cycles
+    // Counter counts from 0 to RESET_CYCLES, so reset is held for exactly RESET_CYCLES cycles
     logic reset_complete;
-    assign reset_complete = (counter >= COUNTER_WIDTH'(RESET_CYCLES - 1));
+    assign reset_complete = (counter >= COUNTER_WIDTH'(RESET_CYCLES));
     
     // Counter logic
     always_ff @(posedge clk or negedge rst_n_in) begin
