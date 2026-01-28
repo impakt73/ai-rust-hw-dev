@@ -40,6 +40,28 @@ pub struct FpRegFile;
 #[verilog(src = "../rtl/fpu.sv", name = "fpu")]
 pub struct Fpu;
 
+// Define FPU submodules
+#[verilog(src = "../rtl/fpu_classifier.sv", name = "fpu_classifier")]
+pub struct FpuClassifier;
+
+#[verilog(src = "../rtl/fpu_comparator.sv", name = "fpu_comparator")]
+pub struct FpuComparator;
+
+#[verilog(src = "../rtl/fpu_adder.sv", name = "fpu_adder")]
+pub struct FpuAdder;
+
+#[verilog(src = "../rtl/fpu_multiplier.sv", name = "fpu_multiplier")]
+pub struct FpuMultiplier;
+
+#[verilog(src = "../rtl/fpu_int_to_float.sv", name = "fpu_int_to_float")]
+pub struct FpuIntToFloat;
+
+#[verilog(src = "../rtl/fpu_float_to_int.sv", name = "fpu_float_to_int")]
+pub struct FpuFloatToInt;
+
+#[verilog(src = "../rtl/fpu_sqrt.sv", name = "fpu_sqrt")]
+pub struct FpuSqrt;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -60,10 +82,17 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     // Convert to references that can be passed to VerilatorRuntime::new
     let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
 
+    // Set up include paths for Verilator to find all RTL modules
+    // This includes the main RTL directory and subdirectories (e.g., peripherals/)
+    let include_paths = [rtl_path];
+
     VerilatorRuntime::new(
         "target/verilator".into(),
         &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
-        &[],
+        &include_paths
+            .iter()
+            .map(|s| (*s).as_ref())
+            .collect::<Vec<_>>(),
         [],
         VerilatorRuntimeOptions::default(),
     )
@@ -113,5 +142,47 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 
 // Helper function to create a runtime for the FPU
 pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu.sv", "div_unit.sv"]) // FPU now depends on div_unit for multi-cycle division
+    create_runtime(&[
+        "fpu.sv",
+        "div_unit.sv",
+        "fpu_classifier.sv",
+        "fpu_comparator.sv",
+        "fpu_adder.sv",
+        "fpu_multiplier.sv",
+        "fpu_int_to_float.sv",
+        "fpu_float_to_int.sv",
+        "fpu_sqrt.sv",
+        "fpu_div_setup.sv",
+        "fpu_div_assemble.sv",
+        "fpu_fma.sv",
+    ]) // FPU now uses modular design with separate submodules
+}
+
+// Helper functions to create runtimes for FPU submodules
+pub fn create_fpu_classifier_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_classifier.sv"])
+}
+
+pub fn create_fpu_comparator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_comparator.sv"])
+}
+
+pub fn create_fpu_adder_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_adder.sv"])
+}
+
+pub fn create_fpu_multiplier_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_multiplier.sv"])
+}
+
+pub fn create_fpu_int_to_float_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_int_to_float.sv"])
+}
+
+pub fn create_fpu_float_to_int_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_float_to_int.sv"])
+}
+
+pub fn create_fpu_sqrt_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["fpu_sqrt.sv"])
 }
