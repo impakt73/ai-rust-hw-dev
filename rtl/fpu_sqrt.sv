@@ -41,10 +41,12 @@ module fpu_sqrt (
             // Calculate result exponent: (exp - 127) / 2 + 127
             if (a[23]) begin  // LSB of exponent (odd)
                 result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
-                mant_with_bit = {2'b01, a[22:1]};  // Adjust mantissa for odd exponent
+                /* verilator lint_off WIDTHTRUNC */
+                mant_with_bit = {2'b01, a[22:0]};  // Prepend 01 for odd exponent (25 bits truncated to 24)
+                /* verilator lint_on WIDTHTRUNC */
             end else begin  // Even exponent
                 result_exp = ((a[30:23] - 8'd127) >> 1) + 8'd127;
-                mant_with_bit = {1'b1, a[22:0]};
+                mant_with_bit = {1'b1, a[22:0]};  // Implicit 1
             end
             
             // Simplified mantissa (approximation)
