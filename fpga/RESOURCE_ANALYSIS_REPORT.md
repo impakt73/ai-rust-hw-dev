@@ -132,13 +132,13 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 
 ### Architecture Changes (Medium)
 
-3. **Make M extension optional** via `ENABLE_M_EXT` parameter
+2. **Make M extension optional** via `ENABLE_M_EXT` parameter
    - Expected savings: ~4,200 LUTs when disabled
 
-4. **Make F extension optional** via `ENABLE_F_EXT` parameter
+3. **Make F extension optional** via `ENABLE_F_EXT` parameter
    - Expected savings: ~4,500 LUTs when disabled
 
-5. **Share FPU hardware** - Single FMA/multiplier for all operations
+4. **Share FPU hardware** - Single FMA/multiplier for all operations
    - Expected savings: ~2,000 LUTs
 
 ### For Minimal FPGA Build (RV32I only)
