@@ -82,10 +82,17 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     // Convert to references that can be passed to VerilatorRuntime::new
     let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
 
+    // Set up include paths for Verilator to find all RTL modules
+    // This includes the main RTL directory and subdirectories (e.g., peripherals/)
+    let include_paths = [rtl_path];
+
     VerilatorRuntime::new(
         "target/verilator".into(),
         &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
-        &[],
+        &include_paths
+            .iter()
+            .map(|s| (*s).as_ref())
+            .collect::<Vec<_>>(),
         [],
         VerilatorRuntimeOptions::default(),
     )
@@ -147,7 +154,7 @@ pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "fpu_sqrt.sv",
         "fpu_div_setup.sv",
         "fpu_div_assemble.sv",
-        "fpu_fma.sv"
+        "fpu_fma.sv",
     ]) // FPU now uses modular design with separate submodules
 }
 
