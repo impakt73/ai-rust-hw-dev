@@ -192,9 +192,7 @@ module top #(
 5. [ ] Re-synthesize full design with extensions disabled
 6. [ ] Verify design fits in iCE40-HX8K
 
-**Note:** The INSTRET counter is not incremented in this implementation (always returns 0).
-This is a simplification - implementing proper instruction retirement counting would require
-an additional input signal from the CPU control logic.
+**Note:** The INSTRET counter is now properly implemented and increments on instruction completion.
 
 ---
 

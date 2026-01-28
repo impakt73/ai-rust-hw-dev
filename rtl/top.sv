@@ -1002,6 +1002,7 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         .is_csr(is_csr_reg & (current_state == S_CSR)),  // Gated by FSM
+        .instr_complete(instr_complete_internal),         // Instruction completion signal
         .funct3(funct3_reg),
         .rs1(rs1_reg),
         .csr_addr(csr_addr),
