@@ -318,7 +318,7 @@ module top #(
         end else begin
             if (alu_out_write) alu_out_reg <= alu_result;
             if (ENABLE_F_EXT && fpu_out_write) fpu_out_reg <= fp_to_int_reg ? fpu_int_result : fpu_fp_result;
-            else if (!ENABLE_F_EXT && fpu_out_write) fpu_out_reg <= 32'd0;  // F extension disabled
+            else if (fpu_out_write) fpu_out_reg <= 32'd0;  // F extension disabled
             if (mdr_write) mdr <= formatted_load_data;
             if (csr_rdata_write) csr_rdata_reg <= csr_rdata;
         end
