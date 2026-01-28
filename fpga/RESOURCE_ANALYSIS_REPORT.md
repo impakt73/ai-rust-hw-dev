@@ -106,13 +106,22 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 
 **Result:** 193 LUTs (2.5% of device) - synthesis completes in ~1 second!
 
-### 4. Register Files (409 + 680 = 1,089 LUTs)
+### 4. Register Files (409 + 680 = 1,089 LUTs) ✅ **ANALYZED**
 
 **Problem:** Both integer and FP register files use LUT-based implementation.
 
-**Recommendation:**
-1. **Use BRAM** for register files (saves ~1,000 LUTs)
-2. iCE40 has 32 BRAM blocks - use 2 for regfiles
+**Analysis Result:** BRAM conversion is **NOT FEASIBLE** on iCE40-HX8K due to:
+1. Memory depth too small (32 entries < 256 minimum for BRAM inference)
+2. Asynchronous read requirement (CPU architecture needs zero-latency reads)
+3. Multi-port reads (FP regfile needs 3 simultaneous ports)
+
+**See detailed analysis:** [`BRAM_CONVERSION_ANALYSIS.md`](BRAM_CONVERSION_ANALYSIS.md)
+
+**Outcome:**
+- ✅ Added `USE_BRAM` parameter to both modules for future use
+- ✅ Comprehensive documentation added to RTL files
+- ✅ Current recommendation: Keep LUT-based (~14% device usage is acceptable)
+- ❌ No LUT savings possible without major CPU architecture changes
 
 ---
 
@@ -125,10 +134,13 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
    - After: 193 LUTs (2.5% of device)
    - Status: **FIXED and tested**
 
-### Immediate Fixes Needed (Easy)
+### ~~Immediate Fixes Needed (Easy)~~ ✅ **COMPLETED**
 
-1. **Use BRAM for register files**
-   - Expected savings: ~1,000 LUTs
+1. ~~**Use BRAM for register files**~~ ✅ **ANALYZED - NOT FEASIBLE**
+   - ~~Expected savings: ~1,000 LUTs~~
+   - **Analysis:** BRAM inference not possible on iCE40 (depth < 256, async reads required)
+   - **See:** [`BRAM_CONVERSION_ANALYSIS.md`](BRAM_CONVERSION_ANALYSIS.md)
+   - **Outcome:** Added configurable parameter for future use, but recommend LUT-based storage
 
 ### Architecture Changes (Medium)
 
@@ -186,9 +198,9 @@ module top #(
 ## Next Steps
 
 1. [x] Fix CSR file implementation (highest priority) - **DONE**
-2. [ ] Add ENABLE_M_EXT parameter to ALU
-3. [ ] Add ENABLE_F_EXT parameter to top module  
-4. [ ] Convert register files to use BRAM
+2. [x] Analyze BRAM conversion for register files - **DONE** (not feasible)
+3. [ ] Add ENABLE_M_EXT parameter to ALU
+4. [ ] Add ENABLE_F_EXT parameter to top module  
 5. [ ] Re-synthesize full design with extensions disabled
 6. [ ] Verify design fits in iCE40-HX8K
 
