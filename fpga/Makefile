@@ -12,27 +12,14 @@ RTL_DIR = ../rtl
 FPGA_DIR = .
 BUILD_DIR = build
 
-# Source files
+# Source files (minimal set for RV32I base ISA only - M and F extensions disabled)
 RTL_SOURCES = \
 	$(RTL_DIR)/alu.sv \
 	$(RTL_DIR)/branch_unit.sv \
 	$(RTL_DIR)/csr_file.sv \
 	$(RTL_DIR)/decoder.sv \
 	$(RTL_DIR)/decompress.sv \
-	$(RTL_DIR)/div_unit.sv \
 	$(RTL_DIR)/fetch_buffer.sv \
-	$(RTL_DIR)/fp_regfile.sv \
-	$(RTL_DIR)/fpu.sv \
-	$(RTL_DIR)/fpu_adder.sv \
-	$(RTL_DIR)/fpu_classifier.sv \
-	$(RTL_DIR)/fpu_comparator.sv \
-	$(RTL_DIR)/fpu_div_assemble.sv \
-	$(RTL_DIR)/fpu_div_setup.sv \
-	$(RTL_DIR)/fpu_float_to_int.sv \
-	$(RTL_DIR)/fpu_fma.sv \
-	$(RTL_DIR)/fpu_int_to_float.sv \
-	$(RTL_DIR)/fpu_multiplier.sv \
-	$(RTL_DIR)/fpu_sqrt.sv \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/regfile.sv \
 	$(RTL_DIR)/writeback_mux.sv \
@@ -43,6 +30,8 @@ RTL_SOURCES = \
 FPGA_SOURCES = \
 	$(FPGA_DIR)/bram_imem.sv \
 	$(FPGA_DIR)/bram_dmem.sv \
+	$(FPGA_DIR)/stub_fpu.sv \
+	$(FPGA_DIR)/stub_div.sv \
 	$(FPGA_DIR)/fpga_top.sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
@@ -82,7 +71,7 @@ $(ASC): $(JSON) $(PCF)
 	           --json $(JSON) \
 	           --pcf $(PCF) \
 	           --asc $(ASC) \
-	           --freq 100 \
+	           --freq 25 \
 	           2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
