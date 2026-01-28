@@ -66,14 +66,18 @@ module fpga_top #(
     // Boot address: Start of instruction memory (DRAM base)
     localparam logic [31:0] BOOT_ADDR = 32'h80000000;
     localparam logic [31:0] DRAM_BASE = 32'h80000000;
+    // DRAM range: 0x80000000 - 0xFFFFFFFF (upper 2GB of address space)
+    // For BRAM, we only use a small portion (4KB each for imem/dmem)
+    localparam logic [31:0] IMEM_SIZE = 32'h1000;  // 4KB instruction memory
+    localparam logic [31:0] DMEM_SIZE = 32'h1000;  // 4KB data memory
     
-    // Instruction memory interface
+    // Instruction memory interface (from CPU)
     logic [31:0] imem_addr;
     logic [31:0] imem_data;
     logic        imem_req;
     logic        imem_ready;
     
-    // Data memory interface (external - to Rust peripherals in simulation)
+    // Data memory interface (from CPU - external bus)
     logic [31:0] ext_mem_addr;
     logic [31:0] ext_mem_wdata;
     logic [31:0] ext_mem_rdata;
@@ -83,14 +87,53 @@ module fpga_top #(
     logic        ext_mem_req;
     logic        ext_mem_ready;
     
-    // BRAM word addresses (properly mapped from CPU addresses)
+    // ============================================================
+    // Address Range Validation
+    // ============================================================
+    // Check if instruction address is within valid DRAM range for IMEM
+    logic imem_addr_valid;
+    assign imem_addr_valid = (imem_addr >= DRAM_BASE) && 
+                             (imem_addr < (DRAM_BASE + IMEM_SIZE));
+    
+    // Check if data address is within valid DRAM range for DMEM
+    logic dmem_addr_valid;
+    assign dmem_addr_valid = (ext_mem_addr >= DRAM_BASE) && 
+                             (ext_mem_addr < (DRAM_BASE + DMEM_SIZE));
+    
+    // BRAM word addresses (only valid when address is in range)
     logic [9:0] imem_bram_addr;  // Word address for 4KB = 1024 words
     logic [9:0] dmem_bram_addr;  // Word address for 4KB = 1024 words
     
     // Calculate word offset within BRAM (subtract DRAM base, then word-align)
-    // This maps CPU address 0x80000000 -> BRAM offset 0, 0x80000004 -> offset 1, etc.
+    // Only meaningful when address is valid; maps 0x80000000 -> offset 0, etc.
     assign imem_bram_addr = (imem_addr - DRAM_BASE) >> 2;
     assign dmem_bram_addr = (ext_mem_addr - DRAM_BASE) >> 2;
+    
+    // Gated control signals - only assert BRAM controls when address is valid
+    logic imem_req_gated;
+    logic dmem_req_gated;
+    logic dmem_we_gated;
+    logic dmem_re_gated;
+    
+    assign imem_req_gated = imem_req && imem_addr_valid;
+    assign dmem_req_gated = ext_mem_req && dmem_addr_valid;
+    assign dmem_we_gated  = ext_mem_we && dmem_addr_valid;
+    assign dmem_re_gated  = ext_mem_re && dmem_addr_valid;
+    
+    // BRAM output signals (directly from BRAM modules)
+    logic [31:0] imem_bram_rdata;
+    logic        imem_bram_ready;
+    logic [31:0] dmem_bram_rdata;
+    logic        dmem_bram_ready;
+    
+    // Mux read data: return 0 for invalid addresses, BRAM data for valid
+    assign imem_data  = imem_addr_valid ? imem_bram_rdata : 32'h0;
+    assign ext_mem_rdata = dmem_addr_valid ? dmem_bram_rdata : 32'h0;
+    
+    // Ready signals: assert immediately for invalid addresses (no wait needed)
+    // For valid addresses, use BRAM ready signal
+    assign imem_ready = imem_addr_valid ? imem_bram_ready : imem_req;
+    assign ext_mem_ready = dmem_addr_valid ? dmem_bram_ready : ext_mem_req;
     
     // LED controller output
     logic [7:0]  led_out;
@@ -164,10 +207,10 @@ module fpga_top #(
         .DATA_WIDTH(32)
     ) imem (
         .clk(sys_clk),
-        .addr(imem_bram_addr),  // Use properly mapped BRAM address
-        .rdata(imem_data),
-        .req(imem_req),
-        .ready(imem_ready)
+        .addr(imem_bram_addr),       // Mapped BRAM address (valid only when in range)
+        .rdata(imem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
+        .req(imem_req_gated),        // Gated request - only active for valid addresses
+        .ready(imem_bram_ready)      // BRAM ready (muxed for invalid addresses)
     );
     
     // ============================================================
@@ -179,14 +222,14 @@ module fpga_top #(
         .DATA_WIDTH(32)
     ) dmem (
         .clk(sys_clk),
-        .addr(dmem_bram_addr),  // Use properly mapped BRAM address
+        .addr(dmem_bram_addr),       // Mapped BRAM address (valid only when in range)
         .wdata(ext_mem_wdata),
-        .rdata(ext_mem_rdata),
-        .we(ext_mem_we),
-        .re(ext_mem_re),
+        .rdata(dmem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
+        .we(dmem_we_gated),          // Gated write enable - drops writes for invalid addresses
+        .re(dmem_re_gated),          // Gated read enable - only active for valid addresses
         .size(ext_mem_size),
-        .req(ext_mem_req),
-        .ready(ext_mem_ready)
+        .req(dmem_req_gated),        // Gated request - only active for valid addresses
+        .ready(dmem_bram_ready)      // BRAM ready (muxed for invalid addresses)
     );
     
     // ============================================================
