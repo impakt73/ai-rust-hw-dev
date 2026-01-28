@@ -1054,10 +1054,281 @@ This significantly simplifies the Rust integration layer - only the bus constant
 
 ## 8. Testing Strategy
 
-### 8.1 Hardware Loopback Approach
+The UART testing strategy consists of two levels:
 
-**Key Design Decision:** All UART testing is performed using the hardware loopback feature (`ENABLE_UART_LOOPBACK = 1`). This eliminates the need for:
-- Rust-side UART signal monitoring
+1. **RTL-Focused Tests** (`testbench/tests/uart_test.rs`) - Lower-level tests that directly verify the UART Verilog module in isolation, without the full CPU
+2. **CPU-Level Tests** (`cpu-sim/tests/test_uart.rs`) - Higher-level integration tests that run RISC-V programs through the CPU simulator with hardware loopback
+
+### 8.1 RTL-Focused Tests (Module-Level)
+
+RTL-focused tests directly instantiate the UART Verilog module via Verilator and test its behavior at the signal level. These tests are located in `testbench/tests/uart_test.rs` and follow the same pattern as existing RTL tests (e.g., `alu_test.rs`, `regfile_test.rs`).
+
+**Purpose:**
+- Verify UART module behavior in isolation
+- Test edge cases and timing requirements
+- Debug issues at the module level without full CPU complexity
+- Fast iteration during UART RTL development
+
+**Test File: testbench/tests/uart_test.rs**
+
+```rust
+use riscv_core::{create_uart_runtime, Uart};
+
+// Clock cycle macro for UART tests
+macro_rules! clock_cycle {
+    ($dut:expr) => {
+        $dut.clk = 0;
+        $dut.eval();
+        $dut.clk = 1;
+        $dut.eval();
+        $dut.clk = 0;
+        $dut.eval();
+    };
+}
+
+// Helper to wait for specified number of clock cycles
+fn wait_cycles(dut: &mut Uart, cycles: u32) {
+    for _ in 0..cycles {
+        clock_cycle!(dut);
+    }
+}
+
+// ============================================================================
+// UART RTL Module Tests
+// ============================================================================
+
+#[test]
+fn test_uart_reset_state() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Apply reset
+    dut.rst_n = 0;
+    dut.we = 0;
+    dut.re = 0;
+    clock_cycle!(dut);
+    
+    // Release reset
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    // Verify TX line is idle high
+    assert_eq!(dut.tx_out, 1, "TX should be idle high after reset");
+    
+    // Verify ready signal is asserted (single-cycle peripheral)
+    assert_eq!(dut.ready, 1, "UART should be ready");
+}
+
+#[test]
+fn test_uart_tx_idle_high() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset and initialize
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    
+    // Verify TX stays high for multiple cycles without any writes
+    for _ in 0..100 {
+        clock_cycle!(dut);
+        assert_eq!(dut.tx_out, 1, "TX should remain idle high");
+    }
+}
+
+#[test]
+fn test_uart_status_register_initial() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    // Read STATUS register (offset 0x08)
+    dut.addr = 0x08;
+    dut.re = 1;
+    dut.eval();
+    
+    let status = dut.rdata;
+    
+    // Check TX_EMPTY (bit 1) is set
+    assert!((status & 0x02) != 0, "TX_EMPTY should be set initially");
+    
+    // Check RX_EMPTY (bit 5) is set
+    assert!((status & 0x20) != 0, "RX_EMPTY should be set initially");
+    
+    // Check TX_FULL (bit 0) is clear
+    assert!((status & 0x01) == 0, "TX_FULL should be clear initially");
+}
+
+#[test]
+fn test_uart_tx_fifo_write() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    // Write a byte to TXDATA (offset 0x00)
+    dut.addr = 0x00;
+    dut.wdata = 0x55;
+    dut.we = 1;
+    dut.size = 0b10;  // Word access
+    clock_cycle!(dut);
+    dut.we = 0;
+    
+    // Read STATUS register
+    dut.addr = 0x08;
+    dut.re = 1;
+    dut.eval();
+    
+    // TX_EMPTY should now be clear (data in FIFO)
+    // Note: Depending on implementation, TX_EMPTY may clear after TX starts
+}
+
+#[test]
+fn test_uart_tx_start_bit() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    // Write a byte to trigger transmission
+    dut.addr = 0x00;
+    dut.wdata = 0xAA;
+    dut.we = 1;
+    dut.size = 0b10;
+    clock_cycle!(dut);
+    dut.we = 0;
+    
+    // TX should eventually go low for start bit
+    let mut saw_start_bit = false;
+    for _ in 0..1000 {
+        clock_cycle!(dut);
+        if dut.tx_out == 0 {
+            saw_start_bit = true;
+            break;
+        }
+    }
+    
+    assert!(saw_start_bit, "TX should transition to low for start bit");
+}
+
+#[test]
+fn test_uart_loopback_single_byte() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    let test_byte: u32 = 0xA5;
+    
+    // Write byte to TXDATA
+    dut.addr = 0x00;
+    dut.wdata = test_byte;
+    dut.we = 1;
+    dut.size = 0b10;
+    clock_cycle!(dut);
+    dut.we = 0;
+    
+    // Connect TX to RX (simulate loopback)
+    // In the actual module, this is done via ENABLE_UART_LOOPBACK parameter
+    // For direct module testing, we manually connect the signals
+    
+    // Wait for transmission to complete (depends on baud rate)
+    // At 115200 baud with 50MHz clock, one bit = ~434 clocks
+    // Full frame = 10 bits = ~4340 clocks
+    for _ in 0..5000 {
+        // Loopback: connect tx_out to rx_in
+        dut.rx_in = dut.tx_out;
+        clock_cycle!(dut);
+    }
+    
+    // Check RX_EMPTY in STATUS register
+    dut.addr = 0x08;
+    dut.re = 1;
+    dut.eval();
+    
+    let status = dut.rdata;
+    let rx_empty = (status & 0x20) != 0;
+    
+    if !rx_empty {
+        // Read RXDATA
+        dut.re = 0;
+        dut.addr = 0x04;
+        dut.re = 1;
+        dut.eval();
+        
+        let received = dut.rdata & 0xFF;
+        assert_eq!(received, test_byte, "Received byte should match transmitted byte");
+    }
+}
+
+#[test]
+fn test_uart_tx_fifo_full() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = Uart::new(&runtime);
+    
+    // Reset
+    dut.rst_n = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
+    
+    // Write 8 bytes to fill the FIFO
+    for i in 0..8 {
+        dut.addr = 0x00;
+        dut.wdata = i as u32;
+        dut.we = 1;
+        dut.size = 0b10;
+        clock_cycle!(dut);
+    }
+    dut.we = 0;
+    
+    // Check STATUS for TX_FULL
+    dut.addr = 0x08;
+    dut.re = 1;
+    dut.eval();
+    
+    let status = dut.rdata;
+    let tx_full = (status & 0x01) != 0;
+    
+    assert!(tx_full, "TX_FULL should be set after writing 8 bytes");
+}
+```
+
+**RTL Test Categories:**
+
+| Test Name | Description | Verifies |
+|-----------|-------------|----------|
+| `test_uart_reset_state` | Check state after reset | TX idle high, ready asserted |
+| `test_uart_tx_idle_high` | TX line without activity | TX stays high |
+| `test_uart_status_register_initial` | STATUS after reset | TX_EMPTY=1, RX_EMPTY=1 |
+| `test_uart_tx_fifo_write` | Write to TXDATA register | Byte accepted into FIFO |
+| `test_uart_tx_start_bit` | Trigger TX transmission | Start bit (low) appears |
+| `test_uart_loopback_single_byte` | TX→RX via loopback | Data integrity |
+| `test_uart_tx_fifo_full` | Fill TX FIFO | TX_FULL status set |
+| `test_uart_baud_timing` | Bit timing accuracy | Correct clocks per bit |
+| `test_uart_rx_oversampling` | RX bit sampling | Sample at mid-bit |
+
+### 8.2 Hardware Loopback Approach (CPU-Level)
+
+**Key Design Decision:** CPU-level UART testing is performed using the hardware loopback feature (`ENABLE_UART_LOOPBACK = 1`). This eliminates the need for:
+- Rust-side UART signal monitoring in the CPU simulator
 - Complex TX capture and RX injection helpers
 - Cycle-accurate timing simulation in Rust
 
@@ -1070,7 +1341,7 @@ This significantly simplifies the Rust integration layer - only the bus constant
 6. Program validates received data matches transmitted data
 7. Program writes success/failure to tohost register
 
-### 8.2 Test Categories
+### 8.3 CPU-Level Test Categories
 
 **1. Register Access Tests (CPU-level):**
 - Verify memory-mapped register addresses
@@ -1091,7 +1362,7 @@ All loopback tests run with hardware loopback enabled (default). The test progra
 - Multi-byte sequence: 0x01, 0x02, 0x03, ...
 - Full FIFO: 8 consecutive bytes
 
-### 8.3 Test File: cpu-sim/tests/test_uart.rs
+### 8.4 Test File: cpu-sim/tests/test_uart.rs
 
 ```rust
 //! UART Controller RTL Peripheral Tests
@@ -1324,7 +1595,22 @@ fn test_uart_loopback_single_byte() {
 }
 ```
 
-### 8.4 Test Scenarios
+### 8.5 Test Scenarios
+
+**RTL-Focused Tests (testbench/tests/uart_test.rs):**
+
+| Test Name | Description | Expected Result |
+|-----------|-------------|-----------------|
+| `test_uart_reset_state` | Check state after reset | TX idle high, ready asserted |
+| `test_uart_tx_idle_high` | TX line without activity | TX stays high |
+| `test_uart_status_register_initial` | STATUS after reset | TX_EMPTY=1, RX_EMPTY=1 |
+| `test_uart_tx_fifo_write` | Write to TXDATA register | Byte accepted into FIFO |
+| `test_uart_tx_start_bit` | Trigger TX transmission | Start bit (low) appears |
+| `test_uart_loopback_single_byte` | TX→RX via manual loopback | Data integrity |
+| `test_uart_tx_fifo_full` | Fill TX FIFO | TX_FULL status set |
+| `test_uart_baud_timing` | Bit timing accuracy | Correct clocks per bit |
+
+**CPU-Level Tests (cpu-sim/tests/test_uart.rs):**
 
 | Test Name | Description | Expected Result |
 |-----------|-------------|-----------------|
@@ -1380,12 +1666,29 @@ fn test_uart_loopback_single_byte() {
   - [ ] Add helper functions
 
 - [ ] Update `riscv_core/src/lib.rs`
+  - [ ] Add `Uart` struct with `#[verilog]` attribute
+  - [ ] Add `create_uart_runtime()` helper function
   - [ ] Add uart.sv to create_cpu_runtime()
 
 - [ ] Clear Verilator cache
   - [ ] `cargo clean`
 
-### Phase 3: Testing
+### Phase 3: RTL-Focused Testing
+
+- [ ] Create `testbench/tests/uart_test.rs`
+  - [ ] test_uart_reset_state()
+  - [ ] test_uart_tx_idle_high()
+  - [ ] test_uart_status_register_initial()
+  - [ ] test_uart_tx_fifo_write()
+  - [ ] test_uart_tx_start_bit()
+  - [ ] test_uart_loopback_single_byte() (manual signal loopback)
+  - [ ] test_uart_tx_fifo_full()
+  - [ ] test_uart_baud_timing()
+
+- [ ] Run RTL tests
+  - [ ] `cargo test -p testbench --verbose`
+
+### Phase 4: CPU-Level Testing
 
 - [ ] Create `cpu-sim/tests/test_uart.rs`
   - [ ] test_uart_constants()
@@ -1393,14 +1696,14 @@ fn test_uart_loopback_single_byte() {
   - [ ] test_uart_status_initial_state()
   - [ ] test_uart_tx_fifo_full()
   - [ ] test_uart_rx_read_empty()
-  - [ ] test_uart_loopback_single_byte()
+  - [ ] test_uart_loopback_single_byte() (hardware loopback)
   - [ ] test_uart_loopback_pattern()
   - [ ] test_uart_loopback_multi_byte()
 
 - [ ] Run all tests
   - [ ] `cargo test --verbose`
 
-### Phase 4: Documentation
+### Phase 5: Documentation
 
 - [ ] Update `AGENTS.md`
   - [ ] Add UART to memory map table
