@@ -185,12 +185,16 @@ module top #(
 
 ## Next Steps
 
-1. [ ] Fix CSR file implementation (highest priority)
+1. [x] Fix CSR file implementation (highest priority) - **DONE**
 2. [ ] Add ENABLE_M_EXT parameter to ALU
 3. [ ] Add ENABLE_F_EXT parameter to top module  
 4. [ ] Convert register files to use BRAM
 5. [ ] Re-synthesize full design with extensions disabled
 6. [ ] Verify design fits in iCE40-HX8K
+
+**Note:** The INSTRET counter is not incremented in this implementation (always returns 0).
+This is a simplification - implementing proper instruction retirement counting would require
+an additional input signal from the CPU control logic.
 
 ---
 

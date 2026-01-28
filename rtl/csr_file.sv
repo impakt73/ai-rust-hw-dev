@@ -75,6 +75,8 @@ module csr_file (
     logic [31:0] csr_mtval;
     
     // Performance counters (64-bit)
+    // Note: CYCLE increments every clock cycle
+    // INSTRET is simplified - always returns 0 (would need instr_complete signal to implement)
     logic [63:0] csr_cycle;
     logic [63:0] csr_instret;
     
@@ -155,7 +157,7 @@ module csr_file (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             csr_mstatus  <= 32'h0;
-            csr_misa     <= 32'h40141101;  // RV32IMACF default
+            csr_misa     <= 32'h40001125;  // RV32IMACF: MXL=01, I=8, M=12, A=0, C=2, F=5
             csr_medeleg  <= 32'h0;
             csr_mideleg  <= 32'h0;
             csr_mie      <= 32'h0;
