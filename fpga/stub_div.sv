@@ -16,6 +16,6 @@ module div_unit #(
     output logic             ready
 );
     // Stub implementation - all outputs tied to zero
-    assign result = 32'h0;
+    assign result = '0;
     assign ready = 1'b0;
 endmodule

@@ -24,8 +24,8 @@ module fpga_top #(
     // PLL parameters calculated for: 100 MHz input -> 25 MHz output
     // DIVR = 0, DIVF = 7, DIVQ = 5 gives: 100 * (7+1) / (2^5) = 100 * 8 / 32 = 25 MHz
     
-    logic pll_clk;       // PLL output clock (25 MHz)
-    logic pll_locked;    // PLL lock indicator
+    logic pll_clk_global; // PLL output on global clock network (25 MHz)
+    logic pll_locked;     // PLL lock indicator
     
     SB_PLL40_CORE #(
         .FEEDBACK_PATH("SIMPLE"),
@@ -35,16 +35,17 @@ module fpga_top #(
         .FILTER_RANGE(3'b001)  // Filter range for 100 MHz input
     ) pll_inst (
         .REFERENCECLK(clk),
-        .PLLOUTCORE(pll_clk),
-        .PLLOUTGLOBAL(),
+        .PLLOUTCORE(),         // Unused - use global network instead
+        .PLLOUTGLOBAL(pll_clk_global),  // Drive system clock via global clock network
         .LOCK(pll_locked),
         .BYPASS(1'b0),
         .RESETB(1'b1)
     );
     
-    // Use PLL clock for all internal logic
+    // Use PLL global clock output for all internal logic
+    // This reduces clock skew and improves timing closure
     logic sys_clk;
-    assign sys_clk = pll_clk;
+    assign sys_clk = pll_clk_global;
     
     // ============================================================
     // Reset Synchronization
@@ -100,14 +101,15 @@ module fpga_top #(
     assign dmem_addr_valid = (ext_mem_addr >= DRAM_BASE) && 
                              (ext_mem_addr < (DRAM_BASE + DMEM_SIZE));
     
-    // BRAM word addresses (only valid when address is in range)
-    logic [9:0] imem_bram_addr;  // Word address for 4KB = 1024 words
-    logic [9:0] dmem_bram_addr;  // Word address for 4KB = 1024 words
+    // BRAM addresses (byte addresses - only valid when address is in range)
+    // Use full byte address to support compressed instructions (2-byte aligned) and sub-word accesses
+    logic [11:0] imem_bram_addr;  // Byte address for 4KB
+    logic [11:0] dmem_bram_addr;  // Byte address for 4KB
     
-    // Calculate word offset within BRAM (subtract DRAM base, then word-align)
+    // Calculate byte offset within BRAM (subtract DRAM base)
     // Only meaningful when address is valid; maps 0x80000000 -> offset 0, etc.
-    assign imem_bram_addr = (imem_addr - DRAM_BASE) >> 2;
-    assign dmem_bram_addr = (ext_mem_addr - DRAM_BASE) >> 2;
+    assign imem_bram_addr = (imem_addr - DRAM_BASE);
+    assign dmem_bram_addr = (ext_mem_addr - DRAM_BASE);
     
     // Gated control signals - only assert BRAM controls when address is valid
     logic imem_req_gated;
@@ -203,11 +205,11 @@ module fpga_top #(
     // 4 KB instruction memory (1024 x 32-bit words)
     // Initialized with a simple test program
     bram_imem #(
-        .ADDR_WIDTH(10),  // 2^10 = 1024 words = 4 KB
+        .ADDR_WIDTH(12),  // 2^12 = 4096 bytes = 4 KB (byte-addressed)
         .DATA_WIDTH(32)
     ) imem (
         .clk(sys_clk),
-        .addr(imem_bram_addr),       // Mapped BRAM address (valid only when in range)
+        .addr(imem_bram_addr),       // Byte address for compressed instruction support
         .rdata(imem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
         .req(imem_req_gated),        // Gated request - only active for valid addresses
         .ready(imem_bram_ready)      // BRAM ready (muxed for invalid addresses)
@@ -218,11 +220,11 @@ module fpga_top #(
     // ============================================================
     // 4 KB data memory (1024 x 32-bit words)
     bram_dmem #(
-        .ADDR_WIDTH(10),  // 2^10 = 1024 words = 4 KB
+        .ADDR_WIDTH(12),  // 2^12 = 4096 bytes = 4 KB (byte-addressed)
         .DATA_WIDTH(32)
     ) dmem (
         .clk(sys_clk),
-        .addr(dmem_bram_addr),       // Mapped BRAM address (valid only when in range)
+        .addr(dmem_bram_addr),       // Byte address for sub-word access support
         .wdata(ext_mem_wdata),
         .rdata(dmem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
         .we(dmem_we_gated),          // Gated write enable - drops writes for invalid addresses

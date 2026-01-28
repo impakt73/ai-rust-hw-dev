@@ -1,20 +1,26 @@
 // Block RAM Instruction Memory
 // Single-port read-only memory for instruction storage
 // Synthesizes to on-chip BRAM on iCE40 FPGA
+// Byte-addressed to support compressed (2-byte aligned) instructions
 
 module bram_imem #(
-    parameter ADDR_WIDTH = 10,  // 2^10 = 1024 words
+    parameter ADDR_WIDTH = 12,  // 2^12 = 4096 bytes = 4 KB
     parameter DATA_WIDTH = 32
 ) (
     input  logic                    clk,
-    input  logic [ADDR_WIDTH-1:0]   addr,
+    input  logic [ADDR_WIDTH-1:0]   addr,   // Byte address
     output logic [DATA_WIDTH-1:0]   rdata,
     input  logic                    req,
     output logic                    ready
 );
 
-    // Memory array
-    logic [DATA_WIDTH-1:0] mem [0:(2**ADDR_WIDTH)-1];
+    // Memory array - stored as 32-bit words, addressed by word index
+    localparam WORD_COUNT = 2**(ADDR_WIDTH-2);  // 4 KB / 4 bytes = 1024 words
+    logic [DATA_WIDTH-1:0] mem [0:WORD_COUNT-1];
+    
+    // Word address is byte address >> 2
+    logic [ADDR_WIDTH-3:0] word_addr;
+    assign word_addr = addr[ADDR_WIDTH-1:2];
     
     // Initialize memory with LED rotation program
     // This program rotates LED pattern left by 1 bit every second (25M cycles at 25MHz)
@@ -68,7 +74,7 @@ module bram_imem #(
         mem[9] = 32'h0075D793;
         
         // 10: or x11, x14, x15  // Combine: pattern = (pattern << 1) | (pattern >> 7)
-        mem[10] = 32'h00F76593;
+        mem[10] = 32'h00F765B3;
         
         // 11: andi x11, x11, 0xFF  // Mask to 8 bits
         mem[11] = 32'h0FF5F593;
@@ -77,7 +83,7 @@ module bram_imem #(
         mem[12] = 32'hFE1FF06F;
         
         // Fill rest with NOPs
-        for (int i = 13; i < (2**ADDR_WIDTH); i++) begin
+        for (int i = 13; i < WORD_COUNT; i++) begin
             mem[i] = 32'h00000013;  // addi x0, x0, 0 (NOP)
         end
     end
@@ -88,7 +94,7 @@ module bram_imem #(
     
     always_ff @(posedge clk) begin
         if (req) begin
-            rdata_reg <= mem[addr];
+            rdata_reg <= mem[word_addr];  // Use word address for memory lookup
             ready_reg <= 1'b1;
         end else begin
             ready_reg <= 1'b0;
