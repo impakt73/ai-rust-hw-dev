@@ -14,7 +14,24 @@ module fpga_top #(
     input  logic       rst_n_btn,
     
     // LED outputs (8 LEDs on Alchitry Cu main board)
-    output logic [7:0] led
+    output logic [7:0] led,
+    
+    // USB Serial
+    input  logic       usb_rx,
+    output logic       usb_tx,
+    
+    // IO Shield - LEDs (24 LEDs in 3 groups of 8)
+    output logic [23:0] io_led,
+    
+    // IO Shield - DIP Switches (24 switches in 3 groups of 8)
+    input  logic [23:0] io_dip,
+    
+    // IO Shield - Buttons (5 buttons, directly active high)
+    input  logic [4:0]  io_button,
+    
+    // IO Shield - Seven-Segment Display
+    output logic [3:0]  io_sel,   // Digit selection (active high)
+    output logic [7:0]  io_seg    // Segment outputs
 );
 
     // ============================================================
@@ -238,5 +255,57 @@ module fpga_top #(
     // LED Output Assignment
     // ============================================================
     assign led = led_out;
+    
+    // Assign 8-bit LED pattern to all 3 IO Shield LED groups
+    assign io_led[7:0]   = led_out;
+    assign io_led[15:8]  = led_out;
+    assign io_led[23:16] = led_out;
+    
+    // ============================================================
+    // USB Serial Loopback
+    // ============================================================
+    assign usb_tx = usb_rx;
+    
+    // ============================================================
+    // Button Counter Logic
+    // ============================================================
+    // Synchronize buttons to system clock domain (2-FF synchronizer)
+    // Note: This is a simple demo implementation without debouncing.
+    // For production use, add a debounce timer (~10-20ms stable period).
+    logic [4:0] io_button_sync1, io_button_sync2;
+    logic [4:0] io_button_prev;
+    logic [7:0] button_counter;
+    
+    always_ff @(posedge sys_clk) begin
+        if (!rst_n) begin
+            io_button_sync1 <= 5'b0;
+            io_button_sync2 <= 5'b0;
+            io_button_prev  <= 5'b0;
+            button_counter  <= 8'b0;
+        end else begin
+            // 2-FF synchronizer for buttons
+            io_button_sync1 <= io_button;
+            io_button_sync2 <= io_button_sync1;
+            
+            // Edge detection: increment on any rising edge of any button
+            io_button_prev <= io_button_sync2;
+            
+            // If any button has a rising edge (was 0, now 1), increment counter
+            if (|(io_button_sync2 & ~io_button_prev)) begin
+                button_counter <= button_counter + 8'd1;
+            end
+        end
+    end
+    
+    // ============================================================
+    // Seven-Segment Display - Show Counter
+    // ============================================================
+    // Enable all digit selections simultaneously (per requirements)
+    // Note: For multiplexed displays, only one digit would be enabled at a time.
+    // The raw counter value is output directly (no BCD-to-7seg decoding per requirements).
+    assign io_sel = 4'b1111;
+    
+    // Display counter value on all segments
+    assign io_seg = button_counter;
 
 endmodule
