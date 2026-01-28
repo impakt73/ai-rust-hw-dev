@@ -583,18 +583,18 @@ always_ff @(posedge clk or negedge rst_n) begin
                 rx_fifo_write_int <= 1'b0;  // Ensure pulse is cleared
                 if (rx_baud_counter == 0) begin
                     rx_baud_counter <= CLKS_PER_SAMPLE - 1;
-                    if (rx_sample_count == 4'd15) begin
-                        // Sample at bit boundary (after 16 samples = 1 bit period)
-                        // Note: With 16x oversampling, we count 16 samples per bit.
-                        // The actual sample occurs at count 15 which is the end of the
-                        // bit period. For mid-bit sampling, use count 7/8 instead.
-                        // This design samples at bit boundary for simplicity.
+                    if (rx_sample_count == 4'd7) begin
+                        // Sample at middle of data bit (after 8 samples = half bit period)
+                        // With 16x oversampling, we sample at count 7 (middle of bit)
+                        // This provides maximum timing margin for robust data recovery
                         rx_shift_reg <= {rx_sync_1, rx_shift_reg[7:1]};  // LSB first
+                        rx_bit_index <= rx_bit_index + 1'b1;
+                    end
+                    if (rx_sample_count == 4'd15) begin
+                        // End of bit period - advance to next bit or stop
                         rx_sample_count <= 4'd0;
-                        if (rx_bit_index == 3'd7) begin
+                        if (rx_bit_index == 3'd0) begin  // Just wrapped from 7 to 0
                             rx_state <= RX_STOP_BIT;
-                        end else begin
-                            rx_bit_index <= rx_bit_index + 1'b1;
                         end
                     end else begin
                         rx_sample_count <= rx_sample_count + 1'b1;
@@ -608,8 +608,9 @@ always_ff @(posedge clk or negedge rst_n) begin
                 rx_fifo_write_int <= 1'b0;  // Default: no write (ensures single-cycle pulse)
                 if (rx_baud_counter == 0) begin
                     rx_baud_counter <= CLKS_PER_SAMPLE - 1;
-                    if (rx_sample_count == 4'd15) begin
-                        // Sample stop bit
+                    if (rx_sample_count == 4'd7) begin
+                        // Sample stop bit at middle of bit (after 8 samples)
+                        // This provides maximum timing margin for stop bit detection
                         if (rx_sync_1 == 1'b1) begin
                             // Valid stop bit - signal FIFO write
                             // (FIFO management block handles actual write)
@@ -1791,14 +1792,10 @@ fn test_uart_loopback_single_byte() {
 
 ### Phase 5: FPGA Integration
 
-- [ ] Update `fpga/fpga_top.sv`
-  - [ ] Add UART external pins (uart_tx, uart_rx) to module ports
-  - [ ] Update `top_with_peripherals` instantiation with `ENABLE_UART_LOOPBACK = 0`
-  - [ ] Connect UART pins to external I/O
+**Note:** The `fpga/fpga_top.sv` module already includes `uart_tx` and `uart_rx` external pins, and the `fpga/ice40hx8k.pcf` pin constraint file already has the UART pin assignments. The only required change is updating the `top_with_peripherals` instantiation.
 
-- [ ] Update `fpga/ice40hx8k.pcf`
-  - [ ] Add UART TX pin assignment
-  - [ ] Add UART RX pin assignment
+- [ ] Update `fpga/fpga_top.sv`
+  - [ ] Update `top_with_peripherals` instantiation with `ENABLE_UART_LOOPBACK = 0`
 
 - [ ] Verify FPGA synthesis still works
   - [ ] `cd fpga && make`
