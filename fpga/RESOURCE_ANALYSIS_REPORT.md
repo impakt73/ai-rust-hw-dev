@@ -17,15 +17,15 @@ This report analyzes the resource consumption of each RTL module in the RISC-V C
 
 ### Top Resource Consumers:
 
-| Rank | Module | LUTs | % of Device | Issue |
-|------|--------|------|-------------|-------|
-| 1 | **ALU** (with div_unit) | 4,738 | 61.7% | 64-bit multipliers + multi-cycle divider |
-| 2 | **FPU** (full) | 4,535 | 59.0% | 4x FMA units + 48-bit divider |
-| 3 | **FPU_FMA** | 2,293 | 29.9% | Multiplier + Adder chain |
-| 4 | **FPU_Multiplier** | 1,574 | 20.5% | 24x24 bit multiplier |
-| 5 | **CSR File** | >7,680 | >100% | 4096x32-bit register array |
+| Rank | Module | LUTs | % of Device | Issue | Status |
+|------|--------|------|-------------|-------|--------|
+| 1 | **ALU** (with div_unit) | 4,738 | 61.7% | 64-bit multipliers + multi-cycle divider | Needs M extension disable option |
+| 2 | **FPU** (full) | 4,535 | 59.0% | 4x FMA units + 48-bit divider | Needs F extension disable option |
+| 3 | **FPU_FMA** | 2,293 | 29.9% | Multiplier + Adder chain | Part of FPU |
+| 4 | **FPU_Multiplier** | 1,574 | 20.5% | 24x24 bit multiplier | Part of FPU |
+| 5 | ~~**CSR File**~~ | ~~>7,680~~ → 193 | ~~>100%~~ → 2.5% | ~~4096x32-bit register array~~ | ✅ **FIXED!** |
 
-**Critical Finding:** The ALU + FPU alone consume ~120% of available LUTs, making the design impossible to fit on the iCE40-HX8K.
+**Critical Finding:** The ALU + FPU alone consume ~120% of available LUTs, making the design impossible to fit on the iCE40-HX8K without disabling extensions.
 
 ---
 
