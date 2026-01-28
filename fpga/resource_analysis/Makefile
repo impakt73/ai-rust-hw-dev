@@ -25,8 +25,6 @@ BASE_SOURCES = $(RTL_DIR)/div_unit.sv
 FPU_BASE_SOURCES = \
 	$(RTL_DIR)/fpu_classifier.sv \
 	$(RTL_DIR)/fpu_comparator.sv \
-	$(RTL_DIR)/fpu_adder.sv \
-	$(RTL_DIR)/fpu_multiplier.sv \
 	$(RTL_DIR)/fpu_sqrt.sv \
 	$(RTL_DIR)/fpu_int_to_float.sv \
 	$(RTL_DIR)/fpu_float_to_int.sv \
@@ -44,15 +42,13 @@ SOURCES_div_unit = $(RTL_DIR)/div_unit.sv
 SOURCES_fetch_buffer = $(RTL_DIR)/fetch_buffer.sv
 SOURCES_fp_regfile = $(RTL_DIR)/fp_regfile.sv
 SOURCES_fpu = $(RTL_DIR)/fpu.sv $(FPU_BASE_SOURCES) $(RTL_DIR)/div_unit.sv
-SOURCES_fpu_adder = $(RTL_DIR)/fpu_adder.sv
 SOURCES_fpu_classifier = $(RTL_DIR)/fpu_classifier.sv
 SOURCES_fpu_comparator = $(RTL_DIR)/fpu_comparator.sv
 SOURCES_fpu_div_assemble = $(RTL_DIR)/fpu_div_assemble.sv
 SOURCES_fpu_div_setup = $(RTL_DIR)/fpu_div_setup.sv
 SOURCES_fpu_float_to_int = $(RTL_DIR)/fpu_float_to_int.sv
-SOURCES_fpu_fma = $(RTL_DIR)/fpu_fma.sv $(RTL_DIR)/fpu_adder.sv $(RTL_DIR)/fpu_multiplier.sv
+SOURCES_fpu_fma = $(RTL_DIR)/fpu_fma.sv
 SOURCES_fpu_int_to_float = $(RTL_DIR)/fpu_int_to_float.sv
-SOURCES_fpu_multiplier = $(RTL_DIR)/fpu_multiplier.sv
 SOURCES_fpu_sqrt = $(RTL_DIR)/fpu_sqrt.sv
 SOURCES_mem_interface = $(RTL_DIR)/mem_interface.sv
 SOURCES_regfile = $(RTL_DIR)/regfile.sv
@@ -68,7 +64,6 @@ DEFINE_div_unit = SYNTH_DIV_UNIT
 DEFINE_fetch_buffer = SYNTH_FETCH_BUFFER
 DEFINE_fp_regfile = SYNTH_FP_REGFILE
 DEFINE_fpu = SYNTH_FPU
-DEFINE_fpu_adder = SYNTH_FPU_ADDER
 DEFINE_fpu_classifier = SYNTH_FPU_CLASSIFIER
 DEFINE_fpu_comparator = SYNTH_FPU_COMPARATOR
 DEFINE_fpu_div_assemble = SYNTH_FPU_DIV_ASSEMBLE
@@ -76,7 +71,6 @@ DEFINE_fpu_div_setup = SYNTH_FPU_DIV_SETUP
 DEFINE_fpu_float_to_int = SYNTH_FPU_FLOAT_TO_INT
 DEFINE_fpu_fma = SYNTH_FPU_FMA
 DEFINE_fpu_int_to_float = SYNTH_FPU_INT_TO_FLOAT
-DEFINE_fpu_multiplier = SYNTH_FPU_MULTIPLIER
 DEFINE_fpu_sqrt = SYNTH_FPU_SQRT
 DEFINE_mem_interface = SYNTH_MEM_INTERFACE
 DEFINE_regfile = SYNTH_REGFILE
@@ -93,7 +87,6 @@ MODULES = \
 	fetch_buffer \
 	fp_regfile \
 	fpu \
-	fpu_adder \
 	fpu_classifier \
 	fpu_comparator \
 	fpu_div_assemble \
@@ -101,7 +94,6 @@ MODULES = \
 	fpu_float_to_int \
 	fpu_fma \
 	fpu_int_to_float \
-	fpu_multiplier \
 	fpu_sqrt \
 	mem_interface \
 	regfile \
@@ -177,7 +169,6 @@ synth-full-cpu: $(BUILD_DIR)
 		$(RTL_DIR)/fetch_buffer.sv \
 		$(RTL_DIR)/fp_regfile.sv \
 		$(RTL_DIR)/fpu.sv \
-		$(RTL_DIR)/fpu_adder.sv \
 		$(RTL_DIR)/fpu_classifier.sv \
 		$(RTL_DIR)/fpu_comparator.sv \
 		$(RTL_DIR)/fpu_div_assemble.sv \
@@ -185,7 +176,6 @@ synth-full-cpu: $(BUILD_DIR)
 		$(RTL_DIR)/fpu_float_to_int.sv \
 		$(RTL_DIR)/fpu_fma.sv \
 		$(RTL_DIR)/fpu_int_to_float.sv \
-		$(RTL_DIR)/fpu_multiplier.sv \
 		$(RTL_DIR)/fpu_sqrt.sv \
 		$(RTL_DIR)/mem_interface.sv \
 		$(RTL_DIR)/regfile.sv \

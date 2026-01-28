@@ -64,13 +64,13 @@ This report analyzes the resource consumption of each RTL module in the RISC-V C
 | regfile | 409 | 335 | 0 | 5.3% | ⚡ Medium |
 | fpu_div_assemble | 513 | 266 | 0 | 6.7% | ⚡ Medium |
 | div_unit | 550 | 385 | 0 | 7.2% | ⚡ Medium |
-| fpu_adder | 599 | 267 | 0 | 7.8% | ⚡ Medium (now shared via FMA) |
 | fp_regfile | 680 | 335 | 0 | 8.9% | ⚡ Medium |
-| fpu_multiplier | 1,574 | 258 | 0 | 20.5% | ⚠️ HIGH (now shared via FMA) |
-| fpu_fma | 2,293 | 268 | 0 | 29.9% | ⚠️ HIGH (single instance now) |
+| fpu_fma | 2,293 | 268 | 0 | 29.9% | ⚠️ HIGH (self-contained with inlined adder/multiplier) |
 | fpu (full) | ~~4,535~~ → 4,077 | 442 | 0 | ~~59.0%~~ → 53.1% | 🟡 Improved (✅ consolidated) |
 | alu (with div) | ~~4,738~~ → 5,551 | 411 | 0 | ~~61.7%~~ → 72.3% | 🟡 Consolidated (single multiplier) |
 | csr_file | 193 | 231 | 0 | 2.5% | ✅ OK (FIXED!) |
+
+**Note:** `fpu_adder.sv` and `fpu_multiplier.sv` have been deleted. Their logic is now inlined in `fpu_fma.sv`.
 
 ---
 
