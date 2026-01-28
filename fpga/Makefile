@@ -23,6 +23,16 @@ RTL_SOURCES = \
 	$(RTL_DIR)/fetch_buffer.sv \
 	$(RTL_DIR)/fp_regfile.sv \
 	$(RTL_DIR)/fpu.sv \
+	$(RTL_DIR)/fpu_adder.sv \
+	$(RTL_DIR)/fpu_classifier.sv \
+	$(RTL_DIR)/fpu_comparator.sv \
+	$(RTL_DIR)/fpu_div_assemble.sv \
+	$(RTL_DIR)/fpu_div_setup.sv \
+	$(RTL_DIR)/fpu_float_to_int.sv \
+	$(RTL_DIR)/fpu_fma.sv \
+	$(RTL_DIR)/fpu_int_to_float.sv \
+	$(RTL_DIR)/fpu_multiplier.sv \
+	$(RTL_DIR)/fpu_sqrt.sv \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/regfile.sv \
 	$(RTL_DIR)/writeback_mux.sv \
@@ -64,22 +74,20 @@ $(BUILD_DIR):
 
 # Synthesis with Yosys
 $(JSON): $(ALL_SOURCES) | $(BUILD_DIR)
-	$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
-	             synth_ice40 -top $(TOP_MODULE) -json $(JSON)" \
-	             2>&1 | tee $(BUILD_DIR)/yosys.log
-
+	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
+			     synth_ice40 -top $(TOP_MODULE) -json $(JSON)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
 $(ASC): $(JSON) $(PCF)
-	$(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
+	bash -e -o pipefail -c '$(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 	           --json $(JSON) \
 	           --pcf $(PCF) \
 	           --asc $(ASC) \
 	           --freq 100 \
-	           2>&1 | tee $(BUILD_DIR)/nextpnr.log
+	           2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(ASC)
-	$(ICEPACK) $(ASC) $(BIN)
+	bash -e -o pipefail -c '$(ICEPACK) $(ASC) $(BIN)'
 
 # Timing analysis
 .PHONY: timing
@@ -90,15 +98,13 @@ timing: $(ASC)
 # Resource utilization report
 .PHONY: utilization
 utilization: $(JSON)
-	@echo "Generating resource utilization report..."
-	@echo "=== Resource Utilization ===" > $(UTILIZATION)
-	@grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true
-	@cat $(UTILIZATION)
+	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
+
 
 # Program FPGA
 .PHONY: program
 program: $(BIN)
-	$(ICEPROG) $(BIN)
+	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
 
 # Clean build artifacts
 .PHONY: clean
