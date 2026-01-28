@@ -2,7 +2,10 @@
 // Wraps the RISC-V CPU core with RTL peripherals
 // Routes RTL peripheral addresses internally, forwards others to external bus
 
-module top_with_peripherals (
+module top_with_peripherals #(
+    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+) (
     input  logic        clk,
     input  logic        rst_n,
     input  logic [31:0] boot_addr,
@@ -136,7 +139,10 @@ module top_with_peripherals (
     // ============================================================
     // CPU Core Instantiation
     // ============================================================
-    top cpu_core (
+    top #(
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .ENABLE_F_EXT(ENABLE_F_EXT)
+    ) cpu_core (
         .clk(clk),
         .rst_n(rst_n),
         .boot_addr(boot_addr),

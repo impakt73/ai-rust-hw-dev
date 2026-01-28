@@ -45,6 +45,33 @@ A **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in SystemVer
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 - ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs
 
+## Extension Configuration (NEW!)
+
+The CPU now supports **configurable extensions** to optimize FPGA resource usage:
+
+| Configuration | M Extension | F Extension | LUT Savings | Target |
+|---------------|-------------|-------------|-------------|--------|
+| **RV32IMFC** (default) | ✅ Enabled | ✅ Enabled | 0 | Full-featured |
+| **RV32IM** | ✅ Enabled | ❌ Disabled | ~4,500 LUTs | No floating-point |
+| **RV32I** (minimal) | ❌ Disabled | ❌ Disabled | ~8,700 LUTs | iCE40-HX8K |
+
+**Example: Minimal RV32I for resource-constrained FPGAs:**
+```systemverilog
+top_with_peripherals #(
+    .ENABLE_M_EXT(1'b0),  // Disable multiply/divide (saves ~4,200 LUTs)
+    .ENABLE_F_EXT(1'b0)   // Disable floating-point (saves ~4,500 LUTs)
+) cpu (
+    .clk(clk),
+    .rst_n(rst_n),
+    // ... other ports
+);
+```
+
+📚 **Documentation:**
+- [Quick Reference](QUICK_REFERENCE.md) - Parameter summary and common configurations
+- [Full Configuration Guide](EXTENSION_CONFIG.md) - Detailed usage and behavioral changes
+- [Testing Guide](TESTING_EXTENSIONS.md) - Verification procedures
+
 ## Quick Start
 
 ### Prerequisites

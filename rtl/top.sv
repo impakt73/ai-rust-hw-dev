@@ -1,7 +1,11 @@
 // Top-Level CPU Module
 // Multi-cycle RISC-V RV32IMC processor with variable-latency memory support
+// Configurable extension support for resource-constrained FPGA targets
 
-module top (
+module top #(
+    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+) (
     input  logic        clk,
     input  logic        rst_n,
     input  logic [31:0] boot_addr,
@@ -280,18 +284,29 @@ module top (
         end
     end
     
-    // FP Operand Registers
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            fa_reg <= 32'h0;
-            fb_reg <= 32'h0;
-            fc_reg <= 32'h0;
-        end else begin
-            if (fa_reg_write) fa_reg <= fs1_data;
-            if (fb_reg_write) fb_reg <= fs2_data;
-            if (fc_reg_write) fc_reg <= fs3_data;
+    // ============================================================
+    // FP Operand Registers (Conditional Generation)
+    // ============================================================
+    generate
+        if (ENABLE_F_EXT) begin : gen_fp_operand_regs
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    fa_reg <= 32'h0;
+                    fb_reg <= 32'h0;
+                    fc_reg <= 32'h0;
+                end else begin
+                    if (fa_reg_write) fa_reg <= fs1_data;
+                    if (fb_reg_write) fb_reg <= fs2_data;
+                    if (fc_reg_write) fc_reg <= fs3_data;
+                end
+            end
+        end else begin : gen_no_fp_operand_regs
+            // F extension disabled: Tie registers to zero
+            assign fa_reg = 32'd0;
+            assign fb_reg = 32'd0;
+            assign fc_reg = 32'd0;
         end
-    end
+    endgenerate
     
     // Result Registers
     always_ff @(posedge clk or negedge rst_n) begin
@@ -302,7 +317,8 @@ module top (
             csr_rdata_reg <= 32'h0;
         end else begin
             if (alu_out_write) alu_out_reg <= alu_result;
-            if (fpu_out_write) fpu_out_reg <= fp_to_int_reg ? fpu_int_result : fpu_fp_result;
+            if (ENABLE_F_EXT && fpu_out_write) fpu_out_reg <= fp_to_int_reg ? fpu_int_result : fpu_fp_result;
+            else if (!ENABLE_F_EXT && fpu_out_write) fpu_out_reg <= 32'd0;  // F extension disabled
             if (mdr_write) mdr <= formatted_load_data;
             if (csr_rdata_write) csr_rdata_reg <= csr_rdata;
         end
@@ -941,7 +957,9 @@ module top (
     end
     
     // ALU instantiation (uses registered control signals)
-    alu u_alu (
+    alu #(
+        .ENABLE_M_EXT(ENABLE_M_EXT)
+    ) u_alu (
         .clk(clk),              // NEW: Clock for division unit
         .rst_n(rst_n),          // NEW: Reset for division unit
         .a(alu_a),
@@ -990,68 +1008,83 @@ module top (
     );
     
     // ============================================================
-    // F Extension: FP Register File and FPU
+    // F Extension: FP Register File and FPU (Conditional Generation)
     // ============================================================
     
-    // FP Register File Module
-    fp_regfile u_fp_regfile (
-        .clk(clk),
-        .rst_n(rst_n),
-        .we(fp_reg_write_en & fp_reg_write_reg),  // Gated by FSM
-        .rs1_addr(rs1),  // Use combinational decoder output for reads
-        .rs2_addr(rs2),  // Use combinational decoder output for reads
-        .rs3_addr(instruction[31:27]),  // rs3 field for fused multiply-add
-        .rd_addr(rd_reg),
-        .rd_data(fd_data),
-        .rs1_data(fs1_data),
-        .rs2_data(fs2_data),
-        .rs3_data(fs3_data)
-    );
-    
-    // FPU rounding mode selection
-    // Instruction rm field (funct3) encodes:
-    // 000=RNE, 001=RTZ, 010=RDN, 011=RUP, 100=RMM, 111=dynamic (use FCSR.frm)
-    assign fpu_rm = (funct3_reg == 3'b111) ? fcsr[7:5] : funct3_reg;
-    
-    // FPU Module
-    fpu u_fpu (
-        .clk(clk),                              // NEW: Clock for multi-cycle division
-        .rst_n(rst_n),                          // NEW: Reset for multi-cycle division
-        .fpu_start(fpu_start),                  // NEW: Start FPU operation
-        .fs1(int_to_fp_reg ? a_reg : fa_reg),   // Source 1: integer or FP
-        .fs2(fb_reg),                           // Source 2: always FP
-        .fs3(fc_reg),                           // Source 3: FP (for fused multiply-add)
-        .int_src(a_reg),                        // Integer source (for int-to-FP conversions)
-        .fpu_op(fpu_op_reg),
-        .rm(fpu_rm),
-        .fp_result(fpu_fp_result),
-        .int_result(fpu_int_result),
-        .fflags(fpu_fflags),
-        .fpu_ready(fpu_ready)                   // NEW: FPU operation complete
-    );
-    
-    // FCSR (Floating Point Control and Status Register)
-    // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
-    // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
-        end else begin
-            // Accumulate exception flags when FP instruction completes
-            if (current_state == S_WRITEBACK && fp_reg_write_reg) begin
-                fcsr[4:0] <= fcsr[4:0] | fpu_fflags;  // OR in new exception flags
+    generate
+        if (ENABLE_F_EXT) begin : gen_f_ext
+            // FP Register File Module
+            fp_regfile u_fp_regfile (
+                .clk(clk),
+                .rst_n(rst_n),
+                .we(fp_reg_write_en & fp_reg_write_reg),  // Gated by FSM
+                .rs1_addr(rs1),  // Use combinational decoder output for reads
+                .rs2_addr(rs2),  // Use combinational decoder output for reads
+                .rs3_addr(instruction[31:27]),  // rs3 field for fused multiply-add
+                .rd_addr(rd_reg),
+                .rd_data(fd_data),
+                .rs1_data(fs1_data),
+                .rs2_data(fs2_data),
+                .rs3_data(fs3_data)
+            );
+            
+            // FPU rounding mode selection
+            // Instruction rm field (funct3) encodes:
+            // 000=RNE, 001=RTZ, 010=RDN, 011=RUP, 100=RMM, 111=dynamic (use FCSR.frm)
+            assign fpu_rm = (funct3_reg == 3'b111) ? fcsr[7:5] : funct3_reg;
+            
+            // FPU Module
+            fpu u_fpu (
+                .clk(clk),                              // NEW: Clock for multi-cycle division
+                .rst_n(rst_n),                          // NEW: Reset for multi-cycle division
+                .fpu_start(fpu_start),                  // NEW: Start FPU operation
+                .fs1(int_to_fp_reg ? a_reg : fa_reg),   // Source 1: integer or FP
+                .fs2(fb_reg),                           // Source 2: always FP
+                .fs3(fc_reg),                           // Source 3: FP (for fused multiply-add)
+                .int_src(a_reg),                        // Integer source (for int-to-FP conversions)
+                .fpu_op(fpu_op_reg),
+                .rm(fpu_rm),
+                .fp_result(fpu_fp_result),
+                .int_result(fpu_int_result),
+                .fflags(fpu_fflags),
+                .fpu_ready(fpu_ready)                   // NEW: FPU operation complete
+            );
+            
+            // FCSR (Floating Point Control and Status Register)
+            // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
+            // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
+                end else begin
+                    // Accumulate exception flags when FP instruction completes
+                    if (current_state == S_WRITEBACK && fp_reg_write_reg) begin
+                        fcsr[4:0] <= fcsr[4:0] | fpu_fflags;  // OR in new exception flags
+                    end
+                    // Handle CSR writes to FCSR, FRM, FFLAGS
+                    else if (is_csr_reg && current_state == S_CSR) begin
+                        case (csr_addr)
+                            12'h001: fcsr[4:0] <= a_reg[4:0];   // FFLAGS write
+                            12'h002: fcsr[7:5] <= a_reg[2:0];   // FRM write
+                            12'h003: fcsr <= a_reg;              // FCSR write (full register)
+                            default: ; // No change
+                        endcase
+                    end
+                end
             end
-            // Handle CSR writes to FCSR, FRM, FFLAGS
-            else if (is_csr_reg && current_state == S_CSR) begin
-                case (csr_addr)
-                    12'h001: fcsr[4:0] <= a_reg[4:0];   // FFLAGS write
-                    12'h002: fcsr[7:5] <= a_reg[2:0];   // FRM write
-                    12'h003: fcsr <= a_reg;              // FCSR write (full register)
-                    default: ; // No change
-                endcase
-            end
+        end else begin : gen_no_f_ext
+            // F extension disabled: Tie FP signals to safe defaults
+            assign fs1_data = 32'd0;
+            assign fs2_data = 32'd0;
+            assign fs3_data = 32'd0;
+            assign fpu_fp_result = 32'd0;
+            assign fpu_int_result = 32'd0;
+            assign fpu_fflags = 5'd0;
+            assign fpu_ready = 1'b1;
+            assign fpu_rm = 3'd0;
+            assign fcsr = 32'd0;
         end
-    end
+    endgenerate
     
     // Writeback Multiplexer Module (uses registered signals)
     writeback_mux u_writeback_mux (
