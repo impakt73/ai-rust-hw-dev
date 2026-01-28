@@ -1,7 +1,11 @@
 // Instruction Decoder Module
 // Decodes RISC-V RV32IMACF instructions
+// Configurable extension support for resource-constrained FPGA targets
 
-module decoder (
+module decoder #(
+    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+) (
     input  logic [31:0] instruction,
     output logic [6:0]  opcode,
     output logic [4:0]  rd,
@@ -192,17 +196,24 @@ module decoder (
                 // Check for M extension (funct7 = 0000001)
                 if (funct7 == 7'b0000001) begin
                     // M extension instructions (multiplication and division)
-                    case (funct3)
-                        3'b000: alu_op = ALU_MUL;     // MUL
-                        3'b001: alu_op = ALU_MULH;    // MULH
-                        3'b010: alu_op = ALU_MULHSU;  // MULHSU
-                        3'b011: alu_op = ALU_MULHU;   // MULHU
-                        3'b100: alu_op = ALU_DIV;     // DIV
-                        3'b101: alu_op = ALU_DIVU;    // DIVU
-                        3'b110: alu_op = ALU_REM;     // REM
-                        3'b111: alu_op = ALU_REMU;    // REMU
-                        default: alu_op = ALU_ADD;
-                    endcase
+                    if (ENABLE_M_EXT) begin
+                        case (funct3)
+                            3'b000: alu_op = ALU_MUL;     // MUL
+                            3'b001: alu_op = ALU_MULH;    // MULH
+                            3'b010: alu_op = ALU_MULHSU;  // MULHSU
+                            3'b011: alu_op = ALU_MULHU;   // MULHU
+                            3'b100: alu_op = ALU_DIV;     // DIV
+                            3'b101: alu_op = ALU_DIVU;    // DIVU
+                            3'b110: alu_op = ALU_REM;     // REM
+                            3'b111: alu_op = ALU_REMU;    // REMU
+                            default: alu_op = ALU_ADD;
+                        endcase
+                    end else begin
+                        // M extension disabled - treat as invalid/NOP
+                        alu_op = ALU_ADD;
+                        alu_src = 1'b0;
+                        reg_write = 1'b0;
+                    end
                 end else begin
                     // Standard RV32I R-type instructions
                     case (funct3)
@@ -231,12 +242,15 @@ module decoder (
             OP_LOAD_FP: begin
                 // FP load instruction (FLW)
                 // Opcode 0b0000111 (bit 2 = 1 distinguishes from OP_LOAD)
-                alu_op = ALU_ADD;  // Calculate address
-                alu_src = 1'b1;    // Use immediate offset
-                mem_read = 1'b1;
-                is_fp_load = 1'b1;
-                fp_reg_write = 1'b1;  // Write to FP register file
-                // Note: funct3 is always 010 for FLW (word-sized FP load)
+                if (ENABLE_F_EXT) begin
+                    alu_op = ALU_ADD;  // Calculate address
+                    alu_src = 1'b1;    // Use immediate offset
+                    mem_read = 1'b1;
+                    is_fp_load = 1'b1;
+                    fp_reg_write = 1'b1;  // Write to FP register file
+                    // Note: funct3 is always 010 for FLW (word-sized FP load)
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
 
             OP_STORE: begin
@@ -249,11 +263,14 @@ module decoder (
             OP_STORE_FP: begin
                 // FP store instruction (FSW)
                 // Opcode 0b0100111 (bit 2 = 1 distinguishes from OP_STORE)
-                alu_op = ALU_ADD;  // Calculate address
-                alu_src = 1'b1;    // Use immediate offset
-                mem_write = 1'b1;
-                is_fp_store = 1'b1;
-                // Note: funct3 is always 010 for FSW (word-sized FP store)
+                if (ENABLE_F_EXT) begin
+                    alu_op = ALU_ADD;  // Calculate address
+                    alu_src = 1'b1;    // Use immediate offset
+                    mem_write = 1'b1;
+                    is_fp_store = 1'b1;
+                    // Note: funct3 is always 010 for FSW (word-sized FP store)
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
 
             OP_BRANCH: begin
@@ -386,107 +403,122 @@ module decoder (
             
             OP_FP: begin
                 // FP computational instructions
-                case (funct7)
-                    7'b0000000: begin  // FADD.S
-                        fp_reg_write = 1'b1;
-                        fpu_op = FPU_ADD;
-                    end
-                    7'b0000100: begin  // FSUB.S
-                        fp_reg_write = 1'b1;
-                        fpu_op = FPU_SUB;
-                    end
-                    7'b0001000: begin  // FMUL.S
-                        fp_reg_write = 1'b1;
-                        fpu_op = FPU_MUL;
-                    end
-                    7'b0001100: begin  // FDIV.S
-                        fp_reg_write = 1'b1;
-                        fpu_op = FPU_DIV;
-                    end
-                    7'b0101100: begin  // FSQRT.S
-                        fp_reg_write = 1'b1;
-                        fpu_op = FPU_SQRT;
-                    end
-                    7'b0010000: begin  // Sign injection (FSGNJ, FSGNJN, FSGNJX)
-                        fp_reg_write = 1'b1;
-                        case (funct3)
-                            3'b000: fpu_op = FPU_SGNJ;   // FSGNJ.S
-                            3'b001: fpu_op = FPU_SGNJN;  // FSGNJN.S
-                            3'b010: fpu_op = FPU_SGNJX;  // FSGNJX.S
-                            default: fpu_op = FPU_SGNJ;
-                        endcase
-                    end
-                    7'b0010100: begin  // MIN/MAX
-                        fp_reg_write = 1'b1;
-                        fpu_op = (funct3 == 3'b000) ? FPU_MIN : FPU_MAX;
-                    end
-                    7'b1010000: begin  // Comparisons (FLE, FLT, FEQ)
-                        fp_reg_write = 1'b0;
-                        reg_write = 1'b1;  // Write to integer register
-                        fp_to_int = 1'b1;
-                        case (funct3)
-                            3'b000: fpu_op = FPU_FLE;  // FLE.S
-                            3'b001: fpu_op = FPU_FLT;  // FLT.S
-                            3'b010: fpu_op = FPU_FEQ;  // FEQ.S
-                            default: fpu_op = FPU_FEQ;
-                        endcase
-                    end
-                    7'b1100000: begin  // FCVT.W.S, FCVT.WU.S
-                        fp_reg_write = 1'b0;
-                        reg_write = 1'b1;
-                        fp_to_int = 1'b1;
-                        fpu_op = (rs2 == 5'b00000) ? FPU_CVTWS : FPU_CVTWUS;
-                    end
-                    7'b1101000: begin  // FCVT.S.W, FCVT.S.WU
-                        fp_reg_write = 1'b1;
-                        int_to_fp = 1'b1;
-                        fpu_op = (rs2 == 5'b00000) ? FPU_CVTSW : FPU_CVTSWU;
-                    end
-                    7'b1110000: begin
-                        if (funct3 == 3'b000) begin
-                            // FMV.X.W - Move FP to integer
-                            fp_reg_write = 1'b0;
-                            reg_write = 1'b1;
-                            fp_to_int = 1'b1;
-                            fpu_op = FPU_MVXW;
-                        end else begin
-                            // FCLASS.S - Classify FP number
-                            fp_reg_write = 1'b0;
-                            reg_write = 1'b1;
-                            fp_to_int = 1'b1;
-                            fpu_op = FPU_FCLASS;
+                if (ENABLE_F_EXT) begin
+                    case (funct7)
+                        7'b0000000: begin  // FADD.S
+                            fp_reg_write = 1'b1;
+                            fpu_op = FPU_ADD;
                         end
-                    end
-                    7'b1111000: begin  // FMV.W.X - Move integer to FP
-                        fp_reg_write = 1'b1;
-                        int_to_fp = 1'b1;
-                        fpu_op = FPU_MVWX;
-                    end
-                    default: begin
-                        fp_reg_write = 1'b0;
-                        fpu_op = FPU_ADD;
-                    end
-                endcase
+                        7'b0000100: begin  // FSUB.S
+                            fp_reg_write = 1'b1;
+                            fpu_op = FPU_SUB;
+                        end
+                        7'b0001000: begin  // FMUL.S
+                            fp_reg_write = 1'b1;
+                            fpu_op = FPU_MUL;
+                        end
+                        7'b0001100: begin  // FDIV.S
+                            fp_reg_write = 1'b1;
+                            fpu_op = FPU_DIV;
+                        end
+                        7'b0101100: begin  // FSQRT.S
+                            fp_reg_write = 1'b1;
+                            fpu_op = FPU_SQRT;
+                        end
+                        7'b0010000: begin  // Sign injection (FSGNJ, FSGNJN, FSGNJX)
+                            fp_reg_write = 1'b1;
+                            case (funct3)
+                                3'b000: fpu_op = FPU_SGNJ;   // FSGNJ.S
+                                3'b001: fpu_op = FPU_SGNJN;  // FSGNJN.S
+                                3'b010: fpu_op = FPU_SGNJX;  // FSGNJX.S
+                                default: fpu_op = FPU_SGNJ;
+                            endcase
+                        end
+                        7'b0010100: begin  // MIN/MAX
+                            fp_reg_write = 1'b1;
+                            fpu_op = (funct3 == 3'b000) ? FPU_MIN : FPU_MAX;
+                        end
+                        7'b1010000: begin  // Comparisons (FLE, FLT, FEQ)
+                            fp_reg_write = 1'b0;
+                            reg_write = 1'b1;  // Write to integer register
+                            fp_to_int = 1'b1;
+                            case (funct3)
+                                3'b000: fpu_op = FPU_FLE;  // FLE.S
+                                3'b001: fpu_op = FPU_FLT;  // FLT.S
+                                3'b010: fpu_op = FPU_FEQ;  // FEQ.S
+                                default: fpu_op = FPU_FEQ;
+                            endcase
+                        end
+                        7'b1100000: begin  // FCVT.W.S, FCVT.WU.S
+                            fp_reg_write = 1'b0;
+                            reg_write = 1'b1;
+                            fp_to_int = 1'b1;
+                            fpu_op = (rs2 == 5'b00000) ? FPU_CVTWS : FPU_CVTWUS;
+                        end
+                        7'b1101000: begin  // FCVT.S.W, FCVT.S.WU
+                            fp_reg_write = 1'b1;
+                            int_to_fp = 1'b1;
+                            fpu_op = (rs2 == 5'b00000) ? FPU_CVTSW : FPU_CVTSWU;
+                        end
+                        7'b1110000: begin
+                            if (funct3 == 3'b000) begin
+                                // FMV.X.W - Move FP to integer
+                                fp_reg_write = 1'b0;
+                                reg_write = 1'b1;
+                                fp_to_int = 1'b1;
+                                fpu_op = FPU_MVXW;
+                            end else begin
+                                // FCLASS.S - Classify FP number
+                                fp_reg_write = 1'b0;
+                                reg_write = 1'b1;
+                                fp_to_int = 1'b1;
+                                fpu_op = FPU_FCLASS;
+                            end
+                        end
+                        7'b1111000: begin  // FMV.W.X - Move integer to FP
+                            fp_reg_write = 1'b1;
+                            int_to_fp = 1'b1;
+                            fpu_op = FPU_MVWX;
+                        end
+                        default: begin
+                            fp_reg_write = 1'b0;
+                            fpu_op = FPU_ADD;
+                        end
+                    endcase
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
             
             OP_FMADD: begin  // FMADD.S
-                fp_reg_write = 1'b1;
-                fpu_op = FPU_MADD;
+                if (ENABLE_F_EXT) begin
+                    fp_reg_write = 1'b1;
+                    fpu_op = FPU_MADD;
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
             
             OP_FMSUB: begin  // FMSUB.S
-                fp_reg_write = 1'b1;
-                fpu_op = FPU_MSUB;
+                if (ENABLE_F_EXT) begin
+                    fp_reg_write = 1'b1;
+                    fpu_op = FPU_MSUB;
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
             
             OP_FNMSUB: begin  // FNMSUB.S
-                fp_reg_write = 1'b1;
-                fpu_op = FPU_NMSUB;
+                if (ENABLE_F_EXT) begin
+                    fp_reg_write = 1'b1;
+                    fpu_op = FPU_NMSUB;
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
             
             OP_FNMADD: begin  // FNMADD.S
-                fp_reg_write = 1'b1;
-                fpu_op = FPU_NMADD;
+                if (ENABLE_F_EXT) begin
+                    fp_reg_write = 1'b1;
+                    fpu_op = FPU_NMADD;
+                end
+                // else: F extension disabled - all signals remain at default (NOP)
             end
 
             default: begin

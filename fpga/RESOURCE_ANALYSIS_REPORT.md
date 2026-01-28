@@ -106,22 +106,13 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 
 **Result:** 193 LUTs (2.5% of device) - synthesis completes in ~1 second!
 
-### 4. Register Files (409 + 680 = 1,089 LUTs) ✅ **ANALYZED**
+### 4. Register Files (409 + 680 = 1,089 LUTs)
 
 **Problem:** Both integer and FP register files use LUT-based implementation.
 
-**Analysis Result:** BRAM conversion is **NOT FEASIBLE** on iCE40-HX8K due to:
-1. Memory depth too small (32 entries < 256 minimum for BRAM inference)
-2. Asynchronous read requirement (CPU architecture needs zero-latency reads)
-3. Multi-port reads (FP regfile needs 3 simultaneous ports)
-
-**See detailed analysis:** [`BRAM_CONVERSION_ANALYSIS.md`](BRAM_CONVERSION_ANALYSIS.md)
-
-**Outcome:**
-- ✅ Added `USE_BRAM` parameter to both modules for future use
-- ✅ Comprehensive documentation added to RTL files
-- ✅ Current recommendation: Keep LUT-based (~14% device usage is acceptable)
-- ❌ No LUT savings possible without major CPU architecture changes
+**Recommendation:**
+1. **Use BRAM** for register files (saves ~1,000 LUTs)
+2. iCE40 has 32 BRAM blocks - use 2 for regfiles
 
 ---
 
@@ -134,13 +125,10 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
    - After: 193 LUTs (2.5% of device)
    - Status: **FIXED and tested**
 
-### ~~Immediate Fixes Needed (Easy)~~ ✅ **COMPLETED**
+### Immediate Fixes Needed (Easy)
 
-1. ~~**Use BRAM for register files**~~ ✅ **ANALYZED - NOT FEASIBLE**
-   - ~~Expected savings: ~1,000 LUTs~~
-   - **Analysis:** BRAM inference not possible on iCE40 (depth < 256, async reads required)
-   - **See:** [`BRAM_CONVERSION_ANALYSIS.md`](BRAM_CONVERSION_ANALYSIS.md)
-   - **Outcome:** Added `REGISTER_OUTPUTS` parameter for timing improvement, but recommend LUT-based storage
+1. **Use BRAM for register files**
+   - Expected savings: ~1,000 LUTs
 
 ### Architecture Changes (Medium)
 
@@ -159,19 +147,14 @@ logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
 |-----------|-----------------|
 | ALU (no M ext) | ~500 |
 | Decoder | 74 |
-| Regfile (LUT-based) | ~400 |
-| FP Regfile (if needed) | ~680 |
+| Regfile (BRAM) | ~100 |
 | CSR (minimal) | ~200 |
 | Control FSM | ~300 |
 | Memory interface | 35 |
 | Other | ~300 |
-| **Total (RV32I)** | **~1,500** |
-| **Total (RV32IF)** | **~2,200** |
+| **Total** | **~1,500** |
 
-**Note:** BRAM conversion for register files is not feasible on iCE40 (see BRAM_CONVERSION_ANALYSIS.md).
-Register files will remain LUT-based (~1,080 LUTs combined for both int + FP).
-
-This would use ~20% of iCE40-HX8K resources (RV32I only), leaving room for peripherals and memory.
+This would use ~20% of iCE40-HX8K resources, leaving room for peripherals and memory.
 
 ---
 
@@ -183,7 +166,7 @@ module top #(
     parameter bit ENABLE_F_EXT = 1'b0,  // Floating-point extension
     parameter bit ENABLE_C_EXT = 1'b1,  // Compressed instructions
     parameter bit ENABLE_A_EXT = 1'b0,  // Atomic extension
-    parameter bit REGISTER_OUTPUTS = 1'b0  // Register outputs for timing (does not use BRAM)
+    parameter bit USE_BRAM_REGFILE = 1'b1  // Use BRAM for registers
 ) (
     // ... ports
 );
@@ -203,9 +186,9 @@ module top #(
 ## Next Steps
 
 1. [x] Fix CSR file implementation (highest priority) - **DONE**
-2. [x] Analyze BRAM conversion for register files - **DONE** (not feasible)
-3. [ ] Add ENABLE_M_EXT parameter to ALU
-4. [ ] Add ENABLE_F_EXT parameter to top module  
+2. [ ] Add ENABLE_M_EXT parameter to ALU
+3. [ ] Add ENABLE_F_EXT parameter to top module  
+4. [ ] Convert register files to use BRAM
 5. [ ] Re-synthesize full design with extensions disabled
 6. [ ] Verify design fits in iCE40-HX8K
 

@@ -856,7 +856,10 @@ module top #(
     );
     
     // Decoder instantiation (decodes ir_reg)
-    decoder u_decoder (
+    decoder #(
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .ENABLE_F_EXT(ENABLE_F_EXT)
+    ) u_decoder (
         .instruction(ir_reg),
         .opcode(opcode),
         .rd(rd),
