@@ -19,8 +19,11 @@ This document provides a detailed technical implementation plan for adding an RT
 4. **Provide FIFO-based TX/RX interfaces** for easy CPU interaction
 5. **Expose status registers** for flow control (FIFO full/empty)
 6. **Connect directly to external RX/TX pins** for FPGA deployment
+7. **Support hardware loopback mode** for simulation testing (TX internally connected to RX)
 
-**Key Architecture Decision:** Run UART logic on system clock with oversampling. This simplifies the design by avoiding separate clock domains while maintaining robust data recovery.
+**Key Architecture Decisions:**
+- **Single Clock Domain:** Run UART logic on system clock with oversampling. This simplifies the design by avoiding separate clock domains while maintaining robust data recovery.
+- **Hardware Loopback for Testing:** A new `ENABLE_UART_LOOPBACK` parameter (enabled by default) connects TX directly to RX internally. This allows CPU test programs to validate UART functionality without requiring Rust-side signal injection, greatly simplifying the verification infrastructure.
 
 ---
 
@@ -813,7 +816,9 @@ end
 
 ### 6.1 Update top_with_peripherals.sv
 
-**Add UART External Pins:**
+**Add UART Parameters and Loopback Support:**
+
+The `ENABLE_UART_LOOPBACK` parameter controls whether the UART TX output is internally connected to the RX input. This is enabled by default for simulation testing and disabled for FPGA deployment where external pins are used.
 
 ```systemverilog
 module top_with_peripherals #(
@@ -821,17 +826,43 @@ module top_with_peripherals #(
     parameter bit ENABLE_F_EXT = 1'b1,
     // UART Parameters
     parameter int UART_CLK_FREQ_HZ = 50_000_000,
-    parameter int UART_BAUD_RATE   = 115200
+    parameter int UART_BAUD_RATE   = 115200,
+    // UART Loopback: When enabled (default), TX is internally connected to RX
+    // for simulation testing. Disable for FPGA deployment with external pins.
+    parameter bit ENABLE_UART_LOOPBACK = 1'b1
 ) (
     // ... existing ports ...
     
     // LED peripheral outputs (existing)
     output logic [7:0]  led_out,
     
-    // UART peripheral pins (NEW)
-    output logic        uart_tx,    // UART transmit output
-    input  logic        uart_rx     // UART receive input
+    // UART peripheral pins (active only when ENABLE_UART_LOOPBACK = 0)
+    output logic        uart_tx,    // UART transmit output (directly connected to uart_tx_internal)
+    input  logic        uart_rx     // UART receive input (directly connected to uart_rx_internal)
 );
+```
+
+**Internal UART Signals and Loopback Logic:**
+
+```systemverilog
+// Internal UART signals
+logic uart_tx_internal;  // TX output from UART module
+logic uart_rx_internal;  // RX input to UART module
+
+// Loopback or external connection
+generate
+    if (ENABLE_UART_LOOPBACK) begin : gen_loopback
+        // Internal loopback: connect TX directly to RX for testing
+        assign uart_rx_internal = uart_tx_internal;
+        // Still expose TX externally for debugging/monitoring
+        assign uart_tx = uart_tx_internal;
+        // uart_rx input port is ignored in loopback mode
+    end else begin : gen_external
+        // External connection: use actual RX/TX pins
+        assign uart_rx_internal = uart_rx;
+        assign uart_tx = uart_tx_internal;
+    end
+endgenerate
 ```
 
 **Add UART Instance and Address Decoding:**
@@ -905,10 +936,44 @@ uart #(
     .size(cpu_dmem_size),
     .ready(uart_ready),
     
-    // External pins
-    .tx_out(uart_tx),
-    .rx_in(uart_rx)
+    // Internal signals (connected via loopback or external pins)
+    .tx_out(uart_tx_internal),
+    .rx_in(uart_rx_internal)
 );
+```
+
+**FPGA Top Module Example (with loopback disabled):**
+
+When deploying to FPGA, instantiate with `ENABLE_UART_LOOPBACK = 0`:
+
+```systemverilog
+module fpga_top (
+    input  logic       clk_50mhz,
+    input  logic       rst_btn_n,
+    
+    // LED outputs
+    output logic [7:0] led,
+    
+    // UART external pins (directly connected to FPGA I/O)
+    output logic       uart_tx_pin,
+    input  logic       uart_rx_pin
+);
+    top_with_peripherals #(
+        .ENABLE_M_EXT(1'b1),
+        .ENABLE_F_EXT(1'b1),
+        .UART_CLK_FREQ_HZ(50_000_000),
+        .UART_BAUD_RATE(115200),
+        .ENABLE_UART_LOOPBACK(1'b0)  // Disable loopback for real hardware
+    ) cpu_system (
+        .clk(clk_50mhz),
+        .rst_n(rst_btn_n),
+        .boot_addr(32'h80000000),
+        // ... memory interfaces ...
+        .led_out(led),
+        .uart_tx(uart_tx_pin),
+        .uart_rx(uart_rx_pin)
+    );
+endmodule
 ```
 
 ### 6.2 Update riscv_core/src/lib.rs
@@ -973,64 +1038,70 @@ pub const fn uart_status_addr() -> u32 {
 }
 ```
 
-### 7.2 Update cpu-sim/src/sim.rs
+### 7.2 Rust Integration Notes
 
-Add UART signal accessors in `SimulatorView`:
+**No UART Signal Accessors Required:**
 
-```rust
-impl<'a> SimulatorView<'a> {
-    // ... existing methods ...
-    
-    /// Read the current UART TX output signal
-    ///
-    /// Returns the raw tx_out signal from the UART module.
-    /// This is useful for verifying UART transmission in tests.
-    pub fn uart_tx(&self) -> bool {
-        self.cpu.uart_tx != 0
-    }
-    
-    /// Set the UART RX input signal
-    ///
-    /// This allows tests to inject serial data into the UART receiver.
-    /// Call this to simulate external UART transmission.
-    pub fn set_uart_rx(&mut self, value: bool) {
-        // Note: This requires the cpu to be mutable
-        // May need to adjust the architecture for this
-    }
-}
-```
+With the `ENABLE_UART_LOOPBACK` parameter enabled by default, there is no need to expose the raw UART TX/RX signals to the Rust simulation code. The hardware loopback handles the connection internally, which means:
+
+- Tests can write data to the TX FIFO and read it back from the RX FIFO
+- No complex signal injection or capture logic is needed in Rust
+- Test programs validate data integrity entirely within the CPU program
+
+This significantly simplifies the Rust integration layer - only the bus constants are needed.
 
 ---
 
 ## 8. Testing Strategy
 
-### 8.1 Test Categories
+### 8.1 Hardware Loopback Approach
 
-**1. Unit Tests (RTL-focused):**
-- Baud rate generator timing accuracy
-- TX FIFO write/read behavior
-- RX FIFO write/read behavior
-- Status register correctness
+**Key Design Decision:** All UART testing is performed using the hardware loopback feature (`ENABLE_UART_LOOPBACK = 1`). This eliminates the need for:
+- Rust-side UART signal monitoring
+- Complex TX capture and RX injection helpers
+- Cycle-accurate timing simulation in Rust
 
-**2. Integration Tests (CPU + UART):**
-- Memory-mapped register access
-- TX data transmission via CPU writes
-- RX data reception via CPU reads
-- FIFO overflow/underflow handling
+**Testing Flow:**
+1. CPU test program writes bytes to TX FIFO (TXDATA register)
+2. UART hardware transmits the data serially
+3. With loopback enabled, TX connects directly to RX
+4. RX hardware receives the data and stores in RX FIFO
+5. CPU test program reads bytes from RX FIFO (RXDATA register)
+6. Program validates received data matches transmitted data
+7. Program writes success/failure to tohost register
 
-**3. Loopback Tests:**
-- Connect TX output to RX input (external loopback)
-- Verify data integrity for various patterns
-- Test at different simulated baud rates
+### 8.2 Test Categories
 
-### 8.2 Test File: cpu-sim/tests/test_uart.rs
+**1. Register Access Tests (CPU-level):**
+- Verify memory-mapped register addresses
+- Test STATUS register initial state (TX_EMPTY, RX_EMPTY)
+- Test TXDATA write behavior
+- Test TX_FULL status when FIFO fills
+
+**2. Loopback Data Integrity Tests (CPU-level):**
+All loopback tests run with hardware loopback enabled (default). The test program:
+- Writes test data to TX FIFO
+- Waits for transmission/reception to complete
+- Reads data from RX FIFO
+- Validates received data matches transmitted data
+- Reports pass/fail via tohost register
+
+**Test Patterns:**
+- Single byte: 0x55, 0xAA, 0x00, 0xFF
+- Multi-byte sequence: 0x01, 0x02, 0x03, ...
+- Full FIFO: 8 consecutive bytes
+
+### 8.3 Test File: cpu-sim/tests/test_uart.rs
 
 ```rust
 //! UART Controller RTL Peripheral Tests
 //!
 //! Tests for the UART controller peripheral (RTL-based).
 //! Address: 0x52000000
-//! Features: TX/RX FIFOs, status register
+//! Features: TX/RX FIFOs, hardware loopback for testing
+//!
+//! Note: All tests assume ENABLE_UART_LOOPBACK = 1 (default),
+//! which internally connects TX to RX for data integrity testing.
 
 use cpu_sim::*;
 use riscv_core::instruction::*;
@@ -1171,77 +1242,85 @@ fn test_uart_status_initial_state() {
 }
 
 // ============================================================================
-// UART Loopback Test (External)
+// UART Loopback Test (Hardware Loopback)
 // ============================================================================
 
 #[test]
-fn test_uart_loopback() {
+fn test_uart_loopback_single_byte() {
     init_test_logger();
     
-    // This test requires external loopback connection (TX->RX)
-    // For simulation, we can monitor the TX signal and feed it to RX
+    // Test program that sends a byte via TX and receives it via RX (hardware loopback)
+    // Uses ENABLE_UART_LOOPBACK = 1 (default) so TX is connected to RX internally
+    //
+    // Algorithm:
+    // 1. Write test byte (0xA5) to TXDATA
+    // 2. Poll STATUS until TX_EMPTY (transmission complete)
+    // 3. Poll STATUS until !RX_EMPTY (data received)
+    // 4. Read RXDATA and compare with sent byte
+    // 5. Write success (1) or failure (0) to tohost
     
-    // Test data pattern
-    let test_byte: u8 = 0xA5;
-    
-    // TODO: Implement loopback test with signal monitoring
-    // This requires access to uart_tx and ability to drive uart_rx
-}
-```
-
-### 8.3 UART Loopback Test Helper
-
-For proper loopback testing, create a helper that:
-
-1. Captures TX output transitions
-2. Measures timing between transitions
-3. Decodes the transmitted byte
-4. Injects the byte back to RX
-
-```rust
-/// UART Loopback Test Helper
-struct UartLoopbackTester {
-    clk_freq_hz: u32,
-    baud_rate: u32,
-    clks_per_bit: u32,
-    
-    // TX capture state
-    tx_last_value: bool,
-    tx_transition_count: u32,
-    tx_bit_count: u32,
-    tx_shift_reg: u8,
-    
-    // RX injection state  
-    rx_bit_timer: u32,
-    rx_bits_to_send: Vec<bool>,
-    rx_bit_index: usize,
-}
-
-impl UartLoopbackTester {
-    pub fn new(clk_freq_hz: u32, baud_rate: u32) -> Self {
-        Self {
-            clk_freq_hz,
-            baud_rate,
-            clks_per_bit: clk_freq_hz / baud_rate,
-            tx_last_value: true,
-            tx_transition_count: 0,
-            tx_bit_count: 0,
-            tx_shift_reg: 0,
-            rx_bit_timer: 0,
-            rx_bits_to_send: Vec::new(),
-            rx_bit_index: 0,
-        }
-    }
-    
-    /// Process one clock cycle of loopback
-    /// Returns the value to drive on uart_rx
-    pub fn tick(&mut self, tx_value: bool) -> bool {
-        // Capture TX and decode bytes
-        // ... implementation details ...
+    let mut instructions = vec![
+        // x15 = UART base address
+        lui(15, UART_BASE >> 12),
         
-        // Return RX value based on captured TX
-        true  // Idle high
-    }
+        // x14 = test byte (0xA5)
+        addi(14, 0, 0xA5),
+        
+        // Write test byte to TXDATA (offset 0)
+        sw(15, 14, UART_TXDATA_OFFSET as i32),
+        
+        // Poll for TX_EMPTY: wait until all data transmitted
+        // Loop: read STATUS, check TX_EMPTY bit, branch if not set
+        lw(13, 15, UART_STATUS_OFFSET as i32),  // x13 = STATUS
+        andi(12, 13, UART_STATUS_TX_EMPTY as i32),  // x12 = TX_EMPTY bit
+        beq(12, 0, -8),  // If TX_EMPTY == 0, loop back to lw
+        
+        // Poll for !RX_EMPTY: wait until data received
+        lw(13, 15, UART_STATUS_OFFSET as i32),  // x13 = STATUS
+        andi(12, 13, UART_STATUS_RX_EMPTY as i32),  // x12 = RX_EMPTY bit
+        bne(12, 0, -8),  // If RX_EMPTY != 0, loop back to lw
+        
+        // Read received byte from RXDATA (offset 4)
+        lw(11, 15, UART_RXDATA_OFFSET as i32),  // x11 = received byte
+        
+        // Compare with sent byte (x14 = 0xA5)
+        // If equal, write 1 to tohost; else write 0
+        lui(10, 0x10000000 >> 12),  // x10 = tohost address
+        beq(11, 14, 8),  // If received == sent, skip to success
+        sw(10, 0, 0),    // Write 0 (failure) to tohost
+        jal(0, 4),       // Jump over success
+        addi(9, 0, 1),   // x9 = 1 (success)
+        sw(10, 9, 0),    // Write 1 (success) to tohost
+        jal(0, 0),       // Infinite loop
+    ];
+    
+    const START_ADDR: u32 = 0x8000_0000;
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    let result = run_program(
+        GLOBAL_MAX_CYCLES * 10,  // Allow more cycles for UART timing
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,
+        0,
+        |sim| {
+            sim.write_memory_region(START_ADDR, &program_bytes, true);
+            Ok(START_ADDR)
+        },
+        None::<fn(&SimulatorView, &SimulationResult)>,
+    )
+    .expect("Simulation should succeed");
+
+    assert_eq!(
+        result.tohost_value,
+        Some(1),
+        "Loopback test: received byte should match sent byte"
+    );
 }
 ```
 
@@ -1254,9 +1333,11 @@ impl UartLoopbackTester {
 | `test_uart_status_initial` | Check initial STATUS register | TX_EMPTY=1, RX_EMPTY=1 |
 | `test_uart_tx_fifo_full` | Write 9+ bytes to TX FIFO | TX_FULL set after 8 writes |
 | `test_uart_rx_read_empty` | Read RXDATA when empty | Returns 0, no crash |
-| `test_uart_loopback_byte` | Send/receive single byte (loopback) | Received == Transmitted |
-| `test_uart_loopback_pattern` | Send/receive 0x00, 0xFF, 0xAA, 0x55 | All patterns match |
-| `test_uart_framing_error` | Inject missing stop bit | RX_ERROR set in STATUS |
+| `test_uart_loopback_single_byte` | Send/receive 0xA5 via hardware loopback | Received == Transmitted |
+| `test_uart_loopback_pattern` | Send/receive 0x00, 0xFF, 0xAA, 0x55 via loopback | All patterns match |
+| `test_uart_loopback_multi_byte` | Send/receive 8 bytes via loopback | All bytes match in order |
+
+**Note:** Framing error tests are not included in the initial implementation since hardware loopback produces valid frames. Framing error testing would require external test equipment or a modified UART that can inject invalid frames.
 
 ---
 
@@ -1276,12 +1357,15 @@ impl UartLoopbackTester {
   - [ ] Compile-time parameter validation
   
 - [ ] Update `rtl/top_with_peripherals.sv`
-  - [ ] Add UART module parameters
+  - [ ] Add ENABLE_UART_LOOPBACK parameter (default = 1)
+  - [ ] Add UART_CLK_FREQ_HZ and UART_BAUD_RATE parameters
   - [ ] Add uart_tx/uart_rx port signals
+  - [ ] Add internal uart_tx_internal/uart_rx_internal signals
+  - [ ] Add generate block for loopback vs external connection
   - [ ] Add UART address decoder constants
   - [ ] Update address decode logic
   - [ ] Update response mux logic
-  - [ ] Instantiate UART module
+  - [ ] Instantiate UART module with internal signals
 
 - [ ] Lint RTL with Verilator
   - [ ] `verilator --lint-only rtl/peripherals/uart.sv`
@@ -1298,10 +1382,6 @@ impl UartLoopbackTester {
 - [ ] Update `riscv_core/src/lib.rs`
   - [ ] Add uart.sv to create_cpu_runtime()
 
-- [ ] Update `cpu-sim/src/sim.rs`
-  - [ ] Add uart_tx() accessor to SimulatorView
-  - [ ] Consider uart_rx injection mechanism
-
 - [ ] Clear Verilator cache
   - [ ] `cargo clean`
 
@@ -1313,11 +1393,9 @@ impl UartLoopbackTester {
   - [ ] test_uart_status_initial_state()
   - [ ] test_uart_tx_fifo_full()
   - [ ] test_uart_rx_read_empty()
-  
-- [ ] Create UART loopback test infrastructure
-  - [ ] UartLoopbackTester helper struct
-  - [ ] test_uart_loopback_byte()
+  - [ ] test_uart_loopback_single_byte()
   - [ ] test_uart_loopback_pattern()
+  - [ ] test_uart_loopback_multi_byte()
 
 - [ ] Run all tests
   - [ ] `cargo test --verbose`
