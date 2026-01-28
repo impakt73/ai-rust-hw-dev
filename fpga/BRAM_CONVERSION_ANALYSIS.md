@@ -16,7 +16,7 @@ The integer and FP register files (`regfile.sv` and `fp_regfile.sv`) were analyz
 2. **Asynchronous read requirement**: Multi-cycle CPU architecture requires zero-latency reads
 3. **Multiple read ports**: FP regfile needs 3 simultaneous read ports
 
-**Outcome:** Added `USE_BRAM` parameter to both modules for **future architectural changes**, but current recommendation is to keep it disabled (`USE_BRAM = 0`).
+**Outcome:** Added `REGISTER_OUTPUTS` parameter to both modules for **future architectural changes**, but current recommendation is to keep it disabled (`REGISTER_OUTPUTS = 0`).
 
 ---
 
@@ -176,11 +176,11 @@ Same as integer regfile, PLUS:
 
 ## Implementation: Configurable Output Registering
 
-Both register files were updated with a `USE_BRAM` parameter:
+Both register files were updated with a `REGISTER_OUTPUTS` parameter:
 
 ```systemverilog
 module regfile #(
-    parameter bit USE_BRAM = 1'b0  // Default: async reads (LUT-based)
+    parameter bit REGISTER_OUTPUTS = 1'b0  // Default: async reads (LUT-based)
 ) (
     // ... ports unchanged ...
 );
@@ -196,7 +196,7 @@ module regfile #(
 
     // Output path: configurable
     generate
-        if (USE_BRAM) begin : gen_registered_outputs
+        if (REGISTER_OUTPUTS) begin : gen_registered_outputs
             // Registered outputs (adds 1 cycle latency, improves Fmax)
             // NOTE: Does NOT infer BRAM on iCE40 (depth < 256)
             always_ff @(posedge clk) begin
@@ -214,9 +214,9 @@ module regfile #(
 endmodule
 ```
 
-### What `USE_BRAM = 1` Actually Does
+### What `REGISTER_OUTPUTS = 1` Actually Does
 
-**IMPORTANT CLARIFICATION:** Setting `USE_BRAM = 1` does **NOT** infer BRAM on iCE40 due to the depth constraint (32 < 256).
+**IMPORTANT CLARIFICATION:** Setting `REGISTER_OUTPUTS = 1` does **NOT** infer BRAM on iCE40 due to the depth constraint (32 < 256).
 
 What it **actually** does:
 - Registers the read outputs (adds flip-flops after LUT RAM)
@@ -224,7 +224,7 @@ What it **actually** does:
 - Adds 1 cycle latency to register reads
 - Storage is **still in LUTs** (distributed RAM)
 
-**Use case for `USE_BRAM = 1`:**
+**Use case for `REGISTER_OUTPUTS = 1`:**
 - If timing closure fails due to long paths through regfile
 - As a pipeline stage insertion point
 - NOT for saving LUT resources (actually increases register usage!)
@@ -233,7 +233,7 @@ What it **actually** does:
 
 ## Verification
 
-All existing tests pass with the updated modules (using default `USE_BRAM = 0`):
+All existing tests pass with the updated modules (using default `REGISTER_OUTPUTS = 0`):
 
 ### Integer Register File Tests
 ```bash
@@ -304,7 +304,7 @@ Since we can't use BRAM, other register file optimizations:
 
 ### For Current iCE40-HX8K Build
 
-1. ✅ **Keep `USE_BRAM = 0`** (async reads, LUT-based storage)
+1. ✅ **Keep `REGISTER_OUTPUTS = 0`** (async reads, LUT-based storage)
 2. ✅ **Disable F extension** (`ENABLE_F_EXT = 0`) - saves 4,500 LUTs
 3. ✅ **Disable M extension** (`ENABLE_M_EXT = 0`) - saves 4,200 LUTs
 4. ✅ **Build RV32IC only** (base + compressed) - target ~1,500 LUTs total
@@ -328,17 +328,17 @@ If targeting larger devices (e.g., Xilinx 7-Series, Intel Cyclone):
 ## Files Modified
 
 1. **`rtl/regfile.sv`**
-   - Added `USE_BRAM` parameter
+   - Added `REGISTER_OUTPUTS` parameter
    - Added comprehensive BRAM inference analysis comments
    - Implemented configurable output path (async/sync)
-   - Maintained backward compatibility (default `USE_BRAM = 0`)
+   - Maintained backward compatibility (default `REGISTER_OUTPUTS = 0`)
 
 2. **`rtl/fp_regfile.sv`**
-   - Added `USE_BRAM` parameter
+   - Added `REGISTER_OUTPUTS` parameter
    - Added comprehensive BRAM inference analysis comments
    - Implemented configurable output path (async/sync)
    - Handled 3-port read complexity
-   - Maintained backward compatibility (default `USE_BRAM = 0`)
+   - Maintained backward compatibility (default `REGISTER_OUTPUTS = 0`)
 
 3. **`fpga/BRAM_CONVERSION_ANALYSIS.md`** (this document)
    - Detailed technical analysis
@@ -365,7 +365,7 @@ If targeting larger devices (e.g., Xilinx 7-Series, Intel Cyclone):
 - ✅ Disable M extension → save 4,200 LUTs
 - ✅ Accept LUT-based register files (~14% device usage)
 
-The `USE_BRAM` parameter remains available for future architectural exploration, but current recommendation is to **keep it disabled**.
+The `REGISTER_OUTPUTS` parameter remains available for future architectural exploration, but current recommendation is to **keep it disabled**.
 
 ---
 

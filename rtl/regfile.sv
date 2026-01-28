@@ -14,7 +14,7 @@
 //   - Asynchronous reads are REQUIRED by the multi-cycle CPU architecture
 //     (DECODE state needs immediate access to register values)
 //
-// WORKAROUND: The USE_BRAM parameter enables a "read-registered" mode where:
+// WORKAROUND: The REGISTER_OUTPUTS parameter enables a "read-registered" mode where:
 //   - Register file uses distributed RAM (LUTs) as before
 //   - Read outputs are optionally registered for timing improvement
 //   - This does NOT save LUTs but improves Fmax by breaking combinational paths
@@ -24,11 +24,11 @@
 //   2. Add bypass/forwarding logic for back-to-back read-after-write hazards
 //   3. Potentially increase depth to 256 entries (waste 224 entries)
 //
-// CURRENT RECOMMENDATION: Keep USE_BRAM=0 (async reads, LUT-based storage)
+// CURRENT RECOMMENDATION: Keep REGISTER_OUTPUTS=0 (async reads, LUT-based storage)
 // Estimated LUT usage: ~400 LUTs (5.3% of iCE40-HX8K)
 
 module regfile #(
-    parameter bit USE_BRAM = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
+    parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
 ) (
     input  logic        clk,
     input  logic        we,           // Write enable
@@ -74,7 +74,7 @@ module regfile #(
 
     // Output path: Optional registering for timing improvement
     generate
-        if (USE_BRAM) begin : gen_registered_outputs
+        if (REGISTER_OUTPUTS) begin : gen_registered_outputs
             // Registered outputs (adds 1 cycle latency, improves Fmax)
             // NOTE: This does NOT infer BRAM on iCE40 due to small depth (32 entries < 256)
             // It only registers the outputs to break combinational paths
@@ -84,10 +84,8 @@ module regfile #(
             end
         end else begin : gen_async_outputs
             // Direct combinational outputs (zero latency, required by current CPU architecture)
-            always_comb begin
-                rs1_data = rs1_data_int;
-                rs2_data = rs2_data_int;
-            end
+            assign rs1_data = rs1_data_int;
+            assign rs2_data = rs2_data_int;
         end
     endgenerate
 
