@@ -190,7 +190,10 @@ module fpga_top #(
     // ============================================================
     top_with_peripherals #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
-        .ENABLE_F_EXT(ENABLE_F_EXT)
+        .ENABLE_F_EXT(ENABLE_F_EXT),
+        .UART_CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
+        .UART_BAUD_RATE(115200),
+        .ENABLE_UART_LOOPBACK(1'b0)     // Disable loopback for FPGA
     ) cpu (
         .clk(sys_clk),
         .rst_n(rst_n),
@@ -214,6 +217,10 @@ module fpga_top #(
         
         // LED peripheral
         .led_out(led_out),
+        
+        // UART peripheral - connect to USB serial
+        .uart_tx(usb_tx),
+        .uart_rx(usb_rx),
         
         // System control
         .halted(halted),
@@ -274,11 +281,6 @@ module fpga_top #(
     assign io_led[7:0]   = led_out;
     assign io_led[15:8]  = led_out;
     assign io_led[23:16] = led_out;
-    
-    // ============================================================
-    // USB Serial Loopback
-    // ============================================================
-    assign usb_tx = usb_rx;
     
     // ============================================================
     // Button Counter Logic

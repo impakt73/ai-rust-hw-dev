@@ -4,7 +4,13 @@
 
 module top_with_peripherals #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    // UART Parameters
+    parameter int UART_CLK_FREQ_HZ = 50_000_000,
+    parameter int UART_BAUD_RATE   = 115200,
+    // UART Loopback: When enabled (default), TX is internally connected to RX
+    // for simulation testing. Disable for FPGA deployment with external pins.
+    parameter bit ENABLE_UART_LOOPBACK = 1'b1
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -29,6 +35,12 @@ module top_with_peripherals #(
     // LED peripheral outputs
     output logic [7:0]  led_out,
     
+    // UART peripheral pins (active only when ENABLE_UART_LOOPBACK = 0)
+    output logic        uart_tx,    // UART transmit output
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic        uart_rx,    // UART receive input (unused in loopback mode)
+    /* verilator lint_on UNUSEDSIGNAL */
+    
     // System control signals (passed through from CPU)
     output logic        halted,
     output logic        instr_complete,
@@ -51,6 +63,8 @@ module top_with_peripherals #(
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
     localparam LED_BASE         = 32'h50000000;
     localparam LED_LIMIT        = 32'h50000010;  // 16 bytes
+    localparam UART_BASE        = 32'h52000000;
+    localparam UART_LIMIT       = 32'h52000100;  // 256 bytes
     
     // ============================================================
     // Internal CPU Memory Interface Signals
@@ -71,20 +85,36 @@ module top_with_peripherals #(
     logic        led_ready;
     
     // ============================================================
+    // UART Controller Interface Signals
+    // ============================================================
+    logic [31:0] uart_rdata;
+    logic        uart_ready;
+    
+    // Internal UART signals for loopback
+    logic uart_tx_internal;  // TX output from UART module
+    logic uart_rx_internal;  // RX input to UART module
+    
+    // ============================================================
     // Address Decoder
     // ============================================================
     logic sel_led;
+    logic sel_uart;
     logic sel_external;
     logic sel_unmapped_rtl;
     
     always_comb begin
         sel_led          = 1'b0;
+        sel_uart         = 1'b0;
         sel_unmapped_rtl = 1'b0;
         sel_external     = 1'b0;
         
         // Check if address is in LED range
         if (cpu_dmem_addr >= LED_BASE && cpu_dmem_addr < LED_LIMIT) begin
             sel_led = 1'b1;
+        end
+        // Check if address is in UART range
+        else if (cpu_dmem_addr >= UART_BASE && cpu_dmem_addr < UART_LIMIT) begin
+            sel_uart = 1'b1;
         end
         // Check if address is in unmapped RTL peripheral space
         else if (cpu_dmem_addr >= RTL_PERIPH_BASE && cpu_dmem_addr < RTL_PERIPH_LIMIT) begin
@@ -108,6 +138,9 @@ module top_with_peripherals #(
         if (sel_led) begin
             cpu_dmem_rdata = led_rdata;
             cpu_dmem_ready = led_ready;
+        end else if (sel_uart) begin
+            cpu_dmem_rdata = uart_rdata;
+            cpu_dmem_ready = uart_ready;
         end else if (sel_unmapped_rtl) begin
             // Unmapped RTL peripheral address - return zero and ready immediately
             cpu_dmem_rdata = 32'h0;
@@ -179,6 +212,23 @@ module top_with_peripherals #(
     );
     
     // ============================================================
+    // UART Loopback or External Connection
+    // ============================================================
+    generate
+        if (ENABLE_UART_LOOPBACK) begin : gen_loopback
+            // Internal loopback: connect TX directly to RX for testing
+            assign uart_rx_internal = uart_tx_internal;
+            // Still expose TX externally for debugging/monitoring
+            assign uart_tx = uart_tx_internal;
+            // uart_rx input port is ignored in loopback mode
+        end else begin : gen_external
+            // External connection: use actual RX/TX pins
+            assign uart_rx_internal = uart_rx;
+            assign uart_tx = uart_tx_internal;
+        end
+    endgenerate
+    
+    // ============================================================
     // LED Controller Instantiation
     // ============================================================
     led_controller led_ctrl (
@@ -196,6 +246,31 @@ module top_with_peripherals #(
         
         // LED outputs
         .led_out(led_out)
+    );
+    
+    // ============================================================
+    // UART Controller Instantiation
+    // ============================================================
+    uart #(
+        .CLK_FREQ_HZ(UART_CLK_FREQ_HZ),
+        .BAUD_RATE(UART_BAUD_RATE),
+        .FIFO_DEPTH(8)
+    ) uart_ctrl (
+        .clk(clk),
+        .rst_n(rst_n),
+        
+        // CPU interface
+        .addr(cpu_dmem_addr),
+        .wdata(cpu_dmem_wdata),
+        .rdata(uart_rdata),
+        .we(cpu_dmem_we && sel_uart),
+        .re(cpu_dmem_re && sel_uart),
+        .size(cpu_dmem_size),
+        .ready(uart_ready),
+        
+        // Internal signals (connected via loopback or external pins)
+        .tx_out(uart_tx_internal),
+        .rx_in(uart_rx_internal)
     );
 
 endmodule
