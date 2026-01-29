@@ -1,0 +1,108 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    UART FPGA INTEGRATION ARCHITECTURE                          ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  FPGA Top Module (fpga_top.sv)                                                 │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │  Clock Generation                                                        │  │
+│  │  ┌────────────┐                                                          │  │
+│  │  │ 100 MHz    │  PLL: DIVR=0, DIVF=7, DIVQ=5                             │  │
+│  │  │ Oscillator ├────► 100 MHz × 8 / 32 = 25 MHz ────► sys_clk             │  │
+│  │  └────────────┘                                                          │  │
+│  └──────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │  CPU Core with Peripherals (top_with_peripherals)                       │  │
+│  │                                                                          │  │
+│  │  Parameters:                                                             │  │
+│  │    • UART_CLK_FREQ_HZ = 25_000_000                                       │  │
+│  │    • UART_BAUD_RATE = 115200                                             │  │
+│  │    • ENABLE_UART_LOOPBACK = 1'b0 ◄──── DISABLED FOR FPGA                │  │
+│  │                                                                          │  │
+│  │  ┌────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  RISC-V CPU Core                                                   │  │  │
+│  │  │  ┌──────────────────┐                                              │  │  │
+│  │  │  │  Memory Bus      │                                              │  │  │
+│  │  │  └────────┬─────────┘                                              │  │  │
+│  │  │           │                                                        │  │  │
+│  │  │           ▼                                                        │  │  │
+│  │  │  ┌──────────────────┐      Address Range: 0x50000000-0x60000000   │  │  │
+│  │  │  │ Address Decoder  ├──────────────────────────────────────────┐  │  │  │
+│  │  │  └──────────────────┘                                          │  │  │  │
+│  │  │           │                                                     │  │  │  │
+│  │  │           ├─── LED Controller  (0x50000000-0x5000000F)         │  │  │  │
+│  │  │           │                                                     │  │  │  │
+│  │  │           └─── UART Controller (0x52000000-0x520000FF) ◄───────┘  │  │  │
+│  │  │                      │                                             │  │  │
+│  │  │                      ▼                                             │  │  │
+│  │  │           ┌──────────────────────┐                                │  │  │
+│  │  │           │ UART Peripheral      │                                │  │  │
+│  │  │           │ (uart.sv)            │                                │  │  │
+│  │  │           │                      │                                │  │  │
+│  │  │           │ Registers:           │                                │  │  │
+│  │  │           │  +0x00: TX Data      │                                │  │  │
+│  │  │           │  +0x04: RX Data      │                                │  │  │
+│  │  │           │  +0x08: Status       │                                │  │  │
+│  │  │           │  +0x0C: Control      │                                │  │  │
+│  │  │           │                      │                                │  │  │
+│  │  │           │ Baud Generator:      │                                │  │  │
+│  │  │           │  Divisor = 217       │                                │  │  │
+│  │  │           │  Rate = 115,207 bps  │                                │  │  │
+│  │  │           │  Error = 0.006%      │                                │  │  │
+│  │  │           │                      │                                │  │  │
+│  │  │           └──────┬──────┬────────┘                                │  │  │
+│  │  │                  │      │                                          │  │  │
+│  │  └──────────────────┼──────┼──────────────────────────────────────────┘  │  │
+│  │                  uart_tx  uart_rx                                        │  │
+│  │                     │      │                                             │  │
+│  │  Port Connections:  │      │                                             │  │
+│  │     .uart_tx(usb_tx)│      │                                             │  │
+│  │     .uart_rx(usb_rx)└──┐ ┌─┘                                             │  │
+│  └────────────────────────┼─┼───────────────────────────────────────────────┘  │
+│                           │ │                                                  │
+│  FPGA I/O Pins:       usb_tx usb_rx                                           │
+│  (ice40hx8k.pcf)          │ │                                                  │
+│                      Pin M9 Pin P14                                            │
+└───────────────────────────┼─┼──────────────────────────────────────────────────┘
+                            │ │
+                            ▼ ▼
+                    ┌─────────────────┐
+                    │ FTDI USB-Serial │
+                    │ Converter Chip  │
+                    │ (on Alchitry Cu)│
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │  USB Connector  │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │  Host Computer  │
+                    │  /dev/ttyUSB0   │
+                    │  115200 baud    │
+                    └─────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+KEY CHANGES IN PHASE 5:
+
+  1. ✅ Added UART parameters (CLK, BAUD, LOOPBACK=OFF)
+  2. ✅ Connected uart_tx → usb_tx (Pin M9)
+  3. ✅ Connected uart_rx → usb_rx (Pin P14)
+  4. ✅ Removed simple loopback: assign usb_tx = usb_rx;
+
+SIGNAL FLOW:
+
+  CPU Write to 0x52000000:
+    CPU → Memory Bus → Address Decoder → UART TX Register →
+    Baud Generator → Serial Transmitter → uart_tx → usb_tx (M9) →
+    FTDI → USB → Host Computer
+
+  Host Computer Write:
+    Host → USB → FTDI → usb_rx (P14) → uart_rx →
+    Serial Receiver → UART RX Register → CPU Read from 0x52000004
+
+═══════════════════════════════════════════════════════════════════════════════
