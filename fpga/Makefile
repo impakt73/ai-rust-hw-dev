@@ -28,6 +28,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/top_with_peripherals.sv
 
 FPGA_SOURCES = \
+	$(FPGA_DIR)/reset_controller.sv \
 	$(FPGA_DIR)/bram_imem.sv \
 	$(FPGA_DIR)/bram_dmem.sv \
 	$(FPGA_DIR)/stub_fpu.sv \
