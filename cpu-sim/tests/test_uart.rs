@@ -5,7 +5,7 @@
 //!
 //! Address: 0x52000000
 //! Features:
-//! - TX/RX FIFOs (16 entries each)
+//! - TX/RX FIFOs (8 entries each)
 //! - Hardware loopback mode (enabled by default)
 //! - Status register for FIFO state
 //!
@@ -181,25 +181,8 @@ fn test_uart_status_initial_state() {
     );
 }
 
-// NOTE: This test is currently disabled due to a suspected issue with UART loopback
-// timing or register read behavior in the CPU simulation environment. The test
-// consistently writes 0 (failure) to tohost, indicating that the received byte does
-// not match the sent byte (0xA5), despite:
-// - TX write working correctly (test_uart_tx_write_byte passes)
-// - STATUS register reads working correctly (test_uart_status_initial_state passes)
-// - Hardware loopback being enabled (ENABLE_UART_LOOPBACK=1 in top_with_peripherals.sv)
-// - Sufficient cycles being allocated (100x GLOBAL_MAX_CYCLES = ~1 million cycles)
-//
-// Further debugging needed:
-// - Enable VCD output to observe UART signal transitions
-// - Add debug prints in RTL to trace TX/RX FIFO operations
-// - Verify that the loopback connection is active during CPU simulation
-// - Check if there's an issue with memory-mapped register reads vs. direct RTL access
-//
-// The RTL-level UART loopback test (testbench/tests/uart_test.rs::test_uart_loopback_single_byte)
-// passes successfully, which suggests the UART RTL logic itself is correct.
+// UART hardware loopback test - verifies TX data is correctly received via internal loopback
 #[test]
-#[ignore = "UART loopback test currently failing - requires further investigation"]
 fn test_uart_loopback_single_byte() {
     init_test_logger();
 

@@ -178,7 +178,8 @@ Address Range          | Device           | Type | Description
 0x40000000-0x40000007 | FIFO             | Rust | Host communication FIFO
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x52000000-0x520000FF | UART Controller  | RTL  | UART TX/RX with 8-byte FIFOs
-0x51000000-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
+0x51000000-0x51FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
+0x52000100-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
 

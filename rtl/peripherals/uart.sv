@@ -143,7 +143,7 @@ module uart #(
     logic [7:0] rx_shift_reg;
     logic [2:0] rx_bit_index;
     logic [3:0] rx_sample_count;  // 0-15 for 16x oversampling
-    logic [$clog2(CLKS_PER_SAMPLE)-1:0] rx_baud_counter;
+    logic [(CLKS_PER_SAMPLE > 1) ? $clog2(CLKS_PER_SAMPLE)-1 : 0 : 0] rx_baud_counter;
     logic rx_busy;
     logic rx_error;
     logic rx_fifo_write_int;  // Pulses high for one cycle when writing to RX FIFO
@@ -287,14 +287,18 @@ module uart #(
                         if (rx_sample_count == 4'd7) begin
                             // Sample at middle of start bit
                             if (rx_sync_1 == 1'b0) begin
-                                // Valid start bit
-                                rx_state <= RX_DATA_BITS;
-                                rx_sample_count <= 4'd0;
-                                rx_bit_index <= 3'd0;
+                                // Valid start bit - continue to end of start bit period
+                                // DON'T transition yet - wait until sample 15
                             end else begin
                                 // False start - return to idle
                                 rx_state <= RX_IDLE;
                             end
+                            rx_sample_count <= rx_sample_count + 1'b1;
+                        end else if (rx_sample_count == 4'd15) begin
+                            // End of start bit period - now transition to data bits
+                            rx_state <= RX_DATA_BITS;
+                            rx_sample_count <= 4'd0;
+                            rx_bit_index <= 3'd0;
                         end else begin
                             rx_sample_count <= rx_sample_count + 1'b1;
                         end
