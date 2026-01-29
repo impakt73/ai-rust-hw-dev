@@ -188,13 +188,13 @@ module fpga_top #(
     // ============================================================
     // CPU Core with Peripherals
     // ============================================================
-    top_with_peripherals #(
+    top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .UART_CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
         .UART_BAUD_RATE(115200),
         .ENABLE_UART_LOOPBACK(1'b0)     // Disable loopback for FPGA
-    ) cpu (
+    ) cpu_inst (
         .clk(sys_clk),
         .rst_n(rst_n),
         .boot_addr(BOOT_ADDR),

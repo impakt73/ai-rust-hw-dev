@@ -204,7 +204,7 @@ This would use ~20% of iCE40-HX8K resources, leaving room for peripherals and me
 ## Proposed Configuration System
 
 ```systemverilog
-module top #(
+module cpu #(
     parameter bit ENABLE_M_EXT = 1'b0,  // Multiply/Divide extension
     parameter bit ENABLE_F_EXT = 1'b0,  // Floating-point extension
     parameter bit ENABLE_C_EXT = 1'b1,  // Compressed instructions

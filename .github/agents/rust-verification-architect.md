@@ -56,7 +56,7 @@ assert_eq!(core.pc, 0x104);  // May fail due to wrong assumption
 
 **✅ CORRECT:**
 ```systemverilog
-// First, add debug print to RTL (top.sv or relevant module)
+// First, add debug print to RTL (cpu.sv or relevant module)
 always_ff @(posedge clk) begin
     if (state == S_FETCH) begin
         $display("FETCH: pc=%h instr=%h", pc, imem_data);

@@ -23,10 +23,10 @@ RTL_SOURCES = \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/regfile.sv \
 	$(RTL_DIR)/writeback_mux.sv \
-	$(RTL_DIR)/top.sv \
+	$(RTL_DIR)/cpu.sv \
 	$(RTL_DIR)/peripherals/led_controller.sv \
 	$(RTL_DIR)/peripherals/uart.sv \
-	$(RTL_DIR)/top_with_peripherals.sv
+	$(RTL_DIR)/top.sv
 
 FPGA_SOURCES = \
 	$(FPGA_DIR)/reset_controller.sv \

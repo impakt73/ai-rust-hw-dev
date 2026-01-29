@@ -12,13 +12,13 @@ pub mod trace;
 // Instruction encoding utilities
 pub mod instruction;
 
-// Define the Top module that can be shared across the workspace
+// Define the Cpu module (CPU core)
+#[verilog(src = "../rtl/cpu.sv", name = "cpu")]
+pub struct Cpu;
+
+// Define the Top module (top-level wrapper with RTL peripherals)
 #[verilog(src = "../rtl/top.sv", name = "top")]
 pub struct Top;
-
-// Define the TopWithPeripherals module (wrapper with RTL peripherals)
-#[verilog(src = "../rtl/top_with_peripherals.sv", name = "top_with_peripherals")]
-pub struct TopWithPeripherals;
 
 // Define ALU module
 #[verilog(src = "../rtl/alu.sv", name = "alu")]
@@ -104,8 +104,8 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top_with_peripherals.sv",       // Top-level wrapper with RTL peripherals
-        "top.sv",                        // CPU core
+        "top.sv",                        // Top-level wrapper with RTL peripherals
+        "cpu.sv",                        // CPU core
         "peripherals/led_controller.sv", // LED controller peripheral
         "peripherals/uart.sv",           // UART controller peripheral
         "fetch_buffer.sv",               // RV32C fetch buffer

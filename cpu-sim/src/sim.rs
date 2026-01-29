@@ -1,7 +1,7 @@
 use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
-use riscv_core::{TopWithPeripherals, Vcd, VerilatedModelConfig, VerilatorRuntime};
+use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::path::Path;
 use std::time::Instant;
 
@@ -31,7 +31,7 @@ pub struct SimulationResult {
 pub struct SimulatorView<'a> {
     bus: &'a mut crate::bus::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
-    cpu: &'a TopWithPeripherals<'static>,
+    cpu: &'a Top<'static>,
 }
 
 impl<'a> SimulatorView<'a> {
@@ -39,7 +39,7 @@ impl<'a> SimulatorView<'a> {
     pub(crate) fn new(
         bus: &'a mut crate::bus::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
-        cpu: &'a TopWithPeripherals<'static>,
+        cpu: &'a Top<'static>,
     ) -> Self {
         SimulatorView {
             bus,
@@ -507,7 +507,7 @@ where
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
     // 1. CPU (dependent) MUST be declared FIRST - drops first
-    pub(crate) cpu: TopWithPeripherals<'static>,
+    pub(crate) cpu: Top<'static>,
     vcd: Option<Vcd<'static>>,
 
     // 2. Runtime (owner) MUST be declared AFTER cpu - drops last
@@ -590,7 +590,7 @@ where
             };
 
             let mut cpu = runtime_ref
-                .create_model::<TopWithPeripherals>(&config)
+                .create_model::<Top>(&config)
                 .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
             // Open VCD file if path is provided

@@ -5,7 +5,11 @@
 **Date:** January 27, 2026  
 **Project:** RISC-V RV32IMACF Multi-Cycle CPU  
 **Based on:** `docs/research/bus-peripheral-implementation-approaches.md`  
-**Status:** Implementation Plan - Ready for Execution
+**Status:** Completed
+
+> **Note:** This is a historical planning document. The module names have since been updated:
+> - `top.sv` → renamed to `cpu.sv` (CPU core module)
+> - `top_with_peripherals.sv` → renamed to `top.sv` (top-level module with RTL peripherals)
 
 ---
 

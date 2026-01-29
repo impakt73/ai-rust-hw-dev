@@ -106,7 +106,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 .
 ├── Cargo.toml              # Workspace root
 ├── rtl/                    # SystemVerilog RTL modules
-│   ├── top.sv             # Top-level CPU (multi-cycle FSM control)
+│   ├── top.sv             # Top-level module (CPU with RTL peripherals)
+│   ├── cpu.sv             # CPU core (multi-cycle FSM control)
 │   ├── alu.sv, decoder.sv, regfile.sv, etc.
 ├── testbench/              # Rust verification (integration tests)
 │   └── tests/             # Integration test files

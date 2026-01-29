@@ -94,7 +94,7 @@ impl SystemBus {
 
     /// Check if an address is in the RTL peripheral address space
     ///
-    /// RTL peripherals are handled directly by the Verilator top_with_peripherals module,
+    /// RTL peripherals are handled directly by the Verilator top module,
     /// not by the Rust SystemBus. This method helps identify such addresses.
     pub fn is_rtl_peripheral(&self, addr: u32) -> bool {
         (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&addr)

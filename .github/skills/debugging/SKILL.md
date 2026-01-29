@@ -32,7 +32,7 @@ description: Comprehensive debugging guide for hardware and software issues. Use
 ### Example: Debugging State Machine Issues
 
 ```systemverilog
-// Add to top.sv or relevant module
+// Add to cpu.sv or relevant module
 always_ff @(posedge clk) begin
     if (state != next_state) begin
         $display("STATE TRANSITION: %s -> %s (pc=%h)", 
