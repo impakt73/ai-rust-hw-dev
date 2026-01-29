@@ -40,6 +40,14 @@ pub struct FpRegFile;
 #[verilog(src = "../rtl/fpu.sv", name = "fpu")]
 pub struct Fpu;
 
+// Define LED Controller module
+#[verilog(src = "../rtl/peripherals/led_controller.sv", name = "led_controller")]
+pub struct LedController;
+
+// Define UART module for RTL testing
+#[verilog(src = "../rtl/peripherals/uart.sv", name = "uart")]
+pub struct Uart;
+
 // Define FPU submodules
 #[verilog(src = "../rtl/fpu_classifier.sv", name = "fpu_classifier")]
 pub struct FpuClassifier;
@@ -99,6 +107,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "top_with_peripherals.sv",       // Top-level wrapper with RTL peripherals
         "top.sv",                        // CPU core
         "peripherals/led_controller.sv", // LED controller peripheral
+        "peripherals/uart.sv",           // UART controller peripheral
         "fetch_buffer.sv",               // RV32C fetch buffer
         "decompress.sv",                 // RV32C decompressor
         "alu.sv",
@@ -132,6 +141,11 @@ pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 // Helper function to create a runtime for the FP RegFile
 pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fp_regfile.sv"])
+}
+
+// Helper function to create a runtime for the UART peripheral
+pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["peripherals/uart.sv"])
 }
 
 // Helper function to create a runtime for the FPU
