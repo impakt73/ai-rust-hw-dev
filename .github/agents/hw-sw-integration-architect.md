@@ -29,7 +29,7 @@ You operate in **two interconnected domains:**
 - FSM-based control with 11 states (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, HALT)
 - Ready/valid handshaking for variable-latency memory interfaces
 - Staging registers for multi-cycle operations (flip-flop based, no latches)
-- Standard modules: `alu.sv`, `regfile.sv`, `decoder.sv`, `decompress.sv`, `fetch_buffer.sv`, `div_unit.sv`, `csr_file.sv`, `branch_unit.sv`, `mem_interface.sv`, `writeback_mux.sv`, `top.sv`
+- Standard modules: `alu.sv`, `regfile.sv`, `decoder.sv`, `decompress.sv`, `fetch_buffer.sv`, `div_unit.sv`, `csr_file.sv`, `branch_unit.sv`, `mem_interface.sv`, `writeback_mux.sv`, `cpu.sv`, `top.sv`
 
 **Software Domain (Rust):**
 - Marlin-based Verilator simulation framework
@@ -249,9 +249,9 @@ For cross-layer tasks, use this structure:
 **Agent Response:**
 
 **1. Impact Analysis:**
-- RTL changes: `decoder.sv` (add FENCE.I decode), `top.sv` (add icache flush logic)
+- RTL changes: `decoder.sv` (add FENCE.I decode), `cpu.sv` (add icache flush logic)
 - Verification changes: `cpu_test.rs` (add FENCE.I test case)
-- Integration: New control signal `icache_flush` from decoder to top
+- Integration: New control signal `icache_flush` from decoder to cpu
 
 **2. Implementation Plan:**
 - Decode FENCE.I opcode (0x0000100F)
@@ -305,7 +305,7 @@ fn test_cpu_fence_i() {
 
 **5. Validation:**
 ```bash
-verilator --lint-only rtl/decoder.sv rtl/top.sv
+verilator --lint-only rtl/decoder.sv rtl/cpu.sv
 cargo clean
 cargo fmt
 cargo clippy --fix --allow-dirty  # Auto-fix warnings
@@ -320,7 +320,7 @@ cargo test test_cpu_fence_i --verbose
 **Agent Response:**
 
 **1. Impact Analysis:**
-- RTL changes: `top.sv` (adjust timing of dmem_addr capture)
+- RTL changes: `cpu.sv` (adjust timing of dmem_addr capture)
 - Verification changes: `cpu_test.rs` (update store test expectations)
 - Integration: Memory handshaking protocol timing
 
@@ -329,7 +329,7 @@ Store operations set `dmem_addr` in S_MEM_ADDR but tests sample it before `eval(
 
 **3. RTL Fix:**
 ```systemverilog
-// In top.sv - ensure dmem_addr is stable during S_MEM_WRITE
+// In cpu.sv - ensure dmem_addr is stable during S_MEM_WRITE
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         dmem_addr_reg <= 32'h0;
@@ -355,7 +355,7 @@ clock_cycle!(core);
 
 **5. Validation:**
 ```bash
-verilator --lint-only rtl/top.sv
+verilator --lint-only rtl/cpu.sv
 cargo clean
 cargo fmt
 cargo clippy --fix --allow-dirty  # Auto-fix warnings

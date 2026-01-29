@@ -227,10 +227,10 @@ This approach creates a symmetric dual-core system where both harts share the sa
 
 #### RTL Changes
 
-**1. Parameterize `top.sv` for Hart ID:**
+**1. Parameterize `cpu.sv` for Hart ID:**
 
 ```systemverilog
-module top #(
+module cpu #(
     parameter HART_ID = 0  // Unique hart identifier
 ) (
     input  logic        clk,
@@ -242,7 +242,7 @@ module top #(
     assign csr_rdata = (csr_addr == 12'hF14) ? HART_ID : /* other CSRs */;
     
     // Per-hart reservation tracking (moved to memory controller)
-    // Remove reservation_valid/reservation_addr from top.sv
+    // Remove reservation_valid/reservation_addr from cpu.sv
 ```
 
 **2. Create Memory Arbiter Module:**
