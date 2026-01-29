@@ -22,68 +22,57 @@ module bram_imem #(
     logic [ADDR_WIDTH-3:0] word_addr;
     assign word_addr = addr[ADDR_WIDTH-1:2];
     
-    // Initialize memory with LED rotation program
-    // This program rotates LED pattern left by 1 bit every second (25M cycles at 25MHz)
+    // Initialize memory with UART-to-LED echo program
+    // This program polls the UART for incoming data and displays received bytes on LEDs
     initial begin
-        // LED Rotation Program
+        // UART-to-LED Echo Program
         // Register allocation:
         //   x10 (a0): LED controller base address (0x50000000)
-        //   x11 (a1): LED pattern register (rotating pattern)
-        //   x12 (a2): Delay counter
-        //   x13 (a3): Delay target (25,000,000 for 1 second at 25 MHz)
-        
-        // Address 0x80000000 (instruction memory base)
+        //   x11 (a1): UART controller base address (0x52000000)
+        //   x12 (a2): UART status register value
+        //   x13 (a3): Received byte / scratch
+        //   x14 (a4): RX_EMPTY mask (bit 5 = 0x20)
+        //
+        // Memory map:
+        //   LED_OUT:     0x50000000 (write to display on LEDs)
+        //   UART_RXDATA: 0x52000004 (read received byte)
+        //   UART_STATUS: 0x52000008 (bit 5 = RX_EMPTY)
         
         // === Initialization ===
-        // 0: lui x10, 0x50000  // Load LED base address upper (0x50000000)
+        // 0: lui x10, 0x50000  // Load LED base address (0x50000000)
         mem[0] = 32'h50000537;
         
-        // 1: addi x11, x0, 0xAA  // Load initial pattern 0xAA (10101010)
-        mem[1] = 32'h0AA00593;
+        // 1: lui x11, 0x52000  // Load UART base address (0x52000000)
+        mem[1] = 32'h520005B7;
         
-        // 2: lui x13, 0x017D8  // Load upper 20 bits of 25M (0x017D7840)
-        mem[2] = 32'h017D86B7;
+        // 2: addi x14, x0, 0x20  // Load RX_EMPTY mask (bit 5)
+        mem[2] = 32'h02000713;
         
-        // 3: addi x13, x13, 0x7840  // Add lower 12 bits to get 25,000,000
-        // Note: 0x7840 is -1984 in signed, so we need to add 0x840 (2112) carefully
-        // Actually: 0x017D7840 = 25,000,000 decimal
-        // lui loads 0x017D8 << 12 = 0x017D8000
-        // We need to subtract 0x7C0 (1984) to get 0x017D7840
-        // addi x13, x13, -1984 = addi x13, x13, 0x840
-        mem[3] = 32'h84068693;
+        // === Main Loop (poll_loop at address 0x0C = instruction 3) ===
+        // 3: lw x12, 8(x11)  // Read UART STATUS register (offset 0x08)
+        mem[3] = 32'h0085A603;
         
-        // === Main Loop ===
-        // 4: sw x11, 0(x10)  // Write LED pattern to controller
-        mem[4] = 32'h00B52023;
+        // 4: and x13, x12, x14  // Mask RX_EMPTY bit
+        mem[4] = 32'h00E676B3;
         
-        // 5: addi x12, x0, 0  // Initialize counter to 0
-        mem[5] = 32'h00000613;
+        // 5: bne x13, x0, -8  // If RX_EMPTY != 0 (FIFO empty), loop back to poll
+        mem[5] = 32'hFE069CE3;
         
-        // === Delay Loop (count to 25M) ===
-        // 6: addi x12, x12, 1  // counter++
-        mem[6] = 32'h00160613;
+        // === Data Available - Read, Display, and Echo ===
+        // 6: lw x13, 4(x11)  // Read byte from UART RXDATA (offset 0x04)
+        mem[6] = 32'h0045A683;
         
-        // 7: bne x12, x13, -4  // if (counter != 25M) goto delay_loop
-        mem[7] = 32'hFED61EE3;
+        // 7: sw x13, 0(x10)  // Write byte to LED_OUT register
+        mem[7] = 32'h00D52023;
         
-        // === Rotate LED Pattern ===
-        // 8: slli x14, x11, 1  // Shift left by 1: x14 = pattern << 1
-        mem[8] = 32'h00159713;
+        // 8: sw x13, 0(x11)  // Echo byte back to UART TXDATA (offset 0x00)
+        mem[8] = 32'h00D5A023;
         
-        // 9: srli x15, x11, 7  // Shift right by 7: x15 = pattern >> 7 (get MSB)
-        mem[9] = 32'h0075D793;
-        
-        // 10: or x11, x14, x15  // Combine: pattern = (pattern << 1) | (pattern >> 7)
-        mem[10] = 32'h00F765B3;
-        
-        // 11: andi x11, x11, 0xFF  // Mask to 8 bits
-        mem[11] = 32'h0FF5F593;
-        
-        // 12: jal x0, -32  // Jump back to main loop (offset = -32 bytes = -8 instructions)
-        mem[12] = 32'hFE1FF06F;
+        // 9: jal x0, -24  // Jump back to poll_loop (offset = -24 bytes = -6 instructions)
+        mem[9] = 32'hFD3FF06F;
         
         // Fill rest with NOPs
-        for (int i = 13; i < WORD_COUNT; i++) begin
+        for (int i = 10; i < WORD_COUNT; i++) begin
             mem[i] = 32'h00000013;  // addi x0, x0, 0 (NOP)
         end
     end

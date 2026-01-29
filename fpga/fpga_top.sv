@@ -283,13 +283,14 @@ module fpga_top #(
     assign io_led[23:16] = led_out;
     
     // ============================================================
-    // Button Counter Logic
+    // Button Counter Logic (also increments on led_out changes)
     // ============================================================
     // Synchronize buttons to system clock domain (2-FF synchronizer)
     // Note: This is a simple demo implementation without debouncing.
     // For production use, add a debounce timer (~10-20ms stable period).
     logic [4:0] io_button_sync1, io_button_sync2;
     logic [4:0] io_button_prev;
+    logic [7:0] led_out_prev;
     logic [7:0] button_counter;
     
     always_ff @(posedge sys_clk) begin
@@ -297,6 +298,7 @@ module fpga_top #(
             io_button_sync1 <= 5'b0;
             io_button_sync2 <= 5'b0;
             io_button_prev  <= 5'b0;
+            led_out_prev    <= 8'b0;
             button_counter  <= 8'b0;
         end else begin
             // 2-FF synchronizer for buttons
@@ -306,8 +308,11 @@ module fpga_top #(
             // Edge detection: increment on any rising edge of any button
             io_button_prev <= io_button_sync2;
             
-            // If any button has a rising edge (was 0, now 1), increment counter
-            if (|(io_button_sync2 & ~io_button_prev)) begin
+            // Track previous led_out value for change detection
+            led_out_prev <= led_out;
+
+            // Increment counter on button press OR led_out change
+            if (|(io_button_sync2 & ~io_button_prev) || (led_out != led_out_prev)) begin
                 button_counter <= button_counter + 8'd1;
             end
         end
