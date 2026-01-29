@@ -357,3 +357,67 @@ fn test_uart_tx_fifo_full() {
         status
     );
 }
+
+#[test]
+fn test_uart_baud_timing() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    // Apply reset
+    reset_uart(&mut dut);
+
+    // Write a byte to trigger transmission
+    // Use 0x01 (00000001 binary, LSB first = 1,0,0,0,0,0,0,0)
+    // This ensures the first data bit is HIGH, so we can measure just the start bit
+    let test_byte = 0x01;
+    write_register(&mut dut, UART_TXDATA, test_byte);
+
+    // Wait for start bit to begin (TX goes low)
+    let mut start_bit_cycle = 0;
+    for cycle in 0..100 {
+        if dut.tx_out == 0 {
+            start_bit_cycle = cycle;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    assert!(
+        start_bit_cycle < 100,
+        "Start bit should appear within 100 cycles"
+    );
+
+    // Now measure how long the start bit lasts (TX stays low)
+    // The start bit is LOW, then first data bit (LSB of 0x01) is HIGH
+    let mut start_bit_cycles = 0;
+    for _ in 0..CLKS_PER_BIT + 100 {
+        if dut.tx_out == 0 {
+            start_bit_cycles += 1;
+        } else {
+            // TX went high - start bit ended, data bit 0 (which is 1) started
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // The start bit should last approximately CLKS_PER_BIT cycles
+    // Allow 25% tolerance for edge effects and counter initialization
+    let min_cycles = (CLKS_PER_BIT as f64 * 0.75) as u32;
+    let max_cycles = (CLKS_PER_BIT as f64 * 1.25) as u32;
+
+    assert!(
+        start_bit_cycles >= min_cycles && start_bit_cycles <= max_cycles,
+        "Start bit should last approximately {} cycles (actual: {}, tolerance: {}-{})",
+        CLKS_PER_BIT,
+        start_bit_cycles,
+        min_cycles,
+        max_cycles
+    );
+
+    println!(
+        "Baud timing verified: start bit lasted {} cycles (expected ~{})",
+        start_bit_cycles, CLKS_PER_BIT
+    );
+}
