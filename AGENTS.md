@@ -177,6 +177,7 @@ Address Range          | Device           | Type | Description
 0x30000000-0x3000000F | Audio            | Rust | Audio buffer
 0x40000000-0x40000007 | FIFO             | Rust | Host communication FIFO
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
+0x52000000-0x520000FF | UART Controller  | RTL  | UART TX/RX with 8-byte FIFOs
 0x51000000-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
@@ -210,6 +211,45 @@ sw(15, 14, 0);        // Write to LED_OUT register
 
 // Read back LED value
 lw(13, 15, 0);        // Read LED_OUT into register x13
+```
+
+**UART Controller Peripheral:**
+- **Address:** 0x52000000-0x520000FF (256 bytes)
+- **Registers:**
+  - 0x00: TXDATA (WO) - Transmit data (write byte to TX FIFO)
+  - 0x04: RXDATA (RO) - Receive data (read byte from RX FIFO)
+  - 0x08: STATUS (RO) - Status register (FIFO status flags)
+  - 0x0C: CTRL (RW) - Control register (reserved)
+- **STATUS Register Bits:**
+  - Bit 0: TX_FULL - TX FIFO is full
+  - Bit 1: TX_EMPTY - TX FIFO is empty (all data transmitted)
+  - Bit 2: TX_BUSY - TX shift register is active
+  - Bit 4: RX_FULL - RX FIFO is full
+  - Bit 5: RX_EMPTY - RX FIFO is empty (no data available)
+  - Bit 6: RX_BUSY - RX shift register is active
+  - Bit 7: RX_ERROR - Framing error detected
+
+**UART Controller Usage Example:**
+```rust
+// UART Usage Example - Write byte and read received byte
+lui(15, 0x52000000);  // Load UART base address
+
+// Write byte to TX FIFO
+addi(14, 0, 0x48);    // ASCII 'H' = 0x48
+sw(15, 14, 0);        // Write to TXDATA (offset 0x00)
+
+// Poll for TX_EMPTY (bit 1)
+lw(13, 15, 0x08);     // Read STATUS
+andi(12, 13, 0x02);   // Check TX_EMPTY bit
+beq(12, 0, -8);       // Loop until TX_EMPTY
+
+// Poll for !RX_EMPTY (bit 5) - for loopback testing
+lw(13, 15, 0x08);     // Read STATUS  
+andi(12, 13, 0x20);   // Check RX_EMPTY bit
+bne(12, 0, -8);       // Loop until data available
+
+// Read received byte
+lw(11, 15, 0x04);     // Read RXDATA
 ```
 
 ### Common Setup Issues
