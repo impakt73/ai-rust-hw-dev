@@ -1,6 +1,31 @@
 // UART Peripheral
 // 8N1 UART (8 data bits, no parity, 1 stop bit) with FIFOs
 // Memory-mapped at 0x52000000 in RTL peripheral address space
+//
+// Register Map:
+//   Offset | Name   | Access | Description
+//   -------|--------|--------|------------------------------------------
+//   0x00   | TXDATA | WO     | Transmit data (write byte to TX FIFO)
+//   0x04   | RXDATA | RO     | Receive data (read byte from RX FIFO)
+//   0x08   | STATUS | RO     | Status register (see bit definitions below)
+//   0x0C   | CTRL   | RW     | Control register (reserved for future use)
+//
+// STATUS Register Bits [7:0]:
+//   [0] TX_FULL   - TX FIFO is full (cannot accept more data)
+//   [1] TX_EMPTY  - TX FIFO is empty AND transmitter idle
+//   [2] TX_BUSY   - TX shift register is actively transmitting
+//   [3] Reserved  - (always 0)
+//   [4] RX_FULL   - RX FIFO is full (incoming data will be lost)
+//   [5] RX_EMPTY  - RX FIFO is empty (no data available)
+//   [6] RX_BUSY   - RX shift register is actively receiving
+//   [7] RX_ERROR  - Framing error (missing stop bit), cleared on STATUS read
+//
+// Features:
+//   - Configurable baud rate via CLK_FREQ_HZ and BAUD_RATE parameters
+//   - 8-entry TX and RX FIFOs
+//   - 16x oversampling on RX for robust bit detection
+//   - 2-FF input synchronizer prevents metastability
+//   - Single-cycle ready (always 1'b1)
 
 /* verilator lint_off UNUSEDSIGNAL */
 module uart #(
@@ -235,12 +260,19 @@ module uart #(
             rx_error <= 1'b0;
             rx_fifo_write_int <= 1'b0;
         end else begin
+            // Handle rx_error clearing FIRST (from STATUS register read)
+            // This ensures error is visible for at least one cycle before clearing
+            if (clear_rx_error) begin
+                rx_error <= 1'b0;
+            end
+            
             // Default: clear write pulse
             rx_fifo_write_int <= 1'b0;
             
             case (rx_state)
                 RX_IDLE: begin
                     rx_busy <= 1'b0;
+                    rx_sample_count <= 4'd0;  // Reset sample count in idle
                     if (rx_sync_1 == 1'b0) begin  // Falling edge detected (start bit)
                         rx_state <= RX_START_BIT;
                         rx_sample_count <= 4'd0;
@@ -319,11 +351,6 @@ module uart #(
                     rx_state <= RX_IDLE;
                 end
             endcase
-            
-            // Handle rx_error clearing (from STATUS register read)
-            if (clear_rx_error) begin
-                rx_error <= 1'b0;
-            end
         end
     end
     
@@ -373,6 +400,11 @@ module uart #(
     logic rx_fifo_read;
     assign rx_fifo_read = re && (reg_offset == 8'h04) && !rx_fifo_empty;
     
+    // RX FIFO write signal with overflow check
+    // Only write if FIFO is not full to keep count synchronized
+    logic rx_fifo_write;
+    assign rx_fifo_write = rx_fifo_write_int && !rx_fifo_full;
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rx_rd_ptr <= '0;
@@ -380,7 +412,7 @@ module uart #(
             rx_fifo_count <= '0;
         end else begin
             // Handle FIFO pointer and count updates
-            case ({rx_fifo_write_int, rx_fifo_read})
+            case ({rx_fifo_write, rx_fifo_read})
                 2'b10: begin  // Write only (RX state machine)
                     rx_wr_ptr <= rx_wr_ptr + 1'b1;
                     rx_fifo_count <= rx_fifo_count + 1'b1;
@@ -396,8 +428,8 @@ module uart #(
                 default: ;  // 2'b00: no change
             endcase
             
-            // Write to FIFO memory (performed by RX state machine)
-            if (rx_fifo_write_int && !rx_fifo_full) begin
+            // Write to FIFO memory (already checked for full via rx_fifo_write)
+            if (rx_fifo_write) begin
                 rx_fifo[rx_wr_ptr] <= rx_shift_reg;
             end
         end
