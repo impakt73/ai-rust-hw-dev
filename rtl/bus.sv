@@ -2,8 +2,12 @@
 // Routes memory requests from a single master to multiple slave peripherals
 // based on configurable address ranges.
 //
+// IMPORTANT: This implementation is hardcoded for exactly 3 slaves to ensure
+// compatibility with Yosys synthesis (which has limited SystemVerilog support).
+// The NUM_SLAVES parameter MUST be set to 3 - other values are not supported.
+//
 // Features:
-// - Parameterizable number of slave peripherals (up to 8)
+// - 3 slave peripherals (fixed - required for Yosys compatibility)
 // - Configurable base address and size for each slave
 // - Address-based request routing with priority to lower slave indices
 // - Optional default slave for catch-all routing (enabled via DEFAULT_SLAVE_IDX >= 0)
@@ -11,13 +15,17 @@
 // - Handles unmapped addresses gracefully (returns zero, asserts ready)
 //
 // Default Slave Feature:
-// When DEFAULT_SLAVE_IDX is set to a valid slave index (0 to NUM_SLAVES-1),
+// When DEFAULT_SLAVE_IDX is set to a valid slave index (0 to 2),
 // that slave receives all requests that don't match any other slave's address range.
 // This is useful for external memory interfaces that should handle "everything else".
 // Set DEFAULT_SLAVE_IDX to -1 to disable this feature (unmapped returns zero).
 //
+// Priority Handling:
+// If address ranges overlap, lower-indexed slaves have priority. Only the first
+// matching slave (checking 0, then 1, then 2) will be selected.
+//
 // Port Interface:
-// All slave ports use concatenated vectors: {slave[N-1], slave[N-2], ..., slave[0]}
+// All slave ports use concatenated vectors: {slave[2], slave[1], slave[0]}
 // For a 3-slave bus with 32-bit addresses:
 //   slave_addr[95:64] = slave 2 address
 //   slave_addr[63:32] = slave 1 address
@@ -25,7 +33,7 @@
 
 /* verilator lint_off UNUSEDSIGNAL */
 module bus #(
-    // Number of slave peripherals connected to this bus (max 8)
+    // Number of slave peripherals - MUST be 3 (hardcoded for Yosys compatibility)
     parameter int NUM_SLAVES = 3,
     // Address and data width parameters
     parameter int ADDR_WIDTH = 32,
@@ -34,7 +42,8 @@ module bus #(
     // When enabled, this slave receives all unmatched addresses
     parameter int DEFAULT_SLAVE_IDX = -1
 ) (
-    // Clock and reset (unused but kept for potential future registered logic)
+    // Clock and reset (unused in current combinational implementation)
+    // Kept for potential future pipelining or registered outputs
     input  logic                              clk,
     input  logic                              rst_n,
     
