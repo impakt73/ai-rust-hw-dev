@@ -199,203 +199,293 @@ module host_bus_interface (
 
 ## 3. Packet Protocol Design
 
-### 3.1 Request Packet Format
+### 3.1 Design Philosophy
 
-The request packet serializes a bus transaction into a compact byte stream:
+The packet protocol is optimized for **minimal wire bandwidth** since the project may use slow serial links. Key design decisions:
 
+- **Variable-length packets** - Only transmit bytes that are needed
+- **No checksums** - Rely on transport layer for error detection if needed
+- **Self-describing headers** - First byte contains enough info to determine packet length
+
+### 3.2 Request Packet Format
+
+Request packets are variable length based on whether it's a read or write transaction:
+
+**Read Request (5 bytes):**
 ```
-Request Packet (10 bytes total):
 ┌─────────────────────────────────────────────────────────────────┐
-│ Byte 0    │ Command/Flags: [7:4]=reserved, [3:2]=size, [1]=0, [0]=we │
+│ Byte 0    │ Header: [7:4]=reserved, [3:2]=size, [1]=0, [0]=we=0 │
 │ Byte 1    │ Address[31:24]                                       │
 │ Byte 2    │ Address[23:16]                                       │
 │ Byte 3    │ Address[15:8]                                        │
 │ Byte 4    │ Address[7:0]                                         │
-│ Byte 5    │ Write Data[31:24] (always sent, ignored for reads)   │
-│ Byte 6    │ Write Data[23:16]                                    │
-│ Byte 7    │ Write Data[15:8]                                     │
-│ Byte 8    │ Write Data[7:0]                                      │
-│ Byte 9    │ Checksum (XOR of bytes 0-8)                          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Command/Flags Byte (Byte 0):**
+**Write Request (5 + N bytes, where N = 1, 2, or 4 based on size):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Byte 0    │ Header: [7:4]=reserved, [3:2]=size, [1]=0, [0]=we=1 │
+│ Byte 1    │ Address[31:24]                                       │
+│ Byte 2    │ Address[23:16]                                       │
+│ Byte 3    │ Address[15:8]                                        │
+│ Byte 4    │ Address[7:0]                                         │
+│ Byte 5    │ Write Data (MSB or only byte for size=00)            │
+│ Byte 6    │ Write Data (for size=01,10) - optional               │
+│ Byte 7    │ Write Data (for size=10) - optional                  │
+│ Byte 8    │ Write Data (LSB for size=10) - optional              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Header Byte (Byte 0):**
 
 | Bits | Field | Description |
 |------|-------|-------------|
 | [0] | `we` | Write enable: 1 = write, 0 = read |
 | [1] | Reserved | Always 0 |
-| [3:2] | `size` | Access size: 00=byte, 01=half, 10=word |
+| [3:2] | `size` | Access size: 00=byte (1B), 01=half (2B), 10=word (4B) |
 | [7:4] | Reserved | Must be 0 |
 
-**Command Byte Examples:**
+**Request Packet Sizes:**
+
+| Transaction Type | Size Field | Total Request Bytes |
+|------------------|------------|---------------------|
+| Read byte        | 00         | 5 (header + 4 addr) |
+| Read halfword    | 01         | 5 (header + 4 addr) |
+| Read word        | 10         | 5 (header + 4 addr) |
+| Write byte       | 00         | 6 (header + 4 addr + 1 data) |
+| Write halfword   | 01         | 7 (header + 4 addr + 2 data) |
+| Write word       | 10         | 9 (header + 4 addr + 4 data) |
+
+**Header Byte Examples:**
 - Read, byte size: `0x00` (size=00, we=0)
 - Read, word size: `0x08` (size=10, we=0)
+- Write, byte size: `0x01` (size=00, we=1)
 - Write, halfword size: `0x05` (size=01, we=1)
 - Write, word size: `0x09` (size=10, we=1)
 
-**Design Rationale:**
-- Fixed 10-byte packet simplifies parsing (no length field needed)
-- Write data always sent (even for reads) to maintain fixed packet size
-- Checksum provides basic error detection
-- Big-endian byte order for address and data (MSB first)
+### 3.3 Response Packet Format
 
-### 3.2 Response Packet Format
+Response packets are variable length based on whether the original request was a read or write:
 
-The response packet returns data (for reads) or acknowledgement (for writes):
-
+**Write Response (1 byte - acknowledgement only):**
 ```
-Response Packet (6 bytes total):
 ┌─────────────────────────────────────────────────────────────────┐
-│ Byte 0    │ Status: [7:4]=reserved, [3:0]=status_code           │
-│ Byte 1    │ Read Data[31:24] (0x00 for writes)                   │
-│ Byte 2    │ Read Data[23:16]                                     │
-│ Byte 3    │ Read Data[15:8]                                      │
-│ Byte 4    │ Read Data[7:0]                                       │
-│ Byte 5    │ Checksum (XOR of bytes 0-4)                          │
+│ Byte 0    │ Header: [7:4]=reserved, [3:2]=size, [1]=0, [0]=we=1 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Status Byte (Byte 0):**
-
-| Value | Name | Description |
-|-------|------|-------------|
-| 0x00 | `STATUS_OK` | Transaction completed successfully |
-| 0x01 | `STATUS_ERROR` | Transaction failed (reserved for future) |
-
-**Design Rationale:**
-- Fixed 6-byte response simplifies parsing
-- Read data always present (zeros for writes)
-- Status code allows for error reporting (future extension)
-- Checksum provides basic error detection
-
-### 3.3 Checksum Calculation
-
-Simple XOR checksum of all preceding bytes:
-
+**Read Response (1 + N bytes, where N = 1, 2, or 4 based on size):**
 ```
-checksum = byte[0] XOR byte[1] XOR byte[2] XOR ... XOR byte[N-2]
+┌─────────────────────────────────────────────────────────────────┐
+│ Byte 0    │ Header: [7:4]=reserved, [3:2]=size, [1]=0, [0]=we=0 │
+│ Byte 1    │ Read Data (MSB or only byte for size=00)             │
+│ Byte 2    │ Read Data (for size=01,10) - optional                │
+│ Byte 3    │ Read Data (for size=10) - optional                   │
+│ Byte 4    │ Read Data (LSB for size=10) - optional               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**For Request (10 bytes):**
-```
-checksum = byte[0] XOR byte[1] XOR ... XOR byte[8]
-```
+**Response Header Byte (Byte 0):**
 
-**For Response (6 bytes):**
-```
-checksum = byte[0] XOR byte[1] XOR ... XOR byte[4]
-```
+| Bits | Field | Description |
+|------|-------|-------------|
+| [0] | `we` | Echoes request we: 1 = was write, 0 = was read |
+| [1] | Reserved | Always 0 |
+| [3:2] | `size` | Echoes request size: 00=byte, 01=half, 10=word |
+| [7:4] | Reserved | Must be 0 |
+
+**Response Packet Sizes:**
+
+| Transaction Type | Size Field | Total Response Bytes |
+|------------------|------------|----------------------|
+| Write (any size) | xx         | 1 (header only)      |
+| Read byte        | 00         | 2 (header + 1 data)  |
+| Read halfword    | 01         | 3 (header + 2 data)  |
+| Read word        | 10         | 5 (header + 4 data)  |
+
+### 3.4 Bandwidth Comparison
+
+The variable-length encoding provides significant bandwidth savings compared to fixed-length packets:
+
+| Transaction | Old (Fixed) | New (Variable) | Savings |
+|-------------|-------------|----------------|---------|
+| Read word   | 10 + 6 = 16 | 5 + 5 = 10     | 37.5%   |
+| Write word  | 10 + 6 = 16 | 9 + 1 = 10     | 37.5%   |
+| Read half   | 10 + 6 = 16 | 5 + 3 = 8      | 50%     |
+| Write half  | 10 + 6 = 16 | 7 + 1 = 8      | 50%     |
+| Read byte   | 10 + 6 = 16 | 5 + 2 = 7      | 56.25%  |
+| Write byte  | 10 + 6 = 16 | 6 + 1 = 7      | 56.25%  |
+
+### 3.5 Packet Parsing Logic
+
+**Request Parsing (Host Side):**
+1. Read header byte (byte 0)
+2. Extract `we` (bit 0) and `size` (bits 3:2)
+3. Read 4 address bytes (bytes 1-4)
+4. If `we == 1` (write): read N data bytes based on size:
+   - size=00: read 1 byte
+   - size=01: read 2 bytes
+   - size=10: read 4 bytes
+
+**Response Parsing (Module Side):**
+1. Read header byte (byte 0)
+2. Extract `we` (bit 0) and `size` (bits 3:2)
+3. If `we == 0` (read response): read N data bytes based on size:
+   - size=00: read 1 byte
+   - size=01: read 2 bytes
+   - size=10: read 4 bytes
+4. If `we == 1` (write response): no more bytes to read
 
 ---
 
 ## 4. State Machine Design
 
-### 4.1 Main Transaction FSM
+### 4.1 Variable-Length Packet FSM Overview
+
+The state machine must handle variable-length packets based on the captured `we` and `size` fields:
+
+**TX Phase (Request Packet):**
+- Always: Header (1 byte) + Address (4 bytes) = 5 bytes minimum
+- If `we == 1` (write): Add data bytes based on size:
+  - size=00: +1 byte (total 6)
+  - size=01: +2 bytes (total 7)
+  - size=10: +4 bytes (total 9)
+
+**RX Phase (Response Packet):**
+- If `we == 1` (write): Header only (1 byte)
+- If `we == 0` (read): Header + data bytes based on size:
+  - size=00: 1 + 1 = 2 bytes
+  - size=01: 1 + 2 = 3 bytes
+  - size=10: 1 + 4 = 5 bytes
+
+### 4.2 Main Transaction FSM Diagram
 
 ```
                            ┌──────────────┐
-                           │    IDLE      │◀──────────────────────────┐
-                           │              │                           │
-                           └──────┬───────┘                           │
-                                  │ req && !in_transaction            │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │   CAPTURE    │ Capture addr, wdata,      │
-                           │   REQUEST    │ we, size into registers   │
-                           └──────┬───────┘                           │
-                                  │                                   │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  TX_BYTE_0   │ Transmit command/flags    │
-                           │              │                           │
-                           └──────┬───────┘                           │
-                                  │ tx_valid && tx_ready              │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  TX_BYTE_1   │ Transmit addr[31:24]      │
-                           │   ...        │                           │
-                           └──────┬───────┘                           │
-                                  │                                   │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  TX_BYTE_9   │ Transmit checksum         │
-                           │              │                           │
-                           └──────┬───────┘                           │
-                                  │ tx_valid && tx_ready              │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  RX_BYTE_0   │ Receive status            │
-                           │              │                           │
-                           └──────┬───────┘                           │
-                                  │ rx_valid && rx_ready              │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  RX_BYTE_1   │ Receive rdata[31:24]      │
-                           │   ...        │                           │
-                           └──────┬───────┘                           │
-                                  │                                   │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │  RX_BYTE_5   │ Receive checksum          │
-                           │              │                           │
-                           └──────┬───────┘                           │
-                                  │ rx_valid && rx_ready              │
-                                  ▼                                   │
-                           ┌──────────────┐                           │
-                           │   COMPLETE   │ Assert ready for 1 cycle  │
-                           │              │ Present rdata             │
-                           └──────┬───────┘                           │
-                                  │                                   │
-                                  └───────────────────────────────────┘
+                           │    IDLE      │◀──────────────────────────────────────┐
+                           │              │                                       │
+                           └──────┬───────┘                                       │
+                                  │ req                                           │
+                                  ▼                                               │
+                           ┌──────────────┐                                       │
+                           │   CAPTURE    │ Capture addr, wdata, we, size         │
+                           └──────┬───────┘                                       │
+                                  │                                               │
+                                  ▼                                               │
+                           ┌──────────────┐                                       │
+                           │  TX_HEADER   │ Transmit header byte                  │
+                           └──────┬───────┘                                       │
+                                  │ tx_valid && tx_ready                          │
+                                  ▼                                               │
+                           ┌──────────────┐                                       │
+                           │  TX_ADDR_3   │ Transmit addr[31:24]                  │
+                           │  TX_ADDR_2   │ Transmit addr[23:16]                  │
+                           │  TX_ADDR_1   │ Transmit addr[15:8]                   │
+                           │  TX_ADDR_0   │ Transmit addr[7:0]                    │
+                           └──────┬───────┘                                       │
+                                  │                                               │
+                                  ▼                                               │
+                    ┌─────────────┴─────────────┐                                 │
+                    │                           │                                 │
+             cap_we == 0                 cap_we == 1                              │
+             (read)                      (write)                                  │
+                    │                           │                                 │
+                    ▼                           ▼                                 │
+             ┌──────────────┐            ┌──────────────┐                         │
+             │ (skip data)  │            │ TX_WDATA_*   │ 1, 2, or 4 bytes        │
+             │              │            │ based on size│                         │
+             └──────┬───────┘            └──────┬───────┘                         │
+                    │                           │                                 │
+                    └─────────────┬─────────────┘                                 │
+                                  ▼                                               │
+                           ┌──────────────┐                                       │
+                           │  RX_HEADER   │ Receive response header               │
+                           └──────┬───────┘                                       │
+                                  │ rx_valid && rx_ready                          │
+                                  ▼                                               │
+                    ┌─────────────┴─────────────┐                                 │
+                    │                           │                                 │
+             cap_we == 1                 cap_we == 0                              │
+             (write ack)                 (read data)                              │
+                    │                           │                                 │
+                    ▼                           ▼                                 │
+             ┌──────────────┐            ┌──────────────┐                         │
+             │ (no data)    │            │ RX_RDATA_*   │ 1, 2, or 4 bytes        │
+             │              │            │ based on size│                         │
+             └──────┬───────┘            └──────┬───────┘                         │
+                    │                           │                                 │
+                    └─────────────┬─────────────┘                                 │
+                                  ▼                                               │
+                           ┌──────────────┐                                       │
+                           │   COMPLETE   │ Assert ready for 1 cycle              │
+                           └──────┬───────┘                                       │
+                                  │                                               │
+                                  └───────────────────────────────────────────────┘
 ```
 
-### 4.2 State Encoding
+### 4.3 State Encoding
 
 ```systemverilog
-typedef enum logic [4:0] {
+typedef enum logic [3:0] {
     // Idle state - waiting for request
-    STATE_IDLE        = 5'd0,
+    STATE_IDLE        = 4'd0,
     
     // Capture request from bus
-    STATE_CAPTURE     = 5'd1,
+    STATE_CAPTURE     = 4'd1,
     
-    // Transmit request packet (10 bytes)
-    STATE_TX_BYTE_0   = 5'd2,   // Command/Flags
-    STATE_TX_BYTE_1   = 5'd3,   // Address[31:24]
-    STATE_TX_BYTE_2   = 5'd4,   // Address[23:16]
-    STATE_TX_BYTE_3   = 5'd5,   // Address[15:8]
-    STATE_TX_BYTE_4   = 5'd6,   // Address[7:0]
-    STATE_TX_BYTE_5   = 5'd7,   // WData[31:24]
-    STATE_TX_BYTE_6   = 5'd8,   // WData[23:16]
-    STATE_TX_BYTE_7   = 5'd9,   // WData[15:8]
-    STATE_TX_BYTE_8   = 5'd10,  // WData[7:0]
-    STATE_TX_BYTE_9   = 5'd11,  // Checksum
+    // Transmit request packet (variable length: 5-9 bytes)
+    STATE_TX_HEADER   = 4'd2,   // Header byte
+    STATE_TX_ADDR_3   = 4'd3,   // Address[31:24]
+    STATE_TX_ADDR_2   = 4'd4,   // Address[23:16]
+    STATE_TX_ADDR_1   = 4'd5,   // Address[15:8]
+    STATE_TX_ADDR_0   = 4'd6,   // Address[7:0]
+    STATE_TX_WDATA_3  = 4'd7,   // WData[31:24] (word writes)
+    STATE_TX_WDATA_2  = 4'd8,   // WData[23:16] (halfword/word writes)
+    STATE_TX_WDATA_1  = 4'd9,   // WData[15:8] (word writes)
+    STATE_TX_WDATA_0  = 4'd10,  // WData[7:0] (all writes)
     
-    // Receive response packet (6 bytes)
-    STATE_RX_BYTE_0   = 5'd12,  // Status
-    STATE_RX_BYTE_1   = 5'd13,  // RData[31:24]
-    STATE_RX_BYTE_2   = 5'd14,  // RData[23:16]
-    STATE_RX_BYTE_3   = 5'd15,  // RData[15:8]
-    STATE_RX_BYTE_4   = 5'd16,  // RData[7:0]
-    STATE_RX_BYTE_5   = 5'd17,  // Checksum
+    // Receive response packet (variable length: 1-5 bytes)
+    STATE_RX_HEADER   = 4'd11,  // Response header
+    STATE_RX_RDATA_3  = 4'd12,  // RData[31:24] (word reads)
+    STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (halfword/word reads)
+    STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (word reads)
+    STATE_RX_RDATA_0  = 4'd15,  // RData[7:0] (all reads)
     
-    // Complete transaction
-    STATE_COMPLETE    = 5'd18
+    // Complete transaction (reuse value since COMPLETE follows RX states)
+    STATE_COMPLETE    = 4'd0    // NOTE: Handled specially, see logic
 } state_t;
 ```
 
-### 4.3 State Transition Logic
+**Note:** Due to the variable-length nature, we use a 4-bit state encoding with conditional transitions. The `STATE_COMPLETE` is handled via a separate `transaction_complete` signal rather than as a unique state value to keep the encoding compact.
 
-**Key Transitions:**
+### 4.4 State Transition Logic (Conceptual)
 
-1. **IDLE → CAPTURE:** When `req` is asserted and no transaction in progress
-2. **CAPTURE → TX_BYTE_0:** Immediately after capturing request
-3. **TX_BYTE_N → TX_BYTE_N+1:** When `tx_valid && tx_ready` (byte transferred)
-4. **TX_BYTE_9 → RX_BYTE_0:** After last TX byte is sent
-5. **RX_BYTE_N → RX_BYTE_N+1:** When `rx_valid && rx_ready` (byte received)
-6. **RX_BYTE_5 → COMPLETE:** After checksum received (validation optional)
-7. **COMPLETE → IDLE:** After one cycle with `ready` asserted
+**TX Phase Transitions:**
+
+1. **IDLE → CAPTURE:** When `req` is asserted
+2. **CAPTURE → TX_HEADER:** Immediately after capturing request
+3. **TX_HEADER → TX_ADDR_3:** When byte transmitted
+4. **TX_ADDR_3 → TX_ADDR_2 → TX_ADDR_1 → TX_ADDR_0:** Sequential address bytes
+5. **TX_ADDR_0 → (next):**
+   - If `cap_we == 0` (read): → RX_HEADER (skip data)
+   - If `cap_we == 1` (write): → TX_WDATA start state based on size
+
+**TX Write Data State Selection (based on size):**
+- `size == 2'b10` (word): TX_ADDR_0 → TX_WDATA_3 → TX_WDATA_2 → TX_WDATA_1 → TX_WDATA_0 → RX_HEADER
+- `size == 2'b01` (half): TX_ADDR_0 → TX_WDATA_2 → TX_WDATA_0 → RX_HEADER
+- `size == 2'b00` (byte): TX_ADDR_0 → TX_WDATA_0 → RX_HEADER
+
+**RX Phase Transitions:**
+
+1. **RX_HEADER received:**
+   - If `cap_we == 1` (write response): → COMPLETE (no data)
+   - If `cap_we == 0` (read response): → RX_RDATA start state based on size
+
+**RX Read Data State Selection (based on size):**
+- `size == 2'b10` (word): RX_HEADER → RX_RDATA_3 → RX_RDATA_2 → RX_RDATA_1 → RX_RDATA_0 → COMPLETE
+- `size == 2'b01` (half): RX_HEADER → RX_RDATA_2 → RX_RDATA_0 → COMPLETE
+- `size == 2'b00` (byte): RX_HEADER → RX_RDATA_0 → COMPLETE
 
 ---
 
@@ -410,13 +500,15 @@ typedef enum logic [4:0] {
 // Features:
 //   - 32-bit bus slave interface compatible with system bus
 //   - 8-bit TX/RX byte stream with valid/ready flow control
-//   - 10-byte request packets, 6-byte response packets
+//   - Variable-length packets optimized for minimal bandwidth
 //   - Pull-only model: single transaction at a time
-//   - XOR checksum for basic error detection
+//   - No checksums (relies on transport layer if needed)
 //
-// Protocol:
-//   Request:  [cmd][addr3][addr2][addr1][addr0][wdata3][wdata2][wdata1][wdata0][cksum]
-//   Response: [status][rdata3][rdata2][rdata1][rdata0][cksum]
+// Protocol (Variable Length):
+//   Read Request:   [header][addr3][addr2][addr1][addr0]              (5 bytes)
+//   Write Request:  [header][addr3][addr2][addr1][addr0][data...]     (6-9 bytes)
+//   Write Response: [header]                                          (1 byte)
+//   Read Response:  [header][data...]                                 (2-5 bytes)
 
 module host_bus_interface (
     // Clock and reset
@@ -450,29 +542,33 @@ module host_bus_interface (
     // ============================================================
     // State Machine
     // ============================================================
-    typedef enum logic [4:0] {
-        STATE_IDLE        = 5'd0,
-        STATE_CAPTURE     = 5'd1,
-        STATE_TX_BYTE_0   = 5'd2,
-        STATE_TX_BYTE_1   = 5'd3,
-        STATE_TX_BYTE_2   = 5'd4,
-        STATE_TX_BYTE_3   = 5'd5,
-        STATE_TX_BYTE_4   = 5'd6,
-        STATE_TX_BYTE_5   = 5'd7,
-        STATE_TX_BYTE_6   = 5'd8,
-        STATE_TX_BYTE_7   = 5'd9,
-        STATE_TX_BYTE_8   = 5'd10,
-        STATE_TX_BYTE_9   = 5'd11,
-        STATE_RX_BYTE_0   = 5'd12,
-        STATE_RX_BYTE_1   = 5'd13,
-        STATE_RX_BYTE_2   = 5'd14,
-        STATE_RX_BYTE_3   = 5'd15,
-        STATE_RX_BYTE_4   = 5'd16,
-        STATE_RX_BYTE_5   = 5'd17,
-        STATE_COMPLETE    = 5'd18
+    typedef enum logic [3:0] {
+        STATE_IDLE        = 4'd0,
+        STATE_CAPTURE     = 4'd1,
+        
+        // TX States (variable length: 5-9 bytes)
+        STATE_TX_HEADER   = 4'd2,   // Header byte
+        STATE_TX_ADDR_3   = 4'd3,   // Address[31:24]
+        STATE_TX_ADDR_2   = 4'd4,   // Address[23:16]
+        STATE_TX_ADDR_1   = 4'd5,   // Address[15:8]
+        STATE_TX_ADDR_0   = 4'd6,   // Address[7:0]
+        STATE_TX_WDATA_3  = 4'd7,   // WData[31:24] (word writes only)
+        STATE_TX_WDATA_2  = 4'd8,   // WData[23:16] (half/word writes)
+        STATE_TX_WDATA_1  = 4'd9,   // WData[15:8] (word writes only)
+        STATE_TX_WDATA_0  = 4'd10,  // WData[7:0] (all writes - byte aligned)
+        
+        // RX States (variable length: 1-5 bytes)
+        STATE_RX_HEADER   = 4'd11,  // Response header
+        STATE_RX_RDATA_3  = 4'd12,  // RData[31:24] (word reads only)
+        STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (half/word reads)
+        STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (word reads only)
+        STATE_RX_RDATA_0  = 4'd15,  // RData[7:0] (all reads - byte aligned)
+        
+        STATE_COMPLETE    = 4'd0    // Reused - distinguished by complete flag
     } state_t;
     
     state_t state, next_state;
+    logic   transaction_complete;  // Indicates COMPLETE state
     
     // ============================================================
     // Captured Request Registers
@@ -485,20 +581,14 @@ module host_bus_interface (
     // ============================================================
     // Response Data Registers
     // ============================================================
-    logic [7:0]  resp_status;   // Received status byte
     logic [31:0] resp_rdata;    // Received read data
-    logic [7:0]  resp_checksum; // Received checksum
-    
-    // ============================================================
-    // Checksum Calculation
-    // ============================================================
-    logic [7:0]  tx_checksum;   // Running TX checksum
-    logic [7:0]  rx_checksum;   // Running RX checksum
     
     // ============================================================
     // TX Data Mux
     // ============================================================
     logic [7:0]  tx_byte;       // Current byte to transmit
+    logic        in_tx_phase;   // Indicates TX phase active
+    logic        in_rx_phase;   // Indicates RX phase active
 ```
 
 ### 5.3 State Machine Logic
@@ -510,13 +600,18 @@ module host_bus_interface (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= STATE_IDLE;
+            transaction_complete <= 1'b0;
         end else begin
             state <= next_state;
+            // Set complete flag when transitioning to complete state
+            transaction_complete <= (next_state == STATE_IDLE) && 
+                                   (state != STATE_IDLE) && 
+                                   (state != STATE_CAPTURE);
         end
     end
     
     // ============================================================
-    // Next State Logic
+    // Next State Logic (Variable Length Packets)
     // ============================================================
     always_comb begin
         next_state = state;
@@ -529,31 +624,105 @@ module host_bus_interface (
             end
             
             STATE_CAPTURE: begin
-                next_state = STATE_TX_BYTE_0;
+                next_state = STATE_TX_HEADER;
             end
             
-            // TX States: advance when tx_valid && tx_ready
-            STATE_TX_BYTE_0: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_1;
-            STATE_TX_BYTE_1: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_2;
-            STATE_TX_BYTE_2: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_3;
-            STATE_TX_BYTE_3: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_4;
-            STATE_TX_BYTE_4: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_5;
-            STATE_TX_BYTE_5: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_6;
-            STATE_TX_BYTE_6: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_7;
-            STATE_TX_BYTE_7: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_8;
-            STATE_TX_BYTE_8: if (tx_valid && tx_ready) next_state = STATE_TX_BYTE_9;
-            STATE_TX_BYTE_9: if (tx_valid && tx_ready) next_state = STATE_RX_BYTE_0;
+            // --------------------------------------------------------
+            // TX Phase: Header + Address (always) + Data (writes only)
+            // --------------------------------------------------------
+            STATE_TX_HEADER: begin
+                if (tx_valid && tx_ready) next_state = STATE_TX_ADDR_3;
+            end
             
-            // RX States: advance when rx_valid && rx_ready
-            STATE_RX_BYTE_0: if (rx_valid && rx_ready) next_state = STATE_RX_BYTE_1;
-            STATE_RX_BYTE_1: if (rx_valid && rx_ready) next_state = STATE_RX_BYTE_2;
-            STATE_RX_BYTE_2: if (rx_valid && rx_ready) next_state = STATE_RX_BYTE_3;
-            STATE_RX_BYTE_3: if (rx_valid && rx_ready) next_state = STATE_RX_BYTE_4;
-            STATE_RX_BYTE_4: if (rx_valid && rx_ready) next_state = STATE_RX_BYTE_5;
-            STATE_RX_BYTE_5: if (rx_valid && rx_ready) next_state = STATE_COMPLETE;
+            STATE_TX_ADDR_3: begin
+                if (tx_valid && tx_ready) next_state = STATE_TX_ADDR_2;
+            end
             
-            STATE_COMPLETE: begin
-                next_state = STATE_IDLE;
+            STATE_TX_ADDR_2: begin
+                if (tx_valid && tx_ready) next_state = STATE_TX_ADDR_1;
+            end
+            
+            STATE_TX_ADDR_1: begin
+                if (tx_valid && tx_ready) next_state = STATE_TX_ADDR_0;
+            end
+            
+            STATE_TX_ADDR_0: begin
+                if (tx_valid && tx_ready) begin
+                    if (cap_we) begin
+                        // Write: send data bytes based on size
+                        case (cap_size)
+                            2'b10:   next_state = STATE_TX_WDATA_3;  // Word: 4 bytes
+                            2'b01:   next_state = STATE_TX_WDATA_2;  // Half: 2 bytes
+                            default: next_state = STATE_TX_WDATA_0;  // Byte: 1 byte
+                        endcase
+                    end else begin
+                        // Read: no data, go to RX phase
+                        next_state = STATE_RX_HEADER;
+                    end
+                end
+            end
+            
+            // TX Write Data States (conditional based on size)
+            STATE_TX_WDATA_3: begin  // Word only
+                if (tx_valid && tx_ready) next_state = STATE_TX_WDATA_2;
+            end
+            
+            STATE_TX_WDATA_2: begin  // Half and Word
+                if (tx_valid && tx_ready) begin
+                    if (cap_size == 2'b10)
+                        next_state = STATE_TX_WDATA_1;  // Word: continue
+                    else
+                        next_state = STATE_TX_WDATA_0;  // Half: skip to LSB
+                end
+            end
+            
+            STATE_TX_WDATA_1: begin  // Word only
+                if (tx_valid && tx_ready) next_state = STATE_TX_WDATA_0;
+            end
+            
+            STATE_TX_WDATA_0: begin  // All writes end here
+                if (tx_valid && tx_ready) next_state = STATE_RX_HEADER;
+            end
+            
+            // --------------------------------------------------------
+            // RX Phase: Header (always) + Data (reads only)
+            // --------------------------------------------------------
+            STATE_RX_HEADER: begin
+                if (rx_valid && rx_ready) begin
+                    if (cap_we) begin
+                        // Write response: header only, transaction complete
+                        next_state = STATE_IDLE;
+                    end else begin
+                        // Read response: receive data based on size
+                        case (cap_size)
+                            2'b10:   next_state = STATE_RX_RDATA_3;  // Word: 4 bytes
+                            2'b01:   next_state = STATE_RX_RDATA_2;  // Half: 2 bytes
+                            default: next_state = STATE_RX_RDATA_0;  // Byte: 1 byte
+                        endcase
+                    end
+                end
+            end
+            
+            // RX Read Data States (conditional based on size)
+            STATE_RX_RDATA_3: begin  // Word only
+                if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_2;
+            end
+            
+            STATE_RX_RDATA_2: begin  // Half and Word
+                if (rx_valid && rx_ready) begin
+                    if (cap_size == 2'b10)
+                        next_state = STATE_RX_RDATA_1;  // Word: continue
+                    else
+                        next_state = STATE_RX_RDATA_0;  // Half: skip to LSB
+                end
+            end
+            
+            STATE_RX_RDATA_1: begin  // Word only
+                if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_0;
+            end
+            
+            STATE_RX_RDATA_0: begin  // All reads end here
+                if (rx_valid && rx_ready) next_state = STATE_IDLE;
             end
             
             default: next_state = STATE_IDLE;
@@ -587,23 +756,27 @@ module host_bus_interface (
 
 ```systemverilog
     // ============================================================
+    // TX Phase Detection
+    // ============================================================
+    assign in_tx_phase = (state >= STATE_TX_HEADER) && (state <= STATE_TX_WDATA_0);
+    
+    // ============================================================
     // TX Data Multiplexer
     // ============================================================
     always_comb begin
         tx_byte = 8'h00;
         
         case (state)
-            STATE_TX_BYTE_0: tx_byte = {4'b0000, cap_size, 1'b0, cap_we};  // Command
-            STATE_TX_BYTE_1: tx_byte = cap_addr[31:24];
-            STATE_TX_BYTE_2: tx_byte = cap_addr[23:16];
-            STATE_TX_BYTE_3: tx_byte = cap_addr[15:8];
-            STATE_TX_BYTE_4: tx_byte = cap_addr[7:0];
-            STATE_TX_BYTE_5: tx_byte = cap_wdata[31:24];
-            STATE_TX_BYTE_6: tx_byte = cap_wdata[23:16];
-            STATE_TX_BYTE_7: tx_byte = cap_wdata[15:8];
-            STATE_TX_BYTE_8: tx_byte = cap_wdata[7:0];
-            STATE_TX_BYTE_9: tx_byte = tx_checksum;  // Checksum
-            default: tx_byte = 8'h00;
+            STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};
+            STATE_TX_ADDR_3:  tx_byte = cap_addr[31:24];
+            STATE_TX_ADDR_2:  tx_byte = cap_addr[23:16];
+            STATE_TX_ADDR_1:  tx_byte = cap_addr[15:8];
+            STATE_TX_ADDR_0:  tx_byte = cap_addr[7:0];
+            STATE_TX_WDATA_3: tx_byte = cap_wdata[31:24];
+            STATE_TX_WDATA_2: tx_byte = cap_wdata[23:16];
+            STATE_TX_WDATA_1: tx_byte = cap_wdata[15:8];
+            STATE_TX_WDATA_0: tx_byte = cap_wdata[7:0];
+            default:          tx_byte = 8'h00;
         endcase
     end
     
@@ -612,65 +785,36 @@ module host_bus_interface (
     // ============================================================
     // TX Valid Signal
     // ============================================================
-    assign tx_valid = (state >= STATE_TX_BYTE_0) && (state <= STATE_TX_BYTE_9);
-    
-    // ============================================================
-    // TX Checksum Calculation (XOR of bytes 0-8)
-    // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            tx_checksum <= 8'h00;
-        end else if (state == STATE_CAPTURE) begin
-            // Initialize checksum at start of transaction
-            tx_checksum <= 8'h00;
-        end else if (tx_valid && tx_ready && state != STATE_TX_BYTE_9) begin
-            // XOR each transmitted byte (except checksum itself)
-            tx_checksum <= tx_checksum ^ tx_byte;
-        end
-    end
+    assign tx_valid = in_tx_phase;
 ```
 
 ### 5.6 RX Data Path
 
 ```systemverilog
     // ============================================================
+    // RX Phase Detection
+    // ============================================================
+    assign in_rx_phase = (state >= STATE_RX_HEADER) && (state <= STATE_RX_RDATA_0);
+    
+    // ============================================================
     // RX Ready Signal
     // ============================================================
-    assign rx_ready = (state >= STATE_RX_BYTE_0) && (state <= STATE_RX_BYTE_5);
+    assign rx_ready = in_rx_phase;
     
     // ============================================================
     // RX Data Capture
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            resp_status   <= 8'h00;
-            resp_rdata    <= 32'h0;
-            resp_checksum <= 8'h00;
+            resp_rdata <= 32'h0;
         end else if (rx_valid && rx_ready) begin
             case (state)
-                STATE_RX_BYTE_0: resp_status <= rx_data;
-                STATE_RX_BYTE_1: resp_rdata[31:24] <= rx_data;
-                STATE_RX_BYTE_2: resp_rdata[23:16] <= rx_data;
-                STATE_RX_BYTE_3: resp_rdata[15:8]  <= rx_data;
-                STATE_RX_BYTE_4: resp_rdata[7:0]   <= rx_data;
-                STATE_RX_BYTE_5: resp_checksum     <= rx_data;
+                STATE_RX_RDATA_3: resp_rdata[31:24] <= rx_data;
+                STATE_RX_RDATA_2: resp_rdata[23:16] <= rx_data;
+                STATE_RX_RDATA_1: resp_rdata[15:8]  <= rx_data;
+                STATE_RX_RDATA_0: resp_rdata[7:0]   <= rx_data;
                 default: ;
             endcase
-        end
-    end
-    
-    // ============================================================
-    // RX Checksum Calculation (for verification - optional)
-    // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_checksum <= 8'h00;
-        end else if (state == STATE_TX_BYTE_9 && tx_valid && tx_ready) begin
-            // Reset RX checksum when transitioning to RX phase
-            rx_checksum <= 8'h00;
-        end else if (rx_valid && rx_ready && state != STATE_RX_BYTE_5) begin
-            // XOR each received byte (except checksum itself)
-            rx_checksum <= rx_checksum ^ rx_data;
         end
     end
 ```
@@ -681,7 +825,7 @@ module host_bus_interface (
     // ============================================================
     // Bus Ready Signal
     // ============================================================
-    assign ready = (state == STATE_COMPLETE);
+    assign ready = transaction_complete;
     
     // ============================================================
     // Bus Read Data
@@ -691,9 +835,17 @@ module host_bus_interface (
 endmodule
 ```
 
-### 5.8 Complete Module
+### 5.8 Complete Module Summary
 
-The complete module combines all sections above into a single file at `rtl/host_bus_interface.sv`.
+The complete module combines all sections above into a single file at `rtl/host_bus_interface.sv`. Key characteristics:
+
+| Property | Value |
+|----------|-------|
+| State bits | 4 bits (16 states used) |
+| TX packet size | 5-9 bytes (variable) |
+| RX packet size | 1-5 bytes (variable) |
+| Latency | 1 cycle after last RX byte |
+| Checksum | None (removed for bandwidth) |
 
 ---
 
@@ -733,11 +885,11 @@ Testing follows the RTL-focused testbench pattern used by other modules in this 
 | Category | Description | Test Count |
 |----------|-------------|------------|
 | Reset State | Verify initial state after reset | 2 |
-| Basic Write | Single write transaction | 3 |
-| Basic Read | Single read transaction | 2 |
-| Protocol | Packet format and checksums | 2 |
+| Basic Write | Single write transaction (various sizes) | 4 |
+| Basic Read | Single read transaction (various sizes) | 4 |
+| Variable Length | Verify correct packet lengths | 3 |
 | Flow Control | TX/RX backpressure handling | 3 |
-| Edge Cases | Size variations, address patterns | 4 |
+| Edge Cases | Address patterns, consecutive ops | 2 |
 
 ### 7.3 Test Infrastructure
 
@@ -812,9 +964,36 @@ fn send_rx_byte(dut: &mut HostBusInterface, byte: u8, max_cycles: u32) -> bool {
     false
 }
 
-/// Calculate XOR checksum of bytes
-fn calculate_checksum(bytes: &[u8]) -> u8 {
-    bytes.iter().fold(0u8, |acc, &b| acc ^ b)
+/// Calculate expected TX packet length based on we and size
+fn expected_tx_len(we: bool, size: u8) -> usize {
+    if we {
+        // Write: header + 4 addr + data
+        match size {
+            0b00 => 6,  // byte: 1 data byte
+            0b01 => 7,  // half: 2 data bytes
+            0b10 => 9,  // word: 4 data bytes
+            _ => 9,
+        }
+    } else {
+        // Read: header + 4 addr (no data)
+        5
+    }
+}
+
+/// Calculate expected RX packet length based on we and size
+fn expected_rx_len(we: bool, size: u8) -> usize {
+    if we {
+        // Write response: header only
+        1
+    } else {
+        // Read response: header + data
+        match size {
+            0b00 => 2,  // byte: 1 data byte
+            0b01 => 3,  // half: 2 data bytes
+            0b10 => 5,  // word: 4 data bytes
+            _ => 5,
+        }
+    }
 }
 ```
 
@@ -861,7 +1040,7 @@ fn test_idle_no_transaction() {
 
 ```rust
 #[test]
-fn test_write_transaction_packet_format() {
+fn test_write_word_packet_format() {
     let runtime = create_host_bus_interface_runtime()
         .expect("Failed to create runtime");
     let mut dut = runtime
@@ -870,7 +1049,7 @@ fn test_write_transaction_packet_format() {
     
     reset_module(&mut dut);
     
-    // Start a write transaction
+    // Start a word write transaction
     dut.addr = 0x12345678;
     dut.wdata = 0xDEADBEEF;
     dut.we = 1;
@@ -879,9 +1058,9 @@ fn test_write_transaction_packet_format() {
     clock_cycle!(dut);
     dut.req = 0;
     
-    // Collect TX packet
+    // Collect TX packet (should be 9 bytes for word write)
     let mut tx_packet: Vec<u8> = Vec::new();
-    for _ in 0..10 {
+    for _ in 0..9 {
         if let Some(byte) = receive_tx_byte(&mut dut, 100) {
             tx_packet.push(byte);
         } else {
@@ -890,10 +1069,10 @@ fn test_write_transaction_packet_format() {
     }
     
     // Verify packet format
-    assert_eq!(tx_packet.len(), 10, "Request packet should be 10 bytes");
+    assert_eq!(tx_packet.len(), 9, "Word write request should be 9 bytes");
     
-    // Byte 0: command = {4'b0, size[1:0], 1'b0, we} = {0, 10, 0, 1} = 0x09
-    assert_eq!(tx_packet[0], 0x09, "Command byte mismatch");
+    // Byte 0: header = {4'b0, size=10, 1'b0, we=1} = 0x09
+    assert_eq!(tx_packet[0], 0x09, "Header byte mismatch");
     
     // Bytes 1-4: Address (big-endian)
     assert_eq!(tx_packet[1], 0x12, "Address[31:24] mismatch");
@@ -901,15 +1080,91 @@ fn test_write_transaction_packet_format() {
     assert_eq!(tx_packet[3], 0x56, "Address[15:8] mismatch");
     assert_eq!(tx_packet[4], 0x78, "Address[7:0] mismatch");
     
-    // Bytes 5-8: Write data (big-endian)
+    // Bytes 5-8: Write data (big-endian, 4 bytes for word)
     assert_eq!(tx_packet[5], 0xDE, "WData[31:24] mismatch");
     assert_eq!(tx_packet[6], 0xAD, "WData[23:16] mismatch");
     assert_eq!(tx_packet[7], 0xBE, "WData[15:8] mismatch");
     assert_eq!(tx_packet[8], 0xEF, "WData[7:0] mismatch");
     
-    // Byte 9: Checksum
-    let expected_checksum = calculate_checksum(&tx_packet[0..9]);
-    assert_eq!(tx_packet[9], expected_checksum, "Checksum mismatch");
+    // Verify no more TX bytes (tx_valid should go low)
+    // Module should now be waiting for RX
+}
+
+#[test]
+fn test_write_halfword_packet_format() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Start a halfword write transaction
+    dut.addr = 0x80001000;
+    dut.wdata = 0x0000CAFE;  // Lower 16 bits used
+    dut.we = 1;
+    dut.size = 0b01;  // Halfword
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Collect TX packet (should be 7 bytes for halfword write)
+    let mut tx_packet: Vec<u8> = Vec::new();
+    for _ in 0..7 {
+        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
+            tx_packet.push(byte);
+        } else {
+            panic!("Failed to receive TX byte");
+        }
+    }
+    
+    assert_eq!(tx_packet.len(), 7, "Halfword write request should be 7 bytes");
+    
+    // Byte 0: header = {4'b0, size=01, 1'b0, we=1} = 0x05
+    assert_eq!(tx_packet[0], 0x05, "Header byte mismatch");
+    
+    // Bytes 5-6: Write data (2 bytes for halfword: [23:16] and [7:0])
+    assert_eq!(tx_packet[5], 0xCA, "WData[23:16] mismatch");
+    assert_eq!(tx_packet[6], 0xFE, "WData[7:0] mismatch");
+}
+
+#[test]
+fn test_write_byte_packet_format() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Start a byte write transaction
+    dut.addr = 0x80002000;
+    dut.wdata = 0x000000AB;  // Lower 8 bits used
+    dut.we = 1;
+    dut.size = 0b00;  // Byte
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Collect TX packet (should be 6 bytes for byte write)
+    let mut tx_packet: Vec<u8> = Vec::new();
+    for _ in 0..6 {
+        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
+            tx_packet.push(byte);
+        } else {
+            panic!("Failed to receive TX byte");
+        }
+    }
+    
+    assert_eq!(tx_packet.len(), 6, "Byte write request should be 6 bytes");
+    
+    // Byte 0: header = {4'b0, size=00, 1'b0, we=1} = 0x01
+    assert_eq!(tx_packet[0], 0x01, "Header byte mismatch");
+    
+    // Byte 5: Write data (1 byte)
+    assert_eq!(tx_packet[5], 0xAB, "WData[7:0] mismatch");
 }
 
 #[test]
@@ -922,7 +1177,7 @@ fn test_write_transaction_complete() {
     
     reset_module(&mut dut);
     
-    // Start a write transaction
+    // Start a word write transaction
     dut.addr = 0x80000000;
     dut.wdata = 0x12345678;
     dut.we = 1;
@@ -931,25 +1186,20 @@ fn test_write_transaction_complete() {
     clock_cycle!(dut);
     dut.req = 0;
     
-    // Drain TX packet (10 bytes)
-    for _ in 0..10 {
+    // Drain TX packet (9 bytes for word write)
+    for _ in 0..9 {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
     
-    // Send response packet (6 bytes): status=0, rdata=0, checksum
-    let response = [0x00, 0x00, 0x00, 0x00, 0x00];
-    let checksum = calculate_checksum(&response);
-    
-    for byte in response.iter() {
-        assert!(send_rx_byte(&mut dut, *byte, 100), "Failed to send RX byte");
-    }
-    assert!(send_rx_byte(&mut dut, checksum, 100), "Failed to send checksum");
+    // Send response packet (1 byte for write: just header)
+    // Header echoes we=1, size=10: 0x09
+    assert!(send_rx_byte(&mut dut, 0x09, 100), "Failed to send response header");
     
     // Give a cycle for state machine to complete
     clock_cycle!(dut);
     
     // Verify ready is asserted
-    assert_eq!(dut.ready, 1, "ready should be HIGH after response received");
+    assert_eq!(dut.ready, 1, "ready should be HIGH after write response");
 }
 ```
 
@@ -957,7 +1207,7 @@ fn test_write_transaction_complete() {
 
 ```rust
 #[test]
-fn test_read_transaction_returns_data() {
+fn test_read_word_returns_data() {
     let runtime = create_host_bus_interface_runtime()
         .expect("Failed to create runtime");
     let mut dut = runtime
@@ -966,27 +1216,27 @@ fn test_read_transaction_returns_data() {
     
     reset_module(&mut dut);
     
-    // Start a read transaction
+    // Start a word read transaction
     dut.addr = 0xABCD1234;
     dut.we = 0;  // Read
-    dut.size = 0b10;
+    dut.size = 0b10;  // Word
     dut.req = 1;
     clock_cycle!(dut);
     dut.req = 0;
     
-    // Drain TX packet
-    for _ in 0..10 {
+    // Drain TX packet (5 bytes for read: header + 4 addr)
+    for _ in 0..5 {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
     
     // Send response with read data = 0xCAFEBABE
-    let response = [0x00, 0xCA, 0xFE, 0xBA, 0xBE];
-    let checksum = calculate_checksum(&response);
-    
-    for byte in response.iter() {
-        assert!(send_rx_byte(&mut dut, *byte, 100), "Failed to send RX byte");
-    }
-    assert!(send_rx_byte(&mut dut, checksum, 100), "Failed to send checksum");
+    // Header: {4'b0, size=10, 1'b0, we=0} = 0x08
+    assert!(send_rx_byte(&mut dut, 0x08, 100), "Failed to send response header");
+    // Data: 4 bytes (word)
+    assert!(send_rx_byte(&mut dut, 0xCA, 100), "Failed to send RData[31:24]");
+    assert!(send_rx_byte(&mut dut, 0xFE, 100), "Failed to send RData[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xBA, 100), "Failed to send RData[15:8]");
+    assert!(send_rx_byte(&mut dut, 0xBE, 100), "Failed to send RData[7:0]");
     
     clock_cycle!(dut);
     
@@ -996,7 +1246,75 @@ fn test_read_transaction_returns_data() {
 }
 
 #[test]
-fn test_read_transaction_command_byte() {
+fn test_read_halfword_returns_data() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Start a halfword read transaction
+    dut.addr = 0x80001000;
+    dut.we = 0;
+    dut.size = 0b01;  // Halfword
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Drain TX packet (5 bytes for read)
+    for _ in 0..5 {
+        receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
+    }
+    
+    // Send response: header + 2 bytes data
+    // Header: {4'b0, size=01, 1'b0, we=0} = 0x04
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "Failed to send response header");
+    assert!(send_rx_byte(&mut dut, 0xAB, 100), "Failed to send RData[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xCD, 100), "Failed to send RData[7:0]");
+    
+    clock_cycle!(dut);
+    
+    assert_eq!(dut.ready, 1, "ready should be HIGH");
+    // Data should be in bits [23:16] and [7:0]
+}
+
+#[test]
+fn test_read_byte_returns_data() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Start a byte read transaction
+    dut.addr = 0x80002000;
+    dut.we = 0;
+    dut.size = 0b00;  // Byte
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Drain TX packet (5 bytes for read)
+    for _ in 0..5 {
+        receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
+    }
+    
+    // Send response: header + 1 byte data
+    // Header: {4'b0, size=00, 1'b0, we=0} = 0x00
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "Failed to send response header");
+    assert!(send_rx_byte(&mut dut, 0x42, 100), "Failed to send RData[7:0]");
+    
+    clock_cycle!(dut);
+    
+    assert_eq!(dut.ready, 1, "ready should be HIGH");
+}
+
+#[test]
+fn test_read_request_packet_format() {
     let runtime = create_host_bus_interface_runtime()
         .expect("Failed to create runtime");
     let mut dut = runtime
@@ -1006,18 +1324,37 @@ fn test_read_transaction_command_byte() {
     reset_module(&mut dut);
     
     // Start a read transaction (we=0)
-    dut.addr = 0x00000000;
+    dut.addr = 0x12345678;
     dut.we = 0;
     dut.size = 0b10;  // Word
     dut.req = 1;
     clock_cycle!(dut);
     dut.req = 0;
     
-    // Get first byte (command)
-    let cmd_byte = receive_tx_byte(&mut dut, 100).expect("Failed to receive command byte");
+    // Collect all TX bytes (should be exactly 5 for read)
+    let mut tx_packet: Vec<u8> = Vec::new();
+    for _ in 0..5 {
+        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
+            tx_packet.push(byte);
+        } else {
+            panic!("Failed to receive TX byte");
+        }
+    }
     
-    // Command byte for read, word size: {4'b0, size=10, 1'b0, we=0} = 0x08
-    assert_eq!(cmd_byte, 0x08, "Command byte for read mismatch");
+    assert_eq!(tx_packet.len(), 5, "Read request should be 5 bytes");
+    
+    // Header byte: {4'b0, size=10, 1'b0, we=0} = 0x08
+    assert_eq!(tx_packet[0], 0x08, "Header byte for read mismatch");
+    
+    // Address bytes
+    assert_eq!(tx_packet[1], 0x12, "Address[31:24] mismatch");
+    assert_eq!(tx_packet[2], 0x34, "Address[23:16] mismatch");
+    assert_eq!(tx_packet[3], 0x56, "Address[15:8] mismatch");
+    assert_eq!(tx_packet[4], 0x78, "Address[7:0] mismatch");
+    
+    // Verify tx_valid goes low after 5 bytes (no more data)
+    clock_cycle!(dut);
+    assert_eq!(dut.tx_valid, 0, "tx_valid should be LOW after read request complete");
 }
 ```
 
@@ -1081,7 +1418,7 @@ fn test_rx_delayed_valid() {
     
     reset_module(&mut dut);
     
-    // Start transaction and drain TX
+    // Start word write transaction and drain TX (9 bytes)
     dut.addr = 0x00000000;
     dut.we = 1;
     dut.size = 0b10;
@@ -1089,7 +1426,7 @@ fn test_rx_delayed_valid() {
     clock_cycle!(dut);
     dut.req = 0;
     
-    for _ in 0..10 {
+    for _ in 0..9 {
         receive_tx_byte(&mut dut, 100).expect("TX byte");
     }
     
@@ -1106,16 +1443,48 @@ fn test_rx_delayed_valid() {
         assert_eq!(dut.ready, 0, "ready should stay LOW waiting for response");
     }
     
-    // Now send response
-    let response = [0x00, 0x00, 0x00, 0x00, 0x00];
-    let checksum = calculate_checksum(&response);
-    for byte in response.iter() {
-        send_rx_byte(&mut dut, *byte, 100);
-    }
-    send_rx_byte(&mut dut, checksum, 100);
+    // Now send response (1 byte for write: header only)
+    send_rx_byte(&mut dut, 0x09, 100);  // Header echoing we=1, size=10
     
     clock_cycle!(dut);
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
+}
+
+#[test]
+fn test_rx_ready_only_in_rx_phase() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Verify rx_ready is LOW in IDLE
+    assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW in IDLE");
+    
+    // Start read transaction
+    dut.addr = 0x80000000;
+    dut.we = 0;
+    dut.size = 0b10;
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // During TX phase, rx_ready should be LOW
+    for _ in 0..3 {
+        assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW during TX phase");
+        receive_tx_byte(&mut dut, 100);
+    }
+    
+    // Finish TX (5 bytes total for read)
+    for _ in 0..2 {
+        receive_tx_byte(&mut dut, 100);
+    }
+    
+    // Now in RX phase, rx_ready should be HIGH
+    clock_cycle!(dut);
+    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH in RX phase");
 }
 ```
 
@@ -1182,7 +1551,7 @@ fn test_write_blocking() {
     
     reset_module(&mut dut);
     
-    // Start a write transaction
+    // Start a word write transaction
     dut.addr = 0x80000000;
     dut.wdata = 0x12345678;
     dut.we = 1;
@@ -1191,14 +1560,9 @@ fn test_write_blocking() {
     clock_cycle!(dut);
     dut.req = 0;
     
-    // Verify ready stays LOW during TX phase
-    for _ in 0..5 {
-        assert_eq!(dut.ready, 0, "ready should be LOW during transaction");
-        receive_tx_byte(&mut dut, 10);
-    }
-    
-    // Drain remaining TX bytes
-    for _ in 0..5 {
+    // Verify ready stays LOW during TX phase (9 bytes for word write)
+    for _ in 0..9 {
+        assert_eq!(dut.ready, 0, "ready should be LOW during TX");
         receive_tx_byte(&mut dut, 100).expect("TX byte");
     }
     
@@ -1207,123 +1571,6 @@ fn test_write_blocking() {
         clock_cycle!(dut);
         assert_eq!(dut.ready, 0, "ready should be LOW waiting for response");
     }
-}
-
-#[test]
-fn test_rx_ready_timing() {
-    let runtime = create_host_bus_interface_runtime()
-        .expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
-    
-    reset_module(&mut dut);
-    
-    // Verify rx_ready is LOW in IDLE state
-    assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW in IDLE");
-    
-    // Start transaction
-    dut.addr = 0x00000000;
-    dut.we = 0;
-    dut.size = 0b10;
-    dut.req = 1;
-    clock_cycle!(dut);
-    dut.req = 0;
-    
-    // During TX phase, rx_ready should be LOW
-    for _ in 0..5 {
-        assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW during TX phase");
-        receive_tx_byte(&mut dut, 100);
-    }
-    
-    // Drain remaining TX
-    for _ in 0..5 {
-        receive_tx_byte(&mut dut, 100);
-    }
-    
-    // After TX complete, rx_ready should go HIGH
-    for _ in 0..5 {
-        clock_cycle!(dut);
-    }
-    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH waiting for response");
-}
-
-#[test]
-fn test_all_ones_address() {
-    let runtime = create_host_bus_interface_runtime()
-        .expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
-    
-    reset_module(&mut dut);
-    
-    // Test with all-ones address
-    dut.addr = 0xFFFFFFFF;
-    dut.wdata = 0xFFFFFFFF;
-    dut.we = 1;
-    dut.size = 0b10;
-    dut.req = 1;
-    clock_cycle!(dut);
-    dut.req = 0;
-    
-    // Collect TX packet
-    let mut tx_packet: Vec<u8> = Vec::new();
-    for _ in 0..10 {
-        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
-            tx_packet.push(byte);
-        }
-    }
-    
-    // Verify address bytes are all 0xFF
-    assert_eq!(tx_packet[1], 0xFF, "Address[31:24] should be 0xFF");
-    assert_eq!(tx_packet[2], 0xFF, "Address[23:16] should be 0xFF");
-    assert_eq!(tx_packet[3], 0xFF, "Address[15:8] should be 0xFF");
-    assert_eq!(tx_packet[4], 0xFF, "Address[7:0] should be 0xFF");
-    
-    // Verify write data bytes are all 0xFF
-    assert_eq!(tx_packet[5], 0xFF, "WData[31:24] should be 0xFF");
-    assert_eq!(tx_packet[6], 0xFF, "WData[23:16] should be 0xFF");
-    assert_eq!(tx_packet[7], 0xFF, "WData[15:8] should be 0xFF");
-    assert_eq!(tx_packet[8], 0xFF, "WData[7:0] should be 0xFF");
-}
-
-#[test]
-fn test_checksum_verification() {
-    let runtime = create_host_bus_interface_runtime()
-        .expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
-    
-    reset_module(&mut dut);
-    
-    // Use known values for predictable checksum
-    dut.addr = 0x00000001;
-    dut.wdata = 0x00000000;
-    dut.we = 0;
-    dut.size = 0b10;  // Word read
-    dut.req = 1;
-    clock_cycle!(dut);
-    dut.req = 0;
-    
-    // Collect TX packet
-    let mut tx_packet: Vec<u8> = Vec::new();
-    for _ in 0..10 {
-        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
-            tx_packet.push(byte);
-        }
-    }
-    
-    // Calculate expected checksum
-    let expected_checksum = calculate_checksum(&tx_packet[0..9]);
-    
-    // Verify checksum matches
-    assert_eq!(
-        tx_packet[9], expected_checksum,
-        "TX checksum mismatch: got 0x{:02x}, expected 0x{:02x}",
-        tx_packet[9], expected_checksum
-    );
 }
 
 #[test]
@@ -1341,7 +1588,7 @@ fn test_consecutive_transactions() {
         let test_addr = 0x80000000 + (iteration as u32 * 4);
         let test_data = 0xDEAD0000 + iteration as u32;
         
-        // Start transaction
+        // Start word write transaction
         dut.addr = test_addr;
         dut.wdata = test_data;
         dut.we = 1;
@@ -1350,18 +1597,13 @@ fn test_consecutive_transactions() {
         clock_cycle!(dut);
         dut.req = 0;
         
-        // Drain TX
-        for _ in 0..10 {
+        // Drain TX (9 bytes for word write)
+        for _ in 0..9 {
             receive_tx_byte(&mut dut, 100).expect("TX byte");
         }
         
-        // Send response
-        let response = [0x00, 0x00, 0x00, 0x00, 0x00];
-        let checksum = calculate_checksum(&response);
-        for byte in response.iter() {
-            send_rx_byte(&mut dut, *byte, 100);
-        }
-        send_rx_byte(&mut dut, checksum, 100);
+        // Send response (1 byte for write)
+        send_rx_byte(&mut dut, 0x09, 100);  // Header echoing we=1, size=10
         
         clock_cycle!(dut);
         
@@ -1372,6 +1614,48 @@ fn test_consecutive_transactions() {
         clock_cycle!(dut);
     }
 }
+
+#[test]
+fn test_all_ones_address() {
+    let runtime = create_host_bus_interface_runtime()
+        .expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    
+    reset_module(&mut dut);
+    
+    // Test with all-ones address (word write = 9 bytes)
+    dut.addr = 0xFFFFFFFF;
+    dut.wdata = 0xFFFFFFFF;
+    dut.we = 1;
+    dut.size = 0b10;
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Collect TX packet (9 bytes for word write)
+    let mut tx_packet: Vec<u8> = Vec::new();
+    for _ in 0..9 {
+        if let Some(byte) = receive_tx_byte(&mut dut, 100) {
+            tx_packet.push(byte);
+        }
+    }
+    
+    assert_eq!(tx_packet.len(), 9, "Word write should be 9 bytes");
+    
+    // Verify address bytes are all 0xFF
+    assert_eq!(tx_packet[1], 0xFF, "Address[31:24] should be 0xFF");
+    assert_eq!(tx_packet[2], 0xFF, "Address[23:16] should be 0xFF");
+    assert_eq!(tx_packet[3], 0xFF, "Address[15:8] should be 0xFF");
+    assert_eq!(tx_packet[4], 0xFF, "Address[7:0] should be 0xFF");
+    
+    // Verify write data bytes are all 0xFF
+    assert_eq!(tx_packet[5], 0xFF, "WData[31:24] should be 0xFF");
+    assert_eq!(tx_packet[6], 0xFF, "WData[23:16] should be 0xFF");
+    assert_eq!(tx_packet[7], 0xFF, "WData[15:8] should be 0xFF");
+    assert_eq!(tx_packet[8], 0xFF, "WData[7:0] should be 0xFF");
+}
 ```
 
 ### 7.10 Test Summary
@@ -1380,19 +1664,22 @@ fn test_consecutive_transactions() {
 |-----------|----------|-------------|
 | `test_reset_state` | Reset | Verify outputs after reset |
 | `test_idle_no_transaction` | Reset | Verify idle behavior |
-| `test_write_transaction_packet_format` | Write | Verify TX packet format |
-| `test_write_transaction_complete` | Write | Full write cycle |
-| `test_write_blocking` | Write | Verify ready stays low during transaction |
-| `test_read_transaction_returns_data` | Read | Verify read data path |
-| `test_read_transaction_command_byte` | Read | Verify read command encoding |
+| `test_write_word_packet_format` | Write | Verify word write TX packet (9 bytes) |
+| `test_write_halfword_packet_format` | Write | Verify halfword write TX packet (7 bytes) |
+| `test_write_byte_packet_format` | Write | Verify byte write TX packet (6 bytes) |
+| `test_write_transaction_complete` | Write | Full word write cycle with 1-byte response |
+| `test_read_word_returns_data` | Read | Word read with 5-byte response |
+| `test_read_halfword_returns_data` | Read | Halfword read with 3-byte response |
+| `test_read_byte_returns_data` | Read | Byte read with 2-byte response |
+| `test_read_request_packet_format` | Read | Verify read TX packet is 5 bytes |
 | `test_tx_backpressure` | Flow | TX ready backpressure handling |
 | `test_rx_delayed_valid` | Flow | Delayed RX response |
-| `test_rx_ready_timing` | Flow | RX ready assertion timing |
-| `test_byte_access_size` | Edge | Byte size encoding (size=00) |
-| `test_halfword_access_size` | Edge | Halfword size encoding (size=01) |
-| `test_all_ones_address` | Edge | 0xFFFFFFFF address handling |
-| `test_checksum_verification` | Protocol | Verify TX checksum calculation |
+| `test_rx_ready_only_in_rx_phase` | Flow | RX ready timing |
+| `test_byte_access_size` | Header | Byte size encoding (size=00) |
+| `test_halfword_access_size` | Header | Halfword size encoding (size=01) |
+| `test_write_blocking` | Blocking | Verify ready stays low during transaction |
 | `test_consecutive_transactions` | Sequence | Back-to-back transactions |
+| `test_all_ones_address` | Edge | 0xFFFFFFFF address handling |
 
 ---
 
@@ -1402,16 +1689,16 @@ fn test_consecutive_transactions() {
 
 - [ ] **Create `rtl/host_bus_interface.sv`**
   - [ ] Module header with parameters and ports
-  - [ ] State machine enum definition
+  - [ ] State machine enum definition (variable-length states)
   - [ ] Captured request registers
   - [ ] Response data registers
   - [ ] State register with async reset
-  - [ ] Next state combinational logic
+  - [ ] Next state combinational logic with size-based branching
   - [ ] Request capture logic
   - [ ] TX data multiplexer
-  - [ ] TX valid/checksum logic
+  - [ ] TX valid signal (variable-length based on we/size)
   - [ ] RX ready signal
-  - [ ] RX data capture logic
+  - [ ] RX data capture logic (variable-length based on we/size)
   - [ ] Bus ready and rdata outputs
   
 - [ ] **Verify Verilator lint**
@@ -1429,11 +1716,11 @@ fn test_consecutive_transactions() {
 - [ ] **Create `testbench/tests/host_bus_interface_test.rs`**
   - [ ] Test infrastructure (macros, helpers)
   - [ ] Reset state tests
-  - [ ] Basic write transaction tests
-  - [ ] Basic read transaction tests
+  - [ ] Variable-length write transaction tests (byte/half/word)
+  - [ ] Variable-length read transaction tests (byte/half/word)
   - [ ] Flow control tests
-  - [ ] Size variation tests
-  - [ ] Protocol/checksum tests
+  - [ ] Header byte encoding tests
+  - [ ] Consecutive transaction tests
 
 - [ ] **Run all tests**
   - [ ] `cargo test --package testbench`
@@ -1473,7 +1760,7 @@ The following integration work is **explicitly out of scope** for this implement
 | Enhancement | Description | Priority |
 |-------------|-------------|----------|
 | Timeout | Add optional timeout for response | Medium |
-| Error Handling | Handle checksum errors gracefully | Medium |
+| Error Handling | Add error status in response header | Medium |
 | Burst Mode | Support multiple transactions per request | Low |
 | DMA | Direct memory access from host | Low |
 | Interrupt | Generate interrupt on transaction complete | Low |
@@ -1491,7 +1778,9 @@ The generic TX/RX byte stream interface can be connected to:
 
 ## Appendix A: Packet Format Quick Reference
 
-### Request Packet (10 bytes)
+### Request Packet (Variable Length: 5-9 bytes)
+
+**Word Write (9 bytes):**
 
 | Byte | Content | Example (Write word to 0x80001234, data=0xDEADBEEF) |
 |------|---------|-----------------------------------------------------|
@@ -1504,37 +1793,71 @@ The generic TX/RX byte stream interface can be connected to:
 | 6 | `wdata[23:16]` | 0xAD |
 | 7 | `wdata[15:8]` | 0xBE |
 | 8 | `wdata[7:0]` | 0xEF |
-| 9 | `checksum` | XOR of bytes 0-8 |
 
-### Response Packet (6 bytes)
+**Word Read (5 bytes):**
 
-| Byte | Content | Example (OK, rdata=0xCAFEBABE) |
-|------|---------|-------------------------------|
-| 0 | `status` | 0x00 (STATUS_OK) |
+| Byte | Content | Example (Read word from 0xABCD1234) |
+|------|---------|-------------------------------------|
+| 0 | `{4'b0, size[1:0], 1'b0, we}` | 0x08 (size=10, we=0) |
+| 1 | `addr[31:24]` | 0xAB |
+| 2 | `addr[23:16]` | 0xCD |
+| 3 | `addr[15:8]` | 0x12 |
+| 4 | `addr[7:0]` | 0x34 |
+
+### Response Packet (Variable Length: 1-5 bytes)
+
+**Write Response (1 byte):**
+
+| Byte | Content | Example (Write acknowledgement) |
+|------|---------|--------------------------------|
+| 0 | `{4'b0, size[1:0], 1'b0, we}` | 0x09 (echoes request header) |
+
+**Word Read Response (5 bytes):**
+
+| Byte | Content | Example (Read returns 0xCAFEBABE) |
+|------|---------|----------------------------------|
+| 0 | `{4'b0, size[1:0], 1'b0, we}` | 0x08 (size=10, we=0) |
 | 1 | `rdata[31:24]` | 0xCA |
 | 2 | `rdata[23:16]` | 0xFE |
 | 3 | `rdata[15:8]` | 0xBA |
 | 4 | `rdata[7:0]` | 0xBE |
-| 5 | `checksum` | XOR of bytes 0-4 |
+
+### Packet Size Summary
+
+| Transaction | Request Bytes | Response Bytes | Total |
+|-------------|---------------|----------------|-------|
+| Read word   | 5             | 5              | 10    |
+| Write word  | 9             | 1              | 10    |
+| Read half   | 5             | 3              | 8     |
+| Write half  | 7             | 1              | 8     |
+| Read byte   | 5             | 2              | 7     |
+| Write byte  | 6             | 1              | 7     |
 
 ---
 
 ## Appendix B: State Machine Diagram (ASCII)
 
 ```
-      ┌───────────────────────────────────────────────────────────────┐
-      │                                                               │
-      │  IDLE ──req──▶ CAPTURE ──▶ TX_0 ──▶ TX_1 ──▶ ... ──▶ TX_9   │
-      │    ▲                                                     │    │
-      │    │                                                     │    │
-      │    │   ┌─────────────────────────────────────────────────┘    │
-      │    │   ▼                                                      │
-      │    └─ COMPLETE ◀── RX_5 ◀── ... ◀── RX_1 ◀── RX_0            │
-      │                                                               │
-      └───────────────────────────────────────────────────────────────┘
+      ┌────────────────────────────────────────────────────────────────────────────┐
+      │                                                                            │
+      │  IDLE ──req──▶ CAPTURE ──▶ TX_HDR ──▶ TX_ADDR ──┬──▶ TX_WDATA ──┐         │
+      │    ▲                                 (4 bytes)  │   (write only) │         │
+      │    │                                            │   (1-4 bytes)  │         │
+      │    │                            ┌───────────────┴────────────────┘         │
+      │    │                            │                                          │
+      │    │                            ▼                                          │
+      │    │                       RX_HEADER ──┬──────────────────▶ COMPLETE       │
+      │    │                                   │ (write response)     │            │
+      │    │                                   │                      │            │
+      │    │                                   ▼                      │            │
+      │    │                              RX_RDATA ───────────────────┘            │
+      │    │                              (read only)                              │
+      │    │                              (1-4 bytes)                              │
+      │    │                                                                       │
+      │    └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Last Updated:** January 30, 2026
