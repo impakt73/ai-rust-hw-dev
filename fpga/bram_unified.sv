@@ -124,9 +124,9 @@ module bram_unified #(
                 // Read logic - use word address for memory lookup
                 rdata_reg <= mem[word_addr];
             end else begin
-                // Memory request without read or write (instruction fetch)
-                // Treat as read operation
-                rdata_reg <= mem[word_addr];
+                // Invalid memory request: req asserted but neither we nor re set.
+                // This should not occur in normal operation; return 0 defensively.
+                rdata_reg <= 32'h0;
             end
             ready_reg <= 1'b1;
         end else begin
