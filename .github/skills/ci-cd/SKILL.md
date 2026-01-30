@@ -21,8 +21,9 @@ The workflow executes the following checks:
 5. ✅ **Build rust-test-program:** `cargo build --verbose` in `rust-test-program/` directory
 6. ✅ **Format rust-test-program:** `cargo fmt -- --check` in `rust-test-program/` directory (must pass - blocking)
 7. ✅ **Clippy rust-test-program:** `cargo clippy -- -D warnings` in `rust-test-program/` directory (must pass - blocking)
+8. ✅ **FPGA Synthesis:** `make` in `fpga/` directory (verifies RTL can be synthesized)
 
-**Note:** All checks including formatting and clippy are now blocking in CI. Your code must pass all checks before it can be merged. This includes the separate `rust-test-program` project which builds for the RISC-V target platform.
+**Note:** All checks including formatting, clippy, and FPGA synthesis are now blocking in CI. Your code must pass all checks before it can be merged. This includes the separate `rust-test-program` project which builds for the RISC-V target platform.
 
 ## PR Readiness Checklist
 
@@ -91,7 +92,13 @@ verilator --lint-only rtl/*.sv
 ```
 No lint errors should be reported.
 
-#### 6. Verify CI Pipeline Status
+#### 6. Verify FPGA Synthesis (if SystemVerilog was modified)
+```bash
+(cd fpga && make)
+```
+Synthesis must complete successfully. This verifies that RTL changes can be synthesized to an FPGA target (iCE40-HX8K).
+
+#### 7. Verify CI Pipeline Status
 - Push your changes to the branch
 - Wait for GitHub Actions CI workflow to complete
 - Check that all CI jobs pass successfully (green checkmark ✓)
@@ -206,7 +213,8 @@ git push
 3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
 5. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
-6. If you modified `rust-test-program/`:
+6. Verify FPGA synthesis (if SystemVerilog modified): `(cd fpga && make)`
+7. If you modified `rust-test-program/`:
    ```bash
    cd rust-test-program
    cargo build --verbose
@@ -290,6 +298,40 @@ cargo test   # Rebuild from scratch
 - Ensure Verilator installation step in CI workflow is correct
 - Check SystemVerilog syntax locally first
 - Verify RTL files are properly included in the build
+
+### Issue: FPGA synthesis failures in CI
+
+**Symptoms:**
+- Yosys synthesis errors
+- nextpnr place-and-route failures
+- Timing violations
+- Resource constraint violations
+
+**Possible causes:**
+- Non-synthesizable SystemVerilog constructs
+- Resource usage exceeds FPGA capacity (iCE40-HX8K has ~7,680 LUTs)
+- Timing constraints not met (target: 25 MHz)
+- Missing or incorrect module instantiations
+
+**Solutions:**
+```bash
+# Test synthesis locally
+cd fpga && make clean && make
+
+# Check synthesis logs for errors
+cat fpga/build/yosys.log | grep -i error
+cat fpga/build/nextpnr.log | grep -i error
+
+# Check timing report
+cat fpga/build/riscv_fpga_timing.rpt
+```
+
+**Common fixes:**
+- Avoid non-synthesizable constructs (delays, fork-join, real numbers)
+- Reduce logic complexity or add pipeline stages for timing
+- Check resource usage in Yosys output (should be <80% utilization)
+- Verify all modules are properly instantiated in `fpga_top.sv`
+- Ensure M and F extensions are disabled for HX8K target (controlled in rtl/top.sv)
 
 ### Issue: Timeout in CI
 

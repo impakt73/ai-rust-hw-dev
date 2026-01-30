@@ -18,12 +18,18 @@ jobs:
     - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator libasound2-dev
+        packages: verilator libasound2-dev yosys fpga-icestorm nextpnr-ice40
         # Bump version (v1 -> v2) to force cache refresh
-        version: v1
+        version: v2
     
     - name: Verify Verilator installation
       run: verilator --version
+    
+    - name: Verify FPGA tools installation
+      run: |
+        yosys --version
+        nextpnr-ice40 --version
+        iceprog --help 2>&1 | head -1
     
     - name: Install Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -70,3 +76,7 @@ jobs:
     - name: Run clippy on rust-test-program
       working-directory: rust-test-program
       run: cargo clippy -- -D warnings
+    
+    - name: Verify FPGA synthesis
+      working-directory: fpga
+      run: make

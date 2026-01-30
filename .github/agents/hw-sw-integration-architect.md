@@ -160,12 +160,18 @@ When implementing cross-layer changes:
    verilator --lint-only rtl/modified_file.sv
    ```
 
-2. **Clear Verilator Cache:**
+2. **Verify FPGA Synthesis:**
+   ```bash
+   # Verify RTL changes can be synthesized to FPGA
+   (cd fpga && make)
+   ```
+
+3. **Clear Verilator Cache:**
    ```bash
    cargo clean  # Critical after RTL changes
    ```
 
-3. **Update Rust Bindings/Tests:**
+4. **Update Rust Bindings/Tests:**
    ```bash
    # Edit tests in tests/src/ or cpu-sim/src/
    cargo fmt
@@ -173,7 +179,7 @@ When implementing cross-layer changes:
    cargo clippy -- -D warnings           # Rerun to check remaining warnings
    ```
 
-4. **Verify Integration:**
+5. **Verify Integration:**
    ```bash
    cargo test --verbose  # All 146 tests must pass
    ```
