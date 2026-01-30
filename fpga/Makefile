@@ -23,6 +23,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/fetch_buffer.sv \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/regfile.sv \
+	$(RTL_DIR)/sync_fifo.sv \
 	$(RTL_DIR)/writeback_mux.sv \
 	$(RTL_DIR)/cpu.sv \
 	$(RTL_DIR)/peripherals/led_controller.sv \
