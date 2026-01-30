@@ -67,16 +67,12 @@ module uart #(
     
     // Parameter validation (simulation only)
     initial begin
-        // Validate FIFO depth is power of 2
-        if ((FIFO_DEPTH & (FIFO_DEPTH - 1)) != 0 || FIFO_DEPTH < 2) begin
-            $fatal(1, "UART: FIFO_DEPTH must be power of 2 and >= 2, got %0d", FIFO_DEPTH);
-        end
-        
         // Validate baud rate is achievable with given clock
         if (CLK_FREQ_HZ / BAUD_RATE < 16) begin
             $fatal(1, "UART: Baud rate %0d too high for clock %0d Hz (need 16x oversampling)",
                    BAUD_RATE, CLK_FREQ_HZ);
         end
+        // Note: FIFO_DEPTH validation is handled by the sync_fifo module
     end
     
     // ============================================================

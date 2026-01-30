@@ -38,6 +38,10 @@ module sync_fifo #(
     output logic [$clog2(DEPTH):0] count
 );
 
+    // Pointer width localparam for readability
+    localparam int PTR_WIDTH = $clog2(DEPTH);
+    localparam int CNT_WIDTH = PTR_WIDTH + 1;
+
     // Parameter validation (simulation only)
     initial begin
         // Validate DEPTH is power of 2
@@ -50,11 +54,17 @@ module sync_fifo #(
     logic [WIDTH-1:0] mem [0:DEPTH-1];
     
     // Pointers
-    logic [$clog2(DEPTH)-1:0] wr_ptr;
-    logic [$clog2(DEPTH)-1:0] rd_ptr;
+    logic [PTR_WIDTH-1:0] wr_ptr;
+    logic [PTR_WIDTH-1:0] rd_ptr;
+    
+    // Internal signals for valid operations
+    logic do_write;
+    logic do_read;
+    assign do_write = wr_en && !full;
+    assign do_read  = rd_en && !empty;
     
     // Status flags
-    assign full  = (count == DEPTH[$clog2(DEPTH):0]);
+    assign full  = (count == DEPTH[CNT_WIDTH-1:0]);
     assign empty = (count == '0);
     
     // Combinatorial read data output
@@ -68,24 +78,22 @@ module sync_fifo #(
             count  <= '0;
         end else begin
             // Handle pointer and count updates based on read/write operations
-            case ({wr_en && !full, rd_en && !empty})
-                2'b10: begin  // Write only
-                    wr_ptr <= wr_ptr + 1'b1;
-                    count  <= count + 1'b1;
-                end
-                2'b01: begin  // Read only
-                    rd_ptr <= rd_ptr + 1'b1;
-                    count  <= count - 1'b1;
-                end
-                2'b11: begin  // Simultaneous read/write: count unchanged
-                    wr_ptr <= wr_ptr + 1'b1;
-                    rd_ptr <= rd_ptr + 1'b1;
-                end
-                default: ;  // 2'b00: no change
-            endcase
+            if (do_write && do_read) begin
+                // Simultaneous read/write: count unchanged
+                wr_ptr <= wr_ptr + 1'b1;
+                rd_ptr <= rd_ptr + 1'b1;
+            end else if (do_write) begin
+                // Write only
+                wr_ptr <= wr_ptr + 1'b1;
+                count  <= count + 1'b1;
+            end else if (do_read) begin
+                // Read only
+                rd_ptr <= rd_ptr + 1'b1;
+                count  <= count - 1'b1;
+            end
             
             // Write to FIFO memory (only when write is valid)
-            if (wr_en && !full) begin
+            if (do_write) begin
                 mem[wr_ptr] <= wdata;
             end
         end
