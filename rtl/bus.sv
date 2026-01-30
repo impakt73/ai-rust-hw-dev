@@ -14,8 +14,10 @@
 
 module bus (
     // Clock and reset (unused in current combinational implementation)
+    /* verilator lint_off UNUSED */
     input  logic        clk,
     input  logic        rst_n,
+    /* verilator lint_on UNUSED */
     
     // Master interface (from CPU)
     input  logic [31:0] master_addr,
@@ -71,13 +73,11 @@ module bus (
     logic sel_led;
     logic sel_uart;
     logic sel_ext_mem;
-    logic sel_unmapped;
     
     always_comb begin
         sel_led      = 1'b0;
         sel_uart     = 1'b0;
         sel_ext_mem  = 1'b0;
-        sel_unmapped = 1'b0;
         
         // Check if address is in LED range
         if (master_addr >= LED_BASE && master_addr < LED_LIMIT) begin
@@ -88,8 +88,10 @@ module bus (
             sel_uart = 1'b1;
         end
         // Check if address is in unmapped RTL peripheral space
+        // (unmapped: no select asserted, uses default response)
         else if (master_addr >= RTL_PERIPH_BASE && master_addr < RTL_PERIPH_LIMIT) begin
-            sel_unmapped = 1'b1;
+            // Unmapped RTL peripheral address - no slave selected
+            // Response mux defaults to ready=1, rdata=0
         end
         // Otherwise route to external memory (DRAM + Rust peripherals)
         else begin
@@ -142,7 +144,7 @@ module bus (
             master_rdata = ext_mem_rdata;
             master_ready = ext_mem_ready;
         end
-        // sel_unmapped: default values apply (return 0, ready = 1)
+        // Unmapped addresses: default values apply (return 0, ready = 1)
     end
 
 endmodule
