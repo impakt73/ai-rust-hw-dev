@@ -448,16 +448,13 @@ typedef enum logic [3:0] {
     // Receive response packet (variable length: 1-5 bytes)
     STATE_RX_HEADER   = 4'd11,  // Response header
     STATE_RX_RDATA_3  = 4'd12,  // RData[31:24] (word reads)
-    STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (halfword/word reads)
-    STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (word reads)
-    STATE_RX_RDATA_0  = 4'd15,  // RData[7:0] (all reads)
-    
-    // Complete transaction (reuse value since COMPLETE follows RX states)
-    STATE_COMPLETE    = 4'd0    // NOTE: Handled specially, see logic
+    STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (word reads)
+    STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (halfword/word reads)
+    STATE_RX_RDATA_0  = 4'd15   // RData[7:0] (all reads)
 } state_t;
 ```
 
-**Note:** Due to the variable-length nature, we use a 4-bit state encoding with conditional transitions. The `STATE_COMPLETE` is handled via a separate `transaction_complete` signal rather than as a unique state value to keep the encoding compact.
+**Note:** Due to the variable-length nature, we use a 4-bit state encoding with conditional transitions. Completion is indicated by transitioning back to `STATE_IDLE` with the `transaction_complete` signal set for one cycle.
 
 ### 4.4 State Transition Logic (Conceptual)
 
@@ -473,7 +470,7 @@ typedef enum logic [3:0] {
 
 **TX Write Data State Selection (based on size):**
 - `size == 2'b10` (word): TX_ADDR_0 → TX_WDATA_3 → TX_WDATA_2 → TX_WDATA_1 → TX_WDATA_0 → RX_HEADER
-- `size == 2'b01` (half): TX_ADDR_0 → TX_WDATA_2 → TX_WDATA_0 → RX_HEADER
+- `size == 2'b01` (half): TX_ADDR_0 → TX_WDATA_1 → TX_WDATA_0 → RX_HEADER
 - `size == 2'b00` (byte): TX_ADDR_0 → TX_WDATA_0 → RX_HEADER
 
 **RX Phase Transitions:**
@@ -483,9 +480,9 @@ typedef enum logic [3:0] {
    - If `cap_we == 0` (read response): → RX_RDATA start state based on size
 
 **RX Read Data State Selection (based on size):**
-- `size == 2'b10` (word): RX_HEADER → RX_RDATA_3 → RX_RDATA_2 → RX_RDATA_1 → RX_RDATA_0 → COMPLETE
-- `size == 2'b01` (half): RX_HEADER → RX_RDATA_2 → RX_RDATA_0 → COMPLETE
-- `size == 2'b00` (byte): RX_HEADER → RX_RDATA_0 → COMPLETE
+- `size == 2'b10` (word): RX_HEADER → RX_RDATA_3 → RX_RDATA_2 → RX_RDATA_1 → RX_RDATA_0 → IDLE
+- `size == 2'b01` (half): RX_HEADER → RX_RDATA_1 → RX_RDATA_0 → IDLE
+- `size == 2'b00` (byte): RX_HEADER → RX_RDATA_0 → IDLE
 
 ---
 
@@ -560,11 +557,9 @@ module host_bus_interface (
         // RX States (variable length: 1-5 bytes)
         STATE_RX_HEADER   = 4'd11,  // Response header
         STATE_RX_RDATA_3  = 4'd12,  // RData[31:24] (word reads only)
-        STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (half/word reads)
-        STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (word reads only)
-        STATE_RX_RDATA_0  = 4'd15,  // RData[7:0] (all reads - byte aligned)
-        
-        STATE_COMPLETE    = 4'd0    // Reused - distinguished by complete flag
+        STATE_RX_RDATA_2  = 4'd13,  // RData[23:16] (word reads only)
+        STATE_RX_RDATA_1  = 4'd14,  // RData[15:8] (halfword/word reads)
+        STATE_RX_RDATA_0  = 4'd15   // RData[7:0] (all reads)
     } state_t;
     
     state_t state, next_state;
@@ -652,7 +647,7 @@ module host_bus_interface (
                         // Write: send data bytes based on size
                         case (cap_size)
                             2'b10:   next_state = STATE_TX_WDATA_3;  // Word: 4 bytes
-                            2'b01:   next_state = STATE_TX_WDATA_2;  // Half: 2 bytes
+                            2'b01:   next_state = STATE_TX_WDATA_1;  // Half: 2 bytes ([15:8], [7:0])
                             default: next_state = STATE_TX_WDATA_0;  // Byte: 1 byte
                         endcase
                     end else begin
@@ -667,16 +662,11 @@ module host_bus_interface (
                 if (tx_valid && tx_ready) next_state = STATE_TX_WDATA_2;
             end
             
-            STATE_TX_WDATA_2: begin  // Half and Word
-                if (tx_valid && tx_ready) begin
-                    if (cap_size == 2'b10)
-                        next_state = STATE_TX_WDATA_1;  // Word: continue
-                    else
-                        next_state = STATE_TX_WDATA_0;  // Half: skip to LSB
-                end
+            STATE_TX_WDATA_2: begin  // Word only
+                if (tx_valid && tx_ready) next_state = STATE_TX_WDATA_1;
             end
             
-            STATE_TX_WDATA_1: begin  // Word only
+            STATE_TX_WDATA_1: begin  // Half and Word
                 if (tx_valid && tx_ready) next_state = STATE_TX_WDATA_0;
             end
             
@@ -696,7 +686,7 @@ module host_bus_interface (
                         // Read response: receive data based on size
                         case (cap_size)
                             2'b10:   next_state = STATE_RX_RDATA_3;  // Word: 4 bytes
-                            2'b01:   next_state = STATE_RX_RDATA_2;  // Half: 2 bytes
+                            2'b01:   next_state = STATE_RX_RDATA_1;  // Half: 2 bytes ([15:8], [7:0])
                             default: next_state = STATE_RX_RDATA_0;  // Byte: 1 byte
                         endcase
                     end
@@ -708,16 +698,11 @@ module host_bus_interface (
                 if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_2;
             end
             
-            STATE_RX_RDATA_2: begin  // Half and Word
-                if (rx_valid && rx_ready) begin
-                    if (cap_size == 2'b10)
-                        next_state = STATE_RX_RDATA_1;  // Word: continue
-                    else
-                        next_state = STATE_RX_RDATA_0;  // Half: skip to LSB
-                end
+            STATE_RX_RDATA_2: begin  // Word only
+                if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_1;
             end
             
-            STATE_RX_RDATA_1: begin  // Word only
+            STATE_RX_RDATA_1: begin  // Half and Word
                 if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_0;
             end
             
@@ -841,7 +826,7 @@ The complete module combines all sections above into a single file at `rtl/host_
 
 | Property | Value |
 |----------|-------|
-| State bits | 4 bits (16 states used) |
+| State bits | 4 bits (up to 16 states, 15 defined) |
 | TX packet size | 5-9 bytes (variable) |
 | RX packet size | 1-5 bytes (variable) |
 | Latency | 1 cycle after last RX byte |
@@ -884,12 +869,14 @@ Testing follows the RTL-focused testbench pattern used by other modules in this 
 
 | Category | Description | Test Count |
 |----------|-------------|------------|
-| Reset State | Verify initial state after reset | 2 |
-| Basic Write | Single write transaction (various sizes) | 4 |
-| Basic Read | Single read transaction (various sizes) | 4 |
-| Variable Length | Verify correct packet lengths | 3 |
-| Flow Control | TX/RX backpressure handling | 3 |
-| Edge Cases | Address patterns, consecutive ops | 2 |
+| Reset | Verify initial state after reset | 2 |
+| Write | Write transaction tests (various sizes) | 4 |
+| Read | Read transaction tests (various sizes) | 4 |
+| Header | Verify correct header byte encoding | 2 |
+| Flow | TX/RX backpressure handling | 3 |
+| Blocking | Verify blocking behavior for transactions | 1 |
+| Sequence | Back-to-back transaction sequences | 1 |
+| Edge | Address patterns and boundary conditions | 1 |
 
 ### 7.3 Test Infrastructure
 
@@ -1124,8 +1111,8 @@ fn test_write_halfword_packet_format() {
     // Byte 0: header = {4'b0, size=01, 1'b0, we=1} = 0x05
     assert_eq!(tx_packet[0], 0x05, "Header byte mismatch");
     
-    // Bytes 5-6: Write data (2 bytes for halfword: [23:16] and [7:0])
-    assert_eq!(tx_packet[5], 0xCA, "WData[23:16] mismatch");
+    // Bytes 5-6: Write data (2 bytes for halfword: [15:8] and [7:0])
+    assert_eq!(tx_packet[5], 0xCA, "WData[15:8] mismatch");
     assert_eq!(tx_packet[6], 0xFE, "WData[7:0] mismatch");
 }
 
@@ -1268,16 +1255,16 @@ fn test_read_halfword_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
     
-    // Send response: header + 2 bytes data
+    // Send response: header + 2 bytes data (16-bit halfword in bits [15:0])
     // Header: {4'b0, size=01, 1'b0, we=0} = 0x04
     assert!(send_rx_byte(&mut dut, 0x04, 100), "Failed to send response header");
-    assert!(send_rx_byte(&mut dut, 0xAB, 100), "Failed to send RData[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xAB, 100), "Failed to send RData[15:8]");
     assert!(send_rx_byte(&mut dut, 0xCD, 100), "Failed to send RData[7:0]");
     
     clock_cycle!(dut);
     
     assert_eq!(dut.ready, 1, "ready should be HIGH");
-    // Data should be in bits [23:16] and [7:0]
+    assert_eq!(dut.rdata & 0xFFFF, 0xABCD, "read halfword should be 0xABCD in bits [15:0]");
 }
 
 #[test]
