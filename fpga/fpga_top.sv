@@ -308,7 +308,7 @@ module fpga_top #(
     // Calculate position (0-5) for the 6 outer segments
     always_comb begin
         // Use modulo to wrap counter to 0-5 range for 6 outer segments
-        seg_position = button_counter[2:0] % 3'd6;
+        seg_position = 3'(button_counter % 8'd6);
         
         // Generate pattern: only one segment lit (active-high internally)
         // Segments: a=0, b=1, c=2, d=3, e=4, f=5
