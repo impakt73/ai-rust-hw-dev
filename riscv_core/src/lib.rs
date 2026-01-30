@@ -105,6 +105,7 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "top.sv",                        // Top-level wrapper with RTL peripherals
+        "bus.sv",                        // System bus for address decoding
         "cpu.sv",                        // CPU core
         "peripherals/led_controller.sv", // LED controller peripheral
         "peripherals/uart.sv",           // UART controller peripheral

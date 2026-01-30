@@ -1,6 +1,7 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
-// Routes RTL peripheral addresses internally, forwards others to external bus
+// Uses the bus module to route requests between CPU and peripherals
+// External memory requests are forwarded out of this module to DRAM + Rust peripherals
 //
 // UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
 // fetch and data access. The CPU's multi-cycle FSM ensures only one type of
@@ -55,19 +56,8 @@ module top #(
 );
 
     // ============================================================
-    // Address Range Definitions
-    // ============================================================
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-    localparam LED_BASE         = 32'h50000000;
-    localparam LED_LIMIT        = 32'h50000010;  // 16 bytes
-    localparam UART_BASE        = 32'h52000000;
-    localparam UART_LIMIT       = 32'h52000100;  // 256 bytes
-    
-    // ============================================================
     // Internal CPU Memory Interface Signals (Unified)
     // ============================================================
-    // The CPU provides a unified memory interface for both instruction and data
     logic [31:0] cpu_mem_addr;
     logic [31:0] cpu_mem_wdata;
     logic [31:0] cpu_mem_rdata;
@@ -79,13 +69,23 @@ module top #(
     // ============================================================
     // LED Controller Interface Signals
     // ============================================================
+    logic [31:0] led_addr;
+    logic [31:0] led_wdata;
     logic [31:0] led_rdata;
+    logic        led_we;
+    logic [1:0]  led_size;
+    logic        led_req;
     logic        led_ready;
     
     // ============================================================
     // UART Controller Interface Signals
     // ============================================================
+    logic [31:0] uart_addr;
+    logic [31:0] uart_wdata;
     logic [31:0] uart_rdata;
+    logic        uart_we;
+    logic [1:0]  uart_size;
+    logic        uart_req;
     logic        uart_ready;
     
     // Internal UART signals for loopback
@@ -93,84 +93,49 @@ module top #(
     logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
-    // Address Decoder
+    // Bus Module Instantiation
     // ============================================================
-    // Decodes CPU memory address to select appropriate destination:
-    // - RTL peripherals (LED, UART) are handled internally
-    // - All other addresses go to external bus (DRAM, Rust peripherals)
-    // Note: Both instruction fetch and data access use this decoder.
-    // Instruction fetches typically target DRAM, data accesses may target
-    // either DRAM or peripherals.
-    logic sel_led;
-    logic sel_uart;
-    logic sel_external;
-    logic sel_unmapped_rtl;
-    
-    always_comb begin
-        sel_led          = 1'b0;
-        sel_uart         = 1'b0;
-        sel_unmapped_rtl = 1'b0;
-        sel_external     = 1'b0;
+    // Routes CPU requests to the appropriate peripheral based on address
+    bus system_bus (
+        .clk(clk),
+        .rst_n(rst_n),
         
-        // Check if address is in LED range
-        if (cpu_mem_addr >= LED_BASE && cpu_mem_addr < LED_LIMIT) begin
-            sel_led = 1'b1;
-        end
-        // Check if address is in UART range
-        else if (cpu_mem_addr >= UART_BASE && cpu_mem_addr < UART_LIMIT) begin
-            sel_uart = 1'b1;
-        end
-        // Check if address is in unmapped RTL peripheral space
-        else if (cpu_mem_addr >= RTL_PERIPH_BASE && cpu_mem_addr < RTL_PERIPH_LIMIT) begin
-            sel_unmapped_rtl = 1'b1;
-        end
-        // Otherwise route to external bus (Rust peripherals + DRAM)
-        else begin
-            sel_external = 1'b1;
-        end
-    end
-    
-    // ============================================================
-    // Response Multiplexer
-    // ============================================================
-    always_comb begin
-        // Default values
-        cpu_mem_rdata = 32'h0;
-        cpu_mem_ready = 1'b0;
+        // Master interface (CPU)
+        .master_addr(cpu_mem_addr),
+        .master_wdata(cpu_mem_wdata),
+        .master_rdata(cpu_mem_rdata),
+        .master_we(cpu_mem_we),
+        .master_size(cpu_mem_size),
+        .master_req(cpu_mem_req),
+        .master_ready(cpu_mem_ready),
         
-        // Select response source
-        if (sel_led) begin
-            cpu_mem_rdata = led_rdata;
-            cpu_mem_ready = led_ready;
-        end else if (sel_uart) begin
-            cpu_mem_rdata = uart_rdata;
-            cpu_mem_ready = uart_ready;
-        end else if (sel_unmapped_rtl) begin
-            // Unmapped RTL peripheral address - return zero and ready immediately
-            cpu_mem_rdata = 32'h0;
-            cpu_mem_ready = 1'b1;
-            // Note: In simulation, this triggers a warning via $display in tests
-        end else if (sel_external) begin
-            cpu_mem_rdata = ext_mem_rdata;
-            cpu_mem_ready = ext_mem_ready;
-        end else begin
-            // Should never reach here if decoder logic is correct
-            cpu_mem_rdata = 32'h0;
-            cpu_mem_ready = 1'b1;
-        end
-    end
-    
-    // ============================================================
-    // External Bus Forwarding
-    // ============================================================
-    // Forward CPU requests to external bus (for Rust peripherals + DRAM)
-    assign ext_mem_addr  = cpu_mem_addr;
-    assign ext_mem_wdata = cpu_mem_wdata;
-    assign ext_mem_size  = cpu_mem_size;
-    
-    // Only assert request/enable if address is external
-    assign ext_mem_req = cpu_mem_req && sel_external;
-    assign ext_mem_we  = cpu_mem_we  && sel_external;
+        // LED Controller interface
+        .led_addr(led_addr),
+        .led_wdata(led_wdata),
+        .led_rdata(led_rdata),
+        .led_we(led_we),
+        .led_size(led_size),
+        .led_req(led_req),
+        .led_ready(led_ready),
+        
+        // UART Controller interface
+        .uart_addr(uart_addr),
+        .uart_wdata(uart_wdata),
+        .uart_rdata(uart_rdata),
+        .uart_we(uart_we),
+        .uart_size(uart_size),
+        .uart_req(uart_req),
+        .uart_ready(uart_ready),
+        
+        // External Memory interface
+        .ext_mem_addr(ext_mem_addr),
+        .ext_mem_wdata(ext_mem_wdata),
+        .ext_mem_rdata(ext_mem_rdata),
+        .ext_mem_we(ext_mem_we),
+        .ext_mem_size(ext_mem_size),
+        .ext_mem_req(ext_mem_req),
+        .ext_mem_ready(ext_mem_ready)
+    );
     
     // ============================================================
     // CPU Core Instantiation
@@ -183,7 +148,7 @@ module top #(
         .rst_n(rst_n),
         .boot_addr(boot_addr),
         
-        // Unified memory interface (handles both instruction fetch and data access)
+        // Unified memory interface
         .mem_addr(cpu_mem_addr),
         .mem_wdata(cpu_mem_wdata),
         .mem_rdata(cpu_mem_rdata),
@@ -192,11 +157,11 @@ module top #(
         .mem_req(cpu_mem_req),
         .mem_ready(cpu_mem_ready),
         
-        // System control (passed through)
+        // System control
         .halted(halted),
         .instr_complete(instr_complete),
         
-        // Debug signals (passed through)
+        // Debug signals
         .debug_rs1_data(debug_rs1_data),
         .debug_rs2_data(debug_rs2_data),
         .debug_rd_data(debug_rd_data),
@@ -212,13 +177,9 @@ module top #(
     // ============================================================
     generate
         if (ENABLE_UART_LOOPBACK) begin : gen_loopback
-            // Internal loopback: connect TX directly to RX for testing
             assign uart_rx_internal = uart_tx_internal;
-            // Still expose TX externally for debugging/monitoring
             assign uart_tx = uart_tx_internal;
-            // uart_rx input port is ignored in loopback mode
         end else begin : gen_external
-            // External connection: use actual RX/TX pins
             assign uart_rx_internal = uart_rx;
             assign uart_tx = uart_tx_internal;
         end
@@ -231,16 +192,14 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface (unified memory)
-        .addr(cpu_mem_addr),
-        .wdata(cpu_mem_wdata),
+        .addr(led_addr),
+        .wdata(led_wdata),
         .rdata(led_rdata),
-        .we(cpu_mem_we && sel_led),
-        .req(cpu_mem_req && sel_led),
-        .size(cpu_mem_size),
+        .we(led_we),
+        .req(led_req),
+        .size(led_size),
         .ready(led_ready),
         
-        // LED outputs
         .led_out(led_out)
     );
     
@@ -255,13 +214,13 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface (unified memory)
-        .addr(cpu_mem_addr),
-        .wdata(cpu_mem_wdata),
+        // Bus slave interface
+        .addr(uart_addr),
+        .wdata(uart_wdata),
         .rdata(uart_rdata),
-        .we(cpu_mem_we && sel_uart),
-        .req(cpu_mem_req && sel_uart),
-        .size(cpu_mem_size),
+        .we(uart_we),
+        .req(uart_req),
+        .size(uart_size),
         .ready(uart_ready),
         
         // Internal signals (connected via loopback or external pins)

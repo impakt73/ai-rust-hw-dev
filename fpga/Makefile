@@ -16,6 +16,7 @@ BUILD_DIR = build
 RTL_SOURCES = \
 	$(RTL_DIR)/alu.sv \
 	$(RTL_DIR)/branch_unit.sv \
+	$(RTL_DIR)/bus.sv \
 	$(RTL_DIR)/csr_file.sv \
 	$(RTL_DIR)/decoder.sv \
 	$(RTL_DIR)/decompress.sv \
