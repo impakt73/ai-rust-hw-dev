@@ -150,14 +150,15 @@ Before marking PR ready for review:
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
 5. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
+6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd fpga && make)`
 
 **rust-test-program Workspace:**
-6. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
-7. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
-8. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
+7. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
+8. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
+9. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
 
 **Additional Checks:**
-9. ✅ All CI checks pass on GitHub Actions
+10. ✅ All CI checks pass on GitHub Actions
 
 ### Security Scanning
 

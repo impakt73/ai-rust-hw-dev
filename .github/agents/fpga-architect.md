@@ -101,6 +101,14 @@ When working with Rust-based verification code (testbenches, simulation harnesse
 6. Verify formatting: `cargo fmt -- --check`
 7. Run tests: `cargo test --verbose`
 
+**Workflow for SystemVerilog Changes:**
+1. Make SystemVerilog modifications (in `rtl/` directory)
+2. Lint the code: `verilator --lint-only rtl/*.sv`
+3. **Verify FPGA synthesis:** `(cd fpga && make)` to ensure design can be synthesized
+4. Run Rust tests to verify RTL changes: `cargo clean && cargo test --verbose`
+
+**Key Principle for SystemVerilog:** Always verify FPGA synthesis after RTL changes to catch synthesis issues early. The `fpga/` directory contains the FPGA build with Yosys/nextpnr targeting iCE40-HX8K. CI will automatically run synthesis verification on all SystemVerilog changes.
+
 **Key Principle:** Always use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to avoid wasting time on issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
 **Note:** CI will reject any PR with formatting issues or clippy warnings. Always run these checks locally before committing.
