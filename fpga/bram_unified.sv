@@ -1,28 +1,41 @@
-// Block RAM Instruction Memory
-// Single-port read-only memory for instruction storage
+// Block RAM Unified Memory
+// Single-port read/write memory for both instruction and data storage
 // Synthesizes to on-chip BRAM on iCE40 FPGA
-// Byte-addressed to support compressed (2-byte aligned) instructions
+// Byte-addressed to support compressed (2-byte aligned) instructions and sub-word accesses
+//
+// This unified BRAM serves both instruction fetch and data access through
+// a single interface. The CPU's multi-cycle FSM ensures only one type of
+// access is active at a time.
 
-module bram_imem #(
-    parameter ADDR_WIDTH = 12,  // 2^12 = 4096 bytes = 4 KB
+module bram_unified #(
+    parameter ADDR_WIDTH = 12,  // Address width in bits (size = 2^ADDR_WIDTH bytes)
     parameter DATA_WIDTH = 32
 ) (
     input  logic                    clk,
     input  logic [ADDR_WIDTH-1:0]   addr,   // Byte address
+    input  logic [DATA_WIDTH-1:0]   wdata,
     output logic [DATA_WIDTH-1:0]   rdata,
-    input  logic                    req,
-    output logic                    ready
+    input  logic                    we,     // Write enable
+    input  logic                    re,     // Read enable
+    input  logic [1:0]              size,   // 00=byte, 01=half, 10=word
+    input  logic                    req,    // Memory request
+    output logic                    ready   // Memory operation complete
 );
 
     // Memory array - stored as 32-bit words, addressed by word index
-    localparam WORD_COUNT = 2**(ADDR_WIDTH-2);  // 4 KB / 4 bytes = 1024 words
+    // Size = 2^ADDR_WIDTH bytes = 2^(ADDR_WIDTH-2) words
+    localparam WORD_COUNT = 2**(ADDR_WIDTH-2);
     logic [DATA_WIDTH-1:0] mem [0:WORD_COUNT-1];
     
     // Word address is byte address >> 2
     logic [ADDR_WIDTH-3:0] word_addr;
     assign word_addr = addr[ADDR_WIDTH-1:2];
     
-    // Initialize memory with UART-to-LED echo program
+    // Byte offset within word
+    logic [1:0] byte_offset;
+    assign byte_offset = addr[1:0];
+    
+    // Initialize memory with UART-to-LED echo program (same as bram_imem.sv)
     // This program polls the UART for incoming data and displays received bytes on LEDs
     initial begin
         // UART-to-LED Echo Program
@@ -77,13 +90,44 @@ module bram_imem #(
         end
     end
     
-    // Read logic with 1-cycle latency
+    // Read/write logic with 1-cycle latency
     logic [DATA_WIDTH-1:0] rdata_reg;
     logic ready_reg;
     
     always_ff @(posedge clk) begin
         if (req) begin
-            rdata_reg <= mem[word_addr];  // Use word address for memory lookup
+            if (we) begin
+                // Write logic with byte lane support using byte offset
+                case (size)
+                    2'b00: begin  // Byte write
+                        case (byte_offset)
+                            2'b00: mem[word_addr][7:0]   <= wdata[7:0];
+                            2'b01: mem[word_addr][15:8]  <= wdata[7:0];
+                            2'b10: mem[word_addr][23:16] <= wdata[7:0];
+                            2'b11: mem[word_addr][31:24] <= wdata[7:0];
+                        endcase
+                    end
+                    2'b01: begin  // Halfword write
+                        if (byte_offset[1] == 1'b0) begin
+                            mem[word_addr][15:0] <= wdata[15:0];
+                        end else begin
+                            mem[word_addr][31:16] <= wdata[15:0];
+                        end
+                    end
+                    2'b10: begin  // Word write
+                        mem[word_addr] <= wdata;
+                    end
+                    default: ;
+                endcase
+                rdata_reg <= 32'h0;
+            end else if (re) begin
+                // Read logic - use word address for memory lookup
+                rdata_reg <= mem[word_addr];
+            end else begin
+                // Invalid memory request: req asserted but neither we nor re set.
+                // This should not occur in normal operation; return 0 defensively.
+                rdata_reg <= 32'h0;
+            end
             ready_reg <= 1'b1;
         end else begin
             ready_reg <= 1'b0;

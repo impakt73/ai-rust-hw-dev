@@ -30,8 +30,7 @@ RTL_SOURCES = \
 
 FPGA_SOURCES = \
 	$(FPGA_DIR)/reset_controller.sv \
-	$(FPGA_DIR)/bram_imem.sv \
-	$(FPGA_DIR)/bram_dmem.sv \
+	$(FPGA_DIR)/bram_unified.sv \
 	$(FPGA_DIR)/stub_fpu.sv \
 	$(FPGA_DIR)/stub_div.sv \
 	$(FPGA_DIR)/fpga_top.sv
