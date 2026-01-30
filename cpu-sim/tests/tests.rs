@@ -648,7 +648,6 @@ fn test_vcd_generation() {
         "dmem_wdata",
         "dmem_rdata",
         "dmem_we",
-        "dmem_re",
     ];
 
     for signal in &expected_signals {

@@ -765,8 +765,9 @@ where
                         // delay_counter > mem_latency_cycles: already completed, keep ready high
                         self.cpu.ext_mem_ready = 1;
                     }
-                } else if self.cpu.ext_mem_re != 0 {
+                } else {
                     // Memory Read (instruction fetch or data load)
+                    // Read is implied by ext_mem_req=1 and ext_mem_we=0
                     // Implement delay counter for variable latency
                     if self.mem_delay_counter <= self.mem_latency_cycles {
                         if self.mem_delay_counter == self.mem_latency_cycles {
@@ -789,8 +790,6 @@ where
                         // delay_counter > mem_latency_cycles: already completed, keep ready high
                         self.cpu.ext_mem_ready = 1;
                     }
-                } else {
-                    self.cpu.ext_mem_ready = 0;
                 }
             } else {
                 self.cpu.ext_mem_ready = 0;
@@ -805,14 +804,13 @@ where
                 let fsm_state = self.cpu.debug_fsm_state;
                 let state_name = Self::fsm_state_name(fsm_state);
                 println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | ext_mem_req={} ext_mem_ready={} ext_mem_we={} ext_mem_re={} | instr_complete={}",
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | ext_mem_req={} ext_mem_ready={} ext_mem_we={} | instr_complete={}",
                     self.cycle_count,
                     state_name,
                     self.cpu.debug_current_pc,
                     self.cpu.ext_mem_req,
                     self.cpu.ext_mem_ready,
                     self.cpu.ext_mem_we,
-                    self.cpu.ext_mem_re,
                     self.cpu.instr_complete
                 );
             }

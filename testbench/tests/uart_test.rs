@@ -40,12 +40,12 @@ macro_rules! clock_cycle {
 /// Helper function to read a register from the UART
 fn read_register(dut: &mut Uart, offset: u32) -> u32 {
     dut.addr = offset;
-    dut.re = 1;
+    dut.req = 1;
     dut.we = 0;
     dut.size = SIZE_WORD;
     dut.eval();
     let value = dut.rdata;
-    dut.re = 0;
+    dut.req = 0;
     dut.eval();
     value
 }
@@ -55,11 +55,12 @@ fn write_register(dut: &mut Uart, offset: u32, value: u32) {
     dut.addr = offset;
     dut.wdata = value;
     dut.we = 1;
-    dut.re = 0;
+    dut.req = 1;
     dut.size = SIZE_WORD;
     dut.eval();
     clock_cycle!(dut);
     dut.we = 0;
+    dut.req = 0;
     dut.eval();
 }
 
@@ -67,7 +68,7 @@ fn write_register(dut: &mut Uart, offset: u32, value: u32) {
 fn reset_uart(dut: &mut Uart) {
     dut.rst_n = 0;
     dut.we = 0;
-    dut.re = 0;
+    dut.req = 0;
     dut.rx_in = 1; // RX line idle high
     clock_cycle!(dut);
     dut.rst_n = 1;
@@ -309,7 +310,7 @@ fn test_uart_tx_fifo_full() {
         dut.addr = UART_TXDATA;
         dut.wdata = (i as u32) & 0xFF;
         dut.we = 1;
-        dut.re = 0;
+        dut.req = 1;
         dut.size = SIZE_WORD;
         dut.eval();
 
@@ -317,6 +318,7 @@ fn test_uart_tx_fifo_full() {
         clock_cycle!(dut);
 
         dut.we = 0;
+        dut.req = 0;
         dut.eval();
     }
 
