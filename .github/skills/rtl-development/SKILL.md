@@ -164,6 +164,19 @@ verilator --lint-only rtl/*.sv
 
 All SystemVerilog code should pass Verilator linting before being committed.
 
+### FPGA Synthesis Verification
+```bash
+# Verify RTL can be synthesized to FPGA (whenever SystemVerilog is modified)
+(cd fpga && make)
+```
+
+**Important:** CI automatically runs FPGA synthesis verification on all SystemVerilog changes. The design must successfully synthesize to the iCE40-HX8K target (Alchitry Cu v1 board) using Yosys/nextpnr.
+
+**Key constraints:**
+- Target frequency: 25 MHz
+- Resource limit: ~7,680 LUTs (currently using ~74%)
+- M and F extensions disabled for HX8K (controlled in rtl/top.sv)
+
 ## Debugging Hardware
 
 **CRITICAL RULE:** When debugging hardware, **NEVER rely heavily on abstract reasoning** about what signals "should" be doing.
