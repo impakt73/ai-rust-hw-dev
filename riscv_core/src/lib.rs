@@ -107,6 +107,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "top.sv",                        // Top-level wrapper with RTL peripherals
         "bus.sv",                        // System bus for address decoding
         "cpu.sv",                        // CPU core
+        "sync_fifo.sv",                  // Generic synchronous FIFO
         "peripherals/led_controller.sv", // LED controller peripheral
         "peripherals/uart.sv",           // UART controller peripheral
         "fetch_buffer.sv",               // RV32C fetch buffer
@@ -146,7 +147,7 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 
 // Helper function to create a runtime for the UART peripheral
 pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["peripherals/uart.sv"])
+    create_runtime(&["sync_fifo.sv", "peripherals/uart.sv"])
 }
 
 // Helper function to create a runtime for the FPU

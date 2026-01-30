@@ -67,33 +67,24 @@ module uart #(
     
     // Parameter validation (simulation only)
     initial begin
-        // Validate FIFO depth is power of 2
-        if ((FIFO_DEPTH & (FIFO_DEPTH - 1)) != 0 || FIFO_DEPTH < 2) begin
-            $fatal(1, "UART: FIFO_DEPTH must be power of 2 and >= 2, got %0d", FIFO_DEPTH);
-        end
-        
         // Validate baud rate is achievable with given clock
         if (CLK_FREQ_HZ / BAUD_RATE < 16) begin
             $fatal(1, "UART: Baud rate %0d too high for clock %0d Hz (need 16x oversampling)",
                    BAUD_RATE, CLK_FREQ_HZ);
         end
+        // Note: FIFO_DEPTH validation is handled by the sync_fifo module
     end
     
     // ============================================================
-    // TX FIFO and State Machine
+    // TX FIFO Instance
     // ============================================================
     
-    // TX FIFO storage
-    logic [7:0] tx_fifo [0:FIFO_DEPTH-1];
-    logic [$clog2(FIFO_DEPTH)-1:0] tx_wr_ptr;
-    logic [$clog2(FIFO_DEPTH)-1:0] tx_rd_ptr;
-    logic [$clog2(FIFO_DEPTH):0]   tx_fifo_count;  // Extra bit for full detection
-    
-    // TX FIFO status flags
+    // TX FIFO control signals
+    logic tx_fifo_wr_en;
+    logic tx_fifo_rd_en;
+    logic [7:0] tx_fifo_rdata;
     logic tx_fifo_full;
     logic tx_fifo_empty;
-    assign tx_fifo_full  = (tx_fifo_count == FIFO_DEPTH[$clog2(FIFO_DEPTH):0]);
-    assign tx_fifo_empty = (tx_fifo_count == '0);
     
     // TX State Machine
     typedef enum logic [1:0] {
@@ -113,23 +104,18 @@ module uart #(
     assign tx_baud_tick = (tx_baud_counter == '0);
     
     // ============================================================
-    // RX FIFO and State Machine
+    // RX FIFO Instance
     // ============================================================
     
     // RX input synchronizer (2-FF for metastability)
     logic rx_sync_0, rx_sync_1;
     
-    // RX FIFO storage
-    logic [7:0] rx_fifo [0:FIFO_DEPTH-1];
-    logic [$clog2(FIFO_DEPTH)-1:0] rx_wr_ptr;
-    logic [$clog2(FIFO_DEPTH)-1:0] rx_rd_ptr;
-    logic [$clog2(FIFO_DEPTH):0]   rx_fifo_count;
-    
-    // RX FIFO status flags
+    // RX FIFO control signals
+    logic rx_fifo_wr_en;
+    logic rx_fifo_rd_en;
+    logic [7:0] rx_fifo_rdata;
     logic rx_fifo_full;
     logic rx_fifo_empty;
-    assign rx_fifo_full  = (rx_fifo_count == FIFO_DEPTH[$clog2(FIFO_DEPTH):0]);
-    assign rx_fifo_empty = (rx_fifo_count == '0);
     
     // RX State Machine
     typedef enum logic [1:0] {
@@ -164,8 +150,7 @@ module uart #(
     // ============================================================
     
     // TX FIFO read signal (TX state machine reads from FIFO)
-    logic tx_fifo_read_int;
-    assign tx_fifo_read_int = (tx_state == TX_IDLE) && !tx_fifo_empty;
+    assign tx_fifo_rd_en = (tx_state == TX_IDLE) && !tx_fifo_empty;
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -181,8 +166,8 @@ module uart #(
                     tx_out <= 1'b1;
                     tx_busy <= 1'b0;
                     if (!tx_fifo_empty) begin
-                        // Load byte from FIFO
-                        tx_shift_reg <= tx_fifo[tx_rd_ptr];
+                        // Load byte from FIFO (use rdata output from sync_fifo)
+                        tx_shift_reg <= tx_fifo_rdata;
                         tx_state <= TX_START_BIT;
                         tx_baud_counter <= CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1;
                         tx_busy <= 1'b1;
@@ -360,86 +345,52 @@ module uart #(
     end
     
     // ============================================================
-    // TX FIFO Management
+    // TX FIFO Instance and Control
     // ============================================================
     
-    // TX FIFO write signal (CPU writes to TXDATA register)
-    logic tx_fifo_write;
-    assign tx_fifo_write = we && (reg_offset == 8'h00) && !tx_fifo_full;
+    // TX FIFO write enable (CPU writes to TXDATA register)
+    assign tx_fifo_wr_en = we && (reg_offset == 8'h00);
     
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            tx_wr_ptr <= '0;
-            tx_rd_ptr <= '0;
-            tx_fifo_count <= '0;
-        end else begin
-            // Handle FIFO pointer and count updates
-            case ({tx_fifo_write, tx_fifo_read_int})
-                2'b10: begin  // Write only
-                    tx_wr_ptr <= tx_wr_ptr + 1'b1;
-                    tx_fifo_count <= tx_fifo_count + 1'b1;
-                end
-                2'b01: begin  // Read only (TX state machine read)
-                    tx_rd_ptr <= tx_rd_ptr + 1'b1;
-                    tx_fifo_count <= tx_fifo_count - 1'b1;
-                end
-                2'b11: begin  // Simultaneous read/write: count unchanged
-                    tx_wr_ptr <= tx_wr_ptr + 1'b1;
-                    tx_rd_ptr <= tx_rd_ptr + 1'b1;
-                end
-                default: ;  // 2'b00: no change
-            endcase
-            
-            // Write to FIFO memory
-            if (tx_fifo_write) begin
-                tx_fifo[tx_wr_ptr] <= wdata[7:0];
-            end
-        end
-    end
+    sync_fifo #(
+        .WIDTH(8),
+        .DEPTH(FIFO_DEPTH)
+    ) tx_fifo_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .wr_en(tx_fifo_wr_en),
+        .wdata(wdata[7:0]),
+        .rd_en(tx_fifo_rd_en),
+        .rdata(tx_fifo_rdata),
+        .full(tx_fifo_full),
+        .empty(tx_fifo_empty),
+        .count()  // Not used
+    );
     
     // ============================================================
-    // RX FIFO Management
+    // RX FIFO Instance and Control
     // ============================================================
     
-    // RX FIFO read signal (CPU reads from RXDATA register)
+    // RX FIFO read enable (CPU reads from RXDATA register)
     // Read occurs when req is asserted and we is not (read intent implied)
-    logic rx_fifo_read;
-    assign rx_fifo_read = req && !we && (reg_offset == 8'h04) && !rx_fifo_empty;
+    assign rx_fifo_rd_en = req && !we && (reg_offset == 8'h04);
     
-    // RX FIFO write signal with overflow check
-    // Only write if FIFO is not full to keep count synchronized
-    logic rx_fifo_write;
-    assign rx_fifo_write = rx_fifo_write_int && !rx_fifo_full;
+    // RX FIFO write enable (RX state machine writes received data)
+    assign rx_fifo_wr_en = rx_fifo_write_int;
     
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_rd_ptr <= '0;
-            rx_wr_ptr <= '0;
-            rx_fifo_count <= '0;
-        end else begin
-            // Handle FIFO pointer and count updates
-            case ({rx_fifo_write, rx_fifo_read})
-                2'b10: begin  // Write only (RX state machine)
-                    rx_wr_ptr <= rx_wr_ptr + 1'b1;
-                    rx_fifo_count <= rx_fifo_count + 1'b1;
-                end
-                2'b01: begin  // Read only (CPU read)
-                    rx_rd_ptr <= rx_rd_ptr + 1'b1;
-                    rx_fifo_count <= rx_fifo_count - 1'b1;
-                end
-                2'b11: begin  // Simultaneous read/write: count unchanged
-                    rx_wr_ptr <= rx_wr_ptr + 1'b1;
-                    rx_rd_ptr <= rx_rd_ptr + 1'b1;
-                end
-                default: ;  // 2'b00: no change
-            endcase
-            
-            // Write to FIFO memory (already checked for full via rx_fifo_write)
-            if (rx_fifo_write) begin
-                rx_fifo[rx_wr_ptr] <= rx_shift_reg;
-            end
-        end
-    end
+    sync_fifo #(
+        .WIDTH(8),
+        .DEPTH(FIFO_DEPTH)
+    ) rx_fifo_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .wr_en(rx_fifo_wr_en),
+        .wdata(rx_shift_reg),
+        .rd_en(rx_fifo_rd_en),
+        .rdata(rx_fifo_rdata),
+        .full(rx_fifo_full),
+        .empty(rx_fifo_empty),
+        .count()  // Not used
+    );
     
     // ============================================================
     // Register Read Logic
@@ -457,7 +408,7 @@ module uart #(
         if (req && !we) begin
             case (reg_offset)
                 8'h00: rdata = 32'h0;  // TXDATA is write-only
-                8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo[rx_rd_ptr]};  // RXDATA
+                8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo_rdata};  // RXDATA
                 8'h08: rdata = {24'h0,                      // STATUS
                               rx_error,                     // [7] RX_ERROR
                               rx_busy,                      // [6] RX_BUSY
