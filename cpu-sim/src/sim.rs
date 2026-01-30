@@ -525,8 +525,7 @@ where
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
-    imem_delay_counter: u32, // Current delay counter for instruction memory
-    dmem_delay_counter: u32, // Current delay counter for data memory
+    mem_delay_counter: u32,  // Current delay counter for unified memory interface
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -622,8 +621,7 @@ where
             trace_callback,
             vcd_time: 0,
             mem_latency_cycles,
-            imem_delay_counter: 0,
-            dmem_delay_counter: 0,
+            mem_delay_counter: 0,
             hung_detector,
         })
     }
@@ -739,36 +737,14 @@ where
             // Evaluate combinational logic
             self.cpu.eval();
 
-            // Handle instruction memory with variable latency
-            if self.cpu.imem_req != 0 {
-                // Implement delay counter for variable latency
-                if self.imem_delay_counter <= self.mem_latency_cycles {
-                    if self.imem_delay_counter == self.mem_latency_cycles {
-                        // Perform read on the cycle when we reach the threshold
-                        let addr = self.cpu.imem_addr;
-                        let data = self.bus.read_word(addr);
-                        self.cpu.imem_data = data;
-                        self.cpu.imem_ready = 1; // Ready after delay
-                    } else {
-                        self.imem_delay_counter += 1;
-                        self.cpu.imem_ready = 0; // Not ready yet
-                    }
-                } else {
-                    // delay_counter > mem_latency_cycles: already completed, keep ready high
-                    self.cpu.imem_ready = 1;
-                }
-            } else {
-                self.cpu.imem_ready = 0;
-                self.imem_delay_counter = 0; // Reset counter when no request
-            }
-
-            // Handle data memory with variable latency
+            // Handle unified memory interface with variable latency
+            // The unified interface handles both instruction fetch and data access
             if self.cpu.ext_mem_req != 0 {
                 if self.cpu.ext_mem_we != 0 {
-                    // Data Memory Write
+                    // Memory Write (data store)
                     // Implement delay counter for variable latency
-                    if self.dmem_delay_counter <= self.mem_latency_cycles {
-                        if self.dmem_delay_counter == self.mem_latency_cycles {
+                    if self.mem_delay_counter <= self.mem_latency_cycles {
+                        if self.mem_delay_counter == self.mem_latency_cycles {
                             // Perform write on the cycle when we reach the threshold
                             let addr = self.cpu.ext_mem_addr;
                             let size = self.cpu.ext_mem_size;
@@ -782,7 +758,7 @@ where
 
                             self.cpu.ext_mem_ready = 1; // Ready after delay
                         } else {
-                            self.dmem_delay_counter += 1;
+                            self.mem_delay_counter += 1;
                             self.cpu.ext_mem_ready = 0; // Not ready yet
                         }
                     } else {
@@ -790,10 +766,10 @@ where
                         self.cpu.ext_mem_ready = 1;
                     }
                 } else if self.cpu.ext_mem_re != 0 {
-                    // Data Memory Read
+                    // Memory Read (instruction fetch or data load)
                     // Implement delay counter for variable latency
-                    if self.dmem_delay_counter <= self.mem_latency_cycles {
-                        if self.dmem_delay_counter == self.mem_latency_cycles {
+                    if self.mem_delay_counter <= self.mem_latency_cycles {
+                        if self.mem_delay_counter == self.mem_latency_cycles {
                             // Perform read on the cycle when we reach the threshold
                             let addr = self.cpu.ext_mem_addr;
                             let size = self.cpu.ext_mem_size;
@@ -806,7 +782,7 @@ where
                             self.cpu.ext_mem_rdata = rdata;
                             self.cpu.ext_mem_ready = 1; // Ready after delay
                         } else {
-                            self.dmem_delay_counter += 1;
+                            self.mem_delay_counter += 1;
                             self.cpu.ext_mem_ready = 0; // Not ready yet
                         }
                     } else {
@@ -818,7 +794,7 @@ where
                 }
             } else {
                 self.cpu.ext_mem_ready = 0;
-                self.dmem_delay_counter = 0; // Reset counter when no request
+                self.mem_delay_counter = 0; // Reset counter when no request
             }
 
             // Re-evaluate after setting memory signals
@@ -829,14 +805,14 @@ where
                 let fsm_state = self.cpu.debug_fsm_state;
                 let state_name = Self::fsm_state_name(fsm_state);
                 println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | imem_req={} imem_ready={} | ext_mem_req={} ext_mem_ready={} | instr_complete={}",
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | ext_mem_req={} ext_mem_ready={} ext_mem_we={} ext_mem_re={} | instr_complete={}",
                     self.cycle_count,
                     state_name,
-                    self.cpu.imem_addr,
-                    self.cpu.imem_req,
-                    self.cpu.imem_ready,
+                    self.cpu.debug_current_pc,
                     self.cpu.ext_mem_req,
                     self.cpu.ext_mem_ready,
+                    self.cpu.ext_mem_we,
+                    self.cpu.ext_mem_re,
                     self.cpu.instr_complete
                 );
             }
@@ -982,7 +958,7 @@ where
                 log::debug!(
                     "Cycle {}: PC=0x{:08x}",
                     self.cycle_count,
-                    self.cpu.imem_addr
+                    self.cpu.debug_current_pc
                 );
             }
         }
