@@ -12,7 +12,7 @@ module led_controller (
     input  logic [31:0] wdata,     // Write data
     output logic [31:0] rdata,     // Read data
     input  logic        we,        // Write enable
-    input  logic        re,        // Read enable
+    input  logic        req,       // Memory request
     input  logic [1:0]  size,      // Access size (00=byte, 01=half, 10=word)
     output logic        ready,     // Operation complete (always ready)
     
@@ -59,10 +59,11 @@ module led_controller (
     end
     
     // Read logic - combinational
+    // Read occurs when req is asserted and we is not (read intent implied)
     always_comb begin
         rdata = 32'h0;
         
-        if (re) begin
+        if (req && !we) begin
             // Always return LED_OUT value in lower 8 bits
             // Upper 24 bits read as 0
             rdata = {24'h0, led_out_reg};

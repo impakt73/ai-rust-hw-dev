@@ -45,7 +45,7 @@ module uart #(
     input  logic [31:0] wdata,     // Write data (only [7:0] used for data)
     output logic [31:0] rdata,     // Read data
     input  logic        we,        // Write enable
-    input  logic        re,        // Read enable
+    input  logic        req,       // Memory request
     input  logic [1:0]  size,      // Access size (00=byte, 01=half, 10=word) - reserved
     output logic        ready,     // Operation complete (always ready)
     
@@ -245,8 +245,9 @@ module uart #(
     end
     
     // RX error management
+    // Clear error when reading STATUS register (read occurs when req && !we)
     logic clear_rx_error;
-    assign clear_rx_error = re && (reg_offset == 8'h08);
+    assign clear_rx_error = req && !we && (reg_offset == 8'h08);
     
     // RX State Machine
     always_ff @(posedge clk or negedge rst_n) begin
@@ -401,8 +402,9 @@ module uart #(
     // ============================================================
     
     // RX FIFO read signal (CPU reads from RXDATA register)
+    // Read occurs when req is asserted and we is not (read intent implied)
     logic rx_fifo_read;
-    assign rx_fifo_read = re && (reg_offset == 8'h04) && !rx_fifo_empty;
+    assign rx_fifo_read = req && !we && (reg_offset == 8'h04) && !rx_fifo_empty;
     
     // RX FIFO write signal with overflow check
     // Only write if FIFO is not full to keep count synchronized
@@ -448,10 +450,11 @@ module uart #(
     assign tx_empty_status = tx_fifo_empty && (tx_state == TX_IDLE);
     
     // Read data mux
+    // Read occurs when req is asserted and we is not (read intent implied)
     always_comb begin
         rdata = 32'h0;
         
-        if (re) begin
+        if (req && !we) begin
             case (reg_offset)
                 8'h00: rdata = 32'h0;  // TXDATA is write-only
                 8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo[rx_rd_ptr]};  // RXDATA

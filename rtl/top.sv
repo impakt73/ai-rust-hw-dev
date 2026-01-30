@@ -26,7 +26,6 @@ module top #(
     output logic [31:0] ext_mem_wdata,
     input  logic [31:0] ext_mem_rdata,
     output logic        ext_mem_we,
-    output logic        ext_mem_re,
     output logic [1:0]  ext_mem_size,
     output logic        ext_mem_req,
     input  logic        ext_mem_ready,
@@ -73,7 +72,6 @@ module top #(
     logic [31:0] cpu_mem_wdata;
     logic [31:0] cpu_mem_rdata;
     logic        cpu_mem_we;
-    logic        cpu_mem_re;
     logic [1:0]  cpu_mem_size;
     logic        cpu_mem_req;
     logic        cpu_mem_ready;
@@ -173,7 +171,6 @@ module top #(
     // Only assert request/enable if address is external
     assign ext_mem_req = cpu_mem_req && sel_external;
     assign ext_mem_we  = cpu_mem_we  && sel_external;
-    assign ext_mem_re  = cpu_mem_re  && sel_external;
     
     // ============================================================
     // CPU Core Instantiation
@@ -191,7 +188,6 @@ module top #(
         .mem_wdata(cpu_mem_wdata),
         .mem_rdata(cpu_mem_rdata),
         .mem_we(cpu_mem_we),
-        .mem_re(cpu_mem_re),
         .mem_size(cpu_mem_size),
         .mem_req(cpu_mem_req),
         .mem_ready(cpu_mem_ready),
@@ -240,7 +236,7 @@ module top #(
         .wdata(cpu_mem_wdata),
         .rdata(led_rdata),
         .we(cpu_mem_we && sel_led),
-        .re(cpu_mem_re && sel_led),
+        .req(cpu_mem_req && sel_led),
         .size(cpu_mem_size),
         .ready(led_ready),
         
@@ -264,7 +260,7 @@ module top #(
         .wdata(cpu_mem_wdata),
         .rdata(uart_rdata),
         .we(cpu_mem_we && sel_uart),
-        .re(cpu_mem_re && sel_uart),
+        .req(cpu_mem_req && sel_uart),
         .size(cpu_mem_size),
         .ready(uart_ready),
         

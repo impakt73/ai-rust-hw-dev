@@ -107,7 +107,6 @@ module fpga_top #(
     logic [31:0] ext_mem_wdata;
     logic [31:0] ext_mem_rdata;
     logic        ext_mem_we;
-    logic        ext_mem_re;
     logic [1:0]  ext_mem_size;
     logic        ext_mem_req;
     logic        ext_mem_ready;
@@ -131,11 +130,9 @@ module fpga_top #(
     // Gated control signals - only assert BRAM controls when address is valid
     logic mem_req_gated;
     logic mem_we_gated;
-    logic mem_re_gated;
     
     assign mem_req_gated = ext_mem_req && mem_addr_valid;
     assign mem_we_gated  = ext_mem_we && mem_addr_valid;
-    assign mem_re_gated  = ext_mem_re && mem_addr_valid;
     
     // BRAM output signals
     logic [31:0] bram_rdata;
@@ -184,7 +181,6 @@ module fpga_top #(
         .ext_mem_wdata(ext_mem_wdata),
         .ext_mem_rdata(ext_mem_rdata),
         .ext_mem_we(ext_mem_we),
-        .ext_mem_re(ext_mem_re),
         .ext_mem_size(ext_mem_size),
         .ext_mem_req(ext_mem_req),
         .ext_mem_ready(ext_mem_ready),
@@ -226,7 +222,6 @@ module fpga_top #(
         .wdata(ext_mem_wdata),
         .rdata(bram_rdata),          // BRAM output (muxed with 0 for invalid addresses)
         .we(mem_we_gated),           // Gated write enable - drops writes for invalid addresses
-        .re(mem_re_gated),           // Gated read enable - only active for valid addresses
         .size(ext_mem_size),
         .req(mem_req_gated),         // Gated request - only active for valid addresses
         .ready(bram_ready)           // BRAM ready (muxed for invalid addresses)

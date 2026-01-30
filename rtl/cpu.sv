@@ -26,7 +26,6 @@ module cpu #(
     output logic [31:0] mem_wdata,     // Write data
     input  logic [31:0] mem_rdata,     // Read data
     output logic        mem_we,        // Write enable
-    output logic        mem_re,        // Read enable
     output logic [1:0]  mem_size,      // Operation size: 00=byte, 01=halfword, 10=word
     output logic        mem_req,       // Memory request
     input  logic        mem_ready,     // Memory operation complete
@@ -251,7 +250,6 @@ module cpu #(
     logic [31:0] dmem_addr_internal;   // Data memory address
     logic [31:0] dmem_wdata_internal;  // Data memory write data
     logic        dmem_we_internal;     // Data memory write enable
-    logic        dmem_re_internal;     // Data memory read enable
     logic [1:0]  dmem_size_internal;   // Data memory operation size
     logic        dmem_req_internal;    // Data memory request
     
@@ -1024,7 +1022,6 @@ module cpu #(
         .dmem_addr(dmem_addr_internal),
         .dmem_wdata(dmem_wdata_internal),
         .dmem_we(dmem_we_internal),
-        .dmem_re(dmem_re_internal),
         .dmem_size(dmem_size_internal),
         .formatted_load_data(formatted_load_data)
     );
@@ -1179,7 +1176,6 @@ module cpu #(
             mem_addr  = imem_addr_internal;
             mem_wdata = 32'h0;
             mem_we    = 1'b0;
-            mem_re    = 1'b1;  // Always read for instruction fetch
             mem_size  = 2'b10; // Always word-sized for instructions
             mem_req   = 1'b1;
         end else if (dmem_req_internal) begin
@@ -1187,7 +1183,6 @@ module cpu #(
             mem_addr  = dmem_addr_internal;
             mem_wdata = dmem_wdata_internal;
             mem_we    = dmem_we_internal;
-            mem_re    = dmem_re_internal;
             mem_size  = dmem_size_internal;
             mem_req   = 1'b1;
         end else begin
@@ -1195,7 +1190,6 @@ module cpu #(
             mem_addr  = 32'h0;
             mem_wdata = 32'h0;
             mem_we    = 1'b0;
-            mem_re    = 1'b0;
             mem_size  = 2'b00;
             mem_req   = 1'b0;
         end
