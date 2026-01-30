@@ -24,7 +24,6 @@ module mem_interface (
     output logic [31:0] dmem_addr,
     output logic [31:0] dmem_wdata,
     output logic        dmem_we,
-    output logic        dmem_re,
     output logic [1:0]  dmem_size,
     
     // Formatted load data
@@ -48,7 +47,6 @@ module mem_interface (
     // Write enable: only in S_MEM_WRITE or S_ATOMIC_RMW states
     // For SC.W, only write if reservation is valid
     assign dmem_we = mem_write && (is_mem_write_state || is_atomic_rmw) && (!is_sc || sc_success);
-    assign dmem_re = mem_read;
     
     // Encode memory operation size from funct3
     // funct3[1:0] distinguishes byte (00), halfword (01), word (10)

@@ -16,7 +16,6 @@ module bram_unified #(
     input  logic [DATA_WIDTH-1:0]   wdata,
     output logic [DATA_WIDTH-1:0]   rdata,
     input  logic                    we,     // Write enable
-    input  logic                    re,     // Read enable
     input  logic [1:0]              size,   // 00=byte, 01=half, 10=word
     input  logic                    req,    // Memory request
     output logic                    ready   // Memory operation complete
@@ -91,6 +90,7 @@ module bram_unified #(
     end
     
     // Read/write logic with 1-cycle latency
+    // Read occurs when req is asserted and we is not (read intent implied)
     logic [DATA_WIDTH-1:0] rdata_reg;
     logic ready_reg;
     
@@ -120,13 +120,10 @@ module bram_unified #(
                     default: ;
                 endcase
                 rdata_reg <= 32'h0;
-            end else if (re) begin
-                // Read logic - use word address for memory lookup
-                rdata_reg <= mem[word_addr];
             end else begin
-                // Invalid memory request: req asserted but neither we nor re set.
-                // This should not occur in normal operation; return 0 defensively.
-                rdata_reg <= 32'h0;
+                // Read logic - use word address for memory lookup
+                // Read intent is implied when req is asserted without we
+                rdata_reg <= mem[word_addr];
             end
             ready_reg <= 1'b1;
         end else begin
