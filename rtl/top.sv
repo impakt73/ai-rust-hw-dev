@@ -1,6 +1,6 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
-// Routes RTL peripheral addresses internally, forwards others to external bus
+// Uses a generic bus module to route requests between CPU and peripherals
 //
 // UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
 // fetch and data access. The CPU's multi-cycle FSM ensures only one type of
@@ -57,12 +57,21 @@ module top #(
     // ============================================================
     // Address Range Definitions
     // ============================================================
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-    localparam LED_BASE         = 32'h50000000;
-    localparam LED_LIMIT        = 32'h50000010;  // 16 bytes
-    localparam UART_BASE        = 32'h52000000;
-    localparam UART_LIMIT       = 32'h52000100;  // 256 bytes
+    // Peripheral address configuration for bus routing
+    // Slave 0: LED Controller
+    localparam LED_BASE = 32'h50000000;
+    localparam LED_SIZE = 32'h00000010;  // 16 bytes
+    // Slave 1: UART Controller
+    localparam UART_BASE = 32'h52000000;
+    localparam UART_SIZE = 32'h00000100;  // 256 bytes
+    // Slave 2: External Memory (catch-all via DEFAULT_SLAVE_IDX)
+    // External memory handles DRAM + Rust peripherals (everything not LED/UART)
+    
+    // Number of bus slaves and their indices
+    localparam NUM_BUS_SLAVES = 3;
+    localparam LED_SLAVE_IDX = 0;
+    localparam UART_SLAVE_IDX = 1;
+    localparam EXT_MEM_SLAVE_IDX = 2;
     
     // ============================================================
     // Internal CPU Memory Interface Signals (Unified)
@@ -77,100 +86,138 @@ module top #(
     logic        cpu_mem_ready;
     
     // ============================================================
-    // LED Controller Interface Signals
+    // Bus Slave Interface Signals (Flattened for Yosys Compatibility)
     // ============================================================
-    logic [31:0] led_rdata;
-    logic        led_ready;
+    // LED Controller (Slave 0)
+    logic [31:0] led_slave_addr;
+    logic [31:0] led_slave_wdata;
+    logic [31:0] led_slave_rdata;
+    logic        led_slave_we;
+    logic [1:0]  led_slave_size;
+    logic        led_slave_req;
+    logic        led_slave_ready;
     
-    // ============================================================
-    // UART Controller Interface Signals
-    // ============================================================
-    logic [31:0] uart_rdata;
-    logic        uart_ready;
+    // UART Controller (Slave 1)
+    logic [31:0] uart_slave_addr;
+    logic [31:0] uart_slave_wdata;
+    logic [31:0] uart_slave_rdata;
+    logic        uart_slave_we;
+    logic [1:0]  uart_slave_size;
+    logic        uart_slave_req;
+    logic        uart_slave_ready;
+    
+    // External Memory (Slave 2)
+    logic [31:0] ext_slave_addr;
+    logic [31:0] ext_slave_wdata;
+    logic [31:0] ext_slave_rdata;
+    logic        ext_slave_we;
+    logic [1:0]  ext_slave_size;
+    logic        ext_slave_req;
+    logic        ext_slave_ready;
     
     // Internal UART signals for loopback
     logic uart_tx_internal;  // TX output from UART module
     logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
-    // Address Decoder
+    // Bus Slave Configuration and Interface Signals
     // ============================================================
-    // Decodes CPU memory address to select appropriate destination:
-    // - RTL peripherals (LED, UART) are handled internally
-    // - All other addresses go to external bus (DRAM, Rust peripherals)
-    // Note: Both instruction fetch and data access use this decoder.
-    // Instruction fetches typically target DRAM, data accesses may target
-    // either DRAM or peripherals.
-    logic sel_led;
-    logic sel_uart;
-    logic sel_external;
-    logic sel_unmapped_rtl;
+    // Concatenated vectors for bus module connections (Yosys compatible)
+    // Format: {slave[2], slave[1], slave[0]} = {ext_mem, uart, led}
     
-    always_comb begin
-        sel_led          = 1'b0;
-        sel_uart         = 1'b0;
-        sel_unmapped_rtl = 1'b0;
-        sel_external     = 1'b0;
+    // Slave configuration
+    logic [NUM_BUS_SLAVES*32-1:0] slave_base_addrs;
+    logic [NUM_BUS_SLAVES*32-1:0] slave_addr_sizes;
+    
+    // Initialize slave configuration using concatenation
+    assign slave_base_addrs = {32'h0, UART_BASE, LED_BASE};  // [2]=unused, [1]=UART, [0]=LED
+    assign slave_addr_sizes = {32'h0, UART_SIZE, LED_SIZE};  // External uses default slave routing
+    
+    // Slave interface signals (concatenated)
+    logic [NUM_BUS_SLAVES*32-1:0] bus_slave_addr_cat;
+    logic [NUM_BUS_SLAVES*32-1:0] bus_slave_wdata_cat;
+    logic [NUM_BUS_SLAVES*32-1:0] bus_slave_rdata_cat;
+    logic [NUM_BUS_SLAVES-1:0]    bus_slave_we_cat;
+    logic [NUM_BUS_SLAVES*2-1:0]  bus_slave_size_cat;
+    logic [NUM_BUS_SLAVES-1:0]    bus_slave_req_cat;
+    logic [NUM_BUS_SLAVES-1:0]    bus_slave_ready_cat;
+    
+    // ============================================================
+    // Bus Module Instantiation
+    // ============================================================
+    // Routes CPU requests to the appropriate slave peripheral
+    bus #(
+        .NUM_SLAVES(NUM_BUS_SLAVES),
+        .ADDR_WIDTH(32),
+        .DATA_WIDTH(32),
+        .DEFAULT_SLAVE_IDX(EXT_MEM_SLAVE_IDX)  // External memory handles unmatched addresses
+    ) system_bus (
+        .clk(clk),
+        .rst_n(rst_n),
         
-        // Check if address is in LED range
-        if (cpu_mem_addr >= LED_BASE && cpu_mem_addr < LED_LIMIT) begin
-            sel_led = 1'b1;
-        end
-        // Check if address is in UART range
-        else if (cpu_mem_addr >= UART_BASE && cpu_mem_addr < UART_LIMIT) begin
-            sel_uart = 1'b1;
-        end
-        // Check if address is in unmapped RTL peripheral space
-        else if (cpu_mem_addr >= RTL_PERIPH_BASE && cpu_mem_addr < RTL_PERIPH_LIMIT) begin
-            sel_unmapped_rtl = 1'b1;
-        end
-        // Otherwise route to external bus (Rust peripherals + DRAM)
-        else begin
-            sel_external = 1'b1;
-        end
-    end
-    
-    // ============================================================
-    // Response Multiplexer
-    // ============================================================
-    always_comb begin
-        // Default values
-        cpu_mem_rdata = 32'h0;
-        cpu_mem_ready = 1'b0;
+        // Master interface (CPU)
+        .master_addr(cpu_mem_addr),
+        .master_wdata(cpu_mem_wdata),
+        .master_rdata(cpu_mem_rdata),
+        .master_we(cpu_mem_we),
+        .master_size(cpu_mem_size),
+        .master_req(cpu_mem_req),
+        .master_ready(cpu_mem_ready),
         
-        // Select response source
-        if (sel_led) begin
-            cpu_mem_rdata = led_rdata;
-            cpu_mem_ready = led_ready;
-        end else if (sel_uart) begin
-            cpu_mem_rdata = uart_rdata;
-            cpu_mem_ready = uart_ready;
-        end else if (sel_unmapped_rtl) begin
-            // Unmapped RTL peripheral address - return zero and ready immediately
-            cpu_mem_rdata = 32'h0;
-            cpu_mem_ready = 1'b1;
-            // Note: In simulation, this triggers a warning via $display in tests
-        end else if (sel_external) begin
-            cpu_mem_rdata = ext_mem_rdata;
-            cpu_mem_ready = ext_mem_ready;
-        end else begin
-            // Should never reach here if decoder logic is correct
-            cpu_mem_rdata = 32'h0;
-            cpu_mem_ready = 1'b1;
-        end
-    end
+        // Slave configuration (base addresses and sizes)
+        .slave_base_addr(slave_base_addrs),
+        .slave_addr_size(slave_addr_sizes),
+        
+        // Slave interfaces (concatenated vectors)
+        .slave_addr(bus_slave_addr_cat),
+        .slave_wdata(bus_slave_wdata_cat),
+        .slave_rdata(bus_slave_rdata_cat),
+        .slave_we(bus_slave_we_cat),
+        .slave_size(bus_slave_size_cat),
+        .slave_req(bus_slave_req_cat),
+        .slave_ready(bus_slave_ready_cat)
+    );
     
     // ============================================================
-    // External Bus Forwarding
+    // Extract Individual Slave Signals from Concatenated Vectors
     // ============================================================
-    // Forward CPU requests to external bus (for Rust peripherals + DRAM)
-    assign ext_mem_addr  = cpu_mem_addr;
-    assign ext_mem_wdata = cpu_mem_wdata;
-    assign ext_mem_size  = cpu_mem_size;
+    // LED Controller (Slave 0) - extract from bit positions [31:0]
+    assign led_slave_addr  = bus_slave_addr_cat[31:0];
+    assign led_slave_wdata = bus_slave_wdata_cat[31:0];
+    assign led_slave_we    = bus_slave_we_cat[0];
+    assign led_slave_size  = bus_slave_size_cat[1:0];
+    assign led_slave_req   = bus_slave_req_cat[0];
     
-    // Only assert request/enable if address is external
-    assign ext_mem_req = cpu_mem_req && sel_external;
-    assign ext_mem_we  = cpu_mem_we  && sel_external;
+    // UART Controller (Slave 1) - extract from bit positions [63:32]
+    assign uart_slave_addr  = bus_slave_addr_cat[63:32];
+    assign uart_slave_wdata = bus_slave_wdata_cat[63:32];
+    assign uart_slave_we    = bus_slave_we_cat[1];
+    assign uart_slave_size  = bus_slave_size_cat[3:2];
+    assign uart_slave_req   = bus_slave_req_cat[1];
+    
+    // External Memory (Slave 2) - extract from bit positions [95:64]
+    assign ext_slave_addr  = bus_slave_addr_cat[95:64];
+    assign ext_slave_wdata = bus_slave_wdata_cat[95:64];
+    assign ext_slave_we    = bus_slave_we_cat[2];
+    assign ext_slave_size  = bus_slave_size_cat[5:4];
+    assign ext_slave_req   = bus_slave_req_cat[2];
+    
+    // Concatenate slave rdata and ready back to bus
+    // Format: {slave[2], slave[1], slave[0]}
+    assign bus_slave_rdata_cat = {ext_slave_rdata, uart_slave_rdata, led_slave_rdata};
+    assign bus_slave_ready_cat = {ext_slave_ready, uart_slave_ready, led_slave_ready};
+    
+    // ============================================================
+    // External Memory Interface Connection (Slave 2)
+    // ============================================================
+    // Connect external memory signals to bus slave interface
+    assign ext_mem_addr  = ext_slave_addr;
+    assign ext_mem_wdata = ext_slave_wdata;
+    assign ext_mem_size  = ext_slave_size;
+    assign ext_mem_req   = ext_slave_req;
+    assign ext_mem_we    = ext_slave_we;
+    assign ext_slave_rdata = ext_mem_rdata;
+    assign ext_slave_ready = ext_mem_ready;
     
     // ============================================================
     // CPU Core Instantiation
@@ -225,27 +272,27 @@ module top #(
     endgenerate
     
     // ============================================================
-    // LED Controller Instantiation
+    // LED Controller Instantiation (Slave 0)
     // ============================================================
     led_controller led_ctrl (
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface (unified memory)
-        .addr(cpu_mem_addr),
-        .wdata(cpu_mem_wdata),
-        .rdata(led_rdata),
-        .we(cpu_mem_we && sel_led),
-        .req(cpu_mem_req && sel_led),
-        .size(cpu_mem_size),
-        .ready(led_ready),
+        // Bus slave interface
+        .addr(led_slave_addr),
+        .wdata(led_slave_wdata),
+        .rdata(led_slave_rdata),
+        .we(led_slave_we),
+        .req(led_slave_req),
+        .size(led_slave_size),
+        .ready(led_slave_ready),
         
         // LED outputs
         .led_out(led_out)
     );
     
     // ============================================================
-    // UART Controller Instantiation
+    // UART Controller Instantiation (Slave 1)
     // ============================================================
     uart #(
         .CLK_FREQ_HZ(UART_CLK_FREQ_HZ),
@@ -255,14 +302,14 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface (unified memory)
-        .addr(cpu_mem_addr),
-        .wdata(cpu_mem_wdata),
-        .rdata(uart_rdata),
-        .we(cpu_mem_we && sel_uart),
-        .req(cpu_mem_req && sel_uart),
-        .size(cpu_mem_size),
-        .ready(uart_ready),
+        // Bus slave interface
+        .addr(uart_slave_addr),
+        .wdata(uart_slave_wdata),
+        .rdata(uart_slave_rdata),
+        .we(uart_slave_we),
+        .req(uart_slave_req),
+        .size(uart_slave_size),
+        .ready(uart_slave_ready),
         
         // Internal signals (connected via loopback or external pins)
         .tx_out(uart_tx_internal),
