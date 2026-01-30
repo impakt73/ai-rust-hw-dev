@@ -99,17 +99,10 @@ module fpga_top #(
     localparam logic [31:0] BOOT_ADDR = 32'h80000000;
     localparam logic [31:0] DRAM_BASE = 32'h80000000;
     // DRAM range: 0x80000000 - 0xFFFFFFFF (upper 2GB of address space)
-    // For BRAM, we only use a small portion (4KB each for imem/dmem)
-    localparam logic [31:0] IMEM_SIZE = 32'h1000;  // 4KB instruction memory
-    localparam logic [31:0] DMEM_SIZE = 32'h1000;  // 4KB data memory
+    // For BRAM, we only use a small portion (8KB unified memory)
+    localparam logic [31:0] MEM_SIZE = 32'h2000;  // 8KB unified memory
     
-    // Instruction memory interface (from CPU)
-    logic [31:0] imem_addr;
-    logic [31:0] imem_data;
-    logic        imem_req;
-    logic        imem_ready;
-    
-    // Data memory interface (from CPU - external bus)
+    // Unified memory interface (from CPU via top module)
     logic [31:0] ext_mem_addr;
     logic [31:0] ext_mem_wdata;
     logic [31:0] ext_mem_rdata;
@@ -122,51 +115,38 @@ module fpga_top #(
     // ============================================================
     // Address Range Validation
     // ============================================================
-    // Check if instruction address is within valid DRAM range for IMEM
-    logic imem_addr_valid;
-    assign imem_addr_valid = (imem_addr >= DRAM_BASE) && 
-                             (imem_addr < (DRAM_BASE + IMEM_SIZE));
+    // Check if address is within valid DRAM range for unified memory
+    logic mem_addr_valid;
+    assign mem_addr_valid = (ext_mem_addr >= DRAM_BASE) && 
+                            (ext_mem_addr < (DRAM_BASE + MEM_SIZE));
     
-    // Check if data address is within valid DRAM range for DMEM
-    logic dmem_addr_valid;
-    assign dmem_addr_valid = (ext_mem_addr >= DRAM_BASE) && 
-                             (ext_mem_addr < (DRAM_BASE + DMEM_SIZE));
-    
-    // BRAM addresses (byte addresses - only valid when address is in range)
-    // Use full byte address to support compressed instructions (2-byte aligned) and sub-word accesses
-    logic [11:0] imem_bram_addr;  // Byte address for 4KB
-    logic [11:0] dmem_bram_addr;  // Byte address for 4KB
+    // BRAM address (byte address - only valid when address is in range)
+    // Use 13 bits for 8KB (2^13 = 8192 bytes)
+    logic [12:0] bram_addr;
     
     // Calculate byte offset within BRAM (subtract DRAM base)
     // Only meaningful when address is valid; maps 0x80000000 -> offset 0, etc.
-    assign imem_bram_addr = (imem_addr - DRAM_BASE);
-    assign dmem_bram_addr = (ext_mem_addr - DRAM_BASE);
+    assign bram_addr = 13'((ext_mem_addr - DRAM_BASE) & 32'h1FFF);
     
     // Gated control signals - only assert BRAM controls when address is valid
-    logic imem_req_gated;
-    logic dmem_req_gated;
-    logic dmem_we_gated;
-    logic dmem_re_gated;
+    logic mem_req_gated;
+    logic mem_we_gated;
+    logic mem_re_gated;
     
-    assign imem_req_gated = imem_req && imem_addr_valid;
-    assign dmem_req_gated = ext_mem_req && dmem_addr_valid;
-    assign dmem_we_gated  = ext_mem_we && dmem_addr_valid;
-    assign dmem_re_gated  = ext_mem_re && dmem_addr_valid;
+    assign mem_req_gated = ext_mem_req && mem_addr_valid;
+    assign mem_we_gated  = ext_mem_we && mem_addr_valid;
+    assign mem_re_gated  = ext_mem_re && mem_addr_valid;
     
-    // BRAM output signals (directly from BRAM modules)
-    logic [31:0] imem_bram_rdata;
-    logic        imem_bram_ready;
-    logic [31:0] dmem_bram_rdata;
-    logic        dmem_bram_ready;
+    // BRAM output signals
+    logic [31:0] bram_rdata;
+    logic        bram_ready;
     
     // Mux read data: return 0 for invalid addresses, BRAM data for valid
-    assign imem_data  = imem_addr_valid ? imem_bram_rdata : 32'h0;
-    assign ext_mem_rdata = dmem_addr_valid ? dmem_bram_rdata : 32'h0;
+    assign ext_mem_rdata = mem_addr_valid ? bram_rdata : 32'h0;
     
     // Ready signals: assert immediately for invalid addresses (no wait needed)
     // For valid addresses, use BRAM ready signal
-    assign imem_ready = imem_addr_valid ? imem_bram_ready : imem_req;
-    assign ext_mem_ready = dmem_addr_valid ? dmem_bram_ready : ext_mem_req;
+    assign ext_mem_ready = mem_addr_valid ? bram_ready : ext_mem_req;
     
     // LED controller output
     logic [7:0]  led_out;
@@ -199,13 +179,7 @@ module fpga_top #(
         .rst_n(rst_n),
         .boot_addr(BOOT_ADDR),
         
-        // Instruction memory
-        .imem_addr(imem_addr),
-        .imem_data(imem_data),
-        .imem_req(imem_req),
-        .imem_ready(imem_ready),
-        
-        // External data memory
+        // Unified external memory (for DRAM/BRAM + Rust peripherals)
         .ext_mem_addr(ext_mem_addr),
         .ext_mem_wdata(ext_mem_wdata),
         .ext_mem_rdata(ext_mem_rdata),
@@ -238,38 +212,24 @@ module fpga_top #(
     );
     
     // ============================================================
-    // Instruction Memory (Block RAM)
+    // Unified Memory (Block RAM)
     // ============================================================
-    // 4 KB instruction memory (1024 x 32-bit words)
-    // Initialized with a simple test program
-    bram_imem #(
-        .ADDR_WIDTH(12),  // 2^12 = 4096 bytes = 4 KB (byte-addressed)
+    // 8 KB unified memory (2048 x 32-bit words)
+    // Used for both instruction fetch and data access
+    // Initialized with a UART-to-LED echo program
+    bram_unified #(
+        .ADDR_WIDTH(13),  // 2^13 = 8192 bytes = 8 KB (byte-addressed)
         .DATA_WIDTH(32)
-    ) imem (
+    ) unified_mem (
         .clk(sys_clk),
-        .addr(imem_bram_addr),       // Byte address for compressed instruction support
-        .rdata(imem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
-        .req(imem_req_gated),        // Gated request - only active for valid addresses
-        .ready(imem_bram_ready)      // BRAM ready (muxed for invalid addresses)
-    );
-    
-    // ============================================================
-    // Data Memory (Block RAM)
-    // ============================================================
-    // 4 KB data memory (1024 x 32-bit words)
-    bram_dmem #(
-        .ADDR_WIDTH(12),  // 2^12 = 4096 bytes = 4 KB (byte-addressed)
-        .DATA_WIDTH(32)
-    ) dmem (
-        .clk(sys_clk),
-        .addr(dmem_bram_addr),       // Byte address for sub-word access support
+        .addr(bram_addr),            // Byte address for instruction and data access
         .wdata(ext_mem_wdata),
-        .rdata(dmem_bram_rdata),     // BRAM output (muxed with 0 for invalid addresses)
-        .we(dmem_we_gated),          // Gated write enable - drops writes for invalid addresses
-        .re(dmem_re_gated),          // Gated read enable - only active for valid addresses
+        .rdata(bram_rdata),          // BRAM output (muxed with 0 for invalid addresses)
+        .we(mem_we_gated),           // Gated write enable - drops writes for invalid addresses
+        .re(mem_re_gated),           // Gated read enable - only active for valid addresses
         .size(ext_mem_size),
-        .req(dmem_req_gated),        // Gated request - only active for valid addresses
-        .ready(dmem_bram_ready)      // BRAM ready (muxed for invalid addresses)
+        .req(mem_req_gated),         // Gated request - only active for valid addresses
+        .ready(bram_ready)           // BRAM ready (muxed for invalid addresses)
     );
     
     // ============================================================

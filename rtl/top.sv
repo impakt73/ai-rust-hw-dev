@@ -1,6 +1,10 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
 // Routes RTL peripheral addresses internally, forwards others to external bus
+//
+// UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
+// fetch and data access. The CPU's multi-cycle FSM ensures only one type of
+// access is active at a time.
 
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -16,13 +20,8 @@ module top #(
     input  logic        rst_n,
     input  logic [31:0] boot_addr,
     
-    // Instruction memory interface (passed through to external bus)
-    output logic [31:0] imem_addr,
-    input  logic [31:0] imem_data,
-    output logic        imem_req,
-    input  logic        imem_ready,
-    
-    // External data memory interface (for Rust peripherals + DRAM)
+    // Unified external memory interface (for DRAM + Rust peripherals)
+    // Handles both instruction fetch and data access
     output logic [31:0] ext_mem_addr,
     output logic [31:0] ext_mem_wdata,
     input  logic [31:0] ext_mem_rdata,
@@ -67,16 +66,17 @@ module top #(
     localparam UART_LIMIT       = 32'h52000100;  // 256 bytes
     
     // ============================================================
-    // Internal CPU Memory Interface Signals
+    // Internal CPU Memory Interface Signals (Unified)
     // ============================================================
-    logic [31:0] cpu_dmem_addr;
-    logic [31:0] cpu_dmem_wdata;
-    logic [31:0] cpu_dmem_rdata;
-    logic        cpu_dmem_we;
-    logic        cpu_dmem_re;
-    logic [1:0]  cpu_dmem_size;
-    logic        cpu_dmem_req;
-    logic        cpu_dmem_ready;
+    // The CPU provides a unified memory interface for both instruction and data
+    logic [31:0] cpu_mem_addr;
+    logic [31:0] cpu_mem_wdata;
+    logic [31:0] cpu_mem_rdata;
+    logic        cpu_mem_we;
+    logic        cpu_mem_re;
+    logic [1:0]  cpu_mem_size;
+    logic        cpu_mem_req;
+    logic        cpu_mem_ready;
     
     // ============================================================
     // LED Controller Interface Signals
@@ -97,6 +97,12 @@ module top #(
     // ============================================================
     // Address Decoder
     // ============================================================
+    // Decodes CPU memory address to select appropriate destination:
+    // - RTL peripherals (LED, UART) are handled internally
+    // - All other addresses go to external bus (DRAM, Rust peripherals)
+    // Note: Both instruction fetch and data access use this decoder.
+    // Instruction fetches typically target DRAM, data accesses may target
+    // either DRAM or peripherals.
     logic sel_led;
     logic sel_uart;
     logic sel_external;
@@ -109,15 +115,15 @@ module top #(
         sel_external     = 1'b0;
         
         // Check if address is in LED range
-        if (cpu_dmem_addr >= LED_BASE && cpu_dmem_addr < LED_LIMIT) begin
+        if (cpu_mem_addr >= LED_BASE && cpu_mem_addr < LED_LIMIT) begin
             sel_led = 1'b1;
         end
         // Check if address is in UART range
-        else if (cpu_dmem_addr >= UART_BASE && cpu_dmem_addr < UART_LIMIT) begin
+        else if (cpu_mem_addr >= UART_BASE && cpu_mem_addr < UART_LIMIT) begin
             sel_uart = 1'b1;
         end
         // Check if address is in unmapped RTL peripheral space
-        else if (cpu_dmem_addr >= RTL_PERIPH_BASE && cpu_dmem_addr < RTL_PERIPH_LIMIT) begin
+        else if (cpu_mem_addr >= RTL_PERIPH_BASE && cpu_mem_addr < RTL_PERIPH_LIMIT) begin
             sel_unmapped_rtl = 1'b1;
         end
         // Otherwise route to external bus (Rust peripherals + DRAM)
@@ -131,28 +137,28 @@ module top #(
     // ============================================================
     always_comb begin
         // Default values
-        cpu_dmem_rdata = 32'h0;
-        cpu_dmem_ready = 1'b0;
+        cpu_mem_rdata = 32'h0;
+        cpu_mem_ready = 1'b0;
         
         // Select response source
         if (sel_led) begin
-            cpu_dmem_rdata = led_rdata;
-            cpu_dmem_ready = led_ready;
+            cpu_mem_rdata = led_rdata;
+            cpu_mem_ready = led_ready;
         end else if (sel_uart) begin
-            cpu_dmem_rdata = uart_rdata;
-            cpu_dmem_ready = uart_ready;
+            cpu_mem_rdata = uart_rdata;
+            cpu_mem_ready = uart_ready;
         end else if (sel_unmapped_rtl) begin
             // Unmapped RTL peripheral address - return zero and ready immediately
-            cpu_dmem_rdata = 32'h0;
-            cpu_dmem_ready = 1'b1;
+            cpu_mem_rdata = 32'h0;
+            cpu_mem_ready = 1'b1;
             // Note: In simulation, this triggers a warning via $display in tests
         end else if (sel_external) begin
-            cpu_dmem_rdata = ext_mem_rdata;
-            cpu_dmem_ready = ext_mem_ready;
+            cpu_mem_rdata = ext_mem_rdata;
+            cpu_mem_ready = ext_mem_ready;
         end else begin
             // Should never reach here if decoder logic is correct
-            cpu_dmem_rdata = 32'h0;
-            cpu_dmem_ready = 1'b1;
+            cpu_mem_rdata = 32'h0;
+            cpu_mem_ready = 1'b1;
         end
     end
     
@@ -160,14 +166,14 @@ module top #(
     // External Bus Forwarding
     // ============================================================
     // Forward CPU requests to external bus (for Rust peripherals + DRAM)
-    assign ext_mem_addr  = cpu_dmem_addr;
-    assign ext_mem_wdata = cpu_dmem_wdata;
-    assign ext_mem_size  = cpu_dmem_size;
+    assign ext_mem_addr  = cpu_mem_addr;
+    assign ext_mem_wdata = cpu_mem_wdata;
+    assign ext_mem_size  = cpu_mem_size;
     
     // Only assert request/enable if address is external
-    assign ext_mem_req = cpu_dmem_req && sel_external;
-    assign ext_mem_we  = cpu_dmem_we  && sel_external;
-    assign ext_mem_re  = cpu_dmem_re  && sel_external;
+    assign ext_mem_req = cpu_mem_req && sel_external;
+    assign ext_mem_we  = cpu_mem_we  && sel_external;
+    assign ext_mem_re  = cpu_mem_re  && sel_external;
     
     // ============================================================
     // CPU Core Instantiation
@@ -180,21 +186,15 @@ module top #(
         .rst_n(rst_n),
         .boot_addr(boot_addr),
         
-        // Instruction memory (passed through)
-        .imem_addr(imem_addr),
-        .imem_data(imem_data),
-        .imem_req(imem_req),
-        .imem_ready(imem_ready),
-        
-        // Data memory (internal to wrapper)
-        .dmem_addr(cpu_dmem_addr),
-        .dmem_wdata(cpu_dmem_wdata),
-        .dmem_rdata(cpu_dmem_rdata),
-        .dmem_we(cpu_dmem_we),
-        .dmem_re(cpu_dmem_re),
-        .dmem_size(cpu_dmem_size),
-        .dmem_req(cpu_dmem_req),
-        .dmem_ready(cpu_dmem_ready),
+        // Unified memory interface (handles both instruction fetch and data access)
+        .mem_addr(cpu_mem_addr),
+        .mem_wdata(cpu_mem_wdata),
+        .mem_rdata(cpu_mem_rdata),
+        .mem_we(cpu_mem_we),
+        .mem_re(cpu_mem_re),
+        .mem_size(cpu_mem_size),
+        .mem_req(cpu_mem_req),
+        .mem_ready(cpu_mem_ready),
         
         // System control (passed through)
         .halted(halted),
@@ -235,13 +235,13 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface
-        .addr(cpu_dmem_addr),
-        .wdata(cpu_dmem_wdata),
+        // CPU interface (unified memory)
+        .addr(cpu_mem_addr),
+        .wdata(cpu_mem_wdata),
         .rdata(led_rdata),
-        .we(cpu_dmem_we && sel_led),
-        .re(cpu_dmem_re && sel_led),
-        .size(cpu_dmem_size),
+        .we(cpu_mem_we && sel_led),
+        .re(cpu_mem_re && sel_led),
+        .size(cpu_mem_size),
         .ready(led_ready),
         
         // LED outputs
@@ -259,13 +259,13 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
-        // CPU interface
-        .addr(cpu_dmem_addr),
-        .wdata(cpu_dmem_wdata),
+        // CPU interface (unified memory)
+        .addr(cpu_mem_addr),
+        .wdata(cpu_mem_wdata),
         .rdata(uart_rdata),
-        .we(cpu_dmem_we && sel_uart),
-        .re(cpu_dmem_re && sel_uart),
-        .size(cpu_dmem_size),
+        .we(cpu_mem_we && sel_uart),
+        .re(cpu_mem_re && sel_uart),
+        .size(cpu_mem_size),
         .ready(uart_ready),
         
         // Internal signals (connected via loopback or external pins)
