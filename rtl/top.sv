@@ -1,6 +1,7 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
 // Uses the bus module to route requests between CPU and peripherals
+// External memory requests are forwarded out of this module to DRAM + Rust peripherals
 //
 // UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
 // fetch and data access. The CPU's multi-cycle FSM ensures only one type of
@@ -88,8 +89,8 @@ module top #(
     logic        uart_ready;
     
     // Internal UART signals for loopback
-    logic uart_tx_internal;
-    logic uart_rx_internal;
+    logic uart_tx_internal;  // TX output from UART module
+    logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
     // Bus Module Instantiation
@@ -213,6 +214,7 @@ module top #(
         .clk(clk),
         .rst_n(rst_n),
         
+        // Bus slave interface
         .addr(uart_addr),
         .wdata(uart_wdata),
         .rdata(uart_rdata),
@@ -221,6 +223,7 @@ module top #(
         .size(uart_size),
         .ready(uart_ready),
         
+        // Internal signals (connected via loopback or external pins)
         .tx_out(uart_tx_internal),
         .rx_in(uart_rx_internal)
     );
