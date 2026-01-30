@@ -256,14 +256,17 @@ module cpu #(
     logic        dmem_req_internal;    // Data memory request
     
     // Memory ready signal routing (unified interface drives both)
+    // Since the FSM ensures only one type of request is active at a time,
+    // mem_ready can be used directly for both instruction and data operations.
     // In S_FETCH: mem_ready indicates instruction is ready
     // In S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW: mem_ready indicates data operation complete
     logic        imem_ready_internal;  // Instruction memory ready (routed from mem_ready)
     logic        dmem_ready_internal;  // Data memory ready (routed from mem_ready)
     
-    // Route mem_ready to internal ready signals based on which request is active
-    assign imem_ready_internal = mem_ready && imem_req_internal;
-    assign dmem_ready_internal = mem_ready && dmem_req_internal;
+    // Route mem_ready directly to internal ready signals
+    // The FSM guarantees mutual exclusion between instruction and data requests
+    assign imem_ready_internal = mem_ready;
+    assign dmem_ready_internal = mem_ready;
     
     // A extension: SC success/failure logic
     logic        sc_success;

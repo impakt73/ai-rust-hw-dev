@@ -8,7 +8,7 @@
 // access is active at a time.
 
 module bram_unified #(
-    parameter ADDR_WIDTH = 12,  // 2^12 = 4096 bytes = 4 KB
+    parameter ADDR_WIDTH = 12,  // Address width in bits (size = 2^ADDR_WIDTH bytes)
     parameter DATA_WIDTH = 32
 ) (
     input  logic                    clk,
@@ -23,7 +23,8 @@ module bram_unified #(
 );
 
     // Memory array - stored as 32-bit words, addressed by word index
-    localparam WORD_COUNT = 2**(ADDR_WIDTH-2);  // 4 KB / 4 bytes = 1024 words
+    // Size = 2^ADDR_WIDTH bytes = 2^(ADDR_WIDTH-2) words
+    localparam WORD_COUNT = 2**(ADDR_WIDTH-2);
     logic [DATA_WIDTH-1:0] mem [0:WORD_COUNT-1];
     
     // Word address is byte address >> 2
