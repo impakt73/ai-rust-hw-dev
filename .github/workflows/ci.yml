@@ -18,9 +18,9 @@ jobs:
     - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator libasound2-dev yosys fpga-icestorm nextpnr-ice40
-        # Bump version (v1 -> v2) to force cache refresh
-        version: v2
+        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40
+        # Bump version (v2 -> v3) to force cache refresh
+        version: v3
     
     - name: Verify Verilator installation
       run: verilator --version
