@@ -1,4 +1,4 @@
-use riscv_core::{create_uart_runtime, Uart};
+use riscv_core::{create_uart_peripheral_runtime, UartPeripheral};
 
 // UART Register Offsets
 const UART_TXDATA: u32 = 0x00;
@@ -38,7 +38,7 @@ macro_rules! clock_cycle {
 }
 
 /// Helper function to read a register from the UART
-fn read_register(dut: &mut Uart, offset: u32) -> u32 {
+fn read_register(dut: &mut UartPeripheral, offset: u32) -> u32 {
     dut.addr = offset;
     dut.req = 1;
     dut.we = 0;
@@ -51,7 +51,7 @@ fn read_register(dut: &mut Uart, offset: u32) -> u32 {
 }
 
 /// Helper function to write a register to the UART
-fn write_register(dut: &mut Uart, offset: u32, value: u32) {
+fn write_register(dut: &mut UartPeripheral, offset: u32, value: u32) {
     dut.addr = offset;
     dut.wdata = value;
     dut.we = 1;
@@ -65,7 +65,7 @@ fn write_register(dut: &mut Uart, offset: u32, value: u32) {
 }
 
 /// Helper function to apply reset to the UART
-fn reset_uart(dut: &mut Uart) {
+fn reset_uart(dut: &mut UartPeripheral) {
     dut.rst_n = 0;
     dut.we = 0;
     dut.req = 0;
@@ -77,9 +77,9 @@ fn reset_uart(dut: &mut Uart) {
 
 #[test]
 fn test_uart_reset_state() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -94,9 +94,9 @@ fn test_uart_reset_state() {
 
 #[test]
 fn test_uart_tx_idle_high() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -111,9 +111,9 @@ fn test_uart_tx_idle_high() {
 
 #[test]
 fn test_uart_status_register_initial() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -165,9 +165,9 @@ fn test_uart_status_register_initial() {
 
 #[test]
 fn test_uart_tx_fifo_write() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -196,9 +196,9 @@ fn test_uart_tx_fifo_write() {
 
 #[test]
 fn test_uart_tx_start_bit() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -243,9 +243,9 @@ fn test_uart_tx_start_bit() {
 
 #[test]
 fn test_uart_loopback_single_byte() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -293,9 +293,9 @@ fn test_uart_loopback_single_byte() {
 
 #[test]
 fn test_uart_tx_fifo_full() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset
@@ -362,9 +362,9 @@ fn test_uart_tx_fifo_full() {
 
 #[test]
 fn test_uart_baud_timing() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = create_uart_peripheral_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
-        .create_model_simple::<Uart>()
+        .create_model_simple::<UartPeripheral>()
         .expect("Failed to create UART model");
 
     // Apply reset

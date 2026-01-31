@@ -45,14 +45,14 @@ pub struct Fpu;
     src = "../rtl/peripherals/led_controller_peripheral.sv",
     name = "led_controller_peripheral"
 )]
-pub struct LedController;
+pub struct LedControllerPeripheral;
 
 // Define UART module for RTL testing
 #[verilog(
     src = "../rtl/peripherals/uart_peripheral.sv",
     name = "uart_peripheral"
 )]
-pub struct Uart;
+pub struct UartPeripheral;
 
 // Define Host Bus Interface module
 #[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
@@ -157,7 +157,7 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 }
 
 // Helper function to create a runtime for the UART peripheral
-pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+pub fn create_uart_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["sync_fifo.sv", "peripherals/uart_peripheral.sv"])
 }
 
