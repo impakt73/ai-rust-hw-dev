@@ -184,11 +184,6 @@ module uart #(
             rx_baud_counter <= '0;
             rx_error <= 1'b0;
         end else begin
-            // Handle rx_error_clr: clear sticky error flag when asserted
-            if (rx_error_clr) begin
-                rx_error <= 1'b0;
-            end
-            
             // Handle handshake: clear rx_valid when consumer asserts rx_ready
             if (rx_valid && rx_ready) begin
                 rx_valid <= 1'b0;
@@ -285,6 +280,13 @@ module uart #(
                     rx_state <= RX_IDLE;
                 end
             endcase
+            
+            // Handle rx_error_clr: clear sticky error flag when asserted
+            // This is placed after the state machine so new errors take precedence
+            // over clearing if both occur in the same cycle
+            if (rx_error_clr) begin
+                rx_error <= 1'b0;
+            end
         end
     end
 

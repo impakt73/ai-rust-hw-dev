@@ -233,7 +233,7 @@ module uart_peripheral #(
                 8'h00: rdata = 32'h0;  // TXDATA is write-only
                 8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo_rdata};  // RXDATA
                 8'h08: rdata = {24'h0,                      // STATUS
-                              uart_rx_error,                // [7] RX_ERROR (sticky, cleared on STATUS read)
+                              uart_rx_error,                // [7] RX_ERROR (sticky, cleared when STATUS register is read)
                               rx_busy_status,               // [6] RX_BUSY
                               rx_fifo_empty,                // [5] RX_EMPTY
                               rx_fifo_full,                 // [4] RX_FULL
