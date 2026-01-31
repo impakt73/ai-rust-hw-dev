@@ -116,10 +116,6 @@ module fpga_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     
-    // CPU's internal UART signals (for loopback)
-    logic cpu_uart_tx;
-    logic cpu_uart_rx;
-    
     // LED controller output
     logic [7:0]  led_out;
     
@@ -147,7 +143,7 @@ module fpga_top #(
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .UART_CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
         .UART_BAUD_RATE(115200),
-        .ENABLE_UART_LOOPBACK(1'b0)     // Disable internal loopback - we handle it in this module
+        .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test
     ) cpu_inst (
         .clk(sys_clk),
         .rst_n(rst_n),
@@ -164,9 +160,9 @@ module fpga_top #(
         // LED peripheral
         .led_out(led_out),
         
-        // CPU's internal UART - loopback for self-test
-        .uart_tx(cpu_uart_tx),
-        .uart_rx(cpu_uart_rx),
+        // CPU's internal UART (loopback enabled via ENABLE_UART_LOOPBACK)
+        .uart_tx(),     // Not connected - internal loopback enabled
+        .uart_rx(1'b1), // Tie high when not used (idle state)
         
         // System control
         .halted(halted),
@@ -182,12 +178,6 @@ module fpga_top #(
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state)
     );
-    
-    // ============================================================
-    // CPU Internal UART Loopback
-    // ============================================================
-    // Connect CPU's internal UART TX to RX for self-test
-    assign cpu_uart_rx = cpu_uart_tx;
     
     // ============================================================
     // Host Communication UART
@@ -335,11 +325,11 @@ module fpga_top #(
                 end
                 
                 HOST_UART_RX_WAIT: begin
-                    // Wait for CPU to acknowledge
+                    // Wait for CPU to acknowledge before returning to IDLE
                     if (host_rx_ready) begin
                         host_rx_valid <= 1'b0;
+                        host_uart_state <= HOST_UART_IDLE;
                     end
-                    host_uart_state <= HOST_UART_IDLE;
                 end
                 
                 default: host_uart_state <= HOST_UART_IDLE;
