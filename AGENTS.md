@@ -179,8 +179,9 @@ Address Range          | Device           | Type | Description
 0x30000000-0x3000000F | Audio            | Rust | Audio buffer
 0x40000000-0x40000007 | FIFO             | Rust | Host communication FIFO
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
+0x51000000-0x5100000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
 0x52000000-0x520000FF | UART Controller  | RTL  | UART TX/RX with 8-byte FIFOs
-0x51000000-0x51FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
+0x51000010-0x51FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
 0x52000100-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
@@ -192,6 +193,16 @@ Address Range          | Device           | Type | Description
   - Bits [31:8]: Reserved (read as 0, writes ignored)
 - **Access sizes:** Byte, halfword, word
 - **Latency:** Single-cycle (ready = 1'b1)
+
+**Clock Peripheral:**
+- **Address:** 0x51000000
+- **Registers (all read-only):**
+  - 0x00: ELAPSED_US - Elapsed microseconds since reset
+  - 0x04: ELAPSED_MS - Elapsed milliseconds since reset
+  - 0x08: ELAPSED_S - Elapsed seconds since reset
+- **Access sizes:** Word (32-bit)
+- **Latency:** Single-cycle (ready = 1'b1)
+- **Note:** Clock frequency is configurable via CLK_FREQ_HZ parameter
 
 **RTL vs Rust Peripherals:**
 - **RTL peripherals** (0x50000000-0x5FFFFFFF): Handled by Verilator, synthesizable to FPGA
@@ -214,6 +225,28 @@ sw(15, 14, 0);        // Write to LED_OUT register
 
 // Read back LED value
 lw(13, 15, 0);        // Read LED_OUT into register x13
+```
+
+**Clock Peripheral Usage Example:**
+```rust
+// Read elapsed time from clock peripheral
+lui(15, 0x51000000);  // Load Clock peripheral base address
+
+// Read elapsed microseconds
+lw(10, 15, 0x00);     // Read ELAPSED_US into register x10
+
+// Read elapsed milliseconds
+lw(11, 15, 0x04);     // Read ELAPSED_MS into register x11
+
+// Read elapsed seconds
+lw(12, 15, 0x08);     // Read ELAPSED_S into register x12
+
+// Delay loop using clock peripheral (wait 100ms)
+lw(10, 15, 0x04);     // Read start time (ms)
+addi(11, 10, 100);    // target = start + 100ms
+delay_loop:
+lw(12, 15, 0x04);     // Read current time (ms)
+blt(12, 11, delay_loop); // Loop until current >= target
 ```
 
 **UART Controller Peripheral:**
