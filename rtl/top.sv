@@ -232,7 +232,7 @@ module top #(
     // ============================================================
     // LED Controller Instantiation
     // ============================================================
-    led_controller led_ctrl (
+    led_controller_peripheral led_ctrl (
         .clk(clk),
         .rst_n(rst_n),
         
@@ -250,7 +250,7 @@ module top #(
     // ============================================================
     // UART Controller Instantiation
     // ============================================================
-    uart #(
+    uart_peripheral #(
         .CLK_FREQ_HZ(UART_CLK_FREQ_HZ),
         .BAUD_RATE(UART_BAUD_RATE),
         .FIFO_DEPTH(8)

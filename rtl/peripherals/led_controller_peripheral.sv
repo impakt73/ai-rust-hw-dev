@@ -2,7 +2,7 @@
 // Simple 8-bit LED output controller
 // Memory-mapped at 0x50000000 in RTL peripheral address space
 
-module led_controller (
+module led_controller_peripheral (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,

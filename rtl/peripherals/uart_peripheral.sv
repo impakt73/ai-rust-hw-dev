@@ -28,7 +28,7 @@
 //   - Single-cycle ready (always 1'b1)
 
 /* verilator lint_off UNUSEDSIGNAL */
-module uart #(
+module uart_peripheral #(
     // System clock frequency in Hz (required for baud rate calculation)
     parameter int CLK_FREQ_HZ = 50_000_000,
     // Target baud rate in bits per second

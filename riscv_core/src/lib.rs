@@ -41,11 +41,17 @@ pub struct FpRegFile;
 pub struct Fpu;
 
 // Define LED Controller module
-#[verilog(src = "../rtl/peripherals/led_controller.sv", name = "led_controller")]
+#[verilog(
+    src = "../rtl/peripherals/led_controller_peripheral.sv",
+    name = "led_controller_peripheral"
+)]
 pub struct LedController;
 
 // Define UART module for RTL testing
-#[verilog(src = "../rtl/peripherals/uart.sv", name = "uart")]
+#[verilog(
+    src = "../rtl/peripherals/uart_peripheral.sv",
+    name = "uart_peripheral"
+)]
 pub struct Uart;
 
 // Define Host Bus Interface module
@@ -108,15 +114,15 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top.sv",                        // Top-level wrapper with RTL peripherals
-        "bus.sv",                        // System bus for address decoding
-        "cpu.sv",                        // CPU core
-        "sync_fifo.sv",                  // Generic synchronous FIFO
-        "host_bus_interface.sv",         // Host bus interface for serialized transactions
-        "peripherals/led_controller.sv", // LED controller peripheral
-        "peripherals/uart.sv",           // UART controller peripheral
-        "fetch_buffer.sv",               // RV32C fetch buffer
-        "decompress.sv",                 // RV32C decompressor
+        "top.sv",                                   // Top-level wrapper with RTL peripherals
+        "bus.sv",                                   // System bus for address decoding
+        "cpu.sv",                                   // CPU core
+        "sync_fifo.sv",                             // Generic synchronous FIFO
+        "host_bus_interface.sv", // Host bus interface for serialized transactions
+        "peripherals/led_controller_peripheral.sv", // LED controller peripheral
+        "peripherals/uart_peripheral.sv", // UART controller peripheral
+        "fetch_buffer.sv",       // RV32C fetch buffer
+        "decompress.sv",         // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
         "regfile.sv",
@@ -152,7 +158,7 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 
 // Helper function to create a runtime for the UART peripheral
 pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["sync_fifo.sv", "peripherals/uart.sv"])
+    create_runtime(&["sync_fifo.sv", "peripherals/uart_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the Host Bus Interface

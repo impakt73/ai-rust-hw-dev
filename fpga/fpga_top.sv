@@ -341,7 +341,7 @@ module fpga_top #(
     assign host_uart_size = 2'b00;
     
     // Instantiate host communication UART
-    uart #(
+    uart_peripheral #(
         .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
         .BAUD_RATE(115200),
         .FIFO_DEPTH(8)
