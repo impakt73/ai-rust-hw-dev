@@ -183,184 +183,31 @@ module fpga_top #(
     // Host Communication UART
     // ============================================================
     // UART for host bus interface communication via USB serial
-    // This UART converts between serial USB and the parallel
-    // host_tx/host_rx byte stream interface
+    // Direct connection using uart.sv module with ready/valid interface
+    // This is much simpler than the previous FSM-based approach using uart_peripheral
     
-    // Host UART internal signals
-    logic [31:0] host_uart_addr;
-    logic [31:0] host_uart_wdata;
-    logic [31:0] host_uart_rdata;
-    logic        host_uart_we;
-    logic [1:0]  host_uart_size;
-    logic        host_uart_req;
-    logic        host_uart_ready;
-    
-    // Host UART TX FIFO interface (CPU -> Host)
-    // We write host_tx_data to the UART when host_tx_valid is high
-    // UART TX ready is fed back to host_tx_ready
-    
-    // Host UART RX FIFO interface (Host -> CPU)
-    // We read from UART and provide data via host_rx_data
-    // host_rx_valid indicates data available, host_rx_ready is CPU's ack
-    
-    // For simplicity, we use direct UART TX/RX signals instead of the bus interface
-    // The host_bus_interface in the top module expects a simple byte stream
-    
-    // UART signals for host communication
-    logic host_uart_tx_out;
-    logic host_uart_rx_in;
-    
-    // Connect to USB serial pins
-    assign usb_tx = host_uart_tx_out;
-    assign host_uart_rx_in = usb_rx;
-    
-    // Use UART for host communication
-    // Note: The UART module has a bus interface, but we need a streaming interface.
-    // We'll use a simple approach: drive the UART via its bus interface registers.
-    
-    // UART register addresses (relative to base)
-    localparam UART_TXDATA_OFFSET = 8'h00;
-    localparam UART_RXDATA_OFFSET = 8'h04;
-    localparam UART_STATUS_OFFSET = 8'h08;
-    
-    // UART STATUS register bit definitions
-    localparam STATUS_RX_EMPTY_BIT = 5;  // Bit 5: RX FIFO is empty
-    
-    // State machine for host UART communication
-    typedef enum logic [3:0] {
-        HOST_UART_IDLE,
-        HOST_UART_TX_WRITE,
-        HOST_UART_TX_WAIT,
-        HOST_UART_RX_STATUS,       // Read STATUS register first
-        HOST_UART_RX_STATUS_WAIT,  // Wait for STATUS read to complete
-        HOST_UART_RX_READ,         // Read RXDATA if data available
-        HOST_UART_RX_WAIT
-    } host_uart_state_t;
-    
-    host_uart_state_t host_uart_state;
-    logic rx_data_available;  // Latch whether RX data is available
-    
-    // Host UART state machine
-    always_ff @(posedge sys_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            host_uart_state <= HOST_UART_IDLE;
-            host_tx_ready <= 1'b0;
-            host_rx_valid <= 1'b0;
-            host_rx_data <= 8'h0;
-            host_uart_addr <= 32'h0;
-            host_uart_wdata <= 32'h0;
-            host_uart_we <= 1'b0;
-            host_uart_req <= 1'b0;
-            rx_data_available <= 1'b0;
-        end else begin
-            case (host_uart_state)
-                HOST_UART_IDLE: begin
-                    host_uart_req <= 1'b0;
-                    
-                    // Priority: TX has priority over RX
-                    if (host_tx_valid && !host_tx_ready) begin
-                        // CPU wants to send a byte - write to UART TXDATA
-                        host_uart_addr <= {24'h0, UART_TXDATA_OFFSET};
-                        host_uart_wdata <= {24'h0, host_tx_data};
-                        host_uart_we <= 1'b1;
-                        host_uart_req <= 1'b1;
-                        host_uart_state <= HOST_UART_TX_WRITE;
-                    end else if (!host_rx_valid || host_rx_ready) begin
-                        // CPU is ready for data or we haven't provided any - check UART STATUS first
-                        host_uart_addr <= {24'h0, UART_STATUS_OFFSET};
-                        host_uart_we <= 1'b0;
-                        host_uart_req <= 1'b1;
-                        host_uart_state <= HOST_UART_RX_STATUS;
-                        // Clear rx_valid until we have new data
-                        if (host_rx_ready) begin
-                            host_rx_valid <= 1'b0;
-                        end
-                    end
-                end
-                
-                HOST_UART_TX_WRITE: begin
-                    if (host_uart_ready) begin
-                        host_tx_ready <= 1'b1;  // Acknowledge the byte
-                        host_uart_req <= 1'b0;
-                        host_uart_state <= HOST_UART_TX_WAIT;
-                    end
-                end
-                
-                HOST_UART_TX_WAIT: begin
-                    // Wait one cycle for handshake
-                    host_tx_ready <= 1'b0;
-                    host_uart_state <= HOST_UART_IDLE;
-                end
-                
-                HOST_UART_RX_STATUS: begin
-                    if (host_uart_ready) begin
-                        // Check STATUS register RX_EMPTY bit (bit 5)
-                        // If bit 5 is 0, data is available
-                        rx_data_available <= !host_uart_rdata[STATUS_RX_EMPTY_BIT];
-                        host_uart_req <= 1'b0;
-                        host_uart_state <= HOST_UART_RX_STATUS_WAIT;
-                    end
-                end
-                
-                HOST_UART_RX_STATUS_WAIT: begin
-                    // If data available, read RXDATA; otherwise return to idle
-                    if (rx_data_available) begin
-                        host_uart_addr <= {24'h0, UART_RXDATA_OFFSET};
-                        host_uart_we <= 1'b0;
-                        host_uart_req <= 1'b1;
-                        host_uart_state <= HOST_UART_RX_READ;
-                    end else begin
-                        host_uart_state <= HOST_UART_IDLE;
-                    end
-                end
-                
-                HOST_UART_RX_READ: begin
-                    if (host_uart_ready) begin
-                        // We already confirmed data is available via STATUS
-                        host_rx_data <= host_uart_rdata[7:0];
-                        host_rx_valid <= 1'b1;
-                        host_uart_req <= 1'b0;
-                        host_uart_state <= HOST_UART_RX_WAIT;
-                    end
-                end
-                
-                HOST_UART_RX_WAIT: begin
-                    // Wait for CPU to acknowledge before returning to IDLE
-                    if (host_rx_ready) begin
-                        host_rx_valid <= 1'b0;
-                        host_uart_state <= HOST_UART_IDLE;
-                    end
-                end
-                
-                default: host_uart_state <= HOST_UART_IDLE;
-            endcase
-        end
-    end
-    
-    // Host UART bus size (always byte access)
-    assign host_uart_size = 2'b00;
-    
-    // Instantiate host communication UART
-    uart_peripheral #(
+    uart #(
         .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
-        .BAUD_RATE(115200),
-        .FIFO_DEPTH(8)
+        .BAUD_RATE(115200)
     ) host_uart_inst (
         .clk(sys_clk),
         .rst_n(rst_n),
         
-        // Bus slave interface (directly driven by state machine)
-        .addr(host_uart_addr),
-        .wdata(host_uart_wdata),
-        .rdata(host_uart_rdata),
-        .we(host_uart_we),
-        .req(host_uart_req),
-        .size(host_uart_size),
-        .ready(host_uart_ready),
+        // TX interface - directly connected to host_tx signals
+        .tx_data(host_tx_data),
+        .tx_valid(host_tx_valid),
+        .tx_ready(host_tx_ready),
         
-        // External UART pins - connected to USB serial
-        .tx_out(host_uart_tx_out),
-        .rx_in(host_uart_rx_in)
+        // RX interface - directly connected to host_rx signals
+        .rx_data(host_rx_data),
+        .rx_valid(host_rx_valid),
+        .rx_ready(host_rx_ready),
+        .rx_error(),      // Optional: can be left unconnected
+        .rx_error_clr(1'b0),  // Not used in host interface
+        
+        // Serial pins - connected to USB serial
+        .tx_out(usb_tx),
+        .rx_in(usb_rx)
     );
     
     // ============================================================
