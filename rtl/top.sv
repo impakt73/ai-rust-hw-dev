@@ -13,8 +13,9 @@
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    // System Clock Frequency (used by UART and Clock Peripheral)
+    parameter int CLK_FREQ_HZ = 50_000_000,
     // UART Parameters
-    parameter int UART_CLK_FREQ_HZ = 50_000_000,
     parameter int UART_BAUD_RATE   = 115200,
     // UART Loopback: When enabled (default), TX is internally connected to RX
     // for simulation testing. Disable for FPGA deployment with external pins.
@@ -83,6 +84,17 @@ module top #(
     logic        led_ready;
     
     // ============================================================
+    // Clock Peripheral Interface Signals
+    // ============================================================
+    logic [31:0] clock_addr;
+    logic [31:0] clock_wdata;
+    logic [31:0] clock_rdata;
+    logic        clock_we;
+    logic [1:0]  clock_size;
+    logic        clock_req;
+    logic        clock_ready;
+    
+    // ============================================================
     // UART Controller Interface Signals
     // ============================================================
     logic [31:0] uart_addr;
@@ -133,6 +145,15 @@ module top #(
         .led_size(led_size),
         .led_req(led_req),
         .led_ready(led_ready),
+        
+        // Clock Peripheral interface
+        .clock_addr(clock_addr),
+        .clock_wdata(clock_wdata),
+        .clock_rdata(clock_rdata),
+        .clock_we(clock_we),
+        .clock_size(clock_size),
+        .clock_req(clock_req),
+        .clock_ready(clock_ready),
         
         // UART Controller interface
         .uart_addr(uart_addr),
@@ -248,10 +269,28 @@ module top #(
     );
     
     // ============================================================
+    // Clock Peripheral Instantiation
+    // ============================================================
+    clock_peripheral #(
+        .CLK_FREQ_HZ(CLK_FREQ_HZ)
+    ) clock_periph (
+        .clk(clk),
+        .rst_n(rst_n),
+        
+        .addr(clock_addr),
+        .wdata(clock_wdata),
+        .rdata(clock_rdata),
+        .we(clock_we),
+        .req(clock_req),
+        .size(clock_size),
+        .ready(clock_ready)
+    );
+    
+    // ============================================================
     // UART Controller Instantiation
     // ============================================================
     uart_peripheral #(
-        .CLK_FREQ_HZ(UART_CLK_FREQ_HZ),
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .BAUD_RATE(UART_BAUD_RATE),
         .FIFO_DEPTH(8)
     ) uart_ctrl (

@@ -69,6 +69,30 @@ pub const fn uart_status_addr() -> u32 {
     UART_BASE + UART_STATUS_OFFSET
 }
 
+/// Clock Peripheral (RTL)
+pub const CLOCK_BASE: u32 = 0x5100_0000;
+pub const CLOCK_SIZE: u32 = 0x0000_0010; // 16 bytes
+
+/// Clock peripheral register offsets
+pub const CLOCK_ELAPSED_US_OFFSET: u32 = 0x00;
+pub const CLOCK_ELAPSED_MS_OFFSET: u32 = 0x04;
+pub const CLOCK_ELAPSED_S_OFFSET: u32 = 0x08;
+
+/// Helper function to get CLOCK ELAPSED_US register address
+pub const fn clock_elapsed_us_addr() -> u32 {
+    CLOCK_BASE + CLOCK_ELAPSED_US_OFFSET
+}
+
+/// Helper function to get CLOCK ELAPSED_MS register address
+pub const fn clock_elapsed_ms_addr() -> u32 {
+    CLOCK_BASE + CLOCK_ELAPSED_MS_OFFSET
+}
+
+/// Helper function to get CLOCK ELAPSED_S register address
+pub const fn clock_elapsed_s_addr() -> u32 {
+    CLOCK_BASE + CLOCK_ELAPSED_S_OFFSET
+}
+
 /// Base address for DRAM
 pub const DRAM_BASE: u32 = 0x8000_0000;
 

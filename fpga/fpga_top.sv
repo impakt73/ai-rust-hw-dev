@@ -141,7 +141,7 @@ module fpga_top #(
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .UART_CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
+        .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by UART and Clock Peripheral
         .UART_BAUD_RATE(115200),
         .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test
     ) cpu_inst (
