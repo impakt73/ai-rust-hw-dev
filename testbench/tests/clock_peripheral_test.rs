@@ -98,29 +98,29 @@ fn test_clock_peripheral_microseconds() {
     // Apply reset
     reset_clock_peripheral(&mut dut);
 
-    // At 1 kHz (TEST_CLK_FREQ_HZ), 1 cycle = 1000 microseconds
+    // At 1 MHz (default CLK_FREQ_HZ), 1 cycle = 1 microsecond
     // Run for a few cycles and check that microseconds increment correctly
 
     // Initial value should be 0
     let us_0 = read_register(&mut dut, ELAPSED_US);
     assert_eq!(us_0, 0, "Initial ELAPSED_US should be 0");
 
-    // Run 1 cycle (should be 1000 microseconds)
+    // Run 1 cycle (should be 1 microsecond)
     clock_cycle!(dut);
     let us_1 = read_register(&mut dut, ELAPSED_US);
-    assert_eq!(us_1, 1000, "After 1 cycle at 1kHz, should be 1000 us");
+    assert_eq!(us_1, 1, "After 1 cycle at 1MHz, should be 1 us");
 
-    // Run 1 more cycle (should be 2000 microseconds)
+    // Run 1 more cycle (should be 2 microseconds)
     clock_cycle!(dut);
     let us_2 = read_register(&mut dut, ELAPSED_US);
-    assert_eq!(us_2, 2000, "After 2 cycles at 1kHz, should be 2000 us");
+    assert_eq!(us_2, 2, "After 2 cycles at 1MHz, should be 2 us");
 
-    // Run 8 more cycles (total 10 cycles = 10000 microseconds = 10 ms)
+    // Run 8 more cycles (total 10 cycles = 10 microseconds)
     for _ in 0..8 {
         clock_cycle!(dut);
     }
     let us_10 = read_register(&mut dut, ELAPSED_US);
-    assert_eq!(us_10, 10000, "After 10 cycles at 1kHz, should be 10000 us");
+    assert_eq!(us_10, 10, "After 10 cycles at 1MHz, should be 10 us");
 }
 
 #[test]
@@ -134,33 +134,25 @@ fn test_clock_peripheral_milliseconds() {
     // Apply reset
     reset_clock_peripheral(&mut dut);
 
-    // At 1 kHz, 1 cycle = 1 millisecond
+    // At 1 MHz, 1000 cycles = 1 millisecond
 
     // Initial value should be 0
     let ms_0 = read_register(&mut dut, ELAPSED_MS);
     assert_eq!(ms_0, 0, "Initial ELAPSED_MS should be 0");
 
-    // Run 1 cycle (should be 1 millisecond)
-    clock_cycle!(dut);
+    // Run 1000 cycles (should be 1 millisecond)
+    for _ in 0..1000 {
+        clock_cycle!(dut);
+    }
     let ms_1 = read_register(&mut dut, ELAPSED_MS);
-    assert_eq!(ms_1, 1, "After 1 cycle at 1kHz, should be 1 ms");
+    assert_eq!(ms_1, 1, "After 1000 cycles at 1MHz, should be 1 ms");
 
-    // Run 9 more cycles (total 10 cycles = 10 milliseconds)
-    for _ in 0..9 {
+    // Run 9000 more cycles (total 10000 cycles = 10 milliseconds)
+    for _ in 0..9000 {
         clock_cycle!(dut);
     }
     let ms_10 = read_register(&mut dut, ELAPSED_MS);
-    assert_eq!(ms_10, 10, "After 10 cycles at 1kHz, should be 10 ms");
-
-    // Run 990 more cycles (total 1000 cycles = 1000 milliseconds = 1 second)
-    for _ in 0..990 {
-        clock_cycle!(dut);
-    }
-    let ms_1000 = read_register(&mut dut, ELAPSED_MS);
-    assert_eq!(
-        ms_1000, 1000,
-        "After 1000 cycles at 1kHz, should be 1000 ms"
-    );
+    assert_eq!(ms_10, 10, "After 10000 cycles at 1MHz, should be 10 ms");
 }
 
 #[test]
@@ -174,32 +166,35 @@ fn test_clock_peripheral_seconds() {
     // Apply reset
     reset_clock_peripheral(&mut dut);
 
-    // At 1 kHz, 1000 cycles = 1 second
+    // At 1 MHz, 1,000,000 cycles = 1 second
 
     // Initial value should be 0
     let s_0 = read_register(&mut dut, ELAPSED_S);
     assert_eq!(s_0, 0, "Initial ELAPSED_S should be 0");
 
-    // Run 500 cycles (should be 0 seconds still)
-    for _ in 0..500 {
+    // Run 500,000 cycles (should be 0 seconds still)
+    for _ in 0..500_000 {
         clock_cycle!(dut);
     }
-    let s_500 = read_register(&mut dut, ELAPSED_S);
-    assert_eq!(s_500, 0, "After 500 cycles at 1kHz, should still be 0 s");
+    let s_500k = read_register(&mut dut, ELAPSED_S);
+    assert_eq!(
+        s_500k, 0,
+        "After 500,000 cycles at 1MHz, should still be 0 s"
+    );
 
-    // Run 500 more cycles (total 1000 cycles = 1 second)
-    for _ in 0..500 {
+    // Run 500,000 more cycles (total 1,000,000 cycles = 1 second)
+    for _ in 0..500_000 {
         clock_cycle!(dut);
     }
-    let s_1000 = read_register(&mut dut, ELAPSED_S);
-    assert_eq!(s_1000, 1, "After 1000 cycles at 1kHz, should be 1 s");
+    let s_1m = read_register(&mut dut, ELAPSED_S);
+    assert_eq!(s_1m, 1, "After 1,000,000 cycles at 1MHz, should be 1 s");
 
-    // Run 1000 more cycles (total 2000 cycles = 2 seconds)
-    for _ in 0..1000 {
+    // Run 1,000,000 more cycles (total 2,000,000 cycles = 2 seconds)
+    for _ in 0..1_000_000 {
         clock_cycle!(dut);
     }
-    let s_2000 = read_register(&mut dut, ELAPSED_S);
-    assert_eq!(s_2000, 2, "After 2000 cycles at 1kHz, should be 2 s");
+    let s_2m = read_register(&mut dut, ELAPSED_S);
+    assert_eq!(s_2m, 2, "After 2,000,000 cycles at 1MHz, should be 2 s");
 }
 
 #[test]
@@ -213,8 +208,8 @@ fn test_clock_peripheral_all_counters_increment() {
     // Apply reset
     reset_clock_peripheral(&mut dut);
 
-    // Run 2000 cycles (2 seconds at 1 kHz)
-    for _ in 0..2000 {
+    // Run 2,000,000 cycles (2 seconds at 1 MHz)
+    for _ in 0..2_000_000 {
         clock_cycle!(dut);
     }
 
@@ -226,13 +221,16 @@ fn test_clock_peripheral_all_counters_increment() {
     // Verify all counters have incremented correctly
     assert_eq!(
         elapsed_us, 2_000_000,
-        "After 2000 cycles at 1kHz, should be 2,000,000 us"
+        "After 2,000,000 cycles at 1MHz, should be 2,000,000 us"
     );
     assert_eq!(
         elapsed_ms, 2000,
-        "After 2000 cycles at 1kHz, should be 2000 ms"
+        "After 2,000,000 cycles at 1MHz, should be 2000 ms"
     );
-    assert_eq!(elapsed_s, 2, "After 2000 cycles at 1kHz, should be 2 s");
+    assert_eq!(
+        elapsed_s, 2,
+        "After 2,000,000 cycles at 1MHz, should be 2 s"
+    );
 }
 
 #[test]
@@ -292,16 +290,15 @@ fn test_clock_peripheral_read_only() {
     let s_after = read_register(&mut dut, ELAPSED_S);
 
     // Values should have incremented (3 extra cycles from write attempts)
-    // At 1 kHz: 3 cycles = 3000 us = 3 ms
+    // At 1 MHz: 3 cycles = 3 us, not enough for 1 ms
     assert_eq!(
         us_after,
-        us_before + 3000,
+        us_before + 3,
         "ELAPSED_US should increment, not be overwritten"
     );
     assert_eq!(
-        ms_after,
-        ms_before + 3,
-        "ELAPSED_MS should increment, not be overwritten"
+        ms_after, ms_before,
+        "ELAPSED_MS should be same (not enough cycles for 1ms)"
     );
     assert_eq!(
         s_after, s_before,
