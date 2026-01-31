@@ -53,11 +53,13 @@ fn test_zero_latency_default() {
         "Should halt with tohost value 42"
     );
 
-    // With zero latency, this should complete quickly
+    // With serialized bus protocol, each memory access takes multiple cycles
+    // (5 bytes TX for read, 1-4 bytes RX for response)
+    // So we expect more cycles than with direct memory interface
     println!("✓ Zero latency test completed in {} cycles", result.cycles);
     assert!(
-        result.cycles < 30,
-        "Should complete in fewer than 30 cycles with zero latency"
+        result.cycles < 100,
+        "Should complete in fewer than 100 cycles with zero latency"
     );
 }
 

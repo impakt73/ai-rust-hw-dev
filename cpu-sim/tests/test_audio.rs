@@ -137,9 +137,9 @@ fn test_audio_pattern() {
 
     let result = run_elf(
         &elf_path,
-        150_000, // High limit for audio sample generation
-        false,   // print_inst_trace
-        false,   // print_fsm_state
+        2_000_000, // High limit for audio sample generation (increased due to serialized bus protocol)
+        false,     // print_inst_trace
+        false,     // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None,                       // vcd_path
