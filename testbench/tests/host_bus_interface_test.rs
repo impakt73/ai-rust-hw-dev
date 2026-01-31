@@ -1,5 +1,11 @@
 // Host Bus Interface Tests
 // Comprehensive testing of the host_bus_interface RTL module
+//
+// Protocol (Little-Endian):
+//   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
+//   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
+//   Write Response: [ack]                                             (1 byte, 0x00)
+//   Read Response:  [data...]                                         (1-4 bytes, no header)
 
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
@@ -149,17 +155,17 @@ fn test_write_word_packet_format() {
     // Byte 0: header = {4'b0, size=10, 1'b0, we=1} = 0x09
     assert_eq!(tx_packet[0], 0x09, "Header byte mismatch");
 
-    // Bytes 1-4: Address (big-endian)
-    assert_eq!(tx_packet[1], 0x12, "Address[31:24] mismatch");
-    assert_eq!(tx_packet[2], 0x34, "Address[23:16] mismatch");
-    assert_eq!(tx_packet[3], 0x56, "Address[15:8] mismatch");
-    assert_eq!(tx_packet[4], 0x78, "Address[7:0] mismatch");
+    // Bytes 1-4: Address (little-endian: LSB first)
+    assert_eq!(tx_packet[1], 0x78, "Address[7:0] mismatch");
+    assert_eq!(tx_packet[2], 0x56, "Address[15:8] mismatch");
+    assert_eq!(tx_packet[3], 0x34, "Address[23:16] mismatch");
+    assert_eq!(tx_packet[4], 0x12, "Address[31:24] mismatch");
 
-    // Bytes 5-8: Write data (big-endian, 4 bytes for word)
-    assert_eq!(tx_packet[5], 0xDE, "WData[31:24] mismatch");
-    assert_eq!(tx_packet[6], 0xAD, "WData[23:16] mismatch");
-    assert_eq!(tx_packet[7], 0xBE, "WData[15:8] mismatch");
-    assert_eq!(tx_packet[8], 0xEF, "WData[7:0] mismatch");
+    // Bytes 5-8: Write data (little-endian: LSB first)
+    assert_eq!(tx_packet[5], 0xEF, "WData[7:0] mismatch");
+    assert_eq!(tx_packet[6], 0xBE, "WData[15:8] mismatch");
+    assert_eq!(tx_packet[7], 0xAD, "WData[23:16] mismatch");
+    assert_eq!(tx_packet[8], 0xDE, "WData[31:24] mismatch");
 }
 
 #[test]
@@ -199,9 +205,9 @@ fn test_write_halfword_packet_format() {
     // Byte 0: header = {4'b0, size=01, 1'b0, we=1} = 0x05
     assert_eq!(tx_packet[0], 0x05, "Header byte mismatch");
 
-    // Bytes 5-6: Write data (2 bytes for halfword: [15:8] and [7:0])
-    assert_eq!(tx_packet[5], 0xCA, "WData[15:8] mismatch");
-    assert_eq!(tx_packet[6], 0xFE, "WData[7:0] mismatch");
+    // Bytes 5-6: Write data (little-endian: LSB first, 2 bytes for halfword)
+    assert_eq!(tx_packet[5], 0xFE, "WData[7:0] mismatch");
+    assert_eq!(tx_packet[6], 0xCA, "WData[15:8] mismatch");
 }
 
 #[test]
@@ -264,14 +270,10 @@ fn test_write_transaction_complete() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response packet (1 byte for write: just header)
-    // Header echoes we=1, size=10: 0x09
-    assert!(
-        send_rx_byte(&mut dut, 0x09, 100),
-        "Failed to send response header"
-    );
+    // Send response packet (1 byte for write: ack byte = 0x00)
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "Failed to send ack byte");
 
-    // Verify ready is asserted (should be HIGH on the cycle after RX completes)
+    // Verify ready is asserted (should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH after write response");
 }
 
@@ -301,31 +303,25 @@ fn test_read_word_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response with read data = 0xCAFEBABE
-    // Header: {4'b0, size=10, 1'b0, we=0} = 0x08
+    // Send response with read data = 0xCAFEBABE (little-endian: LSB first, no header)
     assert!(
-        send_rx_byte(&mut dut, 0x08, 100),
-        "Failed to send response header"
-    );
-    // Data: 4 bytes (word)
-    assert!(
-        send_rx_byte(&mut dut, 0xCA, 100),
-        "Failed to send RData[31:24]"
-    );
-    assert!(
-        send_rx_byte(&mut dut, 0xFE, 100),
-        "Failed to send RData[23:16]"
+        send_rx_byte(&mut dut, 0xBE, 100),
+        "Failed to send RData[7:0]"
     );
     assert!(
         send_rx_byte(&mut dut, 0xBA, 100),
         "Failed to send RData[15:8]"
     );
     assert!(
-        send_rx_byte(&mut dut, 0xBE, 100),
-        "Failed to send RData[7:0]"
+        send_rx_byte(&mut dut, 0xFE, 100),
+        "Failed to send RData[23:16]"
+    );
+    assert!(
+        send_rx_byte(&mut dut, 0xCA, 100),
+        "Failed to send RData[31:24]"
     );
 
-    // Verify read data and ready (ready should be HIGH after last RX byte)
+    // Verify read data and ready (ready should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH");
     assert_eq!(dut.rdata, 0xCAFEBABE, "Read data mismatch");
 }
@@ -352,26 +348,21 @@ fn test_read_halfword_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: header + 2 bytes data (16-bit halfword in bits [15:0])
-    // Header: {4'b0, size=01, 1'b0, we=0} = 0x04
+    // Send response: 2 bytes data (little-endian: LSB first, no header)
     assert!(
-        send_rx_byte(&mut dut, 0x04, 100),
-        "Failed to send response header"
+        send_rx_byte(&mut dut, 0xCD, 100),
+        "Failed to send RData[7:0]"
     );
     assert!(
         send_rx_byte(&mut dut, 0xAB, 100),
         "Failed to send RData[15:8]"
     );
-    assert!(
-        send_rx_byte(&mut dut, 0xCD, 100),
-        "Failed to send RData[7:0]"
-    );
 
     assert_eq!(dut.ready, 1, "ready should be HIGH");
+    // Upper bits should be zeroed for sub-word reads
     assert_eq!(
-        dut.rdata & 0xFFFF,
-        0xABCD,
-        "read halfword should be 0xABCD in bits [15:0]"
+        dut.rdata, 0x0000ABCD,
+        "read halfword should be 0xABCD with upper bits zeroed"
     );
 }
 
@@ -397,22 +388,17 @@ fn test_read_byte_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: header + 1 byte data
-    // Header: {4'b0, size=00, 1'b0, we=0} = 0x00
-    assert!(
-        send_rx_byte(&mut dut, 0x00, 100),
-        "Failed to send response header"
-    );
+    // Send response: 1 byte data (little-endian: no header for read response)
     assert!(
         send_rx_byte(&mut dut, 0x42, 100),
         "Failed to send RData[7:0]"
     );
 
     assert_eq!(dut.ready, 1, "ready should be HIGH");
+    // Upper bits should be zeroed for sub-word reads
     assert_eq!(
-        dut.rdata & 0xFF,
-        0x42,
-        "read byte should be 0x42 in bits [7:0]"
+        dut.rdata, 0x00000042,
+        "read byte should be 0x42 with upper bits zeroed"
     );
 }
 
@@ -448,11 +434,11 @@ fn test_read_request_packet_format() {
     // Header byte: {4'b0, size=10, 1'b0, we=0} = 0x08
     assert_eq!(tx_packet[0], 0x08, "Header byte for read mismatch");
 
-    // Address bytes
-    assert_eq!(tx_packet[1], 0x12, "Address[31:24] mismatch");
-    assert_eq!(tx_packet[2], 0x34, "Address[23:16] mismatch");
-    assert_eq!(tx_packet[3], 0x56, "Address[15:8] mismatch");
-    assert_eq!(tx_packet[4], 0x78, "Address[7:0] mismatch");
+    // Address bytes (little-endian: LSB first)
+    assert_eq!(tx_packet[1], 0x78, "Address[7:0] mismatch");
+    assert_eq!(tx_packet[2], 0x56, "Address[15:8] mismatch");
+    assert_eq!(tx_packet[3], 0x34, "Address[23:16] mismatch");
+    assert_eq!(tx_packet[4], 0x12, "Address[31:24] mismatch");
 
     // Verify tx_valid goes low after 5 bytes (no more data)
     clock_cycle!(dut);
@@ -514,8 +500,16 @@ fn test_tx_backpressure() {
     dut.eval();
     clock_cycle!(dut);
 
-    // Data should have advanced
-    // (next byte should be different for non-zero address)
+    // Verify tx_data has advanced to the next byte
+    let second_byte = dut.tx_data;
+    assert_eq!(
+        dut.tx_valid, 1,
+        "tx_valid should remain HIGH after accepting the first byte"
+    );
+    assert_ne!(
+        second_byte, first_byte,
+        "tx_data should advance to the next byte after backpressure is released"
+    );
 }
 
 #[test]
@@ -555,8 +549,8 @@ fn test_rx_delayed_valid() {
         assert_eq!(dut.ready, 0, "ready should stay LOW waiting for response");
     }
 
-    // Now send response (1 byte for write: header only)
-    send_rx_byte(&mut dut, 0x09, 100); // Header echoing we=1, size=10
+    // Now send response (1 byte for write: ack byte = 0x00)
+    send_rx_byte(&mut dut, 0x00, 100);
 
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
 }
@@ -708,10 +702,10 @@ fn test_consecutive_transactions() {
             receive_tx_byte(&mut dut, 100).expect("TX byte");
         }
 
-        // Send response (1 byte for write)
-        send_rx_byte(&mut dut, 0x09, 100); // Header echoing we=1, size=10
+        // Send response (1 byte for write: ack byte = 0x00)
+        send_rx_byte(&mut dut, 0x00, 100);
 
-        // Verify completion (ready should be HIGH right after RX handshake)
+        // Verify completion (ready should be HIGH in COMPLETE state)
         assert_eq!(dut.ready, 1, "Transaction {} should complete", iteration);
 
         // Wait a cycle for state to return to IDLE before next transaction
@@ -747,15 +741,15 @@ fn test_all_ones_address() {
 
     assert_eq!(tx_packet.len(), 9, "Word write should be 9 bytes");
 
-    // Verify address bytes are all 0xFF
-    assert_eq!(tx_packet[1], 0xFF, "Address[31:24] should be 0xFF");
-    assert_eq!(tx_packet[2], 0xFF, "Address[23:16] should be 0xFF");
-    assert_eq!(tx_packet[3], 0xFF, "Address[15:8] should be 0xFF");
-    assert_eq!(tx_packet[4], 0xFF, "Address[7:0] should be 0xFF");
+    // Verify address bytes are all 0xFF (little-endian)
+    assert_eq!(tx_packet[1], 0xFF, "Address[7:0] should be 0xFF");
+    assert_eq!(tx_packet[2], 0xFF, "Address[15:8] should be 0xFF");
+    assert_eq!(tx_packet[3], 0xFF, "Address[23:16] should be 0xFF");
+    assert_eq!(tx_packet[4], 0xFF, "Address[31:24] should be 0xFF");
 
-    // Verify write data bytes are all 0xFF
-    assert_eq!(tx_packet[5], 0xFF, "WData[31:24] should be 0xFF");
-    assert_eq!(tx_packet[6], 0xFF, "WData[23:16] should be 0xFF");
-    assert_eq!(tx_packet[7], 0xFF, "WData[15:8] should be 0xFF");
-    assert_eq!(tx_packet[8], 0xFF, "WData[7:0] should be 0xFF");
+    // Verify write data bytes are all 0xFF (little-endian)
+    assert_eq!(tx_packet[5], 0xFF, "WData[7:0] should be 0xFF");
+    assert_eq!(tx_packet[6], 0xFF, "WData[15:8] should be 0xFF");
+    assert_eq!(tx_packet[7], 0xFF, "WData[23:16] should be 0xFF");
+    assert_eq!(tx_packet[8], 0xFF, "WData[31:24] should be 0xFF");
 }
