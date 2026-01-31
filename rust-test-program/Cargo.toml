@@ -142,3 +142,8 @@ name = "test_audio_loop"
 path = "src/test_audio_loop.rs"
 test = false
 
+[[bin]]
+name = "test_led_loop"
+path = "src/test_led_loop.rs"
+test = false
+
