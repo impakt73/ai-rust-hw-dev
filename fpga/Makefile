@@ -27,8 +27,8 @@ RTL_SOURCES = \
 	$(RTL_DIR)/sync_fifo.sv \
 	$(RTL_DIR)/writeback_mux.sv \
 	$(RTL_DIR)/cpu.sv \
-	$(RTL_DIR)/peripherals/led_controller.sv \
-	$(RTL_DIR)/peripherals/uart.sv \
+	$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
+	$(RTL_DIR)/peripherals/uart_peripheral.sv \
 	$(RTL_DIR)/top.sv
 
 FPGA_SOURCES = \
