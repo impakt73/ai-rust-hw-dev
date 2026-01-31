@@ -482,7 +482,7 @@ fn test_uart_loopback_multiple_bytes() {
 
         assert!(timeout > 0, "Timeout waiting for RX valid");
         assert_eq!(dut.rx_valid, 1, "RX valid should be high");
-        assert_eq!(dut.rx_data, test_byte, "Byte {} mismatch", test_byte);
+        assert_eq!(dut.rx_data, test_byte, "Byte 0x{:02X} mismatch", test_byte);
 
         // Acknowledge reception
         dut.rx_ready = 1;

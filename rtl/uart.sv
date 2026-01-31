@@ -46,6 +46,9 @@ module uart #(
     // RX oversampling (16x for robust start bit detection)
     localparam int CLKS_PER_SAMPLE = CLKS_PER_BIT / 16;
     
+    // Width for RX baud counter - handle edge case where CLKS_PER_SAMPLE == 1
+    localparam int RX_CNT_WIDTH = (CLKS_PER_SAMPLE > 1) ? $clog2(CLKS_PER_SAMPLE) : 1;
+    
     // Parameter validation (simulation only)
     initial begin
         // Validate baud rate is achievable with given clock
@@ -166,7 +169,7 @@ module uart #(
     logic [7:0] rx_shift_reg;
     logic [2:0] rx_bit_index;
     logic [3:0] rx_sample_count;  // 0-15 for 16x oversampling
-    logic [(CLKS_PER_SAMPLE > 1) ? $clog2(CLKS_PER_SAMPLE)-1 : 0 : 0] rx_baud_counter;
+    logic [RX_CNT_WIDTH-1:0] rx_baud_counter;
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -190,13 +193,13 @@ module uart #(
                     if (rx_sync_1 == 1'b0) begin  // Falling edge detected (start bit)
                         rx_state <= RX_START_BIT;
                         rx_sample_count <= 4'd0;
-                        rx_baud_counter <= CLKS_PER_SAMPLE[$clog2(CLKS_PER_SAMPLE)-1:0] - 1'b1;
+                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
                     end
                 end
                 
                 RX_START_BIT: begin
                     if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[$clog2(CLKS_PER_SAMPLE)-1:0] - 1'b1;
+                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
                         if (rx_sample_count == 4'd7) begin
                             // Sample at middle of start bit
                             if (rx_sync_1 == 1'b0) begin
@@ -221,7 +224,7 @@ module uart #(
                 
                 RX_DATA_BITS: begin
                     if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[$clog2(CLKS_PER_SAMPLE)-1:0] - 1'b1;
+                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
                         if (rx_sample_count == 4'd7) begin
                             // Sample at middle of data bit
                             rx_shift_reg <= {rx_sync_1, rx_shift_reg[7:1]};  // LSB first
@@ -244,7 +247,7 @@ module uart #(
                 
                 RX_STOP_BIT: begin
                     if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[$clog2(CLKS_PER_SAMPLE)-1:0] - 1'b1;
+                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
                         if (rx_sample_count == 4'd7) begin
                             // Sample stop bit at middle
                             if (rx_sync_1 == 1'b1) begin
