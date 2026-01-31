@@ -2,6 +2,9 @@
 // Provides elapsed time counters since reset
 // Memory-mapped at 0x51000000 in RTL peripheral address space
 //
+// FPGA-optimized design: uses cascaded counters with pulse signals
+// instead of large counters and division operations.
+//
 // Registers (all read-only):
 //   0x00: ELAPSED_US - Elapsed time in microseconds
 //   0x04: ELAPSED_MS - Elapsed time in milliseconds
@@ -33,49 +36,189 @@ module clock_peripheral #(
     assign ready = 1'b1;
     
     // ============================================================
-    // Time Counter Logic
+    // FPGA-Optimized Cascaded Counter Design
+    // ============================================================
+    // Uses small counters with pulse signals to avoid large counters
+    // and division/multiplication operations.
+    //
+    // Architecture:
+    // 1. Cycle counter counts up to CYCLES_PER_US, then pulses microsecond_elapsed
+    // 2. Microsecond sub-counter counts 0-999, pulses millisecond_elapsed at 1000
+    // 3. Millisecond sub-counter counts 0-999, increments seconds register at 1000
+    
+    // Calculate cycles per microsecond at compile time
+    // For CLK_FREQ_HZ >= 1 MHz: CYCLES_PER_US = CLK_FREQ_HZ / 1,000,000
+    // For CLK_FREQ_HZ < 1 MHz: We need to count multiple microseconds per cycle
+    localparam int CYCLES_PER_US = (CLK_FREQ_HZ >= 1_000_000) ? 
+                                   (CLK_FREQ_HZ / 1_000_000) : 1;
+    
+    // For low frequency clocks (< 1 MHz), how many microseconds per cycle
+    // For 1 kHz clock: 1 cycle = 1000 microseconds
+    localparam int US_PER_CYCLE = (CLK_FREQ_HZ >= 1_000_000) ?
+                                  1 : (1_000_000 / CLK_FREQ_HZ);
+    
+    // Calculate bit width needed for cycle counter
+    // Need to count from 0 to (CYCLES_PER_US - 1)
+    // $clog2(1) = 0, so use at least 1 bit
+    localparam int CYCLE_COUNTER_WIDTH = (CYCLES_PER_US > 1) ? $clog2(CYCLES_PER_US) : 1;
+    
+    // ============================================================
+    // Counter Registers
     // ============================================================
     
-    // Cycle counter - counts clock cycles since reset (64-bit)
-    logic [63:0] cycle_counter;
+    // Cycle counter - counts cycles until one microsecond elapses
+    // Only used when CLK_FREQ_HZ >= 1 MHz
+    logic [CYCLE_COUNTER_WIDTH-1:0] cycle_counter;
     
-    // Derived time values (32-bit for memory-mapped access)
+    // Microsecond sub-counter - counts 0-999 microseconds within a millisecond
+    logic [9:0] us_sub_counter;
+    
+    // Millisecond sub-counter - counts 0-999 milliseconds within a second
+    logic [9:0] ms_sub_counter;
+    
+    // Elapsed time registers (32-bit, read via memory interface)
     logic [31:0] elapsed_us;
     logic [31:0] elapsed_ms;
     logic [31:0] elapsed_s;
     
-    // Calculate cycles needed for each time unit
-    // Use localparam for compile-time constants
-    // Note: Using explicit 64-bit widths for Yosys compatibility
-    localparam [63:0] CYCLES_PER_MS = 64'(CLK_FREQ_HZ) / 64'd1_000;
-    localparam [63:0] CYCLES_PER_S  = 64'(CLK_FREQ_HZ);
+    // Pulse signals for cascading
+    logic microsecond_elapsed;
+    logic millisecond_elapsed;
     
-    // Handle low frequency case (< 1 MHz) for CYCLES_PER_US
-    // If CLK_FREQ_HZ < 1 MHz, we need to scale differently to avoid divide by zero
+    // ============================================================
+    // Counter Logic
+    // ============================================================
+    
     generate
-        if (CLK_FREQ_HZ >= 1_000_000) begin : gen_us_high_freq
-            // Normal case: clock >= 1 MHz, divide to get microseconds
-            localparam [63:0] CYCLES_PER_US = 64'(CLK_FREQ_HZ) / 64'd1_000_000;
-            assign elapsed_us = 32'(cycle_counter / CYCLES_PER_US);
-        end else begin : gen_us_low_freq
-            // Low frequency case: multiply cycles to get microseconds
-            // For 1 kHz: multiply cycles by 1000 to get microseconds
-            localparam [63:0] US_SCALE = 64'd1_000_000 / 64'(CLK_FREQ_HZ);
-            assign elapsed_us = 32'(cycle_counter * US_SCALE);
+        if (CLK_FREQ_HZ >= 1_000_000) begin : gen_high_freq
+            // High frequency: count cycles until 1 microsecond
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    cycle_counter <= '0;
+                end else if (cycle_counter >= CYCLE_COUNTER_WIDTH'(CYCLES_PER_US - 1)) begin
+                    cycle_counter <= '0;
+                end else begin
+                    cycle_counter <= cycle_counter + 1'b1;
+                end
+            end
+            
+            // Microsecond elapsed when cycle counter wraps
+            assign microsecond_elapsed = (cycle_counter >= CYCLE_COUNTER_WIDTH'(CYCLES_PER_US - 1));
+            
+        end else begin : gen_low_freq
+            // Low frequency (< 1 MHz): each clock cycle represents multiple microseconds
+            // Since 1 cycle >= 1 µs, we signal on every cycle. The elapsed_us register
+            // increments by US_PER_CYCLE each cycle, and us_sub_counter handles the
+            // wrapping logic to derive millisecond and second pulses correctly.
+            assign microsecond_elapsed = 1'b1;
+            
+            // cycle_counter not used in low frequency mode
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    cycle_counter <= '0;
+                end else begin
+                    cycle_counter <= '0;  // Keep at 0, not used
+                end
+            end
         end
     endgenerate
     
-    // Milliseconds and seconds: division is safe when CLK_FREQ_HZ >= 1000
-    // (the minimum sensible clock frequency)
-    assign elapsed_ms = 32'(cycle_counter / CYCLES_PER_MS);
-    assign elapsed_s  = 32'(cycle_counter / CYCLES_PER_S);
+    // Microseconds elapsed register
+    generate
+        if (CLK_FREQ_HZ >= 1_000_000) begin : gen_us_high
+            // High frequency: increment by 1 each microsecond
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    elapsed_us <= 32'h0;
+                end else if (microsecond_elapsed) begin
+                    elapsed_us <= elapsed_us + 32'h1;
+                end
+            end
+        end else begin : gen_us_low
+            // Low frequency: increment by US_PER_CYCLE each clock cycle
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    elapsed_us <= 32'h0;
+                end else begin
+                    elapsed_us <= elapsed_us + 32'(US_PER_CYCLE);
+                end
+            end
+        end
+    endgenerate
     
-    // Cycle counter - increments every clock cycle
+    // Microsecond sub-counter (0-999) for millisecond rollover
+    generate
+        if (CLK_FREQ_HZ >= 1_000_000) begin : gen_us_sub_high
+            // High frequency: increment by 1 each microsecond
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    us_sub_counter <= 10'h0;
+                end else if (microsecond_elapsed) begin
+                    if (us_sub_counter >= 10'd999) begin
+                        us_sub_counter <= 10'h0;
+                    end else begin
+                        us_sub_counter <= us_sub_counter + 10'h1;
+                    end
+                end
+            end
+            
+            // Millisecond elapsed when microsecond sub-counter wraps from 999 to 0
+            assign millisecond_elapsed = microsecond_elapsed && (us_sub_counter >= 10'd999);
+            
+        end else begin : gen_us_sub_low
+            // Low frequency: increment by US_PER_CYCLE each clock cycle
+            // Need to handle case where US_PER_CYCLE might cause us to skip past 999
+            always_ff @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    us_sub_counter <= 10'h0;
+                end else begin
+                    if ((us_sub_counter + 10'(US_PER_CYCLE)) >= 10'd1000) begin
+                        // Wrap around, keeping the remainder
+                        us_sub_counter <= (us_sub_counter + 10'(US_PER_CYCLE)) - 10'd1000;
+                    end else begin
+                        us_sub_counter <= us_sub_counter + 10'(US_PER_CYCLE);
+                    end
+                end
+            end
+            
+            // Millisecond elapsed when we cross the 1000 threshold
+            assign millisecond_elapsed = ((us_sub_counter + 10'(US_PER_CYCLE)) >= 10'd1000);
+        end
+    endgenerate
+    
+    // Milliseconds elapsed register
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            cycle_counter <= 64'h0;
-        end else begin
-            cycle_counter <= cycle_counter + 64'h1;
+            elapsed_ms <= 32'h0;
+        end else if (millisecond_elapsed) begin
+            elapsed_ms <= elapsed_ms + 32'h1;
+        end
+    end
+    
+    // Millisecond sub-counter (0-999) for second rollover
+    logic second_elapsed;
+    
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ms_sub_counter <= 10'h0;
+        end else if (millisecond_elapsed) begin
+            if (ms_sub_counter >= 10'd999) begin
+                ms_sub_counter <= 10'h0;
+            end else begin
+                ms_sub_counter <= ms_sub_counter + 10'h1;
+            end
+        end
+    end
+    
+    // Second elapsed when millisecond sub-counter wraps from 999 to 0
+    assign second_elapsed = millisecond_elapsed && (ms_sub_counter >= 10'd999);
+    
+    // Seconds elapsed register
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            elapsed_s <= 32'h0;
+        end else if (second_elapsed) begin
+            elapsed_s <= elapsed_s + 32'h1;
         end
     end
     
