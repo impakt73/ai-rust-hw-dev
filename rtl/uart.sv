@@ -173,6 +173,23 @@ module uart #(
     logic [3:0] rx_sample_count;  // 0-15 for 16x oversampling
     logic [RX_CNT_WIDTH-1:0] rx_baud_counter;
     
+    // Combinational signal to detect when a new error is being set this cycle
+    // Used to ensure new errors take precedence over rx_error_clr clearing
+    logic rx_error_set;
+    always_comb begin
+        rx_error_set = 1'b0;
+        if (rx_state == RX_STOP_BIT && rx_baud_counter == '0 && rx_sample_count == 4'd7) begin
+            if (rx_sync_1 == 1'b1) begin
+                // Valid stop bit - check for overrun
+                if (rx_valid) begin
+                    rx_error_set = 1'b1;  // Overrun error
+                end
+            end else begin
+                rx_error_set = 1'b1;  // Framing error
+            end
+        end
+    end
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rx_state <= RX_IDLE;
@@ -282,9 +299,9 @@ module uart #(
             endcase
             
             // Handle rx_error_clr: clear sticky error flag when asserted
-            // This is placed after the state machine so new errors take precedence
-            // over clearing if both occur in the same cycle
-            if (rx_error_clr) begin
+            // Only clear if no new error is being set in this cycle
+            // This ensures new errors take precedence over clearing
+            if (rx_error_clr && !rx_error_set) begin
                 rx_error <= 1'b0;
             end
         end

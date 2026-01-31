@@ -535,3 +535,184 @@ fn test_uart_rx_framing_error() {
         "RX error should be set for missing stop bit"
     );
 }
+
+#[test]
+fn test_uart_rx_error_sticky() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    // Apply reset
+    reset_uart(&mut dut);
+
+    // Verify rx_error is initially low
+    assert_eq!(dut.rx_error, 0, "RX error should be low after reset");
+
+    // Send byte with framing error
+    let test_byte = 0x42;
+
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Data bits (LSB first)
+    for i in 0..8 {
+        dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // INCORRECT stop bit (should be high, send low instead)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Return line to idle
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, 10);
+
+    // Verify rx_error is set
+    assert_eq!(
+        dut.rx_error, 1,
+        "RX error should be set after framing error"
+    );
+
+    // Wait many cycles - error should remain set (sticky)
+    wait_cycles(&mut dut, 1000);
+    assert_eq!(dut.rx_error, 1, "RX error should remain set (sticky)");
+
+    // Receive a valid byte - error should still remain set
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Data bits (LSB first) - send 0x55
+    for i in 0..8 {
+        dut.rx_in = if (0x55u8 >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Correct stop bit
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+    wait_cycles(&mut dut, 10);
+
+    // Error should still be set even after valid reception
+    assert_eq!(
+        dut.rx_error, 1,
+        "RX error should remain set even after valid byte reception"
+    );
+}
+
+#[test]
+fn test_uart_rx_error_clr() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    // Apply reset
+    reset_uart(&mut dut);
+
+    // Send byte with framing error to set rx_error
+    let test_byte = 0x33;
+
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Data bits (LSB first)
+    for i in 0..8 {
+        dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // INCORRECT stop bit
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Return line to idle
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, 10);
+
+    // Verify rx_error is set
+    assert_eq!(
+        dut.rx_error, 1,
+        "RX error should be set after framing error"
+    );
+
+    // Assert rx_error_clr to clear the error
+    dut.rx_error_clr = 1;
+    dut.eval();
+    clock_cycle!(dut);
+
+    // Error should now be cleared
+    assert_eq!(
+        dut.rx_error, 0,
+        "RX error should be cleared after rx_error_clr"
+    );
+
+    // De-assert rx_error_clr
+    dut.rx_error_clr = 0;
+    dut.eval();
+    clock_cycle!(dut);
+
+    // Error should stay cleared
+    assert_eq!(
+        dut.rx_error, 0,
+        "RX error should remain cleared after rx_error_clr de-asserted"
+    );
+}
+
+#[test]
+fn test_uart_rx_overrun() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    // Apply reset
+    reset_uart(&mut dut);
+
+    // Receive first byte
+    let first_byte = 0x42;
+    receive_byte(&mut dut, first_byte);
+
+    // Give extra time for processing
+    wait_cycles(&mut dut, 10);
+
+    // Verify first byte received correctly
+    assert_eq!(dut.rx_valid, 1, "RX valid should be high after first byte");
+    assert_eq!(dut.rx_data, first_byte, "First byte should be correct");
+    assert_eq!(dut.rx_error, 0, "RX error should be low after valid byte");
+
+    // Do NOT acknowledge the first byte (don't assert rx_ready)
+    // Immediately receive a second byte - this should cause overrun
+    let second_byte = 0x7E;
+
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Data bits (LSB first)
+    for i in 0..8 {
+        dut.rx_in = if (second_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Valid stop bit
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Give extra time for processing
+    wait_cycles(&mut dut, 10);
+
+    // Verify overrun error was detected
+    assert_eq!(dut.rx_error, 1, "RX error should be set due to overrun");
+
+    // Original data should be preserved (second byte was dropped)
+    assert_eq!(dut.rx_valid, 1, "RX valid should still be high");
+    assert_eq!(
+        dut.rx_data, first_byte,
+        "Original byte should be preserved (second dropped)"
+    );
+}
