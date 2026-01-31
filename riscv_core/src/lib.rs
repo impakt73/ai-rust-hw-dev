@@ -112,6 +112,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "bus.sv",                        // System bus for address decoding
         "cpu.sv",                        // CPU core
         "sync_fifo.sv",                  // Generic synchronous FIFO
+        "host_bus_interface.sv",         // Host bus interface for serialized transactions
         "peripherals/led_controller.sv", // LED controller peripheral
         "peripherals/uart.sv",           // UART controller peripheral
         "fetch_buffer.sv",               // RV32C fetch buffer

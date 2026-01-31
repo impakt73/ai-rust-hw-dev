@@ -1,11 +1,14 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
 // Uses the bus module to route requests between CPU and peripherals
-// External memory requests are forwarded out of this module to DRAM + Rust peripherals
+// External memory requests are serialized via host_bus_interface for host communication
 //
 // UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
 // fetch and data access. The CPU's multi-cycle FSM ensures only one type of
 // access is active at a time.
+//
+// HOST INTERFACE: External memory requests are serialized to an 8-bit byte stream
+// via the host_bus_interface module for communication with a host (simulation or FPGA).
 
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -21,15 +24,17 @@ module top #(
     input  logic        rst_n,
     input  logic [31:0] boot_addr,
     
-    // Unified external memory interface (for DRAM + Rust peripherals)
-    // Handles both instruction fetch and data access
-    output logic [31:0] ext_mem_addr,
-    output logic [31:0] ext_mem_wdata,
-    input  logic [31:0] ext_mem_rdata,
-    output logic        ext_mem_we,
-    output logic [1:0]  ext_mem_size,
-    output logic        ext_mem_req,
-    input  logic        ext_mem_ready,
+    // Host TX Interface (to External Host)
+    // Serialized bus transactions sent to host
+    output logic [7:0]  host_tx_data,
+    output logic        host_tx_valid,
+    input  logic        host_tx_ready,
+    
+    // Host RX Interface (from External Host)
+    // Serialized bus transaction responses from host
+    input  logic [7:0]  host_rx_data,
+    input  logic        host_rx_valid,
+    output logic        host_rx_ready,
     
     // LED peripheral outputs
     output logic [7:0]  led_out,
@@ -93,6 +98,17 @@ module top #(
     logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
+    // External Memory Interface Signals (Bus to Host Bus Interface)
+    // ============================================================
+    logic [31:0] ext_mem_addr;
+    logic [31:0] ext_mem_wdata;
+    logic [31:0] ext_mem_rdata;
+    logic        ext_mem_we;
+    logic [1:0]  ext_mem_size;
+    logic        ext_mem_req;
+    logic        ext_mem_ready;
+    
+    // ============================================================
     // Bus Module Instantiation
     // ============================================================
     // Routes CPU requests to the appropriate peripheral based on address
@@ -127,7 +143,7 @@ module top #(
         .uart_req(uart_req),
         .uart_ready(uart_ready),
         
-        // External Memory interface
+        // External Memory interface (routed to host_bus_interface)
         .ext_mem_addr(ext_mem_addr),
         .ext_mem_wdata(ext_mem_wdata),
         .ext_mem_rdata(ext_mem_rdata),
@@ -135,6 +151,34 @@ module top #(
         .ext_mem_size(ext_mem_size),
         .ext_mem_req(ext_mem_req),
         .ext_mem_ready(ext_mem_ready)
+    );
+    
+    // ============================================================
+    // Host Bus Interface Instantiation
+    // ============================================================
+    // Serializes external memory transactions to byte stream for host communication
+    host_bus_interface host_bus_if (
+        .clk(clk),
+        .rst_n(rst_n),
+        
+        // Bus Slave Interface (from System Bus)
+        .addr(ext_mem_addr),
+        .wdata(ext_mem_wdata),
+        .rdata(ext_mem_rdata),
+        .we(ext_mem_we),
+        .size(ext_mem_size),
+        .req(ext_mem_req),
+        .ready(ext_mem_ready),
+        
+        // Host TX Interface (to External Host)
+        .tx_data(host_tx_data),
+        .tx_valid(host_tx_valid),
+        .tx_ready(host_tx_ready),
+        
+        // Host RX Interface (from External Host)
+        .rx_data(host_rx_data),
+        .rx_valid(host_rx_valid),
+        .rx_ready(host_rx_ready)
     );
     
     // ============================================================

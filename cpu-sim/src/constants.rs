@@ -10,29 +10,23 @@
 ///
 /// # Value Selection Rationale
 ///
-/// The value of 40,000 cycles was chosen based on empirical measurement of
-/// all cpu-sim tests:
+/// The value of 500,000 cycles was chosen based on the serialized bus protocol
+/// where each memory operation requires multiple byte transfers:
 ///
-/// - **Maximum observed cycles**: 17,296 (from test_println_macro)
-/// - **Safety margin**: 2.3× the maximum observed value
-/// - **Unmeasured tests**: Conservative estimates suggest < 5,000 cycles for most ELF tests
+/// - **Read operation**: 5 bytes TX (header + 4 addr) + 1-4 bytes RX = ~6-9 cycles
+/// - **Write operation**: 5-9 bytes TX + 1 byte RX ack = ~7-10 cycles
+/// - **Previous limit**: 40,000 cycles (with direct memory interface)
+/// - **New limit**: ~12.5× higher to account for serialized protocol overhead
 ///
 /// This value:
-/// 1. Provides ample headroom (2.3× maximum observed) for legitimate tests
-/// 2. Is a clean, memorable round number
-/// 3. Remains well below previous high limits (100,000) that were unnecessarily large
-/// 4. Acts as a safety net while the per-instruction limit (10,000 cycles)
+/// 1. Provides ample headroom for legitimate tests with serialized bus protocol
+/// 2. Remains well below limits that would cause unreasonable test durations
+/// 3. Acts as a safety net while the per-instruction limit (10,000 cycles)
 ///    remains the primary hung detection mechanism
-/// 5. Should never be reached by any legitimate test in normal operation
 ///
 /// # Exceptions
 ///
 /// Tests that intentionally test hung detection or long instruction scenarios
 /// may use higher limits with documented justification. The per-instruction
 /// hung detector (default: 10,000 cycles per instruction) handles most edge cases.
-///
-/// # Measurement Data
-///
-/// See `reports/max_cycles_report.csv` for detailed cycle measurements across
-/// all tests that informed this value.
-pub const GLOBAL_MAX_CYCLES: u64 = 40_000;
+pub const GLOBAL_MAX_CYCLES: u64 = 500_000;

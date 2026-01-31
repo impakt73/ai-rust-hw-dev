@@ -8,6 +8,36 @@ use std::time::Instant;
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
+/// Host Bus Interface packet processing state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostBusState {
+    /// Idle - waiting for TX packet from CPU, will consume header when valid
+    Idle,
+    /// Receiving address bytes (4 bytes, little-endian)
+    RxAddr { byte_idx: u8 },
+    /// Receiving write data bytes (1-4 bytes based on size)
+    RxWdata { byte_idx: u8 },
+    /// Sending write acknowledgement
+    TxAck,
+    /// Sending read data bytes (1-4 bytes based on size)
+    TxRdata { byte_idx: u8 },
+}
+
+/// Captured transaction from host bus interface
+#[derive(Debug, Clone, Default)]
+struct HostBusTransaction {
+    /// Write enable (true = write, false = read)
+    we: bool,
+    /// Access size (0 = byte, 1 = halfword, 2 = word)
+    size: u8,
+    /// Address (accumulated little-endian)
+    addr: u32,
+    /// Write data (accumulated little-endian, only valid for writes)
+    wdata: u32,
+    /// Read data to send back (only valid for reads)
+    rdata: u32,
+}
+
 /// Result of a single simulation step
 #[derive(Debug)]
 pub struct SimulationStepResult {
@@ -525,7 +555,10 @@ where
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
-    mem_delay_counter: u32,  // Current delay counter for unified memory interface
+    // Host bus interface state machine
+    host_bus_state: HostBusState,
+    host_bus_txn: HostBusTransaction,
+    host_bus_delay_counter: u32, // Delay counter for memory latency simulation
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -621,7 +654,9 @@ where
             trace_callback,
             vcd_time: 0,
             mem_latency_cycles,
-            mem_delay_counter: 0,
+            host_bus_state: HostBusState::Idle,
+            host_bus_txn: HostBusTransaction::default(),
+            host_bus_delay_counter: 0,
             hung_detector,
         })
     }
@@ -655,6 +690,179 @@ where
         }
     }
 
+    /// Handle the host bus interface protocol
+    ///
+    /// This method implements the host side of the serialized bus protocol.
+    /// It receives TX packets from the CPU (read/write requests) and sends
+    /// RX responses (acknowledgements or read data).
+    ///
+    /// Protocol (Variable Length, Little-Endian):
+    ///   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
+    ///   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
+    ///   Write Response: [ack]                                             (1 byte, 0x00)
+    ///   Read Response:  [data...]                                         (1-4 bytes, no header)
+    ///
+    /// Header format: {4'b0000, size[1:0], 1'b0, we}
+    fn handle_host_bus_interface(&mut self) {
+        match self.host_bus_state {
+            HostBusState::Idle => {
+                // Waiting for TX packet from CPU
+                self.cpu.host_tx_ready = 1; // Ready to receive
+                self.cpu.host_rx_valid = 0; // Not sending anything
+
+                if self.cpu.host_tx_valid != 0 {
+                    // Handshake complete (valid && ready) - consume header byte now
+                    let header = self.cpu.host_tx_data;
+                    // Parse header: {4'b0000, size[1:0], 1'b0, we}
+                    self.host_bus_txn.we = (header & 0x01) != 0;
+                    self.host_bus_txn.size = (header >> 2) & 0x03;
+                    self.host_bus_txn.addr = 0;
+                    self.host_bus_txn.wdata = 0;
+                    self.host_bus_state = HostBusState::RxAddr { byte_idx: 0 };
+                }
+            }
+
+            HostBusState::RxAddr { byte_idx } => {
+                self.cpu.host_tx_ready = 1;
+                self.cpu.host_rx_valid = 0;
+
+                if self.cpu.host_tx_valid != 0 {
+                    let byte = self.cpu.host_tx_data as u32;
+                    // Accumulate address (little-endian)
+                    self.host_bus_txn.addr |= byte << (byte_idx * 8);
+
+                    if byte_idx == 3 {
+                        // Address complete
+                        if self.host_bus_txn.we {
+                            // Write: continue receiving write data
+                            self.host_bus_state = HostBusState::RxWdata { byte_idx: 0 };
+                        } else {
+                            // Read: perform read and start sending response
+                            self.perform_read();
+                            // Apply memory latency
+                            if self.mem_latency_cycles > 0 {
+                                self.host_bus_delay_counter = self.mem_latency_cycles;
+                            }
+                            self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
+                        }
+                    } else {
+                        self.host_bus_state = HostBusState::RxAddr {
+                            byte_idx: byte_idx + 1,
+                        };
+                    }
+                }
+            }
+
+            HostBusState::RxWdata { byte_idx } => {
+                self.cpu.host_tx_ready = 1;
+                self.cpu.host_rx_valid = 0;
+
+                if self.cpu.host_tx_valid != 0 {
+                    let byte = self.cpu.host_tx_data as u32;
+                    // Accumulate write data (little-endian)
+                    self.host_bus_txn.wdata |= byte << (byte_idx * 8);
+
+                    // Determine how many bytes we need based on size
+                    let bytes_needed = match self.host_bus_txn.size {
+                        0 => 1, // byte
+                        1 => 2, // halfword
+                        _ => 4, // word
+                    };
+
+                    if byte_idx + 1 >= bytes_needed {
+                        // Write data complete - perform write and send ack
+                        self.perform_write();
+                        // Apply memory latency
+                        if self.mem_latency_cycles > 0 {
+                            self.host_bus_delay_counter = self.mem_latency_cycles;
+                        }
+                        self.host_bus_state = HostBusState::TxAck;
+                    } else {
+                        self.host_bus_state = HostBusState::RxWdata {
+                            byte_idx: byte_idx + 1,
+                        };
+                    }
+                }
+            }
+
+            HostBusState::TxAck => {
+                // Apply memory latency delay before sending ack
+                if self.host_bus_delay_counter > 0 {
+                    self.host_bus_delay_counter -= 1;
+                    self.cpu.host_tx_ready = 0;
+                    self.cpu.host_rx_valid = 0;
+                    return;
+                }
+
+                self.cpu.host_tx_ready = 0; // Not receiving
+                self.cpu.host_rx_valid = 1;
+                self.cpu.host_rx_data = 0x00; // Ack byte
+
+                if self.cpu.host_rx_ready != 0 {
+                    // Ack accepted, return to idle
+                    self.host_bus_state = HostBusState::Idle;
+                }
+            }
+
+            HostBusState::TxRdata { byte_idx } => {
+                // Apply memory latency delay before sending read data
+                if self.host_bus_delay_counter > 0 {
+                    self.host_bus_delay_counter -= 1;
+                    self.cpu.host_tx_ready = 0;
+                    self.cpu.host_rx_valid = 0;
+                    return;
+                }
+
+                self.cpu.host_tx_ready = 0; // Not receiving
+                self.cpu.host_rx_valid = 1;
+
+                // Send read data byte (little-endian)
+                let byte = ((self.host_bus_txn.rdata >> (byte_idx * 8)) & 0xFF) as u8;
+                self.cpu.host_rx_data = byte;
+
+                if self.cpu.host_rx_ready != 0 {
+                    // Determine how many bytes we need to send based on size
+                    let bytes_needed = match self.host_bus_txn.size {
+                        0 => 1, // byte
+                        1 => 2, // halfword
+                        _ => 4, // word
+                    };
+
+                    if byte_idx + 1 >= bytes_needed {
+                        // All bytes sent, return to idle
+                        self.host_bus_state = HostBusState::Idle;
+                    } else {
+                        self.host_bus_state = HostBusState::TxRdata {
+                            byte_idx: byte_idx + 1,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    /// Perform a read operation from the bus
+    fn perform_read(&mut self) {
+        let addr = self.host_bus_txn.addr;
+        let rdata = match self.host_bus_txn.size {
+            0 => self.bus.read_byte(addr) as u32,
+            1 => self.bus.read_halfword(addr) as u32,
+            _ => self.bus.read_word(addr),
+        };
+        self.host_bus_txn.rdata = rdata;
+    }
+
+    /// Perform a write operation to the bus
+    fn perform_write(&mut self) {
+        let addr = self.host_bus_txn.addr;
+        let wdata = self.host_bus_txn.wdata;
+        match self.host_bus_txn.size {
+            0 => self.bus.write_byte(addr, wdata as u8),
+            1 => self.bus.write_halfword(addr, wdata as u16),
+            _ => self.bus.write_word(addr, wdata),
+        }
+    }
+
     /// Reset the CPU
     /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
@@ -677,6 +885,11 @@ where
         // loads boot_addr whenever rst_n is low; boot_addr must be stable while
         // reset is asserted so the PC will hold this value after reset is released.
         self.cpu.boot_addr = boot_pc;
+
+        // Initialize host bus interface signals
+        self.cpu.host_tx_ready = 0;
+        self.cpu.host_rx_valid = 0;
+        self.cpu.host_rx_data = 0;
 
         // Drive reset low
         self.cpu.rst_n = 0;
@@ -710,6 +923,11 @@ where
         // Reset cumulative elapsed time
         self.total_elapsed_time_us = 0;
 
+        // Reset host bus interface state
+        self.host_bus_state = HostBusState::Idle;
+        self.host_bus_txn = HostBusTransaction::default();
+        self.host_bus_delay_counter = 0;
+
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
     }
@@ -737,64 +955,10 @@ where
             // Evaluate combinational logic
             self.cpu.eval();
 
-            // Handle unified memory interface with variable latency
-            // The unified interface handles both instruction fetch and data access
-            if self.cpu.ext_mem_req != 0 {
-                if self.cpu.ext_mem_we != 0 {
-                    // Memory Write (data store)
-                    // Implement delay counter for variable latency
-                    if self.mem_delay_counter <= self.mem_latency_cycles {
-                        if self.mem_delay_counter == self.mem_latency_cycles {
-                            // Perform write on the cycle when we reach the threshold
-                            let addr = self.cpu.ext_mem_addr;
-                            let size = self.cpu.ext_mem_size;
-                            let wdata = self.cpu.ext_mem_wdata;
-
-                            match size {
-                                0b00 => self.bus.write_byte(addr, wdata as u8),
-                                0b01 => self.bus.write_halfword(addr, wdata as u16),
-                                _ => self.bus.write_word(addr, wdata),
-                            }
-
-                            self.cpu.ext_mem_ready = 1; // Ready after delay
-                        } else {
-                            self.mem_delay_counter += 1;
-                            self.cpu.ext_mem_ready = 0; // Not ready yet
-                        }
-                    } else {
-                        // delay_counter > mem_latency_cycles: already completed, keep ready high
-                        self.cpu.ext_mem_ready = 1;
-                    }
-                } else {
-                    // Memory Read (instruction fetch or data load)
-                    // Read is implied by ext_mem_req=1 and ext_mem_we=0
-                    // Implement delay counter for variable latency
-                    if self.mem_delay_counter <= self.mem_latency_cycles {
-                        if self.mem_delay_counter == self.mem_latency_cycles {
-                            // Perform read on the cycle when we reach the threshold
-                            let addr = self.cpu.ext_mem_addr;
-                            let size = self.cpu.ext_mem_size;
-                            let rdata = match size {
-                                0b00 => self.bus.read_byte(addr) as u32,
-                                0b01 => self.bus.read_halfword(addr) as u32,
-                                _ => self.bus.read_word(addr),
-                            };
-
-                            self.cpu.ext_mem_rdata = rdata;
-                            self.cpu.ext_mem_ready = 1; // Ready after delay
-                        } else {
-                            self.mem_delay_counter += 1;
-                            self.cpu.ext_mem_ready = 0; // Not ready yet
-                        }
-                    } else {
-                        // delay_counter > mem_latency_cycles: already completed, keep ready high
-                        self.cpu.ext_mem_ready = 1;
-                    }
-                }
-            } else {
-                self.cpu.ext_mem_ready = 0;
-                self.mem_delay_counter = 0; // Reset counter when no request
-            }
+            // Handle host bus interface protocol
+            // The CPU sends serialized bus transactions via host_tx_* signals
+            // and we respond via host_rx_* signals
+            self.handle_host_bus_interface();
 
             // Re-evaluate after setting memory signals
             self.cpu.eval();
@@ -804,13 +968,12 @@ where
                 let fsm_state = self.cpu.debug_fsm_state;
                 let state_name = Self::fsm_state_name(fsm_state);
                 println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | ext_mem_req={} ext_mem_ready={} ext_mem_we={} | instr_complete={}",
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | host_tx_valid={} host_rx_ready={} | instr_complete={}",
                     self.cycle_count,
                     state_name,
                     self.cpu.debug_current_pc,
-                    self.cpu.ext_mem_req,
-                    self.cpu.ext_mem_ready,
-                    self.cpu.ext_mem_we,
+                    self.cpu.host_tx_valid,
+                    self.cpu.host_rx_ready,
                     self.cpu.instr_complete
                 );
             }

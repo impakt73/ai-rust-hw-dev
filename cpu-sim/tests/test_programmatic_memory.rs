@@ -72,9 +72,10 @@ fn test_programmatic_instruction_loading() {
         Some(42),
         "Expected tohost value 42 from programmatic instructions"
     );
+    // With serialized bus protocol, memory operations take more cycles
     assert!(
-        result.cycles < 25,
-        "Expected program to complete in less than 25 cycles, got {}",
+        result.cycles < 100,
+        "Expected program to complete in less than 100 cycles, got {}",
         result.cycles
     );
 
