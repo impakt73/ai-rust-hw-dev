@@ -8,4 +8,5 @@ edition = "2021"
 
 [dependencies]
 riscv_core = { path = "../riscv_core" }
+riscv_shared = { path = "../riscv_shared" }
 rand = "0.8"

@@ -3,11 +3,12 @@
 // All address mapping logic is contained within this module.
 //
 // Address Map:
-// - LED Controller:  0x50000000 - 0x5000000F (16 bytes)
-// - UART Controller: 0x52000000 - 0x520000FF (256 bytes)
-// - External Memory: Everything else (DRAM + Rust peripherals)
+// - LED Controller:   0x50000000 - 0x5000000F (16 bytes)
+// - Clock Peripheral: 0x51000000 - 0x5100000F (16 bytes)
+// - UART Controller:  0x52000000 - 0x520000FF (256 bytes)
+// - External Memory:  Everything else (DRAM + Rust peripherals)
 //
-// Unmapped addresses (within RTL peripheral range but not LED/UART):
+// Unmapped addresses (within RTL peripheral range but not LED/CLOCK/UART):
 // - Reads return 0
 // - Writes are dropped
 // - Ready is asserted immediately
@@ -37,6 +38,15 @@ module bus (
     output logic        led_req,
     input  logic        led_ready,
     
+    // Clock Peripheral interface
+    output logic [31:0] clock_addr,
+    output logic [31:0] clock_wdata,
+    input  logic [31:0] clock_rdata,
+    output logic        clock_we,
+    output logic [1:0]  clock_size,
+    output logic        clock_req,
+    input  logic        clock_ready,
+    
     // UART Controller interface
     output logic [31:0] uart_addr,
     output logic [31:0] uart_wdata,
@@ -59,8 +69,10 @@ module bus (
     // ============================================================
     // Address Range Definitions
     // ============================================================
-    localparam LED_BASE  = 32'h50000000;
-    localparam LED_LIMIT = 32'h50000010;  // LED_BASE + 16 bytes
+    localparam LED_BASE   = 32'h50000000;
+    localparam LED_LIMIT  = 32'h50000010;  // LED_BASE + 16 bytes
+    localparam CLOCK_BASE = 32'h51000000;
+    localparam CLOCK_LIMIT = 32'h51000010; // CLOCK_BASE + 16 bytes
     localparam UART_BASE  = 32'h52000000;
     localparam UART_LIMIT = 32'h52000100;  // UART_BASE + 256 bytes
     // RTL peripheral range (for detecting unmapped RTL addresses)
@@ -71,17 +83,23 @@ module bus (
     // Address Decoder
     // ============================================================
     logic sel_led;
+    logic sel_clock;
     logic sel_uart;
     logic sel_ext_mem;
     
     always_comb begin
         sel_led      = 1'b0;
+        sel_clock    = 1'b0;
         sel_uart     = 1'b0;
         sel_ext_mem  = 1'b0;
         
         // Check if address is in LED range
         if (master_addr >= LED_BASE && master_addr < LED_LIMIT) begin
             sel_led = 1'b1;
+        end
+        // Check if address is in Clock Peripheral range
+        else if (master_addr >= CLOCK_BASE && master_addr < CLOCK_LIMIT) begin
+            sel_clock = 1'b1;
         end
         // Check if address is in UART range
         else if (master_addr >= UART_BASE && master_addr < UART_LIMIT) begin
@@ -107,6 +125,10 @@ module bus (
     assign led_wdata     = master_wdata;
     assign led_size      = master_size;
     
+    assign clock_addr    = master_addr;
+    assign clock_wdata   = master_wdata;
+    assign clock_size    = master_size;
+    
     assign uart_addr     = master_addr;
     assign uart_wdata    = master_wdata;
     assign uart_size     = master_size;
@@ -119,6 +141,9 @@ module bus (
     // Unmapped addresses: writes are dropped (no req/we asserted)
     assign led_req      = master_req && sel_led;
     assign led_we       = master_we  && sel_led;
+    
+    assign clock_req    = master_req && sel_clock;
+    assign clock_we     = master_we  && sel_clock;
     
     assign uart_req     = master_req && sel_uart;
     assign uart_we      = master_we  && sel_uart;
@@ -137,6 +162,9 @@ module bus (
         if (sel_led) begin
             master_rdata = led_rdata;
             master_ready = led_ready;
+        end else if (sel_clock) begin
+            master_rdata = clock_rdata;
+            master_ready = clock_ready;
         end else if (sel_uart) begin
             master_rdata = uart_rdata;
             master_ready = uart_ready;

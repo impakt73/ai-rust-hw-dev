@@ -3342,6 +3342,7 @@ version = "0.1.0"
 dependencies = [
  "rand 0.8.5",
  "riscv_core",
+ "riscv_shared",
 ]
 
 [[package]]
