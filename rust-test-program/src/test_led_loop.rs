@@ -34,14 +34,16 @@ const POSITIONS_PER_SWEEP: u32 = 16;
 const DELAY_CYCLES: u32 = (CPU_CLOCK_HZ * SWEEP_TIME_SECONDS) / POSITIONS_PER_SWEEP;
 
 /// Busy-wait delay loop
-/// Each iteration takes approximately 4-5 cycles:
-///   - Loop counter increment (addi): ~1 cycle
-///   - Compare (blt/bne): ~1 cycle
-///   - Branch taken: ~2 cycles (fetch + decode)
-///   - Conservative estimate: 5 cycles per iteration
+///
+/// In the multi-cycle CPU architecture, each iteration takes approximately 7 cycles:
+///   - Counter increment (I-type addi): 4 cycles (FETCH → DECODE → EXECUTE → WRITEBACK)
+///   - Branch comparison (blt/bne): 3 cycles (FETCH → DECODE → BRANCH)
+///   - Total per iteration: 7 cycles
+///
+/// See rtl/cpu.sv FSM states and .github/skills/rtl-development/SKILL.md for details.
 #[inline(never)]
 fn delay_cycles(cycles: u32) {
-    let iterations = cycles / 5;
+    let iterations = cycles / 7;
     for _ in 0..iterations {
         // Empty loop body - the loop overhead provides the delay
         // Using core::hint::black_box to prevent optimization
