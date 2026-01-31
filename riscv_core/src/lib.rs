@@ -47,12 +47,16 @@ pub struct Fpu;
 )]
 pub struct LedControllerPeripheral;
 
-// Define UART module for RTL testing
+// Define UART Peripheral module for RTL testing (with FIFOs)
 #[verilog(
     src = "../rtl/peripherals/uart_peripheral.sv",
     name = "uart_peripheral"
 )]
 pub struct UartPeripheral;
+
+// Define UART core module (no FIFOs, ready/valid interface)
+#[verilog(src = "../rtl/uart.sv", name = "uart")]
+pub struct Uart;
 
 // Define Host Bus Interface module
 #[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
@@ -159,6 +163,11 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 // Helper function to create a runtime for the UART peripheral
 pub fn create_uart_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["sync_fifo.sv", "peripherals/uart_peripheral.sv"])
+}
+
+// Helper function to create a runtime for the UART core
+pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["uart.sv"])
 }
 
 // Helper function to create a runtime for the Host Bus Interface
