@@ -1115,6 +1115,7 @@ dependencies = [
  "elf",
  "env_logger",
  "log",
+ "riscv_shared",
  "serialport",
 ]
 

@@ -5,16 +5,13 @@
 //! requests from the FPGA and routes them to sparse memory.
 
 use clap::Parser;
+use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-
-/// DRAM address range constants
-const DRAM_BASE: u32 = 0x8000_0000;
-const DRAM_END: u32 = 0xFFFF_FFFF;
 
 /// Check if an address is within the DRAM range
 fn is_dram_address(addr: u32) -> bool {
