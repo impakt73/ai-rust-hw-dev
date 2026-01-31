@@ -21,6 +21,7 @@ fn reset_uart(dut: &mut Uart) {
     dut.rst_n = 0;
     dut.tx_valid = 0;
     dut.rx_ready = 0;
+    dut.rx_error_clr = 0;
     dut.rx_in = 1; // RX line idle high
     clock_cycle!(dut);
     dut.rst_n = 1;

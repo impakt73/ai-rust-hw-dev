@@ -202,7 +202,8 @@ module fpga_top #(
         .rx_data(host_rx_data),
         .rx_valid(host_rx_valid),
         .rx_ready(host_rx_ready),
-        .rx_error(),  // Optional: can be left unconnected
+        .rx_error(),      // Optional: can be left unconnected
+        .rx_error_clr(1'b0),  // Not used in host interface
         
         // Serial pins - connected to USB serial
         .tx_out(usb_tx),

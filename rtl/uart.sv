@@ -8,7 +8,8 @@
 //   - Ready/valid handshake for flow control
 //   - 16x oversampling on RX for robust bit detection
 //   - 2-FF input synchronizer prevents metastability
-//   - Framing error detection on RX
+//   - Framing error detection on RX (sticky, cleared via rx_error_clr)
+//   - RX overrun detection: drops incoming data if output not yet consumed
 
 module uart #(
     // System clock frequency in Hz (required for baud rate calculation)
@@ -29,7 +30,8 @@ module uart #(
     output logic [7:0] rx_data,    // Received data
     output logic       rx_valid,   // Module has data ready
     input  logic       rx_ready,   // Consumer can accept data
-    output logic       rx_error,   // Framing error (missing stop bit)
+    output logic       rx_error,   // Error flag (framing error or overrun), sticky until cleared
+    input  logic       rx_error_clr, // Clear rx_error flag when asserted
     
     // External UART pins
     output logic       tx_out,     // Serial transmit output (idle high)
@@ -182,6 +184,11 @@ module uart #(
             rx_baud_counter <= '0;
             rx_error <= 1'b0;
         end else begin
+            // Handle rx_error_clr: clear sticky error flag when asserted
+            if (rx_error_clr) begin
+                rx_error <= 1'b0;
+            end
+            
             // Handle handshake: clear rx_valid when consumer asserts rx_ready
             if (rx_valid && rx_ready) begin
                 rx_valid <= 1'b0;
@@ -251,12 +258,18 @@ module uart #(
                         if (rx_sample_count == 4'd7) begin
                             // Sample stop bit at middle
                             if (rx_sync_1 == 1'b1) begin
-                                // Valid stop bit - latch data and set valid
-                                rx_data <= rx_shift_reg;
-                                rx_valid <= 1'b1;
-                                rx_error <= 1'b0;
+                                // Valid stop bit - check for overrun
+                                if (rx_valid) begin
+                                    // Output register still has valid data, drop incoming data
+                                    // and set error flag (overrun)
+                                    rx_error <= 1'b1;
+                                end else begin
+                                    // Normal case: latch data and set valid
+                                    rx_data <= rx_shift_reg;
+                                    rx_valid <= 1'b1;
+                                end
                             end else begin
-                                // Framing error
+                                // Framing error - set sticky error flag
                                 rx_error <= 1'b1;
                             end
                             rx_state <= RX_IDLE;

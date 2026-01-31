@@ -162,7 +162,7 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 
 // Helper function to create a runtime for the UART peripheral
 pub fn create_uart_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["sync_fifo.sv", "peripherals/uart_peripheral.sv"])
+    create_runtime(&["sync_fifo.sv", "uart.sv", "peripherals/uart_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the UART core

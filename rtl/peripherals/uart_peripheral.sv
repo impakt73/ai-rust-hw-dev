@@ -117,6 +117,10 @@ module uart_peripheral #(
     // UART Core Instantiation
     // ============================================================
     
+    // RX Error clear signal - clear uart's rx_error when STATUS register is read
+    logic clear_rx_error;
+    assign clear_rx_error = req && !we && (reg_offset == 8'h08);
+    
     uart #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .BAUD_RATE(BAUD_RATE)
@@ -134,6 +138,7 @@ module uart_peripheral #(
         .rx_valid(uart_rx_valid),
         .rx_ready(uart_rx_ready),
         .rx_error(uart_rx_error),
+        .rx_error_clr(clear_rx_error),
         
         // Serial pins
         .tx_out(tx_out),
@@ -156,27 +161,6 @@ module uart_peripheral #(
     // Connect UART to RX FIFO
     assign uart_rx_ready = !rx_fifo_full;
     assign rx_fifo_wr_en = uart_rx_valid && !rx_fifo_full;
-    
-    // ============================================================
-    // RX Error Management
-    // ============================================================
-    
-    // Capture and hold rx_error from UART until STATUS read
-    logic rx_error_latched;
-    logic clear_rx_error;
-    assign clear_rx_error = req && !we && (reg_offset == 8'h08);
-    
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_error_latched <= 1'b0;
-        end else begin
-            if (clear_rx_error) begin
-                rx_error_latched <= 1'b0;
-            end else if (uart_rx_error) begin
-                rx_error_latched <= 1'b1;
-            end
-        end
-    end
     
     // ============================================================
     // TX FIFO Instance and Control
@@ -249,7 +233,7 @@ module uart_peripheral #(
                 8'h00: rdata = 32'h0;  // TXDATA is write-only
                 8'h04: rdata = rx_fifo_empty ? 32'h0 : {24'h0, rx_fifo_rdata};  // RXDATA
                 8'h08: rdata = {24'h0,                      // STATUS
-                              rx_error_latched,             // [7] RX_ERROR
+                              uart_rx_error,                // [7] RX_ERROR (sticky, cleared on STATUS read)
                               rx_busy_status,               // [6] RX_BUSY
                               rx_fifo_empty,                // [5] RX_EMPTY
                               rx_fifo_full,                 // [4] RX_FULL
