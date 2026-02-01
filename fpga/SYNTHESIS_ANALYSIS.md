@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 36.72 MHz** (47% timing margin). After implementing the **dual-copy BRAM register file** optimization, the design uses only **59% of available logic cells**, providing ample headroom for additional features.
+The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 34.91 MHz** (40% timing margin). After implementing the **dual-copy BRAM register file** optimization, the design uses only **61% of available logic cells**, providing ample headroom for additional features.
 
 ### Key Metrics (After BRAM Register File Optimization)
 
@@ -330,16 +330,16 @@ The register file BRAM conversion is now complete. The dual-copy architecture su
 
 The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
-- ✅ **Timing closure** at 25 MHz with 40% margin (35.04 MHz achieved)
+- ✅ **Timing closure** at 25 MHz with 40% margin (34.91 MHz achieved)
 - ✅ **No critical warnings** affecting functionality
-- ✅ **Low utilization** (~60%) providing ample expansion headroom
+- ✅ **Low utilization** (~61%) providing ample expansion headroom
 - ✅ **BRAM utilized** for register file (4 of 32 blocks)
 
 ### Completed Optimizations
 
 1. **Pre-computed branch/jump targets with direct equality** - Moved branch target calculation from combinational logic to registered values and removed ALU dependency for BEQ/BNE, improving Fmax from 32.79 MHz to 37.14 MHz (+13.3%)
 
-2. **Dual-banked BRAM register file** - Implemented inference-based BRAM in `regfile.sv` using `sync_dpram.sv` for both simulation and FPGA compatibility. Two BRAM banks provide 2-read, 1-write capability. S_REG_READ FSM state handles 1-cycle read latency. Reduced LUT usage from 91% to 60% at the cost of 4 BRAM blocks.
+2. **Dual-banked BRAM register file** - Implemented inference-based BRAM in `regfile.sv` using `sync_dpram.sv` for both simulation and FPGA compatibility. Two BRAM banks provide 2-read, 1-write capability. S_REG_READ FSM state handles 1-cycle read latency. Reduced LUT usage from 91% to 61% at the cost of 4 BRAM blocks.
 
 ### Remaining Priority Recommendations
 

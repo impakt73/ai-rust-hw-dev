@@ -16,6 +16,14 @@ macro_rules! clock_cycle {
     };
 }
 
+// BRAM-based register file has 1-cycle read latency.
+// After setting the read address, we need to clock once to get the data.
+macro_rules! read_cycle {
+    ($dut:expr) => {
+        clock_cycle!($dut);
+    };
+}
+
 #[test]
 fn test_regfile_write_read() {
     let runtime = create_runtime();
@@ -36,9 +44,10 @@ fn test_regfile_write_read() {
     dut.we = 0;
     dut.eval();
 
-    // Read from x1
+    // Read from x1 (BRAM has 1-cycle read latency)
     dut.rs1_addr = 1;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(
         dut.rs1_data, 42,
         "Register x1 should contain 42 after write"
@@ -50,10 +59,11 @@ fn test_regfile_write_read() {
     dut.rd_data = 100;
     clock_cycle!(dut);
 
-    // Read from x2
+    // Read from x2 (BRAM has 1-cycle read latency)
     dut.we = 0;
     dut.rs2_addr = 2;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(
         dut.rs2_data, 100,
         "Register x2 should contain 100 after write"
@@ -62,6 +72,7 @@ fn test_regfile_write_read() {
     // Verify x1 still has its value
     dut.rs1_addr = 1;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(dut.rs1_data, 42, "Register x1 should still contain 42");
 }
 
@@ -75,24 +86,21 @@ fn test_regfile_x0_hardwired() {
     dut.we = 0;
     dut.eval();
 
-    // Attempt to write to x0
-    dut.we = 1;
-    dut.rd_addr = 0;
-    dut.rd_data = 0xDEADBEEF;
-    clock_cycle!(dut);
+    // NOTE: x0 write gating is now handled in the CPU module, not the regfile.
+    // The regfile's BRAM is initialized to 0, so x0 starts as 0.
+    // In this standalone test, we verify that x0 is initially 0 (BRAM initialized).
+    // The CPU will prevent writes to x0 using the reg_write_x0_gate signal.
 
-    // Disable write
-    dut.we = 0;
-    dut.eval();
-
-    // Read from x0
+    // Verify x0 is initially 0 (BRAM initialization)
     dut.rs1_addr = 0;
     dut.eval();
-    assert_eq!(dut.rs1_data, 0, "Register x0 must always be 0");
+    read_cycle!(dut);
+    assert_eq!(dut.rs1_data, 0, "Register x0 must be initialized to 0");
 
     dut.rs2_addr = 0;
     dut.eval();
-    assert_eq!(dut.rs2_data, 0, "Register x0 must always be 0");
+    read_cycle!(dut);
+    assert_eq!(dut.rs2_data, 0, "Register x0 must be initialized to 0");
 }
 
 #[test]
@@ -117,10 +125,11 @@ fn test_regfile_simultaneous_read() {
     dut.we = 0;
     dut.eval();
 
-    // Test simultaneous reads
+    // Test simultaneous reads (BRAM has 1-cycle read latency)
     dut.rs1_addr = 3;
     dut.rs2_addr = 7;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(dut.rs1_data, 30, "Register x3 should contain 30");
     assert_eq!(dut.rs2_data, 70, "Register x7 should contain 70");
 }
@@ -141,10 +150,11 @@ fn test_regfile_write_enable() {
     dut.rd_data = 123;
     clock_cycle!(dut);
 
-    // Read to verify write
+    // Read to verify write (BRAM has 1-cycle read latency)
     dut.we = 0;
     dut.rs1_addr = 5;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(dut.rs1_data, 123);
 
     // Attempt to write without write enable
@@ -153,9 +163,10 @@ fn test_regfile_write_enable() {
     dut.rd_data = 456;
     clock_cycle!(dut);
 
-    // Verify value didn't change
+    // Verify value didn't change (BRAM has 1-cycle read latency)
     dut.rs1_addr = 5;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(
         dut.rs1_data, 123,
         "Register should not change when write enable is low"
@@ -190,11 +201,12 @@ fn test_regfile_all_registers() {
     dut.we = 0;
     dut.eval();
 
-    // Verify all registers
+    // Verify all registers (BRAM has 1-cycle read latency)
     #[allow(clippy::needless_range_loop)]
     for i in 0..32 {
         dut.rs1_addr = i as u8;
         dut.eval();
+        read_cycle!(dut);
         assert_eq!(
             dut.rs1_data, expected_values[i],
             "Register x{} should contain {}",
@@ -219,10 +231,11 @@ fn test_regfile_overwrite() {
     dut.rd_data = 111;
     clock_cycle!(dut);
 
-    // Verify initial write
+    // Verify initial write (BRAM has 1-cycle read latency)
     dut.we = 0;
     dut.rs1_addr = 10;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(dut.rs1_data, 111);
 
     // Overwrite x10
@@ -231,9 +244,10 @@ fn test_regfile_overwrite() {
     dut.rd_data = 222;
     clock_cycle!(dut);
 
-    // Verify overwrite
+    // Verify overwrite (BRAM has 1-cycle read latency)
     dut.we = 0;
     dut.rs1_addr = 10;
     dut.eval();
+    read_cycle!(dut);
     assert_eq!(dut.rs1_data, 222, "Register x10 should be overwritten");
 }
