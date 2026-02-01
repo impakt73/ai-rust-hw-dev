@@ -8,6 +8,9 @@
 // S_MEM_WRITE/S_ATOMIC_RMW for data). This design simplifies the memory
 // subsystem while remaining compatible with future arbiter integration if
 // pipelining is added.
+//
+// REGISTER FILE: Uses dual-banked BRAM with 1-cycle read latency.
+// The S_REG_READ state provides time for BRAM reads to complete after S_DECODE.
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -57,7 +60,8 @@ module cpu #(
     typedef enum logic [3:0] {
         S_IDLE       = 4'b0000,  // After reset
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for mem_ready)
-        S_DECODE     = 4'b0010,  // Decode and read registers
+        S_DECODE     = 4'b0010,  // Decode instruction, start register file read
+        S_REG_READ   = 4'b1100,  // Wait for BRAM register file read (1-cycle latency)
         S_EXECUTE    = 4'b0011,  // ALU operation
         S_MEM_ADDR   = 4'b0100,  // Calculate memory address
         S_MEM_READ   = 4'b0101,  // Load from memory (wait for mem_ready)
@@ -637,9 +641,17 @@ module cpu #(
             end
             
             S_DECODE: begin
-                // Use combinational decoder outputs (opcode, not opcode_reg)
-                // because decode_reg_write captures them THIS cycle
-                case (opcode)
+                // Decode instruction and start register file read.
+                // Always transition to S_REG_READ to wait for BRAM read latency (1 cycle).
+                // Register file addresses are presented this cycle, data available next cycle.
+                next_state = S_REG_READ;
+            end
+            
+            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
+            // Uses opcode_reg (captured in S_DECODE) to determine next state
+            S_REG_READ: begin
+                // Now register file data is available, proceed based on instruction type
+                case (opcode_reg)
                     7'b0110011,  // R-type
                     7'b0010011,  // I-type arithmetic
                     7'b0110111,  // LUI
@@ -668,9 +680,9 @@ module cpu #(
                         next_state = S_BRANCH;
                     
                     7'b1110011: begin  // SYSTEM
-                        if (is_ecall || is_ebreak)
+                        if (is_ecall_reg || is_ebreak_reg)
                             next_state = S_HALT;
-                        else if (is_csr)
+                        else if (is_csr_reg)
                             next_state = S_CSR;
                     end
 
@@ -796,21 +808,28 @@ module cpu #(
             end
             
             S_DECODE: begin
-                // Integer register reads (always for integer ops, also for some FP ops like int-to-FP)
-                a_reg_write = 1'b1;
-                b_reg_write = 1'b1;
-                // FP register reads (for FP operations)
-                if (fp_reg_write || fp_to_int || int_to_fp || is_fp_store) begin
-                    fa_reg_write = 1'b1;
-                    fb_reg_write = 1'b1;
-                    fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
-                end
+                // Decode instruction and present addresses to register file.
+                // Register data will be captured in S_REG_READ after BRAM latency.
                 decode_reg_write = 1'b1;
                 // Capture CSR read data before write (for read-modify-write operations)
                 if (is_csr)
                     csr_rdata_write = 1'b1;
-                // FENCE completes here
-                if (is_fence) begin
+            end
+            
+            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
+            // This state captures register data after BRAM synchronous read
+            S_REG_READ: begin
+                // BRAM data is now available, capture it
+                a_reg_write = 1'b1;
+                b_reg_write = 1'b1;
+                // FP register reads (for FP operations) - using registered signals
+                if (fp_reg_write_reg || fp_to_int_reg || int_to_fp_reg || is_fp_store_reg) begin
+                    fa_reg_write = 1'b1;
+                    fb_reg_write = 1'b1;
+                    fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
+                end
+                // FENCE completes here (after register read state)
+                if (is_fence_reg) begin
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
                 end
@@ -970,11 +989,16 @@ module cpu #(
     );
     
     // Register file instantiation (write enable gated by FSM)
+    // Uses dual-banked BRAM with 1-cycle read latency, handled by S_REG_READ state
+    // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
+    logic reg_write_x0_gate;
+    assign reg_write_x0_gate = (rd_reg != 5'd0);
+    
     regfile u_regfile (
         .clk(clk),
-        .we(reg_write_en & reg_write_reg),  // Gated by FSM
-        .rs1_addr(rs1),  // Use combinational decoder output for reads
-        .rs2_addr(rs2),  // Use combinational decoder output for reads
+        .we(reg_write_en & reg_write_reg & reg_write_x0_gate),  // Gated by FSM and x0 check
+        .rs1_addr(rs1),  // From decoder, BRAM samples on clock edge
+        .rs2_addr(rs2),  // From decoder, BRAM samples on clock edge
         .rd_addr(rd_reg),
         .rd_data(rd_data),
         .rs1_data(rs1_data),
