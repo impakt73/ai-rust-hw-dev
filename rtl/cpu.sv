@@ -11,7 +11,8 @@
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    parameter bit USE_BRAM_REGFILE = 1'b0  // Use BRAM-based register file (default: LUT-based)
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -66,7 +67,8 @@ module cpu #(
         S_BRANCH     = 4'b1000,  // Branch decision
         S_CSR        = 4'b1001,  // CSR operation
         S_HALT       = 4'b1010,  // ECALL/EBREAK
-        S_ATOMIC_RMW = 4'b1011   // Atomic read-modify-write (A extension)
+        S_ATOMIC_RMW = 4'b1011,  // Atomic read-modify-write (A extension)
+        S_REG_READ   = 4'b1100   // Wait for BRAM register file read (when USE_BRAM_REGFILE=1)
     } state_t;
 
     state_t current_state, next_state;
@@ -639,7 +641,63 @@ module cpu #(
             S_DECODE: begin
                 // Use combinational decoder outputs (opcode, not opcode_reg)
                 // because decode_reg_write captures them THIS cycle
-                case (opcode)
+                //
+                // When USE_BRAM_REGFILE=1, we insert an extra S_REG_READ state
+                // to wait for BRAM synchronous read latency
+                if (USE_BRAM_REGFILE) begin
+                    // Always go to S_REG_READ first when using BRAM
+                    next_state = S_REG_READ;
+                end else begin
+                    // Original logic for LUT-based regfile (immediate read)
+                    case (opcode)
+                        7'b0110011,  // R-type
+                        7'b0010011,  // I-type arithmetic
+                        7'b0110111,  // LUI
+                        7'b0010111,  // AUIPC
+                        7'b1101111,  // JAL
+                        7'b1100111:  // JALR
+                            next_state = S_EXECUTE;
+                        
+                        7'b1010011,  // OP_FP: FP computational instructions
+                        7'b1000011,  // OP_FMADD: Fused multiply-add
+                        7'b1000111,  // OP_FMSUB: Fused multiply-sub
+                        7'b1001011,  // OP_FNMSUB: Fused negate-multiply-sub
+                        7'b1001111:  // OP_FNMADD: Fused negate-multiply-add
+                            next_state = S_EXECUTE;  // FP operations execute in S_EXECUTE
+                        
+                        7'b0000011,  // Load (integer: LW, LH, LB, LHU, LBU)
+                        7'b0000111,  // Load FP (FLW)
+                        7'b0100011,  // Store (integer: SW, SH, SB)
+                        7'b0100111:  // Store FP (FSW)
+                            next_state = S_MEM_ADDR;
+                        
+                        7'b0101111:  // AMO (Atomic operations - A extension)
+                            next_state = S_MEM_ADDR;
+                        
+                        7'b1100011:  // Branch
+                            next_state = S_BRANCH;
+                        
+                        7'b1110011: begin  // SYSTEM
+                            if (is_ecall || is_ebreak)
+                                next_state = S_HALT;
+                            else if (is_csr)
+                                next_state = S_CSR;
+                        end
+
+                        7'b0001111:  // FENCE
+                            next_state = S_FETCH;
+                        
+                        default: next_state = S_HALT;  // Unknown instruction - halt for debug
+                    endcase
+                end
+            end
+            
+            // S_REG_READ: Extra state for BRAM register file read latency
+            // This state is only used when USE_BRAM_REGFILE=1
+            // It uses opcode_reg (captured in S_DECODE) to determine next state
+            S_REG_READ: begin
+                // Now register file data is available, proceed based on instruction type
+                case (opcode_reg)
                     7'b0110011,  // R-type
                     7'b0010011,  // I-type arithmetic
                     7'b0110111,  // LUI
@@ -668,9 +726,9 @@ module cpu #(
                         next_state = S_BRANCH;
                     
                     7'b1110011: begin  // SYSTEM
-                        if (is_ecall || is_ebreak)
+                        if (is_ecall_reg || is_ebreak_reg)
                             next_state = S_HALT;
-                        else if (is_csr)
+                        else if (is_csr_reg)
                             next_state = S_CSR;
                     end
 
@@ -796,14 +854,18 @@ module cpu #(
             end
             
             S_DECODE: begin
-                // Integer register reads (always for integer ops, also for some FP ops like int-to-FP)
-                a_reg_write = 1'b1;
-                b_reg_write = 1'b1;
-                // FP register reads (for FP operations)
-                if (fp_reg_write || fp_to_int || int_to_fp || is_fp_store) begin
-                    fa_reg_write = 1'b1;
-                    fb_reg_write = 1'b1;
-                    fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
+                // When using BRAM regfile, don't capture register data yet (1-cycle latency)
+                // When using LUT regfile, capture immediately (combinational read)
+                if (!USE_BRAM_REGFILE) begin
+                    // Integer register reads (always for integer ops, also for some FP ops like int-to-FP)
+                    a_reg_write = 1'b1;
+                    b_reg_write = 1'b1;
+                    // FP register reads (for FP operations)
+                    if (fp_reg_write || fp_to_int || int_to_fp || is_fp_store) begin
+                        fa_reg_write = 1'b1;
+                        fb_reg_write = 1'b1;
+                        fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
+                    end
                 end
                 decode_reg_write = 1'b1;
                 // Capture CSR read data before write (for read-modify-write operations)
@@ -811,6 +873,25 @@ module cpu #(
                     csr_rdata_write = 1'b1;
                 // FENCE completes here
                 if (is_fence) begin
+                    pc_write = 1'b1;
+                    instr_complete_internal = 1'b1;
+                end
+            end
+            
+            // S_REG_READ: Wait for BRAM register file read (only when USE_BRAM_REGFILE=1)
+            // This state captures register data after BRAM synchronous read latency
+            S_REG_READ: begin
+                // Now BRAM data is available, capture it
+                a_reg_write = 1'b1;
+                b_reg_write = 1'b1;
+                // FP register reads (for FP operations) - using registered signals
+                if (fp_reg_write_reg || fp_to_int_reg || int_to_fp_reg || is_fp_store_reg) begin
+                    fa_reg_write = 1'b1;
+                    fb_reg_write = 1'b1;
+                    fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
+                end
+                // Note: FENCE should complete in S_DECODE, not here
+                if (is_fence_reg) begin
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
                 end
@@ -970,16 +1051,35 @@ module cpu #(
     );
     
     // Register file instantiation (write enable gated by FSM)
-    regfile u_regfile (
-        .clk(clk),
-        .we(reg_write_en & reg_write_reg),  // Gated by FSM
-        .rs1_addr(rs1),  // Use combinational decoder output for reads
-        .rs2_addr(rs2),  // Use combinational decoder output for reads
-        .rd_addr(rd_reg),
-        .rd_data(rd_data),
-        .rs1_data(rs1_data),
-        .rs2_data(rs2_data)
-    );
+    // Conditionally instantiate LUT-based or BRAM-based register file
+    generate
+        if (USE_BRAM_REGFILE) begin : gen_bram_regfile
+            // BRAM-based register file (uses 4 BRAM blocks, reduces LUT usage)
+            // Note: Has 1-cycle read latency, handled by S_REG_READ state
+            regfile_bram u_regfile (
+                .clk(clk),
+                .we(reg_write_en & reg_write_reg),  // Gated by FSM
+                .rs1_addr(rs1),  // Use combinational decoder output for reads
+                .rs2_addr(rs2),  // Use combinational decoder output for reads
+                .rd_addr(rd_reg),
+                .rd_data(rd_data),
+                .rs1_data(rs1_data),
+                .rs2_data(rs2_data)
+            );
+        end else begin : gen_lut_regfile
+            // LUT-based register file (original implementation, combinational reads)
+            regfile u_regfile (
+                .clk(clk),
+                .we(reg_write_en & reg_write_reg),  // Gated by FSM
+                .rs1_addr(rs1),  // Use combinational decoder output for reads
+                .rs2_addr(rs2),  // Use combinational decoder output for reads
+                .rd_addr(rd_reg),
+                .rd_data(rd_data),
+                .rs1_data(rs1_data),
+                .rs2_data(rs2_data)
+            );
+        end
+    endgenerate
     
     // ALU operation selection (multi-cycle: may need different ops for different states)
     logic [4:0] alu_op_mux;

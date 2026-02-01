@@ -13,6 +13,7 @@
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    parameter bit USE_BRAM_REGFILE = 1'b0,  // Use BRAM-based register file (default: LUT-based)
     // System Clock Frequency (used by UART and Clock Peripheral)
     parameter int CLK_FREQ_HZ = 50_000_000,
     // UART Parameters
@@ -207,7 +208,8 @@ module top #(
     // ============================================================
     cpu #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
-        .ENABLE_F_EXT(ENABLE_F_EXT)
+        .ENABLE_F_EXT(ENABLE_F_EXT),
+        .USE_BRAM_REGFILE(USE_BRAM_REGFILE)
     ) cpu_core (
         .clk(clk),
         .rst_n(rst_n),

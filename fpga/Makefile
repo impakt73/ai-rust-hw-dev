@@ -24,6 +24,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/host_bus_interface.sv \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/regfile.sv \
+	$(RTL_DIR)/regfile_bram.sv \
 	$(RTL_DIR)/sync_fifo.sv \
 	$(RTL_DIR)/uart.sv \
 	$(RTL_DIR)/writeback_mux.sv \

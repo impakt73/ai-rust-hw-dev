@@ -11,7 +11,8 @@
 
 module fpga_top #(
     parameter bit ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled for iCE40 resources)
-    parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
+    parameter bit ENABLE_F_EXT = 1'b0,  // RV32F extension: Floating-Point (disabled for iCE40 resources)
+    parameter bit USE_BRAM_REGFILE = 1'b1  // Use BRAM-based register file (enabled to save LUTs)
 ) (
     // Clock input (100 MHz on-board oscillator)
     input  logic       clk,
@@ -141,6 +142,7 @@ module fpga_top #(
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .USE_BRAM_REGFILE(USE_BRAM_REGFILE),  // Use BRAM register file to reduce LUT usage
         .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by UART and Clock Peripheral
         .UART_BAUD_RATE(115200),
         .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test

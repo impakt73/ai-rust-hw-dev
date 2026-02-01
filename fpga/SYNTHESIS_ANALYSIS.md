@@ -1,6 +1,6 @@
 # FPGA Synthesis Analysis Report
 
-**Date:** 2026-02-01  
+**Date:** 2026-02-01 (Updated with BRAM Register File Optimization)  
 **Target Device:** Lattice iCE40-HX8K-CB132 (Alchitry Cu v1)  
 **Synthesis Tools:** Yosys 0.33, nextpnr-ice40, icetime  
 **Design:** RISC-V RV32I CPU with UART peripherals (M and F extensions disabled)
@@ -9,19 +9,30 @@
 
 ## Executive Summary
 
-The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 37.14 MHz** (49% timing margin). The design uses **~91% of available logic cells**, leaving minimal headroom for additional features.
+The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 36.72 MHz** (47% timing margin). After implementing the **dual-copy BRAM register file** optimization, the design uses only **59% of available logic cells**, providing ample headroom for additional features.
 
-### Key Metrics
+### Key Metrics (After BRAM Register File Optimization)
 
 | Metric | Value | Available | Utilization |
 |--------|-------|-----------|-------------|
-| **Logic Cells (ICESTORM_LC)** | 6,988 | 7,680 | **91%** |
-| **Block RAM (ICESTORM_RAM)** | 0 | 32 | 0% |
+| **Logic Cells (ICESTORM_LC)** | 4,563 | 7,680 | **59%** |
+| **Block RAM (ICESTORM_RAM)** | 4 | 32 | 12% |
 | **I/O Pins (SB_IO)** | 77 | 256 | 30% |
 | **Global Buffers (SB_GB)** | 5 | 8 | 62% |
 | **PLLs (ICESTORM_PLL)** | 1 | 2 | 50% |
-| **Max Frequency** | 37.14 MHz | 25 MHz target | **PASS** (+49%) |
-| **Critical Path Delay** | 26.43 ns | 40.00 ns budget | PASS |
+| **Max Frequency** | 36.72 MHz | 25 MHz target | **PASS** (+47%) |
+| **Critical Path Delay** | 27.24 ns | 40.00 ns budget | PASS |
+
+### BRAM Register File Optimization Impact
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| **Logic Cells** | 6,988 (91%) | 4,563 (59%) | **-2,425 LCs (-35%)** |
+| **Block RAM** | 0 (0%) | 4 (12%) | +4 BRAM blocks |
+| **SB_LUT4** | 4,832 | 3,445 | **-1,387 LUTs (-29%)** |
+| **Max Frequency** | 37.33 MHz | 36.72 MHz | -0.61 MHz (-1.6%) |
+
+**Summary:** The dual-copy BRAM register file implementation trades 4 BRAM blocks for a 35% reduction in logic cell usage, with only a 1.6% decrease in maximum frequency. This frees ~2,400 logic cells for future features.
 
 ---
 
@@ -31,29 +42,27 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 
 | Cell Type | Count | Description |
 |-----------|-------|-------------|
-| **SB_LUT4** | 4,832 | 4-input Look-Up Tables |
-| **SB_CARRY** | 916 | Carry chain cells (arithmetic) |
-| **SB_DFFE** | 1,121 | D flip-flop with enable |
-| **SB_DFFER** | 1,079 | D flip-flop with enable and reset |
+| **SB_LUT4** | 3,445 | 4-input Look-Up Tables |
+| **SB_CARRY** | 885 | Carry chain cells (arithmetic) |
+| **SB_DFFE** | 128 | D flip-flop with enable |
+| **SB_DFFER** | 1,175 | D flip-flop with enable and reset |
 | **SB_DFFR** | 84 | D flip-flop with reset |
 | **SB_DFFSR** | 23 | D flip-flop with set/reset |
 | **SB_DFFS** | 10 | D flip-flop with set |
 | **SB_DFFESR** | 8 | D flip-flop with enable, set, and reset |
 | **SB_DFFES** | 7 | D flip-flop with enable and set |
-| **SB_DFF** | 2 | Basic D flip-flop |
+| **SB_DFF** | 12 | Basic D flip-flop |
+| **SB_RAM40_4K** | 4 | 4Kbit Block RAM (for register file) |
 | **SB_PLL40_CORE** | 1 | PLL for clock generation |
-| **Total Cells** | 8,090 | - |
+| **Total Cells** | 5,782 | - |
 
 ### Logic Cell Allocation (from nextpnr)
 
 | LC Usage | Count | Percentage |
 |----------|-------|------------|
-| LUT4 only | 4,281 | 61.4% |
-| LUT4 + DFF combined | 589 | 8.5% |
-| DFF only | 1,745 | 25.0% |
-| CARRY only | 372 | 5.3% |
-| Carry chain legalization | 62 | 0.9% |
-| **Total LCs Used** | **6,973** | **90.8%** |
+| **Total LCs Used** | **4,563** | **59.4%** |
+
+Note: After the BRAM optimization, flip-flop usage is significantly reduced because the 32×32-bit register file no longer uses LUT-based distributed RAM.
 
 ---
 
@@ -85,13 +94,17 @@ The ALU implements all RV32I arithmetic and logical operations:
 
 **Note:** With M extension disabled, no multiplier or divider hardware is instantiated.
 
-### 3. **Register File (regfile.sv)** - ~8-10% of LUTs
+### 3. **Register File (regfile_bram.sv)** - Now using BRAM ✅
 
-- 32 registers × 32 bits = 1,024 flip-flops
-- 2-read, 1-write port multiplexing
-- LUT-based implementation (not using BRAM)
+- **Dual-copy BRAM architecture**: Two identical copies of 32×32-bit register file
+- Copy A provides rs1 read data, Copy B provides rs2 read data
+- Both copies are written simultaneously to stay in sync
+- Uses 4× SB_RAM40_4K blocks (256×16-bit each, 2 per copy for 32-bit width)
+- Added S_REG_READ FSM state to handle 1-cycle BRAM read latency
 
-**Recommendation:** Convert to BRAM implementation to save ~400+ LUTs.
+**Implementation:** `regfile_bram.sv` with `USE_BRAM_REGFILE` parameter in CPU
+
+**Trade-off:** +1 cycle per instruction decode, -1,387 LUTs, +4 BRAM blocks
 
 ### 4. **Decoder (decoder.sv + decompress.sv)** - ~5% of LUTs
 
@@ -173,6 +186,7 @@ This path was optimized by:
 | Optimization | Before | After | Improvement |
 |--------------|--------|-------|-------------|
 | Pre-computed branch/jump targets + direct equality | 32.79 MHz | 37.14 MHz | +13.3% Fmax |
+| BRAM register file (dual-copy) | 37.33 MHz | 36.72 MHz | -1.6% Fmax (acceptable trade-off for 35% LUT savings) |
 
 ### Cross-Domain Paths
 
@@ -225,12 +239,15 @@ nextpnr completed without warnings, indicating:
 
 ## Recommendations for Improvement
 
-### Immediate Optimizations (Low Effort)
+### Completed Optimizations ✅
 
-1. **Convert Register File to BRAM**
-   - The 32×32-bit register file currently uses LUTs
-   - Using 1 BRAM block would save ~400 LUTs
-   - Trade-off: 1-cycle read latency increase
+1. **Convert Register File to BRAM** ✅ (Completed)
+   - Implemented dual-copy BRAM register file (`regfile_bram.sv`)
+   - Uses 4 BRAM blocks, saves ~1,387 LUTs (29% reduction)
+   - Added S_REG_READ state to handle 1-cycle read latency
+   - Max frequency impact: -1.6% (37.33 → 36.72 MHz)
+
+### Remaining Optimizations (Low Effort)
 
 2. **Use BRAM for UART FIFOs (if larger)**
    - Current 8-entry FIFOs correctly use registers
@@ -265,22 +282,31 @@ nextpnr completed without warnings, indicating:
 
 ---
 
-## BRAM Usage Opportunity
+## BRAM Usage
 
 ### Current State
-The design uses **0 of 32 available BRAM blocks**.
+The design uses **4 of 32 available BRAM blocks** for the dual-copy register file.
 
-### Potential BRAM Applications
+### BRAM Block Allocation
 
-| Use Case | BRAM Blocks | LUT Savings | Notes |
-|----------|-------------|-------------|-------|
-| Integer Register File | 1 | ~400 LUTs | Add 1-cycle read latency |
-| Larger UART FIFOs | 1-2 | Minimal | Only if deeper FIFOs needed |
-| Instruction Cache | 4-16 | N/A | Would improve performance |
-| Boot ROM | 1-2 | N/A | Store bootloader |
+| Use Case | BRAM Blocks | Purpose |
+|----------|-------------|---------|
+| Register File Copy A (rs1 port) | 2 | Lower 16-bit + Upper 16-bit |
+| Register File Copy B (rs2 port) | 2 | Lower 16-bit + Upper 16-bit |
+| **Total Used** | **4** | 12% of available BRAM |
+| **Remaining** | **28** | Available for future use |
 
-### Recommendation
-Using BRAM for the register file is the highest-value optimization, reducing LUT usage from 90% to ~85% while freeing resources for additional features.
+### Potential Future BRAM Applications
+
+| Use Case | BRAM Blocks | Notes |
+|----------|-------------|-------|
+| Larger UART FIFOs | 1-2 | Only if deeper FIFOs needed |
+| Instruction Cache | 4-16 | Would improve performance |
+| Boot ROM | 1-2 | Store bootloader |
+| Data Cache | 4-16 | Would improve memory performance |
+
+### Completed Optimization
+The register file BRAM conversion is now complete. The dual-copy architecture successfully provides 2-read, 1-write capability using iCE40's single-port BRAM blocks.
 
 ---
 
@@ -304,20 +330,22 @@ Using BRAM for the register file is the highest-value optimization, reducing LUT
 
 The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
-- ✅ **Timing closure** at 25 MHz with 49% margin (37.14 MHz achieved)
+- ✅ **Timing closure** at 25 MHz with 47% margin (36.72 MHz achieved)
 - ✅ **No critical warnings** affecting functionality
-- ⚠️ **High utilization** (~91%) limiting expansion
-- ⚠️ **No BRAM usage** despite availability
+- ✅ **Low utilization** (~59%) providing ample expansion headroom
+- ✅ **BRAM utilized** for register file (4 of 32 blocks)
 
 ### Completed Optimizations
 
 1. **Pre-computed branch/jump targets with direct equality** - Moved branch target calculation from combinational logic to registered values and removed ALU dependency for BEQ/BNE, improving Fmax from 32.79 MHz to 37.14 MHz (+13.3%)
 
-### Priority Recommendations
+2. **Dual-copy BRAM register file** - Implemented `regfile_bram.sv` with two BRAM copies to provide 2-read, 1-write capability on iCE40's single-port BRAM. Added S_REG_READ FSM state for 1-cycle read latency. Reduced LUT usage from 91% to 59% (-35%) at the cost of 4 BRAM blocks and minor Fmax reduction (-1.6%).
 
-1. **Convert regfile to BRAM** to reduce utilization to ~85%
-2. **Document boot_addr warning** as expected behavior
-3. **Consider 35+ MHz operation** - now achievable with 6% margin
+### Remaining Priority Recommendations
+
+1. **Document boot_addr warning** as expected behavior
+2. **Consider 35 MHz operation** - achievable with 5% margin
+3. **Enable M extension** if needed - now have ~2,400 spare logic cells
 
 ---
 
@@ -330,6 +358,8 @@ The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 | `fpga/build/yosys.log` | Synthesis output |
 | `fpga/build/nextpnr.log` | Place & route output |
 | `fpga/build/riscv_fpga_timing.rpt` | Timing analysis |
+| `rtl/regfile_bram.sv` | BRAM-based register file (new) |
+| `rtl/cpu.sv` | CPU with USE_BRAM_REGFILE parameter |
 
 ---
 
