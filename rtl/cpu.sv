@@ -990,9 +990,13 @@ module cpu #(
     
     // Register file instantiation (write enable gated by FSM)
     // Uses dual-banked BRAM with 1-cycle read latency, handled by S_REG_READ state
+    // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
+    logic reg_write_x0_gate;
+    assign reg_write_x0_gate = (rd_reg != 5'd0);
+    
     regfile u_regfile (
         .clk(clk),
-        .we(reg_write_en & reg_write_reg),  // Gated by FSM
+        .we(reg_write_en & reg_write_reg & reg_write_x0_gate),  // Gated by FSM and x0 check
         .rs1_addr(rs1),  // From decoder, BRAM samples on clock edge
         .rs2_addr(rs2),  // From decoder, BRAM samples on clock edge
         .rd_addr(rd_reg),

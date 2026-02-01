@@ -15,24 +15,24 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 
 | Metric | Value | Available | Utilization |
 |--------|-------|-----------|-------------|
-| **Logic Cells (ICESTORM_LC)** | 4,563 | 7,680 | **59%** |
+| **Logic Cells (ICESTORM_LC)** | 4,688 | 7,680 | **61%** |
 | **Block RAM (ICESTORM_RAM)** | 4 | 32 | 12% |
 | **I/O Pins (SB_IO)** | 77 | 256 | 30% |
 | **Global Buffers (SB_GB)** | 5 | 8 | 62% |
 | **PLLs (ICESTORM_PLL)** | 1 | 2 | 50% |
-| **Max Frequency** | 36.72 MHz | 25 MHz target | **PASS** (+47%) |
-| **Critical Path Delay** | 27.24 ns | 40.00 ns budget | PASS |
+| **Max Frequency** | 34.91 MHz | 25 MHz target | **PASS** (+40%) |
+| **Critical Path Delay** | 28.65 ns | 40.00 ns budget | PASS |
 
 ### BRAM Register File Optimization Impact
 
 | Metric | Before | After | Change |
 |--------|--------|-------|--------|
-| **Logic Cells** | 6,988 (91%) | 4,563 (59%) | **-2,425 LCs (-35%)** |
+| **Logic Cells** | 6,988 (91%) | 4,688 (61%) | **-2,300 LCs (-33%)** |
 | **Block RAM** | 0 (0%) | 4 (12%) | +4 BRAM blocks |
-| **SB_LUT4** | 4,832 | 3,445 | **-1,387 LUTs (-29%)** |
-| **Max Frequency** | 37.33 MHz | 36.72 MHz | -0.61 MHz (-1.6%) |
+| **SB_LUT4** | 4,832 | 3,504 | **-1,328 LUTs (-27%)** |
+| **Max Frequency** | 37.33 MHz | 34.91 MHz | -2.42 MHz (-6.5%) |
 
-**Summary:** The dual-copy BRAM register file implementation trades 4 BRAM blocks for a 35% reduction in logic cell usage, with only a 1.6% decrease in maximum frequency. This frees ~2,400 logic cells for future features.
+**Summary:** The dual-banked BRAM register file implementation trades 4 BRAM blocks for a 33% reduction in logic cell usage. x0 write gating is handled in the CPU (not regfile), and BRAM is initialized to 0 to ensure x0 starts at 0.
 
 ---
 
@@ -42,8 +42,8 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 
 | Cell Type | Count | Description |
 |-----------|-------|-------------|
-| **SB_LUT4** | 3,445 | 4-input Look-Up Tables |
-| **SB_CARRY** | 885 | Carry chain cells (arithmetic) |
+| **SB_LUT4** | 3,504 | 4-input Look-Up Tables |
+| **SB_CARRY** | 916 | Carry chain cells (arithmetic) |
 | **SB_DFFE** | 128 | D flip-flop with enable |
 | **SB_DFFER** | 1,175 | D flip-flop with enable and reset |
 | **SB_DFFR** | 84 | D flip-flop with reset |
@@ -51,18 +51,18 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 | **SB_DFFS** | 10 | D flip-flop with set |
 | **SB_DFFESR** | 8 | D flip-flop with enable, set, and reset |
 | **SB_DFFES** | 7 | D flip-flop with enable and set |
-| **SB_DFF** | 12 | Basic D flip-flop |
+| **SB_DFF** | 74 | Basic D flip-flop |
 | **SB_RAM40_4K** | 4 | 4Kbit Block RAM (for register file) |
 | **SB_PLL40_CORE** | 1 | PLL for clock generation |
-| **Total Cells** | 5,782 | - |
+| **Total Cells** | 5,934 | - |
 
 ### Logic Cell Allocation (from nextpnr)
 
 | LC Usage | Count | Percentage |
 |----------|-------|------------|
-| **Total LCs Used** | **4,563** | **59.4%** |
+| **Total LCs Used** | **4,688** | **61.0%** |
 
-Note: After the BRAM optimization, flip-flop usage is significantly reduced because the 32×32-bit register file no longer uses LUT-based distributed RAM.
+Note: The register file uses dual-banked BRAM with x0 handling simplified: BRAM is initialized to 0, and writes to x0 are gated in the CPU.
 
 ---
 

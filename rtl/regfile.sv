@@ -1,6 +1,5 @@
 // Register File Module
 // 32x32-bit register file for RISC-V RV32I
-// x0 is hardwired to 0
 //
 // DUAL-BANKED BRAM ARCHITECTURE:
 // ==============================
@@ -19,15 +18,15 @@
 // LATENCY:
 //   - Reads: 1 cycle (synchronous BRAM read)
 //   - Writes: 1 cycle (synchronous BRAM write)
-//   - NOTE: CPU must provide registered addresses (address registration is in CPU)
 //
 // x0 HANDLING:
-//   - Writes to x0 are blocked (we is gated)
-//   - Reads from x0 return 0 (output mux based on registered address)
+//   - BRAM is initialized to 0 (via sync_dpram initialization)
+//   - Writes to x0 are blocked by the CPU (we is gated in cpu.sv)
+//   - No special read logic needed since x0 is initialized to 0 and never written
 
 module regfile (
     input  logic        clk,
-    input  logic        we,           // Write enable
+    input  logic        we,           // Write enable (already gated for x0 in CPU)
     input  logic [4:0]  rs1_addr,     // Read address 1
     input  logic [4:0]  rs2_addr,     // Read address 2
     input  logic [4:0]  rd_addr,      // Write address
@@ -35,14 +34,6 @@ module regfile (
     output logic [31:0] rs1_data,     // Read data 1
     output logic [31:0] rs2_data      // Read data 2
 );
-
-    // Write enable gated to prevent x0 writes
-    logic we_gated;
-    assign we_gated = we && (rd_addr != 5'd0);
-
-    // Raw BRAM read outputs (before x0 muxing)
-    logic [31:0] rs1_data_bram;
-    logic [31:0] rs2_data_bram;
 
     // ============================================================
     // Bank A - Provides rs1 read data
@@ -52,11 +43,11 @@ module regfile (
         .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
     ) bank_a (
         .clk(clk),
-        .we(we_gated),
+        .we(we),
         .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
         .wdata(rd_data),
         .raddr({3'b000, rs1_addr}),  // Zero-extend to 8 bits
-        .rdata(rs1_data_bram)
+        .rdata(rs1_data)
     );
 
     // ============================================================
@@ -67,28 +58,11 @@ module regfile (
         .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
     ) bank_b (
         .clk(clk),
-        .we(we_gated),
+        .we(we),
         .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
         .wdata(rd_data),
         .raddr({3'b000, rs2_addr}),  // Zero-extend to 8 bits
-        .rdata(rs2_data_bram)
+        .rdata(rs2_data)
     );
-
-    // ============================================================
-    // x0 Handling - Override BRAM output with 0 for register x0
-    // ============================================================
-    // BRAM reads have 1-cycle latency (address in, data out next cycle).
-    // We register the address here to know which register was requested
-    // when the BRAM data becomes available.
-    logic [4:0] rs1_addr_reg, rs2_addr_reg;
-
-    always_ff @(posedge clk) begin
-        rs1_addr_reg <= rs1_addr;
-        rs2_addr_reg <= rs2_addr;
-    end
-
-    // Output mux: return 0 for x0, otherwise BRAM data
-    assign rs1_data = (rs1_addr_reg == 5'd0) ? 32'd0 : rs1_data_bram;
-    assign rs2_data = (rs2_addr_reg == 5'd0) ? 32'd0 : rs2_data_bram;
 
 endmodule

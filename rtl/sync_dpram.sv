@@ -32,6 +32,15 @@ module sync_dpram #(
     // Depth is 2^ADDR_WIDTH entries
     logic [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
 
+    // Initialize memory to 0 to ensure x0 register starts at 0 (required for RISC-V)
+    // Uses initial block which Yosys supports for BRAM initialization
+    integer i;
+    initial begin
+        for (i = 0; i < (1 << ADDR_WIDTH); i = i + 1) begin
+            mem[i] = {DATA_WIDTH{1'b0}};
+        end
+    end
+
     // Write port - synchronous write
     always_ff @(posedge clk) begin
         if (we) begin
