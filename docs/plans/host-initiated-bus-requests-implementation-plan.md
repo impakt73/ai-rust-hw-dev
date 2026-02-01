@@ -122,7 +122,7 @@ The system follows a **simple, reliable** design:
 | `0x50000000 - 0x5FFFFFFF` | RTL (FPGA) | LED, Clock, UART peripherals |
 | `0x80000000 - 0xFFFFFFFF` | Host (Rust) | DRAM |
 
-_Note: The regions between Host peripheral ranges (e.g., `0x10000100` to `0x1FFFFFFF`) are currently reserved/unassigned._
+**Note:** The regions between Host peripheral ranges (e.g., 0x10000100 to 0x1FFFFFFF) are currently reserved/unassigned.
 
 **Routing Rules:**
 - **CPU requests to `0x50000000 - 0x5FFFFFFF`:** Handled locally by RTL bus (no serialization)
@@ -303,9 +303,9 @@ T6      IDLE                               IDLE
    - After receiving response, processes the buffered request (if any)
 
 **Implementation:**
-- Host tracks pending state via its state machine and request/response tracking structures (current request plus host bus state), rather than a dedicated field
-- FPGA maintains state in `host_bus_interface`: current active transaction direction plus an optional buffered host request
-- Before sending a new request, each side checks its current state to determine if it's already waiting for a response
+- **Host (Rust):** Tracks pending state using the existing `HostBusHostState` enum (state machine) and the `current_host_request: Option<HostBusRequest>` field. When `current_host_request` is `Some` and state is waiting for response, the host has an outstanding request.
+- **FPGA (`host_bus_interface`):** Maintains current active transaction direction in the FSM state, plus adds an optional buffered host request register for the simultaneous request scenario.
+- Before sending a new request, each side checks its current state to determine if it's already waiting for a response.
 
 **Key Invariants:**
 - At most ONE outstanding request per side
