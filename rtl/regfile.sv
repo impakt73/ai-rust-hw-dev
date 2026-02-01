@@ -28,8 +28,8 @@
 module regfile (
     input  logic        clk,
     input  logic        we,           // Write enable
-    input  logic [4:0]  rs1_addr,     // Read address 1 (should be registered in CPU)
-    input  logic [4:0]  rs2_addr,     // Read address 2 (should be registered in CPU)
+    input  logic [4:0]  rs1_addr,     // Read address 1
+    input  logic [4:0]  rs2_addr,     // Read address 2
     input  logic [4:0]  rd_addr,      // Write address
     input  logic [31:0] rd_data,      // Write data
     output logic [31:0] rs1_data,     // Read data 1
@@ -77,12 +77,9 @@ module regfile (
     // ============================================================
     // x0 Handling - Override BRAM output with 0 for register x0
     // ============================================================
-    // BRAM reads have 1-cycle latency, so we need to track if we're
-    // reading x0 when data becomes available. The address should already
-    // be registered in the CPU, so the BRAM output timing aligns with
-    // the registered address comparison.
-    //
-    // We register the address here to match BRAM output timing.
+    // BRAM reads have 1-cycle latency (address in, data out next cycle).
+    // We register the address here to know which register was requested
+    // when the BRAM data becomes available.
     logic [4:0] rs1_addr_reg, rs2_addr_reg;
 
     always_ff @(posedge clk) begin

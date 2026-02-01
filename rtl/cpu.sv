@@ -993,8 +993,8 @@ module cpu #(
     regfile u_regfile (
         .clk(clk),
         .we(reg_write_en & reg_write_reg),  // Gated by FSM
-        .rs1_addr(rs1),  // Combinational decoder output, registered inside regfile
-        .rs2_addr(rs2),  // Combinational decoder output, registered inside regfile
+        .rs1_addr(rs1),  // From decoder, BRAM samples on clock edge
+        .rs2_addr(rs2),  // From decoder, BRAM samples on clock edge
         .rd_addr(rd_reg),
         .rd_data(rd_data),
         .rs1_data(rs1_data),
