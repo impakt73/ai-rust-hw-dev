@@ -17,7 +17,7 @@ module branch_unit (
 );
 
     // Branch decision logic
-    // Note: All comparisons are done directly on registered operands (a_reg, b_reg)
+    // Note: All comparisons are done directly on registered operands (rs1_data, rs2_data)
     // to avoid dependency on ALU result, improving timing closure.
     always_comb begin
         take_branch = 1'b0;
