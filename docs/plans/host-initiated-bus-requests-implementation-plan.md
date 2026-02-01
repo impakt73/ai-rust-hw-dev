@@ -115,9 +115,14 @@ The system follows a **simple, reliable** design:
 
 | Address Range | Owner | Description |
 |---------------|-------|-------------|
-| `0x10000000 - 0x4FFFFFFF` | Host (Rust) | SimControl, Video, Audio, FIFO |
+| `0x10000000 - 0x100000FF` | Host (Rust) | SimControl |
+| `0x20000000 - 0x2000000F` | Host (Rust) | Video |
+| `0x30000000 - 0x3000000F` | Host (Rust) | Audio |
+| `0x40000000 - 0x40000007` | Host (Rust) | FIFO |
 | `0x50000000 - 0x5FFFFFFF` | RTL (FPGA) | LED, Clock, UART peripherals |
 | `0x80000000 - 0xFFFFFFFF` | Host (Rust) | DRAM |
+
+_Note: The regions between Host peripheral ranges (e.g., `0x10000100` to `0x1FFFFFFF`) are currently reserved/unassigned._
 
 **Routing Rules:**
 - **CPU requests to `0x50000000 - 0x5FFFFFFF`:** Handled locally by RTL bus (no serialization)
@@ -178,16 +183,68 @@ Bit  [1]:   Reserved (0)
 Bit  [0]:   we (1=write, 0=read)
 ```
 
-**Alternative (Simpler) Approach - Recommended:**
+**Alternative Approach (Context-Based Detection) - NOT RECOMMENDED:**
 
-Instead of modifying the header, use the **context** to determine packet meaning:
+> **⚠️ WARNING:** This approach is **NOT VIABLE** due to the simultaneous request edge case described below.
+
+An alternative would be to use **context** to determine packet meaning:
 - The Host knows when it's sending a request vs responding
 - The FPGA knows when it's sending a request vs responding
 - A simple state machine on each side tracks whether it expects a request or response
 
-This preserves backward compatibility and reduces complexity.
+**Why This Doesn't Work:** When both sides send a request simultaneously, the receiving side cannot distinguish whether incoming data is:
+- A new request from the other side, OR
+- A response to its own outstanding request
 
-### 2.4 Transaction State Machines
+The extended header format with explicit packet type bits (0010 for host-initiated requests) is **mandatory** to resolve this ambiguity.
+
+### 2.4 Simultaneous Request Handling (Critical Edge Case)
+
+**Problem:** When both Host and FPGA send requests at the same time:
+1. FPGA sends CPU-initiated request (packet type 0000) to Host
+2. Host sends Host-initiated request (packet type 0010) to FPGA
+3. Both sides are now waiting for a response, but receiving a request instead
+
+**Solution:** Each side must be capable of **buffering one incoming request** while waiting for a response to its outstanding request:
+
+1. **Dual-Buffer Requirement:** Both sides must maintain:
+   - A pending **outgoing request** waiting for response
+   - A buffered **incoming request** that arrived while waiting
+
+2. **Processing Order Rule:** When a side has an outstanding request:
+   - It MUST **read and buffer** any incoming request (identified by packet type bits)
+   - It MUST **NOT process** the buffered request until its own response arrives
+   - After receiving the response, it processes the buffered request
+
+3. **Why This Prevents Deadlock:**
+   - Each side can only have ONE outstanding request at a time (existing rule)
+   - Therefore, at most ONE request can be buffered on each side
+   - Response to an outstanding request is never blocked by an unprocessed incoming request
+   - After the response arrives, the buffered request is processed
+
+**FPGA-Side Constraint:**
+When the FPGA has an outstanding CPU-initiated request:
+- The bus is occupied by the CPU
+- An incoming Host request CANNOT be processed (arbiter blocks it)
+- The Host request MUST be buffered until the CPU transaction completes
+- Once the CPU transaction completes, the buffered Host request gains bus access
+
+**Protocol Flow (Simultaneous Requests):**
+
+```
+Time    FPGA Side                          Host Side
+────────────────────────────────────────────────────────────────────
+T1      Send CPU request (type 0000)       Send Host request (type 0010)
+T2      Receive Host request → BUFFER      Receive CPU request → BUFFER
+        (cannot process: bus busy)         (must wait for own response)
+T3      Waiting for CPU response...        Process buffered CPU request
+T4      Receive CPU response               Send CPU response
+        Process buffered Host request      Waiting for Host response...
+T5      Send Host response                 Receive Host response
+T6      IDLE                               IDLE
+```
+
+### 2.5 Transaction State Machines
 
 **Host Side State Machine:**
 
@@ -231,24 +288,30 @@ This preserves backward compatibility and reduces complexity.
     └─────────────────┘           └─────────────────────┘
 ```
 
-### 2.5 Single Pending Transaction Rule
+### 2.6 Single Pending Transaction Rule
 
 **Critical Design Decision:** To keep complexity low and prevent ordering issues:
 
-1. **Host Side:** Can have at most ONE pending transaction at a time
-   - Either processing a CPU-initiated request OR
-   - Waiting for a response to a Host-initiated request
-   - **Never both simultaneously**
+1. **Host Side:** Can have at most ONE **outstanding request** at a time
+   - May send ONE host-initiated request and wait for response
+   - While waiting, MUST buffer any incoming CPU-initiated request
+   - After receiving response, processes the buffered request (if any)
 
-2. **FPGA Side:** Can have at most ONE pending transaction at a time
-   - Either waiting for response to CPU-initiated request OR
-   - Processing a Host-initiated request
-   - **Never both simultaneously**
+2. **FPGA Side:** Can have at most ONE **outstanding request** at a time
+   - May send ONE CPU-initiated request and wait for response
+   - While waiting, MUST buffer any incoming Host-initiated request (identified by packet type 0010)
+   - After receiving response, processes the buffered request (if any)
 
 **Implementation:**
-- Host maintains a single state variable: `host_pending_direction: Option<TransactionDirection>`
-- FPGA maintains a single state in `host_bus_interface`: current active transaction direction
-- Before sending a new request, each side checks if it's already waiting for a response
+- Host tracks pending state via its state machine and request/response tracking structures (current request plus host bus state), rather than a dedicated field
+- FPGA maintains state in `host_bus_interface`: current active transaction direction plus an optional buffered host request
+- Before sending a new request, each side checks its current state to determine if it's already waiting for a response
+
+**Key Invariants:**
+- At most ONE outstanding request per side
+- At most ONE buffered incoming request per side
+- Responses are never blocked (always processed immediately)
+- Buffered requests are processed in FIFO order after response received
 
 ---
 
@@ -368,10 +431,11 @@ module bus_arbiter (
 |----------|-------------|-------|------------|
 | **Host→Host Loop** | Host sends request to address owned by Host | Address range error | Validate address before sending |
 | **CPU→CPU Loop** | CPU sends request to RTL peripheral | Should work (local) | N/A - this is valid |
-| **Simultaneous Requests** | Both CPU and Host request at same time | Arbiter contention | Priority arbiter resolves |
-| **Response Mismatch** | Response received when not expected | Protocol error | State machine validation |
+| **Simultaneous Requests** | Both CPU and Host request at same time | Both sides waiting for response while receiving request | Packet type header distinguishes request from response; buffer incoming request until own response received (see Section 2.4) |
+| **Response Mismatch** | Response received when not expected | Protocol error | State machine validation + packet type bits |
 | **TX Backpressure Deadlock** | TX full while waiting for RX | Buffer exhaustion | Separate TX/RX handling |
 | **Host Disappears** | Host stops responding mid-transaction | Software crash | Optional timeout mechanism |
+| **Bus Contention on Buffered Request** | FPGA receives Host request while CPU transaction active | Bus arbiter blocking | Buffer Host request, process after CPU transaction completes |
 
 ### 4.2 Address Validation (Preventing Routing Loops)
 
@@ -728,7 +792,7 @@ logic [31:0] host_resp_rdata;
 STATE_IDLE: begin
     // First: Check if Host is sending a request (RX has valid data)
     if (rx_valid && is_host_initiated_request_header(rx_data)) begin
-        // Host-initiated request incoming
+        // Host-initiated request incoming (packet type 0010)
         host_cap_we   <= (rx_data & 8'h01) != 0;
         host_cap_size <= (rx_data >> 2) & 2'b11;
         next_state <= STATE_HOST_RX_ADDR_0;
@@ -740,16 +804,34 @@ STATE_IDLE: begin
 end
 
 // Helper function to identify host-initiated request header
-// Host-initiated request headers have bit 4 set to distinguish from:
-// - CPU-initiated requests (sent by FPGA, not received)
-// - Host responses to CPU requests (no bit 4)
+// Host-initiated request headers use packet type 0010 in bits [7:4],
+// per the Extended Header Format specification. This distinguishes them from:
+// - CPU-initiated requests (type 0000, sent by FPGA, not received)
+// - Host responses to CPU requests (type 0001)
+// - FPGA responses to Host requests (type 0011)
 function logic is_host_initiated_request_header(input logic [7:0] data);
-    // Bit 4 set indicates host-initiated request (new protocol extension)
-    return (data[4] == 1'b1);
+    // Check for packet type 0010 in the upper nibble
+    return (data[7:4] == 4'b0010);
 endfunction
 ```
 
-### 5.5 Address Validation in RTL
+### 5.5 STATE_HOST_ERROR Implementation
+
+```systemverilog
+// Error handling state - sends error response to host
+STATE_HOST_ERROR: begin
+    // Send error response byte (0xFF = invalid address)
+    tx_data  <= 8'hFF;
+    tx_valid <= 1'b1;
+    
+    if (tx_ready) begin
+        // Error response sent, return to IDLE
+        next_state <= STATE_IDLE;
+    end
+end
+```
+
+### 5.6 Address Validation in RTL
 
 ```systemverilog
 // Validate host request address before issuing to bus
@@ -922,8 +1004,8 @@ fn handle_host_bus_host_requests(&mut self) {
         
         HostBusHostState::TxHeader => {
             let request = self.current_host_request.as_ref().unwrap();
-            // Send header with host-request bit set
-            let header = 0x10  // Bit 4 = host-initiated request
+            // Send header with packet type 0010 (host-initiated request)
+            let header = 0x20  // Packet type 0b0010 = host-initiated request (Host → FPGA)
                        | ((request.size as u8 & 0x03) << 2)
                        | (if request.we { 0x01 } else { 0x00 });
             
@@ -953,6 +1035,7 @@ Create new test file: `testbench/tests/host_bus_interface_bidirectional_test.rs`
 | **Address Validation** | 4 | Valid RTL addresses, invalid addresses |
 | **Arbiter Priority** | 3 | Host priority, CPU preemption, fairness |
 | **Protocol Edge Cases** | 5 | Backpressure, interleaved requests |
+| **Simultaneous Requests** | 4 | Both sides send request simultaneously, buffering, response ordering |
 | **Error Handling** | 4 | Invalid address response, recovery |
 
 #### 7.1.2 Sample Test: Host Read Word
@@ -970,8 +1053,8 @@ fn test_host_initiated_read_word() {
     // Simulate host sending a read request for LED register
     let target_addr: u32 = 0x50000000;  // LED_BASE
     
-    // Send host request header: {4'b0001, size=10, 1'b0, we=0} = 0x18
-    assert!(send_rx_byte(&mut dut, 0x18, 100), "Failed to send header");
+    // Send host request header: {4'b0010, size=10, 1'b0, we=0} = 0x28
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send header");
     
     // Send address (little-endian)
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
@@ -1017,8 +1100,8 @@ fn test_host_request_invalid_address_error() {
     // Send host request to DRAM address (invalid - would loop back to host)
     let invalid_addr: u32 = 0x80000000;  // DRAM_BASE
     
-    // Send request header
-    assert!(send_rx_byte(&mut dut, 0x18, 100), "Failed to send header");
+    // Send request header (0x28 = Host-initiated word read request)
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send header");
     
     // Send invalid address (little-endian)
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
@@ -1035,6 +1118,79 @@ fn test_host_request_invalid_address_error() {
 }
 ```
 
+#### 7.1.4 Sample Test: Simultaneous Requests
+
+```rust
+#[test]
+fn test_simultaneous_requests_fpga_buffers_host_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+    
+    // Step 1: CPU initiates request (FPGA sends to Host)
+    dut.addr = 0x80000000;  // DRAM address
+    dut.wdata = 0x12345678;
+    dut.we = 1;
+    dut.size = 0b10;  // Word
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+    
+    // Drain header byte from TX
+    let header = receive_tx_byte(&mut dut, 100).expect("CPU request header");
+    assert_eq!(header & 0xF0, 0x00, "CPU request should have packet type 0000");
+    
+    // Step 2: WHILE CPU request is outstanding, Host sends a request
+    // This simulates the simultaneous request scenario
+    // Send host request header (0x28 = Host-initiated word read)
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send host header");
+    
+    // Step 3: FPGA should buffer the host request (not process yet)
+    // because bus is busy with CPU transaction
+    // Continue sending host request address
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    
+    // Step 4: Complete CPU request by providing response from Host
+    // Drain remaining TX bytes for CPU request (address bytes)
+    for _ in 0..4 {
+        receive_tx_byte(&mut dut, 100).expect("CPU address byte");
+    }
+    for _ in 0..4 {
+        receive_tx_byte(&mut dut, 100).expect("CPU wdata byte");
+    }
+    
+    // Send CPU response (write ack)
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "CPU write ack");
+    
+    // Step 5: Now CPU transaction is complete, FPGA should process buffered Host request
+    // Verify host_bus_req is now asserted for the buffered Host request
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_req, 1, "host_bus_req should be asserted after CPU txn completes");
+    assert_eq!(dut.host_bus_addr, 0x50000000, "Should process buffered Host request");
+    
+    // Complete the Host request
+    dut.host_bus_rdata = 0xAA;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+    
+    // Receive Host response
+    let resp = receive_tx_byte(&mut dut, 100).expect("Host response byte 0");
+    assert_eq!(resp, 0xAA, "Host should receive correct LED value");
+}
+```
+
 ### 7.2 CPU-Sim Integration Tests
 
 Create new test file: `cpu-sim/tests/test_host_bus_requests.rs`
@@ -1046,6 +1202,7 @@ Create new test file: `cpu-sim/tests/test_host_bus_requests.rs`
 | **Basic API** | 4 | send_bus_request, receive_bus_response |
 | **LED Integration** | 3 | Read/write LED via host requests |
 | **Mixed Traffic** | 4 | CPU + Host concurrent access |
+| **Simultaneous Requests** | 3 | Request buffering, response ordering |
 | **Error Handling** | 3 | Invalid addresses, pending check |
 
 #### 7.2.2 End-to-End LED Test (from problem statement)
@@ -1199,9 +1356,9 @@ struct TestState {
 | Test Type | Count | Location |
 |-----------|-------|----------|
 | RTL Arbiter Tests | 8 | `testbench/tests/bus_arbiter_test.rs` |
-| RTL Host Request Tests | 15 | `testbench/tests/host_bus_interface_bidirectional_test.rs` |
-| CPU-Sim Integration Tests | 12 | `cpu-sim/tests/test_host_bus_requests.rs` |
-| **Total New Tests** | **35** | |
+| RTL Host Request Tests | 19 | `testbench/tests/host_bus_interface_bidirectional_test.rs` |
+| CPU-Sim Integration Tests | 15 | `cpu-sim/tests/test_host_bus_requests.rs` |
+| **Total New Tests** | **42** | |
 
 ---
 
@@ -1218,8 +1375,10 @@ struct TestState {
   - [ ] Add Host→FPGA request state machine
   - [ ] Add bus master interface ports
   - [ ] Add address validation logic
-  - [ ] Add error response handling
-  - [ ] Update protocol header format
+  - [ ] Add error response handling (STATE_HOST_ERROR)
+  - [ ] Update protocol header format (packet type bits in upper nibble)
+  - [ ] Add buffered host request register for simultaneous request handling
+  - [ ] Implement request buffering when CPU transaction is active
   
 - [ ] Modify `rtl/bus.sv`
   - [ ] Add second master interface for arbiter output
@@ -1241,6 +1400,8 @@ struct TestState {
   - [ ] Implement `receive_bus_response()` method
   - [ ] Add address validation for host requests
   - [ ] Update `handle_host_bus_interface()` for bidirectional traffic
+  - [ ] Add buffered CPU request handling for simultaneous request scenario
+  - [ ] Implement packet type detection (upper nibble) to distinguish requests from responses
   
 - [ ] Modify `cpu-sim/src/lib.rs`
   - [ ] Export new types
