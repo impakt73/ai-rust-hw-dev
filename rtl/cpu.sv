@@ -173,6 +173,14 @@ module cpu #(
     // PC for the current instruction (captured in DECODE)
     logic [31:0] instr_pc_reg;
     
+    // Pre-computed branch/jump target registers (for timing closure)
+    // These are registered during DECODE/EXECUTE to avoid long combinational paths
+    // from the adder to next_pc_value in the same cycle
+    logic [31:0] branch_target_reg;  // pc + imm_b (for B-type branches)
+    logic [31:0] jal_target_reg;     // pc + imm_j (for JAL)
+    logic [31:0] jalr_target_reg;    // a_reg + imm_i (for JALR, computed during EXECUTE)
+    logic        jalr_target_write;  // Control signal to write jalr_target_reg
+    
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
@@ -428,6 +436,30 @@ module cpu #(
             is_fp_store_reg <= is_fp_store;
         end
     end
+    
+    // Branch/Jump Target Registers
+    // Pre-compute branch and jump targets during DECODE to break timing path
+    // For B-type and JAL: pc + immediate is computed when decode_reg_write is asserted
+    // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            branch_target_reg <= 32'h0;
+            jal_target_reg <= 32'h0;
+            jalr_target_reg <= 32'h0;
+        end else begin
+            // Capture B-type and JAL targets during DECODE
+            // These use combinational decoder outputs (pc, imm_b, imm_j) before they're registered
+            if (decode_reg_write) begin
+                branch_target_reg <= (pc + imm_b) & ~32'h1;  // Ensure halfword alignment
+                jal_target_reg <= (pc + imm_j) & ~32'h1;     // Ensure halfword alignment
+            end
+            // Capture JALR target during EXECUTE (a_reg + imm_i_reg)
+            // a_reg is stable after DECODE, imm_i_reg is registered
+            if (jalr_target_write) begin
+                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Ensure halfword alignment
+            end
+        end
+    end
 
     
     // Completed Instruction Registers (captured at instruction completion)
@@ -548,6 +580,9 @@ module cpu #(
     // ============================================================
     // Program Counter with Multi-Cycle Control
     // ============================================================
+    // TIMING OPTIMIZATION: Branch/jump targets are pre-computed and registered
+    // during DECODE (for B-type/JAL) or EXECUTE (for JALR) to break the critical
+    // timing path from adder to PC in the same cycle.
     logic [31:0] next_pc_value;
     
     always_comb begin
@@ -555,12 +590,12 @@ module cpu #(
         
         if (current_state == S_BRANCH) begin
             if (take_branch)
-                next_pc_value = (instr_pc_reg + imm_b_reg) & ~32'h1;  // Branch target (ensure halfword-aligned)
+                next_pc_value = branch_target_reg;  // Use pre-computed branch target
         end else if (current_state == S_WRITEBACK) begin
             if (opcode_reg == 7'b1101111)  // JAL
-                next_pc_value = (instr_pc_reg + imm_j_reg) & ~32'h1;  // Jump target (ensure halfword-aligned)
+                next_pc_value = jal_target_reg;     // Use pre-computed JAL target
             else if (opcode_reg == 7'b1100111)  // JALR
-                next_pc_value = (a_reg + imm_i_reg) & ~32'h1;  // Already has alignment mask
+                next_pc_value = jalr_target_reg;    // Use pre-computed JALR target
         end
     end
     
@@ -749,6 +784,7 @@ module cpu #(
         instr_complete_internal = 1'b0;
         alu_start = 1'b0;  // Default ALU start to inactive
         fpu_start = 1'b0;  // Default FPU start to inactive
+        jalr_target_write = 1'b0;  // Default JALR target write to inactive
         
         case (current_state)
             S_FETCH: begin
@@ -786,6 +822,12 @@ module cpu #(
                     
                     if (alu_ready) begin
                         alu_out_write = 1'b1;
+                    end
+                    
+                    // Capture JALR target (a_reg + imm_i_reg) during EXECUTE
+                    // This breaks the timing path by registering the target before WRITEBACK
+                    if (opcode_reg == 7'b1100111) begin  // JALR
+                        jalr_target_write = 1'b1;
                     end
                 end
                 // FP operations (may be multi-cycle, e.g., division)
