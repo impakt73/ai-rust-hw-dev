@@ -441,6 +441,8 @@ module cpu #(
     // Pre-compute branch and jump targets during DECODE to break timing path
     // For B-type and JAL: pc + immediate is computed when decode_reg_write is asserted
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
+    // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
+    // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             branch_target_reg <= 32'h0;
@@ -450,13 +452,13 @@ module cpu #(
             // Capture B-type and JAL targets during DECODE
             // These use combinational decoder outputs (pc, imm_b, imm_j) before they're registered
             if (decode_reg_write) begin
-                branch_target_reg <= (pc + imm_b) & ~32'h1;  // Ensure halfword alignment
-                jal_target_reg <= (pc + imm_j) & ~32'h1;     // Ensure halfword alignment
+                branch_target_reg <= (pc + imm_b) & ~32'h1;  // Halfword aligned for RV32C
+                jal_target_reg <= (pc + imm_j) & ~32'h1;     // Halfword aligned for RV32C
             end
             // Capture JALR target during EXECUTE (a_reg + imm_i_reg)
             // a_reg is stable after DECODE, imm_i_reg is registered
             if (jalr_target_write) begin
-                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Ensure halfword alignment
+                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Halfword aligned for RV32C
             end
         end
     end
