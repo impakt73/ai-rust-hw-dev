@@ -727,7 +727,7 @@ logic [31:0] host_resp_rdata;
 // Host-initiated requests have priority (checked first on RX)
 STATE_IDLE: begin
     // First: Check if Host is sending a request (RX has valid data)
-    if (rx_valid && host_rx_is_request_header(rx_data)) begin
+    if (rx_valid && is_host_initiated_request_header(rx_data)) begin
         // Host-initiated request incoming
         host_cap_we   <= (rx_data & 8'h01) != 0;
         host_cap_size <= (rx_data >> 2) & 2'b11;
@@ -739,9 +739,11 @@ STATE_IDLE: begin
     end
 end
 
-// Helper function to identify host request header
-// Host request headers have a specific bit pattern to distinguish from responses
-function logic host_rx_is_request_header(input logic [7:0] data);
+// Helper function to identify host-initiated request header
+// Host-initiated request headers have bit 4 set to distinguish from:
+// - CPU-initiated requests (sent by FPGA, not received)
+// - Host responses to CPU requests (no bit 4)
+function logic is_host_initiated_request_header(input logic [7:0] data);
     // Bit 4 set indicates host-initiated request (new protocol extension)
     return (data[4] == 1'b1);
 endfunction
@@ -1273,7 +1275,7 @@ struct TestState {
 - [ ] Update `AGENTS.md` with new memory map info
 - [ ] Update `docs/README.md` if needed
 - [ ] Add inline documentation to new code
-- [ ] Delete this plan document after successful implementation
+- [ ] Mark this plan document as 'Implemented' and move to archive (preserve design rationale)
 
 ---
 
