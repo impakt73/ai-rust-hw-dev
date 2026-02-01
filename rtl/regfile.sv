@@ -2,91 +2,96 @@
 // 32x32-bit register file for RISC-V RV32I
 // x0 is hardwired to 0
 //
-// BRAM INFERENCE ANALYSIS FOR iCE40-HX8K:
-// ========================================
-// iCE40 BRAM blocks are 256x16-bit (4Kbit each). Yosys infers BRAM when:
-//   1. Memory depth >= 256 entries (our regfile has only 32 entries)
-//   2. Synchronous read (read address registered, data available next cycle)
-//   3. Synchronous write
+// DUAL-BANKED BRAM ARCHITECTURE:
+// ==============================
+// RISC-V requires 2 simultaneous reads (rs1, rs2) + 1 write (rd).
+// iCE40 BRAM blocks are simple dual-port (1 read + 1 write port).
 //
-// PROBLEM: This register file does NOT meet BRAM inference criteria because:
-//   - Depth is 32 entries (< 256 minimum for iCE40 BRAM inference)
-//   - Asynchronous reads are REQUIRED by the multi-cycle CPU architecture
-//     (DECODE state needs immediate access to register values)
+// SOLUTION: Use TWO BRAM copies (banks), each storing the complete register file:
+//   - Bank A: Provides rs1 read data (via its read port)
+//   - Bank B: Provides rs2 read data (via its read port)
+//   - Writes go to BOTH banks simultaneously (via their write ports)
 //
-// WORKAROUND: The REGISTER_OUTPUTS parameter enables a "read-registered" mode where:
-//   - Register file uses distributed RAM (LUTs) as before
-//   - Read outputs are optionally registered for timing improvement
-//   - This does NOT save LUTs but improves Fmax by breaking combinational paths
+// RESOURCE USAGE:
+//   - 4 BRAM blocks total (2 banks × 2 blocks per bank for 32-bit width)
+//   - Each sync_dpram instance uses 256x32-bit = 2× iCE40 SB_RAM40_4K blocks
 //
-// FUTURE OPTIMIZATION: To actually use BRAM, the CPU architecture would need:
-//   1. Pipeline the DECODE stage to tolerate 1-cycle read latency
-//   2. Add bypass/forwarding logic for back-to-back read-after-write hazards
-//   3. Potentially increase depth to 256 entries (waste 224 entries)
+// LATENCY:
+//   - Reads: 1 cycle (synchronous BRAM read)
+//   - Writes: 1 cycle (synchronous BRAM write)
+//   - NOTE: CPU must provide registered addresses (address registration is in CPU)
 //
-// CURRENT RECOMMENDATION: Keep REGISTER_OUTPUTS=0 (async reads, LUT-based storage)
-// Estimated LUT usage: ~400 LUTs (5.3% of iCE40-HX8K)
+// x0 HANDLING:
+//   - Writes to x0 are blocked (we is gated)
+//   - Reads from x0 return 0 (output mux based on registered address)
 
-module regfile #(
-    parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
-) (
+module regfile (
     input  logic        clk,
     input  logic        we,           // Write enable
-    input  logic [4:0]  rs1_addr,     // Read address 1
-    input  logic [4:0]  rs2_addr,     // Read address 2
+    input  logic [4:0]  rs1_addr,     // Read address 1 (should be registered in CPU)
+    input  logic [4:0]  rs2_addr,     // Read address 2 (should be registered in CPU)
     input  logic [4:0]  rd_addr,      // Write address
     input  logic [31:0] rd_data,      // Write data
     output logic [31:0] rs1_data,     // Read data 1
     output logic [31:0] rs2_data      // Read data 2
 );
 
-    // 32x32-bit register array (stored in LUTs, not BRAM - see comments above)
-    logic [31:0] registers [31:0];
+    // Write enable gated to prevent x0 writes
+    logic we_gated;
+    assign we_gated = we && (rd_addr != 5'd0);
 
-    // Internal read values (before optional output registering)
-    logic [31:0] rs1_data_int;
-    logic [31:0] rs2_data_int;
+    // Raw BRAM read outputs (before x0 muxing)
+    logic [31:0] rs1_data_bram;
+    logic [31:0] rs2_data_bram;
 
-    // Read operations (combinational/asynchronous from register array)
-    always_comb begin
-        // x0 is always 0 (RISC-V architectural requirement)
-        if (rs1_addr == 5'd0)
-            rs1_data_int = 32'd0;
-        else
-            rs1_data_int = registers[rs1_addr];
-    end
+    // ============================================================
+    // Bank A - Provides rs1 read data
+    // ============================================================
+    sync_dpram #(
+        .DATA_WIDTH(32),
+        .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
+    ) bank_a (
+        .clk(clk),
+        .we(we_gated),
+        .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
+        .wdata(rd_data),
+        .raddr({3'b000, rs1_addr}),  // Zero-extend to 8 bits
+        .rdata(rs1_data_bram)
+    );
 
-    always_comb begin
-        // x0 is always 0
-        if (rs2_addr == 5'd0)
-            rs2_data_int = 32'd0;
-        else
-            rs2_data_int = registers[rs2_addr];
-    end
+    // ============================================================
+    // Bank B - Provides rs2 read data
+    // ============================================================
+    sync_dpram #(
+        .DATA_WIDTH(32),
+        .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
+    ) bank_b (
+        .clk(clk),
+        .we(we_gated),
+        .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
+        .wdata(rd_data),
+        .raddr({3'b000, rs2_addr}),  // Zero-extend to 8 bits
+        .rdata(rs2_data_bram)
+    );
 
-    // Write operation (synchronous)
+    // ============================================================
+    // x0 Handling - Override BRAM output with 0 for register x0
+    // ============================================================
+    // BRAM reads have 1-cycle latency, so we need to track if we're
+    // reading x0 when data becomes available. The address should already
+    // be registered in the CPU, so the BRAM output timing aligns with
+    // the registered address comparison.
+    //
+    // We register the address here to match BRAM output timing.
+    logic [4:0] rs1_addr_reg, rs2_addr_reg;
+
     always_ff @(posedge clk) begin
-        // Only write if write enable is high and address is not x0
-        if (we && rd_addr != 5'd0) begin
-            registers[rd_addr] <= rd_data;
-        end
+        rs1_addr_reg <= rs1_addr;
+        rs2_addr_reg <= rs2_addr;
     end
 
-    // Output path: Optional registering for timing improvement
-    generate
-        if (REGISTER_OUTPUTS) begin : gen_registered_outputs
-            // Registered outputs (adds 1 cycle latency, improves Fmax)
-            // NOTE: This does NOT infer BRAM on iCE40 due to small depth (32 entries < 256)
-            // It only registers the outputs to break combinational paths
-            always_ff @(posedge clk) begin
-                rs1_data <= rs1_data_int;
-                rs2_data <= rs2_data_int;
-            end
-        end else begin : gen_async_outputs
-            // Direct combinational outputs (zero latency, required by current CPU architecture)
-            assign rs1_data = rs1_data_int;
-            assign rs2_data = rs2_data_int;
-        end
-    endgenerate
+    // Output mux: return 0 for x0, otherwise BRAM data
+    assign rs1_data = (rs1_addr_reg == 5'd0) ? 32'd0 : rs1_data_bram;
+    assign rs2_data = (rs2_addr_reg == 5'd0) ? 32'd0 : rs2_data_bram;
 
 endmodule

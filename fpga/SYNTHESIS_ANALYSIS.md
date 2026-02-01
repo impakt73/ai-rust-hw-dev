@@ -94,17 +94,17 @@ The ALU implements all RV32I arithmetic and logical operations:
 
 **Note:** With M extension disabled, no multiplier or divider hardware is instantiated.
 
-### 3. **Register File (regfile_bram.sv)** - Now using BRAM ✅
+### 3. **Register File (regfile.sv)** - Now using BRAM ✅
 
-- **Dual-copy BRAM architecture**: Two identical copies of 32×32-bit register file
-- Copy A provides rs1 read data, Copy B provides rs2 read data
-- Both copies are written simultaneously to stay in sync
-- Uses 4× SB_RAM40_4K blocks (256×16-bit each, 2 per copy for 32-bit width)
-- Added S_REG_READ FSM state to handle 1-cycle BRAM read latency
+- **Dual-banked BRAM architecture**: Two sync_dpram banks, each storing the full 32×32-bit register file
+- Bank A provides rs1 read data, Bank B provides rs2 read data
+- Both banks are written simultaneously to stay in sync
+- Uses 4 BRAM blocks total (inferred via sync_dpram.sv, works in both simulation and FPGA)
+- S_REG_READ FSM state handles 1-cycle BRAM read latency
 
-**Implementation:** `regfile_bram.sv` with `USE_BRAM_REGFILE` parameter in CPU
+**Implementation:** `regfile.sv` instantiates `sync_dpram.sv` (inference-based, no vendor primitives)
 
-**Trade-off:** +1 cycle per instruction decode, -1,387 LUTs, +4 BRAM blocks
+**Trade-off:** +1 cycle per instruction decode, ~1,400 LUTs saved, +4 BRAM blocks
 
 ### 4. **Decoder (decoder.sv + decompress.sv)** - ~5% of LUTs
 
@@ -330,22 +330,22 @@ The register file BRAM conversion is now complete. The dual-copy architecture su
 
 The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
-- ✅ **Timing closure** at 25 MHz with 47% margin (36.72 MHz achieved)
+- ✅ **Timing closure** at 25 MHz with 40% margin (35.04 MHz achieved)
 - ✅ **No critical warnings** affecting functionality
-- ✅ **Low utilization** (~59%) providing ample expansion headroom
+- ✅ **Low utilization** (~60%) providing ample expansion headroom
 - ✅ **BRAM utilized** for register file (4 of 32 blocks)
 
 ### Completed Optimizations
 
 1. **Pre-computed branch/jump targets with direct equality** - Moved branch target calculation from combinational logic to registered values and removed ALU dependency for BEQ/BNE, improving Fmax from 32.79 MHz to 37.14 MHz (+13.3%)
 
-2. **Dual-copy BRAM register file** - Implemented `regfile_bram.sv` with two BRAM copies to provide 2-read, 1-write capability on iCE40's single-port BRAM. Added S_REG_READ FSM state for 1-cycle read latency. Reduced LUT usage from 91% to 59% (-35%) at the cost of 4 BRAM blocks and minor Fmax reduction (-1.6%).
+2. **Dual-banked BRAM register file** - Implemented inference-based BRAM in `regfile.sv` using `sync_dpram.sv` for both simulation and FPGA compatibility. Two BRAM banks provide 2-read, 1-write capability. S_REG_READ FSM state handles 1-cycle read latency. Reduced LUT usage from 91% to 60% at the cost of 4 BRAM blocks.
 
 ### Remaining Priority Recommendations
 
 1. **Document boot_addr warning** as expected behavior
-2. **Consider 35 MHz operation** - achievable with 5% margin
-3. **Enable M extension** if needed - now have ~2,400 spare logic cells
+2. **Consider 35 MHz operation** - achievable with minimal margin
+3. **Enable M extension** if needed - now have ~3,000 spare logic cells
 
 ---
 
@@ -358,8 +358,9 @@ The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 | `fpga/build/yosys.log` | Synthesis output |
 | `fpga/build/nextpnr.log` | Place & route output |
 | `fpga/build/riscv_fpga_timing.rpt` | Timing analysis |
-| `rtl/regfile_bram.sv` | BRAM-based register file (new) |
-| `rtl/cpu.sv` | CPU with USE_BRAM_REGFILE parameter |
+| `rtl/sync_dpram.sv` | Inference-based simple dual-port RAM |
+| `rtl/regfile.sv` | Dual-banked BRAM register file |
+| `rtl/cpu.sv` | CPU with S_REG_READ state for BRAM latency |
 
 ---
 
