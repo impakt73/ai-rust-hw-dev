@@ -924,7 +924,6 @@ module cpu #(
         .funct3(funct3_reg),
         .rs1_data(a_reg),
         .rs2_data(b_reg),
-        .alu_zero(alu_zero),
         .take_branch(take_branch)
     );
     

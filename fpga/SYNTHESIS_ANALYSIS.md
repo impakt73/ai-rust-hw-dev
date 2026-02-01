@@ -9,19 +9,19 @@
 
 ## Executive Summary
 
-The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 35.29 MHz** (41% timing margin). The design uses **~90% of available logic cells**, leaving minimal headroom for additional features.
+The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** target frequency, with an achieved **Fmax of 37.14 MHz** (49% timing margin). The design uses **~91% of available logic cells**, leaving minimal headroom for additional features.
 
 ### Key Metrics
 
 | Metric | Value | Available | Utilization |
 |--------|-------|-----------|-------------|
-| **Logic Cells (ICESTORM_LC)** | ~6,973 | 7,680 | **~90%** |
+| **Logic Cells (ICESTORM_LC)** | 6,988 | 7,680 | **91%** |
 | **Block RAM (ICESTORM_RAM)** | 0 | 32 | 0% |
 | **I/O Pins (SB_IO)** | 77 | 256 | 30% |
 | **Global Buffers (SB_GB)** | 5 | 8 | 62% |
 | **PLLs (ICESTORM_PLL)** | 1 | 2 | 50% |
-| **Max Frequency** | 35.29 MHz | 25 MHz target | **PASS** (+41%) |
-| **Critical Path Delay** | 27.93 ns | 40.00 ns budget | PASS |
+| **Max Frequency** | 37.14 MHz | 25 MHz target | **PASS** (+49%) |
+| **Critical Path Delay** | 26.43 ns | 40.00 ns budget | PASS |
 
 ---
 
@@ -31,8 +31,8 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 
 | Cell Type | Count | Description |
 |-----------|-------|-------------|
-| **SB_LUT4** | 4,870 | 4-input Look-Up Tables |
-| **SB_CARRY** | 885 | Carry chain cells (arithmetic) |
+| **SB_LUT4** | 4,832 | 4-input Look-Up Tables |
+| **SB_CARRY** | 916 | Carry chain cells (arithmetic) |
 | **SB_DFFE** | 1,121 | D flip-flop with enable |
 | **SB_DFFER** | 1,079 | D flip-flop with enable and reset |
 | **SB_DFFR** | 84 | D flip-flop with reset |
@@ -118,7 +118,7 @@ Each includes:
 
 | Clock Domain | Achieved Fmax | Target | Status |
 |--------------|---------------|--------|--------|
-| pll_clk_global (25 MHz) | 35.29 MHz | 25.00 MHz | ✅ PASS |
+| pll_clk_global (25 MHz) | 37.14 MHz | 25.00 MHz | ✅ PASS |
 
 ### Critical Path Breakdown
 
@@ -149,10 +149,10 @@ This path was optimized by:
 | Register file decode | 1.04 | 1.68 | LUT cascade |
 | ALU input selection | 5.75 | 7.43 | LUT + routing |
 | ALU carry chain (32-bit) | 8.22 | 15.65 | 32× SB_CARRY |
-| Result formatting | 8.38 | 24.03 | LUT cascade + routing |
-| UART FIFO write | 3.89 | 27.93 | Register setup |
+| Result formatting | 7.00 | 22.65 | LUT cascade + routing |
+| UART FIFO write | 3.78 | 26.43 | Register setup |
 
-**Total Critical Path:** ~27.93 ns (icetime) / 28.35 ns (nextpnr)
+**Total Critical Path:** ~26.43 ns (icetime) / 26.88 ns (nextpnr)
 
 ### Critical Path Bottlenecks
 
@@ -172,7 +172,7 @@ This path was optimized by:
 
 | Optimization | Before | After | Improvement |
 |--------------|--------|-------|-------------|
-| Pre-computed branch/jump targets | 32.79 MHz | 35.29 MHz | +7.6% Fmax |
+| Pre-computed branch/jump targets + direct equality | 32.79 MHz | 37.14 MHz | +13.3% Fmax |
 
 ### Cross-Domain Paths
 
@@ -304,20 +304,20 @@ Using BRAM for the register file is the highest-value optimization, reducing LUT
 
 The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
-- ✅ **Timing closure** at 25 MHz with 41% margin (35.29 MHz achieved)
+- ✅ **Timing closure** at 25 MHz with 49% margin (37.14 MHz achieved)
 - ✅ **No critical warnings** affecting functionality
-- ⚠️ **High utilization** (~90%) limiting expansion
+- ⚠️ **High utilization** (~91%) limiting expansion
 - ⚠️ **No BRAM usage** despite availability
 
 ### Completed Optimizations
 
-1. **Pre-computed branch/jump targets** - Moved branch target calculation from combinational logic to registered values, improving Fmax from 32.79 MHz to 35.29 MHz (+7.6%)
+1. **Pre-computed branch/jump targets with direct equality** - Moved branch target calculation from combinational logic to registered values and removed ALU dependency for BEQ/BNE, improving Fmax from 32.79 MHz to 37.14 MHz (+13.3%)
 
 ### Priority Recommendations
 
 1. **Convert regfile to BRAM** to reduce utilization to ~85%
 2. **Document boot_addr warning** as expected behavior
-3. **Consider 30+ MHz operation** - now achievable with 17% margin
+3. **Consider 35+ MHz operation** - now achievable with 6% margin
 
 ---
 

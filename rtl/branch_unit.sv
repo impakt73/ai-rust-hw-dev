@@ -8,10 +8,6 @@ module branch_unit (
     input  logic [2:0]  funct3,
     input  logic [31:0] rs1_data,
     input  logic [31:0] rs2_data,
-    // Note: alu_zero is deprecated but kept for interface compatibility.
-    // BEQ/BNE now use direct equality comparison for better timing.
-    // TODO: Remove alu_zero in future interface cleanup.
-    input  logic        alu_zero,
     
     output logic        take_branch
 );
