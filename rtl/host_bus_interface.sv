@@ -491,11 +491,10 @@ module host_bus_interface (
                 host_cap_wdata <= 32'h0;
             end
             
-            // Capture address bytes (little-endian: LSB first)
-            // Note: The state machine uses HOST_RX_HEADER to receive the first address byte,
-            // then HOST_RX_ADDR_0 for second byte, etc. This is different from the CPU path
-            // which captures on the "current" state. For host requests, we capture based on
-            // which byte we're receiving, not which state we're in.
+            // Capture address and data bytes for host-initiated requests (little-endian: LSB first)
+            // The first address byte arrives while in HOST_RX_HEADER (header was consumed in IDLE),
+            // subsequent bytes arrive in the corresponding HOST_RX_ADDR_* states.
+            // For writes, data bytes follow the address bytes.
             if (rx_valid && rx_ready) begin
                 case (state)
                     STATE_HOST_RX_HEADER:  host_cap_addr[7:0]   <= rx_data;  // First addr byte

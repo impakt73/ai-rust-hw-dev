@@ -353,12 +353,12 @@ fn test_host_request_invalid_address_dram() {
     reset_module(&mut dut);
 
     // Send host request to DRAM address (invalid - would loop back to host)
-    let _invalid_addr: u32 = 0x80000000; // DRAM_BASE
+    // DRAM_BASE = 0x80000000
 
     // Send request header: {4'b0010, size=10, 1'b0, we=0} = 0x28
     assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send header");
 
-    // Send invalid address (little-endian)
+    // Send invalid address (little-endian) - 0x80000000
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
@@ -397,13 +397,12 @@ fn test_host_request_invalid_address_fifo() {
 
     reset_module(&mut dut);
 
-    // Send host request to FIFO address (invalid)
-    let _invalid_addr: u32 = 0x40000000; // FIFO
+    // Send host request to FIFO address (invalid) - 0x40000000
 
     // Send request header
     assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send header");
 
-    // Send invalid address
+    // Send invalid address (little-endian) - 0x40000000
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");

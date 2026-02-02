@@ -6,7 +6,7 @@
 **Date:** February 1, 2026  
 **Project:** RISC-V RV32IMACF Multi-Cycle CPU  
 **Prerequisites:** Existing `host_bus_interface.sv` implementation (CPU-initiated transactions only)  
-**Status:** Planning
+**Status:** Implemented
 
 ---
 
