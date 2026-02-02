@@ -23,6 +23,16 @@ This document provides a detailed technical implementation plan for **upgrading 
 5. **Hang Prevention:** Comprehensive edge case handling with timeouts
 6. **Comprehensive Testing:** RTL testbench tests and cpu-sim integration tests
 
+### Backwards Compatibility Warning
+
+> ⚠️ **BREAKING CHANGE:** The protocol changes described in this document are **not backwards compatible** with the existing host bus interface implementation. Specifically:
+>
+> - The new **extended header format** with packet type bits in the upper nibble changes the wire protocol
+> - Existing tests that rely on the old header format will fail and require updates
+> - Both the RTL (`host_bus_interface.sv`) and Rust (`cpu-sim/src/sim.rs`) implementations must be updated simultaneously
+>
+> **After implementing these changes, existing host bus interface tests will need to be updated to use the new packet format before they will pass again.**
+
 ### Design Philosophy
 
 The system follows a **simple, reliable** design:
@@ -30,6 +40,7 @@ The system follows a **simple, reliable** design:
 - **Priority arbitration** with Host taking precedence over CPU
 - **Address range validation** to prevent routing loops
 - **Clear error reporting** for invalid transactions
+- **Asymmetric simultaneous request handling** to prevent deadlocks (Host processes incoming requests while waiting; FPGA buffers incoming requests)
 
 ---
 
@@ -220,36 +231,67 @@ The extended header format with explicit packet type bits is therefore **mandato
 2. Host sends Host-initiated request (packet type 0010) to FPGA
 3. Both sides are now waiting for a response, but receiving a request instead
 
-**Solution:** Each side must be capable of **buffering one incoming request** while waiting for a response to its outstanding request:
+**Why Symmetric Buffering Causes Deadlock:**
 
-1. **Dual-Buffer Requirement (Logical):** Both sides must be able to hold:
-   - A pending **outgoing request** waiting for a response, and
-   - A **buffered incoming request** that arrived while waiting for that response.
+A naive symmetric solution where both sides simply buffer incoming requests and wait for their own response would cause a **deadlock** due to the exclusive nature of the FPGA's system bus:
 
-   This buffering may be implemented either:
-   - As **packet-level buffering** (explicitly reading and storing the full request packet in a side buffer), or
-   - As **byte-level buffering** in an RX FIFO that is dimensioned to hold at least one **maximum-length request packet** while another transaction is outstanding.
+1. When the FPGA has an outstanding CPU-initiated request, the **system bus is locked** by the CPU
+2. Even though the Host has priority in the arbiter, this doesn't help because the CPU has already acquired the bus
+3. The Host-initiated request arriving at the FPGA **cannot be processed** because the bus remains locked
+4. The bus cannot be unlocked until the CPU's request completes
+5. The CPU's request cannot complete until the Host sends a response
+6. If the Host is also waiting for its own response before processing the CPU request, **neither side can make progress**
 
-2. **Processing Order Rule:** When a side has an outstanding request:
-   - It MUST ensure that any new incoming request (identified by packet type bits) is safely **buffered** (either in an RX FIFO or an explicit packet buffer) and not dropped.
-   - It MUST **NOT process** the buffered request until its own response arrives.
-   - After receiving the response, it then processes the buffered request.
+**Solution: Asymmetric Request Handling**
 
-3. **Why This Prevents Deadlock:**
-   - Each side can only have ONE outstanding request at a time (existing rule).
-   - Therefore, at most ONE request can be buffered on each side.
-   - The response to an outstanding request is never blocked by an unprocessed incoming request.
-   - After the response arrives, the buffered request is processed.
+To prevent deadlocks, the system uses an **asymmetric** approach where the two sides behave differently:
 
-**FPGA-Side Constraint and Implementation Note:**
+1. **FPGA Side (Buffer and Wait):** When the FPGA has an outstanding CPU-initiated request:
+   - The system bus is locked by the CPU transaction
+   - Any incoming Host-initiated request is **buffered in the RX FIFO** (byte-level buffering)
+   - The FPGA **cannot process** the buffered request until the CPU transaction completes (bus constraint)
+   - Once the CPU response arrives and the bus is released, the FPGA processes the buffered Host request
+
+2. **Host Side (Process Immediately):** When the Host has an outstanding Host-initiated request:
+   - The Host **continues to process incoming CPU-initiated requests immediately**
+   - The Host does NOT wait for its own response before handling incoming requests
+   - The Host can interleave: send a request, receive and process a CPU request, send the CPU response, then receive its own response
+   - This is possible because the Host has no bus locking constraint
+
+**Why This Prevents Deadlock:**
+
+The asymmetric approach breaks the circular dependency:
+
+1. The FPGA sends a CPU request and its bus becomes locked
+2. If the Host sends a request simultaneously, it accumulates in the FPGA's RX FIFO
+3. The Host **immediately processes** the incoming CPU request (no waiting for its own response)
+4. The Host sends the CPU response
+5. The FPGA receives the response, unlocks the bus, and can now process the buffered Host request
+6. The FPGA sends the Host response
+7. Both sides return to IDLE
+
+The key insight is that the **Host side has no bus locking constraint** and can freely interleave request processing with waiting for responses. The FPGA side is constrained by the system bus, but this is acceptable because the Host side will always be able to make progress and eventually unblock the FPGA.
+
+**FPGA-Side Implementation Notes:**
+
 When the FPGA has an outstanding CPU-initiated request:
-- The bus is occupied by the CPU.
-- An incoming Host request CANNOT be granted bus ownership or processed immediately (arbiter blocks it).
-- The Host request MUST instead be buffered **in the RX FIFO** until the CPU transaction completes.
-- The host-side link layer continues to send the Host request bytes, which accumulate in the FPGA RX FIFO; the request is only **decoded and recognized as a Host-initiated packet** once the state machine returns to `IDLE` and drains the FIFO.
-- Once the CPU transaction completes and the FSM is back in `IDLE`, the FPGA reads the buffered Host request from the RX FIFO and grants it bus access.
+- The bus is occupied by the CPU
+- An incoming Host request CANNOT be granted bus ownership or processed immediately (arbiter blocks it)
+- The Host request bytes accumulate in the **RX FIFO** as byte-level buffering
+- The request is only decoded and processed once the state machine returns to `IDLE` and drains the FIFO
+- Once the CPU transaction completes and the FSM is back in `IDLE`, the FPGA reads the buffered Host request from the RX FIFO and grants it bus access
 
 In this document, references to a "buffered incoming Host request" on the FPGA side specifically mean that the **complete request packet is resident in the RX FIFO** (byte-level buffering) while the FPGA is servicing the CPU-initiated transaction; an additional explicit packet buffer is not required as long as the RX FIFO depth guarantees capacity for one full request.
+
+**Host-Side Implementation Notes:**
+
+The Host must be designed to:
+- Continuously poll for and process incoming packets from the RX path, **even while waiting for a response** to an outstanding Host-initiated request
+- Distinguish between incoming CPU-initiated requests (packet type 0000) and Host response packets (packet type 0011) using the packet type header bits
+- Handle CPU requests inline by: parsing the request, executing the memory operation, and sending the response
+- Resume waiting for the Host response after processing any interleaved CPU requests
+
+This requires the Host's receive loop to be **non-blocking** with respect to its own pending request state.
 
 **Protocol Flow (Simultaneous Requests):**
 
@@ -257,11 +299,12 @@ In this document, references to a "buffered incoming Host request" on the FPGA s
 Time    FPGA Side                          Host Side
 ────────────────────────────────────────────────────────────────────
 T1      Send CPU request (type 0000)       Send Host request (type 0010)
-T2      Receive Host request → BUFFER      Receive CPU request → BUFFER
-        (in RX FIFO, bus busy)             (must wait for own response)
-T3      Waiting for CPU response...        Process buffered CPU request
-T4      Receive CPU response               Send CPU response (type 0001)
-        Process buffered Host request      Waiting for Host response...
+T2      Receive Host request → BUFFER      Receive CPU request
+        (in RX FIFO, bus busy)             (process immediately, no waiting)
+T3      Waiting for CPU response...        Process CPU request, send response
+T4      Receive CPU response               (type 0001)
+        Unlock bus, process buffered       Continue waiting for Host response...
+        Host request from RX FIFO
 T5      Send Host response (type 0011)     Receive Host response
 T6      IDLE                               IDLE
 ```
@@ -269,6 +312,8 @@ T6      IDLE                               IDLE
 ### 2.5 Transaction State Machines
 
 **Host Side State Machine:**
+
+The Host state machine is designed for **non-blocking request handling**. Even while waiting for a response to an outstanding Host-initiated request, the Host continues to poll for and immediately process incoming CPU-initiated requests.
 
 ```
                     ┌───────────────────┐
@@ -281,12 +326,17 @@ T6      IDLE                               IDLE
          │        │                       │        │
          │        ▼                       ▼        │
     ┌────┴────────────┐           ┌────────────────┴────┐
-    │ PROCESSING_CPU  │           │ SENDING_HOST_REQ    │
-    │ REQUEST         │           │                     │
-    │ (recv CPU req,  │           │ (send host request, │
-    │  access bus,    │           │  wait for response) │
-    │  send response) │           │                     │
+    │ PROCESSING_CPU  │           │ AWAITING_HOST_RESP  │
+    │ REQUEST         │◀─────────▶│                     │
+    │ (recv CPU req,  │  (can     │ (sent host request, │
+    │  access bus,    │  handle   │  waiting for resp,  │
+    │  send response) │  inline)  │  still polls RX)    │
     └─────────────────┘           └─────────────────────┘
+
+Note: The bidirectional arrow between states indicates that while in 
+AWAITING_HOST_RESP, if a CPU request arrives, it is processed inline
+(handle CPU request, send response) before resuming the wait for the 
+Host response. This is NOT a state transition but inline processing.
 ```
 
 **FPGA Side State Machine (host_bus_interface):**
@@ -316,24 +366,25 @@ T6      IDLE                               IDLE
 
 1. **Host Side:** Can have at most ONE **outstanding request** at a time
    - May send ONE host-initiated request and wait for response
-   - While waiting, MUST buffer any incoming CPU-initiated request
-   - After receiving response, processes the buffered request (if any)
+   - While waiting, **MUST continue to process incoming CPU-initiated requests immediately** (no buffering)
+   - This prevents deadlocks by ensuring the FPGA can always get its CPU requests serviced
 
 2. **FPGA Side:** Can have at most ONE **outstanding request** at a time
    - May send ONE CPU-initiated request and wait for response
-   - While waiting, MUST buffer any incoming Host-initiated request (identified by packet type 0010)
-   - After receiving response, processes the buffered request (if any)
+   - While waiting, MUST buffer any incoming Host-initiated request (identified by packet type 0010) in the RX FIFO
+   - After receiving response (bus unlocked), processes the buffered request (if any)
+   - Buffering is required because the system bus is locked during a CPU transaction
 
 **Implementation:**
-- **Host (Rust):** Tracks pending state using the existing `HostBusHostState` enum (state machine) and the `current_host_request: Option<HostBusRequest>` field. When `current_host_request` is `Some` and state is waiting for response, the host has an outstanding request.
-- **FPGA (`host_bus_interface`):** Maintains current active transaction direction in the FSM state, plus adds an optional buffered host request register for the simultaneous request scenario.
+- **Host (Rust):** Tracks pending state using the existing `HostBusHostState` enum (state machine) and the `current_host_request: Option<HostBusRequest>` field. The receive loop is **non-blocking** and will process incoming CPU requests even when `current_host_request` is `Some`. This asymmetric design prevents deadlocks.
+- **FPGA (`host_bus_interface`):** Maintains current active transaction direction in the FSM state. Uses byte-level buffering in the RX FIFO to hold incoming Host request packets while a CPU transaction is active. No explicit packet buffer register is needed if the RX FIFO can hold one full request.
 - Before sending a new request, each side checks its current state to determine if it's already waiting for a response.
 
 **Key Invariants:**
 - At most ONE outstanding request per side
-- At most ONE buffered incoming request per side
+- FPGA may have ONE buffered incoming request in RX FIFO (during CPU transaction)
+- Host processes incoming requests **immediately** (no buffering) to prevent deadlocks
 - Responses are never blocked (always processed immediately)
-- Buffered requests are processed in FIFO order after response received
 
 ---
 
@@ -465,11 +516,11 @@ module bus_arbiter (
 |----------|-------------|-------|------------|
 | **Host→Host Loop** | Host sends request to address owned by Host | Address range error | Validate address before sending |
 | **CPU→CPU Loop** | CPU sends request to RTL peripheral | Should work (local) | N/A - this is valid |
-| **Simultaneous Requests** | Both CPU and Host request at same time | Both sides waiting for response while receiving request | Packet type header distinguishes request from response; buffer incoming request until own response received (see Section 2.4) |
+| **Simultaneous Requests** | Both CPU and Host request at same time | Both sides waiting for response while receiving request | **Asymmetric handling:** FPGA buffers Host request in RX FIFO (bus locked); Host processes CPU request immediately (no buffering) to prevent deadlock (see Section 2.4) |
 | **Response Mismatch** | Response received when not expected | Protocol error | State machine validation + packet type bits |
 | **TX Backpressure Deadlock** | TX full while waiting for RX | Buffer exhaustion | Separate TX/RX handling |
 | **Host Disappears** | Host stops responding mid-transaction | Software crash | Optional timeout mechanism |
-| **Bus Contention on Buffered Request** | FPGA receives Host request while CPU transaction active | Bus arbiter blocking | Buffer Host request, process after CPU transaction completes |
+| **Bus Contention on Buffered Request** | FPGA receives Host request while CPU transaction active | Bus arbiter blocking | Buffer Host request in RX FIFO, process after CPU transaction completes |
 
 ### 4.2 Address Validation (Preventing Routing Loops)
 
@@ -1095,7 +1146,7 @@ Create new test file: `testbench/tests/host_bus_interface_bidirectional_test.rs`
 | **Address Validation** | 4 | Valid RTL addresses, invalid addresses |
 | **Arbiter Priority** | 3 | Host priority, CPU preemption, fairness |
 | **Protocol Edge Cases** | 5 | Backpressure, interleaved requests |
-| **Simultaneous Requests** | 4 | Both sides send request simultaneously, buffering, response ordering |
+| **Simultaneous Requests** | 4 | Both sides send request simultaneously; FPGA buffers Host request in RX FIFO, Host processes CPU request immediately (asymmetric handling) |
 | **Error Handling** | 4 | Invalid address response, recovery |
 
 #### 7.1.2 Sample Test: Host Read Word
@@ -1178,17 +1229,15 @@ fn test_host_request_invalid_address_error() {
 }
 ```
 
-#### 7.1.4 Sample Test: Simultaneous Requests
+#### 7.1.4 Sample Test: Simultaneous Requests (FPGA Perspective)
 
-> **Timing Note:** The concrete implementation of this test **must ensure**
-> that the CPU-initiated request has fully completed (all header, address,
-> and data bytes drained from TX, and the FPGA bus interface has returned
-> to its IDLE state) **before** the first Host request header byte is
-> injected on RX, *or* it must explicitly rely on RX FIFO buffering and
-> document that Host bytes may accumulate and be processed only after the
-> CPU transaction completes. In the real test source, this should be
-> enforced via explicit cycle counts and/or state/handshake checks rather
-> than by assuming implicit ordering.
+> **Test Focus:** This RTL test validates the FPGA-side behavior during simultaneous requests.
+> The FPGA must buffer incoming Host request bytes in the RX FIFO while a CPU transaction
+> is active, and only process the buffered Host request after the CPU transaction completes.
+>
+> **Note on Asymmetric Design:** The Host side uses different behavior (immediate processing
+> of incoming CPU requests, no buffering). Host-side behavior is tested in the CPU-Sim
+> integration tests in Section 7.2.
 
 ```rust
 #[test]
@@ -1228,6 +1277,10 @@ fn test_simultaneous_requests_fpga_buffers_host_request() {
     assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
     
     // Step 4: Complete CPU request by providing response from Host
+    // Note: In real operation, the Host processes this CPU request IMMEDIATELY
+    // (no buffering on Host side - asymmetric design). This test simulates
+    // the Host responding promptly, which is the expected behavior.
+    
     // Drain remaining TX bytes for CPU request (address bytes)
     for _ in 0..4 {
         receive_tx_byte(&mut dut, 100).expect("CPU address byte");
@@ -1273,7 +1326,7 @@ Create new test file: `cpu-sim/tests/test_host_bus_requests.rs`
 | **Basic API** | 4 | send_bus_request, receive_bus_response |
 | **LED Integration** | 3 | Read/write LED via host requests |
 | **Mixed Traffic** | 4 | CPU + Host concurrent access |
-| **Simultaneous Requests** | 3 | Request buffering, response ordering |
+| **Simultaneous Requests** | 3 | Host processes incoming CPU requests immediately while waiting for own response (asymmetric handling, prevents deadlock) |
 | **Error Handling** | 3 | Invalid addresses, pending check |
 
 #### 7.2.2 End-to-End LED Test (from problem statement)
@@ -1450,8 +1503,7 @@ struct TestState {
   - [ ] Add address validation logic
   - [ ] Add error response handling (STATE_HOST_ERROR)
   - [ ] Update protocol header format (packet type bits in upper nibble)
-  - [ ] Add buffered host request register for simultaneous request handling
-  - [ ] Implement request buffering when CPU transaction is active
+  - [ ] Ensure RX FIFO has sufficient depth for byte-level buffering of one full Host request packet during CPU transactions
   
 - [ ] Modify `rtl/bus.sv`
   - [ ] Add second master interface for arbiter output
@@ -1473,7 +1525,7 @@ struct TestState {
   - [ ] Implement `receive_bus_response()` method
   - [ ] Add address validation for host requests
   - [ ] Update `handle_host_bus_interface()` for bidirectional traffic
-  - [ ] Add buffered CPU request handling for simultaneous request scenario
+  - [ ] Implement **non-blocking RX handling** that processes incoming CPU requests immediately even while waiting for Host response (asymmetric design to prevent deadlocks)
   - [ ] Implement packet type detection (upper nibble) to distinguish requests from responses
   
 - [ ] Modify `cpu-sim/src/lib.rs`
@@ -1497,7 +1549,13 @@ struct TestState {
 
 ### Phase 4: Verification
 
-- [ ] Run all existing tests (ensure no regression)
+> ⚠️ **Note:** The protocol changes in this plan are **not backwards compatible**. Existing tests 
+> that use the old header format will fail after the RTL/Rust changes are implemented. Update
+> these tests to use the new extended header format (packet type bits in upper nibble) as part
+> of this phase.
+
+- [ ] Update existing host_bus_interface tests to use new packet format
+- [ ] Run all existing tests (ensure no regression after format updates)
 - [ ] Run new tests
 - [ ] Verify FPGA synthesis still works (`cd fpga && make`)
 - [ ] Run verilator lint on all modified RTL
