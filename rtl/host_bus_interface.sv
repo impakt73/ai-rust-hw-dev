@@ -320,8 +320,9 @@ module host_bus_interface (
             // Host-initiated request states (Host → FPGA)
             // --------------------------------------------------------
             STATE_HOST_RX_HEADER: begin
-                // Header already consumed in IDLE state check, capture parameters
-                // and transition to address reception
+                // Header byte is being received in this state (rx_valid && rx_ready handshake)
+                // When handshake completes, header parameters (we, size) are captured in the
+                // sequential block below, then we transition to address reception
                 if (rx_valid && rx_ready) begin
                     next_state = STATE_HOST_RX_ADDR_0;
                 end
@@ -573,14 +574,20 @@ module host_bus_interface (
     assign in_host_rx_phase = (state == STATE_HOST_RX_HEADER) ||
                               ((state >= STATE_HOST_RX_ADDR_0) && (state <= STATE_HOST_RX_WDATA_3));
     
-    // In IDLE state, we accept RX data ONLY if it's a host-initiated request header (packet type 0010)
-    // This is checked combinationally - if rx_valid and header matches, we'll transition
+    // Additional IDLE state check for host-initiated requests:
+    // In IDLE state specifically, we only accept RX data if it's a host-initiated request header
+    // (packet type 0010). This prevents spurious rx_ready assertion during normal IDLE.
+    // Combined with in_rx_phase and in_host_rx_phase, this forms the complete rx_ready logic.
     logic idle_and_host_request_incoming;
     assign idle_and_host_request_incoming = (state == STATE_IDLE) && rx_valid && is_host_initiated_request_header(rx_data);
     
     // ============================================================
     // RX Ready Signal
     // ============================================================
+    // rx_ready is asserted when:
+    // 1. in_rx_phase: Receiving response from host for CPU-initiated requests
+    // 2. in_host_rx_phase: Receiving host-initiated request data
+    // 3. idle_and_host_request_incoming: In IDLE and valid host request header detected
     assign rx_ready = in_rx_phase || in_host_rx_phase || idle_and_host_request_incoming;
     
     // ============================================================

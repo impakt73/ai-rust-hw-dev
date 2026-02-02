@@ -13,6 +13,20 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 const RTL_PERIPH_BASE: u32 = 0x5000_0000;
 const RTL_PERIPH_LIMIT: u32 = 0x6000_0000;
 
+/// Host Bus Interface packet types (upper 4 bits of header byte)
+mod packet_type {
+    /// CPU-initiated request (FPGA → Host TX)
+    pub const CPU_REQUEST: u8 = 0x00;
+    /// Host response to CPU request (Host → FPGA RX)
+    pub const HOST_RESPONSE_TO_CPU: u8 = 0x01;
+    /// Host-initiated request (Host → FPGA RX)
+    pub const HOST_REQUEST: u8 = 0x02;
+    /// FPGA response to Host request (FPGA → Host TX)
+    pub const FPGA_RESPONSE_TO_HOST: u8 = 0x03;
+    /// Error response (FPGA → Host TX)
+    pub const ERROR: u8 = 0x0F;
+}
+
 /// Host Bus Interface packet processing state (CPU-initiated requests)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostBusState {
@@ -43,6 +57,8 @@ pub(crate) enum HostBusHostState {
     RxHeader,
     /// Receiving read data bytes
     RxRdata { byte_idx: u8 },
+    /// Receiving error code byte (after error header)
+    RxErrorCode,
 }
 
 /// Captured transaction from host bus interface (CPU-initiated)
@@ -853,10 +869,10 @@ where
                 if self.cpu.host_tx_valid != 0 {
                     // Handshake complete (valid && ready) - consume header byte now
                     let header = self.cpu.host_tx_data;
-                    let packet_type = (header >> 4) & 0x0F;
+                    let pkt_type = (header >> 4) & 0x0F;
 
                     // Only process CPU-initiated requests (packet type 0000)
-                    if packet_type == 0x00 {
+                    if pkt_type == packet_type::CPU_REQUEST {
                         // Parse header: {4'b0000, size[1:0], 1'b0, we}
                         self.host_bus_txn.we = (header & 0x01) != 0;
                         self.host_bus_txn.size = (header >> 2) & 0x03;
@@ -944,7 +960,7 @@ where
                 self.cpu.host_tx_ready = 0; // Not receiving
                 self.cpu.host_rx_valid = 1;
                 // Response header: packet type 0001 (host response to CPU request)
-                let header = 0x10
+                let header = (packet_type::HOST_RESPONSE_TO_CPU << 4)
                     | ((self.host_bus_txn.size & 0x03) << 2)
                     | (if self.host_bus_txn.we { 0x01 } else { 0x00 });
                 self.cpu.host_rx_data = header;
@@ -1010,9 +1026,9 @@ where
             HostBusHostState::TxHeader => {
                 let request = self.current_host_request.as_ref().unwrap();
                 // Send header with packet type 0010 (host-initiated request)
-                let header = 0x20  // Packet type 0b0010 = host-initiated request
-                           | ((request.size & 0x03) << 2)
-                           | (if request.we { 0x01 } else { 0x00 });
+                let header = (packet_type::HOST_REQUEST << 4)
+                    | ((request.size & 0x03) << 2)
+                    | (if request.we { 0x01 } else { 0x00 });
 
                 self.cpu.host_rx_valid = 1;
                 self.cpu.host_rx_data = header;
@@ -1084,11 +1100,11 @@ where
 
                 if self.cpu.host_tx_valid != 0 {
                     let header = self.cpu.host_tx_data;
-                    let packet_type = (header >> 4) & 0x0F;
+                    let pkt_type = (header >> 4) & 0x0F;
                     let we = (header & 0x01) != 0;
 
-                    match packet_type {
-                        0x03 => {
+                    match pkt_type {
+                        packet_type::FPGA_RESPONSE_TO_HOST => {
                             // FPGA response to host request (type 0011)
                             if we {
                                 // Write response: header only, we're done
@@ -1103,19 +1119,15 @@ where
                                     HostBusHostState::RxRdata { byte_idx: 0 };
                             }
                         }
-                        0x0F => {
-                            // Error response (type 1111)
-                            // Next byte will be the error code, but for now just record error
-                            self.host_bus_response_queue
-                                .push_back(HostBusResponse::Error(FpgaError::InvalidAddress));
-                            self.current_host_request = None;
-                            self.host_bus_host_state = HostBusHostState::Idle;
+                        packet_type::ERROR => {
+                            // Error response (type 1111) - need to receive error code byte
+                            self.host_bus_host_state = HostBusHostState::RxErrorCode;
                         }
                         _ => {
                             // Unexpected packet type
                             log::warn!(
                                 "Unexpected packet type in host response: 0x{:02x}",
-                                packet_type
+                                pkt_type
                             );
                             self.host_bus_response_queue
                                 .push_back(HostBusResponse::Error(FpgaError::ProtocolError));
@@ -1123,6 +1135,26 @@ where
                             self.host_bus_host_state = HostBusHostState::Idle;
                         }
                     }
+                }
+            }
+
+            HostBusHostState::RxErrorCode => {
+                // Receive error code byte after error header
+                self.cpu.host_rx_valid = 0;
+                self.cpu.host_tx_ready = 1;
+
+                if self.cpu.host_tx_valid != 0 {
+                    let error_code = self.cpu.host_tx_data;
+                    // Map error code to FpgaError
+                    let fpga_error = match error_code {
+                        0x01 => FpgaError::InvalidAddress,
+                        0x02 => FpgaError::Timeout,
+                        _ => FpgaError::ProtocolError,
+                    };
+                    self.host_bus_response_queue
+                        .push_back(HostBusResponse::Error(fpga_error));
+                    self.current_host_request = None;
+                    self.host_bus_host_state = HostBusHostState::Idle;
                 }
             }
 
