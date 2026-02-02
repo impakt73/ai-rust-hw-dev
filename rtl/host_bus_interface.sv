@@ -566,13 +566,19 @@ module host_bus_interface (
     // RX Phase Detection (includes Host→CPU responses and Host→FPGA requests)
     // ============================================================
     assign in_rx_phase = (state >= STATE_RX_RESP_HDR && state <= STATE_RX_RDATA_3);
-    assign in_host_rx_phase = (state == STATE_IDLE && rx_valid && is_host_request_header(rx_data)) ||
-                              (state >= STATE_HOST_RX_HEADER && state <= STATE_HOST_RX_WDATA_3);
+    assign in_host_rx_phase = (state >= STATE_HOST_RX_HEADER && state <= STATE_HOST_RX_WDATA_3);
+    
+    // In IDLE state, we need to be ready to accept a host request header
+    // This creates a combinational path: rx_ready = 1 in IDLE allows rx_valid && rx_ready
+    // to detect host request headers. The state machine then transitions to STATE_HOST_RX_HEADER.
+    logic idle_rx_ready;
+    assign idle_rx_ready = (state == STATE_IDLE);
     
     // ============================================================
     // RX Ready Signal (active for both Host→CPU responses and Host→FPGA requests)
+    // Also active in IDLE to detect incoming host request headers
     // ============================================================
-    assign rx_ready = in_rx_phase || in_host_rx_phase;
+    assign rx_ready = in_rx_phase || in_host_rx_phase || idle_rx_ready;
     
     // ============================================================
     // RX Data Capture for CPU←Host responses (Little-Endian: LSB first)

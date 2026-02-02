@@ -861,21 +861,36 @@ where
     ///
     /// Extended header format: {packet_type[3:0], size[1:0], 1'b0, we}
     fn handle_host_bus_interface(&mut self) {
+        // Determine who controls the RX (host→FPGA) interface
+        // Priority: Host→FPGA requests take precedence when sending
+        let host_is_sending = matches!(
+            self.host_bus_host_state,
+            HostBusHostState::TxHeader
+                | HostBusHostState::TxAddr { .. }
+                | HostBusHostState::TxWdata { .. }
+        );
+
+        let cpu_is_responding = matches!(
+            self.host_bus_state,
+            HostBusState::TxHeader | HostBusState::TxAck | HostBusState::TxRdata { .. }
+        );
+
         // Handle CPU→Host direction (receiving CPU requests, sending responses)
-        self.handle_cpu_to_host();
+        self.handle_cpu_to_host(cpu_is_responding, host_is_sending);
 
         // Handle Host→FPGA direction (sending host requests, receiving responses)
-        self.handle_host_to_fpga();
+        self.handle_host_to_fpga(host_is_sending);
     }
 
     /// Handle CPU→Host direction: receive CPU requests and send responses
-    fn handle_cpu_to_host(&mut self) {
+    fn handle_cpu_to_host(&mut self, cpu_is_responding: bool, host_is_sending: bool) {
+        // Always ready to receive from CPU (TX side)
+        self.cpu.host_tx_ready = 1;
+
         match self.host_bus_state {
             HostBusState::Idle => {
-                // Waiting for TX packet from CPU
-                self.cpu.host_tx_ready = 1; // Ready to receive
-                                            // Only set rx_valid if we're actively sending something from host_to_fpga
-                if self.host_bus_host_state == HostBusHostState::Idle {
+                // Only set rx_valid=0 if neither side is actively sending
+                if !host_is_sending && !cpu_is_responding {
                     self.cpu.host_rx_valid = 0;
                 }
 
@@ -926,10 +941,7 @@ where
             }
 
             HostBusState::RxAddr { byte_idx } => {
-                self.cpu.host_tx_ready = 1;
-                if self.host_bus_host_state == HostBusHostState::Idle {
-                    self.cpu.host_rx_valid = 0;
-                }
+                // host_tx_ready is already set at the start of this function
 
                 if self.cpu.host_tx_valid != 0 {
                     let byte = self.cpu.host_tx_data as u32;
@@ -959,10 +971,7 @@ where
             }
 
             HostBusState::RxWdata { byte_idx } => {
-                self.cpu.host_tx_ready = 1;
-                if self.host_bus_host_state == HostBusHostState::Idle {
-                    self.cpu.host_rx_valid = 0;
-                }
+                // host_tx_ready is already set at the start of this function
 
                 if self.cpu.host_tx_valid != 0 {
                     let byte = self.cpu.host_tx_data as u32;
@@ -1065,19 +1074,15 @@ where
     }
 
     /// Handle Host→FPGA direction: send host-initiated requests and receive responses
-    fn handle_host_to_fpga(&mut self) {
+    fn handle_host_to_fpga(&mut self, _host_is_sending: bool) {
         match self.host_bus_host_state {
             HostBusHostState::Idle => {
                 // Check if we have a queued request to send
                 if let Some(request) = self.host_request_queue.pop_front() {
-                    // Only send if we're not processing a CPU request
-                    if self.host_bus_state == HostBusState::Idle {
-                        self.current_host_request = Some(request);
-                        self.host_bus_host_state = HostBusHostState::TxHeader;
-                    } else {
-                        // Put it back and wait
-                        self.host_request_queue.push_front(request);
-                    }
+                    // Start sending the request - we can interleave with CPU processing
+                    // Host-initiated requests take priority on the RX line
+                    self.current_host_request = Some(request);
+                    self.host_bus_host_state = HostBusHostState::TxHeader;
                 }
             }
 
