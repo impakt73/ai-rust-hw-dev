@@ -127,3 +127,38 @@ pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
     // to work correctly.
     (DRAM_BASE..=DRAM_END).contains(&addr) && (DRAM_BASE..=DRAM_END).contains(&end_addr)
 }
+
+// ============================================================
+// Host Bus Protocol Constants
+// ============================================================
+
+/// Packet type for CPU-initiated request (CPU→Host)
+pub const PACKET_TYPE_CPU_REQUEST: u8 = 0x00;
+
+/// Packet type for Host response (Host→FPGA)
+pub const PACKET_TYPE_HOST_RESPONSE: u8 = 0x10;
+
+/// Packet type for Host-initiated request (Host→FPGA)
+pub const PACKET_TYPE_HOST_REQUEST: u8 = 0x20;
+
+/// Packet type for FPGA response (FPGA→Host)
+pub const PACKET_TYPE_FPGA_RESPONSE: u8 = 0x30;
+
+/// Packet type for error response (FPGA→Host or Host→FPGA)
+pub const PACKET_TYPE_ERROR: u8 = 0xF0;
+
+// ============================================================
+// Host Bus Error Codes
+// ============================================================
+
+/// Error code for invalid address (would route back to host)
+pub const ERROR_CODE_INVALID_ADDRESS: u8 = 0xFF;
+
+/// Error code for timeout waiting for response
+pub const ERROR_CODE_TIMEOUT: u8 = 0xFE;
+
+/// Error code for protocol error
+pub const ERROR_CODE_PROTOCOL: u8 = 0xFD;
+
+/// Error code for bus error (no device responded)
+pub const ERROR_CODE_BUS_ERROR: u8 = 0xFC;

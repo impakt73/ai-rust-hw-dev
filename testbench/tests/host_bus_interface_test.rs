@@ -97,7 +97,10 @@ fn test_reset_state() {
     assert_eq!(dut.ready, 0, "ready should be LOW after reset");
     assert_eq!(dut.tx_valid, 0, "tx_valid should be LOW after reset");
     // NOTE: rx_ready is HIGH in IDLE to allow detecting host-initiated requests
-    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH after reset (to detect host requests)");
+    assert_eq!(
+        dut.rx_ready, 1,
+        "rx_ready should be HIGH after reset (to detect host requests)"
+    );
     assert_eq!(dut.rdata, 0, "rdata should be 0 after reset");
 }
 
@@ -593,7 +596,10 @@ fn test_rx_ready_only_in_rx_phase() {
 
     // NOTE: rx_ready is HIGH in IDLE (to detect host-initiated requests)
     // This is the new bidirectional protocol behavior
-    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH in IDLE (for host request detection)");
+    assert_eq!(
+        dut.rx_ready, 1,
+        "rx_ready should be HIGH in IDLE (for host request detection)"
+    );
 
     // Start read transaction
     dut.addr = 0x80000000;

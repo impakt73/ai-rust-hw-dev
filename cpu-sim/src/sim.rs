@@ -86,6 +86,46 @@ pub struct HostBusRequest {
 }
 
 impl HostBusRequest {
+    /// Create a byte read request
+    pub fn read_byte(addr: u32) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: 0,
+            size: 0,
+            we: false,
+        }
+    }
+
+    /// Create a byte write request
+    pub fn write_byte(addr: u32, data: u8) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: data as u32,
+            size: 0,
+            we: true,
+        }
+    }
+
+    /// Create a halfword read request
+    pub fn read_halfword(addr: u32) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: 0,
+            size: 1,
+            we: false,
+        }
+    }
+
+    /// Create a halfword write request
+    pub fn write_halfword(addr: u32, data: u16) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: data as u32,
+            size: 1,
+            we: true,
+        }
+    }
+
     /// Create a word read request
     pub fn read_word(addr: u32) -> Self {
         HostBusRequest {
@@ -574,6 +614,23 @@ impl<'a> SimulatorView<'a> {
             return 0;
         }
         self.bus.memory.read_word(addr)
+    }
+
+    /// Write a 32-bit word to memory (little-endian)
+    ///
+    /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
+    /// Out-of-bounds writes are logged as warnings and ignored.
+    pub fn write_word(&mut self, addr: u32, value: u32) {
+        if !is_valid_dram_range(addr, 4) {
+            log::warn!(
+                "write_word: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), ignoring write",
+                addr,
+                DRAM_BASE,
+                DRAM_END
+            );
+            return;
+        }
+        self.bus.memory.write_word(addr, value);
     }
 
     /// Register a custom device on the system bus

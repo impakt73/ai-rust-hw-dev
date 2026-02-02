@@ -190,7 +190,8 @@ module host_bus_interface (
             STATE_IDLE: begin
                 // Priority 1: Check for incoming Host-initiated request (packet type 0010)
                 if (rx_valid && is_host_request_header(rx_data)) begin
-                    next_state = STATE_HOST_RX_HEADER;
+                    // Header consumed in IDLE, transition directly to first address byte state
+                    next_state = STATE_HOST_RX_ADDR_0;
                 end
                 // Priority 2: Check for CPU request
                 else if (req) begin
@@ -320,11 +321,12 @@ module host_bus_interface (
             // ============================================================
             // Host-Initiated Request States (Host→FPGA)
             // ============================================================
+            // Note: STATE_HOST_RX_HEADER is no longer used in normal flow
+            // Header is consumed in IDLE, transition goes directly to ADDR_0
             STATE_HOST_RX_HEADER: begin
-                // Header byte consumed - parse and move to address reception
-                if (rx_valid && rx_ready) begin
-                    next_state = STATE_HOST_RX_ADDR_0;
-                end
+                // Fallback state - should not normally be reached
+                // Immediately proceed to receiving address bytes
+                next_state = STATE_HOST_RX_ADDR_0;
             end
             
             STATE_HOST_RX_ADDR_0: begin
