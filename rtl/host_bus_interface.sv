@@ -154,12 +154,12 @@ module host_bus_interface (
     // ============================================================
     // Check for host-initiated request header (packet type 0010)
     function logic is_host_request_header(input logic [7:0] data);
-        return (data[7:4] == 4'b0010);
+        is_host_request_header = (data[7:4] == 4'b0010);
     endfunction
     
     // Check for host response header (packet type 0001)
     function logic is_host_response_header(input logic [7:0] data);
-        return (data[7:4] == 4'b0001);
+        is_host_response_header = (data[7:4] == 4'b0001);
     endfunction
     
     // ============================================================
