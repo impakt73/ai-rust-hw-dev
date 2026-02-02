@@ -8,6 +8,11 @@
 
 ---
 
+> **⚠️ IMPORTANT NOTE FOR AI AGENTS:**  
+> This is a **high-context, detailed implementation plan**. To preserve your context budget, **DO NOT read the original parent plan** (`host-initiated-bus-requests-implementation-plan.md`) unless strictly necessary for resolving ambiguities. This document contains all the implementation details needed for the remaining work.
+
+---
+
 ## Executive Summary
 
 This document details the **remaining implementation work** for host-initiated bus requests feature. The foundational infrastructure has been completed (bus arbiter, wiring), but the core bidirectional communication logic in both RTL and Rust remains to be implemented.
@@ -48,15 +53,21 @@ This document details the **remaining implementation work** for host-initiated b
 
 ---
 
-## Known Issue: IDLE State Receive-Byte Handling
+## Known Issue: IDLE State Receive-Byte Handling & Missing RX Buffering
 
 ### Problem Description
 
-The current `host_bus_interface.sv` IDLE state logic only checks for CPU-initiated requests (`req` signal). It does **not** monitor the RX interface for incoming host-initiated requests. This means:
+The current `host_bus_interface.sv` has two critical issues:
 
-- When the Host sends a request (packet type 0010), the FPGA will not recognize it
-- The bytes will arrive on `rx_data` with `rx_valid` asserted, but `rx_ready` is not asserted in IDLE
-- The IDLE state must check `rx_valid`, decode the header, and assert `rx_ready` to consume the byte
+1. **IDLE State RX Handling:** The IDLE state logic only checks for CPU-initiated requests (`req` signal). It does **not** monitor the RX interface for incoming host-initiated requests. This means:
+   - When the Host sends a request (packet type 0010), the FPGA will not recognize it
+   - The bytes will arrive on `rx_data` with `rx_valid` asserted, but `rx_ready` is not asserted in IDLE
+   - The IDLE state must check buffered RX data, decode the header, and assert `rx_fifo_ready` to consume the byte
+
+2. **Missing RX Staging FIFO (CRITICAL):** The current design has no RX buffering. Without a staging FIFO:
+   - Incoming host request bytes are lost if they arrive while the FPGA is transmitting a CPU request
+   - UART has no flow control in real FPGA, so the host cannot pause transmission
+   - The design cannot support true full-duplex operation
 
 ### Current Code (Incorrect)
 
@@ -70,14 +81,20 @@ end
 
 ### Required Fix (Summary)
 
+**1. Add RX Staging FIFO:**
+- Instantiate a 16-byte FIFO on the RX path (UART → FIFO → State Machine)
+- FIFO continuously accepts incoming bytes independent of state machine state
+- State machine reads from FIFO when ready to process
+
+**2. Update IDLE State:**
 The IDLE state must:
-1. Check `rx_valid` for incoming data
-2. Decode the header byte to detect packet type 0010 (host-initiated request)
-3. Assert `rx_ready` to consume the header byte
+1. Check `rx_fifo_valid` for buffered incoming data
+2. Decode the header byte from `rx_fifo_data` to detect packet type 0010 (host-initiated request)
+3. Assert `rx_fifo_ready` to consume the header byte from FIFO
 4. Capture the header fields (`we`, `size`) in registers
 5. Transition to `STATE_HOST_RX_ADDR_0` to start receiving address bytes
 
-**Full implementation details are provided in Task 1 (sections 1.3, 1.4, and 1.9) below.**
+**Full implementation details are provided in Task 1 (sections 1.3, 1.4, 1.5, and 1.9) and the "FPGA-Side Request Buffering" section below.**
 
 ---
 
@@ -160,10 +177,10 @@ always_ff @(posedge clk or negedge rst_n) begin
         host_cap_addr <= 32'h0;
         host_cap_wdata <= 32'h0;
     end else begin
-        // Capture header fields when detecting host request in IDLE
-        if (state == STATE_IDLE && rx_valid && is_host_initiated_request_header(rx_data)) begin
-            host_cap_we   <= rx_data[0];
-            host_cap_size <= rx_data[3:2];
+        // Capture header fields when detecting host request in IDLE (from FIFO)
+        if (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
+            host_cap_we   <= rx_fifo_data[0];
+            host_cap_size <= rx_fifo_data[3:2];
         end
         
         // Capture address bytes (see section 1.5 for full implementation)
@@ -174,14 +191,14 @@ end
 
 #### 1.3 Update IDLE State Logic
 
-**Critical Fix:** Make IDLE state check for incoming host requests and consume the header byte:
+**Critical Fix:** Make IDLE state check for incoming host requests (from RX FIFO) and consume the header byte:
 
 ```systemverilog
 STATE_IDLE: begin
-    // Priority 1: Check for incoming Host-initiated request
-    if (rx_valid && is_host_initiated_request_header(rx_data)) begin
+    // Priority 1: Check for buffered Host-initiated request from FIFO
+    if (rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
         // Packet type 0010: Host request header detected
-        // The header byte will be consumed (rx_ready asserted, see below)
+        // The header byte will be consumed from FIFO (rx_fifo_ready asserted, see below)
         // Fields will be captured in register update (see section 1.4)
         next_state = STATE_HOST_RX_ADDR_0;  // Skip to address reception
     end
@@ -192,38 +209,38 @@ STATE_IDLE: begin
 end
 ```
 
-**Important:** The IDLE state must assert `rx_ready` when a valid host request header is detected, so the byte gets consumed. See section 1.9 for the updated `rx_ready` signal.
+**Important:** The IDLE state must assert `rx_fifo_ready` when a valid host request header is detected in the FIFO, so the byte gets consumed. See section 1.9 for the updated `rx_fifo_ready` signal. The RX FIFO continuously buffers incoming UART bytes independent of the state machine state.
 
 #### 1.5 Implement Host Request RX Path
 
-States to receive host request from RX interface. Note that `STATE_HOST_RX_HEADER` is eliminated since the header is consumed in IDLE:
+States to receive host request from RX FIFO. Note that `STATE_HOST_RX_HEADER` is eliminated since the header is consumed in IDLE:
 
 ```systemverilog
-// Start with address byte 0 (header already consumed in IDLE)
+// Start with address byte 0 (header already consumed in IDLE from FIFO)
 STATE_HOST_RX_ADDR_0: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_addr[7:0] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_addr[7:0] <= rx_fifo_data;
         next_state = STATE_HOST_RX_ADDR_1;
     end
 end
 
 STATE_HOST_RX_ADDR_1: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_addr[15:8] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_addr[15:8] <= rx_fifo_data;
         next_state = STATE_HOST_RX_ADDR_2;
     end
 end
 
 STATE_HOST_RX_ADDR_2: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_addr[23:16] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_addr[23:16] <= rx_fifo_data;
         next_state = STATE_HOST_RX_ADDR_3;
     end
 end
 
 STATE_HOST_RX_ADDR_3: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_addr[31:24] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_addr[31:24] <= rx_fifo_data;
         // Address complete: check if write (need data) or read (validate & issue)
         if (host_cap_we) begin
             next_state = STATE_HOST_RX_WDATA_0;  // Write: receive data
@@ -233,10 +250,10 @@ STATE_HOST_RX_ADDR_3: begin
     end
 end
 
-// Write data states (little-endian)
+// Write data states (little-endian, read from FIFO)
 STATE_HOST_RX_WDATA_0: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_wdata[7:0] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_wdata[7:0] <= rx_fifo_data;
         if (host_cap_size == 2'b00) begin
             next_state = STATE_HOST_BUS_REQ;     // Byte: done
         end else begin
@@ -246,8 +263,8 @@ STATE_HOST_RX_WDATA_0: begin
 end
 
 STATE_HOST_RX_WDATA_1: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_wdata[15:8] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_wdata[15:8] <= rx_fifo_data;
         if (host_cap_size == 2'b01) begin
             next_state = STATE_HOST_BUS_REQ;     // Half: done
         end else begin
@@ -257,15 +274,15 @@ STATE_HOST_RX_WDATA_1: begin
 end
 
 STATE_HOST_RX_WDATA_2: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_wdata[23:16] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_wdata[23:16] <= rx_fifo_data;
         next_state = STATE_HOST_RX_WDATA_3;
     end
 end
 
 STATE_HOST_RX_WDATA_3: begin
-    if (rx_valid && rx_ready) begin
-        host_cap_wdata[31:24] <= rx_data;
+    if (rx_fifo_valid && rx_fifo_ready) begin
+        host_cap_wdata[31:24] <= rx_fifo_data;
         next_state = STATE_HOST_BUS_REQ;
     end
 end
@@ -411,7 +428,9 @@ always_comb begin
 end
 ```
 
-#### 1.9 Update TX Valid and RX Ready Signals
+#### 1.9 Update TX Valid and RX FIFO Ready Signals
+
+**Note:** With the required RX staging FIFO (see "FPGA-Side Request Buffering" section), the state machine reads from `rx_fifo_data`/`rx_fifo_valid` instead of `rx_data`/`rx_valid`.
 
 ```systemverilog
 // TX valid: asserted during CPU TX states OR Host response TX states OR error states
@@ -420,13 +439,14 @@ assign tx_valid = (state >= STATE_TX_HEADER && state <= STATE_TX_WDATA_3) ||
                   (state == STATE_HOST_ERROR) ||
                   (state == STATE_HOST_ERROR_CODE);
 
-// RX ready: asserted during CPU RX states OR Host request RX states OR in IDLE when detecting host request
-assign rx_ready = (state >= STATE_RX_WR_HEADER && state <= STATE_RX_RDATA_3) ||
-                  (state >= STATE_HOST_RX_ADDR_0 && state <= STATE_HOST_RX_WDATA_3) ||
-                  (state == STATE_IDLE && rx_valid && is_host_initiated_request_header(rx_data));
+// RX FIFO ready: asserted when state machine is ready to consume buffered data
+// (FIFO continuously buffers from UART RX independent of this signal)
+assign rx_fifo_ready = (state >= STATE_RX_WR_HEADER && state <= STATE_RX_RDATA_3) ||
+                       (state >= STATE_HOST_RX_ADDR_0 && state <= STATE_HOST_RX_WDATA_3) ||
+                       (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data));
 ```
 
-**Critical:** The last line of `rx_ready` ensures that when a host request header arrives in IDLE, the byte is consumed on that same clock cycle (assuming `rx_valid` is asserted).
+**Critical:** The state machine asserts `rx_fifo_ready` to pop bytes from the FIFO. The FIFO itself accepts incoming UART bytes whenever not full, enabling parallel buffering during CPU TX states.
 
 #### 1.10 Update Bus Master Interface Outputs
 
@@ -738,33 +758,82 @@ fn test_host_invalid_address() {
 Create new file `cpu-sim/tests/test_host_bus_requests.rs`:
 
 ```rust
+use cpu_sim::{HostBusRequest, HostBusResponse, Simulator};
+
 #[test]
 fn test_host_write_led() {
-    let mut sim = Simulator::new(...);
+    let mut sim = Simulator::new(/* appropriate config */);
     
-    // Host writes to LED peripheral
-    let request = HostBusRequest {
-        addr: 0x50000000,
-        wdata: 0xAA,
-        size: 0,  // byte
-        we: true,
-    };
+    // Start simulation until first instruction completes
+    sim.run_until_instruction_complete(|view| {
+        // Host writes to LED peripheral
+        let request = HostBusRequest {
+            addr: 0x50000000,
+            wdata: 0xAA,
+            size: 0,  // byte
+            we: true,
+        };
+        
+        // Send request via SimulatorView
+        view.send_bus_request(request).unwrap();
+    });
     
-    sim.send_bus_request(request).unwrap();
+    // Continue stepping to allow request to process
+    for _ in 0..100 {
+        sim.step();
+    }
+    
+    // Check response via the next instruction_complete callback
+    sim.run_until_instruction_complete(|view| {
+        let response = view.receive_bus_response().expect("Expected response");
+        assert!(matches!(response, HostBusResponse::WriteAck));
+        
+        // Verify LED output changed (access via view)
+        assert_eq!(view.read_peripheral_led(), 0xAA);
+    });
+}
+
+#[test]
+fn test_host_read_led() {
+    let mut sim = Simulator::new(/* appropriate config */);
+    
+    // Write a known value to LED first (via CPU or previous host write)
+    // ... setup code ...
+    
+    sim.run_until_instruction_complete(|view| {
+        // Host reads from LED peripheral
+        let request = HostBusRequest {
+            addr: 0x50000000,
+            wdata: 0,
+            size: 0,  // byte
+            we: false,
+        };
+        
+        view.send_bus_request(request).unwrap();
+    });
     
     // Step simulation to process request
     for _ in 0..100 {
         sim.step();
     }
     
-    // Check response
-    let response = sim.receive_bus_response().unwrap();
-    assert_eq!(response, HostBusResponse::WriteAck);
-    
-    // Verify LED output changed
-    assert_eq!(sim.led_out(), 0xAA);
+    // Check read response
+    sim.run_until_instruction_complete(|view| {
+        let response = view.receive_bus_response().expect("Expected response");
+        if let HostBusResponse::ReadData(data) = response {
+            assert_eq!(data & 0xFF, 0xAA);  // Verify expected LED value
+        } else {
+            panic!("Expected ReadData response");
+        }
+    });
 }
 ```
+
+**Key Testing Pattern:**
+- Use `Simulator::run_until_instruction_complete(callback)` to access `SimulatorView`
+- The `SimulatorView` provides `send_bus_request()` and `receive_bus_response()` methods
+- The `view` parameter in callbacks is the **only** public interface for driving host-initiated bus requests
+- All peripheral reads/writes from tests should go through `SimulatorView` methods
 
 ---
 
@@ -772,14 +841,16 @@ fn test_host_write_led() {
 
 ### Phase 1: RTL Changes (host_bus_interface.sv)
 
+- [ ] **CRITICAL:** Instantiate RX staging FIFO (16-byte depth) for buffering incoming host requests
+- [ ] Connect FIFO input to UART `rx_data`/`rx_valid`, output to state machine
 - [ ] Change state enum from `logic [4:0]` to `logic [5:0]`
 - [ ] Add new states for host request handling (20-36, no separate HOST_RX_HEADER needed)
 - [ ] Add host request capture registers
-- [ ] Update IDLE state to check `rx_valid` and decode packet type
+- [ ] Update IDLE state to check `rx_fifo_valid` and decode packet type from `rx_fifo_data`
 - [ ] Implement `is_host_initiated_request_header()` function
-- [ ] Update IDLE register capture to latch header fields when host request detected
-- [ ] Implement HOST_RX_ADDR states (0-3)
-- [ ] Implement HOST_RX_WDATA states (0-3) for writes
+- [ ] Update IDLE register capture to latch header fields when host request detected in FIFO
+- [ ] Implement HOST_RX_ADDR states (0-3) reading from `rx_fifo_data`
+- [ ] Implement HOST_RX_WDATA states (0-3) for writes, reading from `rx_fifo_data`
 - [ ] Implement address validation (RTL_PERIPH_BASE check)
 - [ ] Implement HOST_BUS_REQ and HOST_BUS_WAIT states
 - [ ] Implement HOST_TX_HEADER state
@@ -787,7 +858,7 @@ fn test_host_write_led() {
 - [ ] Implement HOST_ERROR states (header, code)
 - [ ] Update TX data mux to include host response cases
 - [ ] Update `tx_valid` signal to include host TX states
-- [ ] Update `rx_ready` signal to include host RX states AND IDLE host request detection
+- [ ] Update `rx_fifo_ready` signal to include host RX states AND IDLE host request detection
 - [ ] Update `host_bus_*` output assignments (remove hardcoded zeros)
 - [ ] Run verilator lint check
 
@@ -811,12 +882,14 @@ fn test_host_write_led() {
 
 ### Phase 3: Testing
 
+- [ ] **CRITICAL:** Add `test_host_request_buffering_during_cpu_tx` to validate RX FIFO buffering
 - [ ] Add `test_host_initiated_read` to `host_bus_interface_test.rs`
 - [ ] Add `test_host_initiated_write` to `host_bus_interface_test.rs`
 - [ ] Add `test_host_invalid_address` to `host_bus_interface_test.rs`
+- [ ] Add `test_simultaneous_bidirectional` to verify parallel CPU TX + buffered host RX
 - [ ] Create `cpu-sim/tests/test_host_bus_requests.rs`
-- [ ] Add `test_host_write_led` (end-to-end test)
-- [ ] Add `test_host_read_led` (end-to-end test)
+- [ ] Add `test_host_write_led` (end-to-end test using `SimulatorView`)
+- [ ] Add `test_host_read_led` (end-to-end test using `SimulatorView`)
 - [ ] Run all tests and verify pass
 
 ### Phase 4: Documentation
@@ -829,19 +902,116 @@ fn test_host_write_led() {
 
 ## Testing Notes
 
-### Simultaneous Request Handling
+### FPGA-Side Request Buffering (REQUIRED)
 
-**Note:** The current `host_bus_interface.sv` does NOT use a FIFO for RX buffering. It uses direct state machine handshaking. The original plan discusses "RX FIFO byte-level buffering" as a mechanism to handle simultaneous requests, but this is **not currently implemented**.
+**Critical Design Requirement:** The FPGA **MUST** buffer incoming host requests even while processing outgoing CPU-initiated requests. This is non-negotiable because:
 
-**Design Decision for Initial Implementation:**
+1. **No Flow Control in UART:** In the real FPGA, UART has no hardware flow control mechanism. The host cannot pause transmission when the FPGA is busy.
+2. **Data Loss Prevention:** Without buffering, incoming host request bytes would be lost if they arrive while the FPGA is transmitting a CPU request.
+3. **Full-Duplex Operation:** UART is physically full-duplex (separate TX/RX lines), so simultaneous bidirectional communication is expected.
 
-Given the asymmetric handling strategy where:
-- **Host side:** Processes incoming CPU requests immediately even while waiting for its own response
-- **FPGA side:** Cannot process incoming host requests while CPU transaction is active (bus locked)
+**Required Architecture:**
 
-The simultaneous request scenario is resolved by the **Host side's non-blocking RX processing** rather than FPGA-side buffering. The FPGA's state machine will simply remain in CPU transaction states, and the Host's request will wait on the Host side until the FPGA returns to IDLE.
+The FPGA RTL must implement a **host request staging buffer** (RX FIFO or equivalent) that:
+- Continuously accepts and buffers incoming bytes from the UART RX interface, independent of the state machine state
+- Provides buffered data to the host request state machine when it's ready to process
+- Has sufficient depth to hold at least one complete host request packet (minimum 9 bytes: header + addr + wdata)
 
-**Future Enhancement:** If deeper buffering is needed, a FIFO can be added at the RX interface, but it is not required for the initial implementation.
+**Implementation Approach:**
+
+```systemverilog
+// Add RX staging FIFO for host requests
+logic [7:0] rx_fifo_data;
+logic       rx_fifo_valid;
+logic       rx_fifo_ready;
+logic       rx_fifo_full;
+logic       rx_fifo_empty;
+
+// Instantiate small FIFO (16-byte depth recommended)
+fifo_sync #(
+    .DATA_WIDTH(8),
+    .DEPTH(16)
+) rx_staging_fifo (
+    .clk(clk),
+    .rst_n(rst_n),
+    // Input: Directly from UART RX
+    .wr_data(rx_data),
+    .wr_valid(rx_valid),
+    .wr_ready(/* back to UART - should rarely deassert */),
+    .full(rx_fifo_full),
+    // Output: To host_bus_interface state machine
+    .rd_data(rx_fifo_data),
+    .rd_valid(rx_fifo_valid),
+    .rd_ready(rx_fifo_ready),
+    .empty(rx_fifo_empty)
+);
+
+// State machine reads from FIFO instead of direct rx_data/rx_valid
+// This allows buffering during CPU→Host TX states
+STATE_IDLE: begin
+    if (rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
+        // Process buffered host request
+        next_state = STATE_HOST_RX_ADDR_0;
+    end else if (req) begin
+        // CPU request (existing logic)
+        next_state = STATE_CAPTURE;
+    end
+end
+
+// Update rx_ready to rx_fifo_ready throughout state machine
+assign rx_fifo_ready = (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) ||
+                       (state >= STATE_HOST_RX_ADDR_0 && state <= STATE_HOST_RX_WDATA_3);
+```
+
+**Parallel Operation Example:**
+
+1. **t=0:** FPGA is in `STATE_TX_ADDR_2`, transmitting CPU request to host
+2. **t=1:** Host sends a host-initiated request header byte → enters RX FIFO
+3. **t=2-6:** FPGA continues CPU TX; host request bytes continue buffering in FIFO
+4. **t=7:** FPGA completes CPU TX, returns to `STATE_IDLE`
+5. **t=8:** FPGA detects buffered host request in FIFO, transitions to `STATE_HOST_RX_ADDR_0`
+6. **t=9+:** FPGA processes host request from FIFO, issues bus transaction, sends response
+
+**Testing Requirements:**
+
+All RTL tests for host-initiated requests must validate buffering behavior:
+
+```rust
+#[test]
+fn test_host_request_buffering_during_cpu_tx() {
+    let mut dut = setup_dut();
+    
+    // Start a CPU→Host transaction
+    dut.req.set(1);
+    dut.addr.set(0x50000000);
+    step(&mut dut);
+    
+    // While FPGA is transmitting CPU request (STATE_TX_HEADER, etc.),
+    // inject a host request into RX
+    for _ in 0..3 {  // Let CPU TX advance a few states
+        step(&mut dut);
+    }
+    
+    // Send complete host request while CPU TX is still active
+    send_rx_byte(&mut dut, 0b0010_10_0_0);  // Host read header
+    send_rx_byte(&mut dut, 0x00);  // addr[7:0]
+    send_rx_byte(&mut dut, 0x00);  // addr[15:8]
+    send_rx_byte(&mut dut, 0x00);  // addr[23:16]
+    send_rx_byte(&mut dut, 0x51);  // addr[31:24]
+    
+    // Wait for CPU TX to complete
+    wait_for_idle(&mut dut);
+    
+    // FPGA should now process the buffered host request
+    // Expect host response header (type 0011)
+    assert_tx_byte(&mut dut, 0b0011_10_0_0);
+    // ... assert response data bytes ...
+}
+```
+
+**Why This Is Not Optional:**
+
+The Rust simulator can work around missing FPGA buffering by carefully sequencing requests, but the **real FPGA deployment cannot**. Host software running on a PC will send UART bytes continuously without knowledge of FPGA internal state. The FPGA must handle this correctly or data will be silently dropped.
 
 ---
 
