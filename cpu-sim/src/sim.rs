@@ -17,8 +17,10 @@ enum HostBusState {
     RxAddr { byte_idx: u8 },
     /// Receiving write data bytes (1-4 bytes based on size)
     RxWdata { byte_idx: u8 },
-    /// Sending write acknowledgement
-    TxAck,
+    /// Sending write acknowledgement header (extended header format)
+    TxAckHeader,
+    /// Sending read response header (extended header format)
+    TxRdataHeader,
     /// Sending read data bytes (1-4 bytes based on size)
     TxRdata { byte_idx: u8 },
 }
@@ -696,13 +698,19 @@ where
     /// It receives TX packets from the CPU (read/write requests) and sends
     /// RX responses (acknowledgements or read data).
     ///
-    /// Protocol (Variable Length, Little-Endian):
-    ///   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
-    ///   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
-    ///   Write Response: [ack]                                             (1 byte, 0x00)
-    ///   Read Response:  [data...]                                         (1-4 bytes, no header)
+    /// Protocol (Variable Length, Little-Endian, Extended Header Format):
+    ///   CPU-initiated request (type 0000):  [ext_header][addr0-3][data...] (FPGA → Host TX)
+    ///   Host response to CPU (type 0001):   [ext_header][data...]          (Host → FPGA RX)
     ///
-    /// Header format: {4'b0000, size[1:0], 1'b0, we}
+    /// Extended Header Format (1 byte):
+    ///   Bits [7:4]: Packet type
+    ///     0000 = CPU-initiated request (FPGA → Host TX)
+    ///     0001 = Host response to CPU request (Host → FPGA RX)
+    ///     0010 = Host-initiated request (Host → FPGA RX, future use)
+    ///     0011 = FPGA response to Host request (FPGA → Host TX, future use)
+    ///   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
+    ///   Bit  [1]:   Reserved (0)
+    ///   Bit  [0]:   we (1=write, 0=read)
     fn handle_host_bus_interface(&mut self) {
         match self.host_bus_state {
             HostBusState::Idle => {
@@ -713,7 +721,18 @@ where
                 if self.cpu.host_tx_valid != 0 {
                     // Handshake complete (valid && ready) - consume header byte now
                     let header = self.cpu.host_tx_data;
-                    // Parse header: {4'b0000, size[1:0], 1'b0, we}
+
+                    // Parse extended header: {packet_type[3:0], size[1:0], 1'b0, we}
+                    let packet_type = (header >> 4) & 0x0F;
+
+                    // Verify this is a CPU-initiated request (packet type 0000)
+                    if packet_type != 0x00 {
+                        panic!(
+                            "Unexpected packet type on TX: 0x{:X} (expected 0x0 for CPU-initiated request)",
+                            packet_type
+                        );
+                    }
+
                     self.host_bus_txn.we = (header & 0x01) != 0;
                     self.host_bus_txn.size = (header >> 2) & 0x03;
                     self.host_bus_txn.addr = 0;
@@ -743,7 +762,7 @@ where
                             if self.mem_latency_cycles > 0 {
                                 self.host_bus_delay_counter = self.mem_latency_cycles;
                             }
-                            self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
+                            self.host_bus_state = HostBusState::TxRdataHeader;
                         }
                     } else {
                         self.host_bus_state = HostBusState::RxAddr {
@@ -776,7 +795,7 @@ where
                         if self.mem_latency_cycles > 0 {
                             self.host_bus_delay_counter = self.mem_latency_cycles;
                         }
-                        self.host_bus_state = HostBusState::TxAck;
+                        self.host_bus_state = HostBusState::TxAckHeader;
                     } else {
                         self.host_bus_state = HostBusState::RxWdata {
                             byte_idx: byte_idx + 1,
@@ -785,8 +804,8 @@ where
                 }
             }
 
-            HostBusState::TxAck => {
-                // Apply memory latency delay before sending ack
+            HostBusState::TxAckHeader => {
+                // Apply memory latency delay before sending ack header
                 if self.host_bus_delay_counter > 0 {
                     self.host_bus_delay_counter -= 1;
                     self.cpu.host_tx_ready = 0;
@@ -796,16 +815,20 @@ where
 
                 self.cpu.host_tx_ready = 0; // Not receiving
                 self.cpu.host_rx_valid = 1;
-                self.cpu.host_rx_data = 0x00; // Ack byte
+
+                // Send extended header for write response (packet type 0001)
+                // Format: {packet_type[3:0]=0001, size[1:0], 1'b0, we=1}
+                let header = 0x10 | ((self.host_bus_txn.size & 0x03) << 2) | 0x01;
+                self.cpu.host_rx_data = header;
 
                 if self.cpu.host_rx_ready != 0 {
-                    // Ack accepted, return to idle
+                    // Header sent, return to idle (write ack is just header, no data)
                     self.host_bus_state = HostBusState::Idle;
                 }
             }
 
-            HostBusState::TxRdata { byte_idx } => {
-                // Apply memory latency delay before sending read data
+            HostBusState::TxRdataHeader => {
+                // Apply memory latency delay before sending read response header
                 if self.host_bus_delay_counter > 0 {
                     self.host_bus_delay_counter -= 1;
                     self.cpu.host_tx_ready = 0;
@@ -813,6 +836,21 @@ where
                     return;
                 }
 
+                self.cpu.host_tx_ready = 0; // Not receiving
+                self.cpu.host_rx_valid = 1;
+
+                // Send extended header for read response (packet type 0001)
+                // Format: {packet_type[3:0]=0001, size[1:0], 1'b0, we=0}
+                let header = 0x10 | ((self.host_bus_txn.size & 0x03) << 2);
+                self.cpu.host_rx_data = header;
+
+                if self.cpu.host_rx_ready != 0 {
+                    // Header sent, now send data bytes
+                    self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
+                }
+            }
+
+            HostBusState::TxRdata { byte_idx } => {
                 self.cpu.host_tx_ready = 0; // Not receiving
                 self.cpu.host_rx_valid = 1;
 

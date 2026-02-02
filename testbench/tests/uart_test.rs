@@ -316,7 +316,7 @@ fn test_uart_baud_timing() {
     // Start bit should last approximately CLKS_PER_BIT cycles
     // Allow ±2 cycles tolerance
     assert!(
-        start_bit_cycles >= CLKS_PER_BIT - 2 && start_bit_cycles <= CLKS_PER_BIT + 2,
+        (CLKS_PER_BIT - 2..=CLKS_PER_BIT + 2).contains(&start_bit_cycles),
         "Start bit should last ~{} cycles, got {}",
         CLKS_PER_BIT,
         start_bit_cycles

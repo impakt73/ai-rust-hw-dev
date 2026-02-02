@@ -2,25 +2,36 @@
 // Serializes bus transactions for external host communication
 //
 // Features:
-//   - 32-bit bus slave interface compatible with system bus
+//   - 32-bit bus slave interface compatible with system bus (CPU->Host requests)
+//   - 32-bit bus master interface for Host->CPU requests (via arbiter, currently unused)
 //   - 8-bit TX/RX byte stream with valid/ready flow control
 //   - Variable-length packets optimized for minimal bandwidth
-//   - Pull-only model: single transaction at a time
+//   - Extended header format with packet type bits
 //   - Little-endian data format for x86/ARM compatibility
 //   - No checksums (relies on transport layer if needed)
 //
-// Protocol (Variable Length, Little-Endian):
-//   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
-//   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
-//   Write Response: [ack]                                             (1 byte, 0x00)
-//   Read Response:  [data...]                                         (1-4 bytes, no header)
+// Protocol (Variable Length, Little-Endian, Extended Header):
+//   CPU-initiated request (type 0000):  [ext_header][addr0-3][data...] (FPGA → Host TX)
+//   Host response to CPU (type 0001):   [ext_header][data...]          (Host → FPGA RX)
+//   Host-initiated request (type 0010): [ext_header][addr0-3][data...] (Host → FPGA RX, future)
+//   FPGA response to Host (type 0011):  [ext_header][data...]          (FPGA → Host TX, future)
+//
+// Extended Header Format (1 byte):
+//   Bits [7:4]: Packet type
+//     0000 = CPU-initiated request (FPGA → Host TX)
+//     0001 = Host response to CPU request (Host → FPGA RX)
+//     0010 = Host-initiated request (Host → FPGA RX, future use)
+//     0011 = FPGA response to Host request (FPGA → Host TX, future use)
+//   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
+//   Bit  [1]:   Reserved (0)
+//   Bit  [0]:   we (1=write, 0=read)
 
 module host_bus_interface (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
     
-    // Bus Slave Interface (from System Bus)
+    // Bus Slave Interface (from System Bus - CPU→Host path)
     input  logic [31:0] addr,
     input  logic [31:0] wdata,
     output logic [31:0] rdata,
@@ -28,6 +39,15 @@ module host_bus_interface (
     input  logic [1:0]  size,
     input  logic        req,
     output logic        ready,
+    
+    // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
+    output logic [31:0] host_bus_addr,
+    output logic [31:0] host_bus_wdata,
+    input  logic [31:0] host_bus_rdata,
+    output logic        host_bus_we,
+    output logic [1:0]  host_bus_size,
+    output logic        host_bus_req,
+    input  logic        host_bus_ready,
     
     // Host TX Interface (to External Host)
     output logic [7:0]  tx_data,
@@ -58,15 +78,16 @@ module host_bus_interface (
         STATE_TX_WDATA_2  = 5'd9,   // WData[23:16] (word writes only)
         STATE_TX_WDATA_3  = 5'd10,  // WData[31:24] (word writes only)
         
-        // RX States (variable length: 1-4 bytes)
-        STATE_RX_ACK      = 5'd11,  // Write response: single ack byte
-        STATE_RX_RDATA_0  = 5'd12,  // RData[7:0] (little-endian: LSB first)
-        STATE_RX_RDATA_1  = 5'd13,  // RData[15:8] (halfword/word reads)
-        STATE_RX_RDATA_2  = 5'd14,  // RData[23:16] (word reads only)
-        STATE_RX_RDATA_3  = 5'd15,  // RData[31:24] (word reads only)
+        // RX States (variable length: 1-5 bytes with extended header)
+        STATE_RX_WR_HEADER = 5'd11,  // Write response: header (packet type 0001)
+        STATE_RX_RD_HEADER = 5'd12,  // Read response: header (packet type 0001)
+        STATE_RX_RDATA_0   = 5'd13,  // RData[7:0] (little-endian: LSB first)
+        STATE_RX_RDATA_1   = 5'd14,  // RData[15:8] (halfword/word reads)
+        STATE_RX_RDATA_2   = 5'd15,  // RData[23:16] (word reads only)
+        STATE_RX_RDATA_3   = 5'd16,  // RData[31:24] (word reads only)
         
         // Complete state - asserts ready for one cycle
-        STATE_COMPLETE    = 5'd16
+        STATE_COMPLETE    = 5'd17
     } state_t;
     
     state_t state, next_state;
@@ -145,8 +166,8 @@ module host_bus_interface (
                         // Write: send data bytes in little-endian order
                         next_state = STATE_TX_WDATA_0;  // Always start with LSB
                     end else begin
-                        // Read: no data, go to RX phase
-                        next_state = STATE_RX_RDATA_0;  // Read response starts with LSB
+                        // Read: no data, go to RX phase - expect header first
+                        next_state = STATE_RX_RD_HEADER;
                     end
                 end
             end
@@ -155,8 +176,8 @@ module host_bus_interface (
             STATE_TX_WDATA_0: begin  // All writes start here (LSB)
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b00:   next_state = STATE_RX_ACK;       // Byte: done after 1 byte
-                        default: next_state = STATE_TX_WDATA_1;  // Half/Word: continue
+                        2'b00:   next_state = STATE_RX_WR_HEADER;    // Byte: done after 1 byte, expect header
+                        default: next_state = STATE_TX_WDATA_1;      // Half/Word: continue
                     endcase
                 end
             end
@@ -164,8 +185,8 @@ module host_bus_interface (
             STATE_TX_WDATA_1: begin  // Half and Word
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b01:   next_state = STATE_RX_ACK;       // Half: done after 2 bytes
-                        default: next_state = STATE_TX_WDATA_2;  // Word: continue
+                        2'b01:   next_state = STATE_RX_WR_HEADER;    // Half: done after 2 bytes, expect header
+                        default: next_state = STATE_TX_WDATA_2;      // Word: continue
                     endcase
                 end
             end
@@ -175,16 +196,24 @@ module host_bus_interface (
             end
             
             STATE_TX_WDATA_3: begin  // Word only (MSB, last byte)
-                if (tx_valid && tx_ready) next_state = STATE_RX_ACK;
+                if (tx_valid && tx_ready) next_state = STATE_RX_WR_HEADER;
             end
             
             // --------------------------------------------------------
-            // RX Phase: Ack (writes) or Data (reads)
-            // Data received in little-endian order (LSB first)
+            // RX Phase: Header + Ack (writes) or Header + Data (reads)
+            // Extended header format for responses (packet type 0001)
             // --------------------------------------------------------
-            STATE_RX_ACK: begin  // Write response: single ack byte
+            STATE_RX_WR_HEADER: begin  // Write response: header
                 if (rx_valid && rx_ready) begin
+                    // Write response is just header, no data bytes
                     next_state = STATE_COMPLETE;
+                end
+            end
+            
+            STATE_RX_RD_HEADER: begin  // Read response: header
+                if (rx_valid && rx_ready) begin
+                    // After header, receive data bytes
+                    next_state = STATE_RX_RDATA_0;
                 end
             end
             
@@ -251,12 +280,14 @@ module host_bus_interface (
     
     // ============================================================
     // TX Data Multiplexer (Little-Endian: LSB first)
+    // Extended Header Format: {packet_type[3:0], size[1:0], 1'b0, we}
+    // Packet type 0000 = CPU-initiated request
     // ============================================================
     always_comb begin
         tx_byte = 8'h00;
         
         case (state)
-            STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};
+            STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};  // Packet type 0000
             STATE_TX_ADDR_0:  tx_byte = cap_addr[7:0];
             STATE_TX_ADDR_1:  tx_byte = cap_addr[15:8];
             STATE_TX_ADDR_2:  tx_byte = cap_addr[23:16];
@@ -279,7 +310,7 @@ module host_bus_interface (
     // ============================================================
     // RX Phase Detection
     // ============================================================
-    assign in_rx_phase = (state >= STATE_RX_ACK) && (state <= STATE_RX_RDATA_3);
+    assign in_rx_phase = (state >= STATE_RX_WR_HEADER) && (state <= STATE_RX_RDATA_3);
     
     // ============================================================
     // RX Ready Signal
@@ -316,5 +347,14 @@ module host_bus_interface (
     // Bus Read Data
     // ============================================================
     assign rdata = resp_rdata;
+    
+    // ============================================================
+    // Bus Master Interface (Host→CPU path, currently unused)
+    // ============================================================
+    assign host_bus_addr  = 32'h0;
+    assign host_bus_wdata = 32'h0;
+    assign host_bus_we    = 1'b0;
+    assign host_bus_size  = 2'b00;
+    assign host_bus_req   = 1'b0;
 
 endmodule
