@@ -692,3 +692,632 @@ fn test_consecutive_host_requests() {
     );
     assert_eq!(dut.host_bus_addr, 0x50000100, "Second address should match");
 }
+
+// ============================================================
+// Error Recovery Tests
+// ============================================================
+
+#[test]
+fn test_error_recovery_after_invalid_address() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send request to invalid address (DRAM)
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(
+        send_rx_byte(&mut dut, 0x80, 100),
+        "addr[31:24] = 0x80 (DRAM)"
+    );
+
+    // Receive error response
+    for _ in 0..20 {
+        clock_cycle!(dut);
+        if dut.tx_valid != 0 {
+            break;
+        }
+    }
+    let header = receive_tx_byte(&mut dut, 100).expect("Error header");
+    assert_eq!(header & 0xF0, 0xF0, "Should be error packet type");
+
+    // Receive error code byte
+    let _error_code = receive_tx_byte(&mut dut, 100).expect("Error code");
+
+    // Wait for module to return to idle
+    for _ in 0..10 {
+        clock_cycle!(dut);
+    }
+
+    // Now send a VALID request - module should be able to process it
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header after recovery");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(
+        send_rx_byte(&mut dut, 0x50, 100),
+        "addr[31:24] = 0x50 (valid RTL)"
+    );
+
+    // Wait for bus request
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(
+        dut.host_bus_req, 1,
+        "Module should process valid request after error recovery"
+    );
+    assert_eq!(dut.host_bus_addr, 0x50000000, "Address should be correct");
+}
+
+#[test]
+fn test_multiple_errors_dont_lock_module() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send multiple invalid requests in a row
+    for i in 0..3 {
+        // Invalid address in video range (0x20)
+        let invalid_byte = 0x20 + (i as u8);
+        assert!(send_rx_byte(&mut dut, 0x28, 100), "header iteration {}", i);
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+        assert!(
+            send_rx_byte(&mut dut, invalid_byte, 100),
+            "addr[31:24] = 0x{:02x}",
+            invalid_byte
+        );
+
+        // Receive error response (header + code)
+        for _ in 0..20 {
+            clock_cycle!(dut);
+            if dut.tx_valid != 0 {
+                break;
+            }
+        }
+        let _ = receive_tx_byte(&mut dut, 100);
+        let _ = receive_tx_byte(&mut dut, 100);
+
+        // Wait for return to idle
+        for _ in 0..10 {
+            clock_cycle!(dut);
+        }
+    }
+
+    // Module should still work after multiple errors
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header after errors");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24] = valid");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_req, 1, "Module should still work after errors");
+}
+
+#[test]
+fn test_error_code_value() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send request to invalid address
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x80, 100), "addr[31:24] = invalid");
+
+    // Receive error response
+    for _ in 0..20 {
+        clock_cycle!(dut);
+        if dut.tx_valid != 0 {
+            break;
+        }
+    }
+    let header = receive_tx_byte(&mut dut, 100).expect("Error header");
+    let error_code = receive_tx_byte(&mut dut, 100).expect("Error code");
+
+    // Verify error header format: packet type 1111
+    assert_eq!(header & 0xF0, 0xF0, "Error packet type");
+    // Error code should be 0xFF for invalid address
+    assert_eq!(error_code, 0xFF, "Error code for invalid address");
+}
+
+// ============================================================
+// Bus Latency Tests
+// ============================================================
+
+#[test]
+fn test_slow_bus_response() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send read request
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Wait for bus request
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_req, 1, "Bus request should be asserted");
+
+    // Delay bus response for many cycles (simulating slow peripheral)
+    for _ in 0..50 {
+        clock_cycle!(dut);
+        assert_eq!(dut.host_bus_req, 1, "Bus request should stay asserted");
+    }
+
+    // Finally provide response
+    dut.host_bus_rdata = 0xCAFEBABE;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    // Receive response
+    let header = receive_tx_byte(&mut dut, 100).expect("response header");
+    assert_eq!(header & 0xF0, 0x30, "Response packet type");
+
+    let b0 = receive_tx_byte(&mut dut, 100).expect("data[0]");
+    let b1 = receive_tx_byte(&mut dut, 100).expect("data[1]");
+    let b2 = receive_tx_byte(&mut dut, 100).expect("data[2]");
+    let b3 = receive_tx_byte(&mut dut, 100).expect("data[3]");
+
+    let rdata = (b3 as u32) << 24 | (b2 as u32) << 16 | (b1 as u32) << 8 | (b0 as u32);
+    assert_eq!(rdata, 0xCAFEBABE, "Should get correct data after delay");
+}
+
+#[test]
+fn test_immediate_bus_response() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Pre-assert bus_ready and rdata before issuing request
+    // (simulating a peripheral that responds combinationally)
+    dut.host_bus_ready = 1;
+    dut.host_bus_rdata = 0x12345678;
+
+    // Send read request
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // The bus_ready was already set, so the transaction should complete quickly
+    // Wait for response transmission to start
+    for _ in 0..15 {
+        clock_cycle!(dut);
+        if dut.tx_valid != 0 {
+            break;
+        }
+    }
+
+    // Receive response
+    let header = receive_tx_byte(&mut dut, 100).expect("response header");
+    assert_eq!(header & 0xF0, 0x30, "Response packet type");
+
+    let b0 = receive_tx_byte(&mut dut, 100).expect("data[0]");
+    let b1 = receive_tx_byte(&mut dut, 100).expect("data[1]");
+    let b2 = receive_tx_byte(&mut dut, 100).expect("data[2]");
+    let b3 = receive_tx_byte(&mut dut, 100).expect("data[3]");
+
+    let rdata = (b3 as u32) << 24 | (b2 as u32) << 16 | (b1 as u32) << 8 | (b0 as u32);
+    assert_eq!(rdata, 0x12345678, "Should get correct data");
+}
+
+// ============================================================
+// Write with Read Interleaving Tests
+// ============================================================
+
+#[test]
+fn test_write_then_read_same_address() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // First: Write 0xABCD to address
+    // Header: {4'b0010, size=01 (halfword), 1'b0, we=1} = 0x25
+    assert!(send_rx_byte(&mut dut, 0x25, 100), "write header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    // Write data (halfword, little-endian)
+    assert!(send_rx_byte(&mut dut, 0xCD, 100), "wdata[7:0]");
+    assert!(send_rx_byte(&mut dut, 0xAB, 100), "wdata[15:8]");
+
+    // Wait for bus request
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_we, 1, "Should be write request");
+    assert_eq!(dut.host_bus_wdata & 0xFFFF, 0xABCD, "Write data correct");
+
+    // Complete write
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    // Receive write ack header
+    let ack_header = receive_tx_byte(&mut dut, 100).expect("write ack header");
+    assert_eq!(ack_header & 0xF0, 0x30, "Write ack packet type");
+
+    // Wait to return to idle
+    for _ in 0..5 {
+        clock_cycle!(dut);
+    }
+
+    // Second: Read from same address
+    // Header: {4'b0010, size=01 (halfword), 1'b0, we=0} = 0x24
+    assert!(send_rx_byte(&mut dut, 0x24, 100), "read header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Wait for bus request
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_we, 0, "Should be read request");
+
+    // Provide read response (the value we "wrote")
+    dut.host_bus_rdata = 0x0000ABCD;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    // Receive read response
+    let _header = receive_tx_byte(&mut dut, 100).expect("read header");
+    let b0 = receive_tx_byte(&mut dut, 100).expect("rdata[7:0]");
+    let b1 = receive_tx_byte(&mut dut, 100).expect("rdata[15:8]");
+
+    let rdata = (b1 as u16) << 8 | (b0 as u16);
+    assert_eq!(rdata, 0xABCD, "Read should return written value");
+}
+
+// ============================================================
+// Different Access Size Tests
+// ============================================================
+
+#[test]
+fn test_host_write_all_sizes_sequentially() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Test byte write
+    assert!(send_rx_byte(&mut dut, 0x21, 100), "byte write header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    assert!(send_rx_byte(&mut dut, 0x42, 100), "byte data");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b00, "Size should be byte");
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+    let _ = receive_tx_byte(&mut dut, 100);
+
+    // Wait for idle
+    for _ in 0..5 {
+        clock_cycle!(dut);
+    }
+
+    // Test halfword write
+    assert!(send_rx_byte(&mut dut, 0x25, 100), "halfword write header");
+    assert!(send_rx_byte(&mut dut, 0x02, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    assert!(send_rx_byte(&mut dut, 0xEF, 100), "halfword data[7:0]");
+    assert!(send_rx_byte(&mut dut, 0xBE, 100), "halfword data[15:8]");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b01, "Size should be halfword");
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+    let _ = receive_tx_byte(&mut dut, 100);
+
+    // Wait for idle
+    for _ in 0..5 {
+        clock_cycle!(dut);
+    }
+
+    // Test word write
+    assert!(send_rx_byte(&mut dut, 0x29, 100), "word write header");
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    assert!(send_rx_byte(&mut dut, 0xEF, 100), "word data[7:0]");
+    assert!(send_rx_byte(&mut dut, 0xBE, 100), "word data[15:8]");
+    assert!(send_rx_byte(&mut dut, 0xAD, 100), "word data[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xDE, 100), "word data[31:24]");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b10, "Size should be word");
+    assert_eq!(dut.host_bus_wdata, 0xDEADBEEF, "Word data should match");
+}
+
+#[test]
+fn test_host_read_all_sizes_sequentially() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Test byte read
+    assert!(send_rx_byte(&mut dut, 0x20, 100), "byte read header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b00, "Size should be byte");
+    dut.host_bus_rdata = 0x000000AA;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    let _ = receive_tx_byte(&mut dut, 100); // header
+    let byte_data = receive_tx_byte(&mut dut, 100).expect("byte data");
+    assert_eq!(byte_data, 0xAA, "Byte read data");
+
+    // Wait for idle
+    for _ in 0..5 {
+        clock_cycle!(dut);
+    }
+
+    // Test halfword read
+    assert!(send_rx_byte(&mut dut, 0x24, 100), "halfword read header");
+    assert!(send_rx_byte(&mut dut, 0x02, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b01, "Size should be halfword");
+    dut.host_bus_rdata = 0x0000BEEF;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    let _ = receive_tx_byte(&mut dut, 100); // header
+    let b0 = receive_tx_byte(&mut dut, 100).expect("halfword[0]");
+    let b1 = receive_tx_byte(&mut dut, 100).expect("halfword[1]");
+    let halfword_data = (b1 as u16) << 8 | (b0 as u16);
+    assert_eq!(halfword_data, 0xBEEF, "Halfword read data");
+
+    // Wait for idle
+    for _ in 0..5 {
+        clock_cycle!(dut);
+    }
+
+    // Test word read
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "word read header");
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+        if dut.host_bus_req != 0 {
+            break;
+        }
+    }
+    assert_eq!(dut.host_bus_size, 0b10, "Size should be word");
+    dut.host_bus_rdata = 0xCAFEBABE;
+    dut.host_bus_ready = 1;
+    clock_cycle!(dut);
+    dut.host_bus_ready = 0;
+
+    let _ = receive_tx_byte(&mut dut, 100); // header
+    let b0 = receive_tx_byte(&mut dut, 100).expect("word[0]");
+    let b1 = receive_tx_byte(&mut dut, 100).expect("word[1]");
+    let b2 = receive_tx_byte(&mut dut, 100).expect("word[2]");
+    let b3 = receive_tx_byte(&mut dut, 100).expect("word[3]");
+    let word_data = (b3 as u32) << 24 | (b2 as u32) << 16 | (b1 as u32) << 8 | (b0 as u32);
+    assert_eq!(word_data, 0xCAFEBABE, "Word read data");
+}
+
+// ============================================================
+// Edge Address Tests
+// ============================================================
+
+#[test]
+fn test_valid_rtl_addresses_throughout_range() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Test valid addresses: LED=0x50, Clock=0x51, UART=0x52
+    let test_addresses: [(u8, u32); 3] = [
+        (0x50, 0x50000000), // LED base
+        (0x51, 0x51000000), // Clock base
+        (0x52, 0x52000000), // UART base
+    ];
+
+    for (upper_byte, expected_addr) in test_addresses.iter() {
+        // Send byte read to this address
+        assert!(send_rx_byte(&mut dut, 0x20, 100), "header");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+        assert!(send_rx_byte(&mut dut, *upper_byte, 100), "addr[31:24]");
+
+        // Wait for bus request
+        for _ in 0..10 {
+            clock_cycle!(dut);
+            if dut.host_bus_req != 0 {
+                break;
+            }
+        }
+        assert_eq!(
+            dut.host_bus_req, 1,
+            "Bus request for addr 0x{:08x}",
+            expected_addr
+        );
+        assert_eq!(
+            dut.host_bus_addr, *expected_addr,
+            "Address should match 0x{:08x}",
+            expected_addr
+        );
+
+        // Complete request
+        dut.host_bus_rdata = 0x00;
+        dut.host_bus_ready = 1;
+        clock_cycle!(dut);
+        dut.host_bus_ready = 0;
+
+        // Drain response
+        let _ = receive_tx_byte(&mut dut, 100);
+        let _ = receive_tx_byte(&mut dut, 100);
+
+        // Wait for idle
+        for _ in 0..5 {
+            clock_cycle!(dut);
+        }
+    }
+}
+
+// ============================================================
+// Invalid Address Range Tests
+// ============================================================
+
+#[test]
+fn test_all_invalid_address_ranges() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Test various invalid address ranges
+    let invalid_upper_bytes: [u8; 6] = [
+        0x10, // SimControl
+        0x20, // Video
+        0x30, // Audio
+        0x40, // FIFO
+        0x80, // DRAM
+        0x00, // Unmapped
+    ];
+
+    for upper_byte in invalid_upper_bytes.iter() {
+        // Send read to invalid address
+        assert!(send_rx_byte(&mut dut, 0x20, 100), "header");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+        assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+        assert!(send_rx_byte(&mut dut, *upper_byte, 100), "addr[31:24]");
+
+        // Should receive error response
+        for _ in 0..20 {
+            clock_cycle!(dut);
+            if dut.tx_valid != 0 {
+                break;
+            }
+        }
+
+        let header = receive_tx_byte(&mut dut, 100).expect("error header");
+        assert_eq!(
+            header & 0xF0,
+            0xF0,
+            "Should be error for addr upper=0x{:02x}",
+            upper_byte
+        );
+
+        // Drain error code
+        let _ = receive_tx_byte(&mut dut, 100);
+
+        // Wait for idle
+        for _ in 0..10 {
+            clock_cycle!(dut);
+        }
+    }
+}
