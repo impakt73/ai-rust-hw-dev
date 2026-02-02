@@ -270,8 +270,12 @@ fn test_write_transaction_complete() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response packet (1 byte for write: ack byte = 0x00)
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "Failed to send ack byte");
+    // NEW PROTOCOL: Send response header for write ack (packet type 0001, size=10, we=1)
+    // Header: {4'b0001, size=10, 1'b0, we=1} = 0x19
+    assert!(
+        send_rx_byte(&mut dut, 0x19, 100),
+        "Failed to send write ack header"
+    );
 
     // Verify ready is asserted (should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH after write response");
@@ -303,7 +307,14 @@ fn test_read_word_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response with read data = 0xCAFEBABE (little-endian: LSB first, no header)
+    // NEW PROTOCOL: Send response header first (packet type 0001, size=10, we=0)
+    // Header: {4'b0001, size=10, 1'b0, we=0} = 0x18
+    assert!(
+        send_rx_byte(&mut dut, 0x18, 100),
+        "Failed to send response header"
+    );
+
+    // Send response with read data = 0xCAFEBABE (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xBE, 100),
         "Failed to send RData[7:0]"
@@ -348,7 +359,14 @@ fn test_read_halfword_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 2 bytes data (little-endian: LSB first, no header)
+    // NEW PROTOCOL: Send response header first (packet type 0001, size=01, we=0)
+    // Header: {4'b0001, size=01, 1'b0, we=0} = 0x14
+    assert!(
+        send_rx_byte(&mut dut, 0x14, 100),
+        "Failed to send response header"
+    );
+
+    // Send response: 2 bytes data (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xCD, 100),
         "Failed to send RData[7:0]"
@@ -388,7 +406,14 @@ fn test_read_byte_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 1 byte data (little-endian: no header for read response)
+    // NEW PROTOCOL: Send response header first (packet type 0001, size=00, we=0)
+    // Header: {4'b0001, size=00, 1'b0, we=0} = 0x10
+    assert!(
+        send_rx_byte(&mut dut, 0x10, 100),
+        "Failed to send response header"
+    );
+
+    // Send response: 1 byte data (little-endian)
     assert!(
         send_rx_byte(&mut dut, 0x42, 100),
         "Failed to send RData[7:0]"
@@ -549,8 +574,9 @@ fn test_rx_delayed_valid() {
         assert_eq!(dut.ready, 0, "ready should stay LOW waiting for response");
     }
 
-    // Now send response (1 byte for write: ack byte = 0x00)
-    send_rx_byte(&mut dut, 0x00, 100);
+    // NEW PROTOCOL: Send response header for write ack (packet type 0001, size=10, we=1)
+    // Header: {4'b0001, size=10, 1'b0, we=1} = 0x19
+    send_rx_byte(&mut dut, 0x19, 100);
 
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
 }
@@ -702,8 +728,9 @@ fn test_consecutive_transactions() {
             receive_tx_byte(&mut dut, 100).expect("TX byte");
         }
 
-        // Send response (1 byte for write: ack byte = 0x00)
-        send_rx_byte(&mut dut, 0x00, 100);
+        // NEW PROTOCOL: Send response header for write ack (packet type 0001, size=10, we=1)
+        // Header: {4'b0001, size=10, 1'b0, we=1} = 0x19
+        send_rx_byte(&mut dut, 0x19, 100);
 
         // Verify completion (ready should be HIGH in COMPLETE state)
         assert_eq!(dut.ready, 1, "Transaction {} should complete", iteration);
