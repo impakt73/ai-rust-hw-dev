@@ -488,7 +488,7 @@ fn test_host_request_valid_rtl_peripheral_range() {
 }
 
 // ============================================================
-// Return to Idle Tests
+// Return to idle Tests
 // ============================================================
 
 #[test]

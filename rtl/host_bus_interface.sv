@@ -497,14 +497,14 @@ module host_bus_interface (
             // For writes, data bytes follow the address bytes.
             if (rx_valid && rx_ready) begin
                 case (state)
-                    STATE_HOST_RX_HEADER:  host_cap_addr[7:0]   <= rx_data;  // First addr byte
-                    STATE_HOST_RX_ADDR_0:  host_cap_addr[15:8]  <= rx_data;  // Second addr byte
-                    STATE_HOST_RX_ADDR_1:  host_cap_addr[23:16] <= rx_data;  // Third addr byte
-                    STATE_HOST_RX_ADDR_2:  host_cap_addr[31:24] <= rx_data;  // Fourth addr byte
-                    STATE_HOST_RX_ADDR_3:  host_cap_wdata[7:0]  <= rx_data;  // First wdata byte
-                    STATE_HOST_RX_WDATA_0: host_cap_wdata[15:8] <= rx_data;  // Second wdata byte
-                    STATE_HOST_RX_WDATA_1: host_cap_wdata[23:16] <= rx_data; // Third wdata byte
-                    STATE_HOST_RX_WDATA_2: host_cap_wdata[31:24] <= rx_data; // Fourth wdata byte
+                    STATE_HOST_RX_HEADER:  host_cap_addr[7:0]   <= rx_data;  // addr[7:0] (LSB)
+                    STATE_HOST_RX_ADDR_0:  host_cap_addr[15:8]  <= rx_data;  // addr[15:8]
+                    STATE_HOST_RX_ADDR_1:  host_cap_addr[23:16] <= rx_data;  // addr[23:16]
+                    STATE_HOST_RX_ADDR_2:  host_cap_addr[31:24] <= rx_data;  // addr[31:24] (MSB)
+                    STATE_HOST_RX_ADDR_3:  host_cap_wdata[7:0]  <= rx_data;  // wdata[7:0] (writes only)
+                    STATE_HOST_RX_WDATA_0: host_cap_wdata[15:8] <= rx_data;  // wdata[15:8]
+                    STATE_HOST_RX_WDATA_1: host_cap_wdata[23:16] <= rx_data; // wdata[23:16]
+                    STATE_HOST_RX_WDATA_2: host_cap_wdata[31:24] <= rx_data; // wdata[31:24]
                     default: ;
                 endcase
             end
