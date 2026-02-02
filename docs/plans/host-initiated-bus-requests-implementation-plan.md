@@ -338,8 +338,8 @@ The Host state machine is designed for **non-blocking request handling**. Even w
 of incoming CPU requests. When a CPU request packet (type 0000) is detected while in this
 state, the Host processes it immediately (receive, execute, send response) without leaving
 the AWAITING_HOST_RESP state. This nested handling is critical for deadlock prevention.
-Conceptually, CPU request handling while awaiting a Host response can be thought of as a
-sub-routine that runs inside the waiting loop, not a formal state transition.
+Conceptually, CPU request handling while awaiting a Host response can be thought of as an
+inline handler that runs inside the waiting loop, not a formal state transition.
 
 **FPGA Side State Machine (host_bus_interface):**
 
@@ -1283,9 +1283,9 @@ fn test_simultaneous_requests_fpga_buffers_host_request() {
     
     // Step 4: Complete CPU request by providing response from Host
     //
-    // IMPORTANT: This is an RTL-only test - it tests FPGA behavior only.
+    // Note: This is an RTL-only test - it tests FPGA behavior only.
     // The Host is implemented in Rust (cpu-sim), so Host-side non-blocking
-    // behavior CANNOT be validated here. This test can only verify that:
+    // behavior cannot be validated here. This test can only verify that:
     // - FPGA correctly buffers Host request bytes in RX FIFO
     // - FPGA processes buffered request after CPU transaction completes
     //
