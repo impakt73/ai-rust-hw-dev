@@ -486,7 +486,7 @@ module host_bus_interface (
             host_cap_size  <= 2'b00;
         end else if (state == STATE_IDLE && rx_valid && is_host_request_header(rx_data)) begin
             // Capture header info when receiving host request header
-            host_cap_we   <= (rx_data & 8'h01) != 8'h0;
+            host_cap_we   <= rx_data[0];
             host_cap_size <= rx_data[3:2];
             host_cap_addr <= 32'h0;
             host_cap_wdata <= 32'h0;
