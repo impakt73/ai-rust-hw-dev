@@ -1122,7 +1122,6 @@ where
                         self.host_bus_stall_cycles = 0;
                         self.cpu.host_rx_valid = 0;
                         self.cpu.host_tx_ready = 1;
-                        return;
                     }
                 }
             }
