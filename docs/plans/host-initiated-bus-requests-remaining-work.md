@@ -32,11 +32,12 @@ This document details the **remaining implementation work** for host-initiated b
 ### What Remains to be Implemented ❌
 
 1. **RTL Changes:**
-   - Host→FPGA request state machine in `host_bus_interface.sv`
-   - IDLE state logic to detect and process incoming host requests
+   - Refactor to dual-FSM architecture (separate RX and TX state machines)
+   - RX FSM with request/response buffer assembly logic
+   - TX FSM for handling CPU requests and host responses
    - Address validation for host requests (RTL peripheral range only)
    - Error response states and logic
-   - **Critical Fix:** Proper receive-byte handling in IDLE state (see Known Issue below)
+   - **Critical Fix:** Implement parallel RX/TX operation (see Required Changes below)
 
 2. **Rust Changes:**
    - `send_bus_request()` method in `cpu-sim/src/sim.rs`
@@ -53,414 +54,543 @@ This document details the **remaining implementation work** for host-initiated b
 
 ---
 
-## Known Issue: IDLE State Receive-Byte Handling & Missing RX Buffering
+## Required Changes: Dual-FSM Architecture for Full-Duplex Operation
 
 ### Problem Description
 
-The current `host_bus_interface.sv` has two critical issues:
+The current `host_bus_interface.sv` requires fundamental architectural changes to support true full-duplex bidirectional communication:
 
-1. **IDLE State RX Handling:** The IDLE state logic only checks for CPU-initiated requests (`req` signal). It does **not** monitor the RX interface for incoming host-initiated requests. This means:
-   - When the Host sends a request (packet type 0010), the FPGA will not recognize it
-   - The bytes will arrive on `rx_data` with `rx_valid` asserted, but `rx_ready` is not asserted in IDLE
-   - The IDLE state must check buffered RX data, decode the header, and assert `rx_fifo_ready` to consume the byte
+1. **Single-FSM Limitation:** The current design uses a single state machine that handles both TX (CPU→Host) and RX (Host→CPU) paths sequentially. This prevents parallel operation and creates deadlock scenarios.
 
-2. **Missing RX Staging FIFO (CRITICAL):** The current design has no RX buffering. Without a staging FIFO:
+2. **Missing RX Buffering:** The current design has no buffering for incoming host-initiated requests or CPU responses. Without buffering:
    - Incoming host request bytes are lost if they arrive while the FPGA is transmitting a CPU request
+   - Incoming CPU response bytes are lost if they arrive while processing a host request
    - UART has no flow control in real FPGA, so the host cannot pause transmission
    - The design cannot support true full-duplex operation
 
 ### Current Code (Incorrect)
 
 ```systemverilog
+// Single FSM handling both TX and RX sequentially
 STATE_IDLE: begin
     if (req) begin
-        next_state = STATE_CAPTURE;
+        next_state = STATE_CAPTURE;  // Only handles CPU requests
     end
 end
 ```
 
 ### Required Fix (Summary)
 
-**1. Add RX Staging FIFO:**
-- Instantiate a 16-byte FIFO on the RX path (UART → FIFO → State Machine)
-- FIFO continuously accepts incoming bytes independent of state machine state
-- State machine reads from FIFO when ready to process
+**Dual-FSM Architecture:**
 
-**2. Update IDLE State:**
-The IDLE state must:
-1. Check `rx_fifo_valid` for buffered incoming data
-2. Decode the header byte from `rx_fifo_data` to detect packet type 0010 (host-initiated request)
-3. Assert `rx_fifo_ready` to consume the header byte from FIFO
-4. Capture the header fields (`we`, `size`) in registers
-5. Transition to `STATE_HOST_RX_ADDR_0` to start receiving address bytes
+The design must be refactored into **two independent state machines**:
 
-**Full implementation details are provided in Task 1 (sections 1.3, 1.4, 1.5, and 1.9) and the "FPGA-Side Request Buffering" section below.**
+1. **RX FSM** (Host → FPGA direction):
+   - Continuously accepts incoming bytes from UART unless **both** pending request and pending response buffers are full
+   - Assembles bytes into separate request/response buffers based on packet header
+   - When complete request buffer ready: asserts `rx_request_available`
+   - When complete response buffer ready: asserts `rx_response_available`
+   - **Buffer Priority:** Response must be processed first when both buffered (unlocks arbitration, then processes buffered request)
+
+2. **TX FSM** (FPGA → Host direction):
+   - Handles CPU-initiated requests (reads `req` signal)
+   - Handles host-initiated responses (reads `rx_request_available`)
+   - Arbitrates between CPU and host response sources
+   - Transmits packets independently of RX FSM
+
+**Key Behavior:**
+- `rx_request` buffer feeds bus master signals (`host_bus_req`, `host_bus_addr`, etc.)
+- `rx_response` buffer resolves outgoing host requests waiting for response (from CPU transactions)
+- Both FSMs operate in parallel, enabling true full-duplex communication
+
+**Full implementation details are provided in Task 1 and the "Dual-FSM Architecture" section below.**
 
 ---
 
 ## Detailed Implementation Tasks
 
-### Task 1: RTL State Machine for Host→FPGA Requests
+### Task 1: RTL Dual-FSM Architecture
 
 **File:** `rtl/host_bus_interface.sv`
 
-#### 1.1 Add New States
+#### 1.1 Add Dual State Machines
 
-Extend the state enum to add host-initiated request handling states:
+Replace the single state machine with two independent FSMs:
 
 ```systemverilog
-typedef enum logic [5:0] {
-    // Existing CPU→Host states (unchanged)
-    STATE_IDLE        = 6'd0,
-    STATE_CAPTURE     = 6'd1,
-    STATE_TX_HEADER   = 6'd2,
-    STATE_TX_ADDR_0   = 6'd3,
-    STATE_TX_ADDR_1   = 6'd4,
-    STATE_TX_ADDR_2   = 6'd5,
-    STATE_TX_ADDR_3   = 6'd6,
-    STATE_TX_WDATA_0  = 6'd7,
-    STATE_TX_WDATA_1  = 6'd8,
-    STATE_TX_WDATA_2  = 6'd9,
-    STATE_TX_WDATA_3  = 6'd10,
-    STATE_RX_WR_HEADER = 6'd11,
-    STATE_RX_RD_HEADER = 6'd12,
-    STATE_RX_RDATA_0   = 6'd13,
-    STATE_RX_RDATA_1   = 6'd14,
-    STATE_RX_RDATA_2   = 6'd15,
-    STATE_RX_RDATA_3   = 6'd16,
-    STATE_COMPLETE     = 6'd17,
-    
-    // NEW: Host→FPGA request states
-    STATE_HOST_RX_ADDR_0    = 6'd20,  // Receive address[7:0] (header consumed in IDLE)
-    STATE_HOST_RX_ADDR_1    = 6'd21,  // Receive address[15:8]
-    STATE_HOST_RX_ADDR_2    = 6'd22,  // Receive address[23:16]
-    STATE_HOST_RX_ADDR_3    = 6'd23,  // Receive address[31:24]
-    STATE_HOST_RX_WDATA_0   = 6'd24,  // Receive wdata[7:0] (writes only)
-    STATE_HOST_RX_WDATA_1   = 6'd25,  // Receive wdata[15:8]
-    STATE_HOST_RX_WDATA_2   = 6'd26,  // Receive wdata[23:16]
-    STATE_HOST_RX_WDATA_3   = 6'd27,  // Receive wdata[31:24]
-    STATE_HOST_BUS_REQ      = 6'd28,  // Issue request to bus arbiter
-    STATE_HOST_BUS_WAIT     = 6'd29,  // Wait for bus response
-    STATE_HOST_TX_HEADER    = 6'd30,  // Send response header (type 0011)
-    STATE_HOST_TX_RDATA_0   = 6'd31,  // Send rdata[7:0] (reads only)
-    STATE_HOST_TX_RDATA_1   = 6'd32,  // Send rdata[15:8]
-    STATE_HOST_TX_RDATA_2   = 6'd33,  // Send rdata[23:16]
-    STATE_HOST_TX_RDATA_3   = 6'd34,  // Send rdata[31:24]
-    STATE_HOST_ERROR        = 6'd35,  // Error: send error response
-    STATE_HOST_ERROR_CODE   = 6'd36   // Error: send error code byte
-} state_t;
+// RX FSM: Assembles incoming packets into request/response buffers
+typedef enum logic [3:0] {
+    RX_IDLE          = 4'd0,   // Waiting for packet header
+    RX_REQ_ADDR_0    = 4'd1,   // Assembling host request: addr[7:0]
+    RX_REQ_ADDR_1    = 4'd2,   // addr[15:8]
+    RX_REQ_ADDR_2    = 4'd3,   // addr[23:16]
+    RX_REQ_ADDR_3    = 4'd4,   // addr[31:24]
+    RX_REQ_WDATA_0   = 4'd5,   // wdata[7:0] (writes only)
+    RX_REQ_WDATA_1   = 4'd6,   // wdata[15:8]
+    RX_REQ_WDATA_2   = 4'd7,   // wdata[23:16]
+    RX_REQ_WDATA_3   = 4'd8,   // wdata[31:24]
+    RX_RESP_RDATA_0  = 4'd9,   // Assembling CPU response: rdata[7:0]
+    RX_RESP_RDATA_1  = 4'd10,  // rdata[15:8]
+    RX_RESP_RDATA_2  = 4'd11,  // rdata[23:16]
+    RX_RESP_RDATA_3  = 4'd12   // rdata[31:24]
+} rx_state_t;
+
+// TX FSM: Transmits CPU requests and host responses
+typedef enum logic [4:0] {
+    TX_IDLE          = 5'd0,   // Waiting for CPU req or host response ready
+    TX_CPU_HEADER    = 5'd1,   // Send CPU request header (type 0000)
+    TX_CPU_ADDR_0    = 5'd2,   // addr[7:0]
+    TX_CPU_ADDR_1    = 5'd3,   // addr[15:8]
+    TX_CPU_ADDR_2    = 5'd4,   // addr[23:16]
+    TX_CPU_ADDR_3    = 5'd5,   // addr[31:24]
+    TX_CPU_WDATA_0   = 5'd6,   // wdata[7:0]
+    TX_CPU_WDATA_1   = 5'd7,   // wdata[15:8]
+    TX_CPU_WDATA_2   = 5'd8,   // wdata[23:16]
+    TX_CPU_WDATA_3   = 5'd9,   // wdata[31:24]
+    TX_CPU_RX_HEADER = 5'd10,  // Wait for CPU response header
+    TX_CPU_RX_RDATA  = 5'd11,  // Wait for CPU response data (handled by RX FSM)
+    TX_HOST_HEADER   = 5'd12,  // Send host response header (type 0011)
+    TX_HOST_RDATA_0  = 5'd13,  // Send rdata[7:0] (reads)
+    TX_HOST_RDATA_1  = 5'd14,  // rdata[15:8]
+    TX_HOST_RDATA_2  = 5'd15,  // rdata[23:16]
+    TX_HOST_RDATA_3  = 5'd16,  // rdata[31:24]
+    TX_HOST_ERROR    = 5'd17,  // Send error header (type 1111)
+    TX_HOST_ERROR_CODE = 5'd18 // Send error code byte
+} tx_state_t;
+
+rx_state_t rx_state, rx_next_state;
+tx_state_t tx_state, tx_next_state;
 ```
 
-**Note:** Changed encoding from `logic [4:0]` to `logic [5:0]` to accommodate additional states (max value: 36 decimal = 100100 binary, requires 6 bits).
+#### 1.2 Add Request/Response Buffers
 
-#### 1.4 Add Host Request Capture Logic
-
-Add registers to capture host-initiated request parameters:
+Add registers for pending request and response buffers:
 
 ```systemverilog
-// New registers for host-initiated transactions
-logic [31:0] host_cap_addr;      // Captured host request address
-logic [31:0] host_cap_wdata;     // Captured host request write data
-logic        host_cap_we;        // Captured host request write enable
-logic [1:0]  host_cap_size;      // Captured host request size
-logic [31:0] host_resp_rdata;    // Response read data from bus
+// Request buffer (assembled by RX FSM from Host→FPGA packets, type 0010)
+logic [31:0] req_buf_addr;
+logic [31:0] req_buf_wdata;
+logic        req_buf_we;
+logic [1:0]  req_buf_size;
+logic        req_buf_valid;       // Buffer full and ready to process
+
+// Response buffer (assembled by RX FSM from CPU response packets, type 0001/0011)
+logic [31:0] resp_buf_rdata;
+logic        resp_buf_we;
+logic [1:0]  resp_buf_size;
+logic        resp_buf_valid;      // Buffer full and ready to process
+
+// Host response data (from bus transaction)
+logic [31:0] host_resp_rdata;
+logic        host_resp_error;
+
+// Buffer management
+logic        req_buf_consume;     // Clear req_buf_valid when processed
+logic        resp_buf_consume;    // Clear resp_buf_valid when processed
 ```
 
-**Capture header fields when transitioning from IDLE to HOST_RX_ADDR_0:**
+**Buffer control logic:**
 
 ```systemverilog
-// Add to existing register update block or create new one
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        host_cap_we   <= 1'b0;
-        host_cap_size <= 2'b00;
-        host_cap_addr <= 32'h0;
-        host_cap_wdata <= 32'h0;
+        req_buf_valid  <= 1'b0;
+        resp_buf_valid <= 1'b0;
     end else begin
-        // Capture header fields when detecting host request in IDLE (from FIFO)
-        if (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
-            host_cap_we   <= rx_fifo_data[0];
-            host_cap_size <= rx_fifo_data[3:2];
+        // Set valid when RX FSM completes buffer assembly
+        if (rx_state == RX_REQ_WDATA_3 || 
+            (rx_state == RX_REQ_ADDR_3 && !req_buf_we)) begin
+            req_buf_valid <= 1'b1;
+        end else if (req_buf_consume) begin
+            req_buf_valid <= 1'b0;
         end
         
-        // Capture address bytes (see section 1.5 for full implementation)
-        // Capture write data bytes (see section 1.5 for full implementation)
+        if (rx_state == RX_RESP_RDATA_3 ||
+            (rx_state == RX_RESP_RDATA_0 && resp_buf_size == 2'b00)) begin
+            resp_buf_valid <= 1'b1;
+        end else if (resp_buf_consume) begin
+            resp_buf_valid <= 1'b0;
+        end
     end
 end
 ```
 
-#### 1.3 Update IDLE State Logic
+#### 1.3 Implement RX FSM Logic
 
-**Critical Fix:** Make IDLE state check for incoming host requests (from RX FIFO) and consume the header byte:
+**RX FSM:** Continuously accepts incoming bytes and assembles into request/response buffers:
 
 ```systemverilog
-STATE_IDLE: begin
-    // Priority 1: Check for buffered Host-initiated request from FIFO
-    if (rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
-        // Packet type 0010: Host request header detected
-        // The header byte will be consumed from FIFO (rx_fifo_ready asserted, see below)
-        // Fields will be captured in register update (see section 1.4)
-        next_state = STATE_HOST_RX_ADDR_0;  // Skip to address reception
+// RX ready signal: accept bytes unless both buffers are full
+assign rx_ready = !(req_buf_valid && resp_buf_valid);
+
+always_comb begin
+    rx_next_state = rx_state;
+    
+    case (rx_state)
+        RX_IDLE: begin
+            if (rx_valid && rx_ready) begin
+                // Decode packet type from header
+                case (rx_data[7:4])
+                    4'b0010: begin  // Host→FPGA request
+                        if (!req_buf_valid) begin  // Only if buffer available
+                            req_buf_we   = rx_data[0];
+                            req_buf_size = rx_data[3:2];
+                            rx_next_state = RX_REQ_ADDR_0;
+                        end
+                    end
+                    4'b0001, 4'b0011: begin  // CPU response (write ack or read data)
+                        if (!resp_buf_valid) begin  // Only if buffer available
+                            resp_buf_we   = rx_data[0];
+                            resp_buf_size = rx_data[3:2];
+                            if (rx_data[0]) begin
+                                // Write ack: header only, complete immediately
+                                resp_buf_valid = 1'b1;
+                            end else begin
+                                // Read response: expect data bytes
+                                rx_next_state = RX_RESP_RDATA_0;
+                            end
+                        end
+                    end
+                endcase
+            end
+        end
+        
+        // Request buffer assembly (see section 1.4 for full implementation)
+        // Response buffer assembly (see section 1.5 for full implementation)
+    endcase
+end
+```
+
+**Important:** RX FSM runs **independently** of TX FSM. It continuously accepts bytes as long as at least one buffer is available.
+
+#### 1.4 Implement RX FSM Request Buffer Assembly
+
+RX FSM assembles incoming bytes into request buffer:
+
+```systemverilog
+// Request buffer assembly states (within RX FSM always_comb block)
+RX_REQ_ADDR_0: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_addr[7:0] = rx_data;
+        rx_next_state = RX_REQ_ADDR_1;
     end
-    // Priority 2: Check for CPU-initiated request (existing)
-    else if (req) begin
-        next_state = STATE_CAPTURE;
+end
+
+RX_REQ_ADDR_1: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_addr[15:8] = rx_data;
+        rx_next_state = RX_REQ_ADDR_2;
+    end
+end
+
+RX_REQ_ADDR_2: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_addr[23:16] = rx_data;
+        rx_next_state = RX_REQ_ADDR_3;
+    end
+end
+
+RX_REQ_ADDR_3: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_addr[31:24] = rx_data;
+        if (req_buf_we) begin
+            rx_next_state = RX_REQ_WDATA_0;  // Write: get data
+        end else begin
+            // Read: buffer complete, set req_buf_valid
+            rx_next_state = RX_IDLE;
+        end
+    end
+end
+
+// Write data assembly (little-endian)
+RX_REQ_WDATA_0: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_wdata[7:0] = rx_data;
+        if (req_buf_size == 2'b00) begin
+            rx_next_state = RX_IDLE;  // Byte: done, set req_buf_valid
+        end else begin
+            rx_next_state = RX_REQ_WDATA_1;
+        end
+    end
+end
+
+RX_REQ_WDATA_1: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_wdata[15:8] = rx_data;
+        if (req_buf_size == 2'b01) begin
+            rx_next_state = RX_IDLE;  // Half: done
+        end else begin
+            rx_next_state = RX_REQ_WDATA_2;
+        end
+    end
+end
+
+RX_REQ_WDATA_2: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_wdata[23:16] = rx_data;
+        rx_next_state = RX_REQ_WDATA_3;
+    end
+end
+
+RX_REQ_WDATA_3: begin
+    if (rx_valid && rx_ready) begin
+        req_buf_wdata[31:24] = rx_data;
+        rx_next_state = RX_IDLE;  // Buffer complete, set req_buf_valid
     end
 end
 ```
 
-**Important:** The IDLE state must assert `rx_fifo_ready` when a valid host request header is detected in the FIFO, so the byte gets consumed. See section 1.9 for the updated `rx_fifo_ready` signal. The RX FIFO continuously buffers incoming UART bytes independent of the state machine state.
+#### 1.5 Implement RX FSM Response Buffer Assembly
 
-#### 1.5 Implement Host Request RX Path
-
-States to receive host request from RX FIFO. Note that `STATE_HOST_RX_HEADER` is eliminated since the header is consumed in IDLE:
+RX FSM assembles incoming CPU response bytes into response buffer:
 
 ```systemverilog
-// Start with address byte 0 (header already consumed in IDLE from FIFO)
-STATE_HOST_RX_ADDR_0: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_addr[7:0] <= rx_fifo_data;
-        next_state = STATE_HOST_RX_ADDR_1;
-    end
-end
-
-STATE_HOST_RX_ADDR_1: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_addr[15:8] <= rx_fifo_data;
-        next_state = STATE_HOST_RX_ADDR_2;
-    end
-end
-
-STATE_HOST_RX_ADDR_2: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_addr[23:16] <= rx_fifo_data;
-        next_state = STATE_HOST_RX_ADDR_3;
-    end
-end
-
-STATE_HOST_RX_ADDR_3: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_addr[31:24] <= rx_fifo_data;
-        // Address complete: check if write (need data) or read (validate & issue)
-        if (host_cap_we) begin
-            next_state = STATE_HOST_RX_WDATA_0;  // Write: receive data
+// Response buffer assembly states (within RX FSM always_comb block)
+RX_RESP_RDATA_0: begin
+    if (rx_valid && rx_ready) begin
+        resp_buf_rdata[7:0] = rx_data;
+        if (resp_buf_size == 2'b00) begin
+            rx_next_state = RX_IDLE;  // Byte: done, set resp_buf_valid
         end else begin
-            next_state = STATE_HOST_BUS_REQ;     // Read: validate & issue
+            rx_next_state = RX_RESP_RDATA_1;
         end
     end
 end
 
-// Write data states (little-endian, read from FIFO)
-STATE_HOST_RX_WDATA_0: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_wdata[7:0] <= rx_fifo_data;
-        if (host_cap_size == 2'b00) begin
-            next_state = STATE_HOST_BUS_REQ;     // Byte: done
+RX_RESP_RDATA_1: begin
+    if (rx_valid && rx_ready) begin
+        resp_buf_rdata[15:8] = rx_data;
+        if (resp_buf_size == 2'b01) begin
+            rx_next_state = RX_IDLE;  // Half: done
         end else begin
-            next_state = STATE_HOST_RX_WDATA_1;  // Half/Word: continue
+            rx_next_state = RX_RESP_RDATA_2;
         end
     end
 end
 
-STATE_HOST_RX_WDATA_1: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_wdata[15:8] <= rx_fifo_data;
-        if (host_cap_size == 2'b01) begin
-            next_state = STATE_HOST_BUS_REQ;     // Half: done
-        end else begin
-            next_state = STATE_HOST_RX_WDATA_2;  // Word: continue
-        end
+RX_RESP_RDATA_2: begin
+    if (rx_valid && rx_ready) begin
+        resp_buf_rdata[23:16] = rx_data;
+        rx_next_state = RX_RESP_RDATA_3;
     end
 end
 
-STATE_HOST_RX_WDATA_2: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_wdata[23:16] <= rx_fifo_data;
-        next_state = STATE_HOST_RX_WDATA_3;
-    end
-end
-
-STATE_HOST_RX_WDATA_3: begin
-    if (rx_fifo_valid && rx_fifo_ready) begin
-        host_cap_wdata[31:24] <= rx_fifo_data;
-        next_state = STATE_HOST_BUS_REQ;
+RX_RESP_RDATA_3: begin
+    if (rx_valid && rx_ready) begin
+        resp_buf_rdata[31:24] = rx_data;
+        rx_next_state = RX_IDLE;  // Buffer complete, set resp_buf_valid
     end
 end
 ```
 
-#### 1.5 Implement Address Validation and Bus Request
+#### 1.6 Implement TX FSM Logic
+
+**TX FSM:** Handles CPU requests and host responses independently of RX FSM:
 
 ```systemverilog
-// Address range constants
+// Address range constants for validation
 localparam RTL_PERIPH_BASE  = 32'h5000_0000;
 localparam RTL_PERIPH_LIMIT = 32'h6000_0000;
 
-// Validate address and issue bus request
-STATE_HOST_BUS_REQ: begin
-    // Check if address is in RTL peripheral range
-    if (host_cap_addr >= RTL_PERIPH_BASE && host_cap_addr < RTL_PERIPH_LIMIT) begin
-        // Valid address: issue bus request through arbiter
-        next_state = STATE_HOST_BUS_WAIT;
-    end else begin
-        // Invalid address: send error response
-        next_state = STATE_HOST_ERROR;
-    end
+always_comb begin
+    tx_next_state = tx_state;
+    req_buf_consume = 1'b0;
+    resp_buf_consume = 1'b0;
+    
+    case (tx_state)
+        TX_IDLE: begin
+            // Priority 1: Process buffered response (unlocks arbitration)
+            if (resp_buf_valid) begin
+                resp_buf_consume = 1'b1;
+                tx_next_state = TX_IDLE;  // Response consumed, back to idle
+            end
+            // Priority 2: Process buffered host request
+            else if (req_buf_valid) begin
+                // Validate address
+                if (req_buf_addr >= RTL_PERIPH_BASE && 
+                    req_buf_addr < RTL_PERIPH_LIMIT) begin
+                    // Valid: issue bus request, wait for completion
+                    tx_next_state = TX_HOST_BUS_WAIT;
+                end else begin
+                    // Invalid: send error
+                    tx_next_state = TX_HOST_ERROR;
+                end
+            end
+            // Priority 3: CPU-initiated request
+            else if (req) begin
+                tx_next_state = TX_CPU_HEADER;
+            end
+        end
+        
+        // CPU request transmission (see section 1.7)
+        // Host response transmission (see section 1.8)
+    endcase
 end
 
-STATE_HOST_BUS_WAIT: begin
+// Bus request handling state
+TX_HOST_BUS_WAIT: begin
     if (host_bus_ready) begin
-        // Bus transaction complete
-        // Capture read data if this was a read
-        if (!host_cap_we) begin
-            host_resp_rdata <= host_bus_rdata;
+        // Transaction complete
+        if (!req_buf_we) begin
+            host_resp_rdata = host_bus_rdata;  // Capture read data
         end
-        // Send response header
-        next_state = STATE_HOST_TX_HEADER;
+        host_resp_error = 1'b0;
+        req_buf_consume = 1'b1;
+        tx_next_state = TX_HOST_HEADER;  // Send response
     end
 end
 ```
 
-#### 1.6 Implement Host Response TX Path
+#### 1.7 Implement TX FSM CPU Request Path
 
-Send response back to host (packet type 0011):
+TX FSM handles CPU-initiated requests (existing functionality):
 
 ```systemverilog
-STATE_HOST_TX_HEADER: begin
-    // tx_byte set in TX mux (see below)
+// CPU request states (within TX FSM always_comb block)
+TX_CPU_HEADER: begin
     if (tx_valid && tx_ready) begin
-        if (host_cap_we) begin
-            // Write: response is just header, done
-            next_state = STATE_IDLE;
+        tx_next_state = TX_CPU_ADDR_0;
+    end
+end
+
+TX_CPU_ADDR_0, TX_CPU_ADDR_1, TX_CPU_ADDR_2: begin
+    if (tx_valid && tx_ready) begin
+        tx_next_state = tx_state + 1;  // Sequential progression
+    end
+end
+
+TX_CPU_ADDR_3: begin
+    if (tx_valid && tx_ready) begin
+        if (cpu_cap_we) begin
+            tx_next_state = TX_CPU_WDATA_0;
         end else begin
-            // Read: send data bytes
-            next_state = STATE_HOST_TX_RDATA_0;
+            tx_next_state = TX_CPU_RX_HEADER;  // Wait for response
         end
     end
 end
 
-// Read response data bytes (little-endian)
-STATE_HOST_TX_RDATA_0: begin
+TX_CPU_WDATA_0, TX_CPU_WDATA_1, TX_CPU_WDATA_2: begin
     if (tx_valid && tx_ready) begin
-        if (host_cap_size == 2'b00) begin
-            next_state = STATE_IDLE;              // Byte: done
-        end else begin
-            next_state = STATE_HOST_TX_RDATA_1;   // Half/Word: continue
-        end
+        // Check size to determine next state
+        // ... (similar to existing logic)
     end
 end
 
-STATE_HOST_TX_RDATA_1: begin
-    if (tx_valid && tx_ready) begin
-        if (host_cap_size == 2'b01) begin
-            next_state = STATE_IDLE;              // Half: done
-        end else begin
-            next_state = STATE_HOST_TX_RDATA_2;   // Word: continue
-        end
-    end
-end
-
-STATE_HOST_TX_RDATA_2: begin
-    if (tx_valid && tx_ready) begin
-        next_state = STATE_HOST_TX_RDATA_3;
-    end
-end
-
-STATE_HOST_TX_RDATA_3: begin
-    if (tx_valid && tx_ready) begin
-        next_state = STATE_IDLE;
+TX_CPU_RX_HEADER: begin
+    // Wait for RX FSM to assemble response in resp_buf
+    if (resp_buf_valid) begin
+        resp_buf_consume = 1'b1;
+        tx_next_state = TX_IDLE;  // CPU transaction complete
     end
 end
 ```
 
-#### 1.7 Implement Error Response States
+#### 1.8 Implement TX FSM Host Response Path
+
+TX FSM sends host responses after bus transaction:
 
 ```systemverilog
-STATE_HOST_ERROR: begin
-    // Send error response header (packet type 1111)
-    // tx_byte set in TX mux
+// Host response states (within TX FSM always_comb block)
+TX_HOST_HEADER: begin
     if (tx_valid && tx_ready) begin
-        next_state = STATE_HOST_ERROR_CODE;
+        if (req_buf_we) begin
+            tx_next_state = TX_IDLE;  // Write ack: header only
+        end else begin
+            tx_next_state = TX_HOST_RDATA_0;  // Read: send data
+        end
     end
 end
 
-STATE_HOST_ERROR_CODE: begin
-    // Send error code byte (0xFF = invalid address)
-    // tx_byte set in TX mux
+TX_HOST_RDATA_0: begin
     if (tx_valid && tx_ready) begin
-        next_state = STATE_IDLE;
+        if (req_buf_size == 2'b00) begin
+            tx_next_state = TX_IDLE;
+        end else begin
+            tx_next_state = TX_HOST_RDATA_1;
+        end
+    end
+end
+
+TX_HOST_RDATA_1, TX_HOST_RDATA_2, TX_HOST_RDATA_3: begin
+    if (tx_valid && tx_ready) begin
+        // Sequential progression with size checks
+        // ... (similar to CPU data transmission)
+    end
+end
+
+// Error response states
+TX_HOST_ERROR: begin
+    if (tx_valid && tx_ready) begin
+        req_buf_consume = 1'b1;
+        tx_next_state = TX_HOST_ERROR_CODE;
+    end
+end
+
+TX_HOST_ERROR_CODE: begin
+    if (tx_valid && tx_ready) begin
+        tx_next_state = TX_IDLE;
     end
 end
 ```
 
-#### 1.8 Update TX Data Multiplexer
+#### 1.9 Update TX Data Multiplexer and Control Signals
 
-Add host response TX data to the mux:
+TX data multiplexer based on TX FSM state:
 
 ```systemverilog
 always_comb begin
     tx_byte = 8'h00;
     
-    case (state)
-        // Existing CPU→Host TX states
-        STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};  // Type 0000
-        STATE_TX_ADDR_0:  tx_byte = cap_addr[7:0];
-        STATE_TX_ADDR_1:  tx_byte = cap_addr[15:8];
-        STATE_TX_ADDR_2:  tx_byte = cap_addr[23:16];
-        STATE_TX_ADDR_3:  tx_byte = cap_addr[31:24];
-        STATE_TX_WDATA_0: tx_byte = cap_wdata[7:0];
-        STATE_TX_WDATA_1: tx_byte = cap_wdata[15:8];
-        STATE_TX_WDATA_2: tx_byte = cap_wdata[23:16];
-        STATE_TX_WDATA_3: tx_byte = cap_wdata[31:24];
+    case (tx_state)
+        // CPU→Host TX states
+        TX_CPU_HEADER:  tx_byte = {4'b0000, cpu_cap_size, 1'b0, cpu_cap_we};
+        TX_CPU_ADDR_0:  tx_byte = cpu_cap_addr[7:0];
+        TX_CPU_ADDR_1:  tx_byte = cpu_cap_addr[15:8];
+        TX_CPU_ADDR_2:  tx_byte = cpu_cap_addr[23:16];
+        TX_CPU_ADDR_3:  tx_byte = cpu_cap_addr[31:24];
+        TX_CPU_WDATA_0: tx_byte = cpu_cap_wdata[7:0];
+        TX_CPU_WDATA_1: tx_byte = cpu_cap_wdata[15:8];
+        TX_CPU_WDATA_2: tx_byte = cpu_cap_wdata[23:16];
+        TX_CPU_WDATA_3: tx_byte = cpu_cap_wdata[31:24];
         
-        // NEW: Host→FPGA response TX states
-        STATE_HOST_TX_HEADER:  tx_byte = {4'b0011, host_cap_size, 1'b0, host_cap_we};  // Type 0011
-        STATE_HOST_TX_RDATA_0: tx_byte = host_resp_rdata[7:0];
-        STATE_HOST_TX_RDATA_1: tx_byte = host_resp_rdata[15:8];
-        STATE_HOST_TX_RDATA_2: tx_byte = host_resp_rdata[23:16];
-        STATE_HOST_TX_RDATA_3: tx_byte = host_resp_rdata[31:24];
+        // Host response TX states
+        TX_HOST_HEADER:  tx_byte = {4'b0011, req_buf_size, 1'b0, req_buf_we};
+        TX_HOST_RDATA_0: tx_byte = host_resp_rdata[7:0];
+        TX_HOST_RDATA_1: tx_byte = host_resp_rdata[15:8];
+        TX_HOST_RDATA_2: tx_byte = host_resp_rdata[23:16];
+        TX_HOST_RDATA_3: tx_byte = host_resp_rdata[31:24];
         
-        // NEW: Error response TX states
-        STATE_HOST_ERROR:      tx_byte = {4'b1111, host_cap_size, 1'b0, host_cap_we};  // Type 1111
-        STATE_HOST_ERROR_CODE: tx_byte = 8'hFF;  // Error code: invalid address
+        // Error response TX states
+        TX_HOST_ERROR:      tx_byte = {4'b1111, req_buf_size, 1'b0, req_buf_we};
+        TX_HOST_ERROR_CODE: tx_byte = 8'hFF;  // Error code: invalid address
         
         default: tx_byte = 8'h00;
     endcase
 end
+
+// TX valid: asserted during transmission states
+assign tx_valid = (tx_state >= TX_CPU_HEADER && tx_state <= TX_CPU_WDATA_3) ||
+                  (tx_state >= TX_HOST_HEADER && tx_state <= TX_HOST_RDATA_3) ||
+                  (tx_state == TX_HOST_ERROR) ||
+                  (tx_state == TX_HOST_ERROR_CODE);
+
+// RX ready: accept bytes unless both buffers full (see section 1.3)
+assign rx_ready = !(req_buf_valid && resp_buf_valid);
 ```
-
-#### 1.9 Update TX Valid and RX FIFO Ready Signals
-
-**Note:** With the required RX staging FIFO (see "FPGA-Side Request Buffering" section), the state machine reads from `rx_fifo_data`/`rx_fifo_valid` instead of `rx_data`/`rx_valid`.
-
-```systemverilog
-// TX valid: asserted during CPU TX states OR Host response TX states OR error states
-assign tx_valid = (state >= STATE_TX_HEADER && state <= STATE_TX_WDATA_3) ||
-                  (state >= STATE_HOST_TX_HEADER && state <= STATE_HOST_TX_RDATA_3) ||
-                  (state == STATE_HOST_ERROR) ||
-                  (state == STATE_HOST_ERROR_CODE);
-
-// RX FIFO ready: asserted when state machine is ready to consume buffered data
-// (FIFO continuously buffers from UART RX independent of this signal)
-assign rx_fifo_ready = (state >= STATE_RX_WR_HEADER && state <= STATE_RX_RDATA_3) ||
-                       (state >= STATE_HOST_RX_ADDR_0 && state <= STATE_HOST_RX_WDATA_3) ||
-                       (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data));
-```
-
-**Critical:** The state machine asserts `rx_fifo_ready` to pop bytes from the FIFO. The FIFO itself accepts incoming UART bytes whenever not full, enabling parallel buffering during CPU TX states.
 
 #### 1.10 Update Bus Master Interface Outputs
 
-Connect the host request to the bus master interface:
+Connect the buffered host request to the bus master interface:
 
 ```systemverilog
 // Bus Master Interface (Host→RTL path)
-assign host_bus_addr  = host_cap_addr;
-assign host_bus_wdata = host_cap_wdata;
-assign host_bus_we    = host_cap_we;
-assign host_bus_size  = host_cap_size;
+assign host_bus_addr  = req_buf_addr;
+assign host_bus_wdata = req_buf_wdata;
+assign host_bus_we    = req_buf_we;
+assign host_bus_size  = req_buf_size;
 
-// Assert request only in HOST_BUS_WAIT state
-assign host_bus_req = (state == STATE_HOST_BUS_WAIT);
+// Assert request only in TX_HOST_BUS_WAIT state
+assign host_bus_req = (tx_state == TX_HOST_BUS_WAIT);
 ```
 
 ---
@@ -712,6 +842,7 @@ fn test_host_initiated_read() {
     let mut dut = setup_dut();
     
     // Host sends read request to LED peripheral (0x50000000)
+    // RX FSM will assemble into req_buf
     // Packet type 0010, size=word (10), we=0 (read)
     let header = 0b0010_10_0_0;  // = 0x28
     
@@ -721,7 +852,11 @@ fn test_host_initiated_read() {
     send_rx_byte(&mut dut, 0x00);  // addr[23:16]
     send_rx_byte(&mut dut, 0x50);  // addr[31:24] = 0x50000000
     
-    // Expect FPGA to issue bus request and send response
+    // Wait for RX FSM to complete buffer assembly
+    step(&mut dut);
+    assert_eq!(dut.req_buf_valid.get(), 1);  // Request buffer ready
+    
+    // TX FSM will process req_buf, issue bus request, and send response
     // Response: packet type 0011, size=word, we=0
     assert_tx_byte(&mut dut, 0b0011_10_0_0);  // Response header
     assert_tx_byte(&mut dut, 0x00);  // rdata[7:0]
@@ -739,6 +874,7 @@ fn test_host_invalid_address() {
     let mut dut = setup_dut();
     
     // Host sends request to invalid address (0x80000000, Host DRAM range)
+    // RX FSM assembles into req_buf
     let header = 0b0010_10_0_0;  // Read word
     
     send_rx_byte(&mut dut, header);
@@ -747,7 +883,11 @@ fn test_host_invalid_address() {
     send_rx_byte(&mut dut, 0x00);
     send_rx_byte(&mut dut, 0x80);  // Invalid: Host address
     
-    // Expect error response
+    // Wait for buffer assembly
+    step(&mut dut);
+    assert_eq!(dut.req_buf_valid.get(), 1);
+    
+    // TX FSM validates address and sends error
     assert_tx_byte(&mut dut, 0b1111_10_0_0);  // Error header
     assert_tx_byte(&mut dut, 0xFF);           // Error code: invalid address
 }
@@ -841,25 +981,25 @@ fn test_host_read_led() {
 
 ### Phase 1: RTL Changes (host_bus_interface.sv)
 
-- [ ] **CRITICAL:** Instantiate RX staging FIFO (16-byte depth) for buffering incoming host requests
-- [ ] Connect FIFO input to UART `rx_data`/`rx_valid`, output to state machine
-- [ ] Change state enum from `logic [4:0]` to `logic [5:0]`
-- [ ] Add new states for host request handling (20-36, no separate HOST_RX_HEADER needed)
-- [ ] Add host request capture registers
-- [ ] Update IDLE state to check `rx_fifo_valid` and decode packet type from `rx_fifo_data`
-- [ ] Implement `is_host_initiated_request_header()` function
-- [ ] Update IDLE register capture to latch header fields when host request detected in FIFO
-- [ ] Implement HOST_RX_ADDR states (0-3) reading from `rx_fifo_data`
-- [ ] Implement HOST_RX_WDATA states (0-3) for writes, reading from `rx_fifo_data`
-- [ ] Implement address validation (RTL_PERIPH_BASE check)
-- [ ] Implement HOST_BUS_REQ and HOST_BUS_WAIT states
-- [ ] Implement HOST_TX_HEADER state
-- [ ] Implement HOST_TX_RDATA states (0-3) for reads
-- [ ] Implement HOST_ERROR states (header, code)
-- [ ] Update TX data mux to include host response cases
-- [ ] Update `tx_valid` signal to include host TX states
-- [ ] Update `rx_fifo_ready` signal to include host RX states AND IDLE host request detection
-- [ ] Update `host_bus_*` output assignments (remove hardcoded zeros)
+- [ ] **CRITICAL:** Define dual state machine types: `rx_state_t` and `tx_state_t`
+- [ ] Add RX FSM states for request/response buffer assembly
+- [ ] Add TX FSM states for CPU requests and host responses
+- [ ] Add request buffer registers (`req_buf_addr`, `req_buf_wdata`, `req_buf_valid`, etc.)
+- [ ] Add response buffer registers (`resp_buf_rdata`, `resp_buf_valid`, etc.)
+- [ ] Implement RX FSM combinational logic (packet type decoding in RX_IDLE)
+- [ ] Implement RX FSM request buffer assembly states (RX_REQ_ADDR_*, RX_REQ_WDATA_*)
+- [ ] Implement RX FSM response buffer assembly states (RX_RESP_RDATA_*)
+- [ ] Implement buffer valid/consume control logic
+- [ ] Implement TX FSM combinational logic (TX_IDLE with priority handling)
+- [ ] Implement TX FSM CPU request transmission states
+- [ ] Implement TX FSM host response transmission states
+- [ ] Implement address validation in TX_IDLE (RTL_PERIPH_BASE check)
+- [ ] Implement TX_HOST_BUS_WAIT state for bus transaction
+- [ ] Implement TX_HOST_ERROR states (header, code)
+- [ ] Update TX data mux based on `tx_state`
+- [ ] Update `tx_valid` signal based on `tx_state`
+- [ ] Update `rx_ready` signal: `!(req_buf_valid && resp_buf_valid)`
+- [ ] Update `host_bus_*` output assignments (driven from req_buf)
 - [ ] Run verilator lint check
 
 ### Phase 2: Rust Changes (cpu-sim/src/sim.rs)
@@ -882,11 +1022,14 @@ fn test_host_read_led() {
 
 ### Phase 3: Testing
 
-- [ ] **CRITICAL:** Add `test_host_request_buffering_during_cpu_tx` to validate RX FIFO buffering
+- [ ] **CRITICAL:** Add `test_dual_fsm_parallel_operation` to validate independent RX/TX FSMs
+- [ ] Add `test_request_buffering_during_cpu_tx` to verify request buffer assembly during TX
+- [ ] Add `test_response_buffering_during_host_request` to verify response buffer assembly
+- [ ] Add `test_buffer_priority` to verify response processed before request when both buffered
 - [ ] Add `test_host_initiated_read` to `host_bus_interface_test.rs`
 - [ ] Add `test_host_initiated_write` to `host_bus_interface_test.rs`
 - [ ] Add `test_host_invalid_address` to `host_bus_interface_test.rs`
-- [ ] Add `test_simultaneous_bidirectional` to verify parallel CPU TX + buffered host RX
+- [ ] Add `test_both_buffers_full_backpressure` to verify rx_ready deassertion
 - [ ] Create `cpu-sim/tests/test_host_bus_requests.rs`
 - [ ] Add `test_host_write_led` (end-to-end test using `SimulatorView`)
 - [ ] Add `test_host_read_led` (end-to-end test using `SimulatorView`)
@@ -900,118 +1043,138 @@ fn test_host_read_led() {
 
 ---
 
-## Testing Notes
+## Dual-FSM Architecture Details
 
-### FPGA-Side Request Buffering (REQUIRED)
+### Design Rationale
 
-**Critical Design Requirement:** The FPGA **MUST** buffer incoming host requests even while processing outgoing CPU-initiated requests. This is non-negotiable because:
+**Critical Design Requirement:** The FPGA must support **true full-duplex bidirectional communication** using a dual-FSM architecture:
 
 1. **No Flow Control in UART:** In the real FPGA, UART has no hardware flow control mechanism. The host cannot pause transmission when the FPGA is busy.
-2. **Data Loss Prevention:** Without buffering, incoming host request bytes would be lost if they arrive while the FPGA is transmitting a CPU request.
+2. **Data Loss Prevention:** Without buffer-based parallelism, incoming packets would be lost if they arrive while the FPGA is transmitting.
 3. **Full-Duplex Operation:** UART is physically full-duplex (separate TX/RX lines), so simultaneous bidirectional communication is expected.
+4. **Deadlock Prevention:** Single-FSM designs create deadlocks when both sides wait for responses simultaneously.
 
-**Required Architecture:**
+### Dual-FSM Architecture
 
-The FPGA RTL must implement a **host request staging buffer** (RX FIFO or equivalent) that:
-- Continuously accepts and buffers incoming bytes from the UART RX interface, independent of the state machine state
-- Provides buffered data to the host request state machine when it's ready to process
-- Has sufficient depth to hold at least one complete host request packet (minimum 9 bytes: header + addr + wdata)
+**RX FSM (Independent Receive Path):**
+- Continuously accepts incoming bytes from UART via `rx_data`/`rx_valid`/`rx_ready`
+- Assembles bytes into **request buffer** (Host→FPGA packets, type 0010)
+- Assembles bytes into **response buffer** (CPU response packets, type 0001/0011)
+- Asserts `rx_ready = 0` only when **both** buffers are full (backpressure)
+- Operates independently of TX FSM state
 
-**Implementation Approach:**
+**TX FSM (Independent Transmit Path):**
+- Monitors `req` signal for CPU-initiated requests
+- Monitors `req_buf_valid` for buffered host requests ready to process
+- Monitors `resp_buf_valid` for buffered CPU responses
+- Transmits CPU requests and host responses via `tx_data`/`tx_valid`/`tx_ready`
+- Operates independently of RX FSM state
+
+**Key Parallel Operation:**
+
+```
+Time    RX FSM State        TX FSM State           Buffer Status
+----    ----------------    -------------------    -------------
+t=0     RX_IDLE            TX_CPU_ADDR_2          req=empty, resp=empty
+t=1     RX_REQ_ADDR_0      TX_CPU_ADDR_3          req=filling, resp=empty
+t=2     RX_REQ_ADDR_1      TX_CPU_WDATA_0         req=filling, resp=empty
+t=3     RX_REQ_ADDR_2      TX_CPU_WDATA_1         req=filling, resp=empty
+t=4     RX_REQ_ADDR_3      TX_CPU_RX_HEADER       req=valid, resp=empty
+t=5     RX_IDLE            TX_IDLE                req=valid, resp=empty
+t=6     RX_IDLE            TX_HOST_BUS_WAIT       req=processing, resp=empty
+t=7     RX_RESP_RDATA_0    TX_HOST_BUS_WAIT       req=processing, resp=filling
+t=8     RX_IDLE            TX_HOST_HEADER         req=consuming, resp=valid
+```
+
+**Buffer Priority Handling:**
+
+When both buffers are full (`req_buf_valid && resp_buf_valid`):
+1. TX FSM **MUST** process response first (unlocks arbitration for pending CPU request)
+2. Then process buffered host request (may trigger new bus transaction)
+3. This prevents arbitration deadlock
+
+### Implementation Example
+
+**Dual-FSM State Updates:**
 
 ```systemverilog
-// Add RX staging FIFO for host requests
-logic [7:0] rx_fifo_data;
-logic       rx_fifo_valid;
-logic       rx_fifo_ready;
-logic       rx_fifo_full;
-logic       rx_fifo_empty;
-
-// Instantiate small FIFO (16-byte depth recommended)
-fifo_sync #(
-    .DATA_WIDTH(8),
-    .DEPTH(16)
-) rx_staging_fifo (
-    .clk(clk),
-    .rst_n(rst_n),
-    // Input: Directly from UART RX
-    .wr_data(rx_data),
-    .wr_valid(rx_valid),
-    .wr_ready(/* back to UART - should rarely deassert */),
-    .full(rx_fifo_full),
-    // Output: To host_bus_interface state machine
-    .rd_data(rx_fifo_data),
-    .rd_valid(rx_fifo_valid),
-    .rd_ready(rx_fifo_ready),
-    .empty(rx_fifo_empty)
-);
-
-// State machine reads from FIFO instead of direct rx_data/rx_valid
-// This allows buffering during CPU→Host TX states
-STATE_IDLE: begin
-    if (rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) begin
-        // Process buffered host request
-        next_state = STATE_HOST_RX_ADDR_0;
-    end else if (req) begin
-        // CPU request (existing logic)
-        next_state = STATE_CAPTURE;
+// Separate always_ff blocks for each FSM
+always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        rx_state <= RX_IDLE;
+        tx_state <= TX_IDLE;
+    end else begin
+        rx_state <= rx_next_state;
+        tx_state <= tx_next_state;
     end
 end
 
-// Update rx_ready to rx_fifo_ready throughout state machine
-assign rx_fifo_ready = (state == STATE_IDLE && rx_fifo_valid && is_host_initiated_request_header(rx_fifo_data)) ||
-                       (state >= STATE_HOST_RX_ADDR_0 && state <= STATE_HOST_RX_WDATA_3);
+// RX FSM runs independently
+always_comb begin
+    rx_next_state = rx_state;
+    case (rx_state)
+        RX_IDLE: if (rx_valid && rx_ready) /* decode packet type */
+        // ... RX state transitions independent of TX FSM ...
+    endcase
+end
+
+// TX FSM runs independently
+always_comb begin
+    tx_next_state = tx_state;
+    case (tx_state)
+        TX_IDLE: begin
+            if (resp_buf_valid) /* process response (priority) */
+            else if (req_buf_valid) /* process request */
+            else if (req) /* CPU request */
+        end
+        // ... TX state transitions independent of RX FSM ...
+    endcase
+end
 ```
 
-**Parallel Operation Example:**
+### Testing Requirements
 
-1. **t=0:** FPGA is in `STATE_TX_ADDR_2`, transmitting CPU request to host
-2. **t=1:** Host sends a host-initiated request header byte → enters RX FIFO
-3. **t=2-6:** FPGA continues CPU TX; host request bytes continue buffering in FIFO
-4. **t=7:** FPGA completes CPU TX, returns to `STATE_IDLE`
-5. **t=8:** FPGA detects buffered host request in FIFO, transitions to `STATE_HOST_RX_ADDR_0`
-6. **t=9+:** FPGA processes host request from FIFO, issues bus transaction, sends response
-
-**Testing Requirements:**
-
-All RTL tests for host-initiated requests must validate buffering behavior:
+All RTL tests must validate dual-FSM parallel operation:
 
 ```rust
 #[test]
-fn test_host_request_buffering_during_cpu_tx() {
+fn test_dual_fsm_parallel_operation() {
     let mut dut = setup_dut();
     
-    // Start a CPU→Host transaction
+    // Start CPU→Host transaction (TX FSM active)
     dut.req.set(1);
     dut.addr.set(0x50000000);
     step(&mut dut);
     
-    // While FPGA is transmitting CPU request (STATE_TX_HEADER, etc.),
-    // inject a host request into RX
-    for _ in 0..3 {  // Let CPU TX advance a few states
-        step(&mut dut);
+    // While TX FSM transmits, inject host request (RX FSM assembles)
+    for _ in 0..3 {
+        step(&mut dut);  // TX progresses: TX_HEADER → TX_ADDR_*
     }
     
-    // Send complete host request while CPU TX is still active
-    send_rx_byte(&mut dut, 0b0010_10_0_0);  // Host read header
+    // Send host request bytes (RX FSM assembles into req_buf)
+    send_rx_byte(&mut dut, 0b0010_10_0_0);  // Header
     send_rx_byte(&mut dut, 0x00);  // addr[7:0]
     send_rx_byte(&mut dut, 0x00);  // addr[15:8]
     send_rx_byte(&mut dut, 0x00);  // addr[23:16]
     send_rx_byte(&mut dut, 0x51);  // addr[31:24]
     
-    // Wait for CPU TX to complete
-    wait_for_idle(&mut dut);
+    // Verify: req_buf_valid should be asserted while TX still active
+    assert_eq!(dut.req_buf_valid.get(), 1);
     
-    // FPGA should now process the buffered host request
-    // Expect host response header (type 0011)
+    // Wait for CPU TX to complete
+    wait_for_state(&mut dut, TX_IDLE);
+    
+    // TX FSM should now process buffered request
+    wait_for_state(&mut dut, TX_HOST_BUS_WAIT);
+    
+    // Expect host response transmitted
     assert_tx_byte(&mut dut, 0b0011_10_0_0);
-    // ... assert response data bytes ...
 }
 ```
 
 **Why This Is Not Optional:**
 
-The Rust simulator can work around missing FPGA buffering by carefully sequencing requests, but the **real FPGA deployment cannot**. Host software running on a PC will send UART bytes continuously without knowledge of FPGA internal state. The FPGA must handle this correctly or data will be silently dropped.
+The Rust simulator can work around a single-FSM design by carefully sequencing requests, but the **real FPGA deployment cannot**. Host software running on a PC will send UART bytes continuously without knowledge of FPGA internal state. The dual-FSM architecture is the only correct solution for hardware deployment.
 
 ---
 
