@@ -128,7 +128,7 @@ The system follows a **simple, reliable** design:
 - LED Controller: `0x50000000 - 0x5000000F`
 - Clock Peripheral: `0x51000000 - 0x5100000F`
 - UART Controller: `0x52000000 - 0x520000FF`
-- Reserved RTL: `0x51000010 - 0x51FFFFFF` and `0x52000100 - 0x5FFFFFFF`
+- Reserved RTL: `0x50000010 - 0x50FFFFFF`, `0x51000010 - 0x51FFFFFF`, and `0x52000100 - 0x5FFFFFFF`
 
 All other addresses in `0x50000000 - 0x5FFFFFFF` are reserved/unmapped RTL space. Reads from unmapped addresses return zero; writes are dropped.
 
