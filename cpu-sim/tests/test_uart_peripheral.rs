@@ -284,8 +284,8 @@ fn test_uart_tx_fifo_full() {
     ];
 
     // Write 8 bytes to TX FIFO as fast as possible
-    for i in 0..8 {
-        instructions.push(addi(14, 0, i as i32)); // x14 = byte value
+    for i in 0i32..8 {
+        instructions.push(addi(14, 0, i)); // x14 = byte value
         instructions.push(sw(15, 14, UART_TXDATA_OFFSET as i32)); // Write to TXDATA
     }
 

@@ -7,11 +7,7 @@ use std::path::Path;
 use std::time::Instant;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
-
-/// RTL peripheral address range (for host-initiated request validation)
-const RTL_PERIPH_BASE: u32 = 0x5000_0000;
-const RTL_PERIPH_LIMIT: u32 = 0x6000_0000;
+use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END, RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
 
 /// Host Bus Interface packet types (upper 4 bits of header byte)
 mod packet_type {
@@ -515,6 +511,23 @@ impl<'a> SimulatorView<'a> {
         self.bus.memory.read_word(addr)
     }
 
+    /// Write a 32-bit word to memory (little-endian)
+    ///
+    /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
+    /// Out-of-bounds writes are logged as warnings and ignored.
+    pub fn write_word(&mut self, addr: u32, value: u32) {
+        if !is_valid_dram_range(addr, 4) {
+            log::warn!(
+                "write_word: Address 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), ignoring write",
+                addr,
+                DRAM_BASE,
+                DRAM_END
+            );
+            return;
+        }
+        self.bus.memory.write_word(addr, value);
+    }
+
     /// Register a custom device on the system bus
     ///
     /// This allows user code to register custom peripherals that will be
@@ -693,6 +706,9 @@ where
     pub(crate) host_bus_response_queue: VecDeque<HostBusResponse>,
     current_host_request: Option<HostBusRequest>,
     host_response_rdata: u32, // Accumulated read data from host response
+    // Protocol coordination - ensure clean state transitions
+    host_bus_idle_cycles: u32, // Count cycles since both handlers went idle
+    host_bus_stall_cycles: u32, // Count cycles host TX is stalled waiting for RTL rx_ready
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -796,6 +812,8 @@ where
             host_bus_response_queue: VecDeque::new(),
             current_host_request: None,
             host_response_rdata: 0,
+            host_bus_idle_cycles: 0,
+            host_bus_stall_cycles: 0,
             hung_detector,
         })
     }
@@ -845,6 +863,35 @@ where
     ///     0011 = FPGA response to Host request (FPGA → Host TX)
     ///     1111 = Error response (FPGA → Host TX)
     fn handle_host_bus_interface(&mut self) {
+        // Detect deadlock: both sides trying to send simultaneously
+        // This happens when tx_valid=1 and rx_valid=1 but neither is accepting
+        if self.cpu.host_tx_valid != 0
+            && self.cpu.host_rx_valid != 0
+            && self.cpu.host_tx_ready == 0
+            && self.cpu.host_rx_ready == 0
+        {
+            // Deadlock detected! Host must back off since CPU has priority
+            // (CPU needs to keep executing, host requests can be deferred)
+            if !matches!(self.host_bus_host_state, HostBusHostState::Idle) {
+                // Abort host request and requeue
+                if let Some(request) = self.current_host_request.take() {
+                    self.host_bus_request_queue.push_front(request);
+                }
+                self.host_bus_host_state = HostBusHostState::Idle;
+                self.host_bus_stall_cycles = 0;
+            }
+        }
+
+        // Track idle cycles for protocol coordination
+        let both_idle = matches!(self.host_bus_state, HostBusState::Idle)
+            && matches!(self.host_bus_host_state, HostBusHostState::Idle);
+
+        if both_idle {
+            self.host_bus_idle_cycles = self.host_bus_idle_cycles.saturating_add(1);
+        } else {
+            self.host_bus_idle_cycles = 0;
+        }
+
         // Handle CPU-initiated requests (receiving from CPU, sending responses)
         self.handle_cpu_initiated_requests();
 
@@ -1015,15 +1062,35 @@ where
                     return;
                 }
 
+                // Also check if FPGA is about to send a new CPU request
+                // (tx_valid=1 means FPGA is sending, we shouldn't start host request)
+                if self.cpu.host_tx_valid != 0 {
+                    return;
+                }
+
+                // Require at least 5 idle cycles before starting a new host request
+                // This ensures the RTL has fully transitioned to IDLE state and is
+                // ready to accept host requests. In busy-loop scenarios, CPU requests
+                // come frequently, so we need a longer idle period to avoid conflicts.
+                const MIN_IDLE_CYCLES: u32 = 5;
+                if self.host_bus_idle_cycles < MIN_IDLE_CYCLES {
+                    return;
+                }
+
                 // Check if we have a queued request to send
                 if let Some(request) = self.host_bus_request_queue.pop_front() {
                     self.current_host_request = Some(request);
                     self.host_response_rdata = 0;
+                    self.host_bus_stall_cycles = 0;
                     self.host_bus_host_state = HostBusHostState::TxHeader;
                 }
             }
 
             HostBusHostState::TxHeader => {
+                // Send header byte
+                // We only reach this state if RTL was ready when we started,
+                // but we still need to handle the case where it becomes un-ready
+
                 let request = self.current_host_request.as_ref().unwrap();
                 // Send header with packet type 0010 (host-initiated request)
                 let header = (packet_type::HOST_REQUEST << 4)
@@ -1032,14 +1099,37 @@ where
 
                 self.cpu.host_rx_valid = 1;
                 self.cpu.host_rx_data = header;
-                self.cpu.host_tx_ready = 0;
+                self.cpu.host_tx_ready = 0; // Block CPU while we're sending
 
+                // Check if RTL accepted the header
                 if self.cpu.host_rx_ready != 0 {
+                    // Header accepted! Continue with address bytes
                     self.host_bus_host_state = HostBusHostState::TxAddr { byte_idx: 0 };
+                    self.host_bus_stall_cycles = 0;
+                } else {
+                    // RTL not ready - this shouldn't happen often since we checked before starting
+                    // But if CPU urgently needs the bus, abort
+                    self.host_bus_stall_cycles += 1;
+
+                    const MAX_STALL_CYCLES: u32 = 10;
+                    if self.cpu.host_tx_valid != 0 || self.host_bus_stall_cycles > MAX_STALL_CYCLES
+                    {
+                        // Abort and requeue
+                        if let Some(request) = self.current_host_request.take() {
+                            self.host_bus_request_queue.push_front(request);
+                        }
+                        self.host_bus_host_state = HostBusHostState::Idle;
+                        self.host_bus_stall_cycles = 0;
+                        self.cpu.host_rx_valid = 0;
+                        self.cpu.host_tx_ready = 1;
+                        return;
+                    }
                 }
             }
 
             HostBusHostState::TxAddr { byte_idx } => {
+                // Once we've started sending (past TxHeader), we must complete the packet
+                // to avoid protocol corruption. Don't abort mid-packet.
                 let request = self.current_host_request.as_ref().unwrap();
                 // Send address byte (little-endian)
                 let byte = ((request.addr >> (byte_idx * 8)) & 0xFF) as u8;
@@ -1066,6 +1156,8 @@ where
             }
 
             HostBusHostState::TxWdata { byte_idx } => {
+                // Once we've started sending (past TxHeader), we must complete the packet
+                // to avoid protocol corruption. Don't abort mid-packet.
                 let request = self.current_host_request.as_ref().unwrap();
                 // Send write data byte (little-endian)
                 let byte = ((request.wdata >> (byte_idx * 8)) & 0xFF) as u8;
@@ -1145,10 +1237,10 @@ where
 
                 if self.cpu.host_tx_valid != 0 {
                     let error_code = self.cpu.host_tx_data;
-                    // Map error code to FpgaError
+                    // Map error code to FpgaError (matches RTL: 0xFF = invalid address)
                     let fpga_error = match error_code {
-                        0x01 => FpgaError::InvalidAddress,
-                        0x02 => FpgaError::Timeout,
+                        0xFF => FpgaError::InvalidAddress,
+                        0xFE => FpgaError::Timeout,
                         _ => FpgaError::ProtocolError,
                     };
                     self.host_bus_response_queue
@@ -1284,6 +1376,8 @@ where
         self.host_bus_response_queue.clear();
         self.current_host_request = None;
         self.host_response_rdata = 0;
+        self.host_bus_idle_cycles = 0;
+        self.host_bus_stall_cycles = 0;
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
@@ -1325,11 +1419,13 @@ where
                 let fsm_state = self.cpu.debug_fsm_state;
                 let state_name = Self::fsm_state_name(fsm_state);
                 println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | host_tx_valid={} host_rx_ready={} | instr_complete={}",
+                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | tx_v={} tx_r={} rx_v={} rx_r={} | complete={}",
                     self.cycle_count,
                     state_name,
                     self.cpu.debug_current_pc,
                     self.cpu.host_tx_valid,
+                    self.cpu.host_tx_ready,
+                    self.cpu.host_rx_valid,
                     self.cpu.host_rx_ready,
                     self.cpu.instr_complete
                 );
