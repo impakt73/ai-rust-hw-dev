@@ -22,7 +22,10 @@ pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use dma::Dma;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult, SimulatorView};
+pub use sim::{
+    FpgaError, HostBusRequest, HostBusResponse, SimulationResult, SimulationStepResult,
+    SimulatorView,
+};
 pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
@@ -140,6 +143,9 @@ impl InteractiveSimulator {
                 &mut self.simulator.bus,
                 &mut self.simulator.hung_detector,
                 &self.simulator.cpu,
+                &mut self.simulator.host_bus_request_queue,
+                &mut self.simulator.host_bus_response_queue,
+                &self.simulator.host_bus_host_state,
             );
             load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
         };
@@ -508,7 +514,14 @@ where
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback
     let entry_point = {
-        let mut view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector, &sim.cpu);
+        let mut view = SimulatorView::new(
+            &mut sim.bus,
+            &mut sim.hung_detector,
+            &sim.cpu,
+            &mut sim.host_bus_request_queue,
+            &mut sim.host_bus_response_queue,
+            &sim.host_bus_host_state,
+        );
         setup_callback(&mut view)?
     };
 
@@ -520,7 +533,14 @@ where
 
     // Execute optional post-execution callback with read-only SimulatorView and result
     if let Some(callback) = termination_callback {
-        let view = SimulatorView::new(&mut sim.bus, &mut sim.hung_detector, &sim.cpu);
+        let view = SimulatorView::new(
+            &mut sim.bus,
+            &mut sim.hung_detector,
+            &sim.cpu,
+            &mut sim.host_bus_request_queue,
+            &mut sim.host_bus_response_queue,
+            &sim.host_bus_host_state,
+        );
         callback(&view, &result);
     }
 

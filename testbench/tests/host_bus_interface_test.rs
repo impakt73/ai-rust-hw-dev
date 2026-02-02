@@ -1,11 +1,21 @@
 // Host Bus Interface Tests
 // Comprehensive testing of the host_bus_interface RTL module
 //
-// Protocol (Little-Endian):
-//   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
-//   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
-//   Write Response: [ack]                                             (1 byte, 0x00)
-//   Read Response:  [data...]                                         (1-4 bytes, no header)
+// Extended Header Protocol (Little-Endian):
+//   Header format: {packet_type[3:0], size[1:0], 1'b0, we}
+//   Packet types:
+//     0000 = CPU-initiated request (FPGA → Host TX)
+//     0001 = Host response to CPU request (Host → FPGA RX)
+//     0010 = Host-initiated request (Host → FPGA RX)
+//     0011 = FPGA response to Host request (FPGA → Host TX)
+//     1111 = Error response (FPGA → Host TX)
+//
+//   CPU-initiated request (type 0000):
+//     Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
+//     Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
+//   Host response to CPU (type 0001):
+//     Write Response: [header]                                          (1 byte)
+//     Read Response:  [header][data...]                                 (2-5 bytes)
 
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
@@ -303,7 +313,13 @@ fn test_read_word_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response with read data = 0xCAFEBABE (little-endian: LSB first, no header)
+    // Send response header: packet_type=0001, size=10, 0, we=0 -> 0x18
+    assert!(
+        send_rx_byte(&mut dut, 0x18, 100),
+        "Failed to send response header"
+    );
+
+    // Send read data = 0xCAFEBABE (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xBE, 100),
         "Failed to send RData[7:0]"
@@ -348,7 +364,13 @@ fn test_read_halfword_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 2 bytes data (little-endian: LSB first, no header)
+    // Send response header: packet_type=0001, size=01, 0, we=0 -> 0x14
+    assert!(
+        send_rx_byte(&mut dut, 0x14, 100),
+        "Failed to send response header"
+    );
+
+    // Send response: 2 bytes data (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xCD, 100),
         "Failed to send RData[7:0]"
@@ -388,7 +410,13 @@ fn test_read_byte_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 1 byte data (little-endian: no header for read response)
+    // Send response header: packet_type=0001, size=00, 0, we=0 -> 0x10
+    assert!(
+        send_rx_byte(&mut dut, 0x10, 100),
+        "Failed to send response header"
+    );
+
+    // Send response: 1 byte data
     assert!(
         send_rx_byte(&mut dut, 0x42, 100),
         "Failed to send RData[7:0]"

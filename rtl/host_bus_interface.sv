@@ -86,8 +86,8 @@ module host_bus_interface (
         STATE_TX_WDATA_2  = 6'd9,   // WData[23:16] (word writes only)
         STATE_TX_WDATA_3  = 6'd10,  // WData[31:24] (word writes only)
         
-        // RX States for CPU-initiated requests (variable length: 1-5 bytes)
-        STATE_RX_HEADER   = 6'd11,  // Response header byte (new)
+        // RX States for CPU-initiated requests (extended header format)
+        STATE_RX_HEADER   = 6'd11,  // Response header byte (packet type 0001)
         STATE_RX_RDATA_0  = 6'd12,  // RData[7:0] (little-endian: LSB first)
         STATE_RX_RDATA_1  = 6'd13,  // RData[15:8] (halfword/word reads)
         STATE_RX_RDATA_2  = 6'd14,  // RData[23:16] (word reads only)
@@ -183,7 +183,7 @@ module host_bus_interface (
     // Helper function to identify host-initiated request header
     // Host-initiated request headers use packet type 0010 in bits [7:4]
     function logic is_host_initiated_request_header(input logic [7:0] data);
-        return (data[7:4] == 4'b0010);
+        is_host_initiated_request_header = (data[7:4] == 4'b0010);
     endfunction
     
     always_comb begin
@@ -231,7 +231,7 @@ module host_bus_interface (
                         // Write: send data bytes in little-endian order
                         next_state = STATE_TX_WDATA_0;  // Always start with LSB
                     end else begin
-                        // Read: no data, go to RX phase - wait for response header
+                        // Read: no data, wait for response header
                         next_state = STATE_RX_HEADER;
                     end
                 end
@@ -241,8 +241,8 @@ module host_bus_interface (
             STATE_TX_WDATA_0: begin  // All writes start here (LSB)
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b00:   next_state = STATE_RX_HEADER;    // Byte: done after 1 byte
-                        default: next_state = STATE_TX_WDATA_1;  // Half/Word: continue
+                        2'b00:   next_state = STATE_RX_HEADER;       // Byte: done after 1 byte
+                        default: next_state = STATE_TX_WDATA_1;      // Half/Word: continue
                     endcase
                 end
             end
@@ -250,8 +250,8 @@ module host_bus_interface (
             STATE_TX_WDATA_1: begin  // Half and Word
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b01:   next_state = STATE_RX_HEADER;    // Half: done after 2 bytes
-                        default: next_state = STATE_TX_WDATA_2;  // Word: continue
+                        2'b01:   next_state = STATE_RX_HEADER;       // Half: done after 2 bytes
+                        default: next_state = STATE_TX_WDATA_2;      // Word: continue
                     endcase
                 end
             end
@@ -265,10 +265,12 @@ module host_bus_interface (
             end
             
             // --------------------------------------------------------
-            // RX Phase: Header + Data (for all responses with extended header)
-            // Data received in little-endian order (LSB first)
+            // RX Phase for CPU-initiated requests (extended header format)
+            // Response header: [packet_type=0001][size][0][we]
+            // Write response: header only (1 byte)
+            // Read response: header + data (2-5 bytes)
             // --------------------------------------------------------
-            STATE_RX_HEADER: begin  // Response header byte (type 0001)
+            STATE_RX_HEADER: begin  
                 if (rx_valid && rx_ready) begin
                     if (cap_we) begin
                         // Write response: header only
@@ -566,14 +568,20 @@ module host_bus_interface (
                          ((state >= STATE_RX_RDATA_0) && (state <= STATE_RX_RDATA_3));
     
     // Host-initiated request RX (receiving request from host)
+    // rx_ready is only asserted in IDLE if we're actually ready to start receiving a host request
+    // This avoids breaking backward compatibility with existing tests
     assign in_host_rx_phase = (state == STATE_HOST_RX_HEADER) ||
-                              ((state >= STATE_HOST_RX_ADDR_0) && (state <= STATE_HOST_RX_WDATA_3)) ||
-                              (state == STATE_IDLE); // Also in IDLE to detect incoming host requests
+                              ((state >= STATE_HOST_RX_ADDR_0) && (state <= STATE_HOST_RX_WDATA_3));
+    
+    // In IDLE state, we accept RX data ONLY if it's a host-initiated request header (packet type 0010)
+    // This is checked combinationally - if rx_valid and header matches, we'll transition
+    logic idle_and_host_request_incoming;
+    assign idle_and_host_request_incoming = (state == STATE_IDLE) && rx_valid && is_host_initiated_request_header(rx_data);
     
     // ============================================================
     // RX Ready Signal
     // ============================================================
-    assign rx_ready = in_rx_phase || in_host_rx_phase;
+    assign rx_ready = in_rx_phase || in_host_rx_phase || idle_and_host_request_incoming;
     
     // ============================================================
     // RX Data Capture (Little-Endian: LSB first)
