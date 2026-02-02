@@ -333,10 +333,11 @@ The Host state machine is designed for **non-blocking request handling**. Even w
     │  send response) │  inline)  │  still polls RX)    │
     └─────────────────┘           └─────────────────────┘
 
-Note: The bidirectional arrow between states indicates that while in 
-AWAITING_HOST_RESP, if a CPU request arrives, it is processed inline
-(handle CPU request, send response) before resuming the wait for the 
-Host response. This is NOT a state transition but inline processing.
+Note: The bidirectional arrow represents **nested/interleaved** handling within
+AWAITING_HOST_RESP. When a CPU request arrives while waiting, the Host temporarily
+services it (receive, execute, respond) and then resumes waiting. This can be
+thought of as a sub-routine or nested operation, not a full state transition to
+PROCESSING_CPU_REQUEST and back.
 ```
 
 **FPGA Side State Machine (host_bus_interface):**
@@ -1236,8 +1237,11 @@ fn test_host_request_invalid_address_error() {
 > is active, and only process the buffered Host request after the CPU transaction completes.
 >
 > **Note on Asymmetric Design:** The Host side uses different behavior (immediate processing
-> of incoming CPU requests, no buffering). Host-side behavior is tested in the CPU-Sim
-> integration tests in Section 7.2.
+> of incoming CPU requests, no buffering). Host-side non-blocking behavior is validated in
+> the CPU-Sim integration tests:
+> - Section 7.2.1 "Simultaneous Requests" category (3 tests)
+> - Specifically, tests must verify that the Host can receive and process a CPU request
+>   while waiting for a response to its own outstanding Host request
 
 ```rust
 #[test]
@@ -1329,7 +1333,47 @@ Create new test file: `cpu-sim/tests/test_host_bus_requests.rs`
 | **Simultaneous Requests** | 3 | Host processes incoming CPU requests immediately while waiting for own response (asymmetric handling, prevents deadlock) |
 | **Error Handling** | 3 | Invalid addresses, pending check |
 
-#### 7.2.2 End-to-End LED Test (from problem statement)
+#### 7.2.2 Sample Test: Host-Side Non-Blocking Request Handling (Critical for Deadlock Prevention)
+
+This test validates the Host-side asymmetric behavior that prevents deadlocks:
+
+```rust
+/// Test that Host can process incoming CPU requests while waiting for
+/// its own Host-initiated request response (non-blocking, asymmetric design).
+///
+/// This is the critical test for deadlock prevention. If the Host blocked
+/// waiting for its own response without processing incoming CPU requests,
+/// the system would deadlock when both sides send requests simultaneously.
+#[test]
+fn test_host_processes_cpu_request_while_waiting_for_own_response() {
+    // Setup: Create simulation with CPU program that sends DRAM request
+    // and Host prepared to send request simultaneously
+    
+    // Step 1: Host sends Host-initiated request to LED (0x50000000)
+    // sim.send_bus_request(HostBusRequest::read_word(0x50000000));
+    
+    // Step 2: Simultaneously, CPU sends request to DRAM (triggers CPU→Host packet)
+    // Run CPU until it sends a DRAM access request
+    
+    // Step 3: CRITICAL - While Host is waiting for its LED response,
+    // verify that Host IMMEDIATELY processes the incoming CPU request
+    // (not buffered, not delayed)
+    
+    // Step 4: Host handles CPU DRAM request and sends response
+    // This unblocks the FPGA bus
+    
+    // Step 5: FPGA can now process the buffered Host request from its RX FIFO
+    // and sends the LED response
+    
+    // Step 6: Host receives its LED response
+    // let response = sim.receive_bus_response();
+    // assert!(response.is_some(), "Host should receive LED response");
+    
+    // Key assertion: No deadlock occurred, both transactions completed
+}
+```
+
+#### 7.2.3 End-to-End LED Test (from problem statement)
 
 ```rust
 /// End-to-end test verifying bi-directional host bus communication
