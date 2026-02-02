@@ -2,14 +2,27 @@ use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
+use std::collections::VecDeque;
 use std::path::Path;
 use std::time::Instant;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
-/// Host Bus Interface packet processing state
+/// RTL peripheral address range (host can only access this range)
+const RTL_PERIPH_BASE: u32 = 0x5000_0000;
+const RTL_PERIPH_LIMIT: u32 = 0x6000_0000;
+
+/// Packet types for the extended header format
+const PACKET_TYPE_CPU_REQUEST: u8 = 0x00; // CPU→Host request
+const PACKET_TYPE_HOST_RESPONSE: u8 = 0x10; // Host→CPU response
+const PACKET_TYPE_HOST_REQUEST: u8 = 0x20; // Host→FPGA request
+const PACKET_TYPE_FPGA_RESPONSE: u8 = 0x30; // FPGA→Host response
+const PACKET_TYPE_ERROR: u8 = 0xF0; // Error response
+
+/// Host Bus Interface packet processing state (CPU→Host direction)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 enum HostBusState {
     /// Idle - waiting for TX packet from CPU, will consume header when valid
     Idle,
@@ -17,13 +30,34 @@ enum HostBusState {
     RxAddr { byte_idx: u8 },
     /// Receiving write data bytes (1-4 bytes based on size)
     RxWdata { byte_idx: u8 },
-    /// Sending write acknowledgement
+    /// Sending response header byte (packet type 0001)
+    TxHeader,
+    /// Sending write acknowledgement (after header) - kept for compatibility
     TxAck,
     /// Sending read data bytes (1-4 bytes based on size)
     TxRdata { byte_idx: u8 },
 }
 
-/// Captured transaction from host bus interface
+/// Host-side state machine for host-initiated requests (Host→FPGA direction)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostBusHostState {
+    /// Idle - ready to send or receive
+    Idle,
+    /// Sending host request header (packet type 0010)
+    TxHeader,
+    /// Sending address bytes
+    TxAddr { byte_idx: u8 },
+    /// Sending write data bytes
+    TxWdata { byte_idx: u8 },
+    /// Waiting for response header
+    RxWaitingHeader,
+    /// Waiting for response ack (write completed)
+    RxAck,
+    /// Receiving read data bytes
+    RxRdata { byte_idx: u8 },
+}
+
+/// Captured transaction from host bus interface (CPU→Host)
 #[derive(Debug, Clone, Default)]
 struct HostBusTransaction {
     /// Write enable (true = write, false = read)
@@ -36,6 +70,63 @@ struct HostBusTransaction {
     wdata: u32,
     /// Read data to send back (only valid for reads)
     rdata: u32,
+}
+
+/// Host-initiated bus request
+#[derive(Debug, Clone)]
+pub struct HostBusRequest {
+    /// Address to access (must be in RTL peripheral range 0x5000_0000 - 0x5FFF_FFFF)
+    pub addr: u32,
+    /// Write data (for writes, ignored for reads)
+    pub wdata: u32,
+    /// Access size (0=byte, 1=half, 2=word)
+    pub size: u8,
+    /// Write enable (true = write, false = read)
+    pub we: bool,
+}
+
+impl HostBusRequest {
+    /// Create a word read request
+    pub fn read_word(addr: u32) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: 0,
+            size: 2,
+            we: false,
+        }
+    }
+
+    /// Create a word write request
+    pub fn write_word(addr: u32, data: u32) -> Self {
+        HostBusRequest {
+            addr,
+            wdata: data,
+            size: 2,
+            we: true,
+        }
+    }
+}
+
+/// Response to a host-initiated bus request
+#[derive(Debug, Clone)]
+pub enum HostBusResponse {
+    /// Successful read with data
+    ReadData(u32),
+    /// Successful write acknowledgement
+    WriteAck,
+    /// Error response
+    Error(FpgaError),
+}
+
+/// Error codes from FPGA
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FpgaError {
+    /// Request targeted invalid address (would route back to host)
+    InvalidAddress,
+    /// Request timed out
+    Timeout,
+    /// Protocol error
+    ProtocolError,
 }
 
 /// Result of a single simulation step
@@ -62,6 +153,10 @@ pub struct SimulatorView<'a> {
     bus: &'a mut crate::bus::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
+    /// Queue for host-initiated bus requests
+    host_request_queue: &'a mut VecDeque<HostBusRequest>,
+    /// Queue for host bus responses  
+    host_response_queue: &'a mut VecDeque<HostBusResponse>,
 }
 
 impl<'a> SimulatorView<'a> {
@@ -70,12 +165,60 @@ impl<'a> SimulatorView<'a> {
         bus: &'a mut crate::bus::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
+        host_request_queue: &'a mut VecDeque<HostBusRequest>,
+        host_response_queue: &'a mut VecDeque<HostBusResponse>,
     ) -> Self {
         SimulatorView {
             bus,
             hung_detector,
             cpu,
+            host_request_queue,
+            host_response_queue,
         }
+    }
+
+    /// Queue a host-initiated bus request
+    ///
+    /// The request will be sent to the FPGA on subsequent simulation steps.
+    /// Use receive_bus_response() to get the result.
+    ///
+    /// # Arguments
+    /// * `request` - The bus request to send
+    ///
+    /// # Errors
+    /// * Returns error if address is outside RTL peripheral range (0x5000_0000 - 0x5FFF_FFFF)
+    pub fn send_bus_request(&mut self, request: HostBusRequest) -> Result<(), String> {
+        // Validate address range
+        if request.addr < RTL_PERIPH_BASE || request.addr >= RTL_PERIPH_LIMIT {
+            return Err(format!(
+                "Host-initiated request address 0x{:08x} is outside RTL peripheral range \
+                 (0x{:08x} - 0x{:08x}). Host cannot access addresses that route back to host.",
+                request.addr, RTL_PERIPH_BASE, RTL_PERIPH_LIMIT
+            ));
+        }
+
+        // Queue the request
+        self.host_request_queue.push_back(request);
+        Ok(())
+    }
+
+    /// Receive response to a previously sent host-initiated bus request
+    ///
+    /// # Returns
+    /// * `Some(response)` - Response received
+    /// * `None` - No response available yet
+    pub fn receive_bus_response(&mut self) -> Option<HostBusResponse> {
+        self.host_response_queue.pop_front()
+    }
+
+    /// Check if there are pending host bus responses
+    pub fn has_bus_response(&self) -> bool {
+        !self.host_response_queue.is_empty()
+    }
+
+    /// Check if there are pending host bus requests in the queue
+    pub fn has_pending_requests(&self) -> bool {
+        !self.host_request_queue.is_empty()
     }
 
     /// Read a word from the FIFO TX queue (CPU → Host)
@@ -555,10 +698,16 @@ where
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
-    // Host bus interface state machine
+    // Host bus interface state machine (CPU→Host direction)
     host_bus_state: HostBusState,
     host_bus_txn: HostBusTransaction,
     host_bus_delay_counter: u32, // Delay counter for memory latency simulation
+    // Host-initiated request state machine (Host→FPGA direction)
+    host_bus_host_state: HostBusHostState,
+    current_host_request: Option<HostBusRequest>,
+    pub(crate) host_request_queue: VecDeque<HostBusRequest>,
+    pub(crate) host_response_queue: VecDeque<HostBusResponse>,
+    host_resp_rdata: u32, // Accumulated read data from FPGA response
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -657,6 +806,11 @@ where
             host_bus_state: HostBusState::Idle,
             host_bus_txn: HostBusTransaction::default(),
             host_bus_delay_counter: 0,
+            host_bus_host_state: HostBusHostState::Idle,
+            current_host_request: None,
+            host_request_queue: VecDeque::new(),
+            host_response_queue: VecDeque::new(),
+            host_resp_rdata: 0,
             hung_detector,
         })
     }
@@ -690,41 +844,92 @@ where
         }
     }
 
-    /// Handle the host bus interface protocol
+    /// Handle the host bus interface protocol (bidirectional)
     ///
     /// This method implements the host side of the serialized bus protocol.
-    /// It receives TX packets from the CPU (read/write requests) and sends
-    /// RX responses (acknowledgements or read data).
+    /// It handles both:
+    /// 1. CPU→Host: Receives TX packets from the CPU (read/write requests) and sends
+    ///    RX responses (acknowledgements or read data).
+    /// 2. Host→FPGA: Sends host-initiated requests to the FPGA and receives responses.
     ///
-    /// Protocol (Variable Length, Little-Endian):
-    ///   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
-    ///   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
-    ///   Write Response: [ack]                                             (1 byte, 0x00)
-    ///   Read Response:  [data...]                                         (1-4 bytes, no header)
+    /// Extended Protocol (Variable Length, Little-Endian):
+    ///   CPU Request:    [ext_header][addr0..3][data...]     (packet type 0000)
+    ///   Host Response:  [ext_header][data...]               (packet type 0001)
+    ///   Host Request:   [ext_header][addr0..3][data...]     (packet type 0010)
+    ///   FPGA Response:  [ext_header][data...]               (packet type 0011)
+    ///   Error Response: [ext_header][error_code]            (packet type 1111)
     ///
-    /// Header format: {4'b0000, size[1:0], 1'b0, we}
+    /// Extended header format: {packet_type[3:0], size[1:0], 1'b0, we}
     fn handle_host_bus_interface(&mut self) {
+        // Handle CPU→Host direction (receiving CPU requests, sending responses)
+        self.handle_cpu_to_host();
+
+        // Handle Host→FPGA direction (sending host requests, receiving responses)
+        self.handle_host_to_fpga();
+    }
+
+    /// Handle CPU→Host direction: receive CPU requests and send responses
+    fn handle_cpu_to_host(&mut self) {
         match self.host_bus_state {
             HostBusState::Idle => {
                 // Waiting for TX packet from CPU
                 self.cpu.host_tx_ready = 1; // Ready to receive
-                self.cpu.host_rx_valid = 0; // Not sending anything
+                                            // Only set rx_valid if we're actively sending something from host_to_fpga
+                if self.host_bus_host_state == HostBusHostState::Idle {
+                    self.cpu.host_rx_valid = 0;
+                }
 
                 if self.cpu.host_tx_valid != 0 {
                     // Handshake complete (valid && ready) - consume header byte now
                     let header = self.cpu.host_tx_data;
-                    // Parse header: {4'b0000, size[1:0], 1'b0, we}
-                    self.host_bus_txn.we = (header & 0x01) != 0;
-                    self.host_bus_txn.size = (header >> 2) & 0x03;
-                    self.host_bus_txn.addr = 0;
-                    self.host_bus_txn.wdata = 0;
-                    self.host_bus_state = HostBusState::RxAddr { byte_idx: 0 };
+                    let packet_type = header & 0xF0;
+
+                    if packet_type == PACKET_TYPE_CPU_REQUEST {
+                        // CPU-initiated request (packet type 0000)
+                        self.host_bus_txn.we = (header & 0x01) != 0;
+                        self.host_bus_txn.size = (header >> 2) & 0x03;
+                        self.host_bus_txn.addr = 0;
+                        self.host_bus_txn.wdata = 0;
+                        self.host_bus_state = HostBusState::RxAddr { byte_idx: 0 };
+                    } else if packet_type == PACKET_TYPE_FPGA_RESPONSE {
+                        // FPGA response to our host-initiated request (packet type 0011)
+                        // Parse the header
+                        let we = (header & 0x01) != 0;
+                        let size = (header >> 2) & 0x03;
+
+                        if we {
+                            // Write ack - response is just the header
+                            self.host_response_queue
+                                .push_back(HostBusResponse::WriteAck);
+                            self.host_bus_host_state = HostBusHostState::Idle;
+                            self.current_host_request = None;
+                        } else {
+                            // Read response - need to receive data bytes
+                            self.host_resp_rdata = 0;
+                            if self.current_host_request.is_some() {
+                                self.host_bus_host_state =
+                                    HostBusHostState::RxRdata { byte_idx: 0 };
+                            } else {
+                                // Unexpected response
+                                log::warn!(
+                                    "Received FPGA response but no pending request, size={}",
+                                    size
+                                );
+                            }
+                        }
+                    } else if packet_type == PACKET_TYPE_ERROR {
+                        // Error response (packet type 1111)
+                        // Need to receive the error code byte
+                        self.host_bus_host_state = HostBusHostState::RxAck; // Reuse for error code
+                    }
                 }
             }
 
             HostBusState::RxAddr { byte_idx } => {
                 self.cpu.host_tx_ready = 1;
-                self.cpu.host_rx_valid = 0;
+                if self.host_bus_host_state == HostBusHostState::Idle {
+                    self.cpu.host_rx_valid = 0;
+                }
 
                 if self.cpu.host_tx_valid != 0 {
                     let byte = self.cpu.host_tx_data as u32;
@@ -743,7 +948,7 @@ where
                             if self.mem_latency_cycles > 0 {
                                 self.host_bus_delay_counter = self.mem_latency_cycles;
                             }
-                            self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
+                            self.host_bus_state = HostBusState::TxHeader;
                         }
                     } else {
                         self.host_bus_state = HostBusState::RxAddr {
@@ -755,7 +960,9 @@ where
 
             HostBusState::RxWdata { byte_idx } => {
                 self.cpu.host_tx_ready = 1;
-                self.cpu.host_rx_valid = 0;
+                if self.host_bus_host_state == HostBusHostState::Idle {
+                    self.cpu.host_rx_valid = 0;
+                }
 
                 if self.cpu.host_tx_valid != 0 {
                     let byte = self.cpu.host_tx_data as u32;
@@ -776,7 +983,7 @@ where
                         if self.mem_latency_cycles > 0 {
                             self.host_bus_delay_counter = self.mem_latency_cycles;
                         }
-                        self.host_bus_state = HostBusState::TxAck;
+                        self.host_bus_state = HostBusState::TxHeader;
                     } else {
                         self.host_bus_state = HostBusState::RxWdata {
                             byte_idx: byte_idx + 1,
@@ -785,8 +992,8 @@ where
                 }
             }
 
-            HostBusState::TxAck => {
-                // Apply memory latency delay before sending ack
+            HostBusState::TxHeader => {
+                // Apply memory latency delay before sending response header
                 if self.host_bus_delay_counter > 0 {
                     self.host_bus_delay_counter -= 1;
                     self.cpu.host_tx_ready = 0;
@@ -794,26 +1001,42 @@ where
                     return;
                 }
 
-                self.cpu.host_tx_ready = 0; // Not receiving
+                self.cpu.host_tx_ready = 0; // Not receiving during TX phase
                 self.cpu.host_rx_valid = 1;
-                self.cpu.host_rx_data = 0x00; // Ack byte
+                // Response header: packet type 0001 (host response)
+                let header = PACKET_TYPE_HOST_RESPONSE
+                    | ((self.host_bus_txn.size & 0x03) << 2)
+                    | if self.host_bus_txn.we { 0x01 } else { 0x00 };
+                self.cpu.host_rx_data = header;
 
                 if self.cpu.host_rx_ready != 0 {
-                    // Ack accepted, return to idle
+                    // Header accepted
+                    if self.host_bus_txn.we {
+                        // Write: header is the ack, we're done
+                        self.host_bus_state = HostBusState::Idle;
+                    } else {
+                        // Read: send data bytes
+                        self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
+                    }
+                }
+            }
+
+            HostBusState::TxAck => {
+                // Legacy state - kept for compatibility but now we use TxHeader
+                self.cpu.host_tx_ready = 0;
+                self.cpu.host_rx_valid = 1;
+                // Response header: packet type 0001 + write ack
+                let header =
+                    PACKET_TYPE_HOST_RESPONSE | ((self.host_bus_txn.size & 0x03) << 2) | 0x01; // we=1
+                self.cpu.host_rx_data = header;
+
+                if self.cpu.host_rx_ready != 0 {
                     self.host_bus_state = HostBusState::Idle;
                 }
             }
 
             HostBusState::TxRdata { byte_idx } => {
-                // Apply memory latency delay before sending read data
-                if self.host_bus_delay_counter > 0 {
-                    self.host_bus_delay_counter -= 1;
-                    self.cpu.host_tx_ready = 0;
-                    self.cpu.host_rx_valid = 0;
-                    return;
-                }
-
-                self.cpu.host_tx_ready = 0; // Not receiving
+                self.cpu.host_tx_ready = 0; // Not receiving during TX phase
                 self.cpu.host_rx_valid = 1;
 
                 // Send read data byte (little-endian)
@@ -833,6 +1056,156 @@ where
                         self.host_bus_state = HostBusState::Idle;
                     } else {
                         self.host_bus_state = HostBusState::TxRdata {
+                            byte_idx: byte_idx + 1,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle Host→FPGA direction: send host-initiated requests and receive responses
+    fn handle_host_to_fpga(&mut self) {
+        match self.host_bus_host_state {
+            HostBusHostState::Idle => {
+                // Check if we have a queued request to send
+                if let Some(request) = self.host_request_queue.pop_front() {
+                    // Only send if we're not processing a CPU request
+                    if self.host_bus_state == HostBusState::Idle {
+                        self.current_host_request = Some(request);
+                        self.host_bus_host_state = HostBusHostState::TxHeader;
+                    } else {
+                        // Put it back and wait
+                        self.host_request_queue.push_front(request);
+                    }
+                }
+            }
+
+            HostBusHostState::TxHeader => {
+                if let Some(ref request) = self.current_host_request {
+                    // Send host request header (packet type 0010)
+                    let header = PACKET_TYPE_HOST_REQUEST
+                        | ((request.size & 0x03) << 2)
+                        | if request.we { 0x01 } else { 0x00 };
+
+                    self.cpu.host_rx_valid = 1;
+                    self.cpu.host_rx_data = header;
+
+                    if self.cpu.host_rx_ready != 0 {
+                        self.host_bus_host_state = HostBusHostState::TxAddr { byte_idx: 0 };
+                    }
+                }
+            }
+
+            HostBusHostState::TxAddr { byte_idx } => {
+                if let Some(ref request) = self.current_host_request {
+                    // Send address byte (little-endian)
+                    let byte = ((request.addr >> (byte_idx * 8)) & 0xFF) as u8;
+
+                    self.cpu.host_rx_valid = 1;
+                    self.cpu.host_rx_data = byte;
+
+                    if self.cpu.host_rx_ready != 0 {
+                        if byte_idx == 3 {
+                            // Address complete
+                            if request.we {
+                                // Write: send data bytes
+                                self.host_bus_host_state =
+                                    HostBusHostState::TxWdata { byte_idx: 0 };
+                            } else {
+                                // Read: wait for response
+                                self.host_bus_host_state = HostBusHostState::RxWaitingHeader;
+                            }
+                        } else {
+                            self.host_bus_host_state = HostBusHostState::TxAddr {
+                                byte_idx: byte_idx + 1,
+                            };
+                        }
+                    }
+                }
+            }
+
+            HostBusHostState::TxWdata { byte_idx } => {
+                if let Some(ref request) = self.current_host_request {
+                    // Send write data byte (little-endian)
+                    let byte = ((request.wdata >> (byte_idx * 8)) & 0xFF) as u8;
+
+                    self.cpu.host_rx_valid = 1;
+                    self.cpu.host_rx_data = byte;
+
+                    if self.cpu.host_rx_ready != 0 {
+                        let bytes_needed = match request.size {
+                            0 => 1, // byte
+                            1 => 2, // halfword
+                            _ => 4, // word
+                        };
+
+                        if byte_idx + 1 >= bytes_needed {
+                            // Write data complete, wait for response
+                            self.host_bus_host_state = HostBusHostState::RxWaitingHeader;
+                        } else {
+                            self.host_bus_host_state = HostBusHostState::TxWdata {
+                                byte_idx: byte_idx + 1,
+                            };
+                        }
+                    }
+                }
+            }
+
+            HostBusHostState::RxWaitingHeader => {
+                // Waiting for FPGA response header
+                // The response will be received through host_tx (FPGA's TX is our RX)
+                self.cpu.host_rx_valid = 0; // Not sending
+                                            // host_tx_ready is already set in handle_cpu_to_host
+
+                // Response is handled in handle_cpu_to_host when packet type 0011 is received
+            }
+
+            HostBusHostState::RxAck => {
+                // Waiting for error code byte (used when we got an error response)
+                self.cpu.host_rx_valid = 0;
+
+                if self.cpu.host_tx_valid != 0 && self.cpu.host_tx_ready != 0 {
+                    let error_code = self.cpu.host_tx_data;
+                    let error = match error_code {
+                        0xFF => FpgaError::InvalidAddress,
+                        0xFE => FpgaError::Timeout,
+                        _ => FpgaError::ProtocolError,
+                    };
+                    self.host_response_queue
+                        .push_back(HostBusResponse::Error(error));
+                    self.host_bus_host_state = HostBusHostState::Idle;
+                    self.current_host_request = None;
+                }
+            }
+
+            HostBusHostState::RxRdata { byte_idx } => {
+                // Receiving read data bytes from FPGA response
+                self.cpu.host_rx_valid = 0;
+
+                if self.cpu.host_tx_valid != 0 && self.cpu.host_tx_ready != 0 {
+                    let byte = self.cpu.host_tx_data as u32;
+                    self.host_resp_rdata |= byte << (byte_idx * 8);
+
+                    let bytes_needed = if let Some(ref request) = self.current_host_request {
+                        match request.size {
+                            0 => 1, // byte
+                            1 => 2, // halfword
+                            _ => 4, // word
+                        }
+                    } else {
+                        4 // Default to word if no request (shouldn't happen)
+                    };
+
+                    if byte_idx + 1 >= bytes_needed {
+                        // All bytes received
+                        self.host_response_queue
+                            .push_back(HostBusResponse::ReadData(self.host_resp_rdata));
+                        self.host_bus_host_state = HostBusHostState::Idle;
+                        self.current_host_request = None;
+                        self.host_resp_rdata = 0;
+                    } else {
+                        self.host_bus_host_state = HostBusHostState::RxRdata {
                             byte_idx: byte_idx + 1,
                         };
                     }
@@ -927,6 +1300,13 @@ where
         self.host_bus_state = HostBusState::Idle;
         self.host_bus_txn = HostBusTransaction::default();
         self.host_bus_delay_counter = 0;
+
+        // Reset host-initiated request state
+        self.host_bus_host_state = HostBusHostState::Idle;
+        self.current_host_request = None;
+        self.host_request_queue.clear();
+        self.host_response_queue.clear();
+        self.host_resp_rdata = 0;
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
@@ -1023,7 +1403,13 @@ where
         // Call inst_complete callback if provided (after instruction completion)
         // This callback receives restricted access to the Simulator via SimulatorView
         if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(&mut self.bus, &mut self.hung_detector, &self.cpu);
+            let mut view = SimulatorView::new(
+                &mut self.bus,
+                &mut self.hung_detector,
+                &self.cpu,
+                &mut self.host_request_queue,
+                &mut self.host_response_queue,
+            );
             callback(&mut view);
         }
 
