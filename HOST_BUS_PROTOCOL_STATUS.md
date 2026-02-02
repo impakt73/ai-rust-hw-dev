@@ -141,3 +141,6 @@ j loop_start
 - The protocol uses variable-length packets (1-9 bytes depending on operation)
 - Memory latency can add additional cycles to CPU requests
 - The hung detector triggers after 10,000 cycles without instruction completion
+  - This is typically 100-200x longer than a single instruction (50-100 cycles)
+  - Adequate for detecting true hangs, but may timeout during protocol conflicts
+  - Protocol coordination adds ~10-20 cycles overhead, well within threshold
