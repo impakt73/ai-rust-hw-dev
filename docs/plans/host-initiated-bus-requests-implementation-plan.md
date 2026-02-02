@@ -327,18 +327,19 @@ The Host state machine is designed for **non-blocking request handling**. Even w
          │        ▼                       ▼        │
     ┌────┴────────────┐           ┌────────────────┴────┐
     │ PROCESSING_CPU  │           │ AWAITING_HOST_RESP  │
-    │ REQUEST         │◀─────────▶│                     │
-    │ (recv CPU req,  │  (can     │ (sent host request, │
-    │  access bus,    │  handle   │  waiting for resp,  │
-    │  send response) │  inline)  │  still polls RX)    │
+    │ REQUEST         │           │                     │
+    │ (recv CPU req,  │           │ (sent host request, │
+    │  access bus,    │           │  waiting for resp,  │
+    │  send response) │           │  ALSO polls RX)     │
     └─────────────────┘           └─────────────────────┘
-
-Note: The bidirectional arrow represents **nested/interleaved** handling within
-AWAITING_HOST_RESP. When a CPU request arrives while waiting, the Host temporarily
-services it (receive, execute, respond) and then resumes waiting. This can be
-thought of as a sub-routine or nested operation, not a full state transition to
-PROCESSING_CPU_REQUEST and back.
 ```
+
+**Key Implementation Detail:** The AWAITING_HOST_RESP state must include **inline handling**
+of incoming CPU requests. When a CPU request packet (type 0000) is detected while in this
+state, the Host processes it immediately (receive, execute, send response) without leaving
+the AWAITING_HOST_RESP state. This nested handling is critical for deadlock prevention.
+Conceptually, CPU request handling while awaiting a Host response can be thought of as a
+sub-routine that runs inside the waiting loop, not a formal state transition.
 
 **FPGA Side State Machine (host_bus_interface):**
 
@@ -1281,9 +1282,15 @@ fn test_simultaneous_requests_fpga_buffers_host_request() {
     assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
     
     // Step 4: Complete CPU request by providing response from Host
-    // Note: In real operation, the Host processes this CPU request IMMEDIATELY
-    // (no buffering on Host side - asymmetric design). This test simulates
-    // the Host responding promptly, which is the expected behavior.
+    //
+    // IMPORTANT: This is an RTL-only test - it tests FPGA behavior only.
+    // The Host is implemented in Rust (cpu-sim), so Host-side non-blocking
+    // behavior CANNOT be validated here. This test can only verify that:
+    // - FPGA correctly buffers Host request bytes in RX FIFO
+    // - FPGA processes buffered request after CPU transaction completes
+    //
+    // Host-side immediate processing (no buffering, non-blocking) is validated
+    // in Section 7.2.2: test_host_processes_cpu_request_while_waiting_for_own_response
     
     // Drain remaining TX bytes for CPU request (address bytes)
     for _ in 0..4 {
