@@ -616,7 +616,7 @@ impl<'a> SimulatorView<'a> {
         self.bus.memory.read_word(addr)
     }
 
-    /// Write a 32-bit word to memory (little-endian)
+    /// Write a 32-bit word to memory
     ///
     /// **Validation:** Address must be within DRAM range (0x8000_0000 - 0xFFFF_FFFF).
     /// Out-of-bounds writes are logged as warnings and ignored.
