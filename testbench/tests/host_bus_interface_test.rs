@@ -1,11 +1,17 @@
 // Host Bus Interface Tests
 // Comprehensive testing of the host_bus_interface RTL module
 //
-// Protocol (Little-Endian):
-//   Read Request:   [header][addr0][addr1][addr2][addr3]              (5 bytes)
-//   Write Request:  [header][addr0][addr1][addr2][addr3][data...]     (6-9 bytes)
-//   Write Response: [ack]                                             (1 byte, 0x00)
-//   Read Response:  [data...]                                         (1-4 bytes, no header)
+// Protocol (Little-Endian, Extended Header Format):
+//   CPU-initiated request (type 0000):  [ext_header][addr0-3][data...] (FPGA → Host TX)
+//   Host response to CPU (type 0001):   [ext_header][data...]          (Host → FPGA RX)
+//
+// Extended Header Format:
+//   Bits [7:4]: Packet type
+//     0000 = CPU-initiated request (FPGA → Host TX)
+//     0001 = Host response to CPU request (Host → FPGA RX)
+//   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
+//   Bit  [1]:   Reserved (0)
+//   Bit  [0]:   we (1=write, 0=read)
 
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
@@ -270,8 +276,12 @@ fn test_write_transaction_complete() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response packet (1 byte for write: ack byte = 0x00)
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "Failed to send ack byte");
+    // Send response packet with extended header (packet type 0001)
+    // Header: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
+    assert!(
+        send_rx_byte(&mut dut, 0x19, 100),
+        "Failed to send write response header"
+    );
 
     // Verify ready is asserted (should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH after write response");
@@ -303,7 +313,13 @@ fn test_read_word_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response with read data = 0xCAFEBABE (little-endian: LSB first, no header)
+    // Send response with extended header + read data = 0xCAFEBABE
+    // Header: {packet_type=0001, size=10, 1'b0, we=0} = 0x18
+    assert!(
+        send_rx_byte(&mut dut, 0x18, 100),
+        "Failed to send read response header"
+    );
+    // Data (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xBE, 100),
         "Failed to send RData[7:0]"
@@ -348,7 +364,13 @@ fn test_read_halfword_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 2 bytes data (little-endian: LSB first, no header)
+    // Send response with extended header + halfword data
+    // Header: {packet_type=0001, size=01, 1'b0, we=0} = 0x14
+    assert!(
+        send_rx_byte(&mut dut, 0x14, 100),
+        "Failed to send read response header"
+    );
+    // Data (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xCD, 100),
         "Failed to send RData[7:0]"
@@ -388,7 +410,12 @@ fn test_read_byte_returns_data() {
         receive_tx_byte(&mut dut, 100).expect("Failed to receive TX byte");
     }
 
-    // Send response: 1 byte data (little-endian: no header for read response)
+    // Send response with extended header + byte data
+    // Header: {packet_type=0001, size=00, 1'b0, we=0} = 0x10
+    assert!(
+        send_rx_byte(&mut dut, 0x10, 100),
+        "Failed to send read response header"
+    );
     assert!(
         send_rx_byte(&mut dut, 0x42, 100),
         "Failed to send RData[7:0]"
@@ -549,8 +576,9 @@ fn test_rx_delayed_valid() {
         assert_eq!(dut.ready, 0, "ready should stay LOW waiting for response");
     }
 
-    // Now send response (1 byte for write: ack byte = 0x00)
-    send_rx_byte(&mut dut, 0x00, 100);
+    // Now send response with extended header
+    // Header for byte write response: {packet_type=0001, size=00, 1'b0, we=1} = 0x11
+    send_rx_byte(&mut dut, 0x11, 100);
 
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
 }
@@ -702,8 +730,9 @@ fn test_consecutive_transactions() {
             receive_tx_byte(&mut dut, 100).expect("TX byte");
         }
 
-        // Send response (1 byte for write: ack byte = 0x00)
-        send_rx_byte(&mut dut, 0x00, 100);
+        // Send response with extended header
+        // Header for word write response: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
+        send_rx_byte(&mut dut, 0x19, 100);
 
         // Verify completion (ready should be HIGH in COMPLETE state)
         assert_eq!(dut.ready, 1, "Transaction {} should complete", iteration);

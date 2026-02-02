@@ -110,7 +110,29 @@ module top #(
     logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
-    // External Memory Interface Signals (Bus to Host Bus Interface)
+    // Arbiter Interface Signals (CPU → Arbiter)
+    // ============================================================
+    logic [31:0] arb_bus_addr;
+    logic [31:0] arb_bus_wdata;
+    logic [31:0] arb_bus_rdata;
+    logic        arb_bus_we;
+    logic [1:0]  arb_bus_size;
+    logic        arb_bus_req;
+    logic        arb_bus_ready;
+    
+    // ============================================================
+    // Host Bus Master Interface Signals (Host → Arbiter)
+    // ============================================================
+    logic [31:0] host_master_addr;
+    logic [31:0] host_master_wdata;
+    logic [31:0] host_master_rdata;
+    logic        host_master_we;
+    logic [1:0]  host_master_size;
+    logic        host_master_req;
+    logic        host_master_ready;
+    
+    // ============================================================
+    // External Memory Interface Signals (Arbiter → Bus)
     // ============================================================
     logic [31:0] ext_mem_addr;
     logic [31:0] ext_mem_wdata;
@@ -121,21 +143,58 @@ module top #(
     logic        ext_mem_ready;
     
     // ============================================================
+    // Bus Arbiter Instantiation
+    // ============================================================
+    // Arbitrates between CPU and Host master for bus access
+    // Priority: Host > CPU
+    bus_arbiter arbiter (
+        .clk(clk),
+        .rst_n(rst_n),
+        
+        // CPU Master Interface
+        .cpu_addr(cpu_mem_addr),
+        .cpu_wdata(cpu_mem_wdata),
+        .cpu_rdata(cpu_mem_rdata),
+        .cpu_we(cpu_mem_we),
+        .cpu_size(cpu_mem_size),
+        .cpu_req(cpu_mem_req),
+        .cpu_ready(cpu_mem_ready),
+        
+        // Host Master Interface (from host_bus_interface)
+        .host_addr(host_master_addr),
+        .host_wdata(host_master_wdata),
+        .host_rdata(host_master_rdata),
+        .host_we(host_master_we),
+        .host_size(host_master_size),
+        .host_req(host_master_req),
+        .host_ready(host_master_ready),
+        
+        // Slave Interface (to system_bus)
+        .bus_addr(arb_bus_addr),
+        .bus_wdata(arb_bus_wdata),
+        .bus_rdata(arb_bus_rdata),
+        .bus_we(arb_bus_we),
+        .bus_size(arb_bus_size),
+        .bus_req(arb_bus_req),
+        .bus_ready(arb_bus_ready)
+    );
+    
+    // ============================================================
     // Bus Module Instantiation
     // ============================================================
-    // Routes CPU requests to the appropriate peripheral based on address
+    // Routes requests from arbiter to the appropriate peripheral based on address
     bus system_bus (
         .clk(clk),
         .rst_n(rst_n),
         
-        // Master interface (CPU)
-        .master_addr(cpu_mem_addr),
-        .master_wdata(cpu_mem_wdata),
-        .master_rdata(cpu_mem_rdata),
-        .master_we(cpu_mem_we),
-        .master_size(cpu_mem_size),
-        .master_req(cpu_mem_req),
-        .master_ready(cpu_mem_ready),
+        // Master interface (from Arbiter)
+        .master_addr(arb_bus_addr),
+        .master_wdata(arb_bus_wdata),
+        .master_rdata(arb_bus_rdata),
+        .master_we(arb_bus_we),
+        .master_size(arb_bus_size),
+        .master_req(arb_bus_req),
+        .master_ready(arb_bus_ready),
         
         // LED Controller interface
         .led_addr(led_addr),
@@ -178,11 +237,13 @@ module top #(
     // Host Bus Interface Instantiation
     // ============================================================
     // Serializes external memory transactions to byte stream for host communication
+    // - Slave interface: Receives CPU-initiated external memory requests from bus.sv
+    // - Master interface: Sends Host-initiated requests to arbiter (currently unused)
     host_bus_interface host_bus_if (
         .clk(clk),
         .rst_n(rst_n),
         
-        // Bus Slave Interface (from System Bus)
+        // Bus Slave Interface (from System Bus - CPU→Host path)
         .addr(ext_mem_addr),
         .wdata(ext_mem_wdata),
         .rdata(ext_mem_rdata),
@@ -190,6 +251,15 @@ module top #(
         .size(ext_mem_size),
         .req(ext_mem_req),
         .ready(ext_mem_ready),
+        
+        // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
+        .host_bus_addr(host_master_addr),
+        .host_bus_wdata(host_master_wdata),
+        .host_bus_rdata(host_master_rdata),
+        .host_bus_we(host_master_we),
+        .host_bus_size(host_master_size),
+        .host_bus_req(host_master_req),
+        .host_bus_ready(host_master_ready),
         
         // Host TX Interface (to External Host)
         .tx_data(host_tx_data),
