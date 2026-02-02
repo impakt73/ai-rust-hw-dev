@@ -69,6 +69,10 @@ pub struct ClockPeripheral;
 #[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
 
+// Define Bus Arbiter module
+#[verilog(src = "../rtl/bus_arbiter.sv", name = "bus_arbiter")]
+pub struct BusArbiter;
+
 // Define FPU submodules
 #[verilog(src = "../rtl/fpu_classifier.sv", name = "fpu_classifier")]
 pub struct FpuClassifier;
@@ -127,6 +131,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
     create_runtime(&[
         "top.sv",                                   // Top-level wrapper with RTL peripherals
         "bus.sv",                                   // System bus for address decoding
+        "bus_arbiter.sv",                           // Bus arbiter for host/CPU access
         "cpu.sv",                                   // CPU core
         "sync_fifo.sv",                             // Generic synchronous FIFO
         "host_bus_interface.sv", // Host bus interface for serialized transactions
@@ -223,4 +228,9 @@ pub fn create_fpu_float_to_int_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 pub fn create_fpu_sqrt_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fpu_sqrt.sv"])
+}
+
+// Helper function to create a runtime for the Bus Arbiter
+pub fn create_bus_arbiter_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["bus_arbiter.sv"])
 }

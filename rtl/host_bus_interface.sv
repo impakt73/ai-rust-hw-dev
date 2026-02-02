@@ -337,45 +337,48 @@ module host_bus_interface (
             end
             
             STATE_HOST_RX_ADDR_2: begin
-                if (rx_valid && rx_ready) next_state = STATE_HOST_RX_ADDR_3;
+                if (rx_valid && rx_ready) begin
+                    if (host_cap_we) begin
+                        // Write: need more data bytes, go to ADDR_3
+                        next_state = STATE_HOST_RX_ADDR_3;
+                    end else begin
+                        // Read: all 4 address bytes received, go to bus request
+                        next_state = STATE_HOST_BUS_REQ;
+                    end
+                end
             end
             
             STATE_HOST_RX_ADDR_3: begin
+                // This state only used for writes (receiving first wdata byte)
                 if (rx_valid && rx_ready) begin
-                    if (host_cap_we) begin
-                        // Write: continue receiving data
-                        next_state = STATE_HOST_RX_WDATA_0;
-                    end else begin
-                        // Read: go to bus request (address validation in BUS_REQ state)
-                        next_state = STATE_HOST_BUS_REQ;
-                    end
+                    case (host_cap_size)
+                        2'b00:   next_state = STATE_HOST_BUS_REQ;       // Byte: 1 data byte received, done
+                        default: next_state = STATE_HOST_RX_WDATA_0;  // Half/Word: more data needed
+                    endcase
                 end
             end
             
             STATE_HOST_RX_WDATA_0: begin
                 if (rx_valid && rx_ready) begin
                     case (host_cap_size)
-                        2'b00:   next_state = STATE_HOST_BUS_REQ;      // Byte: done
-                        default: next_state = STATE_HOST_RX_WDATA_1; // Half/Word: continue
+                        2'b01:   next_state = STATE_HOST_BUS_REQ;       // Half: 2 data bytes received, done
+                        default: next_state = STATE_HOST_RX_WDATA_1;  // Word: more data needed
                     endcase
                 end
             end
             
             STATE_HOST_RX_WDATA_1: begin
                 if (rx_valid && rx_ready) begin
-                    case (host_cap_size)
-                        2'b01:   next_state = STATE_HOST_BUS_REQ;      // Half: done
-                        default: next_state = STATE_HOST_RX_WDATA_2; // Word: continue
-                    endcase
+                    // Word: 3 data bytes received, need 1 more
+                    next_state = STATE_HOST_RX_WDATA_2;
                 end
             end
             
             STATE_HOST_RX_WDATA_2: begin
-                if (rx_valid && rx_ready) next_state = STATE_HOST_RX_WDATA_3;
-            end
-            
-            STATE_HOST_RX_WDATA_3: begin
-                if (rx_valid && rx_ready) next_state = STATE_HOST_BUS_REQ;
+                if (rx_valid && rx_ready) begin
+                    // Word: 4 data bytes received, done
+                    next_state = STATE_HOST_BUS_REQ;
+                end
             end
             
             STATE_HOST_BUS_REQ: begin
@@ -489,16 +492,20 @@ module host_bus_interface (
             end
             
             // Capture address bytes (little-endian: LSB first)
+            // Note: The state machine uses HOST_RX_HEADER to receive the first address byte,
+            // then HOST_RX_ADDR_0 for second byte, etc. This is different from the CPU path
+            // which captures on the "current" state. For host requests, we capture based on
+            // which byte we're receiving, not which state we're in.
             if (rx_valid && rx_ready) begin
                 case (state)
-                    STATE_HOST_RX_ADDR_0: host_cap_addr[7:0]   <= rx_data;
-                    STATE_HOST_RX_ADDR_1: host_cap_addr[15:8]  <= rx_data;
-                    STATE_HOST_RX_ADDR_2: host_cap_addr[23:16] <= rx_data;
-                    STATE_HOST_RX_ADDR_3: host_cap_addr[31:24] <= rx_data;
-                    STATE_HOST_RX_WDATA_0: host_cap_wdata[7:0]   <= rx_data;
-                    STATE_HOST_RX_WDATA_1: host_cap_wdata[15:8]  <= rx_data;
-                    STATE_HOST_RX_WDATA_2: host_cap_wdata[23:16] <= rx_data;
-                    STATE_HOST_RX_WDATA_3: host_cap_wdata[31:24] <= rx_data;
+                    STATE_HOST_RX_HEADER:  host_cap_addr[7:0]   <= rx_data;  // First addr byte
+                    STATE_HOST_RX_ADDR_0:  host_cap_addr[15:8]  <= rx_data;  // Second addr byte
+                    STATE_HOST_RX_ADDR_1:  host_cap_addr[23:16] <= rx_data;  // Third addr byte
+                    STATE_HOST_RX_ADDR_2:  host_cap_addr[31:24] <= rx_data;  // Fourth addr byte
+                    STATE_HOST_RX_ADDR_3:  host_cap_wdata[7:0]  <= rx_data;  // First wdata byte
+                    STATE_HOST_RX_WDATA_0: host_cap_wdata[15:8] <= rx_data;  // Second wdata byte
+                    STATE_HOST_RX_WDATA_1: host_cap_wdata[23:16] <= rx_data; // Third wdata byte
+                    STATE_HOST_RX_WDATA_2: host_cap_wdata[31:24] <= rx_data; // Fourth wdata byte
                     default: ;
                 endcase
             end
