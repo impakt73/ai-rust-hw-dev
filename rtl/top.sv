@@ -110,7 +110,7 @@ module top #(
     logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
-    // Arbiter Interface Signals (CPU → Arbiter)
+    // Arbiter Output Signals (Arbiter → Bus)
     // ============================================================
     logic [31:0] arb_bus_addr;
     logic [31:0] arb_bus_wdata;

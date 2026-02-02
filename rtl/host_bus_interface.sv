@@ -31,7 +31,7 @@ module host_bus_interface (
     input  logic        clk,
     input  logic        rst_n,
     
-    // Bus Slave Interface (from System Bus via Arbiter - CPU→Host path)
+    // Bus Slave Interface (from System Bus - CPU→Host path)
     input  logic [31:0] addr,
     input  logic [31:0] wdata,
     output logic [31:0] rdata,

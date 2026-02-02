@@ -50,7 +50,7 @@ fn receive_tx_byte(dut: &mut HostBusInterface, max_cycles: u32) -> Option<u8> {
         if dut.tx_valid != 0 {
             dut.tx_ready = 1;
             dut.eval();
-            let byte = dut.tx_data as u8;
+            let byte = dut.tx_data;
             clock_cycle!(dut);
             dut.tx_ready = 0;
             dut.eval();
@@ -577,8 +577,8 @@ fn test_rx_delayed_valid() {
     }
 
     // Now send response with extended header
-    // Header for byte write response: {packet_type=0001, size=00, 1'b0, we=1} = 0x11
-    send_rx_byte(&mut dut, 0x11, 100);
+    // Header for word write response: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
+    send_rx_byte(&mut dut, 0x19, 100);
 
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
 }
