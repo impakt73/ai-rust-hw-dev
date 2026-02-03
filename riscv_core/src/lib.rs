@@ -69,6 +69,10 @@ pub struct ClockPeripheral;
 #[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
 
+// Define Host RX Buffer module (bidirectional packet buffering)
+#[verilog(src = "../rtl/host_rx_buffer.sv", name = "host_rx_buffer")]
+pub struct HostRxBuffer;
+
 // Define Bus Arbiter module
 #[verilog(src = "../rtl/bus_arbiter.sv", name = "bus_arbiter")]
 pub struct BusArbiter;
@@ -189,7 +193,12 @@ pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 // Helper function to create a runtime for the Host Bus Interface
 pub fn create_host_bus_interface_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["host_bus_interface.sv"])
+    create_runtime(&["host_bus_interface.sv", "host_rx_buffer.sv"])
+}
+
+// Helper function to create a runtime for the Host RX Buffer (standalone testing)
+pub fn create_host_rx_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["host_rx_buffer.sv"])
 }
 
 // Helper function to create a runtime for the Bus Arbiter
