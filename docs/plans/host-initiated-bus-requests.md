@@ -1027,7 +1027,7 @@ fn test_host_initiated_led_write() {
         
         // Compare actual vs expected
         sub(8, 10, 11),                   // x8 = actual - expected
-        bne(8, 0, 12),                    // if not equal, jump to failure
+        bne(8, 0, 16),                    // if not equal, jump to failure
         
         // Success
         addi(7, 0, 1),
