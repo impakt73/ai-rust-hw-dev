@@ -1302,11 +1302,18 @@ where
         // 2. If CPU response is pending, send that (priority over starting new host request)
         // 3. If no CPU work pending, can start sending host-initiated request if queued
 
+        // Check if it's safe to start a new host request:
+        // - No CPU request buffered (waiting to be processed)
+        // - No CPU request being received (mid-packet)
+        // - CPU not about to send a new request (tx_valid = 0)
+        let cpu_idle =
+            !cpu_request_buffered && !receiving_cpu_request && self.cpu.host_tx_valid == 0;
+
         // Debug logging for troubleshooting host bus issues
         if log::log_enabled!(log::Level::Trace) {
             log::trace!(
-                "RX TX priority: host_tx_in_progress={} cpu_resp_pending={} cpu_req_buffered={} recv_cpu_req={} tx_valid={} rx_ready={}",
-                host_request_tx_in_progress, cpu_response_pending, cpu_request_buffered, receiving_cpu_request, self.cpu.host_tx_valid, self.cpu.host_rx_ready
+                "RX TX priority: host_tx_in_progress={} cpu_resp_pending={} cpu_idle={} tx_valid={} rx_ready={}",
+                host_request_tx_in_progress, cpu_response_pending, cpu_idle, self.cpu.host_tx_valid, self.cpu.host_rx_ready
             );
         }
 
@@ -1382,13 +1389,11 @@ where
 
                 HostBusState::Idle => unreachable!(),
             }
-        } else if !cpu_request_buffered && !receiving_cpu_request && self.cpu.host_tx_valid == 0 {
-            // No CPU work pending and no host request in progress
-            // AND CPU is not about to send a request (tx_valid = 0)
-            // Can start sending host-initiated request if one is queued
+        } else if cpu_idle {
+            // CPU is idle - safe to start sending host-initiated request if one is queued
             self.handle_host_request_tx();
         }
-        // else: CPU request is being received, buffered, or CPU is about to send - don't start host request
+        // else: CPU work is pending or about to arrive - don't start host request
     }
 
     /// Perform a read operation from the bus
