@@ -1127,7 +1127,7 @@ fn test_cpu_request_priority_over_host_request() {
     // CPU request should continue being transmitted (TX phase)
     let mut tx_bytes_received = 0;
     for _ in 0..20 {
-        if let Some(_) = receive_tx_byte(&mut dut, 5) {
+        if receive_tx_byte(&mut dut, 5).is_some() {
             tx_bytes_received += 1;
         }
     }

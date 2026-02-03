@@ -949,12 +949,8 @@ where
             }
             HostRequestState::RxHeader | HostRequestState::RxRdata { .. } => {
                 // Handled in handle_host_response_rx()
-                // Ensure rx_valid is low when not transmitting
-                if matches!(self.host_request_state, HostRequestState::RxHeader)
-                    || matches!(self.host_request_state, HostRequestState::RxRdata { .. })
-                {
-                    self.cpu.host_rx_valid = 0;
-                }
+                // Ensure rx_valid is low when not transmitting (we're receiving in these states)
+                self.cpu.host_rx_valid = 0;
             }
         }
     }

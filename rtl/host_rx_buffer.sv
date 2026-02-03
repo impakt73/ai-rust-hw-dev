@@ -159,8 +159,9 @@ module host_rx_buffer (
                             // Only accept response if response buffer is free
                             if (!resp_valid_reg) begin
                                 if (header_we) begin
-                                    // Write response - header only, mark complete
-                                    next_state = STATE_IDLE;  // Stays in idle, resp_valid set in ff block
+                                    // Write response - header only, no data needed
+                                    // resp_valid_reg will be set in the ff block; stay in IDLE
+                                    // (next_state already defaults to state=IDLE)
                                 end else begin
                                     // Read response - need to receive data bytes
                                     next_state = STATE_RESP_RDATA_0;
