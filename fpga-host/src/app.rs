@@ -30,7 +30,8 @@ pub struct App {
     pub memory: SparseMemory,
     /// Command input buffer
     pub input_buffer: String,
-    /// Command history for up/down navigation (capped at MAX_HISTORY_ENTRIES)
+    /// Command history for up/down navigation
+    /// VecDeque for efficient pop_front when capping at MAX_HISTORY_ENTRIES
     pub command_history: VecDeque<String>,
     /// Current position in command history (None = not navigating)
     pub history_index: Option<usize>,
