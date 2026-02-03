@@ -102,7 +102,12 @@ fn test_reset_state() {
     // Verify outputs are in expected initial state
     assert_eq!(dut.ready, 0, "ready should be LOW after reset");
     assert_eq!(dut.tx_valid, 0, "tx_valid should be LOW after reset");
-    assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW after reset");
+    // With the new buffered RX architecture, rx_ready is HIGH when at least one buffer is free.
+    // After reset, both buffers are empty, so rx_ready should be HIGH.
+    assert_eq!(
+        dut.rx_ready, 1,
+        "rx_ready should be HIGH after reset (buffers are free)"
+    );
     assert_eq!(dut.rdata, 0, "rdata should be 0 after reset");
 }
 
@@ -278,10 +283,21 @@ fn test_write_transaction_complete() {
 
     // Send response packet with extended header (packet type 0001)
     // Header: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
+    // With the new buffered architecture, responses go through host_rx_buffer
     assert!(
         send_rx_byte(&mut dut, 0x19, 100),
         "Failed to send write response header"
     );
+
+    // With buffered architecture, need additional clock cycles for:
+    // 1. Buffer to latch response and set resp_valid
+    // 2. Main state machine to transition from CPU_RESP_WAIT to COMPLETE
+    for _ in 0..5 {
+        if dut.ready != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
 
     // Verify ready is asserted (should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH after write response");
@@ -337,6 +353,14 @@ fn test_read_word_returns_data() {
         "Failed to send RData[31:24]"
     );
 
+    // With buffered architecture, need additional clock cycles for state machine
+    for _ in 0..5 {
+        if dut.ready != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
     // Verify read data and ready (ready should be HIGH in COMPLETE state)
     assert_eq!(dut.ready, 1, "ready should be HIGH");
     assert_eq!(dut.rdata, 0xCAFEBABE, "Read data mismatch");
@@ -380,6 +404,14 @@ fn test_read_halfword_returns_data() {
         "Failed to send RData[15:8]"
     );
 
+    // With buffered architecture, need additional clock cycles for state machine
+    for _ in 0..5 {
+        if dut.ready != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
     assert_eq!(dut.ready, 1, "ready should be HIGH");
     // Upper bits should be zeroed for sub-word reads
     assert_eq!(
@@ -420,6 +452,14 @@ fn test_read_byte_returns_data() {
         send_rx_byte(&mut dut, 0x42, 100),
         "Failed to send RData[7:0]"
     );
+
+    // With buffered architecture, need additional clock cycles for state machine
+    for _ in 0..5 {
+        if dut.ready != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
 
     assert_eq!(dut.ready, 1, "ready should be HIGH");
     // Upper bits should be zeroed for sub-word reads
@@ -580,11 +620,22 @@ fn test_rx_delayed_valid() {
     // Header for word write response: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
     send_rx_byte(&mut dut, 0x19, 100);
 
+    // With buffered architecture, need additional clock cycles for state machine
+    for _ in 0..5 {
+        if dut.ready != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
     assert_eq!(dut.ready, 1, "ready should be HIGH after delayed response");
 }
 
 #[test]
-fn test_rx_ready_only_in_rx_phase() {
+fn test_rx_ready_buffered_architecture() {
+    // With the new buffered RX architecture, rx_ready is driven by the host_rx_buffer module.
+    // It is HIGH when at least one buffer is free (response or request buffer).
+    // It is LOW only when BOTH buffers are full.
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostBusInterface>()
@@ -592,8 +643,11 @@ fn test_rx_ready_only_in_rx_phase() {
 
     reset_module(&mut dut);
 
-    // Verify rx_ready is LOW in IDLE
-    assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW in IDLE");
+    // rx_ready should be HIGH in IDLE (both buffers are empty after reset)
+    assert_eq!(
+        dut.rx_ready, 1,
+        "rx_ready should be HIGH in IDLE (buffers free)"
+    );
 
     // Start read transaction
     dut.addr = 0x80000000;
@@ -603,9 +657,12 @@ fn test_rx_ready_only_in_rx_phase() {
     clock_cycle!(dut);
     dut.req = 0;
 
-    // During TX phase, rx_ready should be LOW
+    // During TX phase, rx_ready should still be HIGH because the buffer is free
     for _ in 0..3 {
-        assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW during TX phase");
+        assert_eq!(
+            dut.rx_ready, 1,
+            "rx_ready should be HIGH during TX phase (buffer free)"
+        );
         receive_tx_byte(&mut dut, 100);
     }
 
@@ -614,9 +671,9 @@ fn test_rx_ready_only_in_rx_phase() {
         receive_tx_byte(&mut dut, 100);
     }
 
-    // Now in RX phase, rx_ready should be HIGH
+    // After TX phase, rx_ready should still be HIGH (buffer still free)
     clock_cycle!(dut);
-    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH in RX phase");
+    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH (buffer free)");
 }
 
 // ============================================================
@@ -733,6 +790,14 @@ fn test_consecutive_transactions() {
         // Send response with extended header
         // Header for word write response: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
         send_rx_byte(&mut dut, 0x19, 100);
+
+        // With buffered architecture, need additional clock cycles for state machine
+        for _ in 0..5 {
+            if dut.ready != 0 {
+                break;
+            }
+            clock_cycle!(dut);
+        }
 
         // Verify completion (ready should be HIGH in COMPLETE state)
         assert_eq!(dut.ready, 1, "Transaction {} should complete", iteration);
