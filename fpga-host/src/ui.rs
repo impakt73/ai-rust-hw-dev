@@ -34,14 +34,20 @@ fn render_log_area(frame: &mut Frame, app: &App, area: Rect) {
 
     // Convert log messages to list items with appropriate styling
     let total_messages = app.log_messages.len();
-    let start_idx = if app.scroll_offset == 0 {
+
+    // Clamp scroll_offset to the maximum meaningful value
+    // Maximum scroll is total_messages - visible_lines (or 0 if fewer messages than visible)
+    let max_scroll = total_messages.saturating_sub(visible_lines);
+    let effective_scroll_offset = app.scroll_offset.min(max_scroll);
+
+    let start_idx = if effective_scroll_offset == 0 {
         // Auto-scroll: show the last N messages
         total_messages.saturating_sub(visible_lines)
     } else {
         // Manual scroll: show from calculated offset
         total_messages
             .saturating_sub(visible_lines)
-            .saturating_sub(app.scroll_offset)
+            .saturating_sub(effective_scroll_offset)
     };
 
     let items: Vec<ListItem> = app
@@ -68,11 +74,11 @@ fn render_log_area(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    // Build title with scroll indicator
-    let title = if app.scroll_offset > 0 {
+    // Build title with scroll indicator (showing effective scroll offset)
+    let title = if effective_scroll_offset > 0 {
         format!(
             " FPGA Host Interface (scroll: -{}, ESC to reset) ",
-            app.scroll_offset
+            effective_scroll_offset
         )
     } else {
         " FPGA Host Interface ".to_string()

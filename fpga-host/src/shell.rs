@@ -42,19 +42,33 @@ impl std::error::Error for ParseError {}
 pub struct CommandResult {
     /// Optional message to display
     pub message: Option<String>,
+    /// Log level for the message
+    pub level: log::Level,
 }
 
 impl CommandResult {
-    /// Create a result with a message
+    /// Create a successful result with an info-level message
     pub fn ok(msg: impl Into<String>) -> Self {
         Self {
             message: Some(msg.into()),
+            level: log::Level::Info,
+        }
+    }
+
+    /// Create an error result with an error-level message
+    pub fn error(msg: impl Into<String>) -> Self {
+        Self {
+            message: Some(msg.into()),
+            level: log::Level::Error,
         }
     }
 
     /// Create a result with no message
     pub fn silent() -> Self {
-        Self { message: None }
+        Self {
+            message: None,
+            level: log::Level::Info,
+        }
     }
 }
 
@@ -203,7 +217,7 @@ fn execute_status(app: &App) -> CommandResult {
 /// Execute the connect command
 fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
     if app.serial.is_some() {
-        return CommandResult::ok("Already connected. Disconnect first.");
+        return CommandResult::error("Already connected. Disconnect first.");
     }
 
     match SerialConnection::connect(device, baud) {
@@ -211,7 +225,7 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
             app.serial = Some(serial);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
         }
-        Err(e) => CommandResult::ok(format!("Failed to connect: {}", e)),
+        Err(e) => CommandResult::error(format!("Failed to connect: {}", e)),
     }
 }
 
@@ -231,19 +245,24 @@ fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
     let path = Path::new(path);
 
     if !path.exists() {
-        return CommandResult::ok(format!("File not found: {}", path.display()));
+        return CommandResult::error(format!("File not found: {}", path.display()));
     }
 
-    // Clear existing memory before loading
-    app.memory.clear();
+    // Load into a temporary memory instance first, so we don't
+    // discard the existing memory contents if loading fails.
+    let mut new_memory = Default::default();
 
-    match elf_loader::load_elf(&mut app.memory, path) {
-        Ok(entry_point) => CommandResult::ok(format!(
-            "Loaded {} successfully\nEntry point: 0x{:08x}",
-            path.display(),
-            entry_point
-        )),
-        Err(e) => CommandResult::ok(format!("Failed to load ELF: {}", e)),
+    match elf_loader::load_elf(&mut new_memory, path) {
+        Ok(entry_point) => {
+            // Loading succeeded; commit the new memory.
+            app.memory = new_memory;
+            CommandResult::ok(format!(
+                "Loaded {} successfully\nEntry point: 0x{:08x}",
+                path.display(),
+                entry_point
+            ))
+        }
+        Err(e) => CommandResult::error(format!("Failed to load ELF: {}", e)),
     }
 }
 

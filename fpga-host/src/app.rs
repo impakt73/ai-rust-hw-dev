@@ -10,6 +10,9 @@ use std::collections::VecDeque;
 /// Maximum number of log lines to retain
 const MAX_LOG_LINES: usize = 1000;
 
+/// Maximum number of command history entries to retain
+const MAX_HISTORY_ENTRIES: usize = 500;
+
 /// A log line entry for display
 #[derive(Debug, Clone)]
 pub struct LogLine {
@@ -27,8 +30,8 @@ pub struct App {
     pub memory: SparseMemory,
     /// Command input buffer
     pub input_buffer: String,
-    /// Command history for up/down navigation
-    pub command_history: Vec<String>,
+    /// Command history for up/down navigation (capped at MAX_HISTORY_ENTRIES)
+    pub command_history: VecDeque<String>,
     /// Current position in command history (None = not navigating)
     pub history_index: Option<usize>,
     /// Log message buffer for display (ring buffer)
@@ -39,6 +42,8 @@ pub struct App {
     pub request_count: u64,
     /// Scroll offset for log view (0 = auto-scroll to bottom)
     pub scroll_offset: usize,
+    /// Verbose logging mode
+    pub verbose: bool,
 }
 
 impl App {
@@ -48,13 +53,19 @@ impl App {
             serial: None,
             memory: SparseMemory::new(),
             input_buffer: String::new(),
-            command_history: Vec::new(),
+            command_history: VecDeque::with_capacity(MAX_HISTORY_ENTRIES),
             history_index: None,
             log_messages: VecDeque::with_capacity(MAX_LOG_LINES),
             should_quit: false,
             request_count: 0,
             scroll_offset: 0,
+            verbose: false,
         }
+    }
+
+    /// Set verbose mode
+    pub fn set_verbose(&mut self, verbose: bool) {
+        self.verbose = verbose;
     }
 
     /// Check if a serial connection is active
@@ -110,8 +121,11 @@ impl App {
             return;
         }
 
-        // Add to history
-        self.command_history.push(input.clone());
+        // Add to history (with cap)
+        if self.command_history.len() >= MAX_HISTORY_ENTRIES {
+            self.command_history.pop_front();
+        }
+        self.command_history.push_back(input.clone());
         self.history_index = None;
         self.input_buffer.clear();
 
@@ -121,8 +135,9 @@ impl App {
                 let result = cmd.execute(self);
                 if let Some(msg) = result.message {
                     // Split multi-line messages into separate log entries
+                    // Use the level from the CommandResult
                     for line in msg.lines() {
-                        self.add_log(log::Level::Info, line.to_string());
+                        self.add_log(result.level, line.to_string());
                     }
                 }
             }
@@ -134,6 +149,10 @@ impl App {
 
     /// Add a log message
     pub fn add_log(&mut self, level: log::Level, message: String) {
+        // Filter debug/trace logs if not in verbose mode
+        if !self.verbose && matches!(level, log::Level::Debug | log::Level::Trace) {
+            return;
+        }
         if self.log_messages.len() >= MAX_LOG_LINES {
             self.log_messages.pop_front();
         }

@@ -63,11 +63,6 @@ impl SparseMemory {
         self.data
             .insert(addr.wrapping_add(3), ((data >> 24) & 0xFF) as u8);
     }
-
-    /// Clear all memory contents
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
 }
 
 impl Default for SparseMemory {

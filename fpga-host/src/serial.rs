@@ -195,9 +195,20 @@ impl SerialConnection {
                             );
                             self.bus_state = HostBusState::RxAddr { byte_idx: 0 };
                         }
-                        Ok(0) | Err(_) => {
-                            // No data available or timeout
+                        Ok(0) => {
+                            // No data available
                             return Ok(None);
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            // Timeout or would block - no data available
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            // Real I/O error
+                            return Err(SerialError::IoError(e));
                         }
                         Ok(_) => unreachable!(),
                     }
@@ -226,9 +237,20 @@ impl SerialConnection {
                                 };
                             }
                         }
-                        Ok(0) | Err(_) => {
-                            // No data, return and try again later
+                        Ok(0) => {
+                            // No data available
                             return Ok(None);
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            // Timeout or would block - no data available
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            // Real I/O error
+                            return Err(SerialError::IoError(e));
                         }
                         Ok(_) => unreachable!(),
                     }
@@ -253,9 +275,20 @@ impl SerialConnection {
                                 };
                             }
                         }
-                        Ok(0) | Err(_) => {
-                            // No data, return and try again later
+                        Ok(0) => {
+                            // No data available
                             return Ok(None);
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            // Timeout or would block - no data available
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            // Real I/O error
+                            return Err(SerialError::IoError(e));
                         }
                         Ok(_) => unreachable!(),
                     }
@@ -276,9 +309,20 @@ impl SerialConnection {
                             self.bus_state = HostBusState::WaitHeader;
                             return Ok(Some(event));
                         }
-                        Ok(0) | Err(_) => {
-                            // Write failed, return and try again later
+                        Ok(0) => {
+                            // No bytes written, try again later
                             return Ok(None);
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            // Timeout or would block - try again later
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            // Real I/O error
+                            return Err(SerialError::IoError(e));
                         }
                         Ok(_) => unreachable!(),
                     }
@@ -309,9 +353,20 @@ impl SerialConnection {
                                 };
                             }
                         }
-                        Ok(0) | Err(_) => {
-                            // Write failed, return and try again later
+                        Ok(0) => {
+                            // No bytes written, try again later
                             return Ok(None);
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            // Timeout or would block - try again later
+                            return Ok(None);
+                        }
+                        Err(e) => {
+                            // Real I/O error
+                            return Err(SerialError::IoError(e));
                         }
                         Ok(_) => unreachable!(),
                     }

@@ -72,6 +72,9 @@ fn main() -> io::Result<()> {
 fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     let mut app = App::new();
 
+    // Apply verbose mode from CLI args
+    app.set_verbose(args.verbose);
+
     // Welcome messages
     app.add_log(log::Level::Info, "FPGA Host Interface started".to_string());
     app.add_log(
