@@ -43,11 +43,7 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// The CPU polls the LED register waiting for a non-zero value.
 /// The host uses `send_bus_request()` to write to the LED peripheral via the full
 /// Host → RX → Buffer → Master → Bus → Peripheral path.
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
 

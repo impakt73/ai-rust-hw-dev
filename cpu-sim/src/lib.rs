@@ -142,7 +142,6 @@ impl InteractiveSimulator {
                 &self.simulator.cpu,
                 &mut self.simulator.host_request_pending,
                 &mut self.simulator.host_response_ready,
-                &mut self.simulator.host_request_state,
             );
             load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
         };
@@ -517,7 +516,6 @@ where
             &sim.cpu,
             &mut sim.host_request_pending,
             &mut sim.host_response_ready,
-            &mut sim.host_request_state,
         );
         setup_callback(&mut view)?
     };
@@ -536,7 +534,6 @@ where
             &sim.cpu,
             &mut sim.host_request_pending,
             &mut sim.host_response_ready,
-            &mut sim.host_request_state,
         );
         callback(&view, &result);
     }
