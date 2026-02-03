@@ -889,8 +889,9 @@ where
 
                 if self.cpu.host_rx_ready != 0 {
                     // Handshake complete - move to address transmission
+                    // NOTE: Don't de-assert valid here - next state will set new data
+                    // before the clock edge, and the RTL needs to see this byte first
                     self.host_request_state = HostRequestState::TxAddr { byte_idx: 0 };
-                    self.cpu.host_rx_valid = 0; // De-assert until next byte
                 }
             }
             HostRequestState::TxAddr { byte_idx } => {
@@ -909,6 +910,7 @@ where
                             self.host_request_state = HostRequestState::TxWdata { byte_idx: 0 };
                         } else {
                             // Read request - wait for response
+                            // NOTE: Don't de-assert valid here - let RxHeader state do it
                             self.host_request_state = HostRequestState::RxHeader;
                         }
                     } else {
@@ -916,7 +918,7 @@ where
                             byte_idx: byte_idx + 1,
                         };
                     }
-                    self.cpu.host_rx_valid = 0; // De-assert until next byte
+                    // NOTE: Don't de-assert valid here - next state sets new data before clock edge
                 }
             }
             HostRequestState::TxWdata { byte_idx } => {
@@ -938,13 +940,14 @@ where
 
                     if byte_idx + 1 >= num_bytes {
                         // Write data complete - wait for response
+                        // NOTE: Don't de-assert valid here - let RxHeader state do it on next cycle
+                        // This ensures the RTL sees this byte at the clock edge
                         self.host_request_state = HostRequestState::RxHeader;
                     } else {
                         self.host_request_state = HostRequestState::TxWdata {
                             byte_idx: byte_idx + 1,
                         };
                     }
-                    self.cpu.host_rx_valid = 0; // De-assert until next byte
                 }
             }
             HostRequestState::RxHeader | HostRequestState::RxRdata { .. } => {
@@ -959,10 +962,21 @@ where
     ///
     /// Receives response packets from the RTL via host_tx_* signals.
     /// Packet format: [header][data0-N] (data only for reads)
+    ///
+    /// NOTE: The TX path is shared with CPU-initiated requests. When waiting for
+    /// a host response (packet type 0011), we might see CPU-initiated requests
+    /// (packet type 0000) instead. We only process packet type 0011 here.
     fn handle_host_response_rx(&mut self) {
         match self.host_request_state {
             HostRequestState::RxHeader => {
                 // Waiting for response header (packet type 0011)
+                // NOTE: Only process TX data when CPU-initiated handler is in Idle state.
+                // If CPU-initiated handler is processing a multi-byte packet, we should not
+                // interfere with the TX data stream.
+                if self.host_bus_state != HostBusState::Idle {
+                    return;
+                }
+
                 self.cpu.host_tx_ready = 1; // Ready to receive
 
                 if self.cpu.host_tx_valid != 0 {
@@ -970,10 +984,16 @@ where
                     let header = self.cpu.host_tx_data;
                     let packet_type = (header >> 4) & 0x0F;
 
+                    // If this is a CPU-initiated request (type 0000), skip and let
+                    // the CPU-initiated handler process it
+                    if packet_type == 0x00 {
+                        return;
+                    }
+
                     if packet_type != 0x03 {
                         panic!(
-                            "Unexpected packet type on host response: 0x{:X} (expected 0x3)",
-                            packet_type
+                            "Unexpected packet type on host response: 0x{:X} (expected 0x0 or 0x3), header=0x{:02X}",
+                            packet_type, header
                         );
                     }
 
@@ -1093,10 +1113,16 @@ where
                     // Parse extended header: {packet_type[3:0], size[1:0], 1'b0, we}
                     let packet_type = (header >> 4) & 0x0F;
 
+                    // Skip if this is a host response (packet type 0011) -
+                    // handle_host_response_rx() already processed it
+                    if packet_type == 0x03 {
+                        return;
+                    }
+
                     // Verify this is a CPU-initiated request (packet type 0000)
                     if packet_type != 0x00 {
                         panic!(
-                            "Unexpected packet type on TX: 0x{:X} (expected 0x0 for CPU-initiated request)",
+                            "Unexpected packet type on TX: 0x{:X} (expected 0x0 or 0x3)",
                             packet_type
                         );
                     }

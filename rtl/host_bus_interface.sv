@@ -382,7 +382,8 @@ module host_bus_interface (
     assign buf_resp_consumed = (state == STATE_COMPLETE);
     
     // Consume buffered request when host transaction starts
-    assign buf_req_consumed = (state == STATE_HOST_REQ_PENDING && host_bus_req);
+    // Note: host_bus_req = (state == STATE_HOST_REQ_PENDING), so this simplifies
+    assign buf_req_consumed = (state == STATE_HOST_REQ_PENDING);
 
     // ============================================================
     // TX Phase Detection
