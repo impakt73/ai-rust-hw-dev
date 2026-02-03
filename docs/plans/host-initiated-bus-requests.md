@@ -164,10 +164,6 @@ The module should only lower `rx_ready` when **both** storage locations contain 
 
 #### 4.1.4 Implementation Details
 
-> **Note:** The following SystemVerilog code is a reference implementation to guide development. 
-> It demonstrates the key design patterns but may require refinement during actual implementation,
-> particularly for synthesis tool compatibility and timing optimization.
-
 ```systemverilog
 module host_rx_buffer (
     // Clock and reset
@@ -266,13 +262,24 @@ module host_rx_buffer (
     // rx_ready Logic
     // ============================================================
     // Ready to receive when:
-    // 1. Not both buffers are full (can store new packet)
-    // 2. Either in IDLE (waiting for header) or actively receiving packet data
-    logic can_store_packet;
-    logic is_receiving;
-    assign can_store_packet = !(resp_valid_reg && req_valid_reg);
-    assign is_receiving = (state >= STATE_RESP_RDATA_0) && (state <= STATE_REQ_WDATA_3);
-    assign rx_ready = can_store_packet && (state == STATE_IDLE || is_receiving);
+    // 1. In IDLE state AND at least one buffer is available to store a new packet
+    //    (we don't know the packet type until we see the header, so we must accept
+    //    if either buffer could potentially store the incoming packet)
+    // 2. OR actively receiving a packet (must continue accepting data)
+    //
+    // We lower rx_ready ONLY when both buffers are full AND we're in IDLE.
+    // This satisfies Rule 5: Target must accept data even with outstanding request.
+    logic can_accept_new_packet;
+    logic is_receiving_packet;
+    
+    // At least one buffer must be free to start accepting a new packet
+    assign can_accept_new_packet = !resp_valid_reg || !req_valid_reg;
+    
+    // Currently in the middle of receiving a packet (not in IDLE)
+    assign is_receiving_packet = (state != STATE_IDLE);
+    
+    // Ready when: actively receiving OR (in IDLE with at least one free buffer)
+    assign rx_ready = is_receiving_packet || can_accept_new_packet;
     
     // ============================================================
     // State Register
@@ -295,22 +302,31 @@ module host_rx_buffer (
             STATE_IDLE: begin
                 if (rx_valid && rx_ready) begin
                     // Parse header to determine packet type
+                    // Only accept if the destination buffer is available
                     case (header_packet_type)
                         4'b0001: begin  // Host response to CPU request
-                            // Check if it's a write response (no data) or read response
-                            if (header_we) begin
-                                // Write response - header only, mark complete
-                                next_state = STATE_IDLE;  // Stays in idle, resp_valid set in ff block
-                            end else begin
-                                // Read response - need to receive data bytes
-                                next_state = STATE_RESP_RDATA_0;
+                            // Only accept response if response buffer is free
+                            if (!resp_valid_reg) begin
+                                if (header_we) begin
+                                    // Write response - header only, mark complete
+                                    next_state = STATE_IDLE;  // Stays in idle, resp_valid set in ff block
+                                end else begin
+                                    // Read response - need to receive data bytes
+                                    next_state = STATE_RESP_RDATA_0;
+                                end
                             end
+                            // If resp_valid_reg is set, stay in IDLE (reject this packet)
+                            // The sender must retry when rx_ready goes high again
                         end
                         4'b0010: begin  // Host-initiated request
-                            next_state = STATE_REQ_ADDR_0;
+                            // Only accept request if request buffer is free
+                            if (!req_valid_reg) begin
+                                next_state = STATE_REQ_ADDR_0;
+                            end
+                            // If req_valid_reg is set, stay in IDLE (reject this packet)
                         end
                         default: begin
-                            // Unknown packet type, stay in idle
+                            // Unknown packet type, stay in idle and ignore
                             next_state = STATE_IDLE;
                         end
                     endcase
@@ -443,26 +459,32 @@ module host_rx_buffer (
             if (rx_valid && rx_ready) begin
                 case (state)
                     STATE_IDLE: begin
-                        // Parse header using combinational signals
+                        // Parse header - only capture if destination buffer is free
                         case (header_packet_type)
                             4'b0001: begin  // Host response to CPU request
-                                resp_we_reg    <= header_we;
-                                resp_size_reg  <= header_size;
-                                temp_size      <= header_size;  // Store for later state decisions
-                                resp_rdata_reg <= 32'h0;  // Clear for accumulation
-                                
-                                if (header_we) begin
-                                    // Write response - complete immediately
-                                    resp_valid_reg <= 1'b1;
+                                // Only capture if response buffer is free
+                                if (!resp_valid_reg) begin
+                                    resp_we_reg    <= header_we;
+                                    resp_size_reg  <= header_size;
+                                    temp_size      <= header_size;  // Store for later state decisions
+                                    resp_rdata_reg <= 32'h0;  // Clear for accumulation
+                                    
+                                    if (header_we) begin
+                                        // Write response - complete immediately
+                                        resp_valid_reg <= 1'b1;
+                                    end
                                 end
                             end
                             4'b0010: begin  // Host-initiated request
-                                temp_we        <= header_we;
-                                temp_size      <= header_size;
-                                req_we_reg     <= header_we;
-                                req_size_reg   <= header_size;
-                                req_addr_reg   <= 32'h0;  // Clear for accumulation
-                                req_wdata_reg  <= 32'h0;  // Clear for accumulation
+                                // Only capture if request buffer is free
+                                if (!req_valid_reg) begin
+                                    temp_we        <= header_we;
+                                    temp_size      <= header_size;
+                                    req_we_reg     <= header_we;
+                                    req_size_reg   <= header_size;
+                                    req_addr_reg   <= 32'h0;  // Clear for accumulation
+                                    req_wdata_reg  <= 32'h0;  // Clear for accumulation
+                                end
                             end
                             default: ; // Ignore unknown packet types
                         endcase
@@ -880,27 +902,34 @@ fn test_response_priority()
 
 Add new test file: `cpu-sim/tests/test_host_initiated_requests.rs`
 
-#### 6.3.1 Minimal Synchronization Test
+#### 6.3.1 Minimal Synchronization Test (LED Fence Pattern)
 
-This is the foundational test that proves the system works:
+This is the foundational test that proves the host-initiated bus request system works.
+The LED peripheral (0x50000000) is used as the synchronization fence since it's an RTL
+peripheral that can be written via host-initiated bus requests.
+
+**Key design:** The CPU polls the LED register waiting for a non-zero value. The host
+uses `send_bus_request()` to write to the LED peripheral via the full 
+Host → RX → Buffer → Master → Bus → Peripheral path.
 
 ```rust
 #[test]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
     
-    // Synchronization fence address
-    const FENCE_ADDR: u32 = 0x8000_1000;
+    // LED peripheral is used as the fence (RTL peripheral at 0x50000000)
+    const LED_BASE: u32 = 0x50000000;
     
-    // Program that spins on memory location until it changes from 0 to 1
+    // Program that spins on LED peripheral until it becomes non-zero
     let instructions = vec![
-        // Setup: Load fence address
-        lui(15, 0x80001000 >> 12),       // x15 = fence address base
-        // Spin loop: wait for memory[FENCE_ADDR] != 0
-        lw(14, 15, 0),                   // x14 = memory[fence_addr]
-        beq(14, 0, -4),                  // if x14 == 0, loop back to lw
-        // Exit: Write to tohost
-        lui(10, 0x10000000 >> 12),       // x10 = tohost address
+        // Setup: Load LED peripheral address
+        lui(15, LED_BASE),               // x15 = LED base address (0x50000000)
+        // Spin loop: wait for LED value != 0
+        lw(14, 15, 0),                   // x14 = LED peripheral value
+        andi(14, 14, 0xFF),              // mask to 8 bits
+        beq(14, 0, -8),                  // if x14 == 0, loop back to lw
+        // Exit: Write tohost
+        lui(10, 0x10000000),             // x10 = tohost address
         addi(11, 0, 1),                  // x11 = 1 (success)
         sw(10, 11, 0),                   // memory[tohost] = 1
         jal(0, 0),                       // infinite loop
@@ -920,26 +949,29 @@ fn test_host_initiated_basic_sync() {
         false, // print_inst_trace
         false, // print_fsm_state
         Some(move |sim: &mut SimulatorView| {
-            // On each instruction complete, check if we should release the fence
-            // After some cycles, write 1 to the fence address via host-initiated request
+            // On each instruction complete, check if we should release the fence.
+            // Use send_bus_request() to write to the LED peripheral via the
+            // Host → RX → Buffer → Master → Bus → LED Peripheral path.
             let mut written = fence_written_clone.lock().unwrap();
             if !*written {
                 // Send host-initiated write to LED peripheral (RTL space)
-                // This tests the full path: Host → RX → Buffer → Master → Bus → Peripheral
-                
-                // For this basic test, we'll just use the SimulatorView memory API
-                // to modify the fence, proving the callback mechanism works
-                sim.write_memory_region(FENCE_ADDR, &1u32.to_le_bytes(), false);
+                // Value 0x01 will cause CPU to break out of spin loop
+                sim.send_bus_request(LED_BASE, 0x01, true, 0)
+                    .expect("Should queue host request");
                 *written = true;
+            }
+            
+            // Poll for response completion
+            if let Some(_response) = sim.receive_bus_response() {
+                // Response received, LED write is complete
             }
         }),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            // Setup: Write program and initialize fence to 0
+            // Setup: Write program (LED peripheral starts at 0 after reset)
             sim.write_memory_region(START_ADDR, &program_bytes, true);
-            sim.write_memory_region(FENCE_ADDR, &0u32.to_le_bytes(), false);
             Ok(START_ADDR)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -949,14 +981,18 @@ fn test_host_initiated_basic_sync() {
     assert_eq!(
         result.tohost_value,
         Some(1),
-        "Program should exit with success code after fence release"
+        "Program should exit with success code after LED fence release"
     );
 }
 ```
 
-#### 6.3.2 Host-Initiated LED Write Test
+#### 6.3.2 Host-Initiated LED Write and Read Test
 
-Test actual RTL peripheral access:
+This test verifies that the CPU can correctly read back a value written to the LED
+peripheral via host-initiated bus request. The test uses a two-phase approach:
+1. Host writes a known value to LED peripheral via bus request
+2. Host writes a second value to release the fence
+3. CPU reads LED, compares with expected value stored in DRAM, reports result
 
 ```rust
 #[test]
@@ -964,44 +1000,44 @@ fn test_host_initiated_led_write() {
     init_test_logger();
     
     // Address constants
-    const FENCE_ADDR: u32 = 0x8000_1000;
-    const LED_EXPECTED_ADDR: u32 = 0x8000_1004;
     const LED_BASE: u32 = 0x50000000;
+    const LED_EXPECTED_ADDR: u32 = 0x8000_1000;  // DRAM location for expected value
     
     // Program that:
-    // 1. Waits for fence to be released
-    // 2. Reads the expected LED value from memory (written by host)
+    // 1. Waits for LED peripheral to be non-zero (fence)
+    // 2. Reads the expected LED value from DRAM (written by host)
     // 3. Reads the actual LED value from LED peripheral
     // 4. Compares and writes result to tohost
     let instructions = vec![
         // Setup addresses
-        lui(15, FENCE_ADDR >> 12),        // x15 = fence address
-        lui(14, LED_BASE >> 12),          // x14 = LED base address
-        lui(13, LED_EXPECTED_ADDR >> 12), // x13 = expected value address
+        lui(15, LED_BASE),                // x15 = LED base address (0x50000000)
+        lui(14, 0x80001000),              // x14 = DRAM base for expected value
+        lui(9, 0x10000000),               // x9 = tohost address
         
-        // Wait for fence
-        lw(12, 15, 0),                    // x12 = memory[fence]
-        beq(12, 0, -4),                   // spin while fence == 0
+        // Wait for LED fence (non-zero value)
+        lw(12, 15, 0),                    // x12 = LED peripheral value
+        andi(12, 12, 0xFF),               // mask to 8 bits
+        beq(12, 0, -8),                   // spin while LED == 0
         
-        // Read expected and actual LED values
-        lw(11, 13, LED_EXPECTED_ADDR & 0xFFF),  // x11 = expected LED value
-        lw(10, 14, 0),                    // x10 = LED peripheral value
+        // Read expected value from DRAM and actual LED value
+        lw(11, 14, 0),                    // x11 = expected LED value from DRAM
+        andi(11, 11, 0xFF),               // mask to 8 bits
+        lw(10, 15, 0),                    // x10 = LED peripheral value
         andi(10, 10, 0xFF),               // mask to 8 bits
         
-        // Compare
-        lui(9, 0x10000000 >> 12),         // x9 = tohost address
+        // Compare actual vs expected
         sub(8, 10, 11),                   // x8 = actual - expected
-        bne(8, 0, 12),                    // if not equal, fail
+        bne(8, 0, 12),                    // if not equal, jump to failure
         
         // Success
         addi(7, 0, 1),
-        sw(9, 7, 0),
-        jal(0, 0),
+        sw(9, 7, 0),                      // tohost = 1
+        jal(0, 0),                        // infinite loop
         
         // Failure
         addi(7, 0, 2),
-        sw(9, 7, 0),
-        jal(0, 0),
+        sw(9, 7, 0),                      // tohost = 2
+        jal(0, 0),                        // infinite loop
     ];
     
     const START_ADDR: u32 = 0x8000_0000;
@@ -1020,20 +1056,17 @@ fn test_host_initiated_led_write() {
         Some(move |sim: &mut SimulatorView| {
             let mut sent = host_request_sent_clone.lock().unwrap();
             if !*sent {
-                // Send host-initiated write to LED peripheral
-                let led_value = 0xA5u8;
+                // Write the test value to LED peripheral via host-initiated bus request
+                let led_value: u8 = 0xA5;
                 sim.send_bus_request(LED_BASE, led_value as u32, true, 0)
                     .expect("Should queue host request");
                 
-                // Store expected value in memory for CPU to read
-                sim.write_memory_region(LED_EXPECTED_ADDR, &[led_value], false);
-                
-                // Release fence
-                sim.write_memory_region(FENCE_ADDR, &1u32.to_le_bytes(), false);
+                // Store expected value in DRAM for CPU to compare
+                sim.write_memory_region(LED_EXPECTED_ADDR, &(led_value as u32).to_le_bytes(), false);
                 *sent = true;
             }
             
-            // Check for response
+            // Poll for response
             if let Some(response) = sim.receive_bus_response() {
                 assert!(response.we, "Should be write response");
             }
@@ -1043,7 +1076,8 @@ fn test_host_initiated_led_write() {
         0,
         |sim| {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
-            sim.write_memory_region(FENCE_ADDR, &0u32.to_le_bytes(), false);
+            // Initialize expected value to 0 (will be updated by callback)
+            sim.write_memory_region(LED_EXPECTED_ADDR, &0u32.to_le_bytes(), false);
             Ok(START_ADDR)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -1053,7 +1087,7 @@ fn test_host_initiated_led_write() {
     assert_eq!(
         result.tohost_value,
         Some(1),
-        "LED value should match expected"
+        "LED value should match expected (0xA5)"
     );
 }
 ```
@@ -1104,8 +1138,8 @@ fn test_host_request_during_cpu_activity()
 4. Test with minimal synchronization test
 
 ### Phase 4: Integration Testing
-1. Run basic sync test (fence pattern)
-2. Test LED peripheral access from host
+1. Run basic LED fence test (host writes to LED, CPU polls until non-zero)
+2. Test LED peripheral write and readback from host
 3. Test clock peripheral read from host
 4. Test concurrent CPU and host access
 5. Verify no regressions in existing tests
