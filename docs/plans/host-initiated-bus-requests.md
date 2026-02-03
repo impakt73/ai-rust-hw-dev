@@ -164,6 +164,10 @@ The module should only lower `rx_ready` when **both** storage locations contain 
 
 #### 4.1.4 Implementation Details
 
+> **Note:** The following SystemVerilog code is a reference implementation to guide development. 
+> It demonstrates the key design patterns but may require refinement during actual implementation,
+> particularly for synthesis tool compatibility and timing optimization.
+
 ```systemverilog
 module host_rx_buffer (
     // Clock and reset
@@ -232,6 +236,18 @@ module host_rx_buffer (
     logic        temp_we;
     logic [1:0]  temp_size;
     
+    // Combinational signals for header parsing
+    logic [3:0]  header_packet_type;
+    logic        header_we;
+    logic [1:0]  header_size;
+    
+    // ============================================================
+    // Header Parsing (combinational)
+    // ============================================================
+    assign header_packet_type = rx_data[7:4];
+    assign header_we          = rx_data[0];
+    assign header_size        = rx_data[3:2];
+    
     // ============================================================
     // Output Assignments
     // ============================================================
@@ -249,10 +265,14 @@ module host_rx_buffer (
     // ============================================================
     // rx_ready Logic
     // ============================================================
-    // Ready to receive when not both buffers are full
-    // Also must not be in a receiving state where we can't accept data
-    assign rx_ready = !(resp_valid_reg && req_valid_reg) && (state == STATE_IDLE || 
-                       (rx_valid && (state != STATE_IDLE)));
+    // Ready to receive when:
+    // 1. Not both buffers are full (can store new packet)
+    // 2. Either in IDLE (waiting for header) or actively receiving packet data
+    logic can_store_packet;
+    logic is_receiving;
+    assign can_store_packet = !(resp_valid_reg && req_valid_reg);
+    assign is_receiving = (state >= STATE_RESP_RDATA_0) && (state <= STATE_REQ_WDATA_3);
+    assign rx_ready = can_store_packet && (state == STATE_IDLE || is_receiving);
     
     // ============================================================
     // State Register
@@ -275,13 +295,10 @@ module host_rx_buffer (
             STATE_IDLE: begin
                 if (rx_valid && rx_ready) begin
                     // Parse header to determine packet type
-                    logic [3:0] packet_type;
-                    packet_type = rx_data[7:4];
-                    
-                    case (packet_type)
+                    case (header_packet_type)
                         4'b0001: begin  // Host response to CPU request
                             // Check if it's a write response (no data) or read response
-                            if (rx_data[0]) begin
+                            if (header_we) begin
                                 // Write response - header only, mark complete
                                 next_state = STATE_IDLE;  // Stays in idle, resp_valid set in ff block
                             end else begin
@@ -300,10 +317,10 @@ module host_rx_buffer (
                 end
             end
             
-            // Response data receive states
+            // Response data receive states - use temp_size which was captured from header
             STATE_RESP_RDATA_0: begin
                 if (rx_valid && rx_ready) begin
-                    if (resp_size_reg == 2'b00) begin
+                    if (temp_size == 2'b00) begin
                         next_state = STATE_IDLE;  // Byte: done
                     end else begin
                         next_state = STATE_RESP_RDATA_1;
@@ -313,7 +330,7 @@ module host_rx_buffer (
             
             STATE_RESP_RDATA_1: begin
                 if (rx_valid && rx_ready) begin
-                    if (resp_size_reg == 2'b01) begin
+                    if (temp_size == 2'b01) begin
                         next_state = STATE_IDLE;  // Halfword: done
                     end else begin
                         next_state = STATE_RESP_RDATA_2;
@@ -426,26 +443,24 @@ module host_rx_buffer (
             if (rx_valid && rx_ready) begin
                 case (state)
                     STATE_IDLE: begin
-                        // Parse header
-                        logic [3:0] packet_type;
-                        packet_type = rx_data[7:4];
-                        
-                        case (packet_type)
+                        // Parse header using combinational signals
+                        case (header_packet_type)
                             4'b0001: begin  // Host response to CPU request
-                                resp_we_reg    <= rx_data[0];
-                                resp_size_reg  <= rx_data[3:2];
+                                resp_we_reg    <= header_we;
+                                resp_size_reg  <= header_size;
+                                temp_size      <= header_size;  // Store for later state decisions
                                 resp_rdata_reg <= 32'h0;  // Clear for accumulation
                                 
-                                if (rx_data[0]) begin
+                                if (header_we) begin
                                     // Write response - complete immediately
                                     resp_valid_reg <= 1'b1;
                                 end
                             end
                             4'b0010: begin  // Host-initiated request
-                                temp_we        <= rx_data[0];
-                                temp_size      <= rx_data[3:2];
-                                req_we_reg     <= rx_data[0];
-                                req_size_reg   <= rx_data[3:2];
+                                temp_we        <= header_we;
+                                temp_size      <= header_size;
+                                req_we_reg     <= header_we;
+                                req_size_reg   <= header_size;
                                 req_addr_reg   <= 32'h0;  // Clear for accumulation
                                 req_wdata_reg  <= 32'h0;  // Clear for accumulation
                             end
@@ -453,17 +468,17 @@ module host_rx_buffer (
                         endcase
                     end
                     
-                    // Response data capture (little-endian)
+                    // Response data capture (little-endian) - use temp_size for decisions
                     STATE_RESP_RDATA_0: begin
                         resp_rdata_reg[7:0] <= rx_data;
-                        if (resp_size_reg == 2'b00) begin
+                        if (temp_size == 2'b00) begin
                             resp_valid_reg <= 1'b1;  // Byte read complete
                         end
                     end
                     
                     STATE_RESP_RDATA_1: begin
                         resp_rdata_reg[15:8] <= rx_data;
-                        if (resp_size_reg == 2'b01) begin
+                        if (temp_size == 2'b01) begin
                             resp_valid_reg <= 1'b1;  // Halfword read complete
                         end
                     end
