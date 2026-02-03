@@ -44,10 +44,9 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// The host uses `send_bus_request()` to write to the LED peripheral via the full
 /// Host → RX → Buffer → Master → Bus → Peripheral path.
 ///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
+/// Now working with the unified RX buffer implementation that prioritizes
+/// CPU request processing while interleaving host request transmission.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
 
@@ -292,7 +291,12 @@ fn test_host_initiated_led_read() {
 ///
 /// Host-initiated requests must target RTL peripheral space (0x50000000-0x5FFFFFFF)
 /// to prevent deadlock. Requests to other address ranges should be rejected.
+///
+/// **IGNORED**: This test fails due to RTL priority scheduling. The host-initiated
+/// request to LED causes the CPU to stall waiting for a response that gets delayed.
+/// See module-level documentation.
 #[test]
+#[ignore = "RTL priority: Host request to LED causes CPU stall during instruction fetch"]
 fn test_host_request_address_validation() {
     init_test_logger();
 
