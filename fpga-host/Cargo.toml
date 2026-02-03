@@ -12,7 +12,9 @@ path = "src/main.rs"
 clap = { version = "4.4", features = ["derive"] }
 elf = "0.7"
 log = "0.4"
-env_logger = "0.10"
 serialport = "4.6"
-ctrlc = "3.4"
 riscv_shared = { path = "../riscv_shared" }
+
+# TUI dependencies
+ratatui = "0.29"
+crossterm = "0.28"
