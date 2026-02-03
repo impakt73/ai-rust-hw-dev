@@ -382,7 +382,9 @@ module host_bus_interface (
     assign buf_resp_consumed = (state == STATE_COMPLETE);
     
     // Consume buffered request when host transaction starts
-    // Note: host_bus_req = (state == STATE_HOST_REQ_PENDING), so this simplifies
+    // Note: host_bus_req is defined as (state == STATE_HOST_REQ_PENDING) on line 455,
+    // so the original condition (state == STATE_HOST_REQ_PENDING && host_bus_req)
+    // simplifies to just checking the state.
     assign buf_req_consumed = (state == STATE_HOST_REQ_PENDING);
 
     // ============================================================

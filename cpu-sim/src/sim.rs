@@ -888,9 +888,10 @@ where
                 self.cpu.host_rx_data = header;
 
                 if self.cpu.host_rx_ready != 0 {
-                    // Handshake complete - move to address transmission
-                    // NOTE: Don't de-assert valid here - next state will set new data
-                    // before the clock edge, and the RTL needs to see this byte first
+                    // Handshake complete - transition to TxAddr state.
+                    // NOTE: Don't de-assert valid here - TxAddr will set new address data
+                    // on the same cycle, and the RTL needs to see this header byte at the
+                    // clock edge before we present the next byte.
                     self.host_request_state = HostRequestState::TxAddr { byte_idx: 0 };
                 }
             }
@@ -990,9 +991,10 @@ where
                         return;
                     }
 
+                    // At this point, we expect only host response (type 0x03)
                     if packet_type != 0x03 {
                         panic!(
-                            "Unexpected packet type on host response: 0x{:X} (expected 0x0 or 0x3), header=0x{:02X}",
+                            "Unexpected packet type on host response: 0x{:X} (expected 0x3), header=0x{:02X}",
                             packet_type, header
                         );
                     }
