@@ -229,7 +229,10 @@ impl App {
 
     /// Scroll log view up
     fn scroll_up(&mut self, lines: usize) {
-        let max_offset = self.log_messages.len().saturating_sub(1);
+        if self.log_messages.is_empty() {
+            return;
+        }
+        let max_offset = self.log_messages.len() - 1;
         self.scroll_offset = (self.scroll_offset + lines).min(max_offset);
     }
 

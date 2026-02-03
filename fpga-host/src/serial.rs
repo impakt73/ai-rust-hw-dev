@@ -48,6 +48,11 @@ fn is_dram_address(addr: u32) -> bool {
 }
 
 /// Get the size name for logging
+///
+/// Maps the size encoding used in the bus protocol to a human-readable name:
+/// - 0 = byte (1 byte)
+/// - 1 = halfword (2 bytes)
+/// - 2+ = word (4 bytes)
 pub fn size_name(size: u8) -> &'static str {
     match size {
         0 => "byte",
@@ -57,6 +62,11 @@ pub fn size_name(size: u8) -> &'static str {
 }
 
 /// Get the number of bytes for a given size code
+///
+/// Maps the size encoding used in the bus protocol to the actual byte count:
+/// - 0 = 1 byte
+/// - 1 = 2 bytes (halfword)
+/// - 2+ = 4 bytes (word)
 pub fn bytes_for_size(size: u8) -> u8 {
     match size {
         0 => 1,

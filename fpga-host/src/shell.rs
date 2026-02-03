@@ -7,6 +7,9 @@ use crate::elf_loader;
 use crate::serial::SerialConnection;
 use std::path::Path;
 
+/// Default baud rate for serial connections
+const DEFAULT_BAUD_RATE: u32 = 115200;
+
 /// Errors that can occur during command parsing
 #[derive(Debug)]
 pub enum ParseError {
@@ -103,7 +106,7 @@ impl ShellCommand {
                         reason: "must be a valid number".into(),
                     })?
                 } else {
-                    115200 // Default baud rate
+                    DEFAULT_BAUD_RATE
                 };
                 Ok(ShellCommand::Connect { device, baud })
             }
@@ -149,19 +152,21 @@ impl ShellCommand {
 fn execute_help(command: Option<String>) -> CommandResult {
     if let Some(cmd) = command {
         let help_text = match cmd.to_lowercase().as_str() {
-            "exit" | "quit" | "q" => "exit - Exit the application (Ctrl+C also works)",
-            "help" | "?" => "help [command] - Display help information",
-            "status" => "status - Show current serial connection status",
+            "exit" | "quit" | "q" => "exit - Exit the application (Ctrl+C also works)".to_string(),
+            "help" | "?" => "help [command] - Display help information".to_string(),
+            "status" => "status - Show current serial connection status".to_string(),
             "connect" => {
-                "connect <device> [baud] - Connect to serial port\n  \
-                 Example: connect /dev/ttyUSB0 115200\n  \
-                 Default baud rate is 115200"
+                format!(
+                    "connect <device> [baud] - Connect to serial port\n  \
+                     Example: connect /dev/ttyUSB0 {}\n  \
+                     Default baud rate is {}",
+                    DEFAULT_BAUD_RATE, DEFAULT_BAUD_RATE
+                )
             }
-            "disconnect" => "disconnect - Close the current serial connection",
-            "loadelf" => {
-                "loadelf <path> - Load an ELF file into memory\n  \
+            "disconnect" => "disconnect - Close the current serial connection".to_string(),
+            "loadelf" => "loadelf <path> - Load an ELF file into memory\n  \
                  Example: loadelf ./program.elf"
-            }
+                .to_string(),
             _ => return CommandResult::ok(format!("Unknown command: {}", cmd)),
         };
         CommandResult::ok(help_text)

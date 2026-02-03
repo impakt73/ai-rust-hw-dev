@@ -95,7 +95,8 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
     let input_line = Line::from(vec![
         prompt,
         Span::raw(&app.input_buffer),
-        Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+        // Use a non-blinking underscore cursor for better accessibility
+        Span::styled("_", Style::default().add_modifier(Modifier::DIM)),
     ]);
 
     let input_paragraph = Paragraph::new(input_line).block(Block::default().borders(Borders::ALL));
