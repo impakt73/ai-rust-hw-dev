@@ -13,15 +13,15 @@
 // Protocol (Variable Length, Little-Endian, Extended Header):
 //   CPU-initiated request (type 0000):  [ext_header][addr0-3][data...] (FPGA → Host TX)
 //   Host response to CPU (type 0001):   [ext_header][data...]          (Host → FPGA RX)
-//   Host-initiated request (type 0010): [ext_header][addr0-3][data...] (Host → FPGA RX, future)
-//   FPGA response to Host (type 0011):  [ext_header][data...]          (FPGA → Host TX, future)
+//   Host-initiated request (type 0010): [ext_header][addr0-3][data...] (Host → FPGA RX)
+//   FPGA response to Host (type 0011):  [ext_header][data...]          (FPGA → Host TX)
 //
 // Extended Header Format (1 byte):
 //   Bits [7:4]: Packet type
 //     0000 = CPU-initiated request (FPGA → Host TX)
 //     0001 = Host response to CPU request (Host → FPGA RX)
-//     0010 = Host-initiated request (Host → FPGA RX, future use)
-//     0011 = FPGA response to Host request (FPGA → Host TX, future use)
+//     0010 = Host-initiated request (Host → FPGA RX)
+//     0011 = FPGA response to Host request (FPGA → Host TX)
 //   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
 //   Bit  [1]:   Reserved (0)
 //   Bit  [0]:   we (1=write, 0=read)
@@ -40,7 +40,7 @@ module host_bus_interface (
     input  logic        req,
     output logic        ready,
     
-    // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
+    // Bus Master Interface (to Arbiter - Host→CPU path)
     output logic [31:0] host_bus_addr,
     output logic [31:0] host_bus_wdata,
     input  logic [31:0] host_bus_rdata,
@@ -61,13 +61,54 @@ module host_bus_interface (
 );
 
     // ============================================================
+    // RX Buffer Instance
+    // ============================================================
+    logic        buf_resp_valid;
+    logic        buf_resp_we;
+    logic [1:0]  buf_resp_size;
+    logic [31:0] buf_resp_rdata;
+    logic        buf_resp_consumed;
+    
+    logic        buf_req_valid;
+    logic        buf_req_we;
+    logic [1:0]  buf_req_size;
+    logic [31:0] buf_req_addr;
+    logic [31:0] buf_req_wdata;
+    logic        buf_req_consumed;
+    
+    host_rx_buffer rx_buf (
+        .clk(clk),
+        .rst_n(rst_n),
+        
+        // RX interface from host
+        .rx_data(rx_data),
+        .rx_valid(rx_valid),
+        .rx_ready(rx_ready),
+        
+        // Response outputs (for CPU-initiated requests)
+        .resp_valid(buf_resp_valid),
+        .resp_we(buf_resp_we),
+        .resp_size(buf_resp_size),
+        .resp_rdata(buf_resp_rdata),
+        .resp_consumed(buf_resp_consumed),
+        
+        // Request outputs (for Host-initiated requests)
+        .req_valid(buf_req_valid),
+        .req_we(buf_req_we),
+        .req_size(buf_req_size),
+        .req_addr(buf_req_addr),
+        .req_wdata(buf_req_wdata),
+        .req_consumed(buf_req_consumed)
+    );
+    
+    // ============================================================
     // State Machine
     // ============================================================
     typedef enum logic [4:0] {
         STATE_IDLE        = 5'd0,
         STATE_CAPTURE     = 5'd1,
         
-        // TX States (variable length: 5-9 bytes)
+        // TX States for CPU-initiated requests (variable length: 5-9 bytes)
         STATE_TX_HEADER   = 5'd2,   // Header byte
         STATE_TX_ADDR_0   = 5'd3,   // Address[7:0] (little-endian: LSB first)
         STATE_TX_ADDR_1   = 5'd4,   // Address[15:8]
@@ -78,22 +119,26 @@ module host_bus_interface (
         STATE_TX_WDATA_2  = 5'd9,   // WData[23:16] (word writes only)
         STATE_TX_WDATA_3  = 5'd10,  // WData[31:24] (word writes only)
         
-        // RX States (variable length: 1-5 bytes with extended header)
-        STATE_RX_WR_HEADER = 5'd11,  // Write response: header (packet type 0001)
-        STATE_RX_RD_HEADER = 5'd12,  // Read response: header (packet type 0001)
-        STATE_RX_RDATA_0   = 5'd13,  // RData[7:0] (little-endian: LSB first)
-        STATE_RX_RDATA_1   = 5'd14,  // RData[15:8] (halfword/word reads)
-        STATE_RX_RDATA_2   = 5'd15,  // RData[23:16] (word reads only)
-        STATE_RX_RDATA_3   = 5'd16,  // RData[31:24] (word reads only)
+        // RX States for CPU-initiated response (buffered via host_rx_buffer)
+        STATE_CPU_RESP_WAIT = 5'd11,  // Waiting for buffered response
         
-        // Complete state - asserts ready for one cycle
-        STATE_COMPLETE    = 5'd17
+        // Complete state for CPU-initiated transactions
+        STATE_COMPLETE    = 5'd12,
+        
+        // States for Host-initiated requests
+        STATE_HOST_REQ_PENDING = 5'd13,   // Forward request to bus master
+        STATE_HOST_RESP_WAIT   = 5'd14,   // Wait for bus master response
+        STATE_HOST_TX_HEADER   = 5'd15,   // TX response header (packet type 0011)
+        STATE_HOST_TX_DATA_0   = 5'd16,   // TX response data byte 0
+        STATE_HOST_TX_DATA_1   = 5'd17,   // TX response data byte 1
+        STATE_HOST_TX_DATA_2   = 5'd18,   // TX response data byte 2
+        STATE_HOST_TX_DATA_3   = 5'd19    // TX response data byte 3
     } state_t;
     
     state_t state, next_state;
     
     // ============================================================
-    // Captured Request Registers
+    // Captured Request Registers (CPU-initiated path)
     // ============================================================
     logic [31:0] cap_addr;      // Captured address
     logic [31:0] cap_wdata;     // Captured write data
@@ -101,9 +146,19 @@ module host_bus_interface (
     logic [1:0]  cap_size;      // Captured access size
     
     // ============================================================
-    // Response Data Registers
+    // Host-initiated Request Registers
     // ============================================================
-    logic [31:0] resp_rdata;    // Received read data
+    logic [31:0] host_cap_addr;   // Captured host request address
+    logic [31:0] host_cap_wdata;  // Captured host request write data
+    logic        host_cap_we;     // Captured host request write enable
+    logic [1:0]  host_cap_size;   // Captured host request access size
+    logic [31:0] host_resp_rdata; // Response data from bus master
+    
+    // ============================================================
+    // Response Data Registers (CPU-initiated path, now deprecated)
+    // ============================================================
+    // Note: CPU response data now comes from buffer, but keep for backward compat
+    logic [31:0] resp_rdata;
     
     // ============================================================
     // TX Data Mux
@@ -125,14 +180,19 @@ module host_bus_interface (
     
     // ============================================================
     // Next State Logic (Variable Length Packets, Little-Endian)
+    // Priority: CPU-initiated transactions > Host-initiated transactions
     // ============================================================
     always_comb begin
         next_state = state;
         
         case (state)
             STATE_IDLE: begin
+                // Priority 1: CPU-initiated request (slave interface)
                 if (req) begin
                     next_state = STATE_CAPTURE;
+                // Priority 2: Host-initiated request (from buffer)
+                end else if (buf_req_valid) begin
+                    next_state = STATE_HOST_REQ_PENDING;
                 end
             end
             
@@ -141,7 +201,7 @@ module host_bus_interface (
             end
             
             // --------------------------------------------------------
-            // TX Phase: Header + Address (always) + Data (writes only)
+            // CPU-initiated TX Phase: Header + Address (always) + Data (writes only)
             // Address and data sent in little-endian order (LSB first)
             // --------------------------------------------------------
             STATE_TX_HEADER: begin
@@ -166,8 +226,8 @@ module host_bus_interface (
                         // Write: send data bytes in little-endian order
                         next_state = STATE_TX_WDATA_0;  // Always start with LSB
                     end else begin
-                        // Read: no data, go to RX phase - expect header first
-                        next_state = STATE_RX_RD_HEADER;
+                        // Read: no data, wait for buffered response
+                        next_state = STATE_CPU_RESP_WAIT;
                     end
                 end
             end
@@ -176,8 +236,8 @@ module host_bus_interface (
             STATE_TX_WDATA_0: begin  // All writes start here (LSB)
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b00:   next_state = STATE_RX_WR_HEADER;    // Byte: done after 1 byte, expect header
-                        default: next_state = STATE_TX_WDATA_1;      // Half/Word: continue
+                        2'b00:   next_state = STATE_CPU_RESP_WAIT;  // Byte: done, wait for response
+                        default: next_state = STATE_TX_WDATA_1;     // Half/Word: continue
                     endcase
                 end
             end
@@ -185,8 +245,8 @@ module host_bus_interface (
             STATE_TX_WDATA_1: begin  // Half and Word
                 if (tx_valid && tx_ready) begin
                     case (cap_size)
-                        2'b01:   next_state = STATE_RX_WR_HEADER;    // Half: done after 2 bytes, expect header
-                        default: next_state = STATE_TX_WDATA_2;      // Word: continue
+                        2'b01:   next_state = STATE_CPU_RESP_WAIT;  // Half: done, wait for response
+                        default: next_state = STATE_TX_WDATA_2;     // Word: continue
                     endcase
                 end
             end
@@ -196,52 +256,17 @@ module host_bus_interface (
             end
             
             STATE_TX_WDATA_3: begin  // Word only (MSB, last byte)
-                if (tx_valid && tx_ready) next_state = STATE_RX_WR_HEADER;
+                if (tx_valid && tx_ready) next_state = STATE_CPU_RESP_WAIT;
             end
             
             // --------------------------------------------------------
-            // RX Phase: Header + Ack (writes) or Header + Data (reads)
-            // Extended header format for responses (packet type 0001)
+            // CPU-initiated RX Phase: Wait for buffered response
             // --------------------------------------------------------
-            STATE_RX_WR_HEADER: begin  // Write response: header
-                if (rx_valid && rx_ready) begin
-                    // Write response is just header, no data bytes
+            STATE_CPU_RESP_WAIT: begin
+                // Wait for buffer to have valid response (packet type 0001)
+                if (buf_resp_valid) begin
                     next_state = STATE_COMPLETE;
                 end
-            end
-            
-            STATE_RX_RD_HEADER: begin  // Read response: header
-                if (rx_valid && rx_ready) begin
-                    // After header, receive data bytes
-                    next_state = STATE_RX_RDATA_0;
-                end
-            end
-            
-            // RX Read Data States (little-endian: LSB first)
-            STATE_RX_RDATA_0: begin  // All reads start here (LSB)
-                if (rx_valid && rx_ready) begin
-                    case (cap_size)
-                        2'b00:   next_state = STATE_COMPLETE;     // Byte: done after 1 byte
-                        default: next_state = STATE_RX_RDATA_1;  // Half/Word: continue
-                    endcase
-                end
-            end
-            
-            STATE_RX_RDATA_1: begin  // Half and Word
-                if (rx_valid && rx_ready) begin
-                    case (cap_size)
-                        2'b01:   next_state = STATE_COMPLETE;     // Half: done after 2 bytes
-                        default: next_state = STATE_RX_RDATA_2;  // Word: continue
-                    endcase
-                end
-            end
-            
-            STATE_RX_RDATA_2: begin  // Word only
-                if (rx_valid && rx_ready) next_state = STATE_RX_RDATA_3;
-            end
-            
-            STATE_RX_RDATA_3: begin  // Word only (MSB, last byte)
-                if (rx_valid && rx_ready) next_state = STATE_COMPLETE;
             end
             
             // --------------------------------------------------------
@@ -251,12 +276,68 @@ module host_bus_interface (
                 next_state = STATE_IDLE;
             end
             
+            // --------------------------------------------------------
+            // Host-initiated Request Processing
+            // --------------------------------------------------------
+            STATE_HOST_REQ_PENDING: begin
+                // Forward buffered request to master interface
+                // Wait for bus master to complete
+                if (host_bus_ready) begin
+                    next_state = STATE_HOST_RESP_WAIT;
+                end
+            end
+            
+            STATE_HOST_RESP_WAIT: begin
+                // Wait one cycle to capture response data
+                next_state = STATE_HOST_TX_HEADER;
+            end
+            
+            STATE_HOST_TX_HEADER: begin
+                // Send response header (packet type 0011)
+                if (tx_valid && tx_ready) begin
+                    if (host_cap_we) begin
+                        // Write response: header only, no data
+                        next_state = STATE_IDLE;
+                    end else begin
+                        // Read response: send data bytes
+                        next_state = STATE_HOST_TX_DATA_0;
+                    end
+                end
+            end
+            
+            // Host Response Data TX States (little-endian: LSB first)
+            STATE_HOST_TX_DATA_0: begin
+                if (tx_valid && tx_ready) begin
+                    case (host_cap_size)
+                        2'b00:   next_state = STATE_IDLE;           // Byte: done
+                        default: next_state = STATE_HOST_TX_DATA_1; // Half/Word: continue
+                    endcase
+                end
+            end
+            
+            STATE_HOST_TX_DATA_1: begin
+                if (tx_valid && tx_ready) begin
+                    case (host_cap_size)
+                        2'b01:   next_state = STATE_IDLE;           // Half: done
+                        default: next_state = STATE_HOST_TX_DATA_2; // Word: continue
+                    endcase
+                end
+            end
+            
+            STATE_HOST_TX_DATA_2: begin
+                if (tx_valid && tx_ready) next_state = STATE_HOST_TX_DATA_3;
+            end
+            
+            STATE_HOST_TX_DATA_3: begin
+                if (tx_valid && tx_ready) next_state = STATE_IDLE;
+            end
+            
             default: next_state = STATE_IDLE;
         endcase
     end
 
     // ============================================================
-    // Capture Request on CAPTURE state
+    // Capture Request Registers
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -264,30 +345,70 @@ module host_bus_interface (
             cap_wdata <= 32'h0;
             cap_we    <= 1'b0;
             cap_size  <= 2'b00;
-        end else if (state == STATE_IDLE && req) begin
-            // Capture on rising edge of req while idle
-            cap_addr  <= addr;
-            cap_wdata <= wdata;
-            cap_we    <= we;
-            cap_size  <= size;
+            
+            host_cap_addr  <= 32'h0;
+            host_cap_wdata <= 32'h0;
+            host_cap_we    <= 1'b0;
+            host_cap_size  <= 2'b00;
+            host_resp_rdata <= 32'h0;
+        end else begin
+            // Capture CPU-initiated request
+            if (state == STATE_IDLE && req) begin
+                cap_addr  <= addr;
+                cap_wdata <= wdata;
+                cap_we    <= we;
+                cap_size  <= size;
+            end
+            
+            // Capture host-initiated request from buffer
+            if (state == STATE_IDLE && buf_req_valid && !req) begin
+                host_cap_addr  <= buf_req_addr;
+                host_cap_wdata <= buf_req_wdata;
+                host_cap_we    <= buf_req_we;
+                host_cap_size  <= buf_req_size;
+            end
+            
+            // Capture bus master response data
+            if (state == STATE_HOST_REQ_PENDING && host_bus_ready) begin
+                host_resp_rdata <= host_bus_rdata;
+            end
         end
     end
 
     // ============================================================
+    // Buffer Control Signals
+    // ============================================================
+    // Consume buffered response when CPU transaction completes
+    assign buf_resp_consumed = (state == STATE_COMPLETE);
+    
+    // Consume buffered request when host transaction starts
+    // Note: host_bus_req is defined as (state == STATE_HOST_REQ_PENDING) on line 455,
+    // so the original condition (state == STATE_HOST_REQ_PENDING && host_bus_req)
+    // simplifies to just checking the state.
+    assign buf_req_consumed = (state == STATE_HOST_REQ_PENDING);
+
+    // ============================================================
     // TX Phase Detection
     // ============================================================
-    assign in_tx_phase = (state >= STATE_TX_HEADER) && (state <= STATE_TX_WDATA_3);
+    logic in_cpu_tx_phase;
+    logic in_host_tx_phase;
+    
+    assign in_cpu_tx_phase = (state >= STATE_TX_HEADER) && (state <= STATE_TX_WDATA_3);
+    assign in_host_tx_phase = (state >= STATE_HOST_TX_HEADER) && (state <= STATE_HOST_TX_DATA_3);
+    assign in_tx_phase = in_cpu_tx_phase || in_host_tx_phase;
     
     // ============================================================
     // TX Data Multiplexer (Little-Endian: LSB first)
     // Extended Header Format: {packet_type[3:0], size[1:0], 1'b0, we}
     // Packet type 0000 = CPU-initiated request
+    // Packet type 0011 = FPGA response to host
     // ============================================================
     always_comb begin
         tx_byte = 8'h00;
         
         case (state)
-            STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};  // Packet type 0000
+            // CPU-initiated request packet (type 0000)
+            STATE_TX_HEADER:  tx_byte = {4'b0000, cap_size, 1'b0, cap_we};
             STATE_TX_ADDR_0:  tx_byte = cap_addr[7:0];
             STATE_TX_ADDR_1:  tx_byte = cap_addr[15:8];
             STATE_TX_ADDR_2:  tx_byte = cap_addr[23:16];
@@ -296,6 +417,14 @@ module host_bus_interface (
             STATE_TX_WDATA_1: tx_byte = cap_wdata[15:8];
             STATE_TX_WDATA_2: tx_byte = cap_wdata[23:16];
             STATE_TX_WDATA_3: tx_byte = cap_wdata[31:24];
+            
+            // Host-initiated response packet (type 0011)
+            STATE_HOST_TX_HEADER:  tx_byte = {4'b0011, host_cap_size, 1'b0, host_cap_we};
+            STATE_HOST_TX_DATA_0:  tx_byte = host_resp_rdata[7:0];
+            STATE_HOST_TX_DATA_1:  tx_byte = host_resp_rdata[15:8];
+            STATE_HOST_TX_DATA_2:  tx_byte = host_resp_rdata[23:16];
+            STATE_HOST_TX_DATA_3:  tx_byte = host_resp_rdata[31:24];
+            
             default:          tx_byte = 8'h00;
         endcase
     end
@@ -308,53 +437,23 @@ module host_bus_interface (
     assign tx_valid = in_tx_phase;
 
     // ============================================================
-    // RX Phase Detection
-    // ============================================================
-    assign in_rx_phase = (state >= STATE_RX_WR_HEADER) && (state <= STATE_RX_RDATA_3);
-    
-    // ============================================================
-    // RX Ready Signal
-    // ============================================================
-    assign rx_ready = in_rx_phase;
-    
-    // ============================================================
-    // RX Data Capture (Little-Endian: LSB first)
-    // Clear resp_rdata when entering RX phase to avoid stale data
-    // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            resp_rdata <= 32'h0;
-        end else if (state == STATE_TX_ADDR_3 && tx_valid && tx_ready && !cap_we) begin
-            // Clear rdata when transitioning to read response phase
-            resp_rdata <= 32'h0;
-        end else if (rx_valid && rx_ready) begin
-            case (state)
-                STATE_RX_RDATA_0: resp_rdata[7:0]   <= rx_data;
-                STATE_RX_RDATA_1: resp_rdata[15:8]  <= rx_data;
-                STATE_RX_RDATA_2: resp_rdata[23:16] <= rx_data;
-                STATE_RX_RDATA_3: resp_rdata[31:24] <= rx_data;
-                default: ;
-            endcase
-        end
-    end
-
-    // ============================================================
     // Bus Ready Signal - asserted in COMPLETE state only
     // ============================================================
     assign ready = (state == STATE_COMPLETE);
     
     // ============================================================
-    // Bus Read Data
+    // Bus Read Data (from buffered response)
     // ============================================================
-    assign rdata = resp_rdata;
+    assign rdata = buf_resp_rdata;
     
     // ============================================================
-    // Bus Master Interface (Host→CPU path, currently unused)
+    // Bus Master Interface (Host→CPU path)
+    // Drives bus requests for host-initiated transactions
     // ============================================================
-    assign host_bus_addr  = 32'h0;
-    assign host_bus_wdata = 32'h0;
-    assign host_bus_we    = 1'b0;
-    assign host_bus_size  = 2'b00;
-    assign host_bus_req   = 1'b0;
+    assign host_bus_addr  = host_cap_addr;
+    assign host_bus_wdata = host_cap_wdata;
+    assign host_bus_we    = host_cap_we;
+    assign host_bus_size  = host_cap_size;
+    assign host_bus_req   = (state == STATE_HOST_REQ_PENDING);
 
 endmodule

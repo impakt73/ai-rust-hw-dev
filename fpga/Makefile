@@ -23,6 +23,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/decompress.sv \
 	$(RTL_DIR)/fetch_buffer.sv \
 	$(RTL_DIR)/host_bus_interface.sv \
+	$(RTL_DIR)/host_rx_buffer.sv \
 	$(RTL_DIR)/mem_interface.sv \
 	$(RTL_DIR)/sync_dpram.sv \
 	$(RTL_DIR)/regfile.sv \
