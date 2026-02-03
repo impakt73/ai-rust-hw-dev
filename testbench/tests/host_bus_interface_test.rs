@@ -847,3 +847,294 @@ fn test_all_ones_address() {
     assert_eq!(tx_packet[7], 0xFF, "WData[23:16] should be 0xFF");
     assert_eq!(tx_packet[8], 0xFF, "WData[31:24] should be 0xFF");
 }
+
+// ============================================================
+// Host-Initiated Request Tests
+// These tests verify that the host_bus_interface correctly processes
+// host-initiated requests (type 0010) and sends back FPGA responses (type 0011)
+// ============================================================
+
+/// Helper to send a host-initiated read request and receive the response
+fn send_host_read_request(dut: &mut HostBusInterface, addr: u32, size: u8) -> Option<Vec<u8>> {
+    // Send request header: type=0010, size, we=0
+    // Header: 0010 ss 0 0 where ss is size
+    let header = 0x20 | ((size & 0x03) << 2);
+    if !send_rx_byte(dut, header, 100) {
+        return None;
+    }
+
+    // Send 4 address bytes (little-endian)
+    if !send_rx_byte(dut, (addr & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 8) & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 16) & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 24) & 0xFF) as u8, 100) {
+        return None;
+    }
+
+    // Wait for response by running clock cycles until host_bus_req is asserted
+    // Then provide a response
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            // Request is pending - provide a ready response
+            dut.host_bus_ready = 1;
+            dut.host_bus_rdata = 0xCAFEBABE; // Test read data
+            clock_cycle!(dut);
+            dut.host_bus_ready = 0;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Wait for and collect TX response packet
+    let mut response = Vec::new();
+    let bytes_needed = match size {
+        0 => 2, // Header + 1 data byte
+        1 => 3, // Header + 2 data bytes
+        _ => 5, // Header + 4 data bytes
+    };
+
+    for _ in 0..bytes_needed {
+        if let Some(byte) = receive_tx_byte(dut, 100) {
+            response.push(byte);
+        } else {
+            return None;
+        }
+    }
+
+    Some(response)
+}
+
+/// Helper to send a host-initiated write request and receive the acknowledgement
+fn send_host_write_request(
+    dut: &mut HostBusInterface,
+    addr: u32,
+    wdata: u32,
+    size: u8,
+) -> Option<u8> {
+    // Send request header: type=0010, size, we=1
+    // Header: 0010 ss 0 1 where ss is size
+    let header = 0x21 | ((size & 0x03) << 2);
+    if !send_rx_byte(dut, header, 100) {
+        return None;
+    }
+
+    // Send 4 address bytes (little-endian)
+    if !send_rx_byte(dut, (addr & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 8) & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 16) & 0xFF) as u8, 100) {
+        return None;
+    }
+    if !send_rx_byte(dut, ((addr >> 24) & 0xFF) as u8, 100) {
+        return None;
+    }
+
+    // Send data bytes based on size (little-endian)
+    let data_bytes = match size {
+        0 => 1,
+        1 => 2,
+        _ => 4,
+    };
+    for i in 0..data_bytes {
+        let byte = ((wdata >> (i * 8)) & 0xFF) as u8;
+        if !send_rx_byte(dut, byte, 100) {
+            return None;
+        }
+    }
+
+    // Wait for response by running clock cycles until host_bus_req is asserted
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            // Request is pending - provide a ready response
+            dut.host_bus_ready = 1;
+            clock_cycle!(dut);
+            dut.host_bus_ready = 0;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Receive TX response header (just 1 byte for write ack)
+    receive_tx_byte(dut, 100)
+}
+
+#[test]
+fn test_host_initiated_read_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send host-initiated word read request to address 0x50000000
+    let response = send_host_read_request(&mut dut, 0x50000000, 0b10);
+
+    assert!(response.is_some(), "Should receive response packet");
+    let resp = response.unwrap();
+
+    // Verify response header: type=0011, size=10, we=0 = 0x38
+    assert_eq!(
+        resp[0], 0x38,
+        "Response header should be 0x38 (type=0011, size=10, we=0)"
+    );
+
+    // Verify data bytes (little-endian: 0xCAFEBABE)
+    assert_eq!(resp[1], 0xBE, "RData[7:0] mismatch");
+    assert_eq!(resp[2], 0xBA, "RData[15:8] mismatch");
+    assert_eq!(resp[3], 0xFE, "RData[23:16] mismatch");
+    assert_eq!(resp[4], 0xCA, "RData[31:24] mismatch");
+}
+
+#[test]
+fn test_host_initiated_write_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send host-initiated word write request to address 0x50000000 with data 0xDEADBEEF
+    let response = send_host_write_request(&mut dut, 0x50000000, 0xDEADBEEF, 0b10);
+
+    assert!(response.is_some(), "Should receive response header");
+
+    // Verify response header: type=0011, size=10, we=1 = 0x39
+    assert_eq!(
+        response.unwrap(),
+        0x39,
+        "Response header should be 0x39 (type=0011, size=10, we=1)"
+    );
+}
+
+#[test]
+fn test_host_request_master_interface_signals() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Master interface should be idle initially
+    assert_eq!(dut.host_bus_req, 0, "host_bus_req should be LOW initially");
+
+    // Send host-initiated read request header and address
+    let addr: u32 = 0x50001234;
+    let size: u8 = 0b10; // word
+
+    // Header: type=0010, size=10, we=0 = 0x28
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x34, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x12, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Wait for master interface request to be asserted
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Verify master interface signals
+    assert_eq!(dut.host_bus_req, 1, "host_bus_req should be HIGH");
+    assert_eq!(
+        dut.host_bus_addr, addr,
+        "host_bus_addr should match request address"
+    );
+    assert_eq!(dut.host_bus_we, 0, "host_bus_we should be 0 for read");
+    assert_eq!(dut.host_bus_size, size, "host_bus_size should be word (10)");
+}
+
+#[test]
+fn test_host_write_request_wdata_propagation() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send host-initiated word write request
+    let addr: u32 = 0x50000000;
+    let wdata: u32 = 0xDEADBEEF;
+
+    // Header: type=0010, size=10, we=1 = 0x29
+    assert!(send_rx_byte(&mut dut, 0x29, 100), "header");
+
+    // Address bytes
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Write data bytes (little-endian)
+    assert!(send_rx_byte(&mut dut, 0xEF, 100), "wdata[7:0]");
+    assert!(send_rx_byte(&mut dut, 0xBE, 100), "wdata[15:8]");
+    assert!(send_rx_byte(&mut dut, 0xAD, 100), "wdata[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xDE, 100), "wdata[31:24]");
+
+    // Wait for master interface request
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Verify master interface signals
+    assert_eq!(dut.host_bus_req, 1, "host_bus_req should be HIGH");
+    assert_eq!(dut.host_bus_addr, addr, "host_bus_addr mismatch");
+    assert_eq!(dut.host_bus_wdata, wdata, "host_bus_wdata mismatch");
+    assert_eq!(dut.host_bus_we, 1, "host_bus_we should be 1 for write");
+}
+
+#[test]
+fn test_cpu_request_priority_over_host_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Start CPU-initiated request
+    dut.addr = 0x80000000;
+    dut.wdata = 0x12345678;
+    dut.we = 1;
+    dut.size = 0b10;
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+
+    // Simultaneously try to send host-initiated request header
+    // It should be buffered but not processed until CPU request completes
+    let header = 0x28; // type=0010, size=10, we=0
+    send_rx_byte(&mut dut, header, 10);
+
+    // CPU request should continue being transmitted (TX phase)
+    let mut tx_bytes_received = 0;
+    for _ in 0..20 {
+        if let Some(_) = receive_tx_byte(&mut dut, 5) {
+            tx_bytes_received += 1;
+        }
+    }
+
+    // Should have received at least some TX bytes for CPU request
+    assert!(
+        tx_bytes_received > 0,
+        "CPU request TX should have priority over buffered host request"
+    );
+}
