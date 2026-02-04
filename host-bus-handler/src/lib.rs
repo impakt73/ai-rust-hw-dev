@@ -232,7 +232,7 @@ pub struct HostBusHandler {
     // Buffered incoming response (for our outgoing requests - packet type 0011)
     outgoing_response: IncomingResponse,
 
-    // Buffered incoming request (from FPGA - packet type 0010)
+    // Buffered incoming request (from FPGA - packet type 0000)
     incoming_request: IncomingRequest,
 
     // Outstanding accepted request (waiting for completion via complete_request)
