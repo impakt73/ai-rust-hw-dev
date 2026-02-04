@@ -166,6 +166,16 @@ module host_bus_interface (
     logic        in_rx_phase;   // Indicates RX phase active
     
     // ============================================================
+    // TX Phase Detection (declared early for use in capture logic)
+    // ============================================================
+    logic in_cpu_tx_phase;
+    logic in_host_tx_phase;
+    
+    assign in_cpu_tx_phase = (state >= STATE_TX_HEADER) && (state <= STATE_TX_WDATA_3);
+    assign in_host_tx_phase = (state >= STATE_HOST_TX_HEADER) && (state <= STATE_HOST_TX_DATA_3);
+    assign in_tx_phase = in_cpu_tx_phase || in_host_tx_phase;
+    
+    // ============================================================
     // Bus Master Handshake Complete Signal
     // High when host_bus_req and host_bus_ready are both high
     // ============================================================
@@ -368,9 +378,11 @@ module host_bus_interface (
             end else if (state == STATE_HOST_TX_DATA_3 && tx_valid && tx_ready) begin
                 // Word read response complete
                 host_resp_valid <= 1'b0;
-            end else if (bus_master_handshake_complete && !host_resp_valid) begin
+            end else if (bus_master_handshake_complete && !host_resp_valid && !in_host_tx_phase) begin
                 // Priority 2: Capture data on bus master handshake completion (host-initiated path)
-                // Only capture if we don't already have a pending response
+                // Only capture if:
+                // 1. We don't already have a pending response (host_resp_valid = 0)
+                // 2. We're not currently transmitting a response (in_host_tx_phase = 0)
                 // This happens in parallel with the FSM, outside of state machine control
                 host_cap_we     <= buf_req_we;
                 host_cap_size   <= buf_req_size;
@@ -387,18 +399,8 @@ module host_bus_interface (
     assign buf_resp_consumed = (state == STATE_COMPLETE);
     
     // Consume buffered request when bus master handshake completes
-    // and we don't already have a pending response
-    assign buf_req_consumed = bus_master_handshake_complete && !host_resp_valid;
-
-    // ============================================================
-    // TX Phase Detection
-    // ============================================================
-    logic in_cpu_tx_phase;
-    logic in_host_tx_phase;
-    
-    assign in_cpu_tx_phase = (state >= STATE_TX_HEADER) && (state <= STATE_TX_WDATA_3);
-    assign in_host_tx_phase = (state >= STATE_HOST_TX_HEADER) && (state <= STATE_HOST_TX_DATA_3);
-    assign in_tx_phase = in_cpu_tx_phase || in_host_tx_phase;
+    // and we don't already have a pending response and not in TX phase
+    assign buf_req_consumed = bus_master_handshake_complete && !host_resp_valid && !in_host_tx_phase;
     
     // ============================================================
     // TX Data Multiplexer (Little-Endian: LSB first)
