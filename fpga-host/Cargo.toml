@@ -14,6 +14,7 @@ elf = "0.7"
 log = "0.4"
 serialport = "4.6"
 riscv_shared = { path = "../riscv_shared" }
+shell-words = "1.1"
 
 # TUI dependencies
 ratatui = "0.29"

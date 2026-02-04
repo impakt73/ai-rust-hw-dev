@@ -5,38 +5,11 @@
 use crate::app::App;
 use crate::elf_loader;
 use crate::serial::SerialConnection;
+use clap::{Parser, Subcommand};
 use std::path::Path;
 
 /// Default baud rate for serial connections
 const DEFAULT_BAUD_RATE: u32 = 115200;
-
-/// Errors that can occur during command parsing
-#[derive(Debug)]
-pub enum ParseError {
-    /// Empty command string
-    EmptyCommand,
-    /// Unknown command
-    UnknownCommand(String),
-    /// Missing required argument
-    MissingArgument(String),
-    /// Invalid argument value
-    InvalidArgument { name: String, reason: String },
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseError::EmptyCommand => write!(f, "Empty command"),
-            ParseError::UnknownCommand(cmd) => write!(f, "Unknown command: {}", cmd),
-            ParseError::MissingArgument(arg) => write!(f, "Missing argument: {}", arg),
-            ParseError::InvalidArgument { name, reason } => {
-                write!(f, "Invalid argument '{}': {}", name, reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 /// Result of executing a command
 pub struct CommandResult {
@@ -72,71 +45,58 @@ impl CommandResult {
     }
 }
 
+/// Shell CLI for interactive commands
+#[derive(Parser)]
+#[command(name = "", no_binary_name = true)]
+struct ShellCli {
+    #[command(subcommand)]
+    command: ShellCommand,
+}
+
 /// Available shell commands
+#[derive(Subcommand)]
 pub enum ShellCommand {
-    /// Exit the application
+    /// Exit the application (Ctrl+C also works)
+    #[command(visible_aliases = ["quit", "q"])]
     Exit,
-    /// Display help information
-    Help { command: Option<String> },
-    /// Show connection status
+    /// Show current serial connection status
     Status,
-    /// Connect to serial port
-    Connect { device: String, baud: u32 },
-    /// Disconnect from serial port
+    /// Connect to a serial port
+    Connect {
+        /// Serial device path (e.g., /dev/ttyUSB0)
+        device: String,
+        /// Baud rate (default: 115200)
+        #[arg(default_value_t = DEFAULT_BAUD_RATE)]
+        baud: u32,
+    },
+    /// Close the current serial connection
     Disconnect,
     /// Load an ELF file into memory
-    LoadElf { path: String },
+    #[command(name = "loadelf")]
+    LoadElf {
+        /// Path to the ELF file
+        path: String,
+    },
 }
 
 impl ShellCommand {
     /// Parse a command string into a ShellCommand
-    pub fn parse(input: &str) -> Result<Self, ParseError> {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.is_empty() {
-            return Err(ParseError::EmptyCommand);
+    pub fn parse(input: &str) -> Result<Self, String> {
+        let input = input.trim();
+        if input.is_empty() {
+            return Err("Empty command".to_string());
         }
 
-        let command = parts[0].to_lowercase();
-        let args = &parts[1..];
+        // Split the input into arguments, respecting shell-like parsing
+        let args = match shell_words::split(input) {
+            Ok(args) => args,
+            Err(e) => return Err(format!("Failed to parse command: {}", e)),
+        };
 
-        match command.as_str() {
-            "exit" | "quit" | "q" => Ok(ShellCommand::Exit),
-
-            "help" | "?" => {
-                let cmd = args.first().map(|s| s.to_string());
-                Ok(ShellCommand::Help { command: cmd })
-            }
-
-            "status" => Ok(ShellCommand::Status),
-
-            "connect" => {
-                if args.is_empty() {
-                    return Err(ParseError::MissingArgument("device".into()));
-                }
-                let device = args[0].to_string();
-                let baud = if args.len() > 1 {
-                    args[1].parse().map_err(|_| ParseError::InvalidArgument {
-                        name: "baud".into(),
-                        reason: "must be a valid number".into(),
-                    })?
-                } else {
-                    DEFAULT_BAUD_RATE
-                };
-                Ok(ShellCommand::Connect { device, baud })
-            }
-
-            "disconnect" => Ok(ShellCommand::Disconnect),
-
-            "loadelf" => {
-                if args.is_empty() {
-                    return Err(ParseError::MissingArgument("path".into()));
-                }
-                Ok(ShellCommand::LoadElf {
-                    path: args[0].to_string(),
-                })
-            }
-
-            _ => Err(ParseError::UnknownCommand(command)),
+        // Parse using clap
+        match ShellCli::try_parse_from(args) {
+            Ok(cli) => Ok(cli.command),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -149,8 +109,6 @@ impl ShellCommand {
                 CommandResult::silent()
             }
 
-            ShellCommand::Help { command } => execute_help(command),
-
             ShellCommand::Status => execute_status(app),
 
             ShellCommand::Connect { device, baud } => execute_connect(app, &device, baud),
@@ -159,44 +117,6 @@ impl ShellCommand {
 
             ShellCommand::LoadElf { path } => execute_loadelf(app, &path),
         }
-    }
-}
-
-/// Execute the help command
-fn execute_help(command: Option<String>) -> CommandResult {
-    if let Some(cmd) = command {
-        let help_text = match cmd.to_lowercase().as_str() {
-            "exit" | "quit" | "q" => "exit - Exit the application (Ctrl+C also works)".to_string(),
-            "help" | "?" => "help [command] - Display help information".to_string(),
-            "status" => "status - Show current serial connection status".to_string(),
-            "connect" => {
-                format!(
-                    "connect <device> [baud] - Connect to serial port\n  \
-                     Example: connect /dev/ttyUSB0 {}\n  \
-                     Default baud rate is {}",
-                    DEFAULT_BAUD_RATE, DEFAULT_BAUD_RATE
-                )
-            }
-            "disconnect" => "disconnect - Close the current serial connection".to_string(),
-            "loadelf" => "loadelf <path> - Load an ELF file into memory\n  \
-                 Example: loadelf ./program.elf"
-                .to_string(),
-            _ => return CommandResult::ok(format!("Unknown command: {}", cmd)),
-        };
-        CommandResult::ok(help_text)
-    } else {
-        let help_text = "\
-Available commands:
-  exit       - Exit the application (Ctrl+C also works)
-  help       - Display this help message
-  status     - Show current serial connection status
-  connect    - Connect to a serial port
-  disconnect - Close the current serial connection
-  loadelf    - Load an ELF file into memory
-
-Type 'help <command>' for detailed help on a specific command.
-Use Page Up/Down to scroll the log. Press Escape to reset scroll.";
-        CommandResult::ok(help_text)
     }
 }
 
@@ -284,17 +204,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_help() {
+    fn test_parse_status() {
         assert!(matches!(
-            ShellCommand::parse("help"),
-            Ok(ShellCommand::Help { command: None })
-        ));
-        let result = ShellCommand::parse("help connect");
-        assert!(matches!(
-            result,
-            Ok(ShellCommand::Help {
-                command: Some(ref cmd)
-            }) if cmd == "connect"
+            ShellCommand::parse("status"),
+            Ok(ShellCommand::Status)
         ));
     }
 
@@ -315,17 +228,19 @@ mod tests {
 
     #[test]
     fn test_parse_connect_missing_device() {
-        assert!(matches!(
-            ShellCommand::parse("connect"),
-            Err(ParseError::MissingArgument(_))
-        ));
+        assert!(ShellCommand::parse("connect").is_err());
     }
 
     #[test]
     fn test_parse_connect_invalid_baud() {
+        assert!(ShellCommand::parse("connect /dev/ttyUSB0 abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_disconnect() {
         assert!(matches!(
-            ShellCommand::parse("connect /dev/ttyUSB0 abc"),
-            Err(ParseError::InvalidArgument { .. })
+            ShellCommand::parse("disconnect"),
+            Ok(ShellCommand::Disconnect)
         ));
     }
 
@@ -340,25 +255,16 @@ mod tests {
 
     #[test]
     fn test_parse_loadelf_missing_path() {
-        assert!(matches!(
-            ShellCommand::parse("loadelf"),
-            Err(ParseError::MissingArgument(_))
-        ));
+        assert!(ShellCommand::parse("loadelf").is_err());
     }
 
     #[test]
     fn test_parse_unknown_command() {
-        assert!(matches!(
-            ShellCommand::parse("unknown"),
-            Err(ParseError::UnknownCommand(_))
-        ));
+        assert!(ShellCommand::parse("unknown").is_err());
     }
 
     #[test]
     fn test_parse_empty() {
-        assert!(matches!(
-            ShellCommand::parse(""),
-            Err(ParseError::EmptyCommand)
-        ));
+        assert!(ShellCommand::parse("").is_err());
     }
 }
