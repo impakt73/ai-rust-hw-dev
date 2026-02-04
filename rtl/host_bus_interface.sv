@@ -125,9 +125,7 @@ module host_bus_interface (
         // Complete state for CPU-initiated transactions
         STATE_COMPLETE    = 5'd12,
         
-        // States for Host-initiated requests
-        STATE_HOST_REQ_PENDING = 5'd13,   // Forward request to bus master
-        STATE_HOST_RESP_WAIT   = 5'd14,   // Wait for bus master response
+        // States for Host-initiated response TX (removed STATE_HOST_REQ_PENDING, STATE_HOST_RESP_WAIT)
         STATE_HOST_TX_HEADER   = 5'd15,   // TX response header (packet type 0011)
         STATE_HOST_TX_DATA_0   = 5'd16,   // TX response data byte 0
         STATE_HOST_TX_DATA_1   = 5'd17,   // TX response data byte 1
@@ -147,12 +145,12 @@ module host_bus_interface (
     
     // ============================================================
     // Host-initiated Request Registers
+    // (Removed host_cap_addr, host_cap_wdata - now driven directly from rx buffer)
     // ============================================================
-    logic [31:0] host_cap_addr;   // Captured host request address
-    logic [31:0] host_cap_wdata;  // Captured host request write data
     logic        host_cap_we;     // Captured host request write enable
     logic [1:0]  host_cap_size;   // Captured host request access size
     logic [31:0] host_resp_rdata; // Response data from bus master
+    logic        host_resp_valid; // Indicates a complete response is ready to send
     
     // ============================================================
     // Response Data Registers (CPU-initiated path, now deprecated)
@@ -166,6 +164,13 @@ module host_bus_interface (
     logic [7:0]  tx_byte;       // Current byte to transmit
     logic        in_tx_phase;   // Indicates TX phase active
     logic        in_rx_phase;   // Indicates RX phase active
+    
+    // ============================================================
+    // Bus Master Handshake Complete Signal
+    // High when host_bus_req and host_bus_ready are both high
+    // ============================================================
+    logic bus_master_handshake_complete;
+    assign bus_master_handshake_complete = host_bus_req && host_bus_ready;
 
     // ============================================================
     // State Register
@@ -181,6 +186,7 @@ module host_bus_interface (
     // ============================================================
     // Next State Logic (Variable Length Packets, Little-Endian)
     // Priority: CPU-initiated transactions > Host-initiated transactions
+    // Host-initiated bus master requests now happen in parallel, not via FSM states
     // ============================================================
     always_comb begin
         next_state = state;
@@ -190,9 +196,9 @@ module host_bus_interface (
                 // Priority 1: CPU-initiated request (slave interface)
                 if (req) begin
                     next_state = STATE_CAPTURE;
-                // Priority 2: Host-initiated request (from buffer)
-                end else if (buf_req_valid) begin
-                    next_state = STATE_HOST_REQ_PENDING;
+                // Priority 2: Host response ready to transmit
+                end else if (host_resp_valid) begin
+                    next_state = STATE_HOST_TX_HEADER;
                 end
             end
             
@@ -277,21 +283,8 @@ module host_bus_interface (
             end
             
             // --------------------------------------------------------
-            // Host-initiated Request Processing
+            // Host-initiated Response TX (bus master handshake happens in parallel)
             // --------------------------------------------------------
-            STATE_HOST_REQ_PENDING: begin
-                // Forward buffered request to master interface
-                // Wait for bus master to complete
-                if (host_bus_ready) begin
-                    next_state = STATE_HOST_RESP_WAIT;
-                end
-            end
-            
-            STATE_HOST_RESP_WAIT: begin
-                // Wait one cycle to capture response data
-                next_state = STATE_HOST_TX_HEADER;
-            end
-            
             STATE_HOST_TX_HEADER: begin
                 // Send response header (packet type 0011)
                 if (tx_valid && tx_ready) begin
@@ -346,11 +339,10 @@ module host_bus_interface (
             cap_we    <= 1'b0;
             cap_size  <= 2'b00;
             
-            host_cap_addr  <= 32'h0;
-            host_cap_wdata <= 32'h0;
             host_cap_we    <= 1'b0;
             host_cap_size  <= 2'b00;
             host_resp_rdata <= 32'h0;
+            host_resp_valid <= 1'b0;
         end else begin
             // Capture CPU-initiated request
             if (state == STATE_IDLE && req) begin
@@ -360,17 +352,30 @@ module host_bus_interface (
                 cap_size  <= size;
             end
             
-            // Capture host-initiated request from buffer
-            if (state == STATE_IDLE && buf_req_valid && !req) begin
-                host_cap_addr  <= buf_req_addr;
-                host_cap_wdata <= buf_req_wdata;
-                host_cap_we    <= buf_req_we;
-                host_cap_size  <= buf_req_size;
-            end
-            
-            // Capture bus master response data
-            if (state == STATE_HOST_REQ_PENDING && host_bus_ready) begin
+            // Default: don't change host_resp_valid
+            // Priority 1: Clear host_resp_valid when host TX response is complete
+            // (transitioning from a host TX state back to idle)
+            // This takes priority over setting it, to avoid race condition
+            if (state == STATE_HOST_TX_HEADER && tx_valid && tx_ready && host_cap_we) begin
+                // Write response complete (header only)
+                host_resp_valid <= 1'b0;
+            end else if (state == STATE_HOST_TX_DATA_0 && tx_valid && tx_ready && host_cap_size == 2'b00) begin
+                // Byte read response complete
+                host_resp_valid <= 1'b0;
+            end else if (state == STATE_HOST_TX_DATA_1 && tx_valid && tx_ready && host_cap_size == 2'b01) begin
+                // Half read response complete
+                host_resp_valid <= 1'b0;
+            end else if (state == STATE_HOST_TX_DATA_3 && tx_valid && tx_ready) begin
+                // Word read response complete
+                host_resp_valid <= 1'b0;
+            end else if (bus_master_handshake_complete && !host_resp_valid) begin
+                // Priority 2: Capture data on bus master handshake completion (host-initiated path)
+                // Only capture if we don't already have a pending response
+                // This happens in parallel with the FSM, outside of state machine control
+                host_cap_we     <= buf_req_we;
+                host_cap_size   <= buf_req_size;
                 host_resp_rdata <= host_bus_rdata;
+                host_resp_valid <= 1'b1;
             end
         end
     end
@@ -381,11 +386,9 @@ module host_bus_interface (
     // Consume buffered response when CPU transaction completes
     assign buf_resp_consumed = (state == STATE_COMPLETE);
     
-    // Consume buffered request when host transaction starts
-    // Note: host_bus_req is defined as (state == STATE_HOST_REQ_PENDING) on line 455,
-    // so the original condition (state == STATE_HOST_REQ_PENDING && host_bus_req)
-    // simplifies to just checking the state.
-    assign buf_req_consumed = (state == STATE_HOST_REQ_PENDING);
+    // Consume buffered request when bus master handshake completes
+    // and we don't already have a pending response
+    assign buf_req_consumed = bus_master_handshake_complete && !host_resp_valid;
 
     // ============================================================
     // TX Phase Detection
@@ -448,12 +451,14 @@ module host_bus_interface (
     
     // ============================================================
     // Bus Master Interface (Host→CPU path)
-    // Drives bus requests for host-initiated transactions
+    // Drives bus requests directly from rx buffer outputs
+    // Request is asserted whenever a buffered request is available
+    // and we don't already have a pending response to transmit
     // ============================================================
-    assign host_bus_addr  = host_cap_addr;
-    assign host_bus_wdata = host_cap_wdata;
-    assign host_bus_we    = host_cap_we;
-    assign host_bus_size  = host_cap_size;
-    assign host_bus_req   = (state == STATE_HOST_REQ_PENDING);
+    assign host_bus_addr  = buf_req_addr;
+    assign host_bus_wdata = buf_req_wdata;
+    assign host_bus_we    = buf_req_we;
+    assign host_bus_size  = buf_req_size;
+    assign host_bus_req   = buf_req_valid && !host_resp_valid;
 
 endmodule
