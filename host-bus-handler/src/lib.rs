@@ -164,9 +164,9 @@ enum RxState {
     Idle,
     /// Receiving response data bytes (for packet type 0001 read responses)
     RespRdata { byte_idx: u8 },
-    /// Receiving request address bytes (for packet type 0010)
+    /// Receiving request address bytes (for packet type 0000 CPU-initiated requests from FPGA)
     ReqAddr { byte_idx: u8 },
-    /// Receiving request write data bytes (for packet type 0010 writes)
+    /// Receiving request write data bytes (for packet type 0000 CPU-initiated writes from FPGA)
     ReqWdata { byte_idx: u8 },
     /// Receiving host response data bytes (for packet type 0011 read responses)
     HostRespRdata { byte_idx: u8 },
@@ -222,6 +222,14 @@ struct IncomingResponse {
 /// This structure abstracts the host-side logic for communicating with an FPGA
 /// using the host bus request protocol. It mirrors the behavior of the RTL
 /// `host_bus_interface` and `host_rx_buffer` modules.
+///
+/// The interface is split into three groups of functions:
+/// 1. **Low-level byte interface**: `transfer_rx_byte()`, `transfer_tx_byte()` for
+///    handling serialized bus request data
+/// 2. **Outgoing request interface**: `send_request()`, `receive_response()` for
+///    sending bus requests and receiving their responses
+/// 3. **Incoming request interface**: `accept_request()`, `complete_request()` for
+///    processing incoming bus requests and sending back responses
 #[derive(Debug)]
 pub struct HostBusHandler {
     // RX state machine
@@ -284,6 +292,10 @@ impl HostBusHandler {
     pub fn reset(&mut self) {
         *self = Self::new();
     }
+
+    // ========================================================================
+    // Low-level byte transfer interface (transfer_rx_byte, transfer_tx_byte)
+    // ========================================================================
 
     /// Check if the handler can accept a new RX byte
     ///
@@ -501,13 +513,9 @@ impl HostBusHandler {
         // Check if we need to start a new transmission
         if self.tx_state == TxState::Idle {
             // Priority 1: Send response to an accepted incoming request
-            if let Some((we, size)) = self.accepted_request {
-                if let Some(ref response) = self.pending_response {
-                    // Start sending response
-                    self.tx_state = TxState::ResponseHeader;
-                    // Store response info for transmission
-                    let _ = (we, size, response);
-                }
+            if self.accepted_request.is_some() && self.pending_response.is_some() {
+                // Start sending response
+                self.tx_state = TxState::ResponseHeader;
             }
 
             // Priority 2: Send outgoing request (only if we haven't started transmitting it yet)
