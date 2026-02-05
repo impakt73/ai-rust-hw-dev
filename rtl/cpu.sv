@@ -92,6 +92,7 @@ module cpu #(
     logic [31:0] decomp_output;      // Decompressed 32-bit instruction
     logic        decomp_is_compressed; // Decompressor detected compressed instruction
     logic        decomp_is_valid;    // Decompressor output is valid
+    logic        decomp_is_valid_reg;  // Registered version (captured during S_FETCH)
     
     // Instruction width tracking (from fetch buffer)
     logic        current_insn_compressed; // Current instruction being executed is compressed
@@ -132,6 +133,7 @@ module cpu #(
     logic        int_to_fp;    // Integer source goes to FP unit
     logic        is_fp_load;   // FLW instruction
     logic        is_fp_store;  // FSW instruction
+    logic        invalid_instruction;  // Decoder detected invalid instruction
     
     // ============================================================
     // LR/SC Reservation Station (A Extension)
@@ -195,6 +197,7 @@ module cpu #(
     logic [4:0]  fpu_op_reg;
     logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
     logic        is_fp_load_reg, is_fp_store_reg;  // FP load/store flags
+    logic        invalid_instruction_reg;  // Invalid instruction flag (registered)
     logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -307,10 +310,13 @@ module cpu #(
     // Instruction Register
     // Now stores the decompressed 32-bit instruction (expanded from 16-bit if compressed)
     always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
+        if (!rst_n) begin
             ir_reg <= 32'h0;
-        else if (ir_write)
+            decomp_is_valid_reg <= 1'b1;  // Default to valid
+        end else if (ir_write) begin
             ir_reg <= decomp_output;  // Use decompressed output
+            decomp_is_valid_reg <= decomp_is_valid;  // Capture validity
+        end
     end
     
     // Operand Registers (Integer)
@@ -402,6 +408,8 @@ module cpu #(
             int_to_fp_reg <= 1'b0;
             is_fp_load_reg <= 1'b0;
             is_fp_store_reg <= 1'b0;
+            // Invalid instruction register
+            invalid_instruction_reg <= 1'b0;
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
             rd_reg <= rd;
@@ -438,6 +446,8 @@ module cpu #(
             int_to_fp_reg <= int_to_fp;
             is_fp_load_reg <= is_fp_load;
             is_fp_store_reg <= is_fp_store;
+            // Invalid instruction signal
+            invalid_instruction_reg <= invalid_instruction;
         end
     end
     
@@ -650,47 +660,53 @@ module cpu #(
             // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
             // Uses opcode_reg (captured in S_DECODE) to determine next state
             S_REG_READ: begin
-                // Now register file data is available, proceed based on instruction type
-                case (opcode_reg)
-                    7'b0110011,  // R-type
-                    7'b0010011,  // I-type arithmetic
-                    7'b0110111,  // LUI
-                    7'b0010111,  // AUIPC
-                    7'b1101111,  // JAL
-                    7'b1100111:  // JALR
-                        next_state = S_EXECUTE;
-                    
-                    7'b1010011,  // OP_FP: FP computational instructions
-                    7'b1000011,  // OP_FMADD: Fused multiply-add
-                    7'b1000111,  // OP_FMSUB: Fused multiply-sub
-                    7'b1001011,  // OP_FNMSUB: Fused negate-multiply-sub
-                    7'b1001111:  // OP_FNMADD: Fused negate-multiply-add
-                        next_state = S_EXECUTE;  // FP operations execute in S_EXECUTE
-                    
-                    7'b0000011,  // Load (integer: LW, LH, LB, LHU, LBU)
-                    7'b0000111,  // Load FP (FLW)
-                    7'b0100011,  // Store (integer: SW, SH, SB)
-                    7'b0100111:  // Store FP (FSW)
-                        next_state = S_MEM_ADDR;
-                    
-                    7'b0101111:  // AMO (Atomic operations - A extension)
-                        next_state = S_MEM_ADDR;
-                    
-                    7'b1100011:  // Branch
-                        next_state = S_BRANCH;
-                    
-                    7'b1110011: begin  // SYSTEM
-                        if (is_ecall_reg || is_ebreak_reg)
-                            next_state = S_HALT;
-                        else if (is_csr_reg)
-                            next_state = S_CSR;
-                    end
+                // Check for invalid instruction first (from decoder or decompressor)
+                // If the instruction was invalid during fetch/decompress or decode, halt
+                if (invalid_instruction_reg || !decomp_is_valid_reg) begin
+                    next_state = S_HALT;  // Invalid instruction - halt for debug
+                end else begin
+                    // Now register file data is available, proceed based on instruction type
+                    case (opcode_reg)
+                        7'b0110011,  // R-type
+                        7'b0010011,  // I-type arithmetic
+                        7'b0110111,  // LUI
+                        7'b0010111,  // AUIPC
+                        7'b1101111,  // JAL
+                        7'b1100111:  // JALR
+                            next_state = S_EXECUTE;
+                        
+                        7'b1010011,  // OP_FP: FP computational instructions
+                        7'b1000011,  // OP_FMADD: Fused multiply-add
+                        7'b1000111,  // OP_FMSUB: Fused multiply-sub
+                        7'b1001011,  // OP_FNMSUB: Fused negate-multiply-sub
+                        7'b1001111:  // OP_FNMADD: Fused negate-multiply-add
+                            next_state = S_EXECUTE;  // FP operations execute in S_EXECUTE
+                        
+                        7'b0000011,  // Load (integer: LW, LH, LB, LHU, LBU)
+                        7'b0000111,  // Load FP (FLW)
+                        7'b0100011,  // Store (integer: SW, SH, SB)
+                        7'b0100111:  // Store FP (FSW)
+                            next_state = S_MEM_ADDR;
+                        
+                        7'b0101111:  // AMO (Atomic operations - A extension)
+                            next_state = S_MEM_ADDR;
+                        
+                        7'b1100011:  // Branch
+                            next_state = S_BRANCH;
+                        
+                        7'b1110011: begin  // SYSTEM
+                            if (is_ecall_reg || is_ebreak_reg)
+                                next_state = S_HALT;
+                            else if (is_csr_reg)
+                                next_state = S_CSR;
+                        end
 
-                    7'b0001111:  // FENCE
-                        next_state = S_FETCH;
-                    
-                    default: next_state = S_HALT;  // Unknown instruction - halt for debug
-                endcase
+                        7'b0001111:  // FENCE
+                            next_state = S_FETCH;
+                        
+                        default: next_state = S_HALT;  // Unknown instruction - halt for debug
+                    endcase
+                end
             end
             
             S_EXECUTE: begin
@@ -985,7 +1001,8 @@ module cpu #(
         .fp_to_int(fp_to_int),
         .int_to_fp(int_to_fp),
         .is_fp_load(is_fp_load),
-        .is_fp_store(is_fp_store)
+        .is_fp_store(is_fp_store),
+        .invalid_instruction(invalid_instruction)
     );
     
     // Register file instantiation (write enable gated by FSM)

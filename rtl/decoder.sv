@@ -40,7 +40,8 @@ module decoder #(
     output logic        fp_to_int,    // FP result goes to integer register
     output logic        int_to_fp,    // Integer source goes to FP unit
     output logic        is_fp_load,   // FLW instruction
-    output logic        is_fp_store   // FSW instruction
+    output logic        is_fp_store,  // FSW instruction
+    output logic        invalid_instruction  // Invalid/unrecognized instruction
 );
 
     // Extract fields from instruction
@@ -169,6 +170,8 @@ module decoder #(
         int_to_fp = 1'b0;
         is_fp_load = 1'b0;
         is_fp_store = 1'b0;
+        // Invalid instruction default (valid until proven otherwise)
+        invalid_instruction = 1'b0;
 
         case (opcode)
             OP_IMM: begin
@@ -522,10 +525,11 @@ module decoder #(
             end
 
             default: begin
-                // NOP or invalid instruction
+                // Invalid instruction - unrecognized opcode
                 alu_op = ALU_ADD;
                 alu_src = 1'b0;
                 reg_write = 1'b0;
+                invalid_instruction = 1'b1;  // Signal invalid instruction
             end
         endcase
     end
