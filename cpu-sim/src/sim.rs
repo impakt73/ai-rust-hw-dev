@@ -635,7 +635,11 @@ impl<'a> SimulatorView<'a> {
             .receive_response()
             .map(|resp| HostBusResponse {
                 rdata: resp.rdata,
-                size: resp.size as u8,
+                size: match resp.size {
+                    AccessSize::Byte => 0,
+                    AccessSize::Halfword => 1,
+                    AccessSize::Word => 2,
+                },
                 we: resp.we,
             })
     }
@@ -818,9 +822,12 @@ where
         // Step 1: If host_tx_valid is 1, pass host_tx_data to handler via transfer_rx_byte()
         if self.cpu.host_tx_valid != 0 {
             let byte = self.cpu.host_tx_data;
-            self.host_bus_handler
-                .transfer_rx_byte(byte)
-                .expect("Protocol violation: handler buffer full while FPGA is sending data");
+            self.host_bus_handler.transfer_rx_byte(byte).expect(
+                "Protocol violation: handler buffer full while FPGA is sending data. \
+                 This indicates the FPGA sent more data than expected before the host \
+                 could process it. Ensure incoming requests are accepted and completed \
+                 before the FPGA sends the next request.",
+            );
         }
 
         // Step 2: If host_rx_ready is 1, try to get a byte to send
