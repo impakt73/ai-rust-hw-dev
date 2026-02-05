@@ -71,32 +71,27 @@ module fpga_top #(
     assign sys_clk = pll_clk_global;
     
     // ============================================================
-    // Reset Synchronization and Power-On Reset Controller
+    // Reset Synchronization
     // ============================================================
     logic rst_n;
     
-    // Synchronize reset button to PLL clock domain (2-FF synchronizer)
-    // Also incorporate PLL lock status into reset
-    logic rst_n_sync1, rst_n_sync2;
+    // Synchronize PLL lock to system clock domain (2-FF synchronizer)
+    logic pll_locked_sync1, pll_locked_sync2;
     always_ff @(posedge sys_clk) begin
-        rst_n_sync1 <= rst_n_btn & pll_locked;
-        rst_n_sync2 <= rst_n_sync1;
+        pll_locked_sync1 <= pll_locked;
+        pll_locked_sync2 <= pll_locked_sync1;
+    end
+
+    // Synchronize reset button (active low) to system clock domain (2-FF synchronizer)
+    logic rst_n_btn_sync1, rst_n_btn_sync2;
+    always_ff @(posedge sys_clk) begin
+        rst_n_btn_sync1 <= rst_n_btn;
+        rst_n_btn_sync2 <= rst_n_btn_sync1;
     end
     
-    // Reset controller for robust power-on reset
-    // Holds reset asserted for RESET_CYCLES after input reset deasserts
-    // Also supports soft reset requests from on-board logic
-    logic reset_request;  // Soft reset request (active high) - currently unused
-    assign reset_request = 1'b0;  // No soft reset source connected yet
-    
-    reset_controller #(
-        .RESET_CYCLES(8)
-    ) reset_ctrl (
-        .clk(sys_clk),
-        .rst_n_in(rst_n_sync2),
-        .reset_request(reset_request),
-        .rst_n_out(rst_n)
-    );
+    // Use synchronized button as reset request (active high when button pressed)
+    logic reset_request;
+    assign reset_request = ~rst_n_btn_sync2;
     
     // ============================================================
     // Boot Configuration
@@ -146,7 +141,8 @@ module fpga_top #(
         .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test
     ) cpu_inst (
         .clk(sys_clk),
-        .rst_n(rst_n),
+        .rst_n(pll_locked_sync2),
+        .reset_request(reset_request),
         .boot_addr(BOOT_ADDR),
         
         // Host bus interface (serialized memory transactions)
@@ -176,7 +172,8 @@ module fpga_top #(
         .debug_instruction(debug_instruction),
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
-        .debug_fsm_state(debug_fsm_state)
+        .debug_fsm_state(debug_fsm_state),
+        .rst_n_out(rst_n)
     );
     
     // ============================================================
