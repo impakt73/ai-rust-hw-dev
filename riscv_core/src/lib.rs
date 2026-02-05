@@ -145,6 +145,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "decompress.sv",         // RV32C decompressor
         "alu.sv",
         "div_unit.sv",
+        "mul_unit.sv",
         "regfile.sv",
         "decoder.sv",
         "branch_unit.sv",
@@ -158,7 +159,12 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["alu.sv", "div_unit.sv"])
+    create_runtime(&["alu.sv", "div_unit.sv", "mul_unit.sv"])
+}
+
+// Helper function to create a runtime for the MulUnit
+pub fn create_mul_unit_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["mul_unit.sv"])
 }
 
 // Helper function to create a runtime for the RegFile

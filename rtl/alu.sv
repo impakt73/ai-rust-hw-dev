@@ -1,6 +1,6 @@
 // ALU Module - Arithmetic Logic Unit
 // Implements RISC-V RV32I ALU operations
-// Multi-cycle support for division operations
+// Multi-cycle support for multiplication and division operations
 // Configurable M extension support for resource-constrained FPGAs
 
 module alu #(
@@ -118,55 +118,66 @@ module alu #(
         end
     endgenerate
     
-    // ALU ready signal: immediate for non-div ops, waits for div_ready for division
-    assign alu_ready = is_div_op ? div_ready : 1'b1;
-    
     // ============================================================
-    // M Extension: Shared Multiplier (Conditional Generation)
+    // M Extension: Multiplication Unit (Conditional Generation)
     // ============================================================
-    // Consolidated multiplier for MUL, MULH, MULHSU, MULHU
-    // Uses single 64x64 signed multiplication with proper operand extension
-    logic signed [63:0] mul_a_ext;
-    logic signed [63:0] mul_b_ext;
-    logic signed [63:0] mul_result;
+    // Multi-cycle shift-and-add multiplier for MUL, MULH, MULHSU, MULHU
+    // Replaces single-cycle 64x64 multiplier for better FPGA resource usage
+    logic        mul_start;
+    logic [1:0]  mul_op_type;
+    logic [31:0] mul_result;
+    logic        mul_ready;
+    logic        is_mul_op;
     
     generate
         if (ENABLE_M_EXT) begin : gen_multiplier
-            // Operand preparation: Extend operands based on operation type
+            // Instantiate multiplication unit with default 32-bit width for integer operations
+            mul_unit #(
+                .WIDTH(32)
+            ) u_mul (
+                .clk(clk),
+                .rst_n(rst_n),
+                .start(mul_start),
+                .op_type(mul_op_type),
+                .multiplicand(a),
+                .multiplier(b),
+                .result(mul_result),
+                .ready(mul_ready)
+            );
+            
+            // Detect multiplication operations
+            assign is_mul_op = (alu_op == ALU_MUL)    ||
+                               (alu_op == ALU_MULH)   ||
+                               (alu_op == ALU_MULHSU) ||
+                               (alu_op == ALU_MULHU);
+            
+            // Start multiplication when requested
+            assign mul_start = alu_start && is_mul_op;
+            
+            // Map ALU operation to mul_unit op_type
+            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
             always_comb begin
                 case (alu_op)
-                    ALU_MUL, ALU_MULH: begin
-                        // Signed × Signed
-                        mul_a_ext = {{32{a[31]}}, a};  // Sign-extend
-                        mul_b_ext = {{32{b[31]}}, b};  // Sign-extend
-                    end
-                    ALU_MULHSU: begin
-                        // Signed × Unsigned
-                        mul_a_ext = {{32{a[31]}}, a};  // Sign-extend
-                        mul_b_ext = {32'b0, b};        // Zero-extend
-                    end
-                    ALU_MULHU: begin
-                        // Unsigned × Unsigned
-                        mul_a_ext = {32'b0, a};        // Zero-extend
-                        mul_b_ext = {32'b0, b};        // Zero-extend
-                    end
-                    default: begin
-                        mul_a_ext = 64'sd0;
-                        mul_b_ext = 64'sd0;
-                    end
+                    ALU_MUL:    mul_op_type = 2'b00;
+                    ALU_MULH:   mul_op_type = 2'b01;
+                    ALU_MULHSU: mul_op_type = 2'b10;
+                    ALU_MULHU:  mul_op_type = 2'b11;
+                    default:    mul_op_type = 2'b00;
                 endcase
             end
             
-            // Single shared 64x64 multiplier
-            assign mul_result = mul_a_ext * mul_b_ext;
-            
         end else begin : gen_no_multiplier
             // M extension disabled: No multiplier
-            assign mul_a_ext = 64'sd0;
-            assign mul_b_ext = 64'sd0;
-            assign mul_result = 64'sd0;
+            assign mul_result = 32'd0;
+            assign mul_ready = 1'b1;
+            assign is_mul_op = 1'b0;
+            assign mul_start = 1'b0;
+            assign mul_op_type = 2'b00;
         end
     endgenerate
+    
+    // ALU ready signal: waits for multi-cycle operations (div or mul)
+    assign alu_ready = is_div_op ? div_ready : (is_mul_op ? mul_ready : 1'b1);
 
     always_comb begin
         // Default initialization to avoid latches
@@ -185,19 +196,13 @@ module alu #(
             ALU_SLT:  result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
             ALU_SLTU: result = (a < b) ? 32'd1 : 32'd0;
             
-            // M Extension - Multiplication operations (using shared multiplier)
-            ALU_MUL: begin
-                if (ENABLE_M_EXT) begin
-                    result = mul_result[31:0];  // Lower 32 bits
-                end else begin
-                    result = 32'd0;  // M extension disabled
-                end
-            end
+            // M Extension - Multiplication operations (using multi-cycle mul_unit)
+            ALU_MUL,
             ALU_MULH,
             ALU_MULHSU,
             ALU_MULHU: begin
                 if (ENABLE_M_EXT) begin
-                    result = mul_result[63:32];  // Upper 32 bits
+                    result = mul_result;  // Comes from multiplication unit
                 end else begin
                     result = 32'd0;  // M extension disabled
                 end
