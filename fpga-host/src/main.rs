@@ -16,7 +16,7 @@ use app::App;
 use clap::Parser;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
-use serial::SerialConnection;
+use serial::{BusEvent, SerialConnection};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
@@ -132,10 +132,34 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
 
         // Poll serial connection if connected
         if let Some(ref mut serial) = app.serial {
+            // Get pending request info before polling (need to borrow immutably first)
+            let pending_request = serial.pending_host_request().cloned();
+
             match serial.poll(&mut app.memory) {
                 Ok(Some(event)) => {
-                    app.log_bus_event(&event);
-                    app.request_count += 1;
+                    match &event {
+                        BusEvent::Read { .. } | BusEvent::Write { .. } => {
+                            // CPU-initiated transaction
+                            app.log_bus_event(&event);
+                            app.request_count += 1;
+                        }
+                        BusEvent::HostReadResponse { data, size } => {
+                            // Host-initiated read response - log with request details
+                            if let Some(req) = &pending_request {
+                                app.log_host_read_response(req.addr, *data, *size);
+                            } else {
+                                app.log_bus_event(&event);
+                            }
+                        }
+                        BusEvent::HostWriteResponse { size } => {
+                            // Host-initiated write response - log with request details
+                            if let Some(req) = &pending_request {
+                                app.log_host_write_response(req.addr, req.wdata, *size);
+                            } else {
+                                app.log_bus_event(&event);
+                            }
+                        }
+                    }
                 }
                 Ok(None) => {}
                 Err(e) => {

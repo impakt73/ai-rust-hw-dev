@@ -3,8 +3,9 @@
 //! This module contains the main application state and event handling logic.
 
 use crate::memory::SparseMemory;
-use crate::serial::{bytes_for_size, size_name, BusEvent, SerialConnection};
+use crate::serial::{access_size_name, bytes_for_size, size_name, BusEvent, SerialConnection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
 
 /// Maximum number of log lines to retain
@@ -197,7 +198,45 @@ impl App {
                     width = (bytes_for_size(*size) * 2) as usize
                 )
             }
+            BusEvent::HostReadResponse { data, size } => {
+                let width = size.byte_count() as usize * 2;
+                format!(
+                    "HOST READ response: 0x{:0width$x} ({})",
+                    data,
+                    access_size_name(*size),
+                    width = width
+                )
+            }
+            BusEvent::HostWriteResponse { size } => {
+                format!("HOST WRITE acknowledged ({})", access_size_name(*size))
+            }
         };
+        self.add_log(log::Level::Info, msg);
+    }
+
+    /// Log a host-initiated read response with the request details
+    pub fn log_host_read_response(&mut self, addr: u32, data: u32, size: AccessSize) {
+        let width = size.byte_count() as usize * 2;
+        let msg = format!(
+            "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
+            access_size_name(size),
+            addr,
+            data,
+            width = width
+        );
+        self.add_log(log::Level::Info, msg);
+    }
+
+    /// Log a host-initiated write response with the request details
+    pub fn log_host_write_response(&mut self, addr: u32, data: u32, size: AccessSize) {
+        let width = size.byte_count() as usize * 2;
+        let msg = format!(
+            "HOST WRITE {} @ 0x{:08x} <= 0x{:0width$x} (acknowledged)",
+            access_size_name(size),
+            addr,
+            data,
+            width = width
+        );
         self.add_log(log::Level::Info, msg);
     }
 

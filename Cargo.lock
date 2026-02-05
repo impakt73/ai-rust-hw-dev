@@ -1158,6 +1158,7 @@ dependencies = [
  "clap",
  "crossterm",
  "elf",
+ "host-bus-handler",
  "log",
  "ratatui",
  "riscv_shared",
