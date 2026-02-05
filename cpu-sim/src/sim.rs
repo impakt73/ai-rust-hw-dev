@@ -1,5 +1,6 @@
 use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
+use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::path::Path;
@@ -7,53 +8,6 @@ use std::time::Instant;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
-
-/// Host Bus Interface packet processing state (CPU-initiated path)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostBusState {
-    /// Idle - waiting for TX packet from CPU, will consume header when valid
-    Idle,
-    /// Receiving address bytes (4 bytes, little-endian)
-    RxAddr { byte_idx: u8 },
-    /// Receiving write data bytes (1-4 bytes based on size)
-    RxWdata { byte_idx: u8 },
-    /// Sending write acknowledgement header (extended header format)
-    TxAckHeader,
-    /// Sending read response header (extended header format)
-    TxRdataHeader,
-    /// Sending read data bytes (1-4 bytes based on size)
-    TxRdata { byte_idx: u8 },
-}
-
-/// Host-initiated request state machine (Host→FPGA path)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HostRequestState {
-    /// Idle - no pending request
-    Idle,
-    /// Sending request header (packet type 0010)
-    TxHeader,
-    /// Sending address bytes (4 bytes, little-endian)
-    TxAddr { byte_idx: u8 },
-    /// Sending write data bytes (1-4 bytes based on size)
-    TxWdata { byte_idx: u8 },
-    /// Receiving response header (packet type 0011)
-    RxHeader,
-    /// Receiving read response data bytes (1-4 bytes based on size)
-    RxRdata { byte_idx: u8 },
-}
-
-/// Host-initiated bus request (Host→FPGA)
-#[derive(Debug, Clone)]
-pub(crate) struct HostBusRequest {
-    /// Target address (must be in RTL peripheral space: 0x50000000-0x5FFFFFFF)
-    addr: u32,
-    /// Write data (ignored for reads)
-    wdata: u32,
-    /// Write enable (true = write, false = read)
-    we: bool,
-    /// Access size (0 = byte, 1 = halfword, 2 = word)
-    size: u8,
-}
 
 /// Response from a host-initiated bus request
 #[derive(Debug, Clone)]
@@ -66,19 +20,15 @@ pub struct HostBusResponse {
     pub we: bool,
 }
 
-/// Captured transaction from host bus interface (CPU-initiated path)
-#[derive(Debug, Clone, Default)]
-struct HostBusTransaction {
-    /// Write enable (true = write, false = read)
+/// State for a pending CPU-initiated request (awaiting completion)
+#[derive(Debug, Clone)]
+struct PendingRequest {
+    /// Access size
+    size: AccessSize,
+    /// Write enable
     we: bool,
-    /// Access size (0 = byte, 1 = halfword, 2 = word)
-    size: u8,
-    /// Address (accumulated little-endian)
-    addr: u32,
-    /// Write data (accumulated little-endian, only valid for writes)
-    wdata: u32,
-    /// Read data to send back (only valid for reads)
-    rdata: u32,
+    /// Cycle at which the request was accepted
+    accepted_cycle: u64,
 }
 
 /// Result of a single simulation step
@@ -105,9 +55,7 @@ pub struct SimulatorView<'a> {
     bus: &'a mut crate::bus::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
-    host_request_pending: &'a mut Option<HostBusRequest>,
-    host_response_ready: &'a mut Option<HostBusResponse>,
-    host_request_state: &'a mut HostRequestState,
+    host_bus_handler: &'a mut HostBusHandler,
 }
 
 impl<'a> SimulatorView<'a> {
@@ -116,17 +64,13 @@ impl<'a> SimulatorView<'a> {
         bus: &'a mut crate::bus::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
-        host_request_pending: &'a mut Option<HostBusRequest>,
-        host_response_ready: &'a mut Option<HostBusResponse>,
-        host_request_state: &'a mut HostRequestState,
+        host_bus_handler: &'a mut HostBusHandler,
     ) -> Self {
         SimulatorView {
             bus,
             hung_detector,
             cpu,
-            host_request_pending,
-            host_response_ready,
-            host_request_state,
+            host_bus_handler,
         }
     }
 
@@ -619,15 +563,13 @@ impl<'a> SimulatorView<'a> {
         we: bool,
         size: u8,
     ) -> Result<(), String> {
-        // Validate size
-        if size > 2 {
-            return Err(format!("Invalid size: {} (must be 0, 1, or 2)", size));
-        }
-
-        // Check if already pending
-        if self.host_request_pending.is_some() {
-            return Err("Host request already pending".to_string());
-        }
+        // Validate size and convert to AccessSize
+        let access_size = match size {
+            0 => AccessSize::Byte,
+            1 => AccessSize::Halfword,
+            2 => AccessSize::Word,
+            _ => return Err(format!("Invalid size: {} (must be 0, 1, or 2)", size)),
+        };
 
         // Validate address is in RTL peripheral space (0x50000000-0x5FFFFFFF)
         // This prevents deadlock per Rule 1 (no self-routing)
@@ -638,18 +580,17 @@ impl<'a> SimulatorView<'a> {
             ));
         }
 
-        // Queue the request
-        *self.host_request_pending = Some(HostBusRequest {
-            addr,
-            wdata,
-            we,
-            size,
-        });
+        // Create the request
+        let request = if we {
+            BusRequest::write(addr, wdata, access_size)
+        } else {
+            BusRequest::read(addr, access_size)
+        };
 
-        // Start the state machine
-        *self.host_request_state = HostRequestState::TxHeader;
-
-        Ok(())
+        // Send through the handler
+        self.host_bus_handler
+            .send_request(request)
+            .map_err(|e| format!("Host request rejected: {:?}", e))
     }
 
     /// Receive a bus response from the RTL target
@@ -690,7 +631,13 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn receive_bus_response(&mut self) -> Option<HostBusResponse> {
-        self.host_response_ready.take()
+        self.host_bus_handler
+            .receive_response()
+            .map(|resp| HostBusResponse {
+                rdata: resp.rdata,
+                size: resp.size as u8,
+                we: resp.we,
+            })
     }
 }
 
@@ -725,15 +672,11 @@ where
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
-    // Host bus interface state machine (CPU-initiated path)
-    host_bus_state: HostBusState,
-    host_bus_txn: HostBusTransaction,
-    host_bus_delay_counter: u32, // Delay counter for memory latency simulation
-    // Host-initiated request state machine (Host→FPGA path)
-    pub(crate) host_request_pending: Option<HostBusRequest>,
-    pub(crate) host_response_ready: Option<HostBusResponse>,
-    pub(crate) host_request_state: HostRequestState,
-    host_request_accumulator: u32, // Accumulator for multi-byte data
+    // Host bus handler
+    pub(crate) host_bus_handler: HostBusHandler,
+    // Pending request for memory latency simulation
+    pending_request: Option<PendingRequest>,
+    pending_request_rdata: u32, // Read data to send back when request completes
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -829,13 +772,9 @@ where
             trace_callback,
             vcd_time: 0,
             mem_latency_cycles,
-            host_bus_state: HostBusState::Idle,
-            host_bus_txn: HostBusTransaction::default(),
-            host_bus_delay_counter: 0,
-            host_request_pending: None,
-            host_response_ready: None,
-            host_request_state: HostRequestState::Idle,
-            host_request_accumulator: 0,
+            host_bus_handler: HostBusHandler::new(),
+            pending_request: None,
+            pending_request_rdata: 0,
             hung_detector,
         })
     }
@@ -869,431 +808,102 @@ where
         }
     }
 
-    /// Handle outgoing host-initiated requests (Host→FPGA RX path)
+    /// Handle the host bus interface protocol using the HostBusHandler
     ///
-    /// Sends request packets to the RTL via host_rx_* signals.
-    /// Packet format: [header][addr0-3][data0-N]
-    fn handle_host_request_tx(&mut self) {
-        match self.host_request_state {
-            HostRequestState::Idle => {
-                // No action - waiting for send_bus_request() to queue a request
-            }
-            HostRequestState::TxHeader => {
-                let req = self.host_request_pending.as_ref().unwrap();
-
-                // Send header byte: {packet_type=0010, size, 0, we}
-                let header = 0x20 | ((req.size & 0x03) << 2) | (req.we as u8);
-
-                self.cpu.host_rx_valid = 1;
-                self.cpu.host_rx_data = header;
-
-                if self.cpu.host_rx_ready != 0 {
-                    // Handshake complete - transition to TxAddr state.
-                    // NOTE: Don't de-assert valid here - TxAddr will set new address data
-                    // on the same cycle, and the RTL needs to see this header byte at the
-                    // clock edge before we present the next byte.
-                    self.host_request_state = HostRequestState::TxAddr { byte_idx: 0 };
-                }
-            }
-            HostRequestState::TxAddr { byte_idx } => {
-                let req = self.host_request_pending.as_ref().unwrap();
-
-                // Send address byte (little-endian)
-                let addr_byte = ((req.addr >> (byte_idx * 8)) & 0xFF) as u8;
-
-                self.cpu.host_rx_valid = 1;
-                self.cpu.host_rx_data = addr_byte;
-
-                if self.cpu.host_rx_ready != 0 {
-                    if byte_idx == 3 {
-                        // Address complete - check if write data needed
-                        if req.we {
-                            self.host_request_state = HostRequestState::TxWdata { byte_idx: 0 };
-                        } else {
-                            // Read request - wait for response
-                            // NOTE: Don't de-assert valid here - let RxHeader state do it
-                            self.host_request_state = HostRequestState::RxHeader;
-                        }
-                    } else {
-                        self.host_request_state = HostRequestState::TxAddr {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
-                    // NOTE: Don't de-assert valid here - next state sets new data before clock edge
-                }
-            }
-            HostRequestState::TxWdata { byte_idx } => {
-                let req = self.host_request_pending.as_ref().unwrap();
-
-                // Send write data byte (little-endian)
-                let data_byte = ((req.wdata >> (byte_idx * 8)) & 0xFF) as u8;
-
-                self.cpu.host_rx_valid = 1;
-                self.cpu.host_rx_data = data_byte;
-
-                if self.cpu.host_rx_ready != 0 {
-                    // Determine how many bytes to send based on size
-                    let num_bytes = match req.size {
-                        0 => 1, // byte
-                        1 => 2, // halfword
-                        _ => 4, // word
-                    };
-
-                    if byte_idx + 1 >= num_bytes {
-                        // Write data complete - wait for response
-                        // NOTE: Don't de-assert valid here - let RxHeader state do it on next cycle
-                        // This ensures the RTL sees this byte at the clock edge
-                        self.host_request_state = HostRequestState::RxHeader;
-                    } else {
-                        self.host_request_state = HostRequestState::TxWdata {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
-                }
-            }
-            HostRequestState::RxHeader | HostRequestState::RxRdata { .. } => {
-                // Handled in handle_host_response_rx()
-                // Ensure rx_valid is low when not transmitting (we're receiving in these states)
-                self.cpu.host_rx_valid = 0;
-            }
-        }
-    }
-
-    /// Handle incoming FPGA responses to host-initiated requests (FPGA→Host TX path)
-    ///
-    /// Receives response packets from the RTL via host_tx_* signals.
-    /// Packet format: [header][data0-N] (data only for reads)
-    ///
-    /// NOTE: The TX path is shared with CPU-initiated requests. When waiting for
-    /// a host response (packet type 0011), we might see CPU-initiated requests
-    /// (packet type 0000) instead. We only process packet type 0011 here.
-    fn handle_host_response_rx(&mut self) {
-        match self.host_request_state {
-            HostRequestState::RxHeader => {
-                // Waiting for response header (packet type 0011)
-                // NOTE: Only process TX data when CPU-initiated handler is in Idle state.
-                // If CPU-initiated handler is processing a multi-byte packet, we should not
-                // interfere with the TX data stream.
-                if self.host_bus_state != HostBusState::Idle {
-                    return;
-                }
-
-                self.cpu.host_tx_ready = 1; // Ready to receive
-
-                if self.cpu.host_tx_valid != 0 {
-                    // Handshake complete - parse header
-                    let header = self.cpu.host_tx_data;
-                    let packet_type = (header >> 4) & 0x0F;
-
-                    // If this is a CPU-initiated request (type 0000), skip and let
-                    // the CPU-initiated handler process it
-                    if packet_type == 0x00 {
-                        return;
-                    }
-
-                    // At this point, we expect only host response (type 0x03)
-                    if packet_type != 0x03 {
-                        panic!(
-                            "Unexpected packet type on host response: 0x{:X} (expected 0x3), header=0x{:02X}",
-                            packet_type, header
-                        );
-                    }
-
-                    let req = self.host_request_pending.as_ref().unwrap();
-                    let we = (header & 0x01) != 0;
-                    let size = (header >> 2) & 0x03;
-
-                    // Verify header matches request
-                    if we != req.we || size != req.size {
-                        panic!(
-                            "Response header mismatch: got we={}, size={} but expected we={}, size={}",
-                            we, size, req.we, req.size
-                        );
-                    }
-
-                    if we {
-                        // Write response - complete immediately
-                        self.host_response_ready = Some(HostBusResponse {
-                            rdata: 0,
-                            size,
-                            we: true,
-                        });
-                        self.host_request_pending = None;
-                        self.host_request_state = HostRequestState::Idle;
-                        self.cpu.host_tx_ready = 0;
-                    } else {
-                        // Read response - receive data
-                        self.host_request_accumulator = 0;
-                        self.host_request_state = HostRequestState::RxRdata { byte_idx: 0 };
-                    }
-                }
-            }
-            HostRequestState::RxRdata { byte_idx } => {
-                // Receiving read response data (little-endian)
-                self.cpu.host_tx_ready = 1; // Ready to receive
-
-                if self.cpu.host_tx_valid != 0 {
-                    // Handshake complete - accumulate byte
-                    let data_byte = self.cpu.host_tx_data as u32;
-                    self.host_request_accumulator |= data_byte << (byte_idx * 8);
-
-                    let req = self.host_request_pending.as_ref().unwrap();
-                    let num_bytes = match req.size {
-                        0 => 1, // byte
-                        1 => 2, // halfword
-                        _ => 4, // word
-                    };
-
-                    if byte_idx + 1 >= num_bytes {
-                        // Read data complete
-                        self.host_response_ready = Some(HostBusResponse {
-                            rdata: self.host_request_accumulator,
-                            size: req.size,
-                            we: false,
-                        });
-                        self.host_request_pending = None;
-                        self.host_request_state = HostRequestState::Idle;
-                        self.host_request_accumulator = 0;
-                        self.cpu.host_tx_ready = 0;
-                    } else {
-                        self.host_request_state = HostRequestState::RxRdata {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
-                }
-            }
-            _ => {
-                // Not in RX phase - ensure tx_ready is low
-                self.cpu.host_tx_ready = 0;
-            }
-        }
-    }
-
-    /// Handle the host bus interface protocol
-    ///
-    /// This method implements the host side of the serialized bus protocol.
-    /// It receives TX packets from the CPU (read/write requests) and sends
-    /// RX responses (acknowledgements or read data).
-    ///
-    /// It also handles host-initiated requests (Host→FPGA) in parallel with
-    /// the CPU-initiated flow.
-    ///
-    /// Protocol (Variable Length, Little-Endian, Extended Header Format):
-    ///   CPU-initiated request (type 0000):  [ext_header][addr0-3][data...] (FPGA → Host TX)
-    ///   Host response to CPU (type 0001):   [ext_header][data...]          (Host → FPGA RX)
-    ///   Host-initiated request (type 0010): [ext_header][addr0-3][data...] (Host → FPGA RX)
-    ///   FPGA response to Host (type 0011):  [ext_header][data...]          (FPGA → Host TX)
-    ///
-    /// Extended Header Format (1 byte):
-    ///   Bits [7:4]: Packet type
-    ///     0000 = CPU-initiated request (FPGA → Host TX)
-    ///     0001 = Host response to CPU request (Host → FPGA RX)
-    ///     0010 = Host-initiated request (Host → FPGA RX)
-    ///     0011 = FPGA response to Host request (FPGA → Host TX)
-    ///   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
-    ///   Bit  [1]:   Reserved (0)
-    ///   Bit  [0]:   we (1=write, 0=read)
+    /// This method:
+    /// 1. Transfers TX bytes from FPGA to handler when host_tx_valid=1
+    /// 2. Transfers TX bytes from handler to FPGA when host_rx_ready=1
+    /// 3. Accepts incoming requests and processes them with memory latency support
     fn handle_host_bus_interface(&mut self) {
-        // PRIORITY 1: Handle outgoing host-initiated requests (Host→FPGA RX path)
-        // This runs in parallel with CPU-initiated response handling
-        self.handle_host_request_tx();
+        // Step 1: If host_tx_valid is 1, pass host_tx_data to handler via transfer_rx_byte()
+        if self.cpu.host_tx_valid != 0 {
+            let byte = self.cpu.host_tx_data;
+            self.host_bus_handler
+                .transfer_rx_byte(byte)
+                .expect("Protocol violation: handler buffer full while FPGA is sending data");
+        }
 
-        // PRIORITY 2: Receive FPGA response to host-initiated request (FPGA→Host TX path)
-        self.handle_host_response_rx();
-
-        // PRIORITY 3: Handle CPU-initiated requests (existing flow)
-        match self.host_bus_state {
-            HostBusState::Idle => {
-                // Waiting for TX packet from CPU
-                self.cpu.host_tx_ready = 1; // Ready to receive
-                self.cpu.host_rx_valid = 0; // Not sending anything
-
-                if self.cpu.host_tx_valid != 0 {
-                    // Handshake complete (valid && ready) - consume header byte now
-                    let header = self.cpu.host_tx_data;
-
-                    // Parse extended header: {packet_type[3:0], size[1:0], 1'b0, we}
-                    let packet_type = (header >> 4) & 0x0F;
-
-                    // Skip if this is a host response (packet type 0011) -
-                    // handle_host_response_rx() already processed it
-                    if packet_type == 0x03 {
-                        return;
-                    }
-
-                    // Verify this is a CPU-initiated request (packet type 0000)
-                    if packet_type != 0x00 {
-                        panic!(
-                            "Unexpected packet type on TX: 0x{:X} (expected 0x0 or 0x3)",
-                            packet_type
-                        );
-                    }
-
-                    self.host_bus_txn.we = (header & 0x01) != 0;
-                    self.host_bus_txn.size = (header >> 2) & 0x03;
-                    self.host_bus_txn.addr = 0;
-                    self.host_bus_txn.wdata = 0;
-                    self.host_bus_state = HostBusState::RxAddr { byte_idx: 0 };
-                }
-            }
-
-            HostBusState::RxAddr { byte_idx } => {
-                self.cpu.host_tx_ready = 1;
-                self.cpu.host_rx_valid = 0;
-
-                if self.cpu.host_tx_valid != 0 {
-                    let byte = self.cpu.host_tx_data as u32;
-                    // Accumulate address (little-endian)
-                    self.host_bus_txn.addr |= byte << (byte_idx * 8);
-
-                    if byte_idx == 3 {
-                        // Address complete
-                        if self.host_bus_txn.we {
-                            // Write: continue receiving write data
-                            self.host_bus_state = HostBusState::RxWdata { byte_idx: 0 };
-                        } else {
-                            // Read: perform read and start sending response
-                            self.perform_read();
-                            // Apply memory latency
-                            if self.mem_latency_cycles > 0 {
-                                self.host_bus_delay_counter = self.mem_latency_cycles;
-                            }
-                            self.host_bus_state = HostBusState::TxRdataHeader;
-                        }
-                    } else {
-                        self.host_bus_state = HostBusState::RxAddr {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
-                }
-            }
-
-            HostBusState::RxWdata { byte_idx } => {
-                self.cpu.host_tx_ready = 1;
-                self.cpu.host_rx_valid = 0;
-
-                if self.cpu.host_tx_valid != 0 {
-                    let byte = self.cpu.host_tx_data as u32;
-                    // Accumulate write data (little-endian)
-                    self.host_bus_txn.wdata |= byte << (byte_idx * 8);
-
-                    // Determine how many bytes we need based on size
-                    let bytes_needed = match self.host_bus_txn.size {
-                        0 => 1, // byte
-                        1 => 2, // halfword
-                        _ => 4, // word
-                    };
-
-                    if byte_idx + 1 >= bytes_needed {
-                        // Write data complete - perform write and send ack
-                        self.perform_write();
-                        // Apply memory latency
-                        if self.mem_latency_cycles > 0 {
-                            self.host_bus_delay_counter = self.mem_latency_cycles;
-                        }
-                        self.host_bus_state = HostBusState::TxAckHeader;
-                    } else {
-                        self.host_bus_state = HostBusState::RxWdata {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
-                }
-            }
-
-            HostBusState::TxAckHeader => {
-                // Apply memory latency delay before sending ack header
-                if self.host_bus_delay_counter > 0 {
-                    self.host_bus_delay_counter -= 1;
-                    self.cpu.host_tx_ready = 0;
-                    self.cpu.host_rx_valid = 0;
-                    return;
-                }
-
-                self.cpu.host_tx_ready = 0; // Not receiving
-                self.cpu.host_rx_valid = 1;
-
-                // Send extended header for write response (packet type 0001)
-                // Format: {packet_type[3:0]=0001, size[1:0], 1'b0, we=1}
-                let header = 0x10 | ((self.host_bus_txn.size & 0x03) << 2) | 0x01;
-                self.cpu.host_rx_data = header;
-
-                if self.cpu.host_rx_ready != 0 {
-                    // Header sent, return to idle (write ack is just header, no data)
-                    self.host_bus_state = HostBusState::Idle;
-                }
-            }
-
-            HostBusState::TxRdataHeader => {
-                // Apply memory latency delay before sending read response header
-                if self.host_bus_delay_counter > 0 {
-                    self.host_bus_delay_counter -= 1;
-                    self.cpu.host_tx_ready = 0;
-                    self.cpu.host_rx_valid = 0;
-                    return;
-                }
-
-                self.cpu.host_tx_ready = 0; // Not receiving
-                self.cpu.host_rx_valid = 1;
-
-                // Send extended header for read response (packet type 0001)
-                // Format: {packet_type[3:0]=0001, size[1:0], 1'b0, we=0}
-                let header = 0x10 | ((self.host_bus_txn.size & 0x03) << 2);
-                self.cpu.host_rx_data = header;
-
-                if self.cpu.host_rx_ready != 0 {
-                    // Header sent, now send data bytes
-                    self.host_bus_state = HostBusState::TxRdata { byte_idx: 0 };
-                }
-            }
-
-            HostBusState::TxRdata { byte_idx } => {
-                self.cpu.host_tx_ready = 0; // Not receiving
-                self.cpu.host_rx_valid = 1;
-
-                // Send read data byte (little-endian)
-                let byte = ((self.host_bus_txn.rdata >> (byte_idx * 8)) & 0xFF) as u8;
+        // Step 2: If host_rx_ready is 1, try to get a byte to send
+        if self.cpu.host_rx_ready != 0 {
+            if let Some(byte) = self.host_bus_handler.transfer_tx_byte() {
                 self.cpu.host_rx_data = byte;
+                self.cpu.host_rx_valid = 1;
+            } else {
+                self.cpu.host_rx_valid = 0;
+            }
+        } else {
+            self.cpu.host_rx_valid = 0;
+        }
 
-                if self.cpu.host_rx_ready != 0 {
-                    // Determine how many bytes we need to send based on size
-                    let bytes_needed = match self.host_bus_txn.size {
-                        0 => 1, // byte
-                        1 => 2, // halfword
-                        _ => 4, // word
-                    };
+        // Step 3: Handle pending request completion (memory latency support)
+        if let Some(ref pending) = self.pending_request {
+            // Check if latency delay has elapsed
+            if self.cycle_count >= pending.accepted_cycle + self.mem_latency_cycles as u64 {
+                // Latency complete - send the response
+                let response = if pending.we {
+                    BusResponse::write_ack(pending.size)
+                } else {
+                    BusResponse::read_data(self.pending_request_rdata, pending.size)
+                };
+                self.host_bus_handler
+                    .complete_request(response)
+                    .expect("Failed to complete request");
+                self.pending_request = None;
+            }
+        }
 
-                    if byte_idx + 1 >= bytes_needed {
-                        // All bytes sent, return to idle
-                        self.host_bus_state = HostBusState::Idle;
+        // Step 4: Accept new incoming requests (only if no pending request waiting for latency)
+        if self.pending_request.is_none() {
+            if let Ok(request) = self.host_bus_handler.accept_request() {
+                // Perform the bus operation
+                let rdata = if request.we {
+                    // Write operation
+                    self.perform_write(request.addr, request.wdata, request.size);
+                    0
+                } else {
+                    // Read operation
+                    self.perform_read(request.addr, request.size)
+                };
+
+                // Apply memory latency if configured
+                if self.mem_latency_cycles > 0 {
+                    // Store pending request to complete after latency
+                    self.pending_request = Some(PendingRequest {
+                        size: request.size,
+                        we: request.we,
+                        accepted_cycle: self.cycle_count,
+                    });
+                    self.pending_request_rdata = rdata;
+                } else {
+                    // No latency - complete immediately
+                    let response = if request.we {
+                        BusResponse::write_ack(request.size)
                     } else {
-                        self.host_bus_state = HostBusState::TxRdata {
-                            byte_idx: byte_idx + 1,
-                        };
-                    }
+                        BusResponse::read_data(rdata, request.size)
+                    };
+                    self.host_bus_handler
+                        .complete_request(response)
+                        .expect("Failed to complete request");
                 }
             }
         }
     }
 
     /// Perform a read operation from the bus
-    fn perform_read(&mut self) {
-        let addr = self.host_bus_txn.addr;
-        let rdata = match self.host_bus_txn.size {
-            0 => self.bus.read_byte(addr) as u32,
-            1 => self.bus.read_halfword(addr) as u32,
-            _ => self.bus.read_word(addr),
-        };
-        self.host_bus_txn.rdata = rdata;
+    fn perform_read(&mut self, addr: u32, size: AccessSize) -> u32 {
+        match size {
+            AccessSize::Byte => self.bus.read_byte(addr) as u32,
+            AccessSize::Halfword => self.bus.read_halfword(addr) as u32,
+            AccessSize::Word => self.bus.read_word(addr),
+        }
     }
 
     /// Perform a write operation to the bus
-    fn perform_write(&mut self) {
-        let addr = self.host_bus_txn.addr;
-        let wdata = self.host_bus_txn.wdata;
-        match self.host_bus_txn.size {
-            0 => self.bus.write_byte(addr, wdata as u8),
-            1 => self.bus.write_halfword(addr, wdata as u16),
-            _ => self.bus.write_word(addr, wdata),
+    fn perform_write(&mut self, addr: u32, wdata: u32, size: AccessSize) {
+        match size {
+            AccessSize::Byte => self.bus.write_byte(addr, wdata as u8),
+            AccessSize::Halfword => self.bus.write_halfword(addr, wdata as u16),
+            AccessSize::Word => self.bus.write_word(addr, wdata),
         }
     }
 
@@ -1321,7 +931,9 @@ where
         self.cpu.boot_addr = boot_pc;
 
         // Initialize host bus interface signals
-        self.cpu.host_tx_ready = 0;
+        // host_tx_ready is always 1 because the handler can buffer requests/responses
+        // and the FPGA side never sends more than one request at a time
+        self.cpu.host_tx_ready = 1;
         self.cpu.host_rx_valid = 0;
         self.cpu.host_rx_data = 0;
 
@@ -1357,10 +969,10 @@ where
         // Reset cumulative elapsed time
         self.total_elapsed_time_us = 0;
 
-        // Reset host bus interface state
-        self.host_bus_state = HostBusState::Idle;
-        self.host_bus_txn = HostBusTransaction::default();
-        self.host_bus_delay_counter = 0;
+        // Reset the host bus handler
+        self.host_bus_handler.reset();
+        self.pending_request = None;
+        self.pending_request_rdata = 0;
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
@@ -1461,9 +1073,7 @@ where
                 &mut self.bus,
                 &mut self.hung_detector,
                 &self.cpu,
-                &mut self.host_request_pending,
-                &mut self.host_response_ready,
-                &mut self.host_request_state,
+                &mut self.host_bus_handler,
             );
             callback(&mut view);
         }
