@@ -30,6 +30,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/sync_dpram.sv \
 	$(RTL_DIR)/regfile.sv \
 	$(RTL_DIR)/sync_fifo.sv \
+	$(RTL_DIR)/reset_controller.sv \
 	$(RTL_DIR)/uart.sv \
 	$(RTL_DIR)/writeback_mux.sv \
 	$(RTL_DIR)/cpu.sv \
@@ -39,7 +40,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/top.sv
 
 FPGA_SOURCES = \
-	$(FPGA_DIR)/reset_controller.sv \
 	$(FPGA_DIR)/bram_unified.sv \
 	$(FPGA_DIR)/stub_fpu.sv \
 	$(FPGA_DIR)/fpga_top.sv

@@ -15,6 +15,7 @@ module top #(
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
     // System Clock Frequency (used by UART and Clock Peripheral)
     parameter int CLK_FREQ_HZ = 50_000_000,
+    parameter int RESET_CYCLES = 8,     // Number of cycles to hold reset after release
     // UART Parameters
     parameter int UART_BAUD_RATE   = 115200,
     // UART Loopback: When enabled (default), TX is internally connected to RX
@@ -23,6 +24,7 @@ module top #(
 ) (
     input  logic        clk,
     input  logic        rst_n,
+    input  logic        reset_request,
     input  logic [31:0] boot_addr,
     
     // Host TX Interface (to External Host)
@@ -58,8 +60,25 @@ module top #(
     output logic [31:0] debug_instruction,
     output logic [31:0] debug_current_pc,
     output logic [31:0] debug_current_instruction,
-    output logic [3:0]  debug_fsm_state
+    output logic [3:0]  debug_fsm_state,
+    output logic        rst_n_out
 );
+
+    // ============================================================
+    // Reset Controller
+    // ============================================================
+    logic rst_n_internal;
+
+    reset_controller #(
+        .RESET_CYCLES(RESET_CYCLES)
+    ) reset_ctrl (
+        .clk(clk),
+        .rst_n_in(rst_n),
+        .reset_request(reset_request),
+        .rst_n_out(rst_n_internal)
+    );
+
+    assign rst_n_out = rst_n_internal;
 
     // ============================================================
     // Internal CPU Memory Interface Signals (Unified)
@@ -149,7 +168,7 @@ module top #(
     // Priority: Host > CPU
     bus_arbiter arbiter (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         // CPU Master Interface
         .cpu_addr(cpu_mem_addr),
@@ -185,7 +204,7 @@ module top #(
     // Routes requests from arbiter to the appropriate peripheral based on address
     bus system_bus (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         // Master interface (from Arbiter)
         .master_addr(arb_bus_addr),
@@ -241,7 +260,7 @@ module top #(
     // - Master interface: Sends Host-initiated requests to arbiter (currently unused)
     host_bus_interface host_bus_if (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         // Bus Slave Interface (from System Bus - CPU→Host path)
         .addr(ext_mem_addr),
@@ -280,7 +299,7 @@ module top #(
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) cpu_core (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         .boot_addr(boot_addr),
         
         // Unified memory interface
@@ -325,7 +344,7 @@ module top #(
     // ============================================================
     led_controller_peripheral led_ctrl (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         .addr(led_addr),
         .wdata(led_wdata),
@@ -345,7 +364,7 @@ module top #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ)
     ) clock_periph (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         .addr(clock_addr),
         .wdata(clock_wdata),
@@ -365,7 +384,7 @@ module top #(
         .FIFO_DEPTH(8)
     ) uart_ctrl (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_internal),
         
         // Bus slave interface
         .addr(uart_addr),
