@@ -1987,3 +1987,57 @@ fn test_cpu_amo_unsigned_min_max() {
     println!("✓ AMOMINU, AMOMAXU executed");
     println!("========================================\n");
 }
+
+// ============================================================================
+// Invalid Instruction Tests
+// ============================================================================
+
+/// Test that CPU halts when fetching an instruction value of 0
+///
+/// When memory returns 0x0000, the decompressor identifies this as an invalid
+/// compressed instruction (C.ADDI4SPN with nzuimm=0), sets is_valid=0.
+/// The CPU should transition to S_HALT state when it detects this.
+#[test]
+fn test_cpu_halts_on_zero_instruction() {
+    init_test_logger();
+
+    // Program with 4 zero instructions (invalid compressed instructions)
+    // The CPU should halt when it fetches 0x0000
+    let instructions: Vec<u32> = vec![0, 0, 0, 0];
+
+    const START_ADDR: u32 = 0x8000_0000;
+
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    // Run with low max cycles - we expect halt quickly
+    // Note: Since the CPU halts and doesn't write to tohost, tohost_value will be None
+    let result = run_program(
+        100, // Low max cycles
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,
+        0, // Zero latency
+        |sim| {
+            sim.write_memory_region(START_ADDR, &program_bytes, true);
+            Ok(START_ADDR)
+        },
+        None::<fn(&SimulatorView, &SimulationResult)>,
+    );
+
+    // The CPU should enter a hung state because the invalid instruction causes
+    // the CPU to halt, and the hung detector detects that instructions are
+    // taking too long to complete.
+    let err = result.expect_err("Expected hung error when CPU halts on invalid instruction");
+    assert!(
+        err.contains("hung") || err.contains("Hung"),
+        "Expected hung error, got: {}",
+        err
+    );
+
+    println!("✓ CPU halts correctly on instruction value 0x0000");
+}
