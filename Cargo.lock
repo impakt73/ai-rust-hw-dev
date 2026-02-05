@@ -739,6 +739,7 @@ dependencies = [
  "clap",
  "elf",
  "env_logger",
+ "host-bus-handler",
  "image",
  "log",
  "postcard",

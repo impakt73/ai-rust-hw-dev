@@ -140,9 +140,7 @@ impl InteractiveSimulator {
                 &mut self.simulator.bus,
                 &mut self.simulator.hung_detector,
                 &self.simulator.cpu,
-                &mut self.simulator.host_request_pending,
-                &mut self.simulator.host_response_ready,
-                &mut self.simulator.host_request_state,
+                &mut self.simulator.host_bus_handler,
             );
             load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
         };
@@ -515,9 +513,7 @@ where
             &mut sim.bus,
             &mut sim.hung_detector,
             &sim.cpu,
-            &mut sim.host_request_pending,
-            &mut sim.host_response_ready,
-            &mut sim.host_request_state,
+            &mut sim.host_bus_handler,
         );
         setup_callback(&mut view)?
     };
@@ -534,9 +530,7 @@ where
             &mut sim.bus,
             &mut sim.hung_detector,
             &sim.cpu,
-            &mut sim.host_request_pending,
-            &mut sim.host_response_ready,
-            &mut sim.host_request_state,
+            &mut sim.host_bus_handler,
         );
         callback(&view, &result);
     }
