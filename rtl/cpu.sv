@@ -92,7 +92,6 @@ module cpu #(
     logic [31:0] decomp_output;      // Decompressed 32-bit instruction
     logic        decomp_is_compressed; // Decompressor detected compressed instruction
     logic        decomp_is_valid;    // Decompressor output is valid
-    logic        decomp_is_valid_reg;  // Registered version (captured during S_FETCH)
     
     // Instruction width tracking (from fetch buffer)
     logic        current_insn_compressed; // Current instruction being executed is compressed
@@ -133,7 +132,7 @@ module cpu #(
     logic        int_to_fp;    // Integer source goes to FP unit
     logic        is_fp_load;   // FLW instruction
     logic        is_fp_store;  // FSW instruction
-    logic        invalid_instruction;  // Decoder detected invalid instruction
+    logic        instruction_valid;  // Decoder detected valid instruction
     
     // ============================================================
     // LR/SC Reservation Station (A Extension)
@@ -197,7 +196,11 @@ module cpu #(
     logic [4:0]  fpu_op_reg;
     logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
     logic        is_fp_load_reg, is_fp_store_reg;  // FP load/store flags
-    logic        invalid_instruction_reg;  // Invalid instruction flag (registered)
+    // Merged instruction validity register:
+    // - Reset to 1 (assume valid on startup)
+    // - Updated with decompressor validity when instruction fetched (ir_write)
+    // - ANDed with decoder validity when decoded (decode_reg_write)
+    logic        is_instruction_valid_reg;
     logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -307,18 +310,23 @@ module cpu #(
     // Staging Register Implementations (All Flip-Flops)
     // ============================================================
     
-    // Instruction Register
+    // Instruction Register and Validity Tracking
     // Now stores the decompressed 32-bit instruction (expanded from 16-bit if compressed)
-    // Note: decomp_is_valid_reg defaults to valid (1'b1) on reset. This is safe because
-    // the CPU starts in S_IDLE → S_FETCH sequence, and decomp_is_valid is captured during
-    // ir_write in S_FETCH before being checked in S_REG_READ.
+    // is_instruction_valid_reg tracks instruction validity through the pipeline:
+    // - Reset to 1 (assume valid on startup)
+    // - Populated with decompressor validity when instruction fetched (ir_write)
+    // - ANDed with decoder validity when decoded (decode_reg_write)
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
-            decomp_is_valid_reg <= 1'b1;  // Safe default - captured before use in S_REG_READ
+            is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
         end else if (ir_write) begin
             ir_reg <= decomp_output;  // Use decompressed output
-            decomp_is_valid_reg <= decomp_is_valid;  // Capture validity
+            is_instruction_valid_reg <= decomp_is_valid;  // Capture decompressor validity
+        end else if (decode_reg_write) begin
+            // AND with decoder validity - instruction must be valid from both
+            // decompressor and decoder to be considered valid
+            is_instruction_valid_reg <= is_instruction_valid_reg & instruction_valid;
         end
     end
     
@@ -411,8 +419,7 @@ module cpu #(
             int_to_fp_reg <= 1'b0;
             is_fp_load_reg <= 1'b0;
             is_fp_store_reg <= 1'b0;
-            // Invalid instruction register
-            invalid_instruction_reg <= 1'b0;
+            // Note: is_instruction_valid_reg is handled separately in ir_reg logic
         end else if (decode_reg_write) begin
             opcode_reg <= opcode;
             rd_reg <= rd;
@@ -449,8 +456,7 @@ module cpu #(
             int_to_fp_reg <= int_to_fp;
             is_fp_load_reg <= is_fp_load;
             is_fp_store_reg <= is_fp_store;
-            // Invalid instruction signal
-            invalid_instruction_reg <= invalid_instruction;
+            // Note: is_instruction_valid_reg is updated separately in ir_reg logic
         end
     end
     
@@ -663,12 +669,11 @@ module cpu #(
             // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
             // Uses opcode_reg (captured in S_DECODE) to determine next state
             S_REG_READ: begin
-                // Check for invalid instruction first - two sources of invalidity:
-                // 1. decomp_is_valid_reg: Decompressor detected invalid compressed instruction
-                //    (e.g., all-zero instruction 0x0000 which is illegal C.ADDI4SPN with nzuimm=0)
-                // 2. invalid_instruction_reg: Decoder detected unrecognized opcode in 32-bit instruction
-                // Both must be checked to catch all invalid instruction cases.
-                if (invalid_instruction_reg || !decomp_is_valid_reg) begin
+                // Check for invalid instruction using the merged validity register.
+                // is_instruction_valid_reg combines:
+                // 1. Decompressor validity (captured during ir_write in S_FETCH)
+                // 2. Decoder validity (ANDed during decode_reg_write in S_DECODE)
+                if (!is_instruction_valid_reg) begin
                     next_state = S_HALT;  // Invalid instruction - halt for debug
                 end else begin
                     // Now register file data is available, proceed based on instruction type
@@ -1008,7 +1013,7 @@ module cpu #(
         .int_to_fp(int_to_fp),
         .is_fp_load(is_fp_load),
         .is_fp_store(is_fp_store),
-        .invalid_instruction(invalid_instruction)
+        .instruction_valid(instruction_valid)
     );
     
     // Register file instantiation (write enable gated by FSM)

@@ -1987,3 +1987,84 @@ fn test_cpu_amo_unsigned_min_max() {
     println!("✓ AMOMINU, AMOMAXU executed");
     println!("========================================\n");
 }
+
+// ============================================================================
+// Invalid Instruction Tests
+// ============================================================================
+
+/// Test that CPU halts when fetching an instruction value of 0
+///
+/// When memory returns 0x0000, the decompressor identifies this as an invalid
+/// compressed instruction (C.ADDI4SPN with nzuimm=0), sets is_valid=0.
+/// The CPU should transition to S_HALT state when it detects this.
+#[test]
+fn test_cpu_halts_on_zero_instruction() {
+    init_test_logger();
+
+    // Empty program - memory defaults to 0 which is an invalid instruction
+    // The CPU should halt when it fetches 0x0000
+    let instructions: Vec<u32> = vec![];
+
+    const START_ADDR: u32 = 0x8000_0000;
+
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    // Run with low max cycles - we expect halt quickly
+    // Note: Since the CPU halts and doesn't write to tohost, tohost_value will be None
+    let result = run_program(
+        100, // Low max cycles
+        false,
+        false,
+        None::<fn(&mut SimulatorView)>,
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,
+        0, // Zero latency
+        |sim| {
+            // Write empty program - memory will default to zeros
+            if !program_bytes.is_empty() {
+                sim.write_memory_region(START_ADDR, &program_bytes, true);
+            }
+            Ok(START_ADDR)
+        },
+        None::<fn(&SimulatorView, &SimulationResult)>,
+    );
+
+    match result {
+        Ok(res) => {
+            // Simulation completed - either by reaching max cycles or hung detection
+            println!(
+                "Simulation completed in {} cycles, tohost_value: {:?}",
+                res.cycles, res.tohost_value
+            );
+            // The CPU should halt quickly (within ~10 cycles for FETCH->DECODE->REG_READ->HALT)
+            // If it reaches max cycles without tohost, that means the hung detector
+            // didn't trigger, which is expected if instr_complete keeps being asserted in HALT
+            assert!(
+                res.cycles < 50,
+                "CPU should halt quickly on invalid instruction, took {} cycles",
+                res.cycles
+            );
+            // No tohost write expected since CPU halts
+            assert_eq!(
+                res.tohost_value, None,
+                "CPU should halt without writing to tohost"
+            );
+        }
+        Err(e) => {
+            // Hung detection is expected - CPU is stuck in HALT state
+            // (PC not changing but instr_complete asserted)
+            if e.contains("hung") || e.contains("Hung") {
+                println!(
+                    "Hung detection triggered as expected - CPU halted on invalid instruction"
+                );
+            } else {
+                panic!("Unexpected error: {}", e);
+            }
+        }
+    }
+
+    println!("✓ CPU halts correctly on instruction value 0x0000");
+}
