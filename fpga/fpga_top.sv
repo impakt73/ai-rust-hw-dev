@@ -10,7 +10,7 @@
 // - CPU's internal UART is looped back for self-test
 
 module fpga_top #(
-    parameter bit ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled for iCE40 resources)
+    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (enabled for shift-add multiplier)
     parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
 ) (
     // Clock input (100 MHz on-board oscillator)
