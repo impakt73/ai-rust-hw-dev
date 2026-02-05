@@ -9,24 +9,11 @@ use std::time::Instant;
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
-/// Response from a host-initiated bus request
+/// Pending response for a host-initiated request (awaiting completion after latency)
 #[derive(Debug, Clone)]
-pub struct HostBusResponse {
-    /// Read data (only valid for read requests)
-    pub rdata: u32,
-    /// Access size (0 = byte, 1 = halfword, 2 = word)
-    pub size: u8,
-    /// Whether this was a write request
-    pub we: bool,
-}
-
-/// State for a pending CPU-initiated request (awaiting completion)
-#[derive(Debug, Clone)]
-struct PendingRequest {
-    /// Access size
-    size: AccessSize,
-    /// Write enable
-    we: bool,
+struct PendingResponse {
+    /// The bus response to send
+    response: BusResponse,
     /// Cycle at which the request was accepted
     accepted_cycle: u64,
 }
@@ -525,14 +512,11 @@ impl<'a> SimulatorView<'a> {
     /// and routed through the bus arbiter to the appropriate peripheral.
     ///
     /// # Arguments
-    /// * `addr` - Target address (must be in RTL peripheral space: 0x50000000-0x5FFFFFFF)
-    /// * `wdata` - Write data (ignored for reads)
-    /// * `we` - Write enable (true = write, false = read)
-    /// * `size` - Access size (0 = byte, 1 = halfword, 2 = word)
+    /// * `request` - Bus request (read or write) to send to the RTL target
     ///
     /// # Returns
     /// * `Ok(())` - Request queued successfully
-    /// * `Err(String)` - Request rejected (already pending, or invalid parameters)
+    /// * `Err(String)` - Request rejected (already pending, or invalid address)
     ///
     /// # Examples
     /// ```no_run
@@ -544,7 +528,8 @@ impl<'a> SimulatorView<'a> {
     ///     false, // print_fsm_state
     ///     Some(|sim: &mut SimulatorView| {
     ///         // Write to LED peripheral at 0x50000000
-    ///         sim.send_bus_request(0x50000000, 0xAB, true, 0)
+    ///         let request = BusRequest::write(0x50000000, 0xAB, AccessSize::Byte);
+    ///         sim.send_bus_request(request)
     ///             .expect("Should queue host request");
     ///     }),
     ///     None::<fn(&InstructionTrace)>,
@@ -556,36 +541,15 @@ impl<'a> SimulatorView<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn send_bus_request(
-        &mut self,
-        addr: u32,
-        wdata: u32,
-        we: bool,
-        size: u8,
-    ) -> Result<(), String> {
-        // Validate size and convert to AccessSize
-        let access_size = match size {
-            0 => AccessSize::Byte,
-            1 => AccessSize::Halfword,
-            2 => AccessSize::Word,
-            _ => return Err(format!("Invalid size: {} (must be 0, 1, or 2)", size)),
-        };
-
+    pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
         // Validate address is in RTL peripheral space (0x50000000-0x5FFFFFFF)
         // This prevents deadlock per Rule 1 (no self-routing)
-        if !(0x50000000..0x60000000).contains(&addr) {
+        if !(0x50000000..0x60000000).contains(&request.addr) {
             return Err(format!(
                 "Invalid address 0x{:08x}: must be in RTL peripheral space (0x50000000-0x5FFFFFFF)",
-                addr
+                request.addr
             ));
         }
-
-        // Create the request
-        let request = if we {
-            BusRequest::write(addr, wdata, access_size)
-        } else {
-            BusRequest::read(addr, access_size)
-        };
 
         // Send through the handler
         self.host_bus_handler
@@ -613,9 +577,10 @@ impl<'a> SimulatorView<'a> {
     ///     false, // print_fsm_state
     ///     Some(|sim: &mut SimulatorView| {
     ///         // Send host-initiated read request
-    ///         sim.send_bus_request(0x50000000, 0, false, 0)
+    ///         let request = BusRequest::read(0x50000000, AccessSize::Byte);
+    ///         sim.send_bus_request(request)
     ///             .expect("Should queue host request");
-    ///         
+    ///
     ///         // Poll for response (will be available after a few cycles)
     ///         if let Some(response) = sim.receive_bus_response() {
     ///             println!("LED value: 0x{:02x}", response.rdata);
@@ -630,18 +595,8 @@ impl<'a> SimulatorView<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn receive_bus_response(&mut self) -> Option<HostBusResponse> {
-        self.host_bus_handler
-            .receive_response()
-            .map(|resp| HostBusResponse {
-                rdata: resp.rdata,
-                size: match resp.size {
-                    AccessSize::Byte => 0,
-                    AccessSize::Halfword => 1,
-                    AccessSize::Word => 2,
-                },
-                we: resp.we,
-            })
+    pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
+        self.host_bus_handler.receive_response()
     }
 }
 
@@ -678,9 +633,8 @@ where
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
     // Host bus handler
     pub(crate) host_bus_handler: HostBusHandler,
-    // Pending request for memory latency simulation
-    pending_request: Option<PendingRequest>,
-    pending_request_rdata: u32, // Read data to send back when request completes
+    // Pending response for memory latency simulation
+    pending_response: Option<PendingResponse>,
     // Hung state detection
     pub(crate) hung_detector: Option<HungDetector>,
 }
@@ -777,8 +731,7 @@ where
             vcd_time: 0,
             mem_latency_cycles,
             host_bus_handler: HostBusHandler::new(),
-            pending_request: None,
-            pending_request_rdata: 0,
+            pending_response: None,
             hung_detector,
         })
     }
@@ -842,52 +795,41 @@ where
             self.cpu.host_rx_valid = 0;
         }
 
-        // Step 3: Handle pending request completion (memory latency support)
-        if let Some(ref pending) = self.pending_request {
+        // Step 3: Handle pending response completion (memory latency support)
+        if let Some(ref pending) = self.pending_response {
             // Check if latency delay has elapsed
             if self.cycle_count >= pending.accepted_cycle + self.mem_latency_cycles as u64 {
                 // Latency complete - send the response
-                let response = if pending.we {
-                    BusResponse::write_ack(pending.size)
-                } else {
-                    BusResponse::read_data(self.pending_request_rdata, pending.size)
-                };
                 self.host_bus_handler
-                    .complete_request(response)
+                    .complete_request(pending.response.clone())
                     .expect("Failed to complete request");
-                self.pending_request = None;
+                self.pending_response = None;
             }
         }
 
-        // Step 4: Accept new incoming requests (only if no pending request waiting for latency)
-        if self.pending_request.is_none() {
+        // Step 4: Accept new incoming requests (only if no pending response waiting for latency)
+        if self.pending_response.is_none() {
             if let Ok(request) = self.host_bus_handler.accept_request() {
-                // Perform the bus operation
-                let rdata = if request.we {
+                // Perform the bus operation and create the response immediately
+                let response = if request.we {
                     // Write operation
                     self.perform_write(request.addr, request.wdata, request.size);
-                    0
+                    BusResponse::write_ack(request.size)
                 } else {
                     // Read operation
-                    self.perform_read(request.addr, request.size)
+                    let rdata = self.perform_read(request.addr, request.size);
+                    BusResponse::read_data(rdata, request.size)
                 };
 
                 // Apply memory latency if configured
                 if self.mem_latency_cycles > 0 {
-                    // Store pending request to complete after latency
-                    self.pending_request = Some(PendingRequest {
-                        size: request.size,
-                        we: request.we,
+                    // Store pending response to complete after latency
+                    self.pending_response = Some(PendingResponse {
+                        response,
                         accepted_cycle: self.cycle_count,
                     });
-                    self.pending_request_rdata = rdata;
                 } else {
                     // No latency - complete immediately
-                    let response = if request.we {
-                        BusResponse::write_ack(request.size)
-                    } else {
-                        BusResponse::read_data(rdata, request.size)
-                    };
                     self.host_bus_handler
                         .complete_request(response)
                         .expect("Failed to complete request");
@@ -978,8 +920,7 @@ where
 
         // Reset the host bus handler
         self.host_bus_handler.reset();
-        self.pending_request = None;
-        self.pending_request_rdata = 0;
+        self.pending_response = None;
 
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())

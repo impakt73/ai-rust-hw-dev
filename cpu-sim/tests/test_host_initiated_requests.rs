@@ -5,16 +5,6 @@
 //!
 //! These tests verify the complete path:
 //! Host → RX → Buffer → Master → Bus → Peripheral
-//!
-//! **NOTE: Tests marked with `#[ignore]` fail due to RTL priority scheduling.**
-//! The host_bus_interface RTL module prioritizes CPU-initiated requests over
-//! host-initiated requests. When the CPU continuously makes bus requests (e.g.,
-//! polling the LED peripheral in a tight loop), host-initiated requests are
-//! starved and never processed. This is a known limitation that requires RTL
-//! changes to fix (e.g., round-robin or fair scheduling).
-//!
-//! The RTL-level tests in `testbench/tests/host_bus_interface_test.rs` verify
-//! that host-initiated requests work correctly when there is no CPU contention.
 
 use cpu_sim::*;
 use riscv_core::instruction::*;
@@ -43,11 +33,7 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// The CPU polls the LED register waiting for a non-zero value.
 /// The host uses `send_bus_request()` to write to the LED peripheral via the full
 /// Host → RX → Buffer → Master → Bus → Peripheral path.
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
 
@@ -90,7 +76,8 @@ fn test_host_initiated_basic_sync() {
             if !*written {
                 // Send host-initiated write to LED peripheral (RTL space)
                 // Value 0x01 will cause CPU to break out of spin loop
-                sim.send_bus_request(LED_BASE, 0x01, true, 0)
+                let request = BusRequest::write(LED_BASE, 0x01, AccessSize::Byte);
+                sim.send_bus_request(request)
                     .expect("Should queue host request");
                 *written = true;
             }
@@ -127,11 +114,7 @@ fn test_host_initiated_basic_sync() {
 /// 2. CPU spins until LED is non-zero
 /// 3. CPU reads LED value and compares with expected value in DRAM
 /// 4. CPU reports success or failure via tohost
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_led_write() {
     init_test_logger();
 
@@ -189,7 +172,8 @@ fn test_host_initiated_led_write() {
             if !*sent {
                 // Write the test value to LED peripheral via host-initiated bus request
                 let led_value: u8 = 0xA5;
-                sim.send_bus_request(LED_BASE, led_value as u32, true, 0)
+                let request = BusRequest::write(LED_BASE, led_value as u32, AccessSize::Byte);
+                sim.send_bus_request(request)
                     .expect("Should queue host request");
 
                 // Store expected value in DRAM for CPU to compare
@@ -316,7 +300,8 @@ fn test_host_request_address_validation() {
             let mut tested = validation_tested_clone.lock().unwrap();
             if !*tested {
                 // Test 1: Valid address (LED peripheral)
-                let valid_result = sim.send_bus_request(0x50000000, 0x01, true, 0);
+                let request1 = BusRequest::write(0x50000000, 0x01, AccessSize::Byte);
+                let valid_result = sim.send_bus_request(request1);
                 assert!(
                     valid_result.is_ok(),
                     "Request to RTL peripheral space should succeed"
@@ -324,7 +309,8 @@ fn test_host_request_address_validation() {
 
                 // We can't send another request while one is pending
                 // This is expected behavior
-                let pending_result = sim.send_bus_request(0x50000004, 0x02, true, 0);
+                let request2 = BusRequest::write(0x50000004, 0x02, AccessSize::Byte);
+                let pending_result = sim.send_bus_request(request2);
                 assert!(pending_result.is_err(), "Request while pending should fail");
 
                 *tested = true;
@@ -360,11 +346,7 @@ fn test_host_request_address_validation() {
 ///
 /// Verifies that multiple host requests can be sent sequentially,
 /// waiting for each response before sending the next.
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_multiple_host_requests() {
     init_test_logger();
 
@@ -415,7 +397,8 @@ fn test_multiple_host_requests() {
             // Send next request if we haven't sent 3 yet
             if *count < 3 {
                 *count += 1;
-                sim.send_bus_request(LED_BASE, *count, true, 0)
+                let request = BusRequest::write(LED_BASE, *count, AccessSize::Byte);
+                sim.send_bus_request(request)
                     .expect("Should queue host request");
                 *pending = true;
             }
