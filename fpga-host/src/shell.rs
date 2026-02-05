@@ -36,6 +36,7 @@ impl SizeArg {
 }
 
 /// Result of parsing a shell command
+#[derive(Debug)]
 pub enum ParseResult {
     /// Successfully parsed a command
     Command(ShellCommand),
@@ -88,7 +89,7 @@ struct ShellCli {
 }
 
 /// Available shell commands
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum ShellCommand {
     /// Exit the application (Ctrl+C also works)
     #[command(visible_aliases = ["quit", "q"])]
@@ -656,11 +657,7 @@ mod tests {
         assert!(
             matches!(result, ParseResult::HelpText(_)),
             "Expected HelpText for 'help' command, got {:?}",
-            match &result {
-                ParseResult::Command(_) => "Command",
-                ParseResult::HelpText(_) => "HelpText",
-                ParseResult::Error(_) => "Error",
-            }
+            result
         );
     }
 
@@ -670,7 +667,8 @@ mod tests {
         let result = ShellCommand::parse("help connect");
         assert!(
             matches!(result, ParseResult::HelpText(_)),
-            "Expected HelpText for 'help connect' command"
+            "Expected HelpText for 'help connect' command, got {:?}",
+            result
         );
     }
 }
