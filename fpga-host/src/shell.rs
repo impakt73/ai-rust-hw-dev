@@ -5,7 +5,7 @@
 use crate::app::App;
 use crate::elf_loader;
 use crate::serial::SerialConnection;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
 use std::path::Path;
 
@@ -33,6 +33,15 @@ impl SizeArg {
             SizeArg::Word => AccessSize::Word,
         }
     }
+}
+
+/// Result of parsing a shell command (success cases only)
+#[derive(Debug)]
+pub enum ParseResult {
+    /// Successfully parsed a command
+    Command(ShellCommand),
+    /// Help text to display (not an error)
+    HelpText(String),
 }
 
 /// Result of executing a command
@@ -78,7 +87,7 @@ struct ShellCli {
 }
 
 /// Available shell commands
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum ShellCommand {
     /// Exit the application (Ctrl+C also works)
     #[command(visible_aliases = ["quit", "q"])]
@@ -139,7 +148,13 @@ fn parse_hex_or_decimal(s: &str) -> Result<u32, String> {
 
 impl ShellCommand {
     /// Parse a command string into a ShellCommand
-    pub fn parse(input: &str) -> Result<Self, String> {
+    ///
+    /// Returns Ok(ParseResult) to distinguish between:
+    /// - Successfully parsed commands (ParseResult::Command)
+    /// - Help/version text (ParseResult::HelpText) - displayed at Info level
+    ///
+    /// Returns Err(String) for actual parse errors - displayed at Error level
+    pub fn parse(input: &str) -> Result<ParseResult, String> {
         let input = input.trim();
         if input.is_empty() {
             return Err("Empty command".to_string());
@@ -153,8 +168,16 @@ impl ShellCommand {
 
         // Parse using clap
         match ShellCli::try_parse_from(args) {
-            Ok(cli) => Ok(cli.command),
-            Err(e) => Err(e.to_string()),
+            Ok(cli) => Ok(ParseResult::Command(cli.command)),
+            Err(e) => {
+                // Check if this is help/version output (not an actual error)
+                match e.kind() {
+                    ClapErrorKind::DisplayHelp | ClapErrorKind::DisplayVersion => {
+                        Ok(ParseResult::HelpText(e.to_string()))
+                    }
+                    _ => Err(e.to_string()),
+                }
+            }
         }
     }
 
@@ -392,20 +415,23 @@ mod tests {
     fn test_parse_exit() {
         assert!(matches!(
             ShellCommand::parse("exit"),
-            Ok(ShellCommand::Exit)
+            Ok(ParseResult::Command(ShellCommand::Exit))
         ));
         assert!(matches!(
             ShellCommand::parse("quit"),
-            Ok(ShellCommand::Exit)
+            Ok(ParseResult::Command(ShellCommand::Exit))
         ));
-        assert!(matches!(ShellCommand::parse("q"), Ok(ShellCommand::Exit)));
+        assert!(matches!(
+            ShellCommand::parse("q"),
+            Ok(ParseResult::Command(ShellCommand::Exit))
+        ));
     }
 
     #[test]
     fn test_parse_status() {
         assert!(matches!(
             ShellCommand::parse("status"),
-            Ok(ShellCommand::Status)
+            Ok(ParseResult::Command(ShellCommand::Status))
         ));
     }
 
@@ -414,13 +440,13 @@ mod tests {
         let result = ShellCommand::parse("connect /dev/ttyUSB0");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Connect { ref device, baud: 115200 }) if device == "/dev/ttyUSB0"
+            Ok(ParseResult::Command(ShellCommand::Connect { ref device, baud: 115200 })) if device == "/dev/ttyUSB0"
         ));
 
         let result = ShellCommand::parse("connect /dev/ttyUSB0 9600");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Connect { ref device, baud: 9600 }) if device == "/dev/ttyUSB0"
+            Ok(ParseResult::Command(ShellCommand::Connect { ref device, baud: 9600 })) if device == "/dev/ttyUSB0"
         ));
     }
 
@@ -438,7 +464,7 @@ mod tests {
     fn test_parse_disconnect() {
         assert!(matches!(
             ShellCommand::parse("disconnect"),
-            Ok(ShellCommand::Disconnect)
+            Ok(ParseResult::Command(ShellCommand::Disconnect))
         ));
     }
 
@@ -447,7 +473,7 @@ mod tests {
         let result = ShellCommand::parse("loadelf test.elf");
         assert!(matches!(
             result,
-            Ok(ShellCommand::LoadElf { ref path }) if path == "test.elf"
+            Ok(ParseResult::Command(ShellCommand::LoadElf { ref path })) if path == "test.elf"
         ));
     }
 
@@ -471,10 +497,10 @@ mod tests {
         let result = ShellCommand::parse("read 0x50000000");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Read {
+            Ok(ParseResult::Command(ShellCommand::Read {
                 address: 0x50000000,
                 size: SizeArg::Word
-            })
+            }))
         ));
     }
 
@@ -483,10 +509,10 @@ mod tests {
         let result = ShellCommand::parse("read 256");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Read {
+            Ok(ParseResult::Command(ShellCommand::Read {
                 address: 256,
                 size: SizeArg::Word
-            })
+            }))
         ));
     }
 
@@ -495,28 +521,28 @@ mod tests {
         let result = ShellCommand::parse("read 0x50000000 byte");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Read {
+            Ok(ParseResult::Command(ShellCommand::Read {
                 address: 0x50000000,
                 size: SizeArg::Byte
-            })
+            }))
         ));
 
         let result = ShellCommand::parse("read 0x50000000 halfword");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Read {
+            Ok(ParseResult::Command(ShellCommand::Read {
                 address: 0x50000000,
                 size: SizeArg::Halfword
-            })
+            }))
         ));
 
         let result = ShellCommand::parse("read 0x50000000 half");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Read {
+            Ok(ParseResult::Command(ShellCommand::Read {
                 address: 0x50000000,
                 size: SizeArg::Halfword
-            })
+            }))
         ));
     }
 
@@ -525,11 +551,11 @@ mod tests {
         let result = ShellCommand::parse("write 0x50000000 0xDEADBEEF");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Write {
+            Ok(ParseResult::Command(ShellCommand::Write {
                 address: 0x50000000,
                 data: 0xDEADBEEF,
                 size: SizeArg::Word
-            })
+            }))
         ));
     }
 
@@ -538,11 +564,11 @@ mod tests {
         let result = ShellCommand::parse("write 0x50000000 0xAB byte");
         assert!(matches!(
             result,
-            Ok(ShellCommand::Write {
+            Ok(ParseResult::Command(ShellCommand::Write {
                 address: 0x50000000,
                 data: 0xAB,
                 size: SizeArg::Byte
-            })
+            }))
         ));
     }
 
@@ -616,5 +642,27 @@ mod tests {
         assert!(check_data_size(0x00000000, SizeArg::Word).is_none());
         assert!(check_data_size(0xFFFFFFFF, SizeArg::Word).is_none());
         assert!(check_data_size(0xDEADBEEF, SizeArg::Word).is_none());
+    }
+
+    #[test]
+    fn test_parse_help_returns_help_text() {
+        // "help" should return Ok(HelpText), not an error
+        let result = ShellCommand::parse("help");
+        assert!(
+            matches!(result, Ok(ParseResult::HelpText(_))),
+            "Expected Ok(HelpText) for 'help' command, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_parse_help_for_subcommand() {
+        // "help connect" should return Ok(HelpText)
+        let result = ShellCommand::parse("help connect");
+        assert!(
+            matches!(result, Ok(ParseResult::HelpText(_))),
+            "Expected Ok(HelpText) for 'help connect' command, got {:?}",
+            result
+        );
     }
 }

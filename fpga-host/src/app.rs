@@ -133,7 +133,7 @@ impl App {
 
         // Parse and execute command
         match crate::shell::ShellCommand::parse(&input) {
-            Ok(cmd) => {
+            Ok(crate::shell::ParseResult::Command(cmd)) => {
                 let result = cmd.execute(self);
                 if let Some(msg) = result.message {
                     // Split multi-line messages into separate log entries
@@ -143,8 +143,18 @@ impl App {
                     }
                 }
             }
+            Ok(crate::shell::ParseResult::HelpText(text)) => {
+                // Help/version text should be displayed at Info level, not Error
+                for line in text.lines() {
+                    self.add_log(log::Level::Info, line.to_string());
+                }
+            }
             Err(e) => {
-                self.add_log(log::Level::Error, format!("Command error: {}", e));
+                // Split error text across multiple lines in case clap provides
+                // multi-line error messages
+                for line in e.lines() {
+                    self.add_log(log::Level::Error, line.to_string());
+                }
             }
         }
     }
