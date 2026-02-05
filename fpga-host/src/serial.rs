@@ -321,7 +321,7 @@ impl SerialConnection {
         request: &host_bus_handler::BusRequest,
         memory: &mut SparseMemory,
     ) -> BusEvent {
-        let size = request.size as u8;
+        let size = request.size.to_size_code();
         let is_dram = is_dram_address(request.addr);
 
         if request.we {

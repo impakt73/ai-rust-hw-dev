@@ -65,6 +65,15 @@ impl AccessSize {
         }
     }
 
+    /// Convert to the protocol size encoding (0, 1, 2)
+    pub fn to_size_code(self) -> u8 {
+        match self {
+            AccessSize::Byte => 0,
+            AccessSize::Halfword => 1,
+            AccessSize::Word => 2,
+        }
+    }
+
     /// Try to convert from a u8 value (0, 1, 2)
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {

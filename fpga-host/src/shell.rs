@@ -278,11 +278,7 @@ fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
         Ok(()) => CommandResult::ok(format!(
             "Sent read request for 0x{:08x} ({})",
             address,
-            match size {
-                SizeArg::Byte => "byte",
-                SizeArg::Halfword => "halfword",
-                SizeArg::Word => "word",
-            }
+            crate::serial::access_size_name(access_size)
         )),
         Err(e) => CommandResult::error(format!("Failed to send read request: {}", e)),
     }
@@ -309,11 +305,7 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
                 "Sent write request for 0x{:08x} <= 0x{:0width$x} ({})",
                 address,
                 data,
-                match size {
-                    SizeArg::Byte => "byte",
-                    SizeArg::Halfword => "halfword",
-                    SizeArg::Word => "word",
-                },
+                crate::serial::access_size_name(access_size),
                 width = width
             ))
         }
