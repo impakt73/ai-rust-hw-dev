@@ -25,6 +25,32 @@ pub enum SerialError {
     HandlerError(host_bus_handler::HandlerError),
 }
 
+impl SerialError {
+    /// Check if this is a fatal I/O error that should cause disconnection.
+    ///
+    /// Returns true for errors like broken pipe (device disconnected),
+    /// connection reset, or other unrecoverable I/O failures.
+    pub fn is_fatal(&self) -> bool {
+        match self {
+            SerialError::IoError(e) => {
+                use std::io::ErrorKind;
+                matches!(
+                    e.kind(),
+                    ErrorKind::BrokenPipe
+                        | ErrorKind::ConnectionReset
+                        | ErrorKind::ConnectionAborted
+                        | ErrorKind::NotConnected
+                        | ErrorKind::PermissionDenied
+                )
+            }
+            // OpenFailed is fatal by nature (we never connected)
+            SerialError::OpenFailed(_) => true,
+            // Handler errors are typically recoverable
+            SerialError::HandlerError(_) => false,
+        }
+    }
+}
+
 impl std::fmt::Display for SerialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

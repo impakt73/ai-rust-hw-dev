@@ -131,6 +131,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         }
 
         // Poll serial connection if connected
+        let mut should_disconnect = false;
         if let Some(ref mut serial) = app.serial {
             // Get pending request info before polling (need to borrow immutably first)
             let pending_request = serial.pending_host_request().cloned();
@@ -163,8 +164,26 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    app.add_log(log::Level::Error, format!("Serial error: {}", e));
+                    // Check if this is a fatal error (e.g., device disconnected)
+                    if e.is_fatal() {
+                        app.add_log(log::Level::Error, format!("Serial connection lost: {}", e));
+                        should_disconnect = true;
+                    } else {
+                        app.add_log(log::Level::Error, format!("Serial error: {}", e));
+                    }
                 }
+            }
+        }
+
+        // Handle fatal serial errors by disconnecting (outside the borrow)
+        if should_disconnect {
+            if let Some(serial) = app.serial.take() {
+                let device = serial.device_path().to_string();
+                drop(serial);
+                app.add_log(
+                    log::Level::Warn,
+                    format!("Disconnected from {} due to serial error", device),
+                );
             }
         }
 
