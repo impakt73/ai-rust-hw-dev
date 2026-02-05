@@ -507,11 +507,8 @@ fn test_alu_m_extension_edge_cases() {
     for &op in &m_ops {
         match op {
             ALU_MUL | ALU_MULH | ALU_MULHSU | ALU_MULHU => {
-                // Multiplication: combinational, use eval
-                dut.a = 0;
-                dut.b = 12345;
-                dut.alu_op = op as u8;
-                dut.eval();
+                // Multiplication is now multi-cycle, use helper
+                execute_alu_operation(&mut dut, 0, 12345, op as u8);
                 assert_eq!(
                     dut.result, 0,
                     "M-ext op {} with zero operand should be 0",
@@ -535,10 +532,8 @@ fn test_alu_m_extension_edge_cases() {
     for &op in &m_ops {
         match op {
             ALU_MUL => {
-                dut.a = 0x12345678;
-                dut.b = 1;
-                dut.alu_op = op as u8;
-                dut.eval();
+                // Multiplication is now multi-cycle, use helper
+                execute_alu_operation(&mut dut, 0x12345678, 1, op as u8);
                 assert_eq!(dut.result, 0x12345678, "x × 1 = x");
             }
             ALU_DIV | ALU_DIVU => {
