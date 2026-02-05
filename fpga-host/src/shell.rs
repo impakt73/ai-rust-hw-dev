@@ -260,6 +260,62 @@ fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
     }
 }
 
+/// Check address alignment for a given access size
+/// Returns an error message if misaligned, None if aligned
+fn check_alignment(address: u32, size: SizeArg) -> Option<String> {
+    match size {
+        SizeArg::Byte => None, // Byte access has no alignment requirements
+        SizeArg::Halfword => {
+            if address & 1 != 0 {
+                Some(format!(
+                    "Address 0x{:08x} is not halfword-aligned (must be 2-byte aligned)",
+                    address
+                ))
+            } else {
+                None
+            }
+        }
+        SizeArg::Word => {
+            if address & 3 != 0 {
+                Some(format!(
+                    "Address 0x{:08x} is not word-aligned (must be 4-byte aligned)",
+                    address
+                ))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Check if data value fits within the specified access size
+/// Returns an error message if too large, None if valid
+fn check_data_size(data: u32, size: SizeArg) -> Option<String> {
+    match size {
+        SizeArg::Byte => {
+            if data > 0xFF {
+                Some(format!(
+                    "Data value 0x{:x} exceeds byte size (max 0xFF)",
+                    data
+                ))
+            } else {
+                None
+            }
+        }
+        SizeArg::Halfword => {
+            if data > 0xFFFF {
+                Some(format!(
+                    "Data value 0x{:x} exceeds halfword size (max 0xFFFF)",
+                    data
+                ))
+            } else {
+                None
+            }
+        }
+        SizeArg::Word => None, // u32 always fits in a word
+    }
+}
+
 /// Execute the read command
 fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
     let serial = match app.serial.as_mut() {
@@ -269,6 +325,11 @@ fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
 
     if serial.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    // Check address alignment
+    if let Some(err) = check_alignment(address, size) {
+        return CommandResult::error(err);
     }
 
     let access_size = size.to_access_size();
@@ -293,6 +354,16 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
 
     if serial.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    // Check address alignment
+    if let Some(err) = check_alignment(address, size) {
+        return CommandResult::error(err);
+    }
+
+    // Check data size
+    if let Some(err) = check_data_size(data, size) {
+        return CommandResult::error(err);
     }
 
     let access_size = size.to_access_size();
@@ -494,5 +565,56 @@ mod tests {
         assert_eq!(parse_hex_or_decimal("0xDEADBEEF"), Ok(0xDEADBEEF));
         assert!(parse_hex_or_decimal("0xGGGG").is_err());
         assert!(parse_hex_or_decimal("abc").is_err());
+    }
+
+    #[test]
+    fn test_check_alignment_byte() {
+        // Byte access has no alignment requirements
+        assert!(check_alignment(0x00000000, SizeArg::Byte).is_none());
+        assert!(check_alignment(0x00000001, SizeArg::Byte).is_none());
+        assert!(check_alignment(0x00000003, SizeArg::Byte).is_none());
+    }
+
+    #[test]
+    fn test_check_alignment_halfword() {
+        // Halfword requires 2-byte alignment
+        assert!(check_alignment(0x00000000, SizeArg::Halfword).is_none());
+        assert!(check_alignment(0x00000002, SizeArg::Halfword).is_none());
+        assert!(check_alignment(0x00000001, SizeArg::Halfword).is_some());
+        assert!(check_alignment(0x00000003, SizeArg::Halfword).is_some());
+    }
+
+    #[test]
+    fn test_check_alignment_word() {
+        // Word requires 4-byte alignment
+        assert!(check_alignment(0x00000000, SizeArg::Word).is_none());
+        assert!(check_alignment(0x00000004, SizeArg::Word).is_none());
+        assert!(check_alignment(0x00000001, SizeArg::Word).is_some());
+        assert!(check_alignment(0x00000002, SizeArg::Word).is_some());
+        assert!(check_alignment(0x00000003, SizeArg::Word).is_some());
+    }
+
+    #[test]
+    fn test_check_data_size_byte() {
+        assert!(check_data_size(0x00, SizeArg::Byte).is_none());
+        assert!(check_data_size(0xFF, SizeArg::Byte).is_none());
+        assert!(check_data_size(0x100, SizeArg::Byte).is_some());
+        assert!(check_data_size(0xDEADBEEF, SizeArg::Byte).is_some());
+    }
+
+    #[test]
+    fn test_check_data_size_halfword() {
+        assert!(check_data_size(0x0000, SizeArg::Halfword).is_none());
+        assert!(check_data_size(0xFFFF, SizeArg::Halfword).is_none());
+        assert!(check_data_size(0x10000, SizeArg::Halfword).is_some());
+        assert!(check_data_size(0xDEADBEEF, SizeArg::Halfword).is_some());
+    }
+
+    #[test]
+    fn test_check_data_size_word() {
+        // Word can hold any u32 value
+        assert!(check_data_size(0x00000000, SizeArg::Word).is_none());
+        assert!(check_data_size(0xFFFFFFFF, SizeArg::Word).is_none());
+        assert!(check_data_size(0xDEADBEEF, SizeArg::Word).is_none());
     }
 }

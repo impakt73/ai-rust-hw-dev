@@ -65,13 +65,14 @@ impl AccessSize {
         }
     }
 
-    /// Convert to the protocol size encoding (0, 1, 2)
+    /// Convert to the protocol size encoding (0, 1, 2).
+    ///
+    /// Although this is equivalent to `self as u8` (because the enum
+    /// discriminants mirror the protocol encoding), we keep it as a
+    /// dedicated method so that call sites do not rely directly on the
+    /// discriminant values and the protocol mapping stays explicit here.
     pub fn to_size_code(self) -> u8 {
-        match self {
-            AccessSize::Byte => 0,
-            AccessSize::Halfword => 1,
-            AccessSize::Word => 2,
-        }
+        self as u8
     }
 
     /// Try to convert from a u8 value (0, 1, 2)

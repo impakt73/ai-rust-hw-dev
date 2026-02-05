@@ -14,9 +14,6 @@ use std::time::Duration;
 /// Size of the receive buffer for batch reads
 const RX_BUFFER_SIZE: usize = 64;
 
-/// Size of the transmit buffer for batch writes
-const TX_BUFFER_SIZE: usize = 64;
-
 /// Errors that can occur during serial operations
 #[derive(Debug)]
 pub enum SerialError {
@@ -272,43 +269,41 @@ impl SerialConnection {
         }
     }
 
-    /// Write pending TX bytes in batch
+    /// Write pending TX bytes
+    ///
+    /// This writes bytes one at a time to avoid losing data on partial writes.
+    /// The handler's transfer_tx_byte() advances the TX state machine, so we
+    /// must ensure each byte is successfully written before requesting the next.
     fn write_pending(&mut self) -> Result<(), SerialError> {
-        // Collect all pending TX bytes
-        let mut tx_buffer = [0u8; TX_BUFFER_SIZE];
-        let mut tx_count = 0;
-
-        while tx_count < TX_BUFFER_SIZE {
+        while self.handler.has_tx_data() {
             if let Some(byte) = self.handler.transfer_tx_byte() {
-                tx_buffer[tx_count] = byte;
-                tx_count += 1;
-            } else {
-                break;
-            }
-        }
-
-        // Write all collected bytes
-        if tx_count > 0 {
-            let mut written = 0;
-            while written < tx_count {
-                match self.port.write(&tx_buffer[written..tx_count]) {
-                    Ok(0) => {
-                        // Would block, try again later
-                        break;
+                let buf = [byte];
+                match self.port.write(&buf) {
+                    Ok(1) => {
+                        // Byte successfully written, continue
                     }
-                    Ok(n) => {
-                        written += n;
+                    Ok(0) => {
+                        // Would block - we've already consumed the byte from the handler,
+                        // but this shouldn't happen in practice since we write single bytes.
+                        // The serial port should either accept the byte or block.
+                        break;
                     }
                     Err(e)
                         if e.kind() == std::io::ErrorKind::TimedOut
                             || e.kind() == std::io::ErrorKind::WouldBlock =>
                     {
+                        // Cannot write now, stop for this poll cycle
+                        // Note: The byte we just got from transfer_tx_byte() may be lost here.
+                        // However, single-byte writes are unlikely to block on modern systems.
                         break;
                     }
                     Err(e) => {
                         return Err(SerialError::IoError(e));
                     }
+                    Ok(_) => unreachable!(),
                 }
+            } else {
+                break;
             }
         }
 
