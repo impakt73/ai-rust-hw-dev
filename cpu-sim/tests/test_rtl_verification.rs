@@ -2001,9 +2001,9 @@ fn test_cpu_amo_unsigned_min_max() {
 fn test_cpu_halts_on_zero_instruction() {
     init_test_logger();
 
-    // Empty program - memory defaults to 0 which is an invalid instruction
+    // Program with 4 zero instructions (invalid compressed instructions)
     // The CPU should halt when it fetches 0x0000
-    let instructions: Vec<u32> = vec![];
+    let instructions: Vec<u32> = vec![0, 0, 0, 0];
 
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -2023,48 +2023,21 @@ fn test_cpu_halts_on_zero_instruction() {
         None,
         0, // Zero latency
         |sim| {
-            // Write empty program - memory will default to zeros
-            if !program_bytes.is_empty() {
-                sim.write_memory_region(START_ADDR, &program_bytes, true);
-            }
+            sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
 
-    match result {
-        Ok(res) => {
-            // Simulation completed - either by reaching max cycles or hung detection
-            println!(
-                "Simulation completed in {} cycles, tohost_value: {:?}",
-                res.cycles, res.tohost_value
-            );
-            // The CPU should halt quickly (within ~10 cycles for FETCH->DECODE->REG_READ->HALT)
-            // If it reaches max cycles without tohost, that means the hung detector
-            // didn't trigger, which is expected if instr_complete keeps being asserted in HALT
-            assert!(
-                res.cycles < 50,
-                "CPU should halt quickly on invalid instruction, took {} cycles",
-                res.cycles
-            );
-            // No tohost write expected since CPU halts
-            assert_eq!(
-                res.tohost_value, None,
-                "CPU should halt without writing to tohost"
-            );
-        }
-        Err(e) => {
-            // Hung detection is expected - CPU is stuck in HALT state
-            // (PC not changing but instr_complete asserted)
-            if e.contains("hung") || e.contains("Hung") {
-                println!(
-                    "Hung detection triggered as expected - CPU halted on invalid instruction"
-                );
-            } else {
-                panic!("Unexpected error: {}", e);
-            }
-        }
-    }
+    // The CPU should enter a hung state because the invalid instruction causes
+    // the CPU to halt, and the hung detector detects that instructions are
+    // taking too long to complete.
+    let err = result.expect_err("Expected hung error when CPU halts on invalid instruction");
+    assert!(
+        err.contains("hung") || err.contains("Hung"),
+        "Expected hung error, got: {}",
+        err
+    );
 
     println!("✓ CPU halts correctly on instruction value 0x0000");
 }
