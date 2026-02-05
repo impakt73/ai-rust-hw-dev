@@ -9,17 +9,6 @@ use std::time::Instant;
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
-/// Response from a host-initiated bus request
-#[derive(Debug, Clone)]
-pub struct HostBusResponse {
-    /// Read data (only valid for read requests)
-    pub rdata: u32,
-    /// Access size (0 = byte, 1 = halfword, 2 = word)
-    pub size: u8,
-    /// Whether this was a write request
-    pub we: bool,
-}
-
 /// State for a pending CPU-initiated request (awaiting completion)
 #[derive(Debug, Clone)]
 struct PendingRequest {
@@ -615,7 +604,7 @@ impl<'a> SimulatorView<'a> {
     ///         // Send host-initiated read request
     ///         sim.send_bus_request(0x50000000, 0, false, 0)
     ///             .expect("Should queue host request");
-    ///         
+    ///
     ///         // Poll for response (will be available after a few cycles)
     ///         if let Some(response) = sim.receive_bus_response() {
     ///             println!("LED value: 0x{:02x}", response.rdata);
@@ -630,18 +619,8 @@ impl<'a> SimulatorView<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn receive_bus_response(&mut self) -> Option<HostBusResponse> {
-        self.host_bus_handler
-            .receive_response()
-            .map(|resp| HostBusResponse {
-                rdata: resp.rdata,
-                size: match resp.size {
-                    AccessSize::Byte => 0,
-                    AccessSize::Halfword => 1,
-                    AccessSize::Word => 2,
-                },
-                we: resp.we,
-            })
+    pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
+        self.host_bus_handler.receive_response()
     }
 }
 

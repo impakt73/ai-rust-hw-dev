@@ -5,16 +5,6 @@
 //!
 //! These tests verify the complete path:
 //! Host → RX → Buffer → Master → Bus → Peripheral
-//!
-//! **NOTE: Tests marked with `#[ignore]` fail due to RTL priority scheduling.**
-//! The host_bus_interface RTL module prioritizes CPU-initiated requests over
-//! host-initiated requests. When the CPU continuously makes bus requests (e.g.,
-//! polling the LED peripheral in a tight loop), host-initiated requests are
-//! starved and never processed. This is a known limitation that requires RTL
-//! changes to fix (e.g., round-robin or fair scheduling).
-//!
-//! The RTL-level tests in `testbench/tests/host_bus_interface_test.rs` verify
-//! that host-initiated requests work correctly when there is no CPU contention.
 
 use cpu_sim::*;
 use riscv_core::instruction::*;
@@ -43,11 +33,7 @@ fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
 /// The CPU polls the LED register waiting for a non-zero value.
 /// The host uses `send_bus_request()` to write to the LED peripheral via the full
 /// Host → RX → Buffer → Master → Bus → Peripheral path.
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
 
@@ -127,11 +113,7 @@ fn test_host_initiated_basic_sync() {
 /// 2. CPU spins until LED is non-zero
 /// 3. CPU reads LED value and compares with expected value in DRAM
 /// 4. CPU reports success or failure via tohost
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_host_initiated_led_write() {
     init_test_logger();
 
@@ -360,11 +342,7 @@ fn test_host_request_address_validation() {
 ///
 /// Verifies that multiple host requests can be sent sequentially,
 /// waiting for each response before sending the next.
-///
-/// **IGNORED**: This test fails due to RTL priority scheduling. The CPU's constant
-/// polling starves the host-initiated request. See module-level documentation.
 #[test]
-#[ignore = "RTL priority: CPU requests starve host-initiated requests when CPU is busy polling"]
 fn test_multiple_host_requests() {
     init_test_logger();
 
