@@ -309,10 +309,13 @@ module cpu #(
     
     // Instruction Register
     // Now stores the decompressed 32-bit instruction (expanded from 16-bit if compressed)
+    // Note: decomp_is_valid_reg defaults to valid (1'b1) on reset. This is safe because
+    // the CPU starts in S_IDLE → S_FETCH sequence, and decomp_is_valid is captured during
+    // ir_write in S_FETCH before being checked in S_REG_READ.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
-            decomp_is_valid_reg <= 1'b1;  // Default to valid
+            decomp_is_valid_reg <= 1'b1;  // Safe default - captured before use in S_REG_READ
         end else if (ir_write) begin
             ir_reg <= decomp_output;  // Use decompressed output
             decomp_is_valid_reg <= decomp_is_valid;  // Capture validity
@@ -660,8 +663,11 @@ module cpu #(
             // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
             // Uses opcode_reg (captured in S_DECODE) to determine next state
             S_REG_READ: begin
-                // Check for invalid instruction first (from decoder or decompressor)
-                // If the instruction was invalid during fetch/decompress or decode, halt
+                // Check for invalid instruction first - two sources of invalidity:
+                // 1. decomp_is_valid_reg: Decompressor detected invalid compressed instruction
+                //    (e.g., all-zero instruction 0x0000 which is illegal C.ADDI4SPN with nzuimm=0)
+                // 2. invalid_instruction_reg: Decoder detected unrecognized opcode in 32-bit instruction
+                // Both must be checked to catch all invalid instruction cases.
                 if (invalid_instruction_reg || !decomp_is_valid_reg) begin
                     next_state = S_HALT;  // Invalid instruction - halt for debug
                 end else begin
