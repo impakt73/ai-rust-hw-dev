@@ -11,8 +11,8 @@ use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::time::Duration;
 
-/// Size of the receive buffer for batch reads
-const RX_BUFFER_SIZE: usize = 64;
+/// Size of the intermediate buffers for RX and TX
+const BUFFER_SIZE: usize = 64;
 
 /// Errors that can occur during serial operations
 #[derive(Debug)]
@@ -133,6 +133,14 @@ pub struct SerialConnection {
     handler: HostBusHandler,
     /// Pending host-initiated request (if any)
     pending_host_request: Option<PendingHostRequest>,
+    /// Intermediate RX buffer for bytes read from serial but not yet consumed by handler
+    rx_buffer: [u8; BUFFER_SIZE],
+    /// Number of valid bytes in rx_buffer (starting from index 0)
+    rx_buffer_len: usize,
+    /// Intermediate TX buffer for bytes from handler not yet written to serial
+    tx_buffer: [u8; BUFFER_SIZE],
+    /// Number of valid bytes in tx_buffer (starting from index 0)
+    tx_buffer_len: usize,
 }
 
 impl SerialConnection {
@@ -149,6 +157,10 @@ impl SerialConnection {
             baud_rate: baud,
             handler: HostBusHandler::new(),
             pending_host_request: None,
+            rx_buffer: [0u8; BUFFER_SIZE],
+            rx_buffer_len: 0,
+            tx_buffer: [0u8; BUFFER_SIZE],
+            tx_buffer_len: 0,
         })
     }
 
@@ -195,25 +207,33 @@ impl SerialConnection {
 
     /// Poll for and process bus requests (non-blocking)
     ///
-    /// This function performs batched I/O operations for efficiency.
-    /// It reads available bytes in batches and writes pending bytes in batches.
+    /// This function uses persistent intermediate buffers to avoid losing data:
+    /// - RX: Read from serial port into rx_buffer, then transfer to handler as it accepts bytes
+    /// - TX: Transfer from handler into tx_buffer, then write to serial port as it accepts bytes
+    ///
+    /// Any bytes that couldn't be processed persist in the buffers for the next poll call.
     ///
     /// Returns Ok(Some(event)) if a complete transaction was processed,
     /// Ok(None) if no complete transaction was processed,
     /// or Err if an error occurred.
     pub fn poll(&mut self, memory: &mut SparseMemory) -> Result<Option<BusEvent>, SerialError> {
-        // First, try to read available bytes in batch
-        let mut rx_buffer = [0u8; RX_BUFFER_SIZE];
-        let bytes_read = self.read_available(&mut rx_buffer)?;
+        // === RX Path: Serial Port -> rx_buffer -> Handler ===
 
-        // Feed received bytes to the handler
-        for &byte in &rx_buffer[..bytes_read] {
-            if self.handler.can_accept_rx() {
-                if let Err(e) = self.handler.transfer_rx_byte(byte) {
-                    log::warn!("Handler rejected byte: {:?}", e);
-                }
-            }
-        }
+        // Step 1: Fill rx_buffer from serial port (only into remaining space)
+        self.fill_rx_buffer()?;
+
+        // Step 2: Transfer bytes from rx_buffer to handler
+        self.drain_rx_buffer_to_handler();
+
+        // === TX Path: Handler -> tx_buffer -> Serial Port ===
+
+        // Step 1: Fill tx_buffer from handler
+        self.fill_tx_buffer_from_handler();
+
+        // Step 2: Drain tx_buffer to serial port
+        self.drain_tx_buffer()?;
+
+        // === Check for completed transactions ===
 
         // Check for a response to a host-initiated request
         if self.pending_host_request.is_some() {
@@ -230,8 +250,6 @@ impl SerialConnection {
                         size: response.size,
                     }
                 };
-                // Write any pending TX bytes before returning
-                self.write_pending()?;
                 return Ok(Some(event));
             }
         }
@@ -241,73 +259,92 @@ impl SerialConnection {
             if let Ok(request) = self.handler.accept_request() {
                 // Process the request
                 let event = self.process_cpu_request(&request, memory);
-
-                // Write any pending TX bytes (including the response)
-                self.write_pending()?;
-
                 return Ok(Some(event));
             }
         }
 
-        // Write any pending TX bytes
-        self.write_pending()?;
-
         Ok(None)
     }
 
-    /// Read available bytes from the serial port in batch
-    fn read_available(&mut self, buffer: &mut [u8]) -> Result<usize, SerialError> {
-        match self.port.read(buffer) {
-            Ok(n) => Ok(n),
+    /// Fill rx_buffer from serial port (only reads into remaining available space)
+    fn fill_rx_buffer(&mut self) -> Result<(), SerialError> {
+        let available_space = BUFFER_SIZE - self.rx_buffer_len;
+        if available_space == 0 {
+            return Ok(()); // Buffer is full, cannot read more
+        }
+
+        // Read into the available space at the end of the buffer
+        match self.port.read(&mut self.rx_buffer[self.rx_buffer_len..]) {
+            Ok(n) => {
+                self.rx_buffer_len += n;
+                Ok(())
+            }
             Err(e)
                 if e.kind() == std::io::ErrorKind::TimedOut
                     || e.kind() == std::io::ErrorKind::WouldBlock =>
             {
-                Ok(0)
+                Ok(()) // No data available, that's fine
             }
             Err(e) => Err(SerialError::IoError(e)),
         }
     }
 
-    /// Write pending TX bytes
-    ///
-    /// This writes bytes one at a time to avoid losing data on partial writes.
-    /// The handler's transfer_tx_byte() advances the TX state machine, so we
-    /// must ensure each byte is successfully written before requesting the next.
-    fn write_pending(&mut self) -> Result<(), SerialError> {
-        while self.handler.has_tx_data() {
-            if let Some(byte) = self.handler.transfer_tx_byte() {
-                let buf = [byte];
-                match self.port.write(&buf) {
-                    Ok(1) => {
-                        // Byte successfully written, continue
-                    }
-                    Ok(0) => {
-                        // Would block - we've already consumed the byte from the handler,
-                        // but this shouldn't happen in practice since we write single bytes.
-                        // The serial port should either accept the byte or block.
-                        break;
-                    }
-                    Err(e)
-                        if e.kind() == std::io::ErrorKind::TimedOut
-                            || e.kind() == std::io::ErrorKind::WouldBlock =>
-                    {
-                        // Cannot write now, stop for this poll cycle
-                        // Note: The byte we just got from transfer_tx_byte() may be lost here.
-                        // However, single-byte writes are unlikely to block on modern systems.
-                        break;
-                    }
-                    Err(e) => {
-                        return Err(SerialError::IoError(e));
-                    }
-                    Ok(_) => unreachable!(),
-                }
-            } else {
+    /// Transfer bytes from rx_buffer to handler until handler can't accept more
+    fn drain_rx_buffer_to_handler(&mut self) {
+        let mut consumed = 0;
+        for i in 0..self.rx_buffer_len {
+            if !self.handler.can_accept_rx() {
+                break; // Handler is full, stop
+            }
+            if let Err(e) = self.handler.transfer_rx_byte(self.rx_buffer[i]) {
+                log::warn!("Handler rejected byte: {:?}", e);
                 break;
             }
+            consumed += 1;
         }
 
-        Ok(())
+        // Shift remaining bytes to the front of the buffer
+        if consumed > 0 && consumed < self.rx_buffer_len {
+            self.rx_buffer.copy_within(consumed..self.rx_buffer_len, 0);
+        }
+        self.rx_buffer_len -= consumed;
+    }
+
+    /// Fill tx_buffer from handler until buffer is full or handler has no more data
+    fn fill_tx_buffer_from_handler(&mut self) {
+        while self.tx_buffer_len < BUFFER_SIZE {
+            if let Some(byte) = self.handler.transfer_tx_byte() {
+                self.tx_buffer[self.tx_buffer_len] = byte;
+                self.tx_buffer_len += 1;
+            } else {
+                break; // No more data from handler
+            }
+        }
+    }
+
+    /// Drain tx_buffer to serial port, keeping any bytes that couldn't be written
+    fn drain_tx_buffer(&mut self) -> Result<(), SerialError> {
+        if self.tx_buffer_len == 0 {
+            return Ok(()); // Nothing to write
+        }
+
+        match self.port.write(&self.tx_buffer[..self.tx_buffer_len]) {
+            Ok(n) => {
+                // Shift remaining bytes to the front of the buffer
+                if n > 0 && n < self.tx_buffer_len {
+                    self.tx_buffer.copy_within(n..self.tx_buffer_len, 0);
+                }
+                self.tx_buffer_len -= n;
+                Ok(())
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                Ok(()) // Cannot write now, keep data for next poll
+            }
+            Err(e) => Err(SerialError::IoError(e)),
+        }
     }
 
     /// Process a CPU-initiated request and generate response
