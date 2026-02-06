@@ -325,7 +325,10 @@ module top #(
         .debug_instruction(debug_instruction),
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
-        .debug_fsm_state(debug_fsm_state)
+        .debug_fsm_state(debug_fsm_state),
+        
+        // Boot state indicator (unconnected)
+        .is_booting()
     );
     
     // ============================================================

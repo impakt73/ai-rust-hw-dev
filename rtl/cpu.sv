@@ -52,7 +52,10 @@ module cpu #(
     output logic [31:0] debug_current_instruction, // Current instruction (for hung detection)
     
     // Debug output for FSM state visibility
-    output logic [3:0]  debug_fsm_state   // Current FSM state (for debugging)
+    output logic [3:0]  debug_fsm_state,  // Current FSM state (for debugging)
+    
+    // Boot state indicator
+    output logic        is_booting        // High when CPU is in boot state (S_BOOT)
 );
 
     // ============================================================
@@ -1314,5 +1317,8 @@ module cpu #(
     
     // Debug output for FSM state
     assign debug_fsm_state = current_state;
+    
+    // Boot state indicator
+    assign is_booting = (current_state == S_BOOT);
 
 endmodule
