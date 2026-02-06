@@ -924,17 +924,7 @@ where
         // (rst_n_out goes high). The reset controller holds internal reset for
         // RESET_CYCLES (default 8) after external rst_n goes high.
         loop {
-            // Simple clock cycle without hung detection during reset warmup
-            self.cpu.eval();
-            self.handle_host_bus_interface();
-            self.cpu.eval();
-            self.cpu.clk = 0;
-            self.cpu.eval();
-            self.cpu.clk = 1;
-            self.cpu.eval();
-            self.cycle_count += 1;
-            self.dump_vcd();
-            self.bus.clock_cycle_all_devices();
+            self.boot_clock_cycle();
             if self.cpu.rst_n_out != 0 {
                 break;
             }
@@ -950,7 +940,7 @@ where
         // Spin until we receive the STATUS response
         let mut boot_cycles = 0u32;
         loop {
-            let _ = self.execute_clock_cycle();
+            self.boot_clock_cycle();
             boot_cycles += 1;
             if boot_cycles > 10000 {
                 panic!(
@@ -978,22 +968,34 @@ where
 
         // Spin until we receive the write acknowledgement
         loop {
-            let _ = self.execute_clock_cycle();
+            self.boot_clock_cycle();
             if let Some(_response) = self.host_bus_handler.receive_response() {
                 // Write acknowledged - CPU boot process is now complete
                 break;
             }
         }
 
-        // Reset cycle count to 0 after boot is complete
-        // This ensures cycle_count only reflects instruction execution cycles
-        self.cycle_count = 0;
-
-        // Reset bus devices again after boot to align their state with cycle_count
-        self.bus.reset_all_devices();
-
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
+    }
+
+    /// Execute a single clock cycle during the boot process
+    ///
+    /// This is a simplified version of execute_clock_cycle() that only handles
+    /// the host bus interface protocol and clock edge. It does NOT:
+    /// - Increment cycle_count
+    /// - Call bus.clock_cycle_all_devices()
+    /// - Run hung detector checks
+    /// - Print FSM state
+    fn boot_clock_cycle(&mut self) {
+        self.cpu.eval();
+        self.handle_host_bus_interface();
+        self.cpu.eval();
+        self.cpu.clk = 0;
+        self.cpu.eval();
+        self.cpu.clk = 1;
+        self.cpu.eval();
+        self.dump_vcd();
     }
 
     /// Get the current LED output value
