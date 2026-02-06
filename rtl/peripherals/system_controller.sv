@@ -207,15 +207,17 @@ module system_controller (
     end
     
     // ========================================================================
-    // System LED Control Logic
+    // System LED Control Logic - Registered for clean external timing
     // ========================================================================
-    always_comb begin
-        if (cpu_halted) begin
-            sys_led = 8'hFF;       // All LEDs on when halted
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            sys_led <= 8'h00;
+        end else if (cpu_halted) begin
+            sys_led <= 8'hFF;       // All LEDs on when halted
         end else if (cpu_booting) begin
-            sys_led = 8'h01;       // Bit 0 on when booting
+            sys_led <= 8'h01;       // Bit 0 on when booting
         end else begin
-            sys_led = 8'h00;       // All LEDs off otherwise
+            sys_led <= 8'h00;       // All LEDs off otherwise
         end
     end
     

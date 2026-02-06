@@ -46,3 +46,4 @@ create_test_elf.py
 # Intermediate build files
 *.o
 frame_*.png
+fpga/build/

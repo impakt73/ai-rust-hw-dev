@@ -369,9 +369,11 @@ fn test_system_controller_led_halted() {
     reset_dut(&mut dut);
 
     // When cpu_halted is high, all LED bits should be 1
+    // sys_led is registered so needs a clock cycle to update
     dut.cpu_halted = 1;
     dut.cpu_booting = 0;
     dut.eval();
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.sys_led, 0xFF,
@@ -390,9 +392,11 @@ fn test_system_controller_led_booting() {
     reset_dut(&mut dut);
 
     // When cpu_booting is high (and not halted), only first LED bit should be on
+    // sys_led is registered so needs a clock cycle to update
     dut.cpu_halted = 0;
     dut.cpu_booting = 1;
     dut.eval();
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.sys_led, 0x01,
@@ -411,9 +415,11 @@ fn test_system_controller_led_normal() {
     reset_dut(&mut dut);
 
     // When neither halted nor booting, all LEDs should be off
+    // sys_led is registered so needs a clock cycle to update
     dut.cpu_halted = 0;
     dut.cpu_booting = 0;
     dut.eval();
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.sys_led, 0x00,
@@ -432,9 +438,11 @@ fn test_system_controller_led_halted_takes_priority() {
     reset_dut(&mut dut);
 
     // When both halted and booting, halted takes priority (all LEDs on)
+    // sys_led is registered so needs a clock cycle to update
     dut.cpu_halted = 1;
     dut.cpu_booting = 1;
     dut.eval();
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.sys_led, 0xFF,
