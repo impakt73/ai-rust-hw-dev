@@ -151,7 +151,9 @@ module system_controller (
                 end
                 
                 S_SYS_RESET: begin
-                    // Stay here forever (external reset will reset module)
+                    // Assert system reset as a one-shot request.
+                    // The reset controller will reset the entire design including
+                    // this module on the next cycle, returning to S_CPU_BOOT_WAIT.
                     state_reg <= S_SYS_RESET;
                 end
                 
@@ -209,17 +211,21 @@ module system_controller (
     // ========================================================================
     // System LED Control Logic - Registered for clean external timing
     // ========================================================================
+    logic [7:0] sys_led_reg;
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sys_led <= 8'h00;
+            sys_led_reg <= 8'h00;
         end else if (cpu_halted) begin
-            sys_led <= 8'hFF;       // All LEDs on when halted
+            sys_led_reg <= 8'hFF;       // All LEDs on when halted
         end else if (cpu_booting) begin
-            sys_led <= 8'h01;       // Bit 0 on when booting
+            sys_led_reg <= 8'h01;       // Bit 0 on when booting
         end else begin
-            sys_led <= 8'h00;       // All LEDs off otherwise
+            sys_led_reg <= 8'h00;       // All LEDs off otherwise
         end
     end
+    
+    assign sys_led = sys_led_reg;
     
     // ========================================================================
     // Read Logic - Combinational
@@ -241,5 +247,11 @@ module system_controller (
             endcase
         end
     end
+
+    // ========================================================================
+    // Suppress warnings for unused signals
+    // ========================================================================
+    logic [1:0] unused_size;
+    assign unused_size = size;
 
 endmodule
