@@ -36,7 +36,7 @@ top (CPU)
 
 The CPU uses a 12-state finite state machine:
 
-1. **S_IDLE (0x0):** After reset, before first fetch
+1. **S_BOOT (0x0):** After reset, waits for boot signal before first fetch
 2. **S_FETCH (0x1):** Request instruction from memory, wait for `imem_ready`
 3. **S_DECODE (0x2):** Decode instruction, read registers
 4. **S_EXECUTE (0x3):** Execute ALU operation

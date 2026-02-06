@@ -25,6 +25,7 @@ module top #(
     input  logic        clk,
     input  logic        rst_n,
     input  logic        reset_request,
+    input  logic        boot,
     input  logic [31:0] boot_addr,
     
     // Host TX Interface (to External Host)
@@ -300,6 +301,7 @@ module top #(
     ) cpu_core (
         .clk(clk),
         .rst_n(rst_n_internal),
+        .boot(boot),
         .boot_addr(boot_addr),
         
         // Unified memory interface

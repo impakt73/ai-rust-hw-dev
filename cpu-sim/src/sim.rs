@@ -874,10 +874,11 @@ where
         }
 
         // Set the boot address BEFORE asserting and during reset
-        // This is critical because the PC register uses an asynchronous reset that
-        // loads boot_addr whenever rst_n is low; boot_addr must be stable while
-        // reset is asserted so the PC will hold this value after reset is released.
+        // This is stable throughout the reset sequence and used when boot signal is asserted
         self.cpu.boot_addr = boot_pc;
+
+        // Assert boot signal (will remain asserted forever)
+        self.cpu.boot = 1;
 
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
