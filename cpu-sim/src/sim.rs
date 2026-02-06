@@ -799,8 +799,8 @@ where
         }
 
         // Step 3: Handle pending response completion (memory latency support)
-        // For host-initiated requests, we also need to check if the FPGA
-        // has completed a bus transaction and send the response back
+        // When a CPU-initiated request arrives via the FPGA, we accept it and
+        // delay the response by mem_latency_cycles to simulate memory latency.
         if let Some(ref pending) = self.pending_response {
             // Check if latency delay has elapsed
             if self.cycle_count >= pending.accepted_cycle + self.mem_latency_cycles as u64 {
