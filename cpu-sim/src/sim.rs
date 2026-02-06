@@ -796,6 +796,8 @@ where
         }
 
         // Step 3: Handle pending response completion (memory latency support)
+        // For host-initiated requests, we also need to check if the FPGA
+        // has completed a bus transaction and send the response back
         if let Some(ref pending) = self.pending_response {
             // Check if latency delay has elapsed
             if self.cycle_count >= pending.accepted_cycle + self.mem_latency_cycles as u64 {
@@ -857,9 +859,9 @@ where
     }
 
     /// Reset the CPU
-    /// The boot address is set to the boot_pc while reset is asserted so that
-    /// the PC samples this value through the asynchronous reset and then holds it
-    /// when reset is released.
+    /// After hardware reset, the system controller peripheral handles CPU booting
+    /// via host bus requests. The host reads STATUS to confirm the CPU is waiting
+    /// for boot, then writes the boot address to the BOOT register.
     ///
     /// # Arguments
     /// * `boot_pc` - The program counter value to start execution from
@@ -872,13 +874,6 @@ where
         if let Some(ref detector) = self.hung_detector {
             detector.validate_boot_addr(boot_pc)?;
         }
-
-        // Set the boot address BEFORE asserting and during reset
-        // This is stable throughout the reset sequence and used when boot signal is asserted
-        self.cpu.boot_addr = boot_pc;
-
-        // Assert boot signal (will remain asserted forever)
-        self.cpu.boot = 1;
 
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
@@ -924,6 +919,57 @@ where
         self.host_bus_handler.reset();
         self.pending_response = None;
 
+        // Boot the CPU via host bus requests to the system controller peripheral
+        // Step 1: Read STATUS register to confirm CPU is waiting to be booted
+        let status_addr = riscv_shared::bus::sysctrl_status_addr();
+        let status_request = BusRequest::read(status_addr, AccessSize::Word);
+        self.host_bus_handler
+            .send_request(status_request)
+            .expect("Failed to send STATUS read request");
+
+        // Spin until we receive the STATUS response
+        let mut boot_cycles = 0u32;
+        let mut bytes_sent = 0u32;
+        loop {
+            let _ = self.execute_clock_cycle();
+            boot_cycles += 1;
+            // Count bytes being sent
+            if self.cpu.host_rx_valid != 0 {
+                bytes_sent += 1;
+            }
+            if boot_cycles > 10000 {
+                panic!(
+                    "Boot timed out waiting for STATUS response after {} cycles. rst_n_out={}, host_rx_ready={}, host_tx_valid={}, bytes_sent={}, has_pending_outgoing={}",
+                    boot_cycles, self.cpu.rst_n_out, self.cpu.host_rx_ready, self.cpu.host_tx_valid, bytes_sent, self.host_bus_handler.has_pending_outgoing_request()
+                );
+            }
+            if let Some(response) = self.host_bus_handler.receive_response() {
+                // Check that cpu_booting bit (bit 0) is set
+                assert!(
+                    (response.rdata & riscv_shared::bus::SYSCTRL_STATUS_CPU_BOOTING) != 0,
+                    "CPU is not in boot state after reset - hardware issue (STATUS=0x{:08x})",
+                    response.rdata
+                );
+                break;
+            }
+        }
+
+        // Step 2: Write boot address to BOOT register to complete boot process
+        let boot_addr = riscv_shared::bus::sysctrl_boot_addr();
+        let boot_request = BusRequest::write(boot_addr, boot_pc, AccessSize::Word);
+        self.host_bus_handler
+            .send_request(boot_request)
+            .expect("Failed to send BOOT write request");
+
+        // Spin until we receive the write acknowledgement
+        loop {
+            let _ = self.execute_clock_cycle();
+            if let Some(_response) = self.host_bus_handler.receive_response() {
+                // Write acknowledged - CPU boot process is now complete
+                break;
+            }
+        }
+
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
     }
@@ -934,6 +980,83 @@ where
     #[allow(dead_code)]
     pub fn led_out(&self) -> u8 {
         self.cpu.led_out
+    }
+
+    /// Execute a single clock cycle of the simulation
+    ///
+    /// This handles evaluation, host bus interface protocol, FSM state printing,
+    /// clock edge, VCD dumping, and bus device updates.
+    ///
+    /// # Returns
+    /// * `true` if instruction completed this cycle, `false` otherwise
+    ///
+    /// # Errors
+    /// Returns `HungStateError` if the CPU is detected to be in a hung state
+    fn execute_clock_cycle(&mut self) -> Result<bool, HungStateError> {
+        // Evaluate combinational logic
+        self.cpu.eval();
+
+        // Handle host bus interface protocol
+        // The CPU sends serialized bus transactions via host_tx_* signals
+        // and we respond via host_rx_* signals
+        self.handle_host_bus_interface();
+
+        // Re-evaluate after setting memory signals
+        self.cpu.eval();
+
+        // Print FSM state if enabled (before clock edge)
+        if self.print_fsm_state {
+            let fsm_state = self.cpu.debug_fsm_state;
+            let state_name = Self::fsm_state_name(fsm_state);
+            println!(
+                "Cycle {:6} | State: {:10} | PC: 0x{:08x} | host_tx_valid={} host_rx_ready={} | instr_complete={}",
+                self.cycle_count,
+                state_name,
+                self.cpu.debug_current_pc,
+                self.cpu.host_tx_valid,
+                self.cpu.host_rx_ready,
+                self.cpu.instr_complete
+            );
+        }
+
+        // Clock edge
+        self.cpu.clk = 0;
+        self.cpu.eval();
+        self.cpu.clk = 1;
+        self.cpu.eval();
+
+        // Increment cycle count
+        self.cycle_count += 1;
+
+        // Dump VCD if enabled (after clock edge)
+        self.dump_vcd();
+
+        // Call clock_cycle on all bus devices (after clock edge completes)
+        self.bus.clock_cycle_all_devices();
+
+        // Check if instruction complete (AFTER clock edge)
+        // With delayed instr_complete, values have already settled by the time we see the signal
+        let instruction_complete = self.cpu.instr_complete != 0;
+
+        // Check for hung state on every cycle
+        // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
+        if let Some(ref mut detector) = self.hung_detector {
+            // Use current PC and instruction for hung detection (not completed ones)
+            // debug_current_pc: PC that was used to fetch the current instruction
+            // debug_current_instruction: The instruction currently being executed
+            let pc = self.cpu.debug_current_pc;
+            let instruction = self.cpu.debug_current_instruction;
+            let fsm_state = self.cpu.debug_fsm_state;
+            detector.check_cycle(
+                self.cycle_count,
+                pc,
+                instruction,
+                fsm_state,
+                instruction_complete,
+            )?;
+        }
+
+        Ok(instruction_complete)
     }
 
     /// Execute a single simulation step (one instruction - may take multiple cycles)
@@ -948,68 +1071,7 @@ where
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
-            // Evaluate combinational logic
-            self.cpu.eval();
-
-            // Handle host bus interface protocol
-            // The CPU sends serialized bus transactions via host_tx_* signals
-            // and we respond via host_rx_* signals
-            self.handle_host_bus_interface();
-
-            // Re-evaluate after setting memory signals
-            self.cpu.eval();
-
-            // Print FSM state if enabled (before clock edge)
-            if self.print_fsm_state {
-                let fsm_state = self.cpu.debug_fsm_state;
-                let state_name = Self::fsm_state_name(fsm_state);
-                println!(
-                    "Cycle {:6} | State: {:10} | PC: 0x{:08x} | host_tx_valid={} host_rx_ready={} | instr_complete={}",
-                    self.cycle_count,
-                    state_name,
-                    self.cpu.debug_current_pc,
-                    self.cpu.host_tx_valid,
-                    self.cpu.host_rx_ready,
-                    self.cpu.instr_complete
-                );
-            }
-
-            // Clock edge
-            self.cpu.clk = 0;
-            self.cpu.eval();
-            self.cpu.clk = 1;
-            self.cpu.eval();
-
-            // Increment cycle count
-            self.cycle_count += 1;
-
-            // Dump VCD if enabled (after clock edge)
-            self.dump_vcd();
-
-            // Call clock_cycle on all bus devices (after clock edge completes)
-            self.bus.clock_cycle_all_devices();
-
-            // Check if instruction complete (AFTER clock edge)
-            // With delayed instr_complete, values have already settled by the time we see the signal
-            let instruction_complete = self.cpu.instr_complete != 0;
-
-            // Check for hung state on every cycle
-            // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
-            if let Some(ref mut detector) = self.hung_detector {
-                // Use current PC and instruction for hung detection (not completed ones)
-                // debug_current_pc: PC that was used to fetch the current instruction
-                // debug_current_instruction: The instruction currently being executed
-                let pc = self.cpu.debug_current_pc;
-                let instruction = self.cpu.debug_current_instruction;
-                let fsm_state = self.cpu.debug_fsm_state;
-                detector.check_cycle(
-                    self.cycle_count,
-                    pc,
-                    instruction,
-                    fsm_state,
-                    instruction_complete,
-                )?;
-            }
+            let instruction_complete = self.execute_clock_cycle()?;
 
             if instruction_complete {
                 break;

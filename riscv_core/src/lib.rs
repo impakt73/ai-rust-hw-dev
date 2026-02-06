@@ -65,6 +65,13 @@ pub struct Uart;
 )]
 pub struct ClockPeripheral;
 
+// Define System Controller module
+#[verilog(
+    src = "../rtl/peripherals/system_controller.sv",
+    name = "system_controller"
+)]
+pub struct SystemController;
+
 // Define Host Bus Interface module
 #[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
@@ -142,6 +149,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/uart_peripheral.sv", // UART controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
+        "peripherals/system_controller.sv", // System controller peripheral
         "fetch_buffer.sv",       // RV32C fetch buffer
         "decompress.sv",         // RV32C decompressor
         "alu.sv",
@@ -196,6 +204,11 @@ pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Err
 // Helper function to create a runtime for the Clock Peripheral
 pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["peripherals/clock_peripheral.sv"])
+}
+
+// Helper function to create a runtime for the System Controller
+pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["peripherals/system_controller.sv"])
 }
 
 // Helper function to create a runtime for the Host Bus Interface

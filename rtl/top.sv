@@ -25,8 +25,6 @@ module top #(
     input  logic        clk,
     input  logic        rst_n,
     input  logic        reset_request,
-    input  logic        boot,
-    input  logic [31:0] boot_addr,
     
     // Host TX Interface (to External Host)
     // Serialized bus transactions sent to host
@@ -42,6 +40,9 @@ module top #(
     
     // LED peripheral outputs
     output logic [7:0]  led_out,
+    
+    // System LED output (directly from system controller)
+    output logic [7:0]  sys_led_out,
     
     // UART peripheral pins (active only when ENABLE_UART_LOOPBACK = 0)
     output logic        uart_tx,    // UART transmit output
@@ -75,7 +76,7 @@ module top #(
     ) reset_ctrl (
         .clk(clk),
         .rst_n_in(rst_n),
-        .reset_request(reset_request),
+        .reset_request(reset_request | sysctrl_sys_rst),
         .rst_n_out(rst_n_internal)
     );
 
@@ -128,6 +129,25 @@ module top #(
     // Internal UART signals for loopback
     logic uart_tx_internal;  // TX output from UART module
     logic uart_rx_internal;  // RX input to UART module
+    
+    // ============================================================
+    // System Controller Interface Signals
+    // ============================================================
+    logic [31:0] sysctrl_addr;
+    logic [31:0] sysctrl_wdata;
+    logic [31:0] sysctrl_rdata;
+    logic        sysctrl_we;
+    logic [1:0]  sysctrl_size;
+    logic        sysctrl_req;
+    logic        sysctrl_ready;
+    
+    // System Controller control signals
+    logic        sysctrl_sys_rst;
+    logic        sysctrl_cpu_rst_n;
+    logic        sysctrl_cpu_boot;
+    logic [31:0] sysctrl_cpu_boot_addr;
+    logic        cpu_is_booting;
+    logic        cpu_halted_internal;
     
     // ============================================================
     // Arbiter Output Signals (Arbiter → Bus)
@@ -243,6 +263,15 @@ module top #(
         .uart_req(uart_req),
         .uart_ready(uart_ready),
         
+        // System Controller interface
+        .sysctrl_addr(sysctrl_addr),
+        .sysctrl_wdata(sysctrl_wdata),
+        .sysctrl_rdata(sysctrl_rdata),
+        .sysctrl_we(sysctrl_we),
+        .sysctrl_size(sysctrl_size),
+        .sysctrl_req(sysctrl_req),
+        .sysctrl_ready(sysctrl_ready),
+        
         // External Memory interface (routed to host_bus_interface)
         .ext_mem_addr(ext_mem_addr),
         .ext_mem_wdata(ext_mem_wdata),
@@ -293,6 +322,13 @@ module top #(
     );
     
     // ============================================================
+    // CPU Reset Signal - Combined from internal reset and system controller
+    // ============================================================
+    // CPU is reset when either the internal reset or system controller requests it
+    logic cpu_combined_rst_n;
+    assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
+    
+    // ============================================================
     // CPU Core Instantiation
     // ============================================================
     cpu #(
@@ -300,9 +336,9 @@ module top #(
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) cpu_core (
         .clk(clk),
-        .rst_n(rst_n_internal),
-        .boot(boot),
-        .boot_addr(boot_addr),
+        .rst_n(cpu_combined_rst_n),
+        .boot(sysctrl_cpu_boot),
+        .boot_addr(sysctrl_cpu_boot_addr),
         
         // Unified memory interface
         .mem_addr(cpu_mem_addr),
@@ -314,7 +350,7 @@ module top #(
         .mem_ready(cpu_mem_ready),
         
         // System control
-        .halted(halted),
+        .halted(cpu_halted_internal),
         .instr_complete(instr_complete),
         
         // Debug signals
@@ -327,9 +363,12 @@ module top #(
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
         
-        // Boot state indicator (unconnected)
-        .is_booting()
+        // Boot state indicator
+        .is_booting(cpu_is_booting)
     );
+    
+    // Pass through halted signal
+    assign halted = cpu_halted_internal;
     
     // ============================================================
     // UART Loopback or External Connection
@@ -403,6 +442,34 @@ module top #(
         // Internal signals (connected via loopback or external pins)
         .tx_out(uart_tx_internal),
         .rx_in(uart_rx_internal)
+    );
+    
+    // ============================================================
+    // System Controller Instantiation
+    // ============================================================
+    system_controller sysctrl (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        
+        // Bus slave interface
+        .addr(sysctrl_addr),
+        .wdata(sysctrl_wdata),
+        .rdata(sysctrl_rdata),
+        .we(sysctrl_we),
+        .req(sysctrl_req),
+        .size(sysctrl_size),
+        .ready(sysctrl_ready),
+        
+        // System control outputs
+        .sys_rst(sysctrl_sys_rst),
+        .cpu_rst_n(sysctrl_cpu_rst_n),
+        .cpu_boot_addr(sysctrl_cpu_boot_addr),
+        .cpu_boot(sysctrl_cpu_boot),
+        .sys_led(sys_led_out),
+        
+        // CPU status inputs
+        .cpu_halted(cpu_halted_internal),
+        .cpu_booting(cpu_is_booting)
     );
 
 endmodule

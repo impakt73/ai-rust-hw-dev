@@ -463,4 +463,12 @@ module host_bus_interface (
     assign host_bus_size  = buf_req_size;
     assign host_bus_req   = buf_req_valid && !host_resp_valid;
 
+    // Debug: Monitor host bus master
+    always_ff @(posedge clk) begin
+        if (rst_n && buf_req_valid) begin
+            $display("[HBI] t=%0t buf_req_valid=%0d host_resp_valid=%0d host_bus_req=%0d host_bus_ready=%0d addr=0x%08x we=%0d state=%0d",
+                     $time, buf_req_valid, host_resp_valid, host_bus_req, host_bus_ready, buf_req_addr, buf_req_we, state);
+        end
+    end
+
 endmodule
