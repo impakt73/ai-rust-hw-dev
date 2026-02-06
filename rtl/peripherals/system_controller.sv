@@ -128,12 +128,6 @@ module system_controller (
         if (!rst_n) begin
             state_reg <= S_CPU_BOOT_WAIT;
         end else begin
-            // Debug: Monitor requests arriving at system controller
-            if (req) begin
-                $display("[SYSCTRL] t=%0t req addr=0x%08x we=%0d wdata=0x%08x state=%0d cpu_booting=%0d",
-                         $time, addr, we, wdata, state_reg, cpu_booting);
-            end
-            
             case (state_reg)
                 S_CPU_BOOT_WAIT: begin
                     // Wait for cpu_booting AND write to BOOT register
