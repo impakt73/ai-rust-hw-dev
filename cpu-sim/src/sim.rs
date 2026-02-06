@@ -600,6 +600,9 @@ impl<'a> SimulatorView<'a> {
     }
 }
 
+/// Maximum number of clock cycles allowed during the boot process before timing out
+const BOOT_TIMEOUT_CYCLES: u32 = 10_000;
+
 /// RISC-V CPU Simulator
 ///
 /// This structure owns its runtime internally using an unsafe self-referential pattern.
@@ -942,7 +945,7 @@ where
         loop {
             self.boot_clock_cycle();
             boot_cycles += 1;
-            if boot_cycles > 10000 {
+            if boot_cycles > BOOT_TIMEOUT_CYCLES {
                 panic!(
                     "Boot timed out waiting for STATUS response after {} cycles",
                     boot_cycles
