@@ -18,6 +18,7 @@ module cpu #(
 ) (
     input  logic        clk,
     input  logic        rst_n,
+    input  logic        boot,
     input  logic [31:0] boot_addr,
     
     // Unified memory interface (used for both instruction fetch and data access)
@@ -51,14 +52,17 @@ module cpu #(
     output logic [31:0] debug_current_instruction, // Current instruction (for hung detection)
     
     // Debug output for FSM state visibility
-    output logic [3:0]  debug_fsm_state   // Current FSM state (for debugging)
+    output logic [3:0]  debug_fsm_state,  // Current FSM state (for debugging)
+    
+    // Boot state indicator
+    output logic        is_booting        // High when CPU is in boot state (S_BOOT)
 );
 
     // ============================================================
     // FSM State Definitions
     // ============================================================
     typedef enum logic [3:0] {
-        S_IDLE       = 4'b0000,  // After reset
+        S_BOOT       = 4'b0000,  // After reset, wait for boot signal
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for mem_ready)
         S_DECODE     = 4'b0010,  // Decode instruction, start register file read
         S_REG_READ   = 4'b1100,  // Wait for BRAM register file read (1-cycle latency)
@@ -301,7 +305,7 @@ module cpu #(
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            current_state <= S_IDLE;
+            current_state <= S_BOOT;
         else
             current_state <= next_state;
     end
@@ -626,6 +630,8 @@ module cpu #(
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
+            pc <= 32'h0;
+        else if (current_state == S_BOOT && boot)
             pc <= boot_addr;
         else if (pc_write)
             pc <= next_pc_value;
@@ -647,8 +653,11 @@ module cpu #(
         next_state = current_state;
         
         case (current_state)
-            S_IDLE: begin
-                next_state = S_FETCH;
+            S_BOOT: begin
+                if (boot)
+                    next_state = S_FETCH;
+                else
+                    next_state = S_BOOT;
             end
             
             S_FETCH: begin
@@ -1308,5 +1317,8 @@ module cpu #(
     
     // Debug output for FSM state
     assign debug_fsm_state = current_state;
+    
+    // Boot state indicator
+    assign is_booting = (current_state == S_BOOT);
 
 endmodule

@@ -12,7 +12,7 @@ This document presents research findings and architectural approaches for upgrad
 
 The existing CPU implementation features:
 
-- **12-State FSM Design:** S_IDLE, S_FETCH, S_DECODE, S_EXECUTE, S_MEM_ADDR, S_MEM_READ, S_MEM_WRITE, S_WRITEBACK, S_BRANCH, S_CSR, S_HALT, S_ATOMIC_RMW
+- **12-State FSM Design:** S_BOOT, S_FETCH, S_DECODE, S_EXECUTE, S_MEM_ADDR, S_MEM_READ, S_MEM_WRITE, S_WRITEBACK, S_BRANCH, S_CSR, S_HALT, S_ATOMIC_RMW
 - **Variable-latency memory:** Ready/valid handshaking for realistic memory operations
 - **Multi-cycle ALU operations:** Integer division (DIV, DIVU, REM, REMU)
 - **Multi-cycle FPU operations:** Floating-point division and square root

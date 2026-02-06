@@ -144,6 +144,7 @@ module fpga_top #(
         .rst_n(pll_locked_sync2),
         .reset_request(reset_request),
         .boot_addr(BOOT_ADDR),
+        .boot(1'b1),  // Unconditional boot - always start execution
         
         // Host bus interface (serialized memory transactions)
         .host_tx_data(host_tx_data),
