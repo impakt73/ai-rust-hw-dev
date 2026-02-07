@@ -518,8 +518,9 @@ fn test_host_bus_works_after_halt() {
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
 
-    // The test might fail with a hung error (from the hung detector)
-    // OR with our panic if the response doesn't come back.
+    // The test might fail with a HungStateError (from the simulator's hung detector,
+    // which detects stuck PC after 50 cycles) OR with our explicit panic if the
+    // response doesn't come back within MAX_CALLBACKS.
     // Check what we got.
     let received = response_received.lock().unwrap();
     let count = callback_count.lock().unwrap();
