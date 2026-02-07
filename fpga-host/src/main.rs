@@ -16,6 +16,7 @@ use app::App;
 use clap::Parser;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
+use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use serial::{BusEvent, SerialConnection};
 use std::io;
 use std::panic;
@@ -86,6 +87,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     if let Some(ref elf_path) = args.elf {
         match elf_loader::load_elf(&mut app.memory, elf_path) {
             Ok(entry) => {
+                app.last_entry_point = Some(entry);
                 app.add_log(
                     log::Level::Info,
                     format!(
@@ -132,6 +134,8 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
 
         // Poll serial connection if connected
         let mut should_disconnect = false;
+        let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
+
         if let Some(ref mut serial) = app.serial {
             // Get pending request info before polling (need to borrow immutably first)
             let pending_request = serial.pending_host_request().cloned();
@@ -145,11 +149,64 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             app.request_count += 1;
                         }
                         BusEvent::HostReadResponse { data, size } => {
-                            // Host-initiated read response - log with request details
-                            if let Some(req) = &pending_request {
-                                app.log_host_read_response(req.addr, *data, *size);
+                            // Host-initiated read response - check for pending boot
+                            if let Some(pending_boot) = app.pending_boot.take() {
+                                // This is the STATUS register read response for boot command
+                                let status_val = *data;
+                                let req_addr =
+                                    pending_request.as_ref().map(|r| r.addr).unwrap_or(0);
+
+                                // Verify this is the expected STATUS read
+                                if req_addr != pending_boot.expected_status_addr {
+                                    // Mismatch - log error and don't write BOOT
+                                    app.add_log(
+                                        log::Level::Error,
+                                        format!(
+                                            "Boot flow error: Expected STATUS read at 0x{:08x}, got response for 0x{:08x}",
+                                            pending_boot.expected_status_addr, req_addr
+                                        )
+                                    );
+                                    // Still log the read response
+                                    let width = size.byte_count() as usize * 2;
+                                    let msg = format!(
+                                        "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
+                                        serial::access_size_name(*size),
+                                        req_addr,
+                                        status_val,
+                                        width = width
+                                    );
+                                    app.add_log(log::Level::Info, msg);
+                                } else {
+                                    // Log the STATUS read first
+                                    let width = size.byte_count() as usize * 2;
+                                    let msg = format!(
+                                        "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
+                                        serial::access_size_name(*size),
+                                        req_addr,
+                                        status_val,
+                                        width = width
+                                    );
+                                    app.add_log(log::Level::Info, msg);
+
+                                    // Verify cpu_booting bit (bit 0) is set
+                                    if (status_val & SYSCTRL_STATUS_CPU_BOOTING) == 0 {
+                                        app.add_log(
+                                            log::Level::Error,
+                                            format!("Boot failed: cpu_booting bit not set (STATUS=0x{:08x})", status_val)
+                                        );
+                                    } else {
+                                        // Schedule the BOOT write to happen after we finish processing this event
+                                        pending_boot_request =
+                                            Some((pending_boot.boot_addr, status_val));
+                                    }
+                                }
                             } else {
-                                app.log_bus_event(&event);
+                                // Normal read response - log with request details
+                                if let Some(req) = &pending_request {
+                                    app.log_host_read_response(req.addr, *data, *size);
+                                } else {
+                                    app.log_bus_event(&event);
+                                }
                             }
                         }
                         BusEvent::HostWriteResponse { size } => {
@@ -159,6 +216,17 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             } else {
                                 app.log_bus_event(&event);
                             }
+                        }
+                        BusEvent::HostRequestTimeout { addr } => {
+                            // Host request timed out - clear pending boot and emit warning in TUI
+                            app.pending_boot = None;
+                            app.add_log(
+                                log::Level::Warn,
+                                format!(
+                                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
+                                    addr
+                                )
+                            );
                         }
                     }
                 }
@@ -170,6 +238,36 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                         should_disconnect = true;
                     } else {
                         app.add_log(log::Level::Error, format!("Serial error: {}", e));
+                    }
+                }
+            }
+        }
+
+        // Handle pending boot request (after serial borrow has ended)
+        if let Some((boot_addr, status_val)) = pending_boot_request {
+            if let Some(ref mut serial) = app.serial {
+                let boot_reg_addr = sysctrl_boot_addr();
+                let request = host_bus_handler::BusRequest::write(
+                    boot_reg_addr,
+                    boot_addr,
+                    host_bus_handler::AccessSize::Word,
+                );
+
+                match serial.send_host_request(request) {
+                    Ok(()) => {
+                        app.add_log(
+                            log::Level::Info,
+                            format!(
+                                "STATUS verified (0x{:08x}), sending boot address 0x{:08x} to 0x{:08x}",
+                                status_val, boot_addr, boot_reg_addr
+                            )
+                        );
+                    }
+                    Err(e) => {
+                        app.add_log(
+                            log::Level::Error,
+                            format!("Failed to send boot write request: {}", e),
+                        );
                     }
                 }
             }

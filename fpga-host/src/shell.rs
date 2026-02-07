@@ -7,6 +7,7 @@ use crate::elf_loader;
 use crate::serial::SerialConnection;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
+use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 
 /// Default baud rate for serial connections
@@ -133,6 +134,14 @@ pub enum ShellCommand {
         #[arg(value_enum, default_value_t = SizeArg::Word)]
         size: SizeArg,
     },
+    /// Trigger a system-level reset via the system controller
+    Reset,
+    /// Boot the CPU from a specified address or the last loaded ELF entry point
+    Boot {
+        /// Boot address (hex with 0x prefix or decimal). If not provided, use last ELF entry point
+        #[arg(value_parser = parse_hex_or_decimal)]
+        address: Option<u32>,
+    },
 }
 
 /// Parse a string as either hex (with 0x prefix) or decimal
@@ -205,6 +214,10 @@ impl ShellCommand {
                 data,
                 size,
             } => execute_write(app, address, data, size),
+
+            ShellCommand::Reset => execute_reset(app),
+
+            ShellCommand::Boot { address } => execute_boot(app, address),
         }
     }
 }
@@ -271,8 +284,9 @@ fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
 
     match elf_loader::load_elf(&mut new_memory, path) {
         Ok(entry_point) => {
-            // Loading succeeded; commit the new memory.
+            // Loading succeeded; commit the new memory and save entry point.
             app.memory = new_memory;
+            app.last_entry_point = Some(entry_point);
             CommandResult::ok(format!(
                 "Loaded {} successfully\nEntry point: 0x{:08x}",
                 path.display(),
@@ -404,6 +418,68 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
             ))
         }
         Err(e) => CommandResult::error(format!("Failed to send write request: {}", e)),
+    }
+}
+
+/// Execute the reset command
+fn execute_reset(app: &mut App) -> CommandResult {
+    let serial = match app.serial.as_mut() {
+        Some(s) => s,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
+    if serial.has_pending_host_request() {
+        return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    let reset_addr = sysctrl_reset_addr();
+    let request = BusRequest::write(reset_addr, SYSCTRL_RESET_SYSTEM, AccessSize::Word);
+
+    match serial.send_host_request(request) {
+        Ok(()) => CommandResult::ok(format!("Sent reset request to 0x{:08x}", reset_addr)),
+        Err(e) => CommandResult::error(format!("Failed to send reset request: {}", e)),
+    }
+}
+
+/// Execute the boot command
+fn execute_boot(app: &mut App, address: Option<u32>) -> CommandResult {
+    let serial = match app.serial.as_mut() {
+        Some(s) => s,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
+    if serial.has_pending_host_request() {
+        return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    // Determine boot address
+    let boot_addr = if let Some(addr) = address {
+        addr
+    } else if let Some(entry) = app.last_entry_point {
+        entry
+    } else {
+        return CommandResult::error(
+            "No boot address provided and no ELF file loaded.\nUse 'boot <address>' or load an ELF file first with 'loadelf <file>'."
+        );
+    };
+
+    // First, read STATUS register to verify cpu_booting bit is set
+    let status_addr = sysctrl_status_addr();
+    let request = BusRequest::read(status_addr, AccessSize::Word);
+
+    match serial.send_host_request(request) {
+        Ok(()) => {
+            // Store the boot state so we can continue when STATUS response arrives
+            app.pending_boot = Some(crate::app::PendingBoot {
+                boot_addr,
+                expected_status_addr: status_addr,
+            });
+            CommandResult::ok(format!(
+                "Reading STATUS register (0x{:08x}) to verify cpu_booting bit...",
+                status_addr
+            ))
+        }
+        Err(e) => CommandResult::error(format!("Failed to send STATUS read request: {}", e)),
     }
 }
 
@@ -664,5 +740,41 @@ mod tests {
             "Expected Ok(HelpText) for 'help connect' command, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_parse_reset() {
+        assert!(matches!(
+            ShellCommand::parse("reset"),
+            Ok(ParseResult::Command(ShellCommand::Reset))
+        ));
+    }
+
+    #[test]
+    fn test_parse_boot_with_address() {
+        let result = ShellCommand::parse("boot 0x80000000");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot {
+                address: Some(0x80000000)
+            }))
+        ));
+
+        let result = ShellCommand::parse("boot 0x100");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot {
+                address: Some(0x100)
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_boot_no_address() {
+        let result = ShellCommand::parse("boot");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot { address: None }))
+        ));
     }
 }

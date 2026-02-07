@@ -46,6 +46,19 @@ pub struct App {
     pub scroll_offset: usize,
     /// Verbose logging mode
     pub verbose: bool,
+    /// Last loaded ELF entry point (for boot command)
+    pub last_entry_point: Option<u32>,
+    /// Pending boot command state (waiting for STATUS read response)
+    pub pending_boot: Option<PendingBoot>,
+}
+
+/// State for a pending boot command that requires sequential requests
+#[derive(Debug, Clone)]
+pub struct PendingBoot {
+    /// The boot address to use after STATUS verification
+    pub boot_addr: u32,
+    /// The expected STATUS register address (for verification)
+    pub expected_status_addr: u32,
 }
 
 impl App {
@@ -62,6 +75,8 @@ impl App {
             request_count: 0,
             scroll_offset: 0,
             verbose: false,
+            last_entry_point: None,
+            pending_boot: None,
         }
     }
 
@@ -219,6 +234,9 @@ impl App {
             }
             BusEvent::HostWriteResponse { size } => {
                 format!("HOST WRITE acknowledged ({})", access_size_name(*size))
+            }
+            BusEvent::HostRequestTimeout { addr } => {
+                format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)
             }
         };
         self.add_log(log::Level::Info, msg);
