@@ -37,6 +37,12 @@ module div_unit #(
     // Internal Registers
     // ============================================================
     
+    // Registered inputs (to break timing-critical path)
+    logic [WIDTH-1:0] dividend_reg;
+    logic [WIDTH-1:0] divisor_reg;
+    logic             is_signed_reg;
+    logic             rem_sel_reg;
+    
     // Division working registers
     logic [2*WIDTH-1:0] P;                   // Partial remainder (2*WIDTH-bit)
     logic [2*WIDTH-1:0] D;                   // Divisor aligned (2*WIDTH-bit)
@@ -120,13 +126,13 @@ module div_unit #(
     // ============================================================
     always_comb begin
         // Default values
-        abs_dividend = dividend;
-        abs_divisor = divisor;
+        abs_dividend = dividend_reg;
+        abs_divisor = divisor_reg;
         
         // Compute absolute values in INIT state for signed operations
-        if (state == DIV_INIT && is_signed && divisor != '0) begin
-            abs_dividend = dividend[WIDTH-1] ? (~dividend + 1'b1) : dividend;
-            abs_divisor  = divisor[WIDTH-1]  ? (~divisor  + 1'b1) : divisor;
+        if (state == DIV_INIT && is_signed_reg && divisor_reg != '0) begin
+            abs_dividend = dividend_reg[WIDTH-1] ? (~dividend_reg + 1'b1) : dividend_reg;
+            abs_divisor  = divisor_reg[WIDTH-1]  ? (~divisor_reg  + 1'b1) : divisor_reg;
         end
         
         // Compute shifted, add, and subtract values for non-restoring division
@@ -140,6 +146,10 @@ module div_unit #(
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            dividend_reg <= '0;
+            divisor_reg <= '0;
+            is_signed_reg <= 1'b0;
+            rem_sel_reg <= 1'b0;
             P <= '0;
             D <= '0;
             Q <= '0;
@@ -150,21 +160,31 @@ module div_unit #(
             overflow <= 1'b0;
         end else begin
             case (state)
+                DIV_IDLE: begin
+                    // Register inputs when starting division (breaks critical timing path)
+                    if (start) begin
+                        dividend_reg <= dividend;
+                        divisor_reg <= divisor;
+                        is_signed_reg <= is_signed;
+                        rem_sel_reg <= rem_sel;
+                    end
+                end
+                
                 DIV_INIT: begin
                     // Check for special cases
-                    div_by_zero <= (divisor == '0);
+                    div_by_zero <= (divisor_reg == '0);
                     // Overflow only for signed: most negative / -1
                     /* verilator lint_off WIDTHEXPAND */
-                    overflow <= is_signed && 
-                                (dividend == (1'b1 << (WIDTH-1))) && 
-                                (divisor == '1);
+                    overflow <= is_signed_reg && 
+                                (dividend_reg == (1'b1 << (WIDTH-1))) && 
+                                (divisor_reg == '1);
                     /* verilator lint_on WIDTHEXPAND */
                     
-                    if (divisor != '0) begin
+                    if (divisor_reg != '0) begin
                         // Handle sign tracking for signed division
-                        if (is_signed) begin
-                            dividend_neg <= dividend[WIDTH-1];
-                            divisor_neg <= divisor[WIDTH-1];
+                        if (is_signed_reg) begin
+                            dividend_neg <= dividend_reg[WIDTH-1];
+                            divisor_neg <= divisor_reg[WIDTH-1];
                         end else begin
                             dividend_neg <= 1'b0;
                             divisor_neg <= 1'b0;
@@ -219,7 +239,7 @@ module div_unit #(
     // ============================================================
     always_comb begin
         // Apply signs to quotient and remainder based on RISC-V specification
-        if (is_signed && !div_by_zero && !overflow) begin
+        if (is_signed_reg && !div_by_zero && !overflow) begin
             // Quotient sign: sign(dividend) XOR sign(divisor)
             if (dividend_neg ^ divisor_neg)
                 final_quotient = ~Q + 1'b1;  // Two's complement negation
@@ -247,18 +267,18 @@ module div_unit #(
         if (state == DIV_DONE) begin
             if (div_by_zero) begin
                 // RISC-V spec: division by zero
-                if (rem_sel)
-                    result = dividend;  // REM/REMU: return dividend unchanged
+                if (rem_sel_reg)
+                    result = dividend_reg;  // REM/REMU: return dividend unchanged
                 else
                     result = '1;  // DIV/DIVU: return all 1's
             end else if (overflow) begin
                 // RISC-V spec: most negative / -1 overflow
-                if (rem_sel)
+                if (rem_sel_reg)
                     result = '0;  // REM: return 0
                 else
                     result = (1'b1 << (WIDTH-1));  // DIV: return most negative number
             end else begin
-                if (rem_sel)
+                if (rem_sel_reg)
                     result = final_remainder;  // Remainder
                 else
                     result = final_quotient;   // Quotient
