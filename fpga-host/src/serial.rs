@@ -9,10 +9,13 @@ use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
 use std::io::{Read, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Size of the intermediate buffers for RX and TX
 const BUFFER_SIZE: usize = 64;
+
+/// Timeout for host-initiated requests (1 second)
+const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Errors that can occur during serial operations
 #[derive(Debug)]
@@ -145,6 +148,8 @@ pub struct PendingHostRequest {
     pub addr: u32,
     /// Write data (for write requests)
     pub wdata: u32,
+    /// Time when the request was sent
+    pub sent_at: Instant,
 }
 
 /// Serial connection with bus protocol handling
@@ -225,6 +230,7 @@ impl SerialConnection {
         self.pending_host_request = Some(PendingHostRequest {
             addr: request.addr,
             wdata: request.wdata,
+            sent_at: Instant::now(),
         });
 
         self.handler.send_request(request)?;
@@ -243,6 +249,20 @@ impl SerialConnection {
     /// Ok(None) if no complete transaction was processed,
     /// or Err if an error occurred.
     pub fn poll(&mut self, memory: &mut SparseMemory) -> Result<Option<BusEvent>, SerialError> {
+        // === Check for timeout on pending host requests ===
+        if let Some(ref pending) = self.pending_host_request {
+            if pending.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
+                log::warn!(
+                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
+                    pending.addr
+                );
+                // Reset the handler to restore communication
+                self.handler.reset();
+                self.pending_host_request = None;
+                // Don't return error - just clear the timeout and continue
+            }
+        }
+
         // === RX Path: Serial Port -> rx_buffer -> Handler ===
 
         // Step 1: Fill rx_buffer from serial port (only into remaining space)
