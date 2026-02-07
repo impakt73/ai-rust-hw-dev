@@ -176,25 +176,34 @@ module alu #(
         end
     endgenerate
     
-    // ALU ready signal: waits for multi-cycle operations (div or mul)
-    assign alu_ready = is_div_op ? div_ready : (is_mul_op ? mul_ready : 1'b1);
+    // ============================================================
+    // Combinational Result and Ready Computation
+    // ============================================================
+    logic [31:0] result_comb;
+    logic        zero_comb;
+    logic        ready_comb;
+    
+    // Combinational ready: waits for multi-cycle operations (div or mul)
+    // For single-cycle ops, ready is asserted when alu_start is pulsed.
+    // For multi-cycle ops, ready comes from the sub-unit (div_ready/mul_ready).
+    assign ready_comb = is_div_op ? div_ready : (is_mul_op ? mul_ready : alu_start);
 
     always_comb begin
         // Default initialization to avoid latches
-        result = 32'd0;
+        result_comb = 32'd0;
         
         case (alu_op)
             // RV32I operations
-            ALU_ADD:  result = a + b;
-            ALU_SUB:  result = a - b;
-            ALU_AND:  result = a & b;
-            ALU_OR:   result = a | b;
-            ALU_XOR:  result = a ^ b;
-            ALU_SLL:  result = a << b[4:0];
-            ALU_SRL:  result = a >> b[4:0];
-            ALU_SRA:  result = $signed(a) >>> b[4:0];
-            ALU_SLT:  result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
-            ALU_SLTU: result = (a < b) ? 32'd1 : 32'd0;
+            ALU_ADD:  result_comb = a + b;
+            ALU_SUB:  result_comb = a - b;
+            ALU_AND:  result_comb = a & b;
+            ALU_OR:   result_comb = a | b;
+            ALU_XOR:  result_comb = a ^ b;
+            ALU_SLL:  result_comb = a << b[4:0];
+            ALU_SRL:  result_comb = a >> b[4:0];
+            ALU_SRA:  result_comb = $signed(a) >>> b[4:0];
+            ALU_SLT:  result_comb = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
+            ALU_SLTU: result_comb = (a < b) ? 32'd1 : 32'd0;
             
             // M Extension - Multiplication operations (using multi-cycle mul_unit)
             ALU_MUL,
@@ -202,9 +211,9 @@ module alu #(
             ALU_MULHSU,
             ALU_MULHU: begin
                 if (ENABLE_M_EXT) begin
-                    result = mul_result;  // Comes from multiplication unit
+                    result_comb = mul_result;  // Comes from multiplication unit
                 end else begin
-                    result = 32'd0;  // M extension disabled
+                    result_comb = 32'd0;  // M extension disabled
                 end
             end
             
@@ -214,22 +223,53 @@ module alu #(
             ALU_REM,
             ALU_REMU: begin
                 if (ENABLE_M_EXT) begin
-                    result = div_result;  // Comes from division unit
+                    result_comb = div_result;  // Comes from division unit
                 end else begin
-                    result = 32'd0;  // M extension disabled
+                    result_comb = 32'd0;  // M extension disabled
                 end
             end
             
             // A Extension - MIN/MAX operations (for atomic instructions)
-            ALU_MIN:  result = ($signed(a) < $signed(b)) ? a : b;  // Signed minimum
-            ALU_MAX:  result = ($signed(a) > $signed(b)) ? a : b;  // Signed maximum
-            ALU_MINU: result = (a < b) ? a : b;  // Unsigned minimum
-            ALU_MAXU: result = (a > b) ? a : b;  // Unsigned maximum
+            ALU_MIN:  result_comb = ($signed(a) < $signed(b)) ? a : b;  // Signed minimum
+            ALU_MAX:  result_comb = ($signed(a) > $signed(b)) ? a : b;  // Signed maximum
+            ALU_MINU: result_comb = (a < b) ? a : b;  // Unsigned minimum
+            ALU_MAXU: result_comb = (a > b) ? a : b;  // Unsigned maximum
             
-            default:  result = 32'd0;
+            default:  result_comb = 32'd0;
         endcase
     end
 
-    assign zero = (result == 32'd0);
+    assign zero_comb = (result_comb == 32'd0);
+    
+    // ============================================================
+    // Registered Output Stage
+    // ============================================================
+    // Register result, zero, and alu_ready for better FPGA timing closure.
+    // All outputs become valid on the clock edge following computation,
+    // ensuring result and alu_ready are always synchronized.
+    //
+    // alu_ready is "sticky": once asserted, it stays high until a new
+    // alu_start pulse clears it. This ensures downstream logic (which may
+    // need multiple cycles to respond, e.g., memory through a bus arbiter)
+    // can observe alu_ready for as long as needed.
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            result    <= 32'd0;
+            zero      <= 1'b0;
+            alu_ready <= 1'b0;
+        end else begin
+            result <= result_comb;
+            zero   <= zero_comb;
+            if (alu_start) begin
+                // New operation starting: set ready based on whether it's
+                // a single-cycle op (ready_comb=alu_start=1) or multi-cycle (ready_comb=0)
+                alu_ready <= ready_comb;
+            end else if (ready_comb) begin
+                // Multi-cycle op completed: assert ready
+                alu_ready <= 1'b1;
+            end
+            // else: hold current alu_ready value (sticky)
+        end
+    end
 
 endmodule

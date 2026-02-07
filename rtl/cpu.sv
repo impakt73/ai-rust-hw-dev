@@ -238,6 +238,7 @@ module cpu #(
     logic        alu_ready;       // NEW: ALU operation complete
     logic        alu_start_sent;  // NEW: Track if start pulse has been sent (S_EXECUTE)
     logic        alu_start_sent_rmw;  // NEW: Track if start pulse has been sent (S_ATOMIC_RMW)
+    logic        alu_start_sent_mem;  // Track if start pulse has been sent (S_MEM_ADDR)
     
     // FPU signals
     logic [31:0] fpu_fp_result;   // FP result from FPU
@@ -539,6 +540,16 @@ module cpu #(
             alu_start_sent_rmw <= 1'b1;  // Mark as sent after pulsing
     end
     
+    // Track if ALU start pulse has been sent (for S_MEM_ADDR address calculation)
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            alu_start_sent_mem <= 1'b0;
+        else if (current_state != S_MEM_ADDR)
+            alu_start_sent_mem <= 1'b0;  // Reset when leaving S_MEM_ADDR
+        else if (alu_start)
+            alu_start_sent_mem <= 1'b1;  // Mark as sent after pulsing
+    end
+    
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -740,7 +751,8 @@ module cpu #(
                         next_state = S_EXECUTE;  // Wait for multi-cycle FPU operation
                     end
                 // Integer ALU operations may be multi-cycle (e.g., division)
-                end else if (alu_ready) begin
+                // Guard with alu_start_sent to ignore stale alu_ready from prior states
+                end else if (alu_ready && alu_start_sent) begin
                     next_state = S_WRITEBACK;
                 end else begin
                     next_state = S_EXECUTE;  // Wait for multi-cycle ALU operation
@@ -748,10 +760,17 @@ module cpu #(
             end
             
             S_MEM_ADDR: begin
-                if (mem_read_reg)
-                    next_state = S_MEM_READ;
-                else
-                    next_state = S_MEM_WRITE;
+                // Wait for registered ALU result before proceeding.
+                // Use alu_start_sent_mem to ensure we're checking the result from
+                // THIS state's computation, not a stale alu_ready from a prior state.
+                if (alu_ready && alu_start_sent_mem) begin
+                    if (mem_read_reg)
+                        next_state = S_MEM_READ;
+                    else
+                        next_state = S_MEM_WRITE;
+                end else begin
+                    next_state = S_MEM_ADDR;  // Wait for ALU address calculation
+                end
             end
             
             S_MEM_READ: begin
@@ -794,7 +813,8 @@ module cpu #(
             
             S_ATOMIC_RMW: begin
                 // Wait for ALU ready and memory ready before writeback (unified interface)
-                if (alu_ready && dmem_ready_internal)
+                // Guard with alu_start_sent_rmw to ignore stale alu_ready from prior states
+                if (alu_ready && alu_start_sent_rmw && dmem_ready_internal)
                     next_state = S_WRITEBACK;
                 else
                     next_state = S_ATOMIC_RMW;
@@ -877,7 +897,7 @@ module cpu #(
                     // Pulse alu_start only on first cycle in S_EXECUTE
                     alu_start = !alu_start_sent;
                     
-                    if (alu_ready) begin
+                    if (alu_ready && alu_start_sent) begin
                         alu_out_write = 1'b1;
                     end
                     
@@ -899,7 +919,12 @@ module cpu #(
             end
             
             S_MEM_ADDR: begin
-                alu_out_write = 1'b1;
+                // Pulse alu_start only on first cycle in S_MEM_ADDR
+                alu_start = !alu_start_sent_mem;
+                
+                if (alu_ready && alu_start_sent_mem) begin
+                    alu_out_write = 1'b1;
+                end
             end
             
             S_MEM_READ: begin
@@ -941,9 +966,13 @@ module cpu #(
                 // Pulse alu_start only on first cycle in S_ATOMIC_RMW
                 alu_start = !alu_start_sent_rmw;
                 
-                dmem_req_internal = 1'b1;  // Request memory write
+                // Only request memory write after ALU result is ready
+                // Guard with alu_start_sent_rmw to ignore stale alu_ready
+                if (alu_ready && alu_start_sent_rmw) begin
+                    dmem_req_internal = 1'b1;  // Request memory write
+                end
                 
-                if (alu_ready && dmem_ready_internal) begin
+                if (alu_ready && alu_start_sent_rmw && dmem_ready_internal) begin
                     alu_out_write = 1'b1;  // Capture computed result for memory write
                 end
             end
