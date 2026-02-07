@@ -63,13 +63,7 @@ module top #(
     output logic [31:0] debug_current_pc,
     output logic [31:0] debug_current_instruction,
     output logic [3:0]  debug_fsm_state,
-    output logic        rst_n_out,
-    // Debug outputs for host bus interface debugging
-    output logic [1:0]  debug_arb_state,
-    output logic        debug_host_resp_valid,
-    output logic        debug_host_bus_req,
-    output logic        debug_buf_req_valid,
-    output logic [4:0]  debug_hbi_state
+    output logic        rst_n_out
 );
 
     // ============================================================
@@ -222,10 +216,7 @@ module top #(
         .bus_we(arb_bus_we),
         .bus_size(arb_bus_size),
         .bus_req(arb_bus_req),
-        .bus_ready(arb_bus_ready),
-        
-        // Debug
-        .debug_state(debug_arb_state)
+        .bus_ready(arb_bus_ready)
     );
     
     // ============================================================
@@ -327,13 +318,7 @@ module top #(
         // Host RX Interface (from External Host)
         .rx_data(host_rx_data),
         .rx_valid(host_rx_valid),
-        .rx_ready(host_rx_ready),
-        
-        // Debug outputs
-        .debug_host_resp_valid(debug_host_resp_valid),
-        .debug_host_bus_req_out(debug_host_bus_req),
-        .debug_buf_req_valid_out(debug_buf_req_valid),
-        .debug_fsm_state_out(debug_hbi_state)
+        .rx_ready(host_rx_ready)
     );
     
     // ============================================================
