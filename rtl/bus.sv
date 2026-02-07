@@ -3,12 +3,13 @@
 // All address mapping logic is contained within this module.
 //
 // Address Map:
-// - LED Controller:   0x50000000 - 0x5000000F (16 bytes)
-// - Clock Peripheral: 0x51000000 - 0x5100000F (16 bytes)
-// - UART Controller:  0x52000000 - 0x520000FF (256 bytes)
-// - External Memory:  Everything else (DRAM + Rust peripherals)
+// - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
+// - Clock Peripheral:    0x51000000 - 0x5100000F (16 bytes)
+// - UART Controller:     0x52000000 - 0x520000FF (256 bytes)
+// - System Controller:   0x53000000 - 0x5300000F (16 bytes)
+// - External Memory:     Everything else (DRAM + Rust peripherals)
 //
-// Unmapped addresses (within RTL peripheral range but not LED/CLOCK/UART):
+// Unmapped addresses (within RTL peripheral range but not LED/CLOCK/UART/SYSCTRL):
 // - Reads return 0
 // - Writes are dropped
 // - Ready is asserted immediately
@@ -56,6 +57,15 @@ module bus (
     output logic        uart_req,
     input  logic        uart_ready,
     
+    // System Controller interface
+    output logic [31:0] sysctrl_addr,
+    output logic [31:0] sysctrl_wdata,
+    input  logic [31:0] sysctrl_rdata,
+    output logic        sysctrl_we,
+    output logic [1:0]  sysctrl_size,
+    output logic        sysctrl_req,
+    input  logic        sysctrl_ready,
+    
     // External Memory interface (DRAM + Rust peripherals)
     output logic [31:0] ext_mem_addr,
     output logic [31:0] ext_mem_wdata,
@@ -75,6 +85,8 @@ module bus (
     localparam CLOCK_LIMIT = 32'h51000010; // CLOCK_BASE + 16 bytes
     localparam UART_BASE  = 32'h52000000;
     localparam UART_LIMIT = 32'h52000100;  // UART_BASE + 256 bytes
+    localparam SYSCTRL_BASE  = 32'h53000000;
+    localparam SYSCTRL_LIMIT = 32'h53000010; // SYSCTRL_BASE + 16 bytes
     // RTL peripheral range (for detecting unmapped RTL addresses)
     localparam RTL_PERIPH_BASE  = 32'h50000000;
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
@@ -85,12 +97,14 @@ module bus (
     logic sel_led;
     logic sel_clock;
     logic sel_uart;
+    logic sel_sysctrl;
     logic sel_ext_mem;
     
     always_comb begin
         sel_led      = 1'b0;
         sel_clock    = 1'b0;
         sel_uart     = 1'b0;
+        sel_sysctrl  = 1'b0;
         sel_ext_mem  = 1'b0;
         
         // Check if address is in LED range
@@ -104,6 +118,10 @@ module bus (
         // Check if address is in UART range
         else if (master_addr >= UART_BASE && master_addr < UART_LIMIT) begin
             sel_uart = 1'b1;
+        end
+        // Check if address is in System Controller range
+        else if (master_addr >= SYSCTRL_BASE && master_addr < SYSCTRL_LIMIT) begin
+            sel_sysctrl = 1'b1;
         end
         // Check if address is in unmapped RTL peripheral space
         // (unmapped: no select asserted, uses default response)
@@ -133,6 +151,10 @@ module bus (
     assign uart_wdata    = master_wdata;
     assign uart_size     = master_size;
     
+    assign sysctrl_addr  = master_addr;
+    assign sysctrl_wdata = master_wdata;
+    assign sysctrl_size  = master_size;
+    
     assign ext_mem_addr  = master_addr;
     assign ext_mem_wdata = master_wdata;
     assign ext_mem_size  = master_size;
@@ -147,6 +169,9 @@ module bus (
     
     assign uart_req     = master_req && sel_uart;
     assign uart_we      = master_we  && sel_uart;
+    
+    assign sysctrl_req  = master_req && sel_sysctrl;
+    assign sysctrl_we   = master_we  && sel_sysctrl;
     
     assign ext_mem_req  = master_req && sel_ext_mem;
     assign ext_mem_we   = master_we  && sel_ext_mem;
@@ -168,6 +193,9 @@ module bus (
         end else if (sel_uart) begin
             master_rdata = uart_rdata;
             master_ready = uart_ready;
+        end else if (sel_sysctrl) begin
+            master_rdata = sysctrl_rdata;
+            master_ready = sysctrl_ready;
         end else if (sel_ext_mem) begin
             master_rdata = ext_mem_rdata;
             master_ready = ext_mem_ready;

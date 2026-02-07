@@ -6,6 +6,46 @@ use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::path::Path;
 use std::time::Instant;
 
+/// Maximum number of clock cycles allowed for any boot phase before timing out
+const BOOT_TIMEOUT_CYCLES: u32 = 10_000;
+
+/// Errors that can occur during the CPU boot/reset sequence
+#[derive(Debug)]
+pub enum BootError {
+    /// The boot address is outside valid PC ranges (wraps HungStateError)
+    InvalidBootAddress(HungStateError),
+    /// A boot phase timed out waiting for a condition
+    Timeout { phase: &'static str, cycles: u32 },
+    /// The CPU STATUS register indicates an unexpected state
+    UnexpectedStatus { status: u32 },
+}
+
+impl std::fmt::Display for BootError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BootError::InvalidBootAddress(e) => write!(f, "Invalid boot address: {}", e),
+            BootError::Timeout { phase, cycles } => {
+                write!(f, "Boot timeout in '{}' after {} cycles", phase, cycles)
+            }
+            BootError::UnexpectedStatus { status } => {
+                write!(
+                    f,
+                    "CPU is not in boot state after reset - hardware issue (STATUS=0x{:08x})",
+                    status
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for BootError {}
+
+impl From<HungStateError> for BootError {
+    fn from(e: HungStateError) -> Self {
+        BootError::InvalidBootAddress(e)
+    }
+}
+
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
@@ -866,19 +906,12 @@ where
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
-    /// * `Err(HungStateError)` if the boot_pc is outside valid PC ranges
-    pub fn reset(&mut self, boot_pc: u32) -> Result<(), HungStateError> {
+    /// * `Err(BootError)` if boot address validation fails, a timeout occurs, or CPU state is unexpected
+    pub fn reset(&mut self, boot_pc: u32) -> Result<(), BootError> {
         // Validate boot address before reset if hung detector is configured
         if let Some(ref detector) = self.hung_detector {
             detector.validate_boot_addr(boot_pc)?;
         }
-
-        // Set the boot address BEFORE asserting and during reset
-        // This is stable throughout the reset sequence and used when boot signal is asserted
-        self.cpu.boot_addr = boot_pc;
-
-        // Assert boot signal (will remain asserted forever)
-        self.cpu.boot = 1;
 
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
@@ -924,8 +957,84 @@ where
         self.host_bus_handler.reset();
         self.pending_response = None;
 
+        // Boot the CPU via host bus requests to the system controller peripheral
+        // First, run clock cycles until the internal reset controller has completed
+        // (rst_n_out goes high). The reset controller holds internal reset for
+        // RESET_CYCLES (default 8) after external rst_n goes high.
+        for cycle in 0..BOOT_TIMEOUT_CYCLES {
+            self.boot_clock_cycle();
+            if self.cpu.rst_n_out != 0 {
+                break;
+            }
+            if cycle == BOOT_TIMEOUT_CYCLES - 1 {
+                return Err(BootError::Timeout {
+                    phase: "waiting for reset controller",
+                    cycles: BOOT_TIMEOUT_CYCLES,
+                });
+            }
+        }
+
+        // Step 1: Read STATUS register to confirm CPU is waiting to be booted
+        let status_addr = riscv_shared::bus::sysctrl_status_addr();
+        let status_request = BusRequest::read(status_addr, AccessSize::Word);
+        self.host_bus_handler
+            .send_request(status_request)
+            .expect("Failed to send STATUS read request");
+
+        let response = self.wait_for_bus_response("STATUS read")?;
+        // Check that cpu_booting bit (bit 0) is set
+        if (response.rdata & riscv_shared::bus::SYSCTRL_STATUS_CPU_BOOTING) == 0 {
+            return Err(BootError::UnexpectedStatus {
+                status: response.rdata,
+            });
+        }
+
+        // Step 2: Write boot address to BOOT register to complete boot process
+        let boot_addr = riscv_shared::bus::sysctrl_boot_addr();
+        let boot_request = BusRequest::write(boot_addr, boot_pc, AccessSize::Word);
+        self.host_bus_handler
+            .send_request(boot_request)
+            .expect("Failed to send BOOT write request");
+
+        // Wait for write acknowledgement - CPU boot process is now complete
+        self.wait_for_bus_response("BOOT write")?;
+
         log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
+    }
+
+    /// Execute a single clock cycle during the boot process
+    ///
+    /// This is a simplified clock cycle that only handles the host bus interface
+    /// protocol and clock edge. It does NOT increment cycle_count, call
+    /// bus.clock_cycle_all_devices(), run hung detector checks, or print FSM state.
+    fn boot_clock_cycle(&mut self) {
+        self.cpu.eval();
+        self.handle_host_bus_interface();
+        self.cpu.eval();
+        self.cpu.clk = 0;
+        self.cpu.eval();
+        self.cpu.clk = 1;
+        self.cpu.eval();
+        self.dump_vcd();
+    }
+
+    /// Cycle the design until a bus response is received, then return it.
+    /// Returns a timeout error if no response is received within BOOT_TIMEOUT_CYCLES.
+    fn wait_for_bus_response(&mut self, phase: &'static str) -> Result<BusResponse, BootError> {
+        for cycle in 0..BOOT_TIMEOUT_CYCLES {
+            self.boot_clock_cycle();
+            if let Some(response) = self.host_bus_handler.receive_response() {
+                return Ok(response);
+            }
+            if cycle == BOOT_TIMEOUT_CYCLES - 1 {
+                return Err(BootError::Timeout {
+                    phase,
+                    cycles: BOOT_TIMEOUT_CYCLES,
+                });
+            }
+        }
+        unreachable!()
     }
 
     /// Get the current LED output value

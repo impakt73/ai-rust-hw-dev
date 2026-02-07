@@ -94,13 +94,6 @@ module fpga_top #(
     assign reset_request = ~rst_n_btn_sync2;
     
     // ============================================================
-    // Boot Configuration
-    // ============================================================
-    // Boot address: Start of instruction memory (DRAM base)
-    // Memory is accessed via host computer through USB serial
-    localparam logic [31:0] BOOT_ADDR = 32'h80000000;
-    
-    // ============================================================
     // Host Bus Interface Signals
     // ============================================================
     // Serialized bus transactions between CPU and host UART
@@ -113,6 +106,9 @@ module fpga_top #(
     
     // LED controller output
     logic [7:0]  led_out;
+    
+    // System LED output (from system controller)
+    logic [7:0]  sys_led_out;
     
     // System control
     logic halted;
@@ -143,8 +139,6 @@ module fpga_top #(
         .clk(sys_clk),
         .rst_n(pll_locked_sync2),
         .reset_request(reset_request),
-        .boot_addr(BOOT_ADDR),
-        .boot(1'b1),  // Unconditional boot - always start execution
         
         // Host bus interface (serialized memory transactions)
         .host_tx_data(host_tx_data),
@@ -156,6 +150,9 @@ module fpga_top #(
         
         // LED peripheral
         .led_out(led_out),
+        
+        // System LED (from system controller)
+        .sys_led_out(sys_led_out),
         
         // CPU's internal UART (loopback enabled via ENABLE_UART_LOOPBACK)
         .uart_tx(),     // Not connected - internal loopback enabled
@@ -211,7 +208,8 @@ module fpga_top #(
     // ============================================================
     // LED Output Assignment
     // ============================================================
-    assign led = led_out;
+    // Main board LEDs driven by system controller
+    assign led = sys_led_out;
     
     // Assign 8-bit LED pattern to all 3 IO Shield LED groups
     assign io_led[7:0]   = led_out;

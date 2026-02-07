@@ -23,7 +23,7 @@ pub use constants::GLOBAL_MAX_CYCLES;
 pub use dma::Dma;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{SimulationResult, SimulationStepResult, SimulatorView};
+pub use sim::{BootError, SimulationResult, SimulationStepResult, SimulatorView};
 pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
