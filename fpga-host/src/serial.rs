@@ -139,6 +139,8 @@ pub enum BusEvent {
     HostReadResponse { data: u32, size: AccessSize },
     /// A host-initiated write acknowledgment received
     HostWriteResponse { size: AccessSize },
+    /// A host-initiated request timed out
+    HostRequestTimeout { addr: u32 },
 }
 
 /// Pending host-initiated request information for tracking
@@ -252,14 +254,26 @@ impl SerialConnection {
         // === Check for timeout on pending host requests ===
         if let Some(ref pending) = self.pending_host_request {
             if pending.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
-                log::warn!(
-                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
-                    pending.addr
-                );
-                // Reset the handler to restore communication
-                self.handler.reset();
+                let timed_out_addr = pending.addr;
+                
+                // Drain serial port to remove buffered bytes
+                let mut drain_buffer = [0u8; 256];
+                while self.port.read(&mut drain_buffer).is_ok() {
+                    // Continue draining until no more data
+                }
+                
+                // Clear rx/tx buffers
+                self.rx_buffer_len = 0;
+                self.tx_buffer_len = 0;
+                
+                // Clear pending request
                 self.pending_host_request = None;
-                // Don't return error - just clear the timeout and continue
+                
+                // Reset handler
+                self.handler.reset();
+                
+                // Return timeout event to be handled by main loop
+                return Ok(Some(BusEvent::HostRequestTimeout { addr: timed_out_addr }));
             }
         }
 

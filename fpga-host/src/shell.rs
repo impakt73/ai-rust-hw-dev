@@ -7,17 +7,11 @@ use crate::elf_loader;
 use crate::serial::SerialConnection;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
+use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 
 /// Default baud rate for serial connections
 const DEFAULT_BAUD_RATE: u32 = 115200;
-
-/// System controller peripheral base address
-const SYS_CTRL_BASE: u32 = 0x5300_0000;
-/// System controller STATUS register offset (bit0=cpu_booting, bit1=cpu_halted)
-const SYS_CTRL_STATUS_OFFSET: u32 = 0x0;
-/// System controller RESET register offset
-const SYS_CTRL_RESET_OFFSET: u32 = 0x4;
 
 /// Access size argument for commands
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -438,8 +432,8 @@ fn execute_reset(app: &mut App) -> CommandResult {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
-    let reset_addr = SYS_CTRL_BASE + SYS_CTRL_RESET_OFFSET;
-    let request = BusRequest::write(reset_addr, 1, AccessSize::Word);
+    let reset_addr = sysctrl_reset_addr();
+    let request = BusRequest::write(reset_addr, SYSCTRL_RESET_SYSTEM, AccessSize::Word);
 
     match serial.send_host_request(request) {
         Ok(()) => CommandResult::ok(format!("Sent reset request to 0x{:08x}", reset_addr)),
@@ -470,13 +464,16 @@ fn execute_boot(app: &mut App, address: Option<u32>) -> CommandResult {
     };
 
     // First, read STATUS register to verify cpu_booting bit is set
-    let status_addr = SYS_CTRL_BASE + SYS_CTRL_STATUS_OFFSET;
+    let status_addr = sysctrl_status_addr();
     let request = BusRequest::read(status_addr, AccessSize::Word);
 
     match serial.send_host_request(request) {
         Ok(()) => {
             // Store the boot state so we can continue when STATUS response arrives
-            app.pending_boot = Some(crate::app::PendingBoot { boot_addr });
+            app.pending_boot = Some(crate::app::PendingBoot {
+                boot_addr,
+                expected_status_addr: status_addr,
+            });
             CommandResult::ok(format!(
                 "Reading STATUS register (0x{:08x}) to verify cpu_booting bit...",
                 status_addr
@@ -743,5 +740,37 @@ mod tests {
             "Expected Ok(HelpText) for 'help connect' command, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_parse_reset() {
+        assert!(matches!(
+            ShellCommand::parse("reset"),
+            Ok(ParseResult::Command(ShellCommand::Reset))
+        ));
+    }
+
+    #[test]
+    fn test_parse_boot_with_address() {
+        let result = ShellCommand::parse("boot 0x80000000");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot { address: Some(0x80000000) }))
+        ));
+
+        let result = ShellCommand::parse("boot 0x100");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot { address: Some(0x100) }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_boot_no_address() {
+        let result = ShellCommand::parse("boot");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Boot { address: None }))
+        ));
     }
 }

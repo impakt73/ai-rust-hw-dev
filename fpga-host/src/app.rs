@@ -57,6 +57,8 @@ pub struct App {
 pub struct PendingBoot {
     /// The boot address to use after STATUS verification
     pub boot_addr: u32,
+    /// The expected STATUS register address (for verification)
+    pub expected_status_addr: u32,
 }
 
 impl App {
@@ -232,6 +234,9 @@ impl App {
             }
             BusEvent::HostWriteResponse { size } => {
                 format!("HOST WRITE acknowledged ({})", access_size_name(*size))
+            }
+            BusEvent::HostRequestTimeout { addr } => {
+                format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)
             }
         };
         self.add_log(log::Level::Info, msg);
