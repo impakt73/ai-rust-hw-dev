@@ -191,10 +191,13 @@ fn test_system_controller_boot_sequence() {
     let boot_addr: u32 = 0x8000_0000;
     write_register(&mut dut, REG_BOOT, boot_addr);
 
-    // After write, the system controller should have stored the boot address
+    // Pipeline delay: need one cycle for wdata to be registered
+    clock_cycle!(dut);
+
+    // After pipeline delay, the system controller should have stored the boot address
     assert_eq!(
         dut.cpu_boot_addr, boot_addr,
-        "cpu_boot_addr should match written boot address"
+        "cpu_boot_addr should match written boot address after pipeline delay"
     );
 
     // After one more clock, should transition to S_IDLE (through S_CPU_BOOT)
@@ -223,7 +226,8 @@ fn test_system_controller_boot_requires_cpu_booting() {
 
     // Write boot address - should be ignored since cpu_booting is not high
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // FSM processes registered write (should ignore it)
 
     // Should still be in S_CPU_BOOT_WAIT with cpu_rst_n = 0
     assert_eq!(
@@ -249,10 +253,13 @@ fn test_system_controller_boot_addr_output() {
     let test_addr: u32 = 0xDEAD_BEEF;
     write_register(&mut dut, REG_BOOT, test_addr);
 
-    // cpu_boot_addr should reflect the written value
+    // Pipeline delay: need one cycle for wdata to be registered
+    clock_cycle!(dut);
+
+    // cpu_boot_addr should reflect the written value after pipeline delay
     assert_eq!(
         dut.cpu_boot_addr, test_addr,
-        "cpu_boot_addr should output the boot address"
+        "cpu_boot_addr should output the boot address after pipeline delay"
     );
 }
 
@@ -274,11 +281,13 @@ fn test_system_controller_system_reset() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
+    clock_cycle!(dut); // Pipeline delay for boot write
     clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
 
     // Now trigger a system reset
     write_register(&mut dut, REG_RESET, RESET_SYSTEM);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay for reset write
+    clock_cycle!(dut); // Process reset trigger -> S_SYS_RESET
 
     // sys_rst should be asserted
     assert_eq!(
@@ -320,6 +329,7 @@ fn test_system_controller_cpu_reset() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
+    clock_cycle!(dut); // Pipeline delay for boot write
     clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
 
     // Verify CPU is released
@@ -327,11 +337,10 @@ fn test_system_controller_cpu_reset() {
 
     // Trigger CPU reset
     write_register(&mut dut, REG_RESET, RESET_CPU);
-    // After write_register: cpu_reset_trigger is set
-    // Need one more clock cycle for S_IDLE -> S_CPU_RESET
-    clock_cycle!(dut);
-    // Now in S_CPU_RESET for one cycle, then -> S_CPU_BOOT_WAIT
-    clock_cycle!(dut);
+    // After write_register: cpu_reset_trigger is set (with pipeline delay)
+    clock_cycle!(dut); // Pipeline delay for reset write
+    clock_cycle!(dut); // S_IDLE -> S_CPU_RESET
+    clock_cycle!(dut); // S_CPU_RESET -> S_CPU_BOOT_WAIT
 
     // Now in S_CPU_BOOT_WAIT
     // cpu_rst_n should be 0 (CPU held in reset again)
@@ -345,7 +354,8 @@ fn test_system_controller_cpu_reset() {
     dut.eval();
     let new_boot_addr: u32 = 0x9000_0000;
     write_register(&mut dut, REG_BOOT, new_boot_addr);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay for boot write
+    clock_cycle!(dut); // FSM processes registered boot write
 
     assert_eq!(
         dut.cpu_boot_addr, new_boot_addr,
@@ -495,7 +505,8 @@ fn test_system_controller_reset_clears_state() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
 
     // Verify we're in S_IDLE
     assert_eq!(dut.cpu_rst_n, 1);
@@ -529,16 +540,15 @@ fn test_system_controller_cpu_reset_then_reboot() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
     assert_eq!(dut.cpu_rst_n, 1, "CPU should be released after first boot");
 
     // CPU reset
     write_register(&mut dut, REG_RESET, RESET_CPU);
-    // write_register does one clock cycle (trigger set)
-    // One more for S_IDLE -> S_CPU_RESET
-    clock_cycle!(dut);
-    // One more for S_CPU_RESET -> S_CPU_BOOT_WAIT
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay for reset write
+    clock_cycle!(dut); // S_IDLE -> S_CPU_RESET
+    clock_cycle!(dut); // S_CPU_RESET -> S_CPU_BOOT_WAIT
     assert_eq!(
         dut.cpu_rst_n, 0,
         "CPU should be held in reset after CPU reset"
@@ -548,7 +558,8 @@ fn test_system_controller_cpu_reset_then_reboot() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0xA000_0000);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // FSM processes registered boot write
 
     assert_eq!(
         dut.cpu_boot_addr, 0xA000_0000,
@@ -571,12 +582,14 @@ fn test_system_controller_invalid_reset_value_ignored() {
     dut.cpu_booting = 1;
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
     assert_eq!(dut.cpu_rst_n, 1, "CPU should be in S_IDLE");
 
     // Write invalid value to RESET register (neither 1 nor 2)
     write_register(&mut dut, REG_RESET, 0x42);
-    clock_cycle!(dut);
+    clock_cycle!(dut); // Pipeline delay
+    clock_cycle!(dut); // Process invalid reset (should do nothing)
 
     // Should still be in S_IDLE
     assert_eq!(

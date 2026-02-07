@@ -55,6 +55,9 @@ module system_controller (
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic        sys_reset_trigger;      // System reset request flag
     logic        cpu_reset_trigger;      // CPU reset request flag
+    logic        write_reset_pending;    // Pipeline register for write_reset
+    logic        write_boot_pending;     // Pipeline register for write_boot
+    logic [31:0] wdata_reg;              // Pipeline register for wdata
     
     // ========================================================================
     // System controller is single-cycle - always ready
@@ -81,18 +84,47 @@ module system_controller (
     end
     
     // ========================================================================
-    // Reset Trigger Flags - Set on write, cleared by FSM
+    // Pipeline Registers - Break long combinational path from ALU to reset logic
+    // ========================================================================
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            write_reset_pending <= 1'b0;
+            write_boot_pending  <= 1'b0;
+            wdata_reg           <= 32'h0;
+        end else begin
+            // Default: clear pending flags
+            write_reset_pending <= 1'b0;
+            write_boot_pending  <= 1'b0;
+            
+            // NOTE: write_reset and write_boot are mutually exclusive (different addresses)
+            // due to the address decode logic using a case statement.
+            // Only one can be asserted per cycle.
+            
+            // Capture write_reset intent and data (Cycle 1)
+            if (write_reset) begin
+                write_reset_pending <= 1'b1;
+                wdata_reg           <= wdata;
+            // Capture write_boot intent and data (Cycle 1)
+            end else if (write_boot) begin
+                write_boot_pending <= 1'b1;
+                wdata_reg          <= wdata;
+            end
+        end
+    end
+    
+    // ========================================================================
+    // Reset Trigger Flags - Process registered write data (Cycle 2)
     // ========================================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             sys_reset_trigger <= 1'b0;
             cpu_reset_trigger <= 1'b0;
         end else begin
-            // Set flags on write to RESET register
-            if (write_reset) begin
-                if (wdata == RESET_SYSTEM) begin
+            // Process registered write data on the next cycle
+            if (write_reset_pending) begin
+                if (wdata_reg == RESET_SYSTEM) begin
                     sys_reset_trigger <= 1'b1;
-                end else if (wdata == RESET_CPU) begin
+                end else if (wdata_reg == RESET_CPU) begin
                     cpu_reset_trigger <= 1'b1;
                 end
             end
@@ -108,15 +140,15 @@ module system_controller (
     end
     
     // ========================================================================
-    // Boot Address Register - Capture on write to BOOT in S_CPU_BOOT_WAIT
+    // Boot Address Register - Capture registered write data (Cycle 2)
     // ========================================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             boot_addr_reg <= 32'h00000000;
         end else begin
-            // Capture boot address when written in CPU_BOOT_WAIT state
-            if (state_reg == S_CPU_BOOT_WAIT && write_boot && cpu_booting) begin
-                boot_addr_reg <= wdata;
+            // Capture boot address when write_boot_pending is asserted in CPU_BOOT_WAIT state
+            if (state_reg == S_CPU_BOOT_WAIT && write_boot_pending && cpu_booting) begin
+                boot_addr_reg <= wdata_reg;
             end
         end
     end
@@ -130,8 +162,8 @@ module system_controller (
         end else begin
             case (state_reg)
                 S_CPU_BOOT_WAIT: begin
-                    // Wait for cpu_booting AND write to BOOT register
-                    if (cpu_booting && write_boot) begin
+                    // Wait for cpu_booting AND write_boot_pending (delayed by one cycle)
+                    if (cpu_booting && write_boot_pending) begin
                         state_reg <= S_CPU_BOOT;
                     end
                 end
