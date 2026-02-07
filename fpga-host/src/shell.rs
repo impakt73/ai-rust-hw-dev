@@ -7,7 +7,7 @@ use crate::elf_loader;
 use crate::serial::SerialConnection;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
-use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
+use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 
 /// Default baud rate for serial connections
@@ -755,13 +755,17 @@ mod tests {
         let result = ShellCommand::parse("boot 0x80000000");
         assert!(matches!(
             result,
-            Ok(ParseResult::Command(ShellCommand::Boot { address: Some(0x80000000) }))
+            Ok(ParseResult::Command(ShellCommand::Boot {
+                address: Some(0x80000000)
+            }))
         ));
 
         let result = ShellCommand::parse("boot 0x100");
         assert!(matches!(
             result,
-            Ok(ParseResult::Command(ShellCommand::Boot { address: Some(0x100) }))
+            Ok(ParseResult::Command(ShellCommand::Boot {
+                address: Some(0x100)
+            }))
         ));
     }
 

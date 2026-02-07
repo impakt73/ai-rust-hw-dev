@@ -255,25 +255,27 @@ impl SerialConnection {
         if let Some(ref pending) = self.pending_host_request {
             if pending.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
                 let timed_out_addr = pending.addr;
-                
+
                 // Drain serial port to remove buffered bytes
                 let mut drain_buffer = [0u8; 256];
                 while self.port.read(&mut drain_buffer).is_ok() {
                     // Continue draining until no more data
                 }
-                
+
                 // Clear rx/tx buffers
                 self.rx_buffer_len = 0;
                 self.tx_buffer_len = 0;
-                
+
                 // Clear pending request
                 self.pending_host_request = None;
-                
+
                 // Reset handler
                 self.handler.reset();
-                
+
                 // Return timeout event to be handled by main loop
-                return Ok(Some(BusEvent::HostRequestTimeout { addr: timed_out_addr }));
+                return Ok(Some(BusEvent::HostRequestTimeout {
+                    addr: timed_out_addr,
+                }));
             }
         }
 

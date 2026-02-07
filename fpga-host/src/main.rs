@@ -16,7 +16,7 @@ use app::App;
 use clap::Parser;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
-use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
+use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use serial::{BusEvent, SerialConnection};
 use std::io;
 use std::panic;
@@ -135,7 +135,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         // Poll serial connection if connected
         let mut should_disconnect = false;
         let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
-        
+
         if let Some(ref mut serial) = app.serial {
             // Get pending request info before polling (need to borrow immutably first)
             let pending_request = serial.pending_host_request().cloned();
@@ -153,8 +153,9 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             if let Some(pending_boot) = app.pending_boot.take() {
                                 // This is the STATUS register read response for boot command
                                 let status_val = *data;
-                                let req_addr = pending_request.as_ref().map(|r| r.addr).unwrap_or(0);
-                                
+                                let req_addr =
+                                    pending_request.as_ref().map(|r| r.addr).unwrap_or(0);
+
                                 // Verify this is the expected STATUS read
                                 if req_addr != pending_boot.expected_status_addr {
                                     // Mismatch - log error and don't write BOOT
@@ -186,7 +187,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                         width = width
                                     );
                                     app.add_log(log::Level::Info, msg);
-                                    
+
                                     // Verify cpu_booting bit (bit 0) is set
                                     if (status_val & SYSCTRL_STATUS_CPU_BOOTING) == 0 {
                                         app.add_log(
@@ -195,7 +196,8 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                         );
                                     } else {
                                         // Schedule the BOOT write to happen after we finish processing this event
-                                        pending_boot_request = Some((pending_boot.boot_addr, status_val));
+                                        pending_boot_request =
+                                            Some((pending_boot.boot_addr, status_val));
                                     }
                                 }
                             } else {
@@ -240,7 +242,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 }
             }
         }
-        
+
         // Handle pending boot request (after serial borrow has ended)
         if let Some((boot_addr, status_val)) = pending_boot_request {
             if let Some(ref mut serial) = app.serial {
@@ -248,9 +250,9 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 let request = host_bus_handler::BusRequest::write(
                     boot_reg_addr,
                     boot_addr,
-                    host_bus_handler::AccessSize::Word
+                    host_bus_handler::AccessSize::Word,
                 );
-                
+
                 match serial.send_host_request(request) {
                     Ok(()) => {
                         app.add_log(
@@ -264,7 +266,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                     Err(e) => {
                         app.add_log(
                             log::Level::Error,
-                            format!("Failed to send boot write request: {}", e)
+                            format!("Failed to send boot write request: {}", e),
                         );
                     }
                 }
