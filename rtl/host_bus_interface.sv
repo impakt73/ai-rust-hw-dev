@@ -57,7 +57,13 @@ module host_bus_interface (
     // Host RX Interface (from External Host)
     input  logic [7:0]  rx_data,
     input  logic        rx_valid,
-    output logic        rx_ready
+    output logic        rx_ready,
+
+    // Debug outputs
+    output logic        debug_host_resp_valid,
+    output logic        debug_host_bus_req_out,
+    output logic        debug_buf_req_valid_out,
+    output logic [4:0]  debug_fsm_state_out
 );
 
     // ============================================================
@@ -462,5 +468,11 @@ module host_bus_interface (
     assign host_bus_we    = buf_req_we;
     assign host_bus_size  = buf_req_size;
     assign host_bus_req   = buf_req_valid && !host_resp_valid;
+
+    // Debug outputs
+    assign debug_host_resp_valid = host_resp_valid;
+    assign debug_host_bus_req_out = host_bus_req;
+    assign debug_buf_req_valid_out = buf_req_valid;
+    assign debug_fsm_state_out = state;
 
 endmodule
