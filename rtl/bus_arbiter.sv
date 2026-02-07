@@ -4,7 +4,7 @@
 //
 // Features:
 // - Registered state for timing closure
-// - Hold grant until transaction completes (ready asserted)
+// - Grant follows request: master holds req throughout transaction
 // - No combinational loops
 // - Simple 3-state FSM: IDLE, CPU_GRANT, HOST_GRANT
 
@@ -76,29 +76,24 @@ module bus_arbiter (
             end
             
             ARB_CPU_GRANT: begin
-                if (bus_ready) begin
-                    // Transaction complete
-                    // Check if host is waiting (preempt for next transaction)
-                    if (host_req) begin
-                        next_state = ARB_HOST_GRANT;
-                    end else if (!cpu_req) begin
-                        next_state = ARB_IDLE;
-                    end
-                    // else stay in CPU_GRANT for consecutive CPU transactions
+                if (cpu_req) begin
+                    // CPU still has an active request, stay granted
+                    next_state = ARB_CPU_GRANT;
+                end else if (host_req) begin
+                    next_state = ARB_HOST_GRANT;
+                end else begin
+                    next_state = ARB_IDLE;
                 end
             end
             
             ARB_HOST_GRANT: begin
-                if (bus_ready) begin
-                    // Transaction complete
-                    if (host_req) begin
-                        // Host has more requests
-                        next_state = ARB_HOST_GRANT;
-                    end else if (cpu_req) begin
-                        next_state = ARB_CPU_GRANT;
-                    end else begin
-                        next_state = ARB_IDLE;
-                    end
+                if (host_req) begin
+                    // Host still has an active request, stay granted
+                    next_state = ARB_HOST_GRANT;
+                end else if (cpu_req) begin
+                    next_state = ARB_CPU_GRANT;
+                end else begin
+                    next_state = ARB_IDLE;
                 end
             end
             

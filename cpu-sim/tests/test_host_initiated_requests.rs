@@ -426,3 +426,128 @@ fn test_multiple_host_requests() {
         "Should have sent 3 host requests"
     );
 }
+
+/// Test that host bus interface works after CPU enters S_HALT.
+///
+/// The CPU executes an invalid instruction (0x00000000) which causes it to
+/// enter S_HALT. After the CPU halts, the host should be able to read the
+/// system controller's STATUS register (0x53000000) via a host-initiated
+/// bus request. The STATUS register bit 1 should indicate cpu_halted=1.
+///
+/// This test verifies that the host bus path remains functional even when
+/// the CPU is halted.
+#[test]
+fn test_host_bus_works_after_halt() {
+    init_test_logger();
+
+    // System controller STATUS register address
+    const SYSCTRL_STATUS: u32 = 0x5300_0000;
+
+    // Maximum number of instruction-complete callbacks to wait for a response.
+    // The host bus transaction takes ~12 clock cycles. In S_HALT, each
+    // step() call is 1 cycle, so we need at least ~20 callbacks.
+    // Use a generous limit to avoid flakiness.
+    const MAX_CALLBACKS: u32 = 40;
+
+    // Program: a single zero instruction (invalid compressed instruction)
+    // which will cause the CPU to halt.
+    let instructions: Vec<u32> = vec![0, 0, 0, 0];
+
+    const START_ADDR: u32 = 0x8000_0000;
+    let program_bytes: Vec<u8> = instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect();
+
+    // Track state across callbacks
+    let callback_count = std::sync::Arc::new(std::sync::Mutex::new(0u32));
+    let callback_count_clone = callback_count.clone();
+    let request_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
+    let request_sent_clone = request_sent.clone();
+    let response_received = std::sync::Arc::new(std::sync::Mutex::new(None::<u32>));
+    let response_received_clone = response_received.clone();
+
+    let result = run_program(
+        500, // enough cycles for halt + host bus transaction
+        false,
+        false,
+        Some(move |sim: &mut SimulatorView| {
+            let mut count = callback_count_clone.lock().unwrap();
+            *count += 1;
+
+            let mut sent = request_sent_clone.lock().unwrap();
+            let mut received = response_received_clone.lock().unwrap();
+
+            // Send host-initiated read of STATUS register after a few callbacks
+            // (wait a couple callbacks for the CPU to fully enter HALT)
+            if !*sent && *count >= 3 {
+                let request = BusRequest::read(SYSCTRL_STATUS, AccessSize::Word);
+                match sim.send_bus_request(request) {
+                    Ok(()) => {
+                        *sent = true;
+                    }
+                    Err(e) => {
+                        panic!("Failed to send bus request: {}", e);
+                    }
+                }
+            }
+
+            // Poll for response
+            if *sent && received.is_none() {
+                if let Some(response) = sim.receive_bus_response() {
+                    *received = Some(response.rdata);
+                }
+            }
+
+            // Check timeout
+            if *sent && received.is_none() && *count > MAX_CALLBACKS {
+                panic!(
+                    "Host bus response not received after {} callbacks. \
+                     The host bus interface appears to be hung while CPU is in S_HALT.",
+                    *count
+                );
+            }
+        }),
+        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None,
+        0,
+        |sim| {
+            sim.write_memory_region(START_ADDR, &program_bytes, true);
+            Ok(START_ADDR)
+        },
+        None::<fn(&SimulatorView, &SimulationResult)>,
+    );
+
+    // The test might fail with a HungStateError (from the simulator's hung detector,
+    // which detects stuck PC after 50 cycles) OR with our explicit panic if the
+    // response doesn't come back within MAX_CALLBACKS.
+    // Check what we got.
+    let received = response_received.lock().unwrap();
+    let count = callback_count.lock().unwrap();
+
+    if let Some(status) = *received {
+        // We got a response! Verify the STATUS register value.
+        // Bit 0 = cpu_booting (should be 0 since CPU has booted)
+        // Bit 1 = cpu_halted (should be 1 since CPU is in S_HALT)
+        let cpu_halted = (status >> 1) & 1;
+        assert_eq!(
+            cpu_halted, 1,
+            "STATUS register should show cpu_halted=1, got STATUS=0x{:08x}",
+            status
+        );
+        println!(
+            "✓ Host bus works after CPU halt: STATUS=0x{:08x} (cpu_halted=1) after {} callbacks",
+            status, *count
+        );
+    } else {
+        // Response was never received - this is the bug
+        let err_msg = result.err().unwrap_or_else(|| "No error".to_string());
+        panic!(
+            "Host bus response never received while CPU is in S_HALT. \
+             Request sent: {}, Callbacks: {}, Simulation result: {}",
+            *request_sent.lock().unwrap(),
+            *count,
+            err_msg
+        );
+    }
+}

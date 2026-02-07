@@ -227,22 +227,32 @@ fn test_arbiter_host_preempts_cpu() {
     respond_to_bus(&mut dut, 0, 0);
     clock_cycle!(dut);
 
-    // CPU transaction still active (Host waiting)
+    // CPU transaction still active (Host waiting, CPU still has grant because cpu_req=1)
     assert_eq!(dut.bus_addr, 0x4000, "CPU transaction still active");
 
-    // Complete CPU transaction (bus_ready HIGH)
-    // With host_req asserted, next_state will be HOST_GRANT
+    // Complete CPU transaction (bus_ready HIGH) — CPU sees cpu_ready=1
+    // CPU should then drop its request on the next cycle
     respond_to_bus(&mut dut, 0xBBBBBBBB, 1);
     clock_cycle!(dut);
 
-    // State transitioned to HOST_GRANT on this cycle
-    // CPU does NOT see ready=1 because grant switched to Host
+    // CPU still has grant this cycle (cpu_req was still 1 on previous edge)
+    // CPU sees cpu_ready=1 and completes its transaction
+    assert_eq!(
+        dut.cpu_ready, 1,
+        "cpu_ready should be HIGH (transaction completing)"
+    );
+
+    // CPU drops its request after seeing ready=1, host_req still asserted
+    // Arbiter will transition to HOST_GRANT on next clock edge
+    set_cpu_request(&mut dut, 0, 0, 0, 0, 0);
+    respond_to_bus(&mut dut, 0, 0);
+    clock_cycle!(dut);
+
+    // Host should have the bus now
     assert_eq!(
         dut.cpu_ready, 0,
         "cpu_ready should be LOW (grant switched to Host)"
     );
-
-    // Host should have the bus now (preemption)
     assert_eq!(
         dut.bus_addr, 0x6000,
         "bus_addr should match Host addr (preemption)"
