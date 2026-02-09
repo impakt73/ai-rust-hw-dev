@@ -286,7 +286,7 @@ fn test_read_halfword_outside_dram_range() {
             Ok(DRAM_BASE)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
-            // Read below DRAM range
+            // Read below DRAM range (unmapped address, not in any peripheral range)
             let value = sim.read_halfword(0x0100_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
@@ -330,7 +330,7 @@ fn test_read_word_outside_dram_range() {
             let value = sim.read_word(0x0000_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
-            // Read from Rust peripheral range (not DRAM)
+            // Read from unmapped address (not in any peripheral or DRAM range)
             let value = sim.read_word(0x0100_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
