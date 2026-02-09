@@ -14,9 +14,9 @@ fn init_test_logger() {
 /// Generate tohost termination sequence
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
+        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
         addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x1000_0000)
+        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x4000_0000)
         jal(0, 0),                  // Infinite loop (jump to self)
     ]
 }

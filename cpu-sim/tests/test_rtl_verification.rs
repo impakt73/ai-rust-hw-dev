@@ -21,13 +21,13 @@ fn init_test_logger() {
 /// This is required for multi-cycle CPU implementations to signal program completion.
 ///
 /// The sequence uses two registers:
-/// - addr_reg: holds the tohost address (0x1000_0000)
+/// - addr_reg: holds the tohost address (0x4000_0000)
 /// - value_reg: holds the success code (1)
 ///
 /// Returns: [LUI addr_reg, ADDI value_reg, SW, JAL (infinite loop)]
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
+        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
         addi(value_reg, 0, 1),      // Load success code (1)
         sw(addr_reg, value_reg, 0), // Store value to tohost address
         jal(0, 0),                  // Infinite loop (jump to self)
@@ -732,7 +732,7 @@ fn test_cpu_tohost_halt() {
         addi(1, 0, 10),
         addi(2, 1, 5),
         add(3, 1, 2),
-        lui(4, 0x10000000), // x4 = 0x10000000 (tohost address)
+        lui(4, 0x40000000), // x4 = 0x40000000 (tohost address)
         addi(5, 0, 1),      // x5 = 1 (exit code)
         sw(4, 5, 0),        // Store x5 to tohost address
         jal(0, 0),          // Infinite loop

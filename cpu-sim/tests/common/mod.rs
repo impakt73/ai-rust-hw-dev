@@ -23,7 +23,7 @@ pub fn create_test_program() -> Vec<u8> {
         sw(5, 1, 0),         // mem[x5] = x1
         lw(6, 5, 0),         // x6 = mem[x5]
         addi(10, 0, 42),     // x10 = 42
-        lui(11, 0x10000000), // x11 = 0x10000000 (tohost address)
+        lui(11, 0x40000000), // x11 = 0x40000000 (tohost address)
         sw(11, 10, 0),       // tohost = 42
         jal(0, 0),           // halt
     ];
@@ -45,7 +45,7 @@ pub fn create_trace_test_program() -> Vec<u8> {
         sw(0, 1, 0),         // mem[0] = x1
         lw(9, 0, 0),         // x9 = mem[0]
         addi(10, 0, 42),     // x10 = 42
-        lui(11, 0x10000000), // x11 = 0x10000000 (tohost address)
+        lui(11, 0x40000000), // x11 = 0x40000000 (tohost address)
         sw(11, 10, 0),       // tohost = 42
         jal(0, 0),           // halt
     ];
@@ -94,7 +94,7 @@ pub fn create_register_trace_program() -> Vec<u8> {
         add(30, 29, 1),      // x30 = 124
         // Success
         addi(30, 0, 42),     // x30 = 42
-        lui(31, 0x10000000), // x31 = 0x10000000 (tohost address)
+        lui(31, 0x40000000), // x31 = 0x40000000 (tohost address)
         sw(31, 30, 0),       // tohost = 42
         jal(0, 0),           // halt
     ];

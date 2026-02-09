@@ -6,9 +6,9 @@
 use core::ptr::{read_volatile, write_volatile};
 
 /// DMA device base address
-/// Note: This uses the same base as Video device (0x2000_0000)
+/// Note: This uses the same base as Video device (0x4000_1000)
 /// Programs using DMA should ensure it doesn't conflict with Video device usage
-pub const DMA_BASE: u32 = 0x2000_0000;
+pub const DMA_BASE: u32 = 0x4000_1000;
 
 /// DMA source address register offset
 pub const DMA_SRC_ADDR: u32 = DMA_BASE;

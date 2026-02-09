@@ -169,20 +169,19 @@ Before marking PR ready for review:
 
 ### Important Memory Addresses
 
-**Complete Memory Map:**
+**Complete Memory Map** (see `docs/memory-map.md` for the full reference):
 
 ```
 Address Range          | Device           | Type | Description
 -----------------------|------------------|------|----------------------------
-0x10000000-0x100000FF | SimControl       | Rust | Simulation control
-0x20000000-0x2000000F | Video            | Rust | Video frame buffer
-0x30000000-0x3000000F | Audio            | Rust | Audio buffer
-0x40000000-0x40000007 | FIFO             | Rust | Host communication FIFO
+0x40000000-0x400000FF | SimControl       | Rust | Simulation control
+0x40001000-0x4000100F | Video            | Rust | Video frame buffer
+0x40002000-0x4000200F | Audio            | Rust | Audio buffer
+0x40003000-0x40003007 | FIFO             | Rust | Host communication FIFO
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x51000000-0x5100000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
 0x52000000-0x520000FF | UART Controller  | RTL  | UART TX/RX with 8-byte FIFOs
-0x51000010-0x51FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
-0x52000100-0x5FFFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
+0x53000000-0x5300000F | System Controller| RTL  | CPU boot and reset control
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
 
@@ -206,7 +205,7 @@ Address Range          | Device           | Type | Description
 
 **RTL vs Rust Peripherals:**
 - **RTL peripherals** (0x50000000-0x5FFFFFFF): Handled by Verilator, synthesizable to FPGA
-- **Rust peripherals** (0x10000000-0x4FFFFFFF): Handled by SystemBus, simulation only
+- **Rust peripherals** (0x40000000-0x4FFFFFFF): Handled by SystemBus, simulation only
 
 **DRAM range:** 0x80000000 - 0xFFFFFFFF
 

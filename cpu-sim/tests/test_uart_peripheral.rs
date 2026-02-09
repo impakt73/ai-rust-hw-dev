@@ -31,7 +31,7 @@ fn init_test_logger() {
 /// Generate tohost success termination (writes 1 to tohost)
 fn tohost_success() -> Vec<u32> {
     vec![
-        lui(10, 0x10000000), // x10 = 0x10000000 (tohost address)
+        lui(10, 0x40000000), // x10 = 0x40000000 (tohost address)
         addi(9, 0, 1),       // x9 = 1 (success)
         sw(10, 9, 0),        // Write success to tohost
         jal(0, 0),           // Infinite loop
@@ -41,7 +41,7 @@ fn tohost_success() -> Vec<u32> {
 /// Generate tohost failure termination (writes 0 to tohost)
 fn tohost_failure() -> Vec<u32> {
     vec![
-        lui(10, 0x10000000), // x10 = 0x10000000 (tohost address)
+        lui(10, 0x40000000), // x10 = 0x40000000 (tohost address)
         addi(9, 0, 0),       // x9 = 0 (failure)
         sw(10, 9, 0),        // Write failure to tohost
         jal(0, 0),           // Infinite loop
@@ -221,7 +221,7 @@ fn test_uart_loopback_single_byte() {
         lw(11, 15, UART_RXDATA_OFFSET as i32), // x11 = RXDATA
         // Compare received byte (x11) with sent byte (x14)
         // If equal, write success (1) to tohost, else failure (0)
-        lui(10, 0x10000000), // x10 = tohost address
+        lui(10, 0x40000000), // x10 = tohost address
         bne(11, 14, 16),     // If received != sent, jump to failure (skip 4 instructions)
         // Success path
         addi(9, 0, 1), // x9 = 1 (success)
@@ -349,12 +349,12 @@ fn test_uart_rx_read_empty() {
         // If RXDATA is 0, report success; otherwise failure
         bne(13, 0, 12), // If x13 != 0, jump to failure (3 instructions)
         // Success: RXDATA returned 0
-        lui(10, 0x10000000),
+        lui(10, 0x40000000),
         addi(9, 0, 1),
         sw(10, 9, 0),
         jal(0, 12), // Jump over failure
         // Failure
-        lui(10, 0x10000000),
+        lui(10, 0x40000000),
         addi(9, 0, 0),
         sw(10, 9, 0),
         jal(0, 0), // Infinite loop
@@ -408,7 +408,7 @@ fn test_uart_loopback_pattern() {
     let instructions = vec![
         // Setup registers
         lui(15, UART_BASE),  // x15 = UART base
-        lui(10, 0x10000000), // x10 = tohost address
+        lui(10, 0x40000000), // x10 = tohost address
         // Test pattern 1: 0x00
         addi(14, 0, 0x00),                     // x14 = 0x00
         sw(15, 14, UART_TXDATA_OFFSET as i32), // Write to TXDATA
@@ -509,7 +509,7 @@ fn test_uart_loopback_multi_byte() {
 
     let mut instructions = vec![
         lui(15, UART_BASE),  // x15 = UART base
-        lui(10, 0x10000000), // x10 = tohost address
+        lui(10, 0x40000000), // x10 = tohost address
     ];
 
     // Send and verify 8 bytes (0x01 through 0x08)

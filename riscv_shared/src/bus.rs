@@ -1,18 +1,25 @@
 //! Bus device base addresses and memory range validation
 
+/// Rust Peripheral Address Space
+/// Base address for Rust peripherals (simulation-only peripherals handled by SystemBus)
+pub const RUST_PERIPH_BASE: u32 = 0x4000_0000;
+
+/// Limit address for Rust peripherals (exclusive)
+pub const RUST_PERIPH_LIMIT: u32 = 0x5000_0000;
+
 /// Base address for SimControl device (tohost register)
-pub const SIM_CONTROL_BASE: u32 = 0x1000_0000;
+pub const SIM_CONTROL_BASE: u32 = 0x4000_0000;
 
 /// Base address for Video device
 /// This is the recommended base address for external Video bus devices
-pub const VIDEO_BASE: u32 = 0x2000_0000;
+pub const VIDEO_BASE: u32 = 0x4000_1000;
 
 /// Base address for Audio device
 /// This is the recommended base address for external Audio bus devices
-pub const AUDIO_BASE: u32 = 0x3000_0000;
+pub const AUDIO_BASE: u32 = 0x4000_2000;
 
 /// Base address for FIFO device
-pub const FIFO_BASE: u32 = 0x4000_0000;
+pub const FIFO_BASE: u32 = 0x4000_3000;
 
 /// RTL Peripheral Address Space
 /// Base address for RTL peripherals (synthesizable peripherals in Verilog)

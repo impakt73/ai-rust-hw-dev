@@ -18,7 +18,7 @@ use riscv_core::instruction::*;
 fn create_termination_program(tohost_value: u32) -> Vec<u8> {
     let instructions = vec![
         addi(10, 0, tohost_value as i32), // x10 = value
-        lui(11, 0x10000000),              // x11 = tohost base
+        lui(11, 0x40000000),              // x11 = tohost base
         sw(11, 10, 0),                    // tohost = value
         jal(0, 0),                        // Infinite loop (halt)
     ];
@@ -157,7 +157,7 @@ fn test_write_memory_at_dram_start() {
 
     let instructions = vec![
         addi(10, 0, 42),     // x10 = 42
-        lui(11, 0x10000000), // x11 = 0x10000000 (tohost)
+        lui(11, 0x40000000), // x11 = 0x40000000 (tohost)
         sw(11, 10, 0),       // tohost = 42
         jal(0, 0),           // halt
     ];
@@ -287,7 +287,7 @@ fn test_read_halfword_outside_dram_range() {
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {
             // Read below DRAM range
-            let value = sim.read_halfword(0x1000_0000);
+            let value = sim.read_halfword(0x0100_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
             // Read spanning the end of DRAM (halfword at DRAM_END would span beyond)
@@ -330,8 +330,8 @@ fn test_read_word_outside_dram_range() {
             let value = sim.read_word(0x0000_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
-            // Read from FIFO range (not DRAM)
-            let value = sim.read_word(0x4000_0000);
+            // Read from Rust peripheral range (not DRAM)
+            let value = sim.read_word(0x0100_0000);
             assert_eq!(value, 0, "Out-of-bounds read should return 0");
 
             // Read spanning the end of DRAM

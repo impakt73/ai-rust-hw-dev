@@ -9,7 +9,7 @@ use core::ptr::write_volatile;
 use postcard::to_allocvec;
 
 /// MMIO addresses for FIFO communication
-const FIFO_DATA: u32 = 0x4000_0000;
+const FIFO_DATA: u32 = 0x4000_3000;
 
 /// Send a DebugPacket to the host via MMIO FIFO
 ///

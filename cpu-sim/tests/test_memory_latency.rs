@@ -16,12 +16,12 @@ fn test_zero_latency_default() {
     init_test_logger();
 
     // Load a simple program:
-    // lui x2, 0x10000000   - load tohost address
+    // lui x2, 0x40000000   - load tohost address
     // addi x1, x0, 42      - load value 42
-    // sw x1, 0(x2)         - write to tohost (0x10000000)
+    // sw x1, 0(x2)         - write to tohost (0x40000000)
     // jal x0, 0            - infinite loop
     let instructions: Vec<u32> = vec![
-        lui(2, 0x10000000), // lui x2, 0x10000000
+        lui(2, 0x40000000), // lui x2, 0x40000000
         addi(1, 0, 42),     // addi x1, x0, 42
         sw(2, 1, 0),        // sw x1, 0(x2)
         jal(0, 0),          // jal x0, 0
@@ -69,12 +69,12 @@ fn test_multi_cycle_memory_latency() {
     init_test_logger();
 
     // Load a simple program:
-    // lui x2, 0x10000000   - load tohost address
+    // lui x2, 0x40000000   - load tohost address
     // addi x1, x0, 42      - load value 42
     // sw x1, 0(x2)         - write to tohost
     // jal x0, 0            - infinite loop
     let instructions: Vec<u32> = vec![
-        lui(2, 0x10000000), // lui x2, 0x10000000
+        lui(2, 0x40000000), // lui x2, 0x40000000
         addi(1, 0, 42),     // addi x1, x0, 42
         sw(2, 1, 0),        // sw x1, 0(x2)
         jal(0, 0),          // jal x0, 0
@@ -128,15 +128,15 @@ fn test_load_store_with_latency() {
     // 2. addi x1, x0, 100    (x1 = 100)
     // 3. sw x1, 0(x4)        (store 100 to DRAM address)
     // 4. lw x2, 0(x4)        (load from DRAM into x2)
-    // 5. lui x3, 0x10000000  (load tohost address)
-    // 6. sw x2, 0(x3)        (write to tohost 0x10000000 to halt)
+    // 5. lui x3, 0x40000000  (load tohost address)
+    // 6. sw x2, 0(x3)        (write to tohost 0x40000000 to halt)
     // 7. jal x0, 0           (infinite loop)
     let instructions: Vec<u32> = vec![
         lui(4, 0x80000000), // lui x4, 0x80000000
         addi(1, 0, 100),    // addi x1, x0, 100
         sw(4, 1, 0),        // sw x1, 0(x4)
         lw(2, 4, 0),        // lw x2, 0(x4)
-        lui(3, 0x10000000), // lui x3, 0x10000000
+        lui(3, 0x40000000), // lui x3, 0x40000000
         sw(3, 2, 0),        // sw x2, 0(x3)
         jal(0, 0),          // jal x0, 0
     ];

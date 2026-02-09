@@ -17,7 +17,7 @@ fn init_test_logger() {
 /// Generate tohost termination sequence
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
+        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
         addi(value_reg, 0, 1),      // Load success code (1)
         sw(addr_reg, value_reg, 0), // Store value to tohost address
         jal(0, 0),                  // Infinite loop (jump to self)
@@ -49,7 +49,7 @@ fn test_host_initiated_basic_sync() {
         andi(14, 14, 0xFF), // mask to 8 bits
         beq(14, 0, -8),     // if x14 == 0, loop back to lw
         // Exit: Write tohost
-        lui(10, 0x10000000), // x10 = tohost address
+        lui(10, 0x40000000), // x10 = tohost address
         addi(11, 0, 1),      // x11 = 1 (success)
         sw(10, 11, 0),       // memory[tohost] = 1
         jal(0, 0),           // infinite loop
@@ -131,7 +131,7 @@ fn test_host_initiated_led_write() {
         // Setup addresses
         lui(15, LED_BASE),   // x15 = LED base address (0x50000000)
         lui(14, 0x80001000), // x14 = DRAM base for expected value
-        lui(9, 0x10000000),  // x9 = tohost address
+        lui(9, 0x40000000),  // x9 = tohost address
         // Wait for LED fence (non-zero value)
         lw(12, 15, 0),      // x12 = LED peripheral value
         andi(12, 12, 0xFF), // mask to 8 bits
@@ -361,7 +361,7 @@ fn test_multiple_host_requests() {
         andi(12, 12, 0xFF), // mask to 8 bits
         blt(12, 14, -8),    // if LED < 3, loop
         // Exit
-        lui(10, 0x10000000), // tohost address
+        lui(10, 0x40000000), // tohost address
         addi(11, 0, 1),
         sw(10, 11, 0),
         jal(0, 0),

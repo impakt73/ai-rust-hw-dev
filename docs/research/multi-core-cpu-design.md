@@ -25,16 +25,16 @@ The existing system consists of:
 - **Top Module (`top.sv`)**: Multi-cycle FSM with 12 states (IDLE, FETCH, DECODE, EXECUTE, MEM_ADDR, MEM_READ, MEM_WRITE, WRITEBACK, BRANCH, CSR, HALT, ATOMIC_RMW)
 - **Instruction Set**: RV32IMACF (118 instructions: Base + M/A/C/F extensions + Zicsr)
 - **Memory Interface**: Separate instruction and data ports with ready/valid handshaking for variable-latency memory
-- **Debug Infrastructure**: FIFO-based packet protocol at 0x40000000
+- **Debug Infrastructure**: FIFO-based packet protocol at 0x40003000
 
 **Rust Simulation Layer:**
 - **Verilator Integration**: Marlin-based RTL simulation with automatic compilation/caching
 - **SystemBus Architecture**: Memory-mapped device routing with pluggable `BusDevice` trait
   - DRAM: 0x80000000 - 0xFFFFFFFF
-  - FIFO: 0x40000000
-  - SimControl: 0x30000000
-  - Audio: 0x50000000
-  - Video: 0x60000000
+  - SimControl: 0x40000000
+  - Video: 0x40001000
+  - Audio: 0x40002000
+  - FIFO: 0x40003000
 - **Memory Model**: Sparse HashMap-based byte-addressable memory with configurable latency
 - **Verification**: 264 comprehensive tests across ALU, registers, decompression, and CPU execution
 

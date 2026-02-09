@@ -93,13 +93,13 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
             // Write a simple program that halts via SimControl
             // lui x15, 0x80000000  - Load upper immediate for DRAM base
             // addi x10, x0, 1      - Set exit code to 1 (success)
-            // lui x11, 0x10000000  - Load upper immediate for SimControl base
+            // lui x11, 0x40000000  - Load upper immediate for SimControl base
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
             let instructions: Vec<u32> = vec![
                 lui(15, 0x80000000), // lui x15, 0x80000000
                 addi(10, 0, 1),      // addi x10, x0, 1
-                lui(11, 0x10000000), // lui x11, 0x10000000
+                lui(11, 0x40000000), // lui x11, 0x40000000
                 sw(11, 10, 0),       // sw x10, 0(x11)
                 jal(0, 0),           // jal x0, 0
             ];
@@ -179,7 +179,7 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
             // nop (addi x0, x0, 0) - No operation
             // nop (addi x0, x0, 0) - No operation
             // addi x10, x0, 42     - Set exit code to 42
-            // lui x11, 0x10000000  - Load upper immediate for SimControl base
+            // lui x11, 0x40000000  - Load upper immediate for SimControl base
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
             let instructions: Vec<u32> = vec![
@@ -188,7 +188,7 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
                 addi(0, 0, 0),       // nop (addi x0, x0, 0)
                 addi(0, 0, 0),       // nop (addi x0, x0, 0)
                 addi(10, 0, 42),     // addi x10, x0, 42
-                lui(11, 0x10000000), // lui x11, 0x10000000
+                lui(11, 0x40000000), // lui x11, 0x40000000
                 sw(11, 10, 0),       // sw x10, 0(x11)
                 jal(0, 0),           // jal x0, 0
             ];
@@ -275,7 +275,7 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
             let instructions: Vec<u32> = vec![
                 lui(15, 0x80000000), // lui x15, 0x80000000
                 addi(10, 0, 1),      // addi x10, x0, 1
-                lui(11, 0x10000000), // lui x11, 0x10000000
+                lui(11, 0x40000000), // lui x11, 0x40000000
                 sw(11, 10, 0),       // sw x10, 0(x11)
                 jal(0, 0),           // jal x0, 0
             ];
