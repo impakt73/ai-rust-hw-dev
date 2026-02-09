@@ -1117,7 +1117,7 @@ fn test_hung_detection_catches_long_instruction() {
 
     // LUI x2, 0x80000 (load upper bits of DRAM base)
     // LW x1, 0x100(x2) - load word from address 0x80000100 into x1
-    let lui_instr = riscv_core::instruction::lui(2, 0x80000000);
+    let lui_instr = riscv_core::instruction::lui(2, DRAM_BASE);
     let load_instr = lw(1, 2, 0x100);
     let program_bytes: Vec<u8> = [lui_instr, load_instr]
         .iter()
@@ -1630,7 +1630,7 @@ fn test_global_max_cycles_safety_margin() {
 
     // Test 3: Memory latency test
     let instructions: Vec<u8> = vec![
-        0x37, 0x01, 0x00, 0x10, // lui x2, 0x10000
+        0x37, 0x01, 0x00, 0x40, // lui x2, 0x40000 (x2 = 0x40000000 = tohost address)
         0x93, 0x00, 0xa0, 0x02, // addi x1, x0, 42
         0x23, 0x20, 0x11, 0x00, // sw x1, 0(x2)
         0x6f, 0x00, 0x00, 0x00, // jal x0, 0

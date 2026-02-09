@@ -189,11 +189,14 @@ cargo run --package sim-view -- --max-cycles 100000 path/to/program.elf
 
 The simulator uses the following memory-mapped I/O addresses:
 
-- `0x1000_0000` - SimControl (tohost register) - Built-in
-- `0x2000_0000` - Video device (`VIDEO_BASE`)
-- `0x3000_0000` - Audio device (`AUDIO_BASE`)
-- `0x4000_0000` - FIFO device - Built-in
+- `0x4000_0000` - SimControl (tohost register) - Built-in
+- `0x4000_1000` - Video device (`VIDEO_BASE`)
+- `0x4000_2000` - Audio device (`AUDIO_BASE`)
+- `0x4000_3000` - FIFO device - Built-in
+- `0x5000_0000 - 0x5FFF_FFFF` - RTL peripherals (LED, Clock, UART, System Controller)
 - `0x8000_0000 - 0xFFFF_FFFF` - DRAM - Built-in
+
+For the full memory map, see [`docs/memory-map.md`](../docs/memory-map.md).
 
 Programs can write to the Video and Audio devices using these base addresses. 
 See the test programs in the `rust-test-program/` directory for examples.

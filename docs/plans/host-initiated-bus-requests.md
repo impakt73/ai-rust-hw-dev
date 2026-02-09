@@ -929,7 +929,7 @@ fn test_host_initiated_basic_sync() {
         andi(14, 14, 0xFF),              // mask to 8 bits
         beq(14, 0, -8),                  // if x14 == 0, loop back to lw
         // Exit: Write tohost
-        lui(10, 0x10000000),             // x10 = tohost address
+        lui(10, SIM_CONTROL_BASE),       // x10 = tohost address
         addi(11, 0, 1),                  // x11 = 1 (success)
         sw(10, 11, 0),                   // memory[tohost] = 1
         jal(0, 0),                       // infinite loop
@@ -1012,7 +1012,7 @@ fn test_host_initiated_led_write() {
         // Setup addresses
         lui(15, LED_BASE),                // x15 = LED base address (0x50000000)
         lui(14, 0x80001000),              // x14 = DRAM base for expected value
-        lui(9, 0x10000000),               // x9 = tohost address
+        lui(9, SIM_CONTROL_BASE),         // x9 = tohost address
         
         // Wait for LED fence (non-zero value)
         lw(12, 15, 0),                    // x12 = LED peripheral value

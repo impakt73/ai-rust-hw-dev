@@ -16,10 +16,10 @@ fn init_test_logger() {
 /// Generate tohost termination sequence
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x10000000),  // Load 0x10000000 into addr_reg
-        addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address
-        jal(0, 0),                  // Infinite loop (jump to self)
+        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
+        addi(value_reg, 0, 1),           // Load success code (1)
+        sw(addr_reg, value_reg, 0),      // Store value to tohost address
+        jal(0, 0),                       // Infinite loop (jump to self)
     ]
 }
 
@@ -43,9 +43,9 @@ fn test_led_basic_write_word() {
     // x15 = LED base address
     // x14 = value to write (0xAA)
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
-        addi(14, 0, 0xAA),   // Load value 0xAA
-        sw(15, 14, 0),       // Write to LED_OUT (offset 0)
+        lui(15, LED_BASE), // Load LED base address
+        addi(14, 0, 0xAA), // Load value 0xAA
+        sw(15, 14, 0),     // Write to LED_OUT (offset 0)
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -95,9 +95,9 @@ fn test_led_byte_access() {
 
     // Write 0x55 to LED_OUT register using byte access
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
-        addi(14, 0, 0x55),   // Load value 0x55
-        sb(15, 14, 0),       // Store byte to LED_OUT
+        lui(15, LED_BASE), // Load LED base address
+        addi(14, 0, 0x55), // Load value 0x55
+        sb(15, 14, 0),     // Store byte to LED_OUT
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -145,9 +145,9 @@ fn test_led_halfword_access() {
 
     // Write 0x00FF to LED_OUT register using halfword access
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
-        addi(14, 0, 0xFF),   // Load value 0xFF
-        sh(15, 14, 0),       // Store halfword to LED_OUT
+        lui(15, LED_BASE), // Load LED base address
+        addi(14, 0, 0xFF), // Load value 0xFF
+        sh(15, 14, 0),     // Store halfword to LED_OUT
     ];
     instructions.extend(tohost_termination(7, 8));
 
@@ -196,10 +196,10 @@ fn test_led_read_back() {
     // Write to LED, then read back to verify
     // This tests that LED_OUT is readable
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
-        addi(14, 0, 0xCC),   // Load value 0xCC
-        sw(15, 14, 0),       // Write to LED_OUT
-        lw(13, 15, 0),       // Read back from LED_OUT into x13
+        lui(15, LED_BASE), // Load LED base address
+        addi(14, 0, 0xCC), // Load value 0xCC
+        sw(15, 14, 0),     // Write to LED_OUT
+        lw(13, 15, 0),     // Read back from LED_OUT into x13
         // Verify the read value matches (checking lower 8 bits)
         andi(13, 13, 0xFF), // Mask to lower 8 bits
         addi(12, 0, 0xCC),  // Expected value
@@ -251,7 +251,7 @@ fn test_led_pattern_sequence() {
 
     // Write a sequence of different patterns to LED
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
+        lui(15, LED_BASE), // Load LED base address
         // Pattern 1: 0x00 (all off)
         addi(14, 0, 0x00),
         sw(15, 14, 0),
@@ -314,7 +314,7 @@ fn test_led_upper_bits_ignored() {
 
     // Write 0xFFFFFFAA to LED_OUT - upper 24 bits should be ignored
     let mut instructions = vec![
-        lui(15, 0x50000000), // Load LED base address
+        lui(15, LED_BASE),   // Load LED base address
         lui(14, 0xFFFFF000), // Load 0xFFFFF000
         ori(14, 14, 0xAA),   // OR with 0xAA -> 0xFFFFFFAA
         sw(15, 14, 0),       // Write to LED_OUT
