@@ -1117,7 +1117,7 @@ fn test_hung_detection_catches_long_instruction() {
 
     // LUI x2, 0x80000 (load upper bits of DRAM base)
     // LW x1, 0x100(x2) - load word from address 0x80000100 into x1
-    let lui_instr = riscv_core::instruction::lui(2, 0x80000000);
+    let lui_instr = riscv_core::instruction::lui(2, DRAM_BASE);
     let load_instr = lw(1, 2, 0x100);
     let program_bytes: Vec<u8> = [lui_instr, load_instr]
         .iter()

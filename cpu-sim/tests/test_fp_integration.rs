@@ -14,10 +14,10 @@ fn init_test_logger() {
 /// Generate tohost termination sequence
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
-        addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x4000_0000)
-        jal(0, 0),                  // Infinite loop (jump to self)
+        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
+        addi(value_reg, 0, 1),           // Load success code (1)
+        sw(addr_reg, value_reg, 0),      // Store value to tohost address (0x4000_0000)
+        jal(0, 0),                       // Infinite loop (jump to self)
     ]
 }
 
@@ -82,7 +82,7 @@ fn test_cpu_flw_fsw_basic() {
         flw(1, 1, 0),       // f1 = load FP value from memory
         fsw(1, 1, 4),       // Store f1 to memory[0x80001004]
         lw(3, 1, 4),        // x3 = load from memory[0x80001004]
-        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        lui(4, DRAM_BASE),  // x4 = 0x80000000 (base)
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
@@ -186,7 +186,7 @@ fn test_cpu_fadd_basic() {
         fadd_s(3, 1, 2),    // f3 = f1 + f2 = 3.0
         fsw(1, 3, 8),       // mem[x1+8] = f3
         lw(4, 1, 8),        // x4 = result
-        lui(5, 0x80000000), // x5 = 0x80000000 (base)
+        lui(5, DRAM_BASE),  // x5 = 0x80000000 (base)
         addi(5, 5, 0x100),  // x5 = 0x80000100
         sw(5, 4, 0),        // Store result to 0x80000100
     ];
@@ -227,7 +227,7 @@ fn test_cpu_fmul_basic() {
         fmul_s(3, 1, 2),    // f3 = f1 * f2 = 6.0
         fsw(1, 3, 8),       // mem[x1+8] = f3
         lw(4, 1, 8),        // x4 = result
-        lui(5, 0x80000000), // x5 = 0x80000000 (base)
+        lui(5, DRAM_BASE),  // x5 = 0x80000000 (base)
         addi(5, 5, 0x100),  // x5 = 0x80000100
         sw(5, 4, 0),        // Store result to 0x80000100
     ];
@@ -267,7 +267,7 @@ fn test_cpu_fcvt_s_w() {
         lui(2, 0x80001000), // x2 = 0x80001000
         fsw(2, 1, 0),       // mem[x2] = f1
         lw(3, 2, 0),        // x3 = result
-        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        lui(4, DRAM_BASE),  // x4 = 0x80000000 (base)
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
@@ -303,7 +303,7 @@ fn test_cpu_fcvt_w_s() {
         sw(1, 2, 0),        // mem[x1] = 42.0
         flw(1, 1, 0),       // f1 = 42.0
         fcvt_w_s(3, 1),     // x3 = (int)f1 = 42
-        lui(4, 0x80000000), // x4 = 0x80000000 (base)
+        lui(4, DRAM_BASE),  // x4 = 0x80000000 (base)
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
@@ -395,7 +395,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
         lui(1, 0x3F800000), // x1 = 0x3F800000 (1.0 in FP)
         fmv_w_x(1, 1),      // f1 = x1 (bitwise move)
         fmv_x_w(2, 1),      // x2 = f1 (bitwise move back)
-        lui(3, 0x80000000), // x3 = 0x80000000 (base)
+        lui(3, DRAM_BASE),  // x3 = 0x80000000 (base)
         addi(3, 3, 0x100),  // x3 = 0x80000100
         sw(3, 2, 0),        // Store result to 0x80000100
     ];

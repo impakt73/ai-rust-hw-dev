@@ -91,17 +91,17 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
             sim.register_device(0x7000_0000, device)?;
 
             // Write a simple program that halts via SimControl
-            // lui x15, 0x80000000  - Load upper immediate for DRAM base
+            // x15 = DRAM_BASE  - Load upper immediate for DRAM base
             // addi x10, x0, 1      - Set exit code to 1 (success)
-            // lui x11, 0x40000000  - Load upper immediate for SimControl base
+            // lui x11, SIM_CONTROL_BASE  - Load SimControl base address
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
             let instructions: Vec<u32> = vec![
-                lui(15, 0x80000000), // lui x15, 0x80000000
-                addi(10, 0, 1),      // addi x10, x0, 1
-                lui(11, 0x40000000), // lui x11, 0x40000000
-                sw(11, 10, 0),       // sw x10, 0(x11)
-                jal(0, 0),           // jal x0, 0
+                lui(15, DRAM_BASE),        // x15 = DRAM_BASE
+                addi(10, 0, 1),            // addi x10, x0, 1
+                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),             // sw x10, 0(x11)
+                jal(0, 0),                 // jal x0, 0
             ];
             let program_bytes: Vec<u8> = instructions
                 .iter()
@@ -174,23 +174,23 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
             sim.register_device(0x7000_0000, device)?;
 
             // Write a simple program with a few NOPs followed by halt
-            // lui x15, 0x80000000  - Load upper immediate for DRAM base
+            // x15 = DRAM_BASE  - Load upper immediate for DRAM base
             // nop (addi x0, x0, 0) - No operation
             // nop (addi x0, x0, 0) - No operation
             // nop (addi x0, x0, 0) - No operation
             // addi x10, x0, 42     - Set exit code to 42
-            // lui x11, 0x40000000  - Load upper immediate for SimControl base
+            // lui x11, SIM_CONTROL_BASE  - Load SimControl base address
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
             let instructions: Vec<u32> = vec![
-                lui(15, 0x80000000), // lui x15, 0x80000000
-                addi(0, 0, 0),       // nop (addi x0, x0, 0)
-                addi(0, 0, 0),       // nop (addi x0, x0, 0)
-                addi(0, 0, 0),       // nop (addi x0, x0, 0)
-                addi(10, 0, 42),     // addi x10, x0, 42
-                lui(11, 0x40000000), // lui x11, 0x40000000
-                sw(11, 10, 0),       // sw x10, 0(x11)
-                jal(0, 0),           // jal x0, 0
+                lui(15, DRAM_BASE),        // x15 = DRAM_BASE
+                addi(0, 0, 0),             // nop (addi x0, x0, 0)
+                addi(0, 0, 0),             // nop (addi x0, x0, 0)
+                addi(0, 0, 0),             // nop (addi x0, x0, 0)
+                addi(10, 0, 42),           // addi x10, x0, 42
+                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),             // sw x10, 0(x11)
+                jal(0, 0),                 // jal x0, 0
             ];
             let program_bytes: Vec<u8> = instructions
                 .iter()
@@ -273,11 +273,11 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
 
             // Write a simple halt program
             let instructions: Vec<u32> = vec![
-                lui(15, 0x80000000), // lui x15, 0x80000000
-                addi(10, 0, 1),      // addi x10, x0, 1
-                lui(11, 0x40000000), // lui x11, 0x40000000
-                sw(11, 10, 0),       // sw x10, 0(x11)
-                jal(0, 0),           // jal x0, 0
+                lui(15, DRAM_BASE),        // x15 = DRAM_BASE
+                addi(10, 0, 1),            // addi x10, x0, 1
+                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),             // sw x10, 0(x11)
+                jal(0, 0),                 // jal x0, 0
             ];
             let program_bytes: Vec<u8> = instructions
                 .iter()

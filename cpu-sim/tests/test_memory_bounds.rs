@@ -18,7 +18,7 @@ use riscv_core::instruction::*;
 fn create_termination_program(tohost_value: u32) -> Vec<u8> {
     let instructions = vec![
         addi(10, 0, tohost_value as i32), // x10 = value
-        lui(11, 0x40000000),              // x11 = tohost base
+        lui(11, SIM_CONTROL_BASE),        // x11 = tohost base
         sw(11, 10, 0),                    // tohost = value
         jal(0, 0),                        // Infinite loop (halt)
     ];
@@ -156,10 +156,10 @@ fn test_write_memory_at_dram_start() {
         .ok();
 
     let instructions = vec![
-        addi(10, 0, 42),     // x10 = 42
-        lui(11, 0x40000000), // x11 = 0x40000000 (tohost)
-        sw(11, 10, 0),       // tohost = 42
-        jal(0, 0),           // halt
+        addi(10, 0, 42),           // x10 = 42
+        lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE (tohost)
+        sw(11, 10, 0),             // tohost = 42
+        jal(0, 0),                 // halt
     ];
     let program = common::instructions_to_bytes(&instructions);
 

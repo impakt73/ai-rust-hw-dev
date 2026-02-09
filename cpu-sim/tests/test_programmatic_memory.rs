@@ -12,14 +12,14 @@ fn test_programmatic_instruction_loading() {
     // Define a simple program:
     // Address 0x80000000:
     //   addi x10, x0, 42       ; x10 = 42
-    //   lui x11, 0x40000000    ; x11 = tohost address (0x40000000)
+    //   lui x11, SIM_CONTROL_BASE ; x11 = tohost address
     //   sw x10, 0(x11)         ; store to tohost (halt)
     //   jal x0, 0              ; infinite loop (stay here)
     let instructions: Vec<u32> = vec![
-        addi(10, 0, 42),     // addi x10, x0, 42
-        lui(11, 0x40000000), // lui x11, 0x40000000
-        sw(11, 10, 0),       // sw x10, 0(x11)
-        jal(0, 0),           // jal x0, 0
+        addi(10, 0, 42),           // addi x10, x0, 42
+        lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
+        sw(11, 10, 0),             // sw x10, 0(x11)
+        jal(0, 0),                 // jal x0, 0
     ];
     let program: Vec<u8> = instructions
         .iter()
@@ -48,7 +48,7 @@ fn test_programmatic_instruction_loading() {
             );
             println!("  Program size: {} bytes", program.len());
             println!("  Instruction 1: addi x10, x0, 42");
-            println!("  Instruction 2: lui x11, 0x40000000 ; load tohost address");
+            println!("  Instruction 2: lui x11, SIM_CONTROL_BASE ; load tohost address");
             println!("  Instruction 3: sw x10, 0(x11) ; store to tohost");
             println!("  Instruction 4: jal x0, 0 ; infinite loop");
 
@@ -152,10 +152,10 @@ fn test_write_memory_region_patterns() {
 
             // Return a simple program to satisfy the prep callback
             let instructions: Vec<u32> = vec![
-                addi(10, 0, 42),     // addi x10, x0, 42
-                lui(11, 0x40000000), // lui x11, 0x40000000
-                sw(11, 10, 0),       // sw x10, 0(x11)
-                jal(0, 0),           // jal x0, 0
+                addi(10, 0, 42),           // addi x10, x0, 42
+                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),             // sw x10, 0(x11)
+                jal(0, 0),                 // jal x0, 0
             ];
             let program: Vec<u8> = instructions
                 .iter()

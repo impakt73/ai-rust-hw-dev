@@ -21,16 +21,16 @@ fn init_test_logger() {
 /// This is required for multi-cycle CPU implementations to signal program completion.
 ///
 /// The sequence uses two registers:
-/// - addr_reg: holds the tohost address (0x4000_0000)
+/// - addr_reg: holds the tohost address (SIM_CONTROL_BASE)
 /// - value_reg: holds the success code (1)
 ///
 /// Returns: [LUI addr_reg, ADDI value_reg, SW, JAL (infinite loop)]
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
-        addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address
-        jal(0, 0),                  // Infinite loop (jump to self)
+        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
+        addi(value_reg, 0, 1),           // Load success code (1)
+        sw(addr_reg, value_reg, 0),      // Store value to tohost address
+        jal(0, 0),                       // Infinite loop (jump to self)
     ]
 }
 
@@ -231,7 +231,7 @@ fn test_cpu_branch_beq_bne() {
         bne(1, 4, 8),
         addi(5, 0, 99),
         addi(6, 0, 1),
-        lui(9, 0x80000000),
+        lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 5, 4),
     ];
@@ -289,7 +289,7 @@ fn test_cpu_branch_blt_bge() {
         bge(2, 1, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
-        lui(9, 0x80000000),
+        lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
@@ -341,7 +341,7 @@ fn test_cpu_branch_bltu_bgeu() {
         bgeu(1, 2, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
-        lui(9, 0x80000000),
+        lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
@@ -388,7 +388,7 @@ fn test_cpu_load_store() {
     // 0x14: SW   x2, 8(x1)    ; Store x2 to memory[0x80000008]
     // 0x18: LW   x5, 8(x1)    ; Load from memory[0x80000008] to x5
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, 42),
         sw(1, 2, 0),
         lw(3, 1, 0),
@@ -441,7 +441,7 @@ fn test_cpu_load_byte() {
     // 0x24: SW   x5, 0x18(x1)
     // 0x28: SW   x6, 0x1C(x1)
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, -1),
         sw(1, 2, 0),
         lb(3, 1, 0),
@@ -503,7 +503,7 @@ fn test_cpu_load_halfword() {
     // Program: Test LH (load halfword signed) and LHU (load halfword unsigned)
     // Memory base: 0x80000000
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, -1),
         sw(1, 2, 0),
         lh(3, 1, 0),
@@ -566,7 +566,7 @@ fn test_cpu_store_byte() {
     // We'll write individual bytes to different positions in a word
     // Memory base: 0x80000000
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, 0x12),
         addi(3, 0, 0x34),
         addi(4, 0, 0x56),
@@ -606,7 +606,7 @@ fn test_cpu_store_halfword() {
     // Program: Test SH (store halfword)
     // Memory base: 0x80000000
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, 0x234),
         addi(3, 0, 0x678),
         sh(1, 2, 0),
@@ -642,7 +642,7 @@ fn test_cpu_byte_halfword_mixed() {
     // Program: Test mixed byte/halfword operations with positive and negative values
     // Memory base: 0x80000000
     let mut instructions = vec![
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         addi(2, 0, -128),
         sb(1, 2, 0),
         lb(3, 1, 0),
@@ -732,10 +732,10 @@ fn test_cpu_tohost_halt() {
         addi(1, 0, 10),
         addi(2, 1, 5),
         add(3, 1, 2),
-        lui(4, 0x40000000), // x4 = 0x40000000 (tohost address)
-        addi(5, 0, 1),      // x5 = 1 (exit code)
-        sw(4, 5, 0),        // Store x5 to tohost address
-        jal(0, 0),          // Infinite loop
+        lui(4, SIM_CONTROL_BASE), // x4 = SIM_CONTROL_BASE (tohost address)
+        addi(5, 0, 1),            // x5 = 1 (exit code)
+        sw(4, 5, 0),              // Store x5 to tohost address
+        jal(0, 0),                // Infinite loop
     ];
 
     run_program_with_options(
@@ -855,7 +855,7 @@ fn test_cpu_csr_read_write() {
     let mut instructions = vec![
         addi(1, 0, 100),
         csrrw(2, 1, 0x300), // x2 = CSR[0x300]; CSR[0x300] = x1
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 2, 0),
         csrrw(3, 0, 0x300), // x3 = CSR[0x300]; CSR[0x300] = 0
         sw(8, 3, 4),
@@ -905,7 +905,7 @@ fn test_cpu_csr_set_clear() {
         csrrw(0, 1, 0x301),
         addi(2, 0, 0b0101),
         csrrs(3, 2, 0x301), // x3 = CSR; CSR |= x2
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
         addi(4, 0, 0b1000),
         csrrc(5, 4, 0x301), // x5 = CSR; CSR &= ~x4
@@ -953,7 +953,7 @@ fn test_cpu_csr_immediate() {
     // Memory base: 0x80000000
     let mut instructions = vec![
         csrrwi(1, 15, 0x302),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 1, 0),
         csrrsi(2, 8, 0x302),
         sw(8, 2, 4),
@@ -1010,7 +1010,7 @@ fn test_cpu_csr_instret() {
         addi(2, 0, 0),      // Instr #2: NOP equivalent (x2 = 0)
         addi(3, 0, 0),      // Instr #3: NOP equivalent (x3 = 0)
         csrrs(4, 0, 0xC02), // Instr #4: Read INSTRET (x4 = CSR[0xC02], no write)
-        lui(8, 0x80000000), // Instr #5: Load base address
+        lui(8, DRAM_BASE),  // Instr #5: Load base address
         sw(8, 4, 0),        // Instr #6: Store INSTRET value to memory
     ];
     instructions.extend(tohost_termination(7, 9)); // Instr #7-10: Termination sequence
@@ -1052,7 +1052,7 @@ fn test_cpu_mul_instruction() {
         addi(1, 0, 10),
         addi(2, 0, 20),
         mul(3, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1080,7 +1080,7 @@ fn test_cpu_mulh_instruction() {
         lui(1, 0x10000),
         lui(2, 0x10000),
         mulh(3, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1112,7 +1112,7 @@ fn test_cpu_div_instruction() {
         addi(1, 0, 100),
         addi(2, 0, 7),
         div(3, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1140,7 +1140,7 @@ fn test_cpu_div_by_zero() {
         addi(1, 0, 100),
         addi(2, 0, 0),
         div(3, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1172,7 +1172,7 @@ fn test_cpu_rem_instruction() {
         addi(1, 0, 100),
         addi(2, 0, 7),
         rem(3, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1201,7 +1201,7 @@ fn test_cpu_divu_remu_unsigned() {
         addi(2, 0, 2),
         divu(3, 1, 2),
         remu(4, 1, 2),
-        lui(8, 0x80000000),
+        lui(8, DRAM_BASE),
         sw(8, 3, 0),
         sw(8, 4, 4),
     ];
@@ -1248,7 +1248,7 @@ fn test_cpu_m_extension_program() {
         div(7, 6, 3),
         rem(8, 4, 5),
         add(9, 7, 8),
-        lui(10, 0x80000000),
+        lui(10, DRAM_BASE),
         sw(10, 9, 0),
     ];
     instructions.extend(tohost_termination(7, 8));
@@ -1309,7 +1309,7 @@ fn test_comprehensive_trace_validation() {
         sll(8, 1, 0),        // x8 = x1 << 0 = 10
         srl(9, 2, 0),        // x9 = x2 >> 0 = 20
         lui(10, 0x12345000), // x10 = 0x12345000
-        lui(11, 0x80000000), // x11 = 0x80000000 (base address)
+        lui(11, DRAM_BASE),  // x11 = 0x80000000 (base address)
         sw(11, 1, 0),        // mem[0x80000000] = x1 = 10
         lw(11, 11, 0),       // x11 = mem[0x80000000] = 10
     ];
@@ -1734,7 +1734,7 @@ fn test_cpu_lr_sc_success() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 100
@@ -1784,7 +1784,7 @@ fn test_cpu_amoswap() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 42
@@ -1830,7 +1830,7 @@ fn test_cpu_amoadd() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, initial_value as i32),
         sw(1, 2, 0), // mem[x1] = 10
@@ -1871,7 +1871,7 @@ fn test_cpu_amo_logical() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Test AMOXOR: mem = 0xFF, xor with 0x0F -> mem = 0xF0
         addi(2, 0, 0xFF),
         sw(1, 2, 0), // mem[x1] = 0xFF
@@ -1916,7 +1916,7 @@ fn test_cpu_amo_min_max() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Test AMOMIN: mem = 20, min with 15 -> mem = 15
         addi(2, 0, 20),
         sw(1, 2, 0), // mem[x1] = 20
@@ -1958,7 +1958,7 @@ fn test_cpu_amo_unsigned_min_max() {
 
     let mut instructions = vec![
         // Setup: x1 = 0x80000000 (memory address)
-        lui(1, 0x80000000),
+        lui(1, DRAM_BASE),
         // Test AMOMINU: mem = 100, minu with 50 -> mem = 50
         addi(2, 0, 100),
         sw(1, 2, 0), // mem[x1] = 100

@@ -15,10 +15,10 @@ fn init_test_logger() {
 /// Generate tohost termination sequence using standard (32-bit) instructions
 fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
     vec![
-        lui(addr_reg, 0x40000000),  // Load 0x40000000 into addr_reg
-        addi(value_reg, 0, 1),      // Load success code (1)
-        sw(addr_reg, value_reg, 0), // Store value to tohost address (0x4000_0000)
-        jal(0, 0),                  // Infinite loop (jump to self)
+        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
+        addi(value_reg, 0, 1),           // Load success code (1)
+        sw(addr_reg, value_reg, 0),      // Store value to tohost address (0x4000_0000)
+        jal(0, 0),                       // Infinite loop (jump to self)
     ]
 }
 
@@ -59,7 +59,7 @@ fn test_c_li() {
 
             // Write result to memory
             let mut offset = 2;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -107,7 +107,7 @@ fn test_c_addi() {
 
             // Write result to memory
             let mut offset = 4;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -156,7 +156,7 @@ fn test_c_add() {
 
             // Write result to memory
             let mut offset = 6;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -204,7 +204,7 @@ fn test_c_mv() {
 
             // Write result to memory
             let mut offset = 6;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -261,7 +261,7 @@ fn test_compressed_to_compressed_transition() {
 
             // Write result to memory
             let mut offset = 8;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -310,7 +310,7 @@ fn test_compressed_to_uncompressed_transition() {
 
             // Write result to memory
             let mut offset = 6; // 2 bytes (C.LI) + 4 bytes (ADDI)
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -359,7 +359,7 @@ fn test_uncompressed_to_compressed_transition() {
 
             // Write result to memory
             let mut offset = 6; // 4 bytes (ADDI) + 2 bytes (C.ADDI)
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
@@ -410,7 +410,7 @@ fn test_uncompressed_to_uncompressed_regression() {
             offset += 4;
 
             // Write results to memory
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 12, 0x100));
             offset += 4;
@@ -466,7 +466,7 @@ fn test_mixed_sequence_across_word_boundary() {
 
             // Write result to memory
             let mut offset = 10;
-            write_standard_instruction(sim, START_ADDR + offset, lui(15, 0x80000000));
+            write_standard_instruction(sim, START_ADDR + offset, lui(15, DRAM_BASE));
             offset += 4;
             write_standard_instruction(sim, START_ADDR + offset, sw(15, 10, 0x100));
             offset += 4;
