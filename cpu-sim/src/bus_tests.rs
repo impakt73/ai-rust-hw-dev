@@ -172,9 +172,9 @@ fn test_device_registration_overlap_error() {
 fn test_device_registration_fifo_range_protected() {
     let mut bus = SystemBus::new();
 
-    // Try to register device in FIFO range (0x4000_3000 - 0x4000_3008)
+    // Try to register device in FIFO range (FIFO_BASE - FIFO_BASE+8)
     let dev = Box::new(MockDevice::new(8, "TestDevice"));
-    let result = bus.register_device(0x4000_3000, dev);
+    let result = bus.register_device(FIFO_BASE, dev);
 
     assert!(matches!(
         result,
@@ -190,9 +190,9 @@ fn test_device_registration_fifo_range_protected() {
 fn test_device_registration_sim_control_range_protected() {
     let mut bus = SystemBus::new();
 
-    // Try to register device in SimControl range (0x4000_0000 - 0x4000_0004)
+    // Try to register device in SimControl range (SIM_CONTROL_BASE - SIM_CONTROL_BASE+4)
     let dev = Box::new(MockDevice::new(4, "TestDevice"));
-    let result = bus.register_device(0x4000_0000, dev);
+    let result = bus.register_device(SIM_CONTROL_BASE, dev);
 
     assert!(matches!(
         result,

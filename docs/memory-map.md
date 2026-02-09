@@ -2,18 +2,19 @@
 
 This document is the **source of truth** for all memory-mapped addresses used in the project.
 
-All address constants are defined in [`riscv_shared/src/bus.rs`](../riscv_shared/src/bus.rs).
+The canonical definitions of memory-map ranges and base addresses live in [`riscv_shared/src/bus.rs`](../riscv_shared/src/bus.rs); individual peripherals may define additional address and register constants in their own modules (for example, `riscv_shared/src/dma.rs`, `riscv_shared/src/sim_control.rs`, and `riscv_shared/src/fifo.rs`).
 
 ## Address Map Overview
 
 ```
 Address Range            | Device              | Type | Description
 -------------------------|---------------------|------|----------------------------
-0x40000000 - 0x400000FF  | SimControl          | Rust | Simulation control (tohost)
+0x40000000 - 0x40000003  | SimControl          | Rust | Simulation control (tohost)
 0x40001000 - 0x4000100F  | Video               | Rust | Video frame buffer
 0x40002000 - 0x4000200F  | Audio               | Rust | Audio buffer
 0x40003000 - 0x40003007  | FIFO                | Rust | Host communication FIFO
-0x40004000 - 0x4FFFFFFF  | Reserved (Rust)     | Rust | Reserved for future Rust peripherals
+0x40004000 - 0x40004013  | DMA                 | Rust | DMA controller
+0x40005000 - 0x4FFFFFFF  | Reserved (Rust)     | Rust | Reserved for future Rust peripherals
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
 0x51000000 - 0x5100000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
 0x52000000 - 0x520000FF  | UART Controller     | RTL  | UART TX/RX with 8-byte FIFOs
@@ -46,9 +47,9 @@ termination to the simulator.
 
 **Usage:**
 ```rust
-lui(reg, 0x40000000);  // Load SimControl base address
-addi(val, 0, 42);      // Load success code
-sw(reg, val, 0);       // Write to tohost → halts simulation
+lui(reg, SIM_CONTROL_BASE);  // Load SimControl base address
+addi(val, 0, 42);            // Load success code
+sw(reg, val, 0);             // Write to tohost → halts simulation
 ```
 
 ### Video (0x40001000)
@@ -87,6 +88,20 @@ The FIFO device provides bidirectional host communication using a packet protoco
 | 0x04   | FIFO_STATUS | RO     | Status: bit 0 = RX_VALID, bit 1 = TX_READY |
 
 **Constants:** `FIFO_BASE`, `FIFO_DATA`, `FIFO_STATUS`, `RX_VALID`, `TX_READY`
+
+### DMA (0x40004000)
+
+The DMA device provides hardware-accelerated memory-to-memory transfers.
+
+| Offset | Register     | Access | Description |
+|--------|--------------|--------|-------------|
+| 0x00   | DMA_SRC_ADDR | RW     | Source address |
+| 0x04   | DMA_DST_ADDR | RW     | Destination address |
+| 0x08   | DMA_SIZE     | RW     | Transfer size in bytes |
+| 0x0C   | DMA_STATUS   | RO     | Status: bit 0 = BUSY |
+| 0x10   | DMA_DISPATCH | WO     | Write 1 to trigger transfer |
+
+**Constants:** `DMA_BASE`, `DMA_SRC_ADDR`, `DMA_DST_ADDR`, `DMA_SIZE`, `DMA_STATUS`, `DMA_DISPATCH`
 
 ## RTL Peripherals (0x50000000 - 0x5FFFFFFF)
 

@@ -174,10 +174,11 @@ Before marking PR ready for review:
 ```
 Address Range          | Device           | Type | Description
 -----------------------|------------------|------|----------------------------
-0x40000000-0x400000FF | SimControl       | Rust | Simulation control
+0x40000000-0x40000003 | SimControl       | Rust | Simulation control
 0x40001000-0x4000100F | Video            | Rust | Video frame buffer
 0x40002000-0x4000200F | Audio            | Rust | Audio buffer
 0x40003000-0x40003007 | FIFO             | Rust | Host communication FIFO
+0x40004000-0x40004013 | DMA              | Rust | DMA controller
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x51000000-0x5100000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
 0x52000000-0x520000FF | UART Controller  | RTL  | UART TX/RX with 8-byte FIFOs

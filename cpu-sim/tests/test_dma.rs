@@ -8,8 +8,8 @@ fn test_dma_copy() {
     let elf_path =
         sim_tests::test_program_path("test_dma_copy").expect("Failed to find test_dma_copy");
 
-    // DMA device base address (must match test program)
-    const DMA_BASE: u32 = 0x4000_1000;
+    // DMA device base address (from riscv_shared)
+    use riscv_shared::dma::DMA_BASE;
 
     // Track DMA activity via FIFO for debugging (optional)
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
@@ -22,7 +22,7 @@ fn test_dma_copy() {
 
     // Setup callback to register DMA device
     let setup_callback = |view: &mut SimulatorView| {
-        // Register DMA device at 0x4000_1000
+        // Register DMA device at DMA_BASE
         let dma = Box::new(Dma::new());
         view.register_device(DMA_BASE, dma)
             .expect("Failed to register DMA device");
