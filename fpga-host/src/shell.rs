@@ -98,11 +98,8 @@ pub enum ShellCommand {
     Status,
     /// Connect to a device
     Connect {
-        /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
-        device: String,
-        /// Baud rate (default: 115200)
-        #[arg(default_value_t = DEFAULT_BAUD_RATE)]
-        baud: u32,
+        #[command(subcommand)]
+        runtime: ConnectRuntime,
     },
     /// Close the current device connection
     Disconnect,
@@ -142,6 +139,19 @@ pub enum ShellCommand {
         /// Boot address (hex with 0x prefix or decimal). If not provided, use last ELF entry point
         #[arg(value_parser = parse_hex_or_decimal)]
         address: Option<u32>,
+    },
+}
+
+/// Supported runtime configuration for connect
+#[derive(Debug, Subcommand)]
+pub enum ConnectRuntime {
+    /// Connect to an FPGA over a serial link
+    Fpga {
+        /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
+        device: String,
+        /// Baud rate (default: 115200)
+        #[arg(default_value_t = DEFAULT_BAUD_RATE)]
+        baud: u32,
     },
 }
 
@@ -202,7 +212,9 @@ impl ShellCommand {
 
             ShellCommand::Status => execute_status(app),
 
-            ShellCommand::Connect { device, baud } => execute_connect(app, &device, baud),
+            ShellCommand::Connect { runtime } => match runtime {
+                ConnectRuntime::Fpga { device, baud } => execute_connect(app, &device, baud),
+            },
 
             ShellCommand::Disconnect => execute_disconnect(app),
 
@@ -237,7 +249,7 @@ fn execute_status(app: &App) -> CommandResult {
             status.push_str("\nPending host request: YES");
         }
     } else {
-        status.push_str("Not connected. Use 'connect <device> [baud]' to connect.");
+        status.push_str("Not connected. Use 'connect fpga <device> [baud]' to connect.");
     }
 
     CommandResult::ok(status)
@@ -516,27 +528,32 @@ mod tests {
 
     #[test]
     fn test_parse_connect() {
-        let result = ShellCommand::parse("connect /dev/ttyUSB0");
+        let result = ShellCommand::parse("connect fpga /dev/ttyUSB0");
         assert!(matches!(
             result,
-            Ok(ParseResult::Command(ShellCommand::Connect { ref device, baud: 115200 })) if device == "/dev/ttyUSB0"
+            Ok(ParseResult::Command(ShellCommand::Connect {
+                runtime: ConnectRuntime::Fpga { ref device, baud: 115200 }
+            })) if device == "/dev/ttyUSB0"
         ));
 
-        let result = ShellCommand::parse("connect /dev/ttyUSB0 9600");
+        let result = ShellCommand::parse("connect fpga /dev/ttyUSB0 9600");
         assert!(matches!(
             result,
-            Ok(ParseResult::Command(ShellCommand::Connect { ref device, baud: 9600 })) if device == "/dev/ttyUSB0"
+            Ok(ParseResult::Command(ShellCommand::Connect {
+                runtime: ConnectRuntime::Fpga { ref device, baud: 9600 }
+            })) if device == "/dev/ttyUSB0"
         ));
     }
 
     #[test]
     fn test_parse_connect_missing_device() {
         assert!(ShellCommand::parse("connect").is_err());
+        assert!(ShellCommand::parse("connect fpga").is_err());
     }
 
     #[test]
     fn test_parse_connect_invalid_baud() {
-        assert!(ShellCommand::parse("connect /dev/ttyUSB0 abc").is_err());
+        assert!(ShellCommand::parse("connect fpga /dev/ttyUSB0 abc").is_err());
     }
 
     #[test]
