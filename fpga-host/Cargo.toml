@@ -10,10 +10,10 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
+device-runtime = { path = "../device-runtime" }
 elf = "0.7"
 host-bus-handler = { path = "../host-bus-handler" }
 log = "0.4"
-serialport = "4.6"
 riscv_shared = { path = "../riscv_shared" }
 shell-words = "1.1"
 

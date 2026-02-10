@@ -3,7 +3,7 @@
 //! This module contains the main application state and event handling logic.
 
 use crate::memory::SparseMemory;
-use crate::serial::{access_size_name, bytes_for_size, size_name, BusEvent, SerialConnection};
+use crate::serial::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
@@ -27,7 +27,7 @@ pub struct LogLine {
 /// Main application state
 pub struct App {
     /// Serial connection state
-    pub serial: Option<SerialConnection>,
+    pub serial: Option<Box<dyn DeviceRuntime>>,
     /// Sparse memory model for DRAM (shared with serial background thread when connected)
     pub memory: Arc<Mutex<SparseMemory>>,
     /// Command input buffer

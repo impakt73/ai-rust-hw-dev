@@ -17,7 +17,7 @@ use clap::Parser;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
 use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
-use serial::{BusEvent, SerialConnection};
+use serial::{BusEvent, FpgaDeviceRuntime};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
@@ -108,13 +108,13 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     // Handle CLI-provided serial connection
     if let Some(ref serial_path) = args.serial {
         let path_str = serial_path.to_string_lossy();
-        match SerialConnection::connect(&path_str, args.baud, Arc::clone(&app.memory)) {
-            Ok(serial) => {
+        match FpgaDeviceRuntime::connect(&path_str, args.baud, Arc::clone(&app.memory)) {
+            Ok(runtime) => {
                 app.add_log(
                     log::Level::Info,
                     format!("Connected to {} at {} baud", path_str, args.baud),
                 );
-                app.serial = Some(serial);
+                app.serial = Some(Box::new(runtime));
             }
             Err(e) => {
                 app.add_log(log::Level::Error, format!("Failed to connect: {}", e));

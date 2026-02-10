@@ -4,7 +4,7 @@
 
 use crate::app::App;
 use crate::elf_loader;
-use crate::serial::SerialConnection;
+use crate::serial::FpgaDeviceRuntime;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
 use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
@@ -251,9 +251,9 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match SerialConnection::connect(device, baud, Arc::clone(&app.memory)) {
-        Ok(serial) => {
-            app.serial = Some(serial);
+    match FpgaDeviceRuntime::connect(device, baud, Arc::clone(&app.memory)) {
+        Ok(runtime) => {
+            app.serial = Some(Box::new(runtime));
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
         }
         Err(e) => CommandResult::error(format!("Failed to connect: {}", e)),
