@@ -9,6 +9,7 @@ use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use host_bus_handler::{AccessSize, BusRequest};
 use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Default baud rate for serial connections
 const DEFAULT_BAUD_RATE: u32 = 115200;
@@ -250,7 +251,7 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match SerialConnection::connect(device, baud) {
+    match SerialConnection::connect(device, baud, Arc::clone(&app.memory)) {
         Ok(serial) => {
             app.serial = Some(serial);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
@@ -285,7 +286,7 @@ fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
     match elf_loader::load_elf(&mut new_memory, path) {
         Ok(entry_point) => {
             // Loading succeeded; commit the new memory and save entry point.
-            app.memory = new_memory;
+            *app.memory.lock().unwrap() = new_memory;
             app.last_entry_point = Some(entry_point);
             CommandResult::ok(format!(
                 "Loaded {} successfully\nEntry point: 0x{:08x}",

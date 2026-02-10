@@ -3,12 +3,19 @@
 //! This module provides the serial port abstraction and implements the
 //! host bus interface protocol for communicating with the FPGA using
 //! the host-bus-handler crate.
+//!
+//! The core I/O logic runs on a background thread inside [`DeviceRuntime`],
+//! while [`SerialConnection`] provides the public interface for sending
+//! host requests and receiving bus events.
 
 use crate::memory::SparseMemory;
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
 use std::io::{Read, Write};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// Size of the intermediate buffers for RX and TX
@@ -154,46 +161,422 @@ pub struct PendingHostRequest {
     pub sent_at: Instant,
 }
 
-/// Serial connection with bus protocol handling
+/// Internal message sent from the main thread to the background thread
+enum RuntimeCommand {
+    /// Send a host-initiated bus request
+    SendRequest(BusRequest),
+    /// Shut down the background thread
+    Shutdown,
+}
+
+/// Result of a poll iteration on the background thread, sent back to main thread
+enum RuntimeEvent {
+    /// A bus event was produced
+    Bus(BusEvent),
+    /// A fatal serial error occurred
+    FatalError(String),
+    /// A non-fatal serial error occurred
+    NonFatalError(String),
+}
+
+/// Background runtime that performs serial I/O on a dedicated thread.
+///
+/// All serial port interaction, protocol handling, and CPU-initiated request
+/// processing happen on the background thread. The main thread communicates
+/// via channels and shared state.
+struct DeviceRuntime {
+    /// Channel to send commands to the background thread
+    command_tx: mpsc::Sender<RuntimeCommand>,
+    /// Channel to receive events from the background thread
+    event_rx: mpsc::Receiver<RuntimeEvent>,
+    /// Shared pending host request state (for querying from main thread)
+    pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+    /// Handle to the background thread
+    thread_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl DeviceRuntime {
+    /// Create a new DeviceRuntime that runs the poll loop on a background thread.
+    fn new(port: Box<dyn SerialPort>, memory: Arc<Mutex<SparseMemory>>) -> Self {
+        let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
+        let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
+        let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
+            Arc::new(Mutex::new(None));
+        let pending_clone = Arc::clone(&pending_host_request);
+
+        let thread_handle = thread::spawn(move || {
+            Self::run_loop(port, memory, command_rx, event_tx, pending_clone);
+        });
+
+        DeviceRuntime {
+            command_tx,
+            event_rx,
+            pending_host_request,
+            thread_handle: Some(thread_handle),
+        }
+    }
+
+    /// Background thread main loop
+    fn run_loop(
+        mut port: Box<dyn SerialPort>,
+        memory: Arc<Mutex<SparseMemory>>,
+        command_rx: mpsc::Receiver<RuntimeCommand>,
+        event_tx: mpsc::Sender<RuntimeEvent>,
+        pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+    ) {
+        let mut handler = HostBusHandler::new();
+        let mut rx_buffer = [0u8; BUFFER_SIZE];
+        let mut rx_buffer_len: usize = 0;
+        let mut tx_buffer = [0u8; BUFFER_SIZE];
+        let mut tx_buffer_len: usize = 0;
+
+        loop {
+            // Check for commands from the main thread (non-blocking)
+            match command_rx.try_recv() {
+                Ok(RuntimeCommand::Shutdown) => break,
+                Ok(RuntimeCommand::SendRequest(request)) => {
+                    // pending_host_request is already set by the sender before
+                    // enqueuing this command, so we only need to forward to handler
+                    if let Err(e) = handler.send_request(request) {
+                        // Clear pending on failure
+                        {
+                            let mut pending = pending_host_request.lock().unwrap();
+                            *pending = None;
+                        }
+                        let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
+                            "Handler error: {:?}",
+                            e
+                        )));
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
+                Err(mpsc::TryRecvError::Disconnected) => break, // Main thread dropped sender
+            }
+
+            // Run one poll iteration
+            match Self::poll_once(
+                &mut port,
+                &memory,
+                &mut handler,
+                &mut rx_buffer,
+                &mut rx_buffer_len,
+                &mut tx_buffer,
+                &mut tx_buffer_len,
+                &pending_host_request,
+            ) {
+                Ok(Some(event)) => {
+                    if event_tx.send(RuntimeEvent::Bus(event)).is_err() {
+                        break; // Main thread dropped receiver
+                    }
+                }
+                Ok(None) => {
+                    // No event produced this iteration. The serial port read
+                    // timeout (set during connect) naturally paces the loop
+                    // when no data is available, so no explicit sleep is needed.
+                }
+                Err(e) => {
+                    let is_fatal = e.is_fatal();
+                    let msg = e.to_string();
+                    let runtime_event = if is_fatal {
+                        RuntimeEvent::FatalError(msg)
+                    } else {
+                        RuntimeEvent::NonFatalError(msg)
+                    };
+                    if event_tx.send(runtime_event).is_err() {
+                        break;
+                    }
+                    if is_fatal {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Single poll iteration (extracted from old SerialConnection::poll)
+    #[allow(clippy::too_many_arguments)]
+    fn poll_once(
+        port: &mut Box<dyn SerialPort>,
+        memory: &Arc<Mutex<SparseMemory>>,
+        handler: &mut HostBusHandler,
+        rx_buffer: &mut [u8; BUFFER_SIZE],
+        rx_buffer_len: &mut usize,
+        tx_buffer: &mut [u8; BUFFER_SIZE],
+        tx_buffer_len: &mut usize,
+        pending_host_request: &Arc<Mutex<Option<PendingHostRequest>>>,
+    ) -> Result<Option<BusEvent>, SerialError> {
+        // === Check for timeout on pending host requests ===
+        {
+            let mut pending = pending_host_request.lock().unwrap();
+            if let Some(ref p) = *pending {
+                if p.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
+                    let timed_out_addr = p.addr;
+
+                    // Drain serial port to remove buffered bytes
+                    let mut drain_buffer = [0u8; 256];
+                    while port.read(&mut drain_buffer).is_ok() {
+                        // Continue draining until no more data
+                    }
+
+                    // Clear rx/tx buffers
+                    *rx_buffer_len = 0;
+                    *tx_buffer_len = 0;
+
+                    // Clear pending request
+                    *pending = None;
+
+                    // Reset handler
+                    handler.reset();
+
+                    return Ok(Some(BusEvent::HostRequestTimeout {
+                        addr: timed_out_addr,
+                    }));
+                }
+            }
+        }
+
+        // === RX Path: Serial Port -> rx_buffer -> Handler ===
+        Self::fill_rx_buffer(port, rx_buffer, rx_buffer_len)?;
+        Self::drain_rx_buffer_to_handler(handler, rx_buffer, rx_buffer_len);
+
+        // === TX Path: Handler -> tx_buffer -> Serial Port ===
+        Self::fill_tx_buffer_from_handler(handler, tx_buffer, tx_buffer_len);
+        Self::drain_tx_buffer(port, tx_buffer, tx_buffer_len)?;
+
+        // === Check for completed transactions ===
+
+        // Check for a response to a host-initiated request
+        {
+            let mut pending = pending_host_request.lock().unwrap();
+            if pending.is_some() {
+                if let Some(response) = handler.receive_response() {
+                    *pending = None;
+                    let event = if response.we {
+                        BusEvent::HostWriteResponse {
+                            size: response.size,
+                        }
+                    } else {
+                        BusEvent::HostReadResponse {
+                            data: response.rdata,
+                            size: response.size,
+                        }
+                    };
+                    return Ok(Some(event));
+                }
+            }
+        }
+
+        // Check for incoming CPU-initiated requests from FPGA
+        if handler.has_incoming_request() {
+            if let Ok(request) = handler.accept_request() {
+                let event = Self::process_cpu_request(handler, &request, memory);
+                return Ok(Some(event));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Fill rx_buffer from serial port (only reads into remaining available space)
+    fn fill_rx_buffer(
+        port: &mut Box<dyn SerialPort>,
+        rx_buffer: &mut [u8; BUFFER_SIZE],
+        rx_buffer_len: &mut usize,
+    ) -> Result<(), SerialError> {
+        let available_space = BUFFER_SIZE - *rx_buffer_len;
+        if available_space == 0 {
+            return Ok(());
+        }
+
+        match port.read(&mut rx_buffer[*rx_buffer_len..]) {
+            Ok(n) => {
+                *rx_buffer_len += n;
+                Ok(())
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(SerialError::IoError(e)),
+        }
+    }
+
+    /// Transfer bytes from rx_buffer to handler until handler can't accept more
+    fn drain_rx_buffer_to_handler(
+        handler: &mut HostBusHandler,
+        rx_buffer: &mut [u8; BUFFER_SIZE],
+        rx_buffer_len: &mut usize,
+    ) {
+        let mut consumed = 0;
+        for byte in rx_buffer.iter().take(*rx_buffer_len) {
+            if !handler.can_accept_rx() {
+                break;
+            }
+            if let Err(e) = handler.transfer_rx_byte(*byte) {
+                log::warn!("Handler rejected byte: {:?}", e);
+                break;
+            }
+            consumed += 1;
+        }
+
+        if consumed > 0 && consumed < *rx_buffer_len {
+            rx_buffer.copy_within(consumed..*rx_buffer_len, 0);
+        }
+        *rx_buffer_len -= consumed;
+    }
+
+    /// Fill tx_buffer from handler until buffer is full or handler has no more data
+    fn fill_tx_buffer_from_handler(
+        handler: &mut HostBusHandler,
+        tx_buffer: &mut [u8; BUFFER_SIZE],
+        tx_buffer_len: &mut usize,
+    ) {
+        while *tx_buffer_len < BUFFER_SIZE {
+            if let Some(byte) = handler.transfer_tx_byte() {
+                tx_buffer[*tx_buffer_len] = byte;
+                *tx_buffer_len += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Drain tx_buffer to serial port, keeping any bytes that couldn't be written
+    fn drain_tx_buffer(
+        port: &mut Box<dyn SerialPort>,
+        tx_buffer: &mut [u8; BUFFER_SIZE],
+        tx_buffer_len: &mut usize,
+    ) -> Result<(), SerialError> {
+        if *tx_buffer_len == 0 {
+            return Ok(());
+        }
+
+        match port.write(&tx_buffer[..*tx_buffer_len]) {
+            Ok(n) => {
+                if n > 0 && n < *tx_buffer_len {
+                    tx_buffer.copy_within(n..*tx_buffer_len, 0);
+                }
+                *tx_buffer_len -= n;
+                Ok(())
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(SerialError::IoError(e)),
+        }
+    }
+
+    /// Process a CPU-initiated request and generate response
+    fn process_cpu_request(
+        handler: &mut HostBusHandler,
+        request: &host_bus_handler::BusRequest,
+        memory: &Arc<Mutex<SparseMemory>>,
+    ) -> BusEvent {
+        let size = request.size.to_size_code();
+        let is_dram = is_dram_address(request.addr);
+
+        let mut memory = memory.lock().unwrap();
+
+        if request.we {
+            if is_dram {
+                match request.size {
+                    AccessSize::Byte => memory.write_byte(request.addr, request.wdata as u8),
+                    AccessSize::Halfword => {
+                        memory.write_halfword(request.addr, request.wdata as u16)
+                    }
+                    AccessSize::Word => memory.write_word(request.addr, request.wdata),
+                }
+            }
+            let response = BusResponse::write_ack(request.size);
+            if let Err(e) = handler.complete_request(response) {
+                log::error!("Failed to complete write request: {:?}", e);
+            }
+
+            BusEvent::Write {
+                addr: request.addr,
+                size,
+                data: request.wdata,
+                is_dram,
+            }
+        } else {
+            let rdata = if is_dram {
+                match request.size {
+                    AccessSize::Byte => memory.read_byte(request.addr) as u32,
+                    AccessSize::Halfword => memory.read_halfword(request.addr) as u32,
+                    AccessSize::Word => memory.read_word(request.addr),
+                }
+            } else {
+                0
+            };
+
+            let response = BusResponse::read_data(rdata, request.size);
+            if let Err(e) = handler.complete_request(response) {
+                log::error!("Failed to complete read request: {:?}", e);
+            }
+
+            BusEvent::Read {
+                addr: request.addr,
+                size,
+                data: rdata,
+                is_dram,
+            }
+        }
+    }
+}
+
+impl Drop for DeviceRuntime {
+    fn drop(&mut self) {
+        // Signal the background thread to stop
+        let _ = self.command_tx.send(RuntimeCommand::Shutdown);
+        // Wait for the thread to finish
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Serial connection with bus protocol handling.
+///
+/// This is the public interface for communicating with the FPGA over serial.
+/// Internally, all serial I/O runs on a background thread managed by
+/// [`DeviceRuntime`]. Thread synchronization is handled internally; callers
+/// interact with this struct as if it were single-threaded.
 pub struct SerialConnection {
-    /// Underlying serial port
-    port: Box<dyn SerialPort>,
     /// Device path for status display
     device_path: String,
     /// Baud rate for status display
     baud_rate: u32,
-    /// Host bus handler from the crate
-    handler: HostBusHandler,
-    /// Pending host-initiated request (if any)
-    pending_host_request: Option<PendingHostRequest>,
-    /// Intermediate RX buffer for bytes read from serial but not yet consumed by handler
-    rx_buffer: [u8; BUFFER_SIZE],
-    /// Number of valid bytes in rx_buffer (starting from index 0)
-    rx_buffer_len: usize,
-    /// Intermediate TX buffer for bytes from handler not yet written to serial
-    tx_buffer: [u8; BUFFER_SIZE],
-    /// Number of valid bytes in tx_buffer (starting from index 0)
-    tx_buffer_len: usize,
+    /// Background runtime handling serial I/O
+    runtime: DeviceRuntime,
 }
 
 impl SerialConnection {
-    /// Create a new serial connection
-    pub fn connect(device: &str, baud: u32) -> Result<Self, SerialError> {
+    /// Create a new serial connection.
+    ///
+    /// Opens the serial port and launches a background thread to handle
+    /// serial I/O and protocol processing. The provided memory is shared
+    /// with the background thread for CPU-initiated request processing.
+    pub fn connect(
+        device: &str,
+        baud: u32,
+        memory: Arc<Mutex<SparseMemory>>,
+    ) -> Result<Self, SerialError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
             .map_err(SerialError::OpenFailed)?;
 
+        let runtime = DeviceRuntime::new(port, memory);
+
         Ok(SerialConnection {
-            port,
             device_path: device.to_string(),
             baud_rate: baud,
-            handler: HostBusHandler::new(),
-            pending_host_request: None,
-            rx_buffer: [0u8; BUFFER_SIZE],
-            rx_buffer_len: 0,
-            tx_buffer: [0u8; BUFFER_SIZE],
-            tx_buffer_len: 0,
+            runtime,
         })
     }
 
@@ -209,261 +592,76 @@ impl SerialConnection {
 
     /// Check if there is a pending host-initiated request
     pub fn has_pending_host_request(&self) -> bool {
-        self.pending_host_request.is_some()
+        self.runtime.pending_host_request.lock().unwrap().is_some()
     }
 
-    /// Get information about the pending host-initiated request
-    pub fn pending_host_request(&self) -> Option<&PendingHostRequest> {
-        self.pending_host_request.as_ref()
+    /// Get a clone of the pending host-initiated request information
+    pub fn pending_host_request(&self) -> Option<PendingHostRequest> {
+        self.runtime.pending_host_request.lock().unwrap().clone()
     }
 
     /// Send a host-initiated bus request
     ///
     /// Returns Ok(()) if the request was accepted, or Err if there's already
     /// a pending request or another error occurred.
+    ///
+    /// The pending host request flag is set under the lock before enqueuing the
+    /// command to the background thread, which prevents a race where multiple
+    /// requests could be sent before the background thread processes the first.
     pub fn send_host_request(&mut self, request: BusRequest) -> Result<(), SerialError> {
-        if self.pending_host_request.is_some() {
-            return Err(SerialError::HandlerError(
-                host_bus_handler::HandlerError::RequestPending,
-            ));
+        // Atomically check and set pending request under the same lock
+        {
+            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+            if pending.is_some() {
+                return Err(SerialError::HandlerError(
+                    host_bus_handler::HandlerError::RequestPending,
+                ));
+            }
+            *pending = Some(PendingHostRequest {
+                addr: request.addr,
+                wdata: request.wdata,
+                sent_at: Instant::now(),
+            });
         }
 
-        // Store info about the request for later logging
-        self.pending_host_request = Some(PendingHostRequest {
-            addr: request.addr,
-            wdata: request.wdata,
-            sent_at: Instant::now(),
-        });
+        // Enqueue the command; if the channel send fails, clear the pending flag
+        if let Err(e) = self
+            .runtime
+            .command_tx
+            .send(RuntimeCommand::SendRequest(request))
+        {
+            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+            *pending = None;
+            return Err(SerialError::IoError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                format!("Background thread disconnected: {}", e),
+            )));
+        }
 
-        self.handler.send_request(request)?;
         Ok(())
     }
 
-    /// Poll for and process bus requests (non-blocking)
+    /// Poll for bus events (non-blocking).
     ///
-    /// This function uses persistent intermediate buffers to avoid losing data:
-    /// - RX: Read from serial port into rx_buffer, then transfer to handler as it accepts bytes
-    /// - TX: Transfer from handler into tx_buffer, then write to serial port as it accepts bytes
-    ///
-    /// Any bytes that couldn't be processed persist in the buffers for the next poll call.
-    ///
-    /// Returns Ok(Some(event)) if a complete transaction was processed,
-    /// Ok(None) if no complete transaction was processed,
-    /// or Err if an error occurred.
-    pub fn poll(&mut self, memory: &mut SparseMemory) -> Result<Option<BusEvent>, SerialError> {
-        // === Check for timeout on pending host requests ===
-        if let Some(ref pending) = self.pending_host_request {
-            if pending.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
-                let timed_out_addr = pending.addr;
-
-                // Drain serial port to remove buffered bytes
-                let mut drain_buffer = [0u8; 256];
-                while self.port.read(&mut drain_buffer).is_ok() {
-                    // Continue draining until no more data
-                }
-
-                // Clear rx/tx buffers
-                self.rx_buffer_len = 0;
-                self.tx_buffer_len = 0;
-
-                // Clear pending request
-                self.pending_host_request = None;
-
-                // Reset handler
-                self.handler.reset();
-
-                // Return timeout event to be handled by main loop
-                return Ok(Some(BusEvent::HostRequestTimeout {
-                    addr: timed_out_addr,
-                }));
+    /// Returns the next available event from the background thread, or None
+    /// if no events are ready. Errors from the background thread are returned
+    /// as `SerialError`.
+    pub fn poll(&mut self) -> Result<Option<BusEvent>, SerialError> {
+        match self.runtime.event_rx.try_recv() {
+            Ok(RuntimeEvent::Bus(event)) => Ok(Some(event)),
+            Ok(RuntimeEvent::FatalError(msg)) => Err(SerialError::IoError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                msg,
+            ))),
+            Ok(RuntimeEvent::NonFatalError(msg)) => {
+                Err(SerialError::IoError(std::io::Error::other(msg)))
             }
-        }
-
-        // === RX Path: Serial Port -> rx_buffer -> Handler ===
-
-        // Step 1: Fill rx_buffer from serial port (only into remaining space)
-        self.fill_rx_buffer()?;
-
-        // Step 2: Transfer bytes from rx_buffer to handler
-        self.drain_rx_buffer_to_handler();
-
-        // === TX Path: Handler -> tx_buffer -> Serial Port ===
-
-        // Step 1: Fill tx_buffer from handler
-        self.fill_tx_buffer_from_handler();
-
-        // Step 2: Drain tx_buffer to serial port
-        self.drain_tx_buffer()?;
-
-        // === Check for completed transactions ===
-
-        // Check for a response to a host-initiated request
-        if self.pending_host_request.is_some() {
-            if let Some(response) = self.handler.receive_response() {
-                // Clear the pending request - we've received the response
-                self.pending_host_request.take();
-                let event = if response.we {
-                    BusEvent::HostWriteResponse {
-                        size: response.size,
-                    }
-                } else {
-                    BusEvent::HostReadResponse {
-                        data: response.rdata,
-                        size: response.size,
-                    }
-                };
-                return Ok(Some(event));
-            }
-        }
-
-        // Check for incoming CPU-initiated requests from FPGA
-        if self.handler.has_incoming_request() {
-            if let Ok(request) = self.handler.accept_request() {
-                // Process the request
-                let event = self.process_cpu_request(&request, memory);
-                return Ok(Some(event));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Fill rx_buffer from serial port (only reads into remaining available space)
-    fn fill_rx_buffer(&mut self) -> Result<(), SerialError> {
-        let available_space = BUFFER_SIZE - self.rx_buffer_len;
-        if available_space == 0 {
-            return Ok(()); // Buffer is full, cannot read more
-        }
-
-        // Read into the available space at the end of the buffer
-        match self.port.read(&mut self.rx_buffer[self.rx_buffer_len..]) {
-            Ok(n) => {
-                self.rx_buffer_len += n;
-                Ok(())
-            }
-            Err(e)
-                if e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock =>
-            {
-                Ok(()) // No data available, that's fine
-            }
-            Err(e) => Err(SerialError::IoError(e)),
-        }
-    }
-
-    /// Transfer bytes from rx_buffer to handler until handler can't accept more
-    fn drain_rx_buffer_to_handler(&mut self) {
-        let mut consumed = 0;
-        for i in 0..self.rx_buffer_len {
-            if !self.handler.can_accept_rx() {
-                break; // Handler is full, stop
-            }
-            if let Err(e) = self.handler.transfer_rx_byte(self.rx_buffer[i]) {
-                log::warn!("Handler rejected byte: {:?}", e);
-                break;
-            }
-            consumed += 1;
-        }
-
-        // Shift remaining bytes to the front of the buffer
-        if consumed > 0 && consumed < self.rx_buffer_len {
-            self.rx_buffer.copy_within(consumed..self.rx_buffer_len, 0);
-        }
-        self.rx_buffer_len -= consumed;
-    }
-
-    /// Fill tx_buffer from handler until buffer is full or handler has no more data
-    fn fill_tx_buffer_from_handler(&mut self) {
-        while self.tx_buffer_len < BUFFER_SIZE {
-            if let Some(byte) = self.handler.transfer_tx_byte() {
-                self.tx_buffer[self.tx_buffer_len] = byte;
-                self.tx_buffer_len += 1;
-            } else {
-                break; // No more data from handler
-            }
-        }
-    }
-
-    /// Drain tx_buffer to serial port, keeping any bytes that couldn't be written
-    fn drain_tx_buffer(&mut self) -> Result<(), SerialError> {
-        if self.tx_buffer_len == 0 {
-            return Ok(()); // Nothing to write
-        }
-
-        match self.port.write(&self.tx_buffer[..self.tx_buffer_len]) {
-            Ok(n) => {
-                // Shift remaining bytes to the front of the buffer
-                if n > 0 && n < self.tx_buffer_len {
-                    self.tx_buffer.copy_within(n..self.tx_buffer_len, 0);
-                }
-                self.tx_buffer_len -= n;
-                Ok(())
-            }
-            Err(e)
-                if e.kind() == std::io::ErrorKind::TimedOut
-                    || e.kind() == std::io::ErrorKind::WouldBlock =>
-            {
-                Ok(()) // Cannot write now, keep data for next poll
-            }
-            Err(e) => Err(SerialError::IoError(e)),
-        }
-    }
-
-    /// Process a CPU-initiated request and generate response
-    fn process_cpu_request(
-        &mut self,
-        request: &host_bus_handler::BusRequest,
-        memory: &mut SparseMemory,
-    ) -> BusEvent {
-        let size = request.size.to_size_code();
-        let is_dram = is_dram_address(request.addr);
-
-        if request.we {
-            // Write request
-            if is_dram {
-                match request.size {
-                    AccessSize::Byte => memory.write_byte(request.addr, request.wdata as u8),
-                    AccessSize::Halfword => {
-                        memory.write_halfword(request.addr, request.wdata as u16)
-                    }
-                    AccessSize::Word => memory.write_word(request.addr, request.wdata),
-                }
-            }
-            // Send write acknowledgment
-            let response = BusResponse::write_ack(request.size);
-            if let Err(e) = self.handler.complete_request(response) {
-                log::error!("Failed to complete write request: {:?}", e);
-            }
-
-            BusEvent::Write {
-                addr: request.addr,
-                size,
-                data: request.wdata,
-                is_dram,
-            }
-        } else {
-            // Read request
-            let rdata = if is_dram {
-                match request.size {
-                    AccessSize::Byte => memory.read_byte(request.addr) as u32,
-                    AccessSize::Halfword => memory.read_halfword(request.addr) as u32,
-                    AccessSize::Word => memory.read_word(request.addr),
-                }
-            } else {
-                0 // Non-DRAM reads return 0
-            };
-
-            // Send read response
-            let response = BusResponse::read_data(rdata, request.size);
-            if let Err(e) = self.handler.complete_request(response) {
-                log::error!("Failed to complete read request: {:?}", e);
-            }
-
-            BusEvent::Read {
-                addr: request.addr,
-                size,
-                data: rdata,
-                is_dram,
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(SerialError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Background thread terminated",
+                )))
             }
         }
     }
