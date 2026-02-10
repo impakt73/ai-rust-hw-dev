@@ -161,9 +161,6 @@ pub struct PendingHostRequest {
     pub sent_at: Instant,
 }
 
-/// Poll interval for the background thread when idle
-const POLL_INTERVAL: Duration = Duration::from_millis(1);
-
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
     /// Send a host-initiated bus request
@@ -238,15 +235,8 @@ impl DeviceRuntime {
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
-                    // Store pending request info
-                    {
-                        let mut pending = pending_host_request.lock().unwrap();
-                        *pending = Some(PendingHostRequest {
-                            addr: request.addr,
-                            wdata: request.wdata,
-                            sent_at: Instant::now(),
-                        });
-                    }
+                    // pending_host_request is already set by the sender before
+                    // enqueuing this command, so we only need to forward to handler
                     if let Err(e) = handler.send_request(request) {
                         // Clear pending on failure
                         {
@@ -280,8 +270,9 @@ impl DeviceRuntime {
                     }
                 }
                 Ok(None) => {
-                    // No event, sleep briefly to avoid busy-spinning
-                    thread::sleep(POLL_INTERVAL);
+                    // No event produced this iteration. The serial port read
+                    // timeout (set during connect) naturally paces the loop
+                    // when no data is available, so no explicit sleep is needed.
                 }
                 Err(e) => {
                     let is_fatal = e.is_fatal();
@@ -613,23 +604,41 @@ impl SerialConnection {
     ///
     /// Returns Ok(()) if the request was accepted, or Err if there's already
     /// a pending request or another error occurred.
+    ///
+    /// The pending host request flag is set under the lock before enqueuing the
+    /// command to the background thread, which prevents a race where multiple
+    /// requests could be sent before the background thread processes the first.
     pub fn send_host_request(&mut self, request: BusRequest) -> Result<(), SerialError> {
-        // Check for pending request on the main thread side
-        if self.has_pending_host_request() {
-            return Err(SerialError::HandlerError(
-                host_bus_handler::HandlerError::RequestPending,
-            ));
+        // Atomically check and set pending request under the same lock
+        {
+            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+            if pending.is_some() {
+                return Err(SerialError::HandlerError(
+                    host_bus_handler::HandlerError::RequestPending,
+                ));
+            }
+            *pending = Some(PendingHostRequest {
+                addr: request.addr,
+                wdata: request.wdata,
+                sent_at: Instant::now(),
+            });
         }
 
-        self.runtime
+        // Enqueue the command; if the channel send fails, clear the pending flag
+        if let Err(e) = self
+            .runtime
             .command_tx
             .send(RuntimeCommand::SendRequest(request))
-            .map_err(|_| {
-                SerialError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread disconnected",
-                ))
-            })
+        {
+            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+            *pending = None;
+            return Err(SerialError::IoError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                format!("Background thread disconnected: {}", e),
+            )));
+        }
+
+        Ok(())
     }
 
     /// Poll for bus events (non-blocking).
