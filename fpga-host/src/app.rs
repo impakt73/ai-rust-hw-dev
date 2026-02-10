@@ -3,11 +3,9 @@
 //! This module contains the main application state and event handling logic.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use device_runtime::memory::SparseMemory;
 use device_runtime::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 
 /// Maximum number of log lines to retain
 const MAX_LOG_LINES: usize = 1000;
@@ -28,8 +26,6 @@ pub struct LogLine {
 pub struct App {
     /// Device runtime connection state
     pub device_runtime: Option<Box<dyn DeviceRuntime>>,
-    /// Sparse memory model for DRAM (shared with device runtime background thread when connected)
-    pub memory: Arc<Mutex<SparseMemory>>,
     /// Command input buffer
     pub input_buffer: String,
     /// Command history for up/down navigation
@@ -67,7 +63,6 @@ impl App {
     pub fn new() -> Self {
         Self {
             device_runtime: None,
-            memory: Arc::new(Mutex::new(SparseMemory::new())),
             input_buffer: String::new(),
             command_history: VecDeque::with_capacity(MAX_HISTORY_ENTRIES),
             history_index: None,

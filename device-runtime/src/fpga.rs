@@ -14,6 +14,7 @@ use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -63,6 +64,8 @@ pub(crate) struct FpgaDeviceRuntime {
     event_rx: mpsc::Receiver<RuntimeEvent>,
     /// Shared pending host request state (for querying from main thread)
     pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+    /// Sparse memory model for DRAM (shared with background thread)
+    memory: Arc<Mutex<SparseMemory>>,
     /// Handle to the background thread
     thread_handle: Option<thread::JoinHandle<()>>,
 }
@@ -71,26 +74,25 @@ impl FpgaDeviceRuntime {
     /// Create a new FpgaDeviceRuntime connected to the specified serial port.
     ///
     /// Opens the serial port and launches a background thread to handle
-    /// serial I/O and protocol processing. The provided memory is shared
-    /// with the background thread for CPU-initiated request processing.
-    pub(crate) fn connect(
-        device: &str,
-        baud: u32,
-        memory: Arc<Mutex<SparseMemory>>,
-    ) -> Result<Self, DeviceError> {
+    /// serial I/O and protocol processing. The runtime owns its own sparse
+    /// memory for CPU-initiated request processing.
+    pub(crate) fn connect(device: &str, baud: u32) -> Result<Self, DeviceError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
             .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
+
+        let memory = Arc::new(Mutex::new(SparseMemory::new()));
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
+        let memory_clone = Arc::clone(&memory);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, memory, command_rx, event_tx, pending_clone);
+            Self::run_loop(port, memory_clone, command_rx, event_tx, pending_clone);
         });
 
         Ok(FpgaDeviceRuntime {
@@ -99,6 +101,7 @@ impl FpgaDeviceRuntime {
             command_tx,
             event_rx,
             pending_host_request,
+            memory,
             thread_handle: Some(thread_handle),
         })
     }
@@ -483,6 +486,57 @@ impl DeviceRuntime for FpgaDeviceRuntime {
 
     fn has_pending_host_request(&self) -> bool {
         self.pending_host_request.lock().unwrap().is_some()
+    }
+
+    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
+        let file_data = std::fs::read(path).map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
+        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
+            .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
+
+        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().unwrap_or(0);
+
+        let mut memory = self.memory.lock().unwrap();
+        // Clear existing memory contents before loading new ELF
+        *memory = SparseMemory::new();
+
+        if let Some(phdrs) = elf_file.segments() {
+            for phdr in phdrs.iter() {
+                if phdr.p_type == elf::abi::PT_LOAD {
+                    let vaddr = phdr.p_vaddr as u32;
+                    let file_size = phdr.p_filesz as usize;
+                    let offset = phdr.p_offset as usize;
+
+                    if file_size > 0 {
+                        let end = match offset.checked_add(file_size) {
+                            Some(end) if end <= file_data.len() => end,
+                            _ => {
+                                return Err(DeviceError::OpenFailed(Box::new(
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!(
+                                            "Segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
+                                            offset, file_size, file_data.len()
+                                        ),
+                                    ),
+                                )));
+                            }
+                        };
+
+                        let segment_data = &file_data[offset..end];
+                        for (i, &byte) in segment_data.iter().enumerate() {
+                            memory.write_byte(vaddr.wrapping_add(i as u32), byte);
+                        }
+                        log::info!(
+                            "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
+                            vaddr,
+                            file_size
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(entry_point)
     }
 }
 
