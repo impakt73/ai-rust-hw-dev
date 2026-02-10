@@ -2,9 +2,9 @@
 //!
 //! This module contains the main application state and event handling logic.
 
-use crate::serial::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use device_runtime::memory::SparseMemory;
+use device_runtime::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -26,9 +26,9 @@ pub struct LogLine {
 
 /// Main application state
 pub struct App {
-    /// Serial connection state
-    pub serial: Option<Box<dyn DeviceRuntime>>,
-    /// Sparse memory model for DRAM (shared with serial background thread when connected)
+    /// Device runtime connection state
+    pub device_runtime: Option<Box<dyn DeviceRuntime>>,
+    /// Sparse memory model for DRAM (shared with device runtime background thread when connected)
     pub memory: Arc<Mutex<SparseMemory>>,
     /// Command input buffer
     pub input_buffer: String,
@@ -66,7 +66,7 @@ impl App {
     /// Create a new application instance
     pub fn new() -> Self {
         Self {
-            serial: None,
+            device_runtime: None,
             memory: Arc::new(Mutex::new(SparseMemory::new())),
             input_buffer: String::new(),
             command_history: VecDeque::with_capacity(MAX_HISTORY_ENTRIES),
@@ -86,9 +86,9 @@ impl App {
         self.verbose = verbose;
     }
 
-    /// Check if a serial connection is active
+    /// Check if a device runtime connection is active
     pub fn is_connected(&self) -> bool {
-        self.serial.is_some()
+        self.device_runtime.is_some()
     }
 
     /// Handle a keyboard event

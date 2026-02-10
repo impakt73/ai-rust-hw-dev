@@ -1,22 +1,20 @@
 //! FPGA Host Interface
 //!
 //! This binary provides a host interface for communicating with a RISC-V CPU
-//! running on an FPGA over a serial connection. It features an interactive
-//! TUI with a scrolling log view, command shell, and dynamic serial port
-//! connection management.
+//! via a device runtime. It features an interactive TUI with a scrolling log
+//! view, command shell, and dynamic device connection management.
 
 mod app;
 mod elf_loader;
-mod serial;
 mod shell;
 mod ui;
 
 use app::App;
 use clap::Parser;
 use crossterm::event::{self, Event};
+use device_runtime::{access_size_name, create_device_runtime, BusEvent, DeviceRuntimeType};
 use ratatui::DefaultTerminal;
 use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
-use serial::{create_device_runtime, BusEvent, DeviceRuntimeType};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
@@ -26,12 +24,12 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(author, version, about = "FPGA Host Interface for RISC-V CPU")]
 struct Args {
-    /// Path to the serial device (e.g., /dev/ttyUSB0)
+    /// Path to the device (e.g., /dev/ttyUSB0 for FPGA serial)
     /// If provided, auto-connect on startup
-    #[arg(short, long)]
-    serial: Option<PathBuf>,
+    #[arg(short = 'd', long)]
+    device: Option<PathBuf>,
 
-    /// Baud rate for serial communication
+    /// Baud rate for device communication
     #[arg(short, long, default_value_t = 115200)]
     baud: u32,
 
@@ -104,9 +102,9 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         }
     }
 
-    // Handle CLI-provided serial connection
-    if let Some(ref serial_path) = args.serial {
-        let path_str = serial_path.to_string_lossy();
+    // Handle CLI-provided device connection
+    if let Some(ref device_path) = args.device {
+        let path_str = device_path.to_string_lossy();
         let runtime_type = DeviceRuntimeType::Fpga {
             device: path_str.to_string(),
             baud: args.baud,
@@ -117,7 +115,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                     log::Level::Info,
                     format!("Connected to {} at {} baud", path_str, args.baud),
                 );
-                app.serial = Some(runtime);
+                app.device_runtime = Some(runtime);
             }
             Err(e) => {
                 app.add_log(log::Level::Error, format!("Failed to connect: {}", e));
@@ -130,19 +128,19 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         // Draw UI
         terminal.draw(|frame| ui::render(frame, &app))?;
 
-        // Handle input events (with timeout for serial polling)
+        // Handle input events (with timeout for device polling)
         if event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 app.handle_key_event(key);
             }
         }
 
-        // Poll serial connection if connected
+        // Poll device runtime if connected
         let mut should_disconnect = false;
         let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
 
-        if let Some(ref mut serial) = app.serial {
-            match serial.poll() {
+        if let Some(ref mut runtime) = app.device_runtime {
+            match runtime.poll() {
                 Ok(Some(event)) => {
                     match &event {
                         BusEvent::Read { .. } | BusEvent::Write { .. } => {
@@ -171,7 +169,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                     let width = size.byte_count() as usize * 2;
                                     let msg = format!(
                                         "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
-                                        serial::access_size_name(*size),
+                                        access_size_name(*size),
                                         req_addr,
                                         status_val,
                                         width = width
@@ -182,7 +180,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                     let width = size.byte_count() as usize * 2;
                                     let msg = format!(
                                         "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
-                                        serial::access_size_name(*size),
+                                        access_size_name(*size),
                                         req_addr,
                                         status_val,
                                         width = width
@@ -227,18 +225,18 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 Err(e) => {
                     // Check if this is a fatal error (e.g., device disconnected)
                     if e.is_fatal() {
-                        app.add_log(log::Level::Error, format!("Serial connection lost: {}", e));
+                        app.add_log(log::Level::Error, format!("Device connection lost: {}", e));
                         should_disconnect = true;
                     } else {
-                        app.add_log(log::Level::Error, format!("Serial error: {}", e));
+                        app.add_log(log::Level::Error, format!("Device runtime error: {}", e));
                     }
                 }
             }
         }
 
-        // Handle pending boot request (after serial borrow has ended)
+        // Handle pending boot request (after device runtime borrow has ended)
         if let Some((boot_addr, status_val)) = pending_boot_request {
-            if let Some(ref mut serial) = app.serial {
+            if let Some(ref mut runtime) = app.device_runtime {
                 let boot_reg_addr = sysctrl_boot_addr();
                 let request = host_bus_handler::BusRequest::write(
                     boot_reg_addr,
@@ -246,7 +244,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                     host_bus_handler::AccessSize::Word,
                 );
 
-                match serial.send_host_request(request) {
+                match runtime.send_host_request(request) {
                     Ok(()) => {
                         app.add_log(
                             log::Level::Info,
@@ -266,14 +264,14 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
             }
         }
 
-        // Handle fatal serial errors by disconnecting (outside the borrow)
+        // Handle fatal device errors by disconnecting (outside the borrow)
         if should_disconnect {
-            if let Some(serial) = app.serial.take() {
-                let device = serial.device_path().to_string();
-                drop(serial);
+            if let Some(runtime) = app.device_runtime.take() {
+                let device = runtime.device_path().to_string();
+                drop(runtime);
                 app.add_log(
                     log::Level::Warn,
-                    format!("Disconnected from {} due to serial error", device),
+                    format!("Disconnected from {} due to device error", device),
                 );
             }
         }
