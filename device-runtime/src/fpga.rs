@@ -484,13 +484,11 @@ impl DeviceRuntime for FpgaDeviceRuntime {
     fn has_pending_host_request(&self) -> bool {
         self.pending_host_request.lock().unwrap().is_some()
     }
+}
 
-    fn device_path(&self) -> &str {
-        &self.device_path
-    }
-
-    fn baud_rate(&self) -> u32 {
-        self.baud_rate
+impl std::fmt::Display for FpgaDeviceRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({} baud)", self.device_path, self.baud_rate)
     }
 }
 

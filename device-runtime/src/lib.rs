@@ -187,7 +187,7 @@ pub fn bytes_for_size(size: u8) -> u8 {
 /// Implementations handle the details of the communication channel (e.g.,
 /// serial port for FPGA, simulation bus for software models). The runtime
 /// manages background I/O and provides a non-blocking polling interface.
-pub trait DeviceRuntime {
+pub trait DeviceRuntime: std::fmt::Display {
     /// Send a host-initiated bus request.
     ///
     /// Returns Ok(()) if the request was accepted, or Err if there's already
@@ -201,10 +201,4 @@ pub trait DeviceRuntime {
 
     /// Check if there is a pending host-initiated request.
     fn has_pending_host_request(&self) -> bool;
-
-    /// Get a human-readable description of the device connection.
-    fn device_path(&self) -> &str;
-
-    /// Get the communication speed/rate of the device connection.
-    fn baud_rate(&self) -> u32;
 }

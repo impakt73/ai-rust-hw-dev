@@ -324,9 +324,11 @@ pub struct SerialConnection { ... }
 
 impl SerialConnection {
     pub fn connect(device: &str, baud: u32) -> Result<Self, SerialError> { ... }
-    pub fn device_path(&self) -> &str { ... }
-    pub fn baud_rate(&self) -> u32 { ... }
     pub fn poll(&mut self, memory: &mut SparseMemory) -> Result<Option<BusEvent>, SerialError> { ... }
+}
+
+impl std::fmt::Display for SerialConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { ... }
 }
 ```
 
@@ -850,9 +852,8 @@ Use Page Up/Down to scroll the log. Press Enter to submit commands.";
 fn execute_status(app: &App) -> CommandResult {
     if let Some(ref serial) = app.serial {
         CommandResult::ok(format!(
-            "Connected to {} at {} baud\nTotal bus requests: {}",
-            serial.device_path(),
-            serial.baud_rate(),
+            "Connected to {}\nTotal bus requests: {}",
+            serial,
             app.request_count
         ))
     } else {
@@ -879,7 +880,7 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
 
 fn execute_disconnect(app: &mut App) -> CommandResult {
     if let Some(serial) = app.serial.take() {
-        let device = serial.device_path().to_string();
+        let device = serial.to_string();
         drop(serial);  // Explicitly close
         log::info!("Disconnected from {}", device);
         CommandResult::ok(format!("Disconnected from {}", device))

@@ -229,10 +229,8 @@ fn execute_status(app: &App) -> CommandResult {
 
     if let Some(ref runtime) = app.device_runtime {
         status.push_str(&format!(
-            "Connected to {} at {} baud\nTotal bus requests: {}",
-            runtime.device_path(),
-            runtime.baud_rate(),
-            app.request_count
+            "Connected to {}\nTotal bus requests: {}",
+            runtime, app.request_count
         ));
 
         if runtime.has_pending_host_request() {
@@ -267,7 +265,7 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
 /// Execute the disconnect command
 fn execute_disconnect(app: &mut App) -> CommandResult {
     if let Some(runtime) = app.device_runtime.take() {
-        let device = runtime.device_path().to_string();
+        let device = runtime.to_string();
         drop(runtime); // Explicitly close
         CommandResult::ok(format!("Disconnected from {}", device))
     } else {

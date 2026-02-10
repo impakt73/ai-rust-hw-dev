@@ -267,7 +267,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         // Handle fatal device errors by disconnecting (outside the borrow)
         if should_disconnect {
             if let Some(runtime) = app.device_runtime.take() {
-                let device = runtime.device_path().to_string();
+                let device = runtime.to_string();
                 drop(runtime);
                 app.add_log(
                     log::Level::Warn,
