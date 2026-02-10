@@ -10,7 +10,7 @@ mod shell;
 mod ui;
 
 use app::App;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 use device_runtime::{access_size_name, create_device_runtime, BusEvent, DeviceRuntimeType};
 use ratatui::DefaultTerminal;
@@ -24,14 +24,9 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(author, version, about = "FPGA Host Interface for RISC-V CPU")]
 struct Args {
-    /// Path to the device (e.g., /dev/ttyUSB0 for FPGA serial)
-    /// If provided, auto-connect on startup
-    #[arg(short = 'd', long)]
-    device: Option<PathBuf>,
-
-    /// Baud rate for device communication
-    #[arg(short, long, default_value_t = 115200)]
-    baud: u32,
+    /// Device runtime configuration (auto-connect on startup)
+    #[command(subcommand)]
+    runtime: Option<RuntimeArgs>,
 
     /// Path to the RISC-V ELF executable to load
     /// If provided, auto-load on startup
@@ -41,6 +36,20 @@ struct Args {
     /// Enable verbose logging (debug level)
     #[arg(short, long)]
     verbose: bool,
+}
+
+#[derive(Subcommand)]
+enum RuntimeArgs {
+    /// Connect to an FPGA over a serial link
+    Fpga {
+        /// Path to the device (e.g., /dev/ttyUSB0)
+        #[arg(short = 'd', long)]
+        device: PathBuf,
+
+        /// Baud rate for device communication
+        #[arg(short, long, default_value_t = 115200)]
+        baud: u32,
+    },
 }
 
 fn main() -> io::Result<()> {
@@ -103,22 +112,23 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     }
 
     // Handle CLI-provided device connection
-    if let Some(ref device_path) = args.device {
-        let path_str = device_path.to_string_lossy();
-        let runtime_type = DeviceRuntimeType::Fpga {
-            device: path_str.to_string(),
-            baud: args.baud,
-        };
-        match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
-            Ok(runtime) => {
-                app.add_log(
-                    log::Level::Info,
-                    format!("Connected to {} at {} baud", path_str, args.baud),
-                );
-                app.device_runtime = Some(runtime);
-            }
-            Err(e) => {
-                app.add_log(log::Level::Error, format!("Failed to connect: {}", e));
+    if let Some(runtime_args) = args.runtime {
+        match runtime_args {
+            RuntimeArgs::Fpga { device, baud } => {
+                let runtime_type = DeviceRuntimeType::Fpga {
+                    device: device.to_string_lossy().to_string(),
+                    baud,
+                };
+                match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
+                    Ok(runtime) => {
+                        let description = runtime.to_string();
+                        app.add_log(log::Level::Info, format!("Connected to {}", description));
+                        app.device_runtime = Some(runtime);
+                    }
+                    Err(e) => {
+                        app.add_log(log::Level::Error, format!("Failed to connect: {}", e));
+                    }
+                }
             }
         }
     }
@@ -267,7 +277,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         // Handle fatal device errors by disconnecting (outside the borrow)
         if should_disconnect {
             if let Some(runtime) = app.device_runtime.take() {
-                let device = runtime.device_path().to_string();
+                let device = runtime.to_string();
                 drop(runtime);
                 app.add_log(
                     log::Level::Warn,
