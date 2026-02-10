@@ -493,7 +493,15 @@ impl DeviceRuntime for FpgaDeviceRuntime {
         let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
             .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
 
-        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().unwrap_or(0);
+        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().map_err(|_| {
+            DeviceError::OpenFailed(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "ELF entry point 0x{:x} does not fit in u32",
+                    elf_file.ehdr.e_entry
+                ),
+            )))
+        })?;
 
         let mut memory = self.memory.lock().unwrap();
         // Clear existing memory contents before loading new ELF

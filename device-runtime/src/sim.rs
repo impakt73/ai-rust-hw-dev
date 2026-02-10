@@ -255,7 +255,12 @@ impl SimDeviceRuntime {
         let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
         let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
             .map_err(|e| format!("Failed to parse ELF: {}", e))?;
-        Ok(elf_file.ehdr.e_entry.try_into().unwrap_or(0))
+        elf_file.ehdr.e_entry.try_into().map_err(|_| {
+            format!(
+                "ELF entry point 0x{:x} does not fit in u32",
+                elf_file.ehdr.e_entry
+            )
+        })
     }
 }
 
@@ -345,10 +350,16 @@ impl DeviceRuntime for SimDeviceRuntime {
                 }
                 Ok(other_event) => {
                     // Consume other events (Bus events, etc.) during loading
-                    // We could buffer them but they shouldn't occur during load
-                    log::debug!("Received non-ELF event during load_elf: dropping");
-                    if let RuntimeEvent::NonFatalError(msg) = other_event {
-                        log::warn!("Non-fatal error during ELF load: {}", msg);
+                    match other_event {
+                        RuntimeEvent::NonFatalError(msg) => {
+                            log::warn!("Non-fatal error during ELF load: {}", msg);
+                        }
+                        RuntimeEvent::Bus(_) => {
+                            log::debug!("Received bus event during load_elf: dropping");
+                        }
+                        _ => {
+                            log::debug!("Received unexpected event during load_elf: dropping");
+                        }
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
