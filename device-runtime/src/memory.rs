@@ -1,4 +1,4 @@
-//! Sparse memory model for FPGA host
+//! Sparse memory model
 //!
 //! This module provides a byte-addressable sparse memory implementation
 //! using a HashMap for efficient storage of only written bytes.
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 /// Sparse memory model using a byte-addressable HashMap
 ///
-/// Similar to cpu-sim/src/memory.rs but simplified for fpga-host use case
+/// Similar to cpu-sim/src/memory.rs but simplified for host use case
 pub struct SparseMemory {
     data: HashMap<u32, u8>,
 }

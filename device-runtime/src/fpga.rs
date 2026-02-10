@@ -1,14 +1,15 @@
-//! Serial connection and bus protocol handling
+//! FPGA device runtime implementation
 //!
-//! This module provides the serial port abstraction and implements the
-//! host bus interface protocol for communicating with the FPGA using
-//! the host-bus-handler crate.
+//! This module provides [`FpgaDeviceRuntime`], which implements the
+//! [`DeviceRuntime`] trait for communicating with an FPGA-based RISC-V CPU
+//! over a serial port using the host-bus-handler protocol.
 //!
-//! The core I/O logic runs on a background thread inside [`DeviceRuntime`],
-//! while [`SerialConnection`] provides the public interface for sending
-//! host requests and receiving bus events.
+//! All serial port interaction, protocol handling, and CPU-initiated request
+//! processing happen on a background thread. The main thread communicates
+//! via channels and shared state.
 
 use crate::memory::SparseMemory;
+use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
@@ -24,149 +25,9 @@ const BUFFER_SIZE: usize = 64;
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// Errors that can occur during serial operations
-#[derive(Debug)]
-pub enum SerialError {
-    /// Failed to open the serial port
-    OpenFailed(serialport::Error),
-    /// I/O error during communication
-    IoError(std::io::Error),
-    /// Handler error (e.g., buffer full)
-    HandlerError(host_bus_handler::HandlerError),
-}
-
-impl SerialError {
-    /// Check if this is a fatal I/O error that should cause disconnection.
-    ///
-    /// Returns true for errors like broken pipe (device disconnected),
-    /// connection reset, or other unrecoverable I/O failures.
-    pub fn is_fatal(&self) -> bool {
-        match self {
-            SerialError::IoError(e) => {
-                use std::io::ErrorKind;
-                matches!(
-                    e.kind(),
-                    ErrorKind::BrokenPipe
-                        | ErrorKind::ConnectionReset
-                        | ErrorKind::ConnectionAborted
-                        | ErrorKind::NotConnected
-                        | ErrorKind::PermissionDenied
-                )
-            }
-            // OpenFailed is fatal by nature (we never connected)
-            SerialError::OpenFailed(_) => true,
-            // Handler errors are typically recoverable
-            SerialError::HandlerError(_) => false,
-        }
-    }
-}
-
-impl std::fmt::Display for SerialError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SerialError::OpenFailed(e) => write!(f, "Failed to open serial port: {}", e),
-            SerialError::IoError(e) => write!(f, "I/O error: {}", e),
-            SerialError::HandlerError(e) => write!(f, "Handler error: {:?}", e),
-        }
-    }
-}
-
-impl std::error::Error for SerialError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            SerialError::OpenFailed(e) => Some(e),
-            SerialError::IoError(e) => Some(e),
-            SerialError::HandlerError(_) => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for SerialError {
-    fn from(e: std::io::Error) -> Self {
-        SerialError::IoError(e)
-    }
-}
-
-impl From<host_bus_handler::HandlerError> for SerialError {
-    fn from(e: host_bus_handler::HandlerError) -> Self {
-        SerialError::HandlerError(e)
-    }
-}
-
 /// Check if an address is within the DRAM range
 fn is_dram_address(addr: u32) -> bool {
     (DRAM_BASE..=DRAM_END).contains(&addr)
-}
-
-/// Get the size name for logging
-pub fn size_name(size: u8) -> &'static str {
-    match size {
-        0 => "byte",
-        1 => "halfword",
-        _ => "word",
-    }
-}
-
-/// Get the size name for an AccessSize
-pub fn access_size_name(size: AccessSize) -> &'static str {
-    match size {
-        AccessSize::Byte => "byte",
-        AccessSize::Halfword => "halfword",
-        AccessSize::Word => "word",
-    }
-}
-
-/// Get the number of bytes for a given size code
-pub fn bytes_for_size(size: u8) -> u8 {
-    match size {
-        0 => 1,
-        1 => 2,
-        _ => 4,
-    }
-}
-
-/// Event generated when a bus transaction completes
-#[derive(Debug)]
-pub enum BusEvent {
-    /// A read transaction completed (CPU-initiated, handled by host)
-    Read {
-        addr: u32,
-        size: u8,
-        data: u32,
-        is_dram: bool,
-    },
-    /// A write transaction completed (CPU-initiated, handled by host)
-    Write {
-        addr: u32,
-        size: u8,
-        data: u32,
-        is_dram: bool,
-    },
-    /// A host-initiated read response received
-    HostReadResponse {
-        addr: u32,
-        data: u32,
-        size: AccessSize,
-    },
-    /// A host-initiated write acknowledgment received
-    HostWriteResponse {
-        addr: u32,
-        wdata: u32,
-        size: AccessSize,
-    },
-    /// A host-initiated request timed out
-    HostRequestTimeout { addr: u32 },
-}
-
-/// Pending host-initiated request information for tracking
-#[derive(Debug, Clone)]
-pub struct PendingHostRequest {
-    /// The address being accessed
-    pub addr: u32,
-    /// Write data (for write requests)
-    pub wdata: u32,
-    /// Time when the request was sent
-    pub sent_at: Instant,
 }
 
 /// Internal message sent from the main thread to the background thread
@@ -187,12 +48,15 @@ enum RuntimeEvent {
     NonFatalError(String),
 }
 
-/// Background runtime that performs serial I/O on a dedicated thread.
+/// FPGA device runtime that communicates over a serial port.
 ///
-/// All serial port interaction, protocol handling, and CPU-initiated request
-/// processing happen on the background thread. The main thread communicates
-/// via channels and shared state.
-struct DeviceRuntime {
+/// Implements [`DeviceRuntime`] by running serial I/O on a background thread.
+/// The main thread communicates via channels and shared state.
+pub(crate) struct FpgaDeviceRuntime {
+    /// Device path for status display
+    device_path: String,
+    /// Baud rate for status display
+    baud_rate: u32,
     /// Channel to send commands to the background thread
     command_tx: mpsc::Sender<RuntimeCommand>,
     /// Channel to receive events from the background thread
@@ -203,9 +67,22 @@ struct DeviceRuntime {
     thread_handle: Option<thread::JoinHandle<()>>,
 }
 
-impl DeviceRuntime {
-    /// Create a new DeviceRuntime that runs the poll loop on a background thread.
-    fn new(port: Box<dyn SerialPort>, memory: Arc<Mutex<SparseMemory>>) -> Self {
+impl FpgaDeviceRuntime {
+    /// Create a new FpgaDeviceRuntime connected to the specified serial port.
+    ///
+    /// Opens the serial port and launches a background thread to handle
+    /// serial I/O and protocol processing. The provided memory is shared
+    /// with the background thread for CPU-initiated request processing.
+    pub(crate) fn connect(
+        device: &str,
+        baud: u32,
+        memory: Arc<Mutex<SparseMemory>>,
+    ) -> Result<Self, DeviceError> {
+        let port = serialport::new(device, baud)
+            .timeout(Duration::from_millis(1))
+            .open()
+            .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
+
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
@@ -216,12 +93,14 @@ impl DeviceRuntime {
             Self::run_loop(port, memory, command_rx, event_tx, pending_clone);
         });
 
-        DeviceRuntime {
+        Ok(FpgaDeviceRuntime {
+            device_path: device.to_string(),
+            baud_rate: baud,
             command_tx,
             event_rx,
             pending_host_request,
             thread_handle: Some(thread_handle),
-        }
+        })
     }
 
     /// Background thread main loop
@@ -312,7 +191,7 @@ impl DeviceRuntime {
         tx_buffer: &mut [u8; BUFFER_SIZE],
         tx_buffer_len: &mut usize,
         pending_host_request: &Arc<Mutex<Option<PendingHostRequest>>>,
-    ) -> Result<Option<BusEvent>, SerialError> {
+    ) -> Result<Option<BusEvent>, DeviceError> {
         // === Check for timeout on pending host requests ===
         {
             let mut pending = pending_host_request.lock().unwrap();
@@ -322,8 +201,18 @@ impl DeviceRuntime {
 
                     // Drain serial port to remove buffered bytes
                     let mut drain_buffer = [0u8; 256];
-                    while port.read(&mut drain_buffer).is_ok() {
-                        // Continue draining until no more data
+                    loop {
+                        match port.read(&mut drain_buffer) {
+                            Ok(0) => break,
+                            Ok(_) => continue,
+                            Err(ref e)
+                                if e.kind() == std::io::ErrorKind::TimedOut
+                                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+                            {
+                                break;
+                            }
+                            Err(_) => break,
+                        }
                     }
 
                     // Clear rx/tx buffers
@@ -395,7 +284,7 @@ impl DeviceRuntime {
         port: &mut Box<dyn SerialPort>,
         rx_buffer: &mut [u8; BUFFER_SIZE],
         rx_buffer_len: &mut usize,
-    ) -> Result<(), SerialError> {
+    ) -> Result<(), DeviceError> {
         let available_space = BUFFER_SIZE - *rx_buffer_len;
         if available_space == 0 {
             return Ok(());
@@ -412,7 +301,7 @@ impl DeviceRuntime {
             {
                 Ok(())
             }
-            Err(e) => Err(SerialError::IoError(e)),
+            Err(e) => Err(DeviceError::IoError(e)),
         }
     }
 
@@ -461,7 +350,7 @@ impl DeviceRuntime {
         port: &mut Box<dyn SerialPort>,
         tx_buffer: &mut [u8; BUFFER_SIZE],
         tx_buffer_len: &mut usize,
-    ) -> Result<(), SerialError> {
+    ) -> Result<(), DeviceError> {
         if *tx_buffer_len == 0 {
             return Ok(());
         }
@@ -480,14 +369,14 @@ impl DeviceRuntime {
             {
                 Ok(())
             }
-            Err(e) => Err(SerialError::IoError(e)),
+            Err(e) => Err(DeviceError::IoError(e)),
         }
     }
 
     /// Process a CPU-initiated request and generate response
     fn process_cpu_request(
         handler: &mut HostBusHandler,
-        request: &host_bus_handler::BusRequest,
+        request: &BusRequest,
         memory: &Arc<Mutex<SparseMemory>>,
     ) -> BusEvent {
         let size = request.size.to_size_code();
@@ -542,86 +431,13 @@ impl DeviceRuntime {
     }
 }
 
-impl Drop for DeviceRuntime {
-    fn drop(&mut self) {
-        // Signal the background thread to stop
-        let _ = self.command_tx.send(RuntimeCommand::Shutdown);
-        // Wait for the thread to finish
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-/// Serial connection with bus protocol handling.
-///
-/// This is the public interface for communicating with the FPGA over serial.
-/// Internally, all serial I/O runs on a background thread managed by
-/// [`DeviceRuntime`]. Thread synchronization is handled internally; callers
-/// interact with this struct as if it were single-threaded.
-pub struct SerialConnection {
-    /// Device path for status display
-    device_path: String,
-    /// Baud rate for status display
-    baud_rate: u32,
-    /// Background runtime handling serial I/O
-    runtime: DeviceRuntime,
-}
-
-impl SerialConnection {
-    /// Create a new serial connection.
-    ///
-    /// Opens the serial port and launches a background thread to handle
-    /// serial I/O and protocol processing. The provided memory is shared
-    /// with the background thread for CPU-initiated request processing.
-    pub fn connect(
-        device: &str,
-        baud: u32,
-        memory: Arc<Mutex<SparseMemory>>,
-    ) -> Result<Self, SerialError> {
-        let port = serialport::new(device, baud)
-            .timeout(Duration::from_millis(1))
-            .open()
-            .map_err(SerialError::OpenFailed)?;
-
-        let runtime = DeviceRuntime::new(port, memory);
-
-        Ok(SerialConnection {
-            device_path: device.to_string(),
-            baud_rate: baud,
-            runtime,
-        })
-    }
-
-    /// Get the device path
-    pub fn device_path(&self) -> &str {
-        &self.device_path
-    }
-
-    /// Get the baud rate
-    pub fn baud_rate(&self) -> u32 {
-        self.baud_rate
-    }
-
-    /// Check if there is a pending host-initiated request
-    pub fn has_pending_host_request(&self) -> bool {
-        self.runtime.pending_host_request.lock().unwrap().is_some()
-    }
-
-    /// Send a host-initiated bus request
-    ///
-    /// Returns Ok(()) if the request was accepted, or Err if there's already
-    /// a pending request or another error occurred.
-    ///
-    /// The pending host request flag is set under the lock before enqueuing the
-    /// command to the background thread, which prevents a race where multiple
-    /// requests could be sent before the background thread processes the first.
-    pub fn send_host_request(&mut self, request: BusRequest) -> Result<(), SerialError> {
+impl DeviceRuntime for FpgaDeviceRuntime {
+    fn send_host_request(&mut self, request: BusRequest) -> Result<(), DeviceError> {
         // Atomically check and set pending request under the same lock
         {
-            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+            let mut pending = self.pending_host_request.lock().unwrap();
             if pending.is_some() {
-                return Err(SerialError::HandlerError(
+                return Err(DeviceError::HandlerError(
                     host_bus_handler::HandlerError::RequestPending,
                 ));
             }
@@ -633,14 +449,10 @@ impl SerialConnection {
         }
 
         // Enqueue the command; if the channel send fails, clear the pending flag
-        if let Err(e) = self
-            .runtime
-            .command_tx
-            .send(RuntimeCommand::SendRequest(request))
-        {
-            let mut pending = self.runtime.pending_host_request.lock().unwrap();
+        if let Err(e) = self.command_tx.send(RuntimeCommand::SendRequest(request)) {
+            let mut pending = self.pending_host_request.lock().unwrap();
             *pending = None;
-            return Err(SerialError::IoError(std::io::Error::new(
+            return Err(DeviceError::IoError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 format!("Background thread disconnected: {}", e),
             )));
@@ -649,28 +461,46 @@ impl SerialConnection {
         Ok(())
     }
 
-    /// Poll for bus events (non-blocking).
-    ///
-    /// Returns the next available event from the background thread, or None
-    /// if no events are ready. Errors from the background thread are returned
-    /// as `SerialError`.
-    pub fn poll(&mut self) -> Result<Option<BusEvent>, SerialError> {
-        match self.runtime.event_rx.try_recv() {
+    fn poll(&mut self) -> Result<Option<BusEvent>, DeviceError> {
+        match self.event_rx.try_recv() {
             Ok(RuntimeEvent::Bus(event)) => Ok(Some(event)),
-            Ok(RuntimeEvent::FatalError(msg)) => Err(SerialError::IoError(std::io::Error::new(
+            Ok(RuntimeEvent::FatalError(msg)) => Err(DeviceError::IoError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 msg,
             ))),
             Ok(RuntimeEvent::NonFatalError(msg)) => {
-                Err(SerialError::IoError(std::io::Error::other(msg)))
+                Err(DeviceError::IoError(std::io::Error::other(msg)))
             }
             Err(mpsc::TryRecvError::Empty) => Ok(None),
             Err(mpsc::TryRecvError::Disconnected) => {
-                Err(SerialError::IoError(std::io::Error::new(
+                Err(DeviceError::IoError(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     "Background thread terminated",
                 )))
             }
+        }
+    }
+
+    fn has_pending_host_request(&self) -> bool {
+        self.pending_host_request.lock().unwrap().is_some()
+    }
+
+    fn device_path(&self) -> &str {
+        &self.device_path
+    }
+
+    fn baud_rate(&self) -> u32 {
+        self.baud_rate
+    }
+}
+
+impl Drop for FpgaDeviceRuntime {
+    fn drop(&mut self) {
+        // Signal the background thread to stop
+        let _ = self.command_tx.send(RuntimeCommand::Shutdown);
+        // Wait for the thread to finish
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
         }
     }
 }

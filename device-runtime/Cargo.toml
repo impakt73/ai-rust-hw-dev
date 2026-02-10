@@ -1,0 +1,11 @@
+[package]
+name = "device-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Device runtime trait and FPGA implementation for RISC-V CPU host communication"
+
+[dependencies]
+host-bus-handler = { path = "../host-bus-handler" }
+log = "0.4"
+riscv_shared = { path = "../riscv_shared" }
+serialport = "4.6"

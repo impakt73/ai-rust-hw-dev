@@ -4,14 +4,14 @@
 
 use crate::app::App;
 use crate::elf_loader;
-use crate::serial::SerialConnection;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
+use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType};
 use host_bus_handler::{AccessSize, BusRequest};
 use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 use std::sync::Arc;
 
-/// Default baud rate for serial connections
+/// Default baud rate for device connections
 const DEFAULT_BAUD_RATE: u32 = 115200;
 
 /// Access size argument for commands
@@ -94,17 +94,17 @@ pub enum ShellCommand {
     /// Exit the application (Ctrl+C also works)
     #[command(visible_aliases = ["quit", "q"])]
     Exit,
-    /// Show current serial connection status
+    /// Show current device connection status
     Status,
-    /// Connect to a serial port
+    /// Connect to a device
     Connect {
-        /// Serial device path (e.g., /dev/ttyUSB0)
+        /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
         device: String,
         /// Baud rate (default: 115200)
         #[arg(default_value_t = DEFAULT_BAUD_RATE)]
         baud: u32,
     },
-    /// Close the current serial connection
+    /// Close the current device connection
     Disconnect,
     /// Load an ELF file into memory
     #[command(name = "loadelf")]
@@ -227,15 +227,15 @@ impl ShellCommand {
 fn execute_status(app: &App) -> CommandResult {
     let mut status = String::new();
 
-    if let Some(ref serial) = app.serial {
+    if let Some(ref runtime) = app.device_runtime {
         status.push_str(&format!(
             "Connected to {} at {} baud\nTotal bus requests: {}",
-            serial.device_path(),
-            serial.baud_rate(),
+            runtime.device_path(),
+            runtime.baud_rate(),
             app.request_count
         ));
 
-        if serial.has_pending_host_request() {
+        if runtime.has_pending_host_request() {
             status.push_str("\nPending host request: YES");
         }
     } else {
@@ -247,13 +247,17 @@ fn execute_status(app: &App) -> CommandResult {
 
 /// Execute the connect command
 fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
-    if app.serial.is_some() {
+    if app.device_runtime.is_some() {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match SerialConnection::connect(device, baud, Arc::clone(&app.memory)) {
-        Ok(serial) => {
-            app.serial = Some(serial);
+    let runtime_type = DeviceRuntimeType::Fpga {
+        device: device.to_string(),
+        baud,
+    };
+    match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
+        Ok(runtime) => {
+            app.device_runtime = Some(runtime);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
         }
         Err(e) => CommandResult::error(format!("Failed to connect: {}", e)),
@@ -262,9 +266,9 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
 
 /// Execute the disconnect command
 fn execute_disconnect(app: &mut App) -> CommandResult {
-    if let Some(serial) = app.serial.take() {
-        let device = serial.device_path().to_string();
-        drop(serial); // Explicitly close
+    if let Some(runtime) = app.device_runtime.take() {
+        let device = runtime.device_path().to_string();
+        drop(runtime); // Explicitly close
         CommandResult::ok(format!("Disconnected from {}", device))
     } else {
         CommandResult::ok("Not connected.")
@@ -356,12 +360,12 @@ fn check_data_size(data: u32, size: SizeArg) -> Option<String> {
 
 /// Execute the read command
 fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
-    let serial = match app.serial.as_mut() {
-        Some(s) => s,
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
         None => return CommandResult::error("Not connected. Use 'connect' first."),
     };
 
-    if serial.has_pending_host_request() {
+    if runtime.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
@@ -373,11 +377,11 @@ fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
     let access_size = size.to_access_size();
     let request = BusRequest::read(address, access_size);
 
-    match serial.send_host_request(request) {
+    match runtime.send_host_request(request) {
         Ok(()) => CommandResult::ok(format!(
             "Sent read request for 0x{:08x} ({})",
             address,
-            crate::serial::access_size_name(access_size)
+            access_size_name(access_size)
         )),
         Err(e) => CommandResult::error(format!("Failed to send read request: {}", e)),
     }
@@ -385,12 +389,12 @@ fn execute_read(app: &mut App, address: u32, size: SizeArg) -> CommandResult {
 
 /// Execute the write command
 fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> CommandResult {
-    let serial = match app.serial.as_mut() {
-        Some(s) => s,
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
         None => return CommandResult::error("Not connected. Use 'connect' first."),
     };
 
-    if serial.has_pending_host_request() {
+    if runtime.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
@@ -407,14 +411,14 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
     let access_size = size.to_access_size();
     let request = BusRequest::write(address, data, access_size);
 
-    match serial.send_host_request(request) {
+    match runtime.send_host_request(request) {
         Ok(()) => {
             let width = access_size.byte_count() as usize * 2;
             CommandResult::ok(format!(
                 "Sent write request for 0x{:08x} <= 0x{:0width$x} ({})",
                 address,
                 data,
-                crate::serial::access_size_name(access_size),
+                access_size_name(access_size),
                 width = width
             ))
         }
@@ -424,19 +428,19 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
 
 /// Execute the reset command
 fn execute_reset(app: &mut App) -> CommandResult {
-    let serial = match app.serial.as_mut() {
-        Some(s) => s,
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
         None => return CommandResult::error("Not connected. Use 'connect' first."),
     };
 
-    if serial.has_pending_host_request() {
+    if runtime.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
     let reset_addr = sysctrl_reset_addr();
     let request = BusRequest::write(reset_addr, SYSCTRL_RESET_SYSTEM, AccessSize::Word);
 
-    match serial.send_host_request(request) {
+    match runtime.send_host_request(request) {
         Ok(()) => CommandResult::ok(format!("Sent reset request to 0x{:08x}", reset_addr)),
         Err(e) => CommandResult::error(format!("Failed to send reset request: {}", e)),
     }
@@ -444,12 +448,12 @@ fn execute_reset(app: &mut App) -> CommandResult {
 
 /// Execute the boot command
 fn execute_boot(app: &mut App, address: Option<u32>) -> CommandResult {
-    let serial = match app.serial.as_mut() {
-        Some(s) => s,
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
         None => return CommandResult::error("Not connected. Use 'connect' first."),
     };
 
-    if serial.has_pending_host_request() {
+    if runtime.has_pending_host_request() {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
@@ -468,7 +472,7 @@ fn execute_boot(app: &mut App, address: Option<u32>) -> CommandResult {
     let status_addr = sysctrl_status_addr();
     let request = BusRequest::read(status_addr, AccessSize::Word);
 
-    match serial.send_host_request(request) {
+    match runtime.send_host_request(request) {
         Ok(()) => {
             // Store the boot state so we can continue when STATUS response arrives
             app.pending_boot = Some(crate::app::PendingBoot {
