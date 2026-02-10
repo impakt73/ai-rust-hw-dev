@@ -143,9 +143,9 @@ pub enum BusEvent {
         is_dram: bool,
     },
     /// A host-initiated read response received
-    HostReadResponse { data: u32, size: AccessSize },
+    HostReadResponse { addr: u32, data: u32, size: AccessSize },
     /// A host-initiated write acknowledgment received
-    HostWriteResponse { size: AccessSize },
+    HostWriteResponse { addr: u32, wdata: u32, size: AccessSize },
     /// A host-initiated request timed out
     HostRequestTimeout { addr: u32 },
 }
@@ -348,15 +348,20 @@ impl DeviceRuntime {
         // Check for a response to a host-initiated request
         {
             let mut pending = pending_host_request.lock().unwrap();
-            if pending.is_some() {
+            if let Some(ref p) = *pending {
                 if let Some(response) = handler.receive_response() {
+                    let req_addr = p.addr;
+                    let req_wdata = p.wdata;
                     *pending = None;
                     let event = if response.we {
                         BusEvent::HostWriteResponse {
+                            addr: req_addr,
+                            wdata: req_wdata,
                             size: response.size,
                         }
                     } else {
                         BusEvent::HostReadResponse {
+                            addr: req_addr,
                             data: response.rdata,
                             size: response.size,
                         }
@@ -593,11 +598,6 @@ impl SerialConnection {
     /// Check if there is a pending host-initiated request
     pub fn has_pending_host_request(&self) -> bool {
         self.runtime.pending_host_request.lock().unwrap().is_some()
-    }
-
-    /// Get a clone of the pending host-initiated request information
-    pub fn pending_host_request(&self) -> Option<PendingHostRequest> {
-        self.runtime.pending_host_request.lock().unwrap().clone()
     }
 
     /// Send a host-initiated bus request

@@ -224,17 +224,25 @@ impl App {
                     width = (bytes_for_size(*size) * 2) as usize
                 )
             }
-            BusEvent::HostReadResponse { data, size } => {
+            BusEvent::HostReadResponse { addr, data, size } => {
                 let width = size.byte_count() as usize * 2;
                 format!(
-                    "HOST READ response: 0x{:0width$x} ({})",
-                    data,
+                    "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
                     access_size_name(*size),
+                    addr,
+                    data,
                     width = width
                 )
             }
-            BusEvent::HostWriteResponse { size } => {
-                format!("HOST WRITE acknowledged ({})", access_size_name(*size))
+            BusEvent::HostWriteResponse { addr, wdata, size } => {
+                let width = size.byte_count() as usize * 2;
+                format!(
+                    "HOST WRITE {} @ 0x{:08x} <= 0x{:0width$x} (acknowledged)",
+                    access_size_name(*size),
+                    addr,
+                    wdata,
+                    width = width
+                )
             }
             BusEvent::HostRequestTimeout { addr } => {
                 format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)

@@ -139,9 +139,6 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
 
         if let Some(ref mut serial) = app.serial {
-            // Get pending request info before polling
-            let pending_request = serial.pending_host_request();
-
             match serial.poll() {
                 Ok(Some(event)) => {
                     match &event {
@@ -150,13 +147,12 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             app.log_bus_event(&event);
                             app.request_count += 1;
                         }
-                        BusEvent::HostReadResponse { data, size } => {
+                        BusEvent::HostReadResponse { addr, data, size } => {
                             // Host-initiated read response - check for pending boot
                             if let Some(pending_boot) = app.pending_boot.take() {
                                 // This is the STATUS register read response for boot command
                                 let status_val = *data;
-                                let req_addr =
-                                    pending_request.as_ref().map(|r| r.addr).unwrap_or(0);
+                                let req_addr = *addr;
 
                                 // Verify this is the expected STATUS read
                                 if req_addr != pending_boot.expected_status_addr {
@@ -204,20 +200,12 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                 }
                             } else {
                                 // Normal read response - log with request details
-                                if let Some(req) = &pending_request {
-                                    app.log_host_read_response(req.addr, *data, *size);
-                                } else {
-                                    app.log_bus_event(&event);
-                                }
+                                app.log_host_read_response(*addr, *data, *size);
                             }
                         }
-                        BusEvent::HostWriteResponse { size } => {
+                        BusEvent::HostWriteResponse { addr, wdata, size } => {
                             // Host-initiated write response - log with request details
-                            if let Some(req) = &pending_request {
-                                app.log_host_write_response(req.addr, req.wdata, *size);
-                            } else {
-                                app.log_bus_event(&event);
-                            }
+                            app.log_host_write_response(*addr, *wdata, *size);
                         }
                         BusEvent::HostRequestTimeout { addr } => {
                             // Host request timed out - clear pending boot and emit warning in TUI
