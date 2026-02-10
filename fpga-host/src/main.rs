@@ -7,7 +7,6 @@
 
 mod app;
 mod elf_loader;
-mod memory;
 mod serial;
 mod shell;
 mod ui;
@@ -17,7 +16,7 @@ use clap::Parser;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
 use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
-use serial::{BusEvent, FpgaDeviceRuntime};
+use serial::{create_device_runtime, BusEvent, DeviceRuntimeType};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
@@ -108,13 +107,17 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     // Handle CLI-provided serial connection
     if let Some(ref serial_path) = args.serial {
         let path_str = serial_path.to_string_lossy();
-        match FpgaDeviceRuntime::connect(&path_str, args.baud, Arc::clone(&app.memory)) {
+        let runtime_type = DeviceRuntimeType::Fpga {
+            device: path_str.to_string(),
+            baud: args.baud,
+        };
+        match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
             Ok(runtime) => {
                 app.add_log(
                     log::Level::Info,
                     format!("Connected to {} at {} baud", path_str, args.baud),
                 );
-                app.serial = Some(Box::new(runtime));
+                app.serial = Some(runtime);
             }
             Err(e) => {
                 app.add_log(log::Level::Error, format!("Failed to connect: {}", e));

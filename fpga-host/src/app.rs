@@ -2,9 +2,9 @@
 //!
 //! This module contains the main application state and event handling logic.
 
-use crate::memory::SparseMemory;
 use crate::serial::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use device_runtime::memory::SparseMemory;
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};

@@ -2,7 +2,7 @@
 //!
 //! This module provides functionality to load ELF executables into sparse memory.
 
-use crate::memory::SparseMemory;
+use device_runtime::memory::SparseMemory;
 use std::path::Path;
 
 /// Errors that can occur during ELF loading

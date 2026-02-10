@@ -2,20 +2,23 @@
 //!
 //! This crate defines the [`DeviceRuntime`] trait for communicating with a
 //! RISC-V CPU device, along with shared types like [`BusEvent`] and
-//! [`DeviceError`]. The [`FpgaDeviceRuntime`] provides an FPGA-specific
-//! implementation that communicates over a serial port.
+//! [`DeviceError`]. Use [`create_device_runtime`] to create a runtime
+//! instance for the desired backend (e.g., FPGA over serial).
 
-pub mod fpga;
+mod fpga;
 pub mod memory;
+
+use memory::SparseMemory;
 
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
+use std::sync::{Arc, Mutex};
 
 /// Errors that can occur during device operations
 #[derive(Debug)]
 pub enum DeviceError {
     /// Failed to open the device connection
-    OpenFailed(String),
+    OpenFailed(Box<dyn std::error::Error + Send + Sync>),
     /// I/O error during communication
     IoError(std::io::Error),
     /// Handler error (e.g., buffer full)
@@ -61,7 +64,7 @@ impl std::fmt::Display for DeviceError {
 impl std::error::Error for DeviceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            DeviceError::OpenFailed(_) => None,
+            DeviceError::OpenFailed(e) => Some(e.as_ref()),
             DeviceError::IoError(e) => Some(e),
             DeviceError::HandlerError(_) => None,
         }
@@ -77,6 +80,34 @@ impl From<std::io::Error> for DeviceError {
 impl From<host_bus_handler::HandlerError> for DeviceError {
     fn from(e: host_bus_handler::HandlerError) -> Self {
         DeviceError::HandlerError(e)
+    }
+}
+
+/// Available device runtime backends
+#[derive(Debug, Clone)]
+pub enum DeviceRuntimeType {
+    /// FPGA device connected over a serial port
+    Fpga {
+        /// Serial device path (e.g., /dev/ttyUSB0)
+        device: String,
+        /// Baud rate for serial communication
+        baud: u32,
+    },
+}
+
+/// Create a device runtime for the specified backend.
+///
+/// The provided memory is shared with the runtime for CPU-initiated request
+/// processing.
+pub fn create_device_runtime(
+    runtime_type: DeviceRuntimeType,
+    memory: Arc<Mutex<SparseMemory>>,
+) -> Result<Box<dyn DeviceRuntime>, DeviceError> {
+    match runtime_type {
+        DeviceRuntimeType::Fpga { device, baud } => {
+            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud, memory)?;
+            Ok(Box::new(runtime))
+        }
     }
 }
 

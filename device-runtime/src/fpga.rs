@@ -52,7 +52,7 @@ enum RuntimeEvent {
 ///
 /// Implements [`DeviceRuntime`] by running serial I/O on a background thread.
 /// The main thread communicates via channels and shared state.
-pub struct FpgaDeviceRuntime {
+pub(crate) struct FpgaDeviceRuntime {
     /// Device path for status display
     device_path: String,
     /// Baud rate for status display
@@ -73,7 +73,7 @@ impl FpgaDeviceRuntime {
     /// Opens the serial port and launches a background thread to handle
     /// serial I/O and protocol processing. The provided memory is shared
     /// with the background thread for CPU-initiated request processing.
-    pub fn connect(
+    pub(crate) fn connect(
         device: &str,
         baud: u32,
         memory: Arc<Mutex<SparseMemory>>,
@@ -81,7 +81,7 @@ impl FpgaDeviceRuntime {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
-            .map_err(|e| DeviceError::OpenFailed(e.to_string()))?;
+            .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
@@ -201,8 +201,18 @@ impl FpgaDeviceRuntime {
 
                     // Drain serial port to remove buffered bytes
                     let mut drain_buffer = [0u8; 256];
-                    while port.read(&mut drain_buffer).is_ok() {
-                        // Continue draining until no more data
+                    loop {
+                        match port.read(&mut drain_buffer) {
+                            Ok(0) => break,
+                            Ok(_) => continue,
+                            Err(ref e)
+                                if e.kind() == std::io::ErrorKind::TimedOut
+                                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+                            {
+                                break;
+                            }
+                            Err(_) => break,
+                        }
                     }
 
                     // Clear rx/tx buffers
