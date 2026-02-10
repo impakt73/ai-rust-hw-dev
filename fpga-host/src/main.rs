@@ -21,6 +21,7 @@ use serial::{BusEvent, SerialConnection};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -85,7 +86,8 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
 
     // Handle CLI-provided ELF file
     if let Some(ref elf_path) = args.elf {
-        match elf_loader::load_elf(&mut app.memory, elf_path) {
+        let result = elf_loader::load_elf(&mut app.memory.lock().unwrap(), elf_path);
+        match result {
             Ok(entry) => {
                 app.last_entry_point = Some(entry);
                 app.add_log(
@@ -106,7 +108,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     // Handle CLI-provided serial connection
     if let Some(ref serial_path) = args.serial {
         let path_str = serial_path.to_string_lossy();
-        match SerialConnection::connect(&path_str, args.baud) {
+        match SerialConnection::connect(&path_str, args.baud, Arc::clone(&app.memory)) {
             Ok(serial) => {
                 app.add_log(
                     log::Level::Info,
@@ -137,10 +139,10 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
 
         if let Some(ref mut serial) = app.serial {
-            // Get pending request info before polling (need to borrow immutably first)
-            let pending_request = serial.pending_host_request().cloned();
+            // Get pending request info before polling
+            let pending_request = serial.pending_host_request();
 
-            match serial.poll(&mut app.memory) {
+            match serial.poll() {
                 Ok(Some(event)) => {
                     match &event {
                         BusEvent::Read { .. } | BusEvent::Write { .. } => {
