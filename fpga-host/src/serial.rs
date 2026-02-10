@@ -143,9 +143,17 @@ pub enum BusEvent {
         is_dram: bool,
     },
     /// A host-initiated read response received
-    HostReadResponse { addr: u32, data: u32, size: AccessSize },
+    HostReadResponse {
+        addr: u32,
+        data: u32,
+        size: AccessSize,
+    },
     /// A host-initiated write acknowledgment received
-    HostWriteResponse { addr: u32, wdata: u32, size: AccessSize },
+    HostWriteResponse {
+        addr: u32,
+        wdata: u32,
+        size: AccessSize,
+    },
     /// A host-initiated request timed out
     HostRequestTimeout { addr: u32 },
 }
