@@ -117,29 +117,26 @@ impl SimDeviceRuntime {
                         log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
-                Ok(RuntimeCommand::LoadElf(path, result_tx)) => match simulator.load_elf(&path) {
-                    Ok(entry_point) => {
-                        elf_loaded = true;
-                        let _ = result_tx.send(Ok(entry_point));
+                Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
+                    match simulator.load_elf_no_boot(&path) {
+                        Ok(entry_point) => {
+                            elf_loaded = true;
+                            let _ = result_tx.send(Ok(entry_point));
+                        }
+                        Err(e) => {
+                            let _ = result_tx.send(Err(e));
+                        }
                     }
-                    Err(e) => {
-                        let _ = result_tx.send(Err(e));
-                    }
-                },
+                }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
 
             // Only step the simulator if an ELF has been loaded
             if elf_loaded {
-                // Step one instruction
-                match simulator.step_instruction() {
-                    Ok(result) => {
-                        if result.tohost_value.is_some() {
-                            // Program has terminated, stop stepping
-                            elf_loaded = false;
-                        }
-                    }
+                // Step one cycle for fine-grained control
+                match simulator.step_cycle() {
+                    Ok(_) => {}
                     Err(e) => {
                         let _ = event_tx
                             .send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));

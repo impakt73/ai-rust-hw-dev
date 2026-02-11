@@ -375,11 +375,15 @@ where
     ///
     /// # Arguments
     /// * `boot_pc` - The program counter value to start execution from
+    /// * `boot_cpu` - Whether to perform the CPU boot sequence (STATUS read + BOOT write).
+    ///   When false, only the hardware reset is performed and the CPU is left in the boot
+    ///   state (S_BOOT), allowing the calling code to handle the boot sequence externally
+    ///   via bus requests.
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
     /// * `Err(BootError)` if boot address validation fails, a timeout occurs, or CPU state is unexpected
-    pub fn reset(&mut self, boot_pc: u32) -> Result<(), BootError> {
+    pub fn reset(&mut self, boot_pc: u32, boot_cpu: bool) -> Result<(), BootError> {
         // Validate boot address before reset if hung detector is configured
         if let Some(ref detector) = self.hung_detector {
             detector.validate_boot_addr(boot_pc)?;
@@ -444,6 +448,13 @@ where
                     cycles: BOOT_TIMEOUT_CYCLES,
                 });
             }
+        }
+
+        // If boot_cpu is false, skip the boot sequence and leave the CPU in boot state
+        // so the calling code can handle it externally via bus requests
+        if !boot_cpu {
+            log::info!("CPU hardware reset complete (boot deferred)");
+            return Ok(());
         }
 
         // Step 1: Read STATUS register to confirm CPU is waiting to be booted
@@ -574,22 +585,24 @@ where
         // With delayed instr_complete, values have already settled by the time we see the signal
         let instruction_complete = self.cpu.instr_complete != 0;
 
-        // Check for hung state on every cycle
-        // This detects stuck FSM, invalid PC, and PC loops (when instruction completes)
-        if let Some(ref mut detector) = self.hung_detector {
-            // Use current PC and instruction for hung detection (not completed ones)
-            // debug_current_pc: PC that was used to fetch the current instruction
-            // debug_current_instruction: The instruction currently being executed
-            let pc = self.cpu.debug_current_pc;
-            let instruction = self.cpu.debug_current_instruction;
-            let fsm_state = self.cpu.debug_fsm_state;
-            detector.check_cycle(
-                self.cycle_count,
-                pc,
-                instruction,
-                fsm_state,
-                instruction_complete,
-            )?;
+        // Check for hung state on every cycle, but skip when CPU is in boot state
+        // (S_BOOT) since it is not expected to make progress on instructions until booted
+        if self.cpu.cpu_booting == 0 {
+            if let Some(ref mut detector) = self.hung_detector {
+                // Use current PC and instruction for hung detection (not completed ones)
+                // debug_current_pc: PC that was used to fetch the current instruction
+                // debug_current_instruction: The instruction currently being executed
+                let pc = self.cpu.debug_current_pc;
+                let instruction = self.cpu.debug_current_instruction;
+                let fsm_state = self.cpu.debug_fsm_state;
+                detector.check_cycle(
+                    self.cycle_count,
+                    pc,
+                    instruction,
+                    fsm_state,
+                    instruction_complete,
+                )?;
+            }
         }
 
         if instruction_complete {
@@ -653,7 +666,7 @@ where
     /// # Errors
     /// Returns error if hung state is detected or other simulation errors occur
     pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
-        self.reset(boot_pc)
+        self.reset(boot_pc, true)
             .map_err(|e| format!("Reset failed: {}", e))?;
 
         log::info!("Starting simulation (max {} cycles)", max_cycles);

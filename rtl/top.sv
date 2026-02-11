@@ -63,7 +63,8 @@ module top #(
     output logic [31:0] debug_current_pc,
     output logic [31:0] debug_current_instruction,
     output logic [3:0]  debug_fsm_state,
-    output logic        rst_n_out
+    output logic        rst_n_out,
+    output logic        cpu_booting
 );
 
     // ============================================================
@@ -369,6 +370,9 @@ module top #(
     
     // Pass through halted signal
     assign halted = cpu_halted_internal;
+    
+    // Pass through cpu boot state signal
+    assign cpu_booting = cpu_is_booting;
     
     // ============================================================
     // UART Loopback or External Connection
