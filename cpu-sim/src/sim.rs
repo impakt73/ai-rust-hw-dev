@@ -483,7 +483,6 @@ where
     fn boot_clock_cycle(&mut self) {
         self.cpu.eval();
         self.handle_host_bus_interface();
-        self.cpu.eval();
         self.cpu.clk = 0;
         self.cpu.eval();
         self.cpu.clk = 1;
@@ -536,9 +535,6 @@ where
         // The CPU sends serialized bus transactions via host_tx_* signals
         // and we respond via host_rx_* signals
         self.handle_host_bus_interface();
-
-        // Re-evaluate after setting memory signals
-        self.cpu.eval();
 
         // Print FSM state if enabled (before clock edge)
         if self.print_fsm_state {
