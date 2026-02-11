@@ -261,40 +261,43 @@ impl<'a> SimulatorView<'a> {
         })
     }
 
-    /// Dump a region of memory and save it as a PNG image
+    /// Dump a region of memory as an RGBA8 image
     ///
-    /// This is a convenience method for testing Video peripheral output.
-    /// The memory region is interpreted as raw RGBA8 pixels and saved to disk.
+    /// Interprets the memory region as RGBA8 pixel data (4 bytes per pixel)
+    /// and saves it as an image file. The format is determined by the file extension.
     ///
     /// # Arguments
-    /// * `start_addr` - Starting address of the image data in memory
-    /// * `width` - Width in pixels
-    /// * `height` - Height in pixels
-    /// * `output_path` - Output file path (e.g., "output.png")
+    /// * `start_addr` - Starting address of the memory region containing image data
+    /// * `width` - Image width in pixels
+    /// * `height` - Image height in pixels
+    /// * `output_path` - Path to the output image file (format determined by extension)
     ///
     /// # Returns
-    /// * `Ok(())` if image was saved successfully
-    /// * `Err(String)` if image saving failed
+    /// * `Ok(())` on success
+    /// * `Err(String)` on error
+    ///
+    /// # Requirements
+    /// The memory region must contain at least `width * height * 4` bytes of valid data.
     ///
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::*;
     /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
+    /// // dump_memory_region_as_image is typically used in run_elf's termination_callback
     /// run_elf(
-    ///     Path::new("test.elf"),
-    ///     1000,
+    ///     Path::new("graphics.elf"),
+    ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
-    ///     None::<fn(&mut SimulatorView)>,
-    ///     None::<fn(&InstructionTrace)>,
+    ///     None::<fn(&mut SimulatorView)>, // inst_complete_callback
+    ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
-    ///     None::<fn(&mut SimulatorView)>,
+    ///     None::<fn(&mut SimulatorView)>, // setup_callback
     ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
-    ///         // Save framebuffer (320x240 RGBA8 = 307200 bytes)
-    ///         sim.dump_memory_region_as_image(0x8000_0000, 320, 240, "frame.png")
-    ///             .expect("Failed to save frame");
+    ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
+    ///             .expect("Failed to dump image");
     ///     }),
     /// )?;
     /// # Ok(())
@@ -309,12 +312,21 @@ impl<'a> SimulatorView<'a> {
     ) -> Result<(), String> {
         use image::{ImageBuffer, Rgba};
 
-        let size = width * height * 4; // RGBA8 = 4 bytes per pixel
-        let pixels: Vec<u8> = self.dump_memory_region(start_addr, size).collect();
+        // Calculate total bytes needed
+        let pixel_count = width
+            .checked_mul(height)
+            .ok_or_else(|| "Image dimensions overflow".to_string())?;
+        let total_bytes = pixel_count
+            .checked_mul(4)
+            .ok_or_else(|| "Image size overflow".to_string())?;
 
-        let img_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_raw(width, height, pixels).ok_or_else(|| {
-                "Failed to create image buffer from memory (invalid dimensions?)".to_string()
+        // Collect pixel data from memory
+        let pixel_data: Vec<u8> = self.dump_memory_region(start_addr, total_bytes).collect();
+
+        // Create image buffer from raw RGBA8 data
+        let img_buffer = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, pixel_data)
+            .ok_or_else(|| {
+                "Failed to create image buffer from pixel data (size mismatch)".to_string()
             })?;
 
         img_buffer
