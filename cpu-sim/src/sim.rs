@@ -224,6 +224,48 @@ where
         }
     }
 
+    /// Handle callbacks and tracing when an instruction completes
+    fn handle_instruction_complete(&mut self) {
+        // Call inst_complete callback if provided (after instruction completion)
+        // This callback receives restricted access to the Simulator via SimulatorView
+        if let Some(ref mut callback) = self.inst_complete_callback {
+            let mut view = SimulatorView::new(
+                &mut self.bus,
+                &mut self.hung_detector,
+                &self.cpu,
+                &mut self.host_bus_handler,
+            );
+            callback(&mut view);
+        }
+
+        // Unified instruction trace handling
+        // Check if trace callback is valid or instruction trace printing is enabled
+        if self.trace_callback.is_some() || self.print_inst_trace {
+            // Assemble InstructionTrace structure using debug signals from CPU
+            let pc = self.cpu.debug_pc;
+            let instruction = self.cpu.debug_instruction;
+            let rs1_value = self.cpu.debug_rs1_data;
+            let rs2_value = self.cpu.debug_rs2_data;
+            let rd_value = self.cpu.debug_rd_data;
+
+            let trace =
+                InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
+
+            // Print the display version of the structure if printing is enabled
+            if self.print_inst_trace {
+                println!(
+                    "Cycle {:6} | PC: 0x{:08x} | {}",
+                    self.cycle_count, pc, trace
+                );
+            }
+
+            // Call the trace callback with the structure if the callback is valid
+            if let Some(ref mut callback) = self.trace_callback {
+                callback(&trace);
+            }
+        }
+    }
+
     /// Dump VCD waveform at current timestamp and increment the timestamp counter
     ///
     /// This is a helper function that handles VCD dumping if VCD tracing is enabled.
@@ -550,6 +592,10 @@ where
             )?;
         }
 
+        if instruction_complete {
+            self.handle_instruction_complete();
+        }
+
         let elapsed_us = start_time.elapsed().as_micros() as u64;
 
         // Accumulate elapsed time
@@ -577,45 +623,6 @@ where
             let instruction_complete = self.step_cycle()?;
             if instruction_complete {
                 break;
-            }
-        }
-
-        // Call inst_complete callback if provided (after instruction completion)
-        // This callback receives restricted access to the Simulator via SimulatorView
-        if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(
-                &mut self.bus,
-                &mut self.hung_detector,
-                &self.cpu,
-                &mut self.host_bus_handler,
-            );
-            callback(&mut view);
-        }
-
-        // Unified instruction trace handling
-        // Check if trace callback is valid or instruction trace printing is enabled
-        if self.trace_callback.is_some() || self.print_inst_trace {
-            // Assemble InstructionTrace structure using debug signals from CPU
-            let pc = self.cpu.debug_pc;
-            let instruction = self.cpu.debug_instruction;
-            let rs1_value = self.cpu.debug_rs1_data;
-            let rs2_value = self.cpu.debug_rs2_data;
-            let rd_value = self.cpu.debug_rd_data;
-
-            let trace =
-                InstructionTrace::from_instruction(pc, instruction, rs1_value, rs2_value, rd_value);
-
-            // Print the display version of the structure if printing is enabled
-            if self.print_inst_trace {
-                println!(
-                    "Cycle {:6} | PC: 0x{:08x} | {}",
-                    self.cycle_count, pc, trace
-                );
-            }
-
-            // Call the trace callback with the structure if the callback is valid
-            if let Some(ref mut callback) = self.trace_callback {
-                callback(&trace);
             }
         }
 
