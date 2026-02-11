@@ -24,8 +24,8 @@ const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
-    /// Load an ELF file into the simulator
-    LoadElf(std::path::PathBuf),
+    /// Load an ELF file into the simulator, with a one-shot channel for the result
+    LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -34,10 +34,6 @@ enum RuntimeCommand {
 enum RuntimeEvent {
     /// A bus event was produced
     Bus(BusEvent),
-    /// ELF loading completed successfully
-    ElfLoaded(u32),
-    /// ELF loading failed
-    ElfLoadError(String),
     /// A fatal error occurred
     FatalError(String),
 }
@@ -108,18 +104,28 @@ impl SimDeviceRuntime {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
                     if let Err(e) = simulator.send_bus_request(request) {
+                        // Clear pending and notify caller with a failure event
                         let mut pending = pending_host_request.lock().unwrap();
-                        *pending = None;
+                        if let Some(ref p) = *pending {
+                            let failed_addr = p.addr;
+                            *pending = None;
+                            let _ =
+                                event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
+                                    addr: failed_addr,
+                                }));
+                        } else {
+                            *pending = None;
+                        }
                         log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
-                Ok(RuntimeCommand::LoadElf(path)) => match simulator.load_elf(&path) {
+                Ok(RuntimeCommand::LoadElf(path, result_tx)) => match simulator.load_elf(&path) {
                     Ok(entry_point) => {
                         elf_loaded = true;
-                        let _ = event_tx.send(RuntimeEvent::ElfLoaded(entry_point));
+                        let _ = result_tx.send(Ok(entry_point));
                     }
                     Err(e) => {
-                        let _ = event_tx.send(RuntimeEvent::ElfLoadError(e));
+                        let _ = result_tx.send(Err(e));
                     }
                 },
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -223,10 +229,6 @@ impl DeviceRuntime for SimDeviceRuntime {
     fn poll(&mut self) -> Result<Option<BusEvent>, DeviceError> {
         match self.event_rx.try_recv() {
             Ok(RuntimeEvent::Bus(event)) => Ok(Some(event)),
-            Ok(RuntimeEvent::ElfLoaded(_)) | Ok(RuntimeEvent::ElfLoadError(_)) => {
-                // These are handled internally by load_elf
-                Ok(None)
-            }
             Ok(RuntimeEvent::FatalError(msg)) => Err(DeviceError::IoError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 msg,
@@ -246,9 +248,12 @@ impl DeviceRuntime for SimDeviceRuntime {
     }
 
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
+        // Create a one-shot channel for the ELF load result
+        let (result_tx, result_rx) = mpsc::channel::<Result<u32, String>>();
+
         // Send the ELF load command to the background thread
         self.command_tx
-            .send(RuntimeCommand::LoadElf(path.to_path_buf()))
+            .send(RuntimeCommand::LoadElf(path.to_path_buf(), result_tx))
             .map_err(|e| {
                 DeviceError::IoError(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
@@ -256,37 +261,22 @@ impl DeviceRuntime for SimDeviceRuntime {
                 ))
             })?;
 
-        // Wait synchronously for the result
-        loop {
-            match self.event_rx.recv_timeout(Duration::from_secs(30)) {
-                Ok(RuntimeEvent::ElfLoaded(entry_point)) => return Ok(entry_point),
-                Ok(RuntimeEvent::ElfLoadError(e)) => {
-                    return Err(DeviceError::OpenFailed(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        e,
-                    ))));
-                }
-                Ok(RuntimeEvent::FatalError(msg)) => {
-                    return Err(DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::BrokenPipe,
-                        msg,
-                    )));
-                }
-                Ok(RuntimeEvent::Bus(_)) => {
-                    log::debug!("Received bus event during load_elf: dropping");
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    return Err(DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "Timed out waiting for ELF load to complete",
-                    )));
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::BrokenPipe,
-                        "Background thread terminated during ELF load",
-                    )));
-                }
+        // Wait for the result on the dedicated channel (does not consume bus events)
+        match result_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(entry_point)) => Ok(entry_point),
+            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e,
+            ))),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Timed out waiting for ELF load to complete",
+            ))),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Background thread terminated during ELF load",
+                )))
             }
         }
     }
