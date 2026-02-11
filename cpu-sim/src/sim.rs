@@ -492,10 +492,9 @@ where
     /// protocol and clock edge. It does NOT increment cycle_count, call
     /// bus.clock_cycle_all_devices(), run hung detector checks, or print FSM state.
     fn boot_clock_cycle(&mut self) {
-        self.cpu.eval();
-        self.handle_host_bus_interface();
         self.cpu.clk = 0;
         self.cpu.eval();
+        self.handle_host_bus_interface();
         self.cpu.clk = 1;
         self.cpu.eval();
         self.dump_vcd();
@@ -539,7 +538,8 @@ where
     pub fn step_cycle(&mut self) -> Result<bool, HungStateError> {
         let start_time = Instant::now();
 
-        // Evaluate combinational logic
+        // Clock edge
+        self.cpu.clk = 0;
         self.cpu.eval();
 
         // Handle host bus interface protocol
@@ -562,9 +562,6 @@ where
             );
         }
 
-        // Clock edge
-        self.cpu.clk = 0;
-        self.cpu.eval();
         self.cpu.clk = 1;
         self.cpu.eval();
 
