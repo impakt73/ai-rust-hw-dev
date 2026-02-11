@@ -306,26 +306,22 @@ The simulator supports configurable memory latency to test the CPU's ability to 
 #### Using Variable Latency
 
 ```rust
-use cpu_sim::Simulator;
-use device_runtime::SystemBus;
+use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView};
+use std::path::Path;
 
-let runtime = riscv_core::create_cpu_runtime()?;
-let bus = SystemBus::new();
-
-// Configure memory latency at initialization (3 cycle latency)
-let mut sim = Simulator::new(
-    &runtime,
-    bus,
-    false,  // print_inst_trace
-    false,  // print_fsm_state
-    None::<fn(u32)>,
-    None::<fn(&riscv_core::trace::InstructionTrace)>,
-    3,      // mem_latency_cycles
+// Configure memory latency via run_elf (3 cycle latency)
+let result = run_elf(
+    Path::new("program.elf"),
+    10_000,
+    false, // print_inst_trace
+    false, // print_fsm_state
+    None::<fn(&mut SimulatorView)>,
+    None::<fn(&InstructionTrace)>,
+    None, // vcd_path
+    3,    // mem_latency_cycles
+    None::<fn(&mut SimulatorView)>,
+    None::<fn(&SimulatorView, &SimulationResult)>,
 )?;
-
-// Load and run your program
-let entry_point = cpu_sim::load_elf(&mut sim, Path::new("program.elf"))?;
-let result = sim.run(entry_point, 10000)?;
 ```
 
 #### How It Works
