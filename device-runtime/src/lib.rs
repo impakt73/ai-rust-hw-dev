@@ -106,8 +106,8 @@ pub fn create_device_runtime(
             Ok(Box::new(runtime))
         }
         DeviceRuntimeType::Sim => {
-            let runtime =
-                sim::SimDeviceRuntime::new().map_err(|e| DeviceError::OpenFailed(e.into()))?;
+            let runtime = sim::SimDeviceRuntime::new()
+                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }
     }

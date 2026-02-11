@@ -140,7 +140,7 @@ impl SimulationThread {
                 match request {
                     SimRequest::LoadELF(path) => {
                         match simulator.load_elf(&path) {
-                            Ok(()) => {
+                            Ok(_entry_point) => {
                                 total_cycles = 0;
                                 batch_count = 0;
                                 running = false; // Don't auto-start

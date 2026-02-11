@@ -5,12 +5,12 @@
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
-//! continuously. Host-initiated bus requests are forwarded to the
-//! simulator's host bus handler.
+//! continuously. Host-initiated bus requests are forwarded directly
+//! to the simulator's internal host bus handler.
 
 use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{BusRequest, BusResponse, HostBusHandler};
+use host_bus_handler::BusRequest;
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -40,9 +40,6 @@ enum RuntimeEvent {
     ElfLoadError(String),
     /// A fatal error occurred
     FatalError(String),
-    /// A non-fatal error occurred
-    #[allow(dead_code)]
-    NonFatalError(String),
 }
 
 /// Simulator device runtime that runs the CPU in software.
@@ -72,10 +69,9 @@ impl SimDeviceRuntime {
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
-        let elf_loaded: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(command_rx, event_tx, pending_clone, elf_loaded);
+            Self::run_loop(command_rx, event_tx, pending_clone);
         });
 
         Ok(SimDeviceRuntime {
@@ -91,7 +87,6 @@ impl SimDeviceRuntime {
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
-        elf_loaded: Arc<Mutex<bool>>,
     ) {
         // Create the interactive simulator
         let mut simulator = match InteractiveSimulator::new() {
@@ -105,64 +100,40 @@ impl SimDeviceRuntime {
             }
         };
 
-        let mut handler = HostBusHandler::new();
+        let mut elf_loaded = false;
 
         loop {
             // Check for commands from the main thread (non-blocking)
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
-                    if let Err(e) = handler.send_request(request) {
-                        {
-                            let mut pending = pending_host_request.lock().unwrap();
-                            *pending = None;
-                        }
-                        let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
-                            "Handler error: {:?}",
-                            e
-                        )));
+                    if let Err(e) = simulator.send_bus_request(request) {
+                        let mut pending = pending_host_request.lock().unwrap();
+                        *pending = None;
+                        log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
-                Ok(RuntimeCommand::LoadElf(path)) => {
-                    match simulator.load_elf(&path) {
-                        Ok(()) => {
-                            // Extract entry point by reading the ELF header again
-                            // (InteractiveSimulator::load_elf doesn't return it)
-                            // We need to parse the ELF ourselves for the entry point
-                            match Self::read_elf_entry_point(&path) {
-                                Ok(entry_point) => {
-                                    *elf_loaded.lock().unwrap() = true;
-                                    let _ = event_tx.send(RuntimeEvent::ElfLoaded(entry_point));
-                                }
-                                Err(e) => {
-                                    let _ = event_tx.send(RuntimeEvent::ElfLoadError(e));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = event_tx.send(RuntimeEvent::ElfLoadError(e));
-                        }
+                Ok(RuntimeCommand::LoadElf(path)) => match simulator.load_elf(&path) {
+                    Ok(entry_point) => {
+                        elf_loaded = true;
+                        let _ = event_tx.send(RuntimeEvent::ElfLoaded(entry_point));
                     }
-                }
+                    Err(e) => {
+                        let _ = event_tx.send(RuntimeEvent::ElfLoadError(e));
+                    }
+                },
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
 
             // Only step the simulator if an ELF has been loaded
-            let is_loaded = *elf_loaded.lock().unwrap();
-            if is_loaded {
+            if elf_loaded {
                 // Step one instruction
                 match simulator.step_instruction() {
                     Ok(result) => {
-                        if let Some(tohost) = result.tohost_value {
-                            let _ = event_tx.send(RuntimeEvent::Bus(BusEvent::Write {
-                                addr: 0x40000000, // SIM_CONTROL_BASE
-                                size: 2,          // word
-                                data: tohost,
-                                is_dram: false,
-                            }));
+                        if result.tohost_value.is_some() {
                             // Program has terminated, stop stepping
-                            *elf_loaded.lock().unwrap() = false;
+                            elf_loaded = false;
                         }
                     }
                     Err(e) => {
@@ -183,7 +154,6 @@ impl SimDeviceRuntime {
                     if p.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
                         let timed_out_addr = p.addr;
                         *pending = None;
-                        handler.reset();
                         let _ = event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
                             addr: timed_out_addr,
                         }));
@@ -191,11 +161,12 @@ impl SimDeviceRuntime {
                 }
             }
 
-            // Check for completed host-initiated responses
+            // Check for completed host-initiated responses from the simulator
             {
                 let mut pending = pending_host_request.lock().unwrap();
-                if let Some(ref p) = *pending {
-                    if let Some(response) = handler.receive_response() {
+                if pending.is_some() {
+                    if let Some(response) = simulator.receive_bus_response() {
+                        let p = pending.as_ref().unwrap();
                         let req_addr = p.addr;
                         let req_wdata = p.wdata;
                         *pending = None;
@@ -216,51 +187,7 @@ impl SimDeviceRuntime {
                     }
                 }
             }
-
-            // Check for incoming CPU-initiated requests
-            if handler.has_incoming_request() {
-                if let Ok(request) = handler.accept_request() {
-                    let size = request.size.to_size_code();
-                    let event = if request.we {
-                        let response = BusResponse::write_ack(request.size);
-                        if let Err(e) = handler.complete_request(response) {
-                            log::error!("Failed to complete write request: {:?}", e);
-                        }
-                        BusEvent::Write {
-                            addr: request.addr,
-                            size,
-                            data: request.wdata,
-                            is_dram: false,
-                        }
-                    } else {
-                        let response = BusResponse::read_data(0, request.size);
-                        if let Err(e) = handler.complete_request(response) {
-                            log::error!("Failed to complete read request: {:?}", e);
-                        }
-                        BusEvent::Read {
-                            addr: request.addr,
-                            size,
-                            data: 0,
-                            is_dram: false,
-                        }
-                    };
-                    let _ = event_tx.send(RuntimeEvent::Bus(event));
-                }
-            }
         }
-    }
-
-    /// Read the entry point from an ELF file
-    fn read_elf_entry_point(path: &Path) -> Result<u32, String> {
-        let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
-        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
-            .map_err(|e| format!("Failed to parse ELF: {}", e))?;
-        elf_file.ehdr.e_entry.try_into().map_err(|_| {
-            format!(
-                "ELF entry point 0x{:x} does not fit in u32",
-                elf_file.ehdr.e_entry
-            )
-        })
     }
 }
 
@@ -304,9 +231,6 @@ impl DeviceRuntime for SimDeviceRuntime {
                 std::io::ErrorKind::BrokenPipe,
                 msg,
             ))),
-            Ok(RuntimeEvent::NonFatalError(msg)) => {
-                Err(DeviceError::IoError(std::io::Error::other(msg)))
-            }
             Err(mpsc::TryRecvError::Empty) => Ok(None),
             Err(mpsc::TryRecvError::Disconnected) => {
                 Err(DeviceError::IoError(std::io::Error::new(
@@ -348,19 +272,8 @@ impl DeviceRuntime for SimDeviceRuntime {
                         msg,
                     )));
                 }
-                Ok(other_event) => {
-                    // Consume other events (Bus events, etc.) during loading
-                    match other_event {
-                        RuntimeEvent::NonFatalError(msg) => {
-                            log::warn!("Non-fatal error during ELF load: {}", msg);
-                        }
-                        RuntimeEvent::Bus(_) => {
-                            log::debug!("Received bus event during load_elf: dropping");
-                        }
-                        _ => {
-                            log::debug!("Received unexpected event during load_elf: dropping");
-                        }
-                    }
+                Ok(RuntimeEvent::Bus(_)) => {
+                    log::debug!("Received bus event during load_elf: dropping");
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     return Err(DeviceError::IoError(std::io::Error::new(

@@ -35,6 +35,8 @@ fn is_dram_address(addr: u32) -> bool {
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
+    /// Load an ELF file into memory
+    LoadElf(std::path::PathBuf),
     /// Shut down the background thread
     Shutdown,
 }
@@ -43,6 +45,10 @@ enum RuntimeCommand {
 enum RuntimeEvent {
     /// A bus event was produced
     Bus(BusEvent),
+    /// ELF loading completed successfully
+    ElfLoaded(u32),
+    /// ELF loading failed
+    ElfLoadError(String),
     /// A fatal serial error occurred
     FatalError(String),
     /// A non-fatal serial error occurred
@@ -64,8 +70,6 @@ pub(crate) struct FpgaDeviceRuntime {
     event_rx: mpsc::Receiver<RuntimeEvent>,
     /// Shared pending host request state (for querying from main thread)
     pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
-    /// Sparse memory model for DRAM (shared with background thread)
-    memory: Arc<Mutex<SparseMemory>>,
     /// Handle to the background thread
     thread_handle: Option<thread::JoinHandle<()>>,
 }
@@ -82,17 +86,16 @@ impl FpgaDeviceRuntime {
             .open()
             .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
 
-        let memory = Arc::new(Mutex::new(SparseMemory::new()));
+        let memory = SparseMemory::new();
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
-        let memory_clone = Arc::clone(&memory);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, memory_clone, command_rx, event_tx, pending_clone);
+            Self::run_loop(port, memory, command_rx, event_tx, pending_clone);
         });
 
         Ok(FpgaDeviceRuntime {
@@ -101,7 +104,6 @@ impl FpgaDeviceRuntime {
             command_tx,
             event_rx,
             pending_host_request,
-            memory,
             thread_handle: Some(thread_handle),
         })
     }
@@ -109,7 +111,7 @@ impl FpgaDeviceRuntime {
     /// Background thread main loop
     fn run_loop(
         mut port: Box<dyn SerialPort>,
-        memory: Arc<Mutex<SparseMemory>>,
+        mut memory: SparseMemory,
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
@@ -139,6 +141,15 @@ impl FpgaDeviceRuntime {
                         )));
                     }
                 }
+                Ok(RuntimeCommand::LoadElf(path)) => match Self::load_elf_into_memory(&path) {
+                    Ok((entry_point, new_memory)) => {
+                        memory = new_memory;
+                        let _ = event_tx.send(RuntimeEvent::ElfLoaded(entry_point));
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(RuntimeEvent::ElfLoadError(e));
+                    }
+                },
                 Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
                 Err(mpsc::TryRecvError::Disconnected) => break, // Main thread dropped sender
             }
@@ -146,7 +157,7 @@ impl FpgaDeviceRuntime {
             // Run one poll iteration
             match Self::poll_once(
                 &mut port,
-                &memory,
+                &mut memory,
                 &mut handler,
                 &mut rx_buffer,
                 &mut rx_buffer_len,
@@ -187,7 +198,7 @@ impl FpgaDeviceRuntime {
     #[allow(clippy::too_many_arguments)]
     fn poll_once(
         port: &mut Box<dyn SerialPort>,
-        memory: &Arc<Mutex<SparseMemory>>,
+        memory: &mut SparseMemory,
         handler: &mut HostBusHandler,
         rx_buffer: &mut [u8; BUFFER_SIZE],
         rx_buffer_len: &mut usize,
@@ -380,12 +391,10 @@ impl FpgaDeviceRuntime {
     fn process_cpu_request(
         handler: &mut HostBusHandler,
         request: &BusRequest,
-        memory: &Arc<Mutex<SparseMemory>>,
+        memory: &mut SparseMemory,
     ) -> BusEvent {
         let size = request.size.to_size_code();
         let is_dram = is_dram_address(request.addr);
-
-        let mut memory = memory.lock().unwrap();
 
         if request.we {
             if is_dram {
@@ -432,6 +441,59 @@ impl FpgaDeviceRuntime {
             }
         }
     }
+
+    /// Load an ELF file into a new SparseMemory, returning the entry point and memory.
+    ///
+    /// This loads into a temporary memory instance first, so existing memory is
+    /// preserved if loading fails.
+    fn load_elf_into_memory(path: &Path) -> Result<(u32, SparseMemory), String> {
+        let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
+        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
+            .map_err(|e| format!("Failed to parse ELF: {}", e))?;
+
+        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().map_err(|_| {
+            format!(
+                "ELF entry point 0x{:x} does not fit in u32",
+                elf_file.ehdr.e_entry
+            )
+        })?;
+
+        let mut new_memory = SparseMemory::new();
+
+        if let Some(phdrs) = elf_file.segments() {
+            for phdr in phdrs.iter() {
+                if phdr.p_type == elf::abi::PT_LOAD {
+                    let vaddr = phdr.p_vaddr as u32;
+                    let file_size = phdr.p_filesz as usize;
+                    let offset = phdr.p_offset as usize;
+
+                    if file_size > 0 {
+                        let end = match offset.checked_add(file_size) {
+                            Some(end) if end <= file_data.len() => end,
+                            _ => {
+                                return Err(format!(
+                                    "Segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
+                                    offset, file_size, file_data.len()
+                                ));
+                            }
+                        };
+
+                        let segment_data = &file_data[offset..end];
+                        for (i, &byte) in segment_data.iter().enumerate() {
+                            new_memory.write_byte(vaddr.wrapping_add(i as u32), byte);
+                        }
+                        log::info!(
+                            "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
+                            vaddr,
+                            file_size
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok((entry_point, new_memory))
+    }
 }
 
 impl DeviceRuntime for FpgaDeviceRuntime {
@@ -467,6 +529,10 @@ impl DeviceRuntime for FpgaDeviceRuntime {
     fn poll(&mut self) -> Result<Option<BusEvent>, DeviceError> {
         match self.event_rx.try_recv() {
             Ok(RuntimeEvent::Bus(event)) => Ok(Some(event)),
+            Ok(RuntimeEvent::ElfLoaded(_)) | Ok(RuntimeEvent::ElfLoadError(_)) => {
+                // These are handled internally by load_elf
+                Ok(None)
+            }
             Ok(RuntimeEvent::FatalError(msg)) => Err(DeviceError::IoError(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 msg,
@@ -489,62 +555,50 @@ impl DeviceRuntime for FpgaDeviceRuntime {
     }
 
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
-        let file_data = std::fs::read(path).map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
-        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
-            .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
+        // Send the ELF load command to the background thread
+        self.command_tx
+            .send(RuntimeCommand::LoadElf(path.to_path_buf()))
+            .map_err(|e| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    format!("Background thread disconnected: {}", e),
+                ))
+            })?;
 
-        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().map_err(|_| {
-            DeviceError::OpenFailed(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "ELF entry point 0x{:x} does not fit in u32",
-                    elf_file.ehdr.e_entry
-                ),
-            )))
-        })?;
-
-        let mut memory = self.memory.lock().unwrap();
-        // Clear existing memory contents before loading new ELF
-        *memory = SparseMemory::new();
-
-        if let Some(phdrs) = elf_file.segments() {
-            for phdr in phdrs.iter() {
-                if phdr.p_type == elf::abi::PT_LOAD {
-                    let vaddr = phdr.p_vaddr as u32;
-                    let file_size = phdr.p_filesz as usize;
-                    let offset = phdr.p_offset as usize;
-
-                    if file_size > 0 {
-                        let end = match offset.checked_add(file_size) {
-                            Some(end) if end <= file_data.len() => end,
-                            _ => {
-                                return Err(DeviceError::OpenFailed(Box::new(
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        format!(
-                                            "Segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
-                                            offset, file_size, file_data.len()
-                                        ),
-                                    ),
-                                )));
-                            }
-                        };
-
-                        let segment_data = &file_data[offset..end];
-                        for (i, &byte) in segment_data.iter().enumerate() {
-                            memory.write_byte(vaddr.wrapping_add(i as u32), byte);
-                        }
-                        log::info!(
-                            "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
-                            vaddr,
-                            file_size
-                        );
-                    }
+        // Wait synchronously for the result
+        loop {
+            match self.event_rx.recv_timeout(Duration::from_secs(30)) {
+                Ok(RuntimeEvent::ElfLoaded(entry_point)) => return Ok(entry_point),
+                Ok(RuntimeEvent::ElfLoadError(e)) => {
+                    return Err(DeviceError::OpenFailed(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        e,
+                    ))));
+                }
+                Ok(RuntimeEvent::FatalError(msg)) => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        msg,
+                    )));
+                }
+                Ok(_) => {
+                    // Consume other events during loading (bus events, non-fatal errors)
+                    log::debug!("Received event during load_elf: dropping");
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Timed out waiting for ELF load to complete",
+                    )));
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "Background thread terminated during ELF load",
+                    )));
                 }
             }
         }
-
-        Ok(entry_point)
     }
 }
 
