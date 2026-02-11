@@ -5,7 +5,6 @@
 //! view, command shell, and dynamic device connection management.
 
 mod app;
-mod elf_loader;
 mod shell;
 mod ui;
 
@@ -18,7 +17,6 @@ use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -50,6 +48,8 @@ enum RuntimeArgs {
         #[arg(short, long, default_value_t = 115200)]
         baud: u32,
     },
+    /// Use the software simulator
+    Sim,
 }
 
 fn main() -> io::Result<()> {
@@ -90,46 +90,51 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         "Type 'help' for available commands".to_string(),
     );
 
-    // Handle CLI-provided ELF file
-    if let Some(ref elf_path) = args.elf {
-        let result = elf_loader::load_elf(&mut app.memory.lock().unwrap(), elf_path);
-        match result {
-            Ok(entry) => {
-                app.last_entry_point = Some(entry);
-                app.add_log(
-                    log::Level::Info,
-                    format!(
-                        "Loaded ELF: {} (entry: 0x{:08x})",
-                        elf_path.display(),
-                        entry
-                    ),
-                );
+    // Handle CLI-provided device connection
+    if let Some(runtime_args) = args.runtime {
+        let runtime_type = match runtime_args {
+            RuntimeArgs::Fpga { device, baud } => DeviceRuntimeType::Fpga {
+                device: device.to_string_lossy().to_string(),
+                baud,
+            },
+            RuntimeArgs::Sim => DeviceRuntimeType::Sim,
+        };
+        match create_device_runtime(runtime_type) {
+            Ok(runtime) => {
+                let description = runtime.to_string();
+                app.add_log(log::Level::Info, format!("Connected to {}", description));
+                app.device_runtime = Some(runtime);
             }
             Err(e) => {
-                app.add_log(log::Level::Error, format!("Failed to load ELF: {}", e));
+                app.add_log(log::Level::Error, format!("Failed to connect: {}", e));
             }
         }
     }
 
-    // Handle CLI-provided device connection
-    if let Some(runtime_args) = args.runtime {
-        match runtime_args {
-            RuntimeArgs::Fpga { device, baud } => {
-                let runtime_type = DeviceRuntimeType::Fpga {
-                    device: device.to_string_lossy().to_string(),
-                    baud,
-                };
-                match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
-                    Ok(runtime) => {
-                        let description = runtime.to_string();
-                        app.add_log(log::Level::Info, format!("Connected to {}", description));
-                        app.device_runtime = Some(runtime);
-                    }
-                    Err(e) => {
-                        app.add_log(log::Level::Error, format!("Failed to connect: {}", e));
-                    }
+    // Handle CLI-provided ELF file (requires an active device connection)
+    if let Some(ref elf_path) = args.elf {
+        if let Some(ref mut runtime) = app.device_runtime {
+            match runtime.load_elf(elf_path) {
+                Ok(entry) => {
+                    app.last_entry_point = Some(entry);
+                    app.add_log(
+                        log::Level::Info,
+                        format!(
+                            "Loaded ELF: {} (entry: 0x{:08x})",
+                            elf_path.display(),
+                            entry
+                        ),
+                    );
+                }
+                Err(e) => {
+                    app.add_log(log::Level::Error, format!("Failed to load ELF: {}", e));
                 }
             }
+        } else {
+            app.add_log(
+                log::Level::Error,
+                "Cannot load ELF: no device connected. Connect first, then load ELF.".to_string(),
+            );
         }
     }
 

@@ -7,12 +7,11 @@
 
 mod fpga;
 pub mod memory;
-
-use memory::SparseMemory;
+mod sim;
 
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
-use std::sync::{Arc, Mutex};
+use std::path::Path;
 
 /// Errors that can occur during device operations
 #[derive(Debug)]
@@ -93,19 +92,22 @@ pub enum DeviceRuntimeType {
         /// Baud rate for serial communication
         baud: u32,
     },
+    /// Software simulator
+    Sim,
 }
 
 /// Create a device runtime for the specified backend.
-///
-/// The provided memory is shared with the runtime for CPU-initiated request
-/// processing.
 pub fn create_device_runtime(
     runtime_type: DeviceRuntimeType,
-    memory: Arc<Mutex<SparseMemory>>,
 ) -> Result<Box<dyn DeviceRuntime>, DeviceError> {
     match runtime_type {
         DeviceRuntimeType::Fpga { device, baud } => {
-            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud, memory)?;
+            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud)?;
+            Ok(Box::new(runtime))
+        }
+        DeviceRuntimeType::Sim => {
+            let runtime = sim::SimDeviceRuntime::new()
+                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }
     }
@@ -201,4 +203,12 @@ pub trait DeviceRuntime: std::fmt::Display {
 
     /// Check if there is a pending host-initiated request.
     fn has_pending_host_request(&self) -> bool;
+
+    /// Load an ELF file into the device's memory.
+    ///
+    /// For FPGA runtimes, this populates the internal sparse memory model.
+    /// For simulator runtimes, this loads directly into the simulator's memory.
+    ///
+    /// Returns the ELF entry point address on success.
+    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError>;
 }

@@ -3,13 +3,11 @@
 //! This module provides the interactive command shell functionality.
 
 use crate::app::App;
-use crate::elf_loader;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType};
 use host_bus_handler::{AccessSize, BusRequest};
 use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
-use std::sync::Arc;
 
 /// Default baud rate for device connections
 const DEFAULT_BAUD_RATE: u32 = 115200;
@@ -153,6 +151,8 @@ pub enum ConnectRuntime {
         #[arg(default_value_t = DEFAULT_BAUD_RATE)]
         baud: u32,
     },
+    /// Connect to the software simulator
+    Sim,
 }
 
 /// Parse a string as either hex (with 0x prefix) or decimal
@@ -213,7 +213,8 @@ impl ShellCommand {
             ShellCommand::Status => execute_status(app),
 
             ShellCommand::Connect { runtime } => match runtime {
-                ConnectRuntime::Fpga { device, baud } => execute_connect(app, &device, baud),
+                ConnectRuntime::Fpga { device, baud } => execute_connect_fpga(app, &device, baud),
+                ConnectRuntime::Sim => execute_connect_sim(app),
             },
 
             ShellCommand::Disconnect => execute_disconnect(app),
@@ -255,8 +256,8 @@ fn execute_status(app: &App) -> CommandResult {
     CommandResult::ok(status)
 }
 
-/// Execute the connect command
-fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
+/// Execute the connect fpga command
+fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult {
     if app.device_runtime.is_some() {
         return CommandResult::error("Already connected. Disconnect first.");
     }
@@ -265,12 +266,27 @@ fn execute_connect(app: &mut App, device: &str, baud: u32) -> CommandResult {
         device: device.to_string(),
         baud,
     };
-    match create_device_runtime(runtime_type, Arc::clone(&app.memory)) {
+    match create_device_runtime(runtime_type) {
         Ok(runtime) => {
             app.device_runtime = Some(runtime);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
         }
         Err(e) => CommandResult::error(format!("Failed to connect: {}", e)),
+    }
+}
+
+/// Execute the connect sim command
+fn execute_connect_sim(app: &mut App) -> CommandResult {
+    if app.device_runtime.is_some() {
+        return CommandResult::error("Already connected. Disconnect first.");
+    }
+
+    match create_device_runtime(DeviceRuntimeType::Sim) {
+        Ok(runtime) => {
+            app.device_runtime = Some(runtime);
+            CommandResult::ok("Connected to Simulator".to_string())
+        }
+        Err(e) => CommandResult::error(format!("Failed to create simulator: {}", e)),
     }
 }
 
@@ -287,20 +303,19 @@ fn execute_disconnect(app: &mut App) -> CommandResult {
 
 /// Execute the loadelf command
 fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
     let path = Path::new(path);
 
     if !path.exists() {
         return CommandResult::error(format!("File not found: {}", path.display()));
     }
 
-    // Load into a temporary memory instance first, so we don't
-    // discard the existing memory contents if loading fails.
-    let mut new_memory = Default::default();
-
-    match elf_loader::load_elf(&mut new_memory, path) {
+    match runtime.load_elf(path) {
         Ok(entry_point) => {
-            // Loading succeeded; commit the new memory and save entry point.
-            *app.memory.lock().unwrap() = new_memory;
             app.last_entry_point = Some(entry_point);
             CommandResult::ok(format!(
                 "Loaded {} successfully\nEntry point: 0x{:08x}",
@@ -549,6 +564,17 @@ mod tests {
     fn test_parse_connect_missing_device() {
         assert!(ShellCommand::parse("connect").is_err());
         assert!(ShellCommand::parse("connect fpga").is_err());
+    }
+
+    #[test]
+    fn test_parse_connect_sim() {
+        let result = ShellCommand::parse("connect sim");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Connect {
+                runtime: ConnectRuntime::Sim
+            }))
+        ));
     }
 
     #[test]

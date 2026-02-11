@@ -125,7 +125,7 @@ impl InteractiveSimulator {
     /// * `path` - Path to the RISC-V ELF executable file
     ///
     /// # Returns
-    /// * `Ok(())` on success
+    /// * `Ok(entry_point)` with the ELF entry point address on success
     /// * `Err(String)` if the ELF file cannot be loaded or is invalid
     ///
     /// # Examples
@@ -133,9 +133,10 @@ impl InteractiveSimulator {
     /// # use cpu_sim::InteractiveSimulator;
     /// # use std::path::Path;
     /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_elf(Path::new("test.elf")).expect("Failed to load ELF");
+    /// let entry = sim.load_elf(Path::new("test.elf")).expect("Failed to load ELF");
+    /// println!("Entry point: 0x{:08x}", entry);
     /// ```
-    pub fn load_elf(&mut self, path: &Path) -> Result<(), String> {
+    pub fn load_elf(&mut self, path: &Path) -> Result<u32, String> {
         // Load ELF into simulator memory using the helper function
         let entry_point = {
             let mut view = SimulatorView::new(
@@ -160,7 +161,7 @@ impl InteractiveSimulator {
         // Mark ELF as loaded
         self.elf_loaded = true;
 
-        Ok(())
+        Ok(entry_point)
     }
 
     /// Register a custom bus device at the specified base address
@@ -261,6 +262,44 @@ impl InteractiveSimulator {
         self.simulator
             .step()
             .map_err(|e| format!("Execution error: {}", e))
+    }
+
+    /// Send a bus request from the host to the RTL target
+    ///
+    /// This forwards the request to the simulator's internal host bus handler.
+    /// The request will be processed during subsequent `step_instruction()` calls.
+    ///
+    /// # Arguments
+    /// * `request` - Bus request (read or write) to send to the RTL target
+    ///
+    /// # Returns
+    /// * `Ok(())` - Request queued successfully
+    /// * `Err(String)` - Request rejected (already pending, or invalid address)
+    pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
+        let mut view = SimulatorView::new(
+            &mut self.simulator.bus,
+            &mut self.simulator.hung_detector,
+            &self.simulator.cpu,
+            &mut self.simulator.host_bus_handler,
+        );
+        view.send_bus_request(request)
+    }
+
+    /// Receive a bus response from the RTL target
+    ///
+    /// Returns the response for the most recently completed host-initiated request.
+    ///
+    /// # Returns
+    /// * `Some(response)` - Response received
+    /// * `None` - No response available yet
+    pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
+        let mut view = SimulatorView::new(
+            &mut self.simulator.bus,
+            &mut self.simulator.hung_detector,
+            &self.simulator.cpu,
+            &mut self.simulator.host_bus_handler,
+        );
+        view.receive_bus_response()
     }
 }
 /// Load an ELF file into a simulator's memory
