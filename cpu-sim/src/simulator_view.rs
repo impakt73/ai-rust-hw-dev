@@ -231,9 +231,14 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn dump_memory_region(&self, start_addr: u32, size: u32) -> impl Iterator<Item = u8> + '_ {
-        // Validate range before reading
-        let is_valid = is_valid_dram_range(start_addr, size);
-        if !is_valid {
+        // Validate the entire range upfront
+        let is_valid = if size > 0 {
+            is_valid_dram_range(start_addr, size)
+        } else {
+            true // Empty range is valid
+        };
+
+        if !is_valid && size > 0 {
             log::warn!(
                 "dump_memory_region: Address range 0x{:08x} - 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x})",
                 start_addr,
@@ -243,7 +248,9 @@ impl<'a> SimulatorView<'a> {
             );
         }
 
-        // Return iterator with validation check
+        // Dump from memory using absolute addresses.
+        // The address range is validated once above; if it is invalid, this iterator
+        // returns 0 without performing any memory reads.
         (0..size).map(move |offset| {
             let addr = start_addr.wrapping_add(offset);
             if is_valid {

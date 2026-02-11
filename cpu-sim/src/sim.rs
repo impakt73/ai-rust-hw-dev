@@ -46,10 +46,6 @@ impl From<HungStateError> for BootError {
     }
 }
 
-/// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-#[allow(unused_imports)]
-use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
-
 /// Pending response for a host-initiated request (awaiting completion after latency)
 #[derive(Debug, Clone)]
 struct PendingResponse {
