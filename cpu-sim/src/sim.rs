@@ -397,6 +397,10 @@ where
         self.cpu.host_rx_data = 0;
         self.cpu.reset_request = 0;
 
+        // Initialize direct memory interface signals
+        self.cpu.direct_mem_rdata = 0;
+        self.cpu.direct_mem_ready = 0;
+
         // Drive reset low
         self.cpu.rst_n = 0;
         self.cpu.clk = 0;
@@ -537,14 +541,42 @@ where
     /// * `Ok(false)` - Instruction still in progress, more cycles needed
     /// * `Err(HungStateError)` - Hung state detected
     pub fn step_cycle(&mut self) -> Result<bool, HungStateError> {
-        let start_time = Instant::now();
-
         // Evaluate combinational logic
         self.cpu.eval();
 
-        // Handle host bus interface protocol
-        // The CPU sends serialized bus transactions via host_tx_* signals
-        // and we respond via host_rx_* signals
+        // Handle direct memory interface (when ENABLE_DIRECT_MEM=1 in RTL)
+        // This provides single-cycle memory access, bypassing the host_bus_interface
+        // byte serialization. The direct_mem_req signal indicates the CPU/bus needs
+        // an external memory access. We handle it immediately for zero-latency.
+        if self.cpu.direct_mem_req != 0 {
+            let addr = self.cpu.direct_mem_addr;
+            let size = self.cpu.direct_mem_size;
+            if self.cpu.direct_mem_we != 0 {
+                // Write operation
+                let wdata = self.cpu.direct_mem_wdata;
+                match size {
+                    0b00 => self.bus.write_byte(addr, wdata as u8),
+                    0b01 => self.bus.write_halfword(addr, wdata as u16),
+                    _ => self.bus.write_word(addr, wdata),
+                }
+            } else {
+                // Read operation
+                let rdata = match size {
+                    0b00 => self.bus.read_byte(addr) as u32,
+                    0b01 => self.bus.read_halfword(addr) as u32,
+                    _ => self.bus.read_word(addr),
+                };
+                self.cpu.direct_mem_rdata = rdata;
+            }
+            self.cpu.direct_mem_ready = 1;
+            // Re-evaluate after setting memory signals
+            self.cpu.eval();
+        } else {
+            self.cpu.direct_mem_ready = 0;
+        }
+
+        // Handle host bus interface protocol (still needed for host-initiated requests
+        // such as boot sequence STATUS reads and BOOT writes)
         self.handle_host_bus_interface();
 
         // Print FSM state if enabled (before clock edge)
@@ -605,15 +637,6 @@ where
             self.handle_instruction_complete();
         }
 
-        let elapsed_us = start_time.elapsed().as_micros() as u64;
-
-        // Accumulate elapsed time
-        self.total_elapsed_time_us = self.total_elapsed_time_us.saturating_add(elapsed_us);
-
-        // Update bus with cumulative elapsed time for devices
-        // This ensures Video and other time-sensitive devices get accurate cumulative time
-        self.bus.update_elapsed_time(self.total_elapsed_time_us);
-
         Ok(instruction_complete)
     }
 
@@ -625,7 +648,7 @@ where
     /// # Errors
     /// Returns `HungStateError` if the CPU is detected to be in a hung state
     pub fn step_instruction(&mut self) -> Result<SimulationStepResult, HungStateError> {
-        let start_elapsed_time_us = self.total_elapsed_time_us;
+        let start_time = Instant::now();
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
@@ -638,9 +661,14 @@ where
         // Check for termination via SimControl device
         let halt_value = self.bus.sim_control.termination_requested();
 
-        let elapsed_us = self
-            .total_elapsed_time_us
-            .saturating_sub(start_elapsed_time_us);
+        let elapsed_us = start_time.elapsed().as_micros() as u64;
+
+        // Accumulate elapsed time
+        self.total_elapsed_time_us = self.total_elapsed_time_us.saturating_add(elapsed_us);
+
+        // Update bus with cumulative elapsed time for devices
+        // This ensures Video and other time-sensitive devices get accurate cumulative time
+        self.bus.update_elapsed_time(self.total_elapsed_time_us);
 
         Ok(SimulationStepResult {
             tohost_value: halt_value,

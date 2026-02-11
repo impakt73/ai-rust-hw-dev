@@ -20,7 +20,14 @@ module top #(
     parameter int UART_BAUD_RATE   = 115200,
     // UART Loopback: When enabled (default), TX is internally connected to RX
     // for simulation testing. Disable for FPGA deployment with external pins.
-    parameter bit ENABLE_UART_LOOPBACK = 1'b1
+    parameter bit ENABLE_UART_LOOPBACK = 1'b1,
+    // Direct Memory Interface: When enabled, exposes ext_mem_* ports for direct
+    // memory access by the host (simulation). This bypasses the host_bus_interface
+    // byte serialization for CPU-initiated external memory requests, providing
+    // significantly faster simulation. The host_bus_interface is still used for
+    // host-initiated requests (boot sequence, etc.).
+    // Default: enabled (for simulation performance). FPGA top should set to 0.
+    parameter bit ENABLE_DIRECT_MEM = 1'b1
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -37,6 +44,17 @@ module top #(
     input  logic [7:0]  host_rx_data,
     input  logic        host_rx_valid,
     output logic        host_rx_ready,
+    
+    // Direct Memory Interface (active when ENABLE_DIRECT_MEM = 1)
+    // Provides single-cycle memory access for simulation, bypassing
+    // the host_bus_interface byte serialization overhead
+    output logic [31:0] direct_mem_addr,
+    output logic [31:0] direct_mem_wdata,
+    input  logic [31:0] direct_mem_rdata,
+    output logic        direct_mem_we,
+    output logic [1:0]  direct_mem_size,
+    output logic        direct_mem_req,
+    input  logic        direct_mem_ready,
     
     // LED peripheral outputs
     output logic [7:0]  led_out,
@@ -184,6 +202,58 @@ module top #(
     logic        ext_mem_ready;
     
     // ============================================================
+    // Host Bus Interface Slave Signals
+    // ============================================================
+    // When ENABLE_DIRECT_MEM is active, the host_bus_interface slave port
+    // is disconnected from CPU-initiated ext_mem requests (those go directly
+    // to the host via direct_mem_* ports instead). The host_bus_interface
+    // is still instantiated for host-initiated requests via the master port.
+    logic [31:0] hbi_slave_addr;
+    logic [31:0] hbi_slave_wdata;
+    logic [31:0] hbi_slave_rdata;
+    logic        hbi_slave_we;
+    logic [1:0]  hbi_slave_size;
+    logic        hbi_slave_req;
+    logic        hbi_slave_ready;
+    
+    generate
+        if (ENABLE_DIRECT_MEM) begin : gen_direct_mem
+            // Direct memory mode: route ext_mem signals to direct_mem ports
+            assign direct_mem_addr  = ext_mem_addr;
+            assign direct_mem_wdata = ext_mem_wdata;
+            assign direct_mem_we    = ext_mem_we;
+            assign direct_mem_size  = ext_mem_size;
+            assign direct_mem_req   = ext_mem_req;
+            assign ext_mem_rdata    = direct_mem_rdata;
+            assign ext_mem_ready    = direct_mem_ready;
+            
+            // Disconnect host_bus_interface slave port from CPU-initiated requests
+            assign hbi_slave_addr  = 32'h0;
+            assign hbi_slave_wdata = 32'h0;
+            assign hbi_slave_we    = 1'b0;
+            assign hbi_slave_size  = 2'b00;
+            assign hbi_slave_req   = 1'b0;
+            // hbi_slave_rdata and hbi_slave_ready are unused in direct mode
+        end else begin : gen_serialized_mem
+            // Serialized mode: route ext_mem signals to host_bus_interface
+            assign hbi_slave_addr  = ext_mem_addr;
+            assign hbi_slave_wdata = ext_mem_wdata;
+            assign hbi_slave_we    = ext_mem_we;
+            assign hbi_slave_size  = ext_mem_size;
+            assign hbi_slave_req   = ext_mem_req;
+            assign ext_mem_rdata   = hbi_slave_rdata;
+            assign ext_mem_ready   = hbi_slave_ready;
+            
+            // Direct memory ports unused in serialized mode
+            assign direct_mem_addr  = 32'h0;
+            assign direct_mem_wdata = 32'h0;
+            assign direct_mem_we    = 1'b0;
+            assign direct_mem_size  = 2'b00;
+            assign direct_mem_req   = 1'b0;
+        end
+    endgenerate
+    
+    // ============================================================
     // Bus Arbiter Instantiation
     // ============================================================
     // Arbitrates between CPU and Host master for bus access
@@ -294,13 +364,14 @@ module top #(
         .rst_n(rst_n_internal),
         
         // Bus Slave Interface (from System Bus - CPU→Host path)
-        .addr(ext_mem_addr),
-        .wdata(ext_mem_wdata),
-        .rdata(ext_mem_rdata),
-        .we(ext_mem_we),
-        .size(ext_mem_size),
-        .req(ext_mem_req),
-        .ready(ext_mem_ready),
+        // When ENABLE_DIRECT_MEM=1, this is disconnected (req=0)
+        .addr(hbi_slave_addr),
+        .wdata(hbi_slave_wdata),
+        .rdata(hbi_slave_rdata),
+        .we(hbi_slave_we),
+        .size(hbi_slave_size),
+        .req(hbi_slave_req),
+        .ready(hbi_slave_ready),
         
         // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
         .host_bus_addr(host_master_addr),

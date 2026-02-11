@@ -134,7 +134,8 @@ module fpga_top #(
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by UART and Clock Peripheral
         .UART_BAUD_RATE(115200),
-        .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test
+        .ENABLE_UART_LOOPBACK(1'b1),    // Enable internal loopback for self-test
+        .ENABLE_DIRECT_MEM(1'b0)        // Use serialized host bus for FPGA
     ) cpu_inst (
         .clk(sys_clk),
         .rst_n(pll_locked_sync2),
@@ -147,6 +148,15 @@ module fpga_top #(
         .host_rx_data(host_rx_data),
         .host_rx_valid(host_rx_valid),
         .host_rx_ready(host_rx_ready),
+        
+        // Direct memory interface (unused in FPGA mode - ENABLE_DIRECT_MEM=0)
+        .direct_mem_addr(),
+        .direct_mem_wdata(),
+        .direct_mem_rdata(32'h0),
+        .direct_mem_we(),
+        .direct_mem_size(),
+        .direct_mem_req(),
+        .direct_mem_ready(1'b0),
         
         // LED peripheral
         .led_out(led_out),
