@@ -11,6 +11,7 @@ mod memory;
 pub mod packet_transport; // Public for integration tests
 mod sim;
 mod sim_control;
+mod simulator_view;
 mod video;
 
 // Public API exports - only what's needed for external use
@@ -24,7 +25,8 @@ pub use constants::GLOBAL_MAX_CYCLES;
 pub use dma::Dma;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{BootError, SimulationResult, SimulationStepResult, SimulatorView};
+pub use sim::{BootError, SimulationResult, SimulationStepResult};
+pub use simulator_view::SimulatorView;
 pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
@@ -260,7 +262,58 @@ impl InteractiveSimulator {
 
         // Step the simulator by one instruction
         self.simulator
-            .step()
+            .step_instruction()
+            .map_err(|e| format!("Execution error: {}", e))
+    }
+
+    /// Execute a single clock cycle and return whether instruction completed
+    ///
+    /// Steps the simulator forward by one clock cycle. This is a lower-level interface
+    /// than `step_instruction()`, allowing cycle-by-cycle control for debugging or
+    /// timing-sensitive testing.
+    ///
+    /// # Returns
+    /// * `Ok(true)` - The current instruction completed on this cycle
+    /// * `Ok(false)` - The instruction is still in progress, more cycles needed
+    /// * `Err(String)` - If no ELF is loaded or if a hung state is detected
+    ///
+    /// # Errors
+    /// - Returns an error if `load_elf()` has not been called successfully
+    /// - Returns an error if the CPU enters a hung state
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use cpu_sim::InteractiveSimulator;
+    /// # use std::path::Path;
+    /// let mut sim = InteractiveSimulator::new().unwrap();
+    /// sim.load_elf(Path::new("test.elf")).unwrap();
+    ///
+    /// // Execute cycles until instruction completes
+    /// loop {
+    ///     match sim.step_cycle() {
+    ///         Ok(true) => {
+    ///             println!("Instruction completed");
+    ///             break;
+    ///         }
+    ///         Ok(false) => {
+    ///             println!("Cycle done, instruction still executing...");
+    ///         }
+    ///         Err(e) => {
+    ///             eprintln!("Error: {}", e);
+    ///             break;
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn step_cycle(&mut self) -> Result<bool, String> {
+        // Check if ELF has been loaded
+        if !self.elf_loaded {
+            return Err("No ELF file loaded. Call load_elf() before stepping cycles.".to_string());
+        }
+
+        // Step the simulator by one cycle
+        self.simulator
+            .step_cycle()
             .map_err(|e| format!("Execution error: {}", e))
     }
 
