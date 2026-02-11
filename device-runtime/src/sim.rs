@@ -108,14 +108,12 @@ impl SimDeviceRuntime {
                         let mut pending = pending_host_request.lock().unwrap();
                         if let Some(ref p) = *pending {
                             let failed_addr = p.addr;
-                            *pending = None;
                             let _ =
                                 event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
                                     addr: failed_addr,
                                 }));
-                        } else {
-                            *pending = None;
                         }
+                        *pending = None;
                         log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
