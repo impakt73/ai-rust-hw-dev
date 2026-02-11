@@ -139,6 +139,31 @@ impl InteractiveSimulator {
     /// println!("Entry point: 0x{:08x}", entry);
     /// ```
     pub fn load_elf(&mut self, path: &Path) -> Result<u32, String> {
+        self.load_elf_internal(path, true)
+    }
+
+    /// Load an ELF file into the simulator and reset without booting the CPU
+    ///
+    /// This function loads the ELF file into simulator memory, extracts the entry point,
+    /// and performs a hardware reset but skips the CPU boot sequence. The CPU is left in
+    /// the boot state (S_BOOT), allowing the calling code to handle the boot externally
+    /// via bus requests (e.g., reading STATUS and writing BOOT address).
+    ///
+    /// This is used by the fpga-host integration where the boot sequence is managed
+    /// by the host application.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the RISC-V ELF executable file
+    ///
+    /// # Returns
+    /// * `Ok(entry_point)` with the ELF entry point address on success
+    /// * `Err(String)` if the ELF file cannot be loaded or is invalid
+    pub fn load_elf_no_boot(&mut self, path: &Path) -> Result<u32, String> {
+        self.load_elf_internal(path, false)
+    }
+
+    /// Internal helper for loading an ELF file with optional boot
+    fn load_elf_internal(&mut self, path: &Path, boot_cpu: bool) -> Result<u32, String> {
         // Load ELF into simulator memory using the helper function
         let entry_point = {
             let mut view = SimulatorView::new(
@@ -157,7 +182,7 @@ impl InteractiveSimulator {
 
         // Reset the simulator to the entry point
         self.simulator
-            .reset(entry_point)
+            .reset(entry_point, boot_cpu)
             .map_err(|e| format!("Reset failed: {}", e))?;
 
         // Mark ELF as loaded
