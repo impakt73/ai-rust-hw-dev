@@ -2,6 +2,7 @@ mod common;
 
 use common::{create_register_trace_program, create_test_program, create_trace_test_program};
 use cpu_sim::*;
+use device_runtime::DRAM_BASE;
 use std::sync::{Arc, Mutex};
 
 /// Helper function to initialize test logger (idempotent)

@@ -8,7 +8,7 @@
 //! from shared buffers when needed (e.g., during window presents or audio fills).
 
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
-use cpu_sim::AudioConfig;
+use device_runtime::AudioConfig;
 use std::path::PathBuf;
 
 /// Trait for video output backends (GUI or headless)

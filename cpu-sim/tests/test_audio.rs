@@ -1,4 +1,5 @@
 use cpu_sim::*;
+use device_runtime::{Audio, AudioConfig, AUDIO_BASE};
 use std::cell::RefCell;
 use std::rc::Rc;
 

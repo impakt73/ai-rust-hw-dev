@@ -4,6 +4,7 @@
 //! including FP load/store, register interactions, FCSR management, and multi-cycle execution.
 
 use cpu_sim::*;
+use device_runtime::{DRAM_BASE, SIM_CONTROL_BASE};
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)

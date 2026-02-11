@@ -1,10 +1,11 @@
 use crate::hung_detector::HungDetector;
+use device_runtime::{is_valid_dram_range, BusDevice, SystemBus};
 use host_bus_handler::{BusRequest, BusResponse, HostBusHandler};
 use riscv_core::Top;
 use std::path::Path;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
+use device_runtime::{DRAM_BASE, DRAM_END};
 
 /// Restricted view of the Simulator for use in callbacks
 ///
@@ -12,7 +13,7 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// the full Simulator internals. This allows callbacks to interact with memory,
 /// FIFO, and other simulator components while maintaining encapsulation.
 pub struct SimulatorView<'a> {
-    bus: &'a mut crate::bus::SystemBus,
+    bus: &'a mut SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
     host_bus_handler: &'a mut HostBusHandler,
@@ -21,7 +22,7 @@ pub struct SimulatorView<'a> {
 impl<'a> SimulatorView<'a> {
     /// Create a new SimulatorView with access to the given components
     pub(crate) fn new(
-        bus: &'a mut crate::bus::SystemBus,
+        bus: &'a mut SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
         host_bus_handler: &'a mut HostBusHandler,
@@ -403,7 +404,8 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Example
     /// ```no_run
-    /// use cpu_sim::*;
+    /// use cpu_sim::{run_program, InstructionTrace, SimulationResult, SimulatorView};
+    /// use device_runtime::{BusDevice, BusDeviceError, SystemContext};
     ///
     /// # struct MyVideoDevice;
     /// # impl MyVideoDevice {
@@ -438,7 +440,7 @@ impl<'a> SimulatorView<'a> {
     pub fn register_device(
         &mut self,
         base_addr: u32,
-        device: Box<dyn crate::BusDevice>,
+        device: Box<dyn BusDevice>,
     ) -> Result<(), String> {
         self.bus
             .register_device(base_addr, device)

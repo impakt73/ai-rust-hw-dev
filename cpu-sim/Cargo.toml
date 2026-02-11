@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+device-runtime = { path = "../device-runtime" }
 riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
 host-bus-handler = { path = "../host-bus-handler" }

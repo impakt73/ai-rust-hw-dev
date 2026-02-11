@@ -92,7 +92,7 @@ impl AudioBackend for GuiAudioBackend {
         self.audio_source = Some(buffer);
     }
 
-    fn set_config(&mut self, config: &cpu_sim::AudioConfig) {
+    fn set_config(&mut self, config: &device_runtime::AudioConfig) {
         if let Err(e) = self.stream.set_config(config) {
             log::error!("Failed to reconfigure audio stream: {}", e);
         }

@@ -6,7 +6,7 @@
 
 use crate::backend_traits::{AudioBackend, EventSource, VideoBackend, ViewerEvent};
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
-use cpu_sim::AudioConfig;
+use device_runtime::AudioConfig;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -17,7 +17,7 @@ pub struct CapturedFrame {
     pub data: Vec<u8>,
 
     /// Video configuration at capture time
-    pub config: cpu_sim::VideoConfig,
+    pub config: device_runtime::VideoConfig,
 
     /// Timestamp when frame was presented
     pub timestamp: Instant,
@@ -239,7 +239,7 @@ impl EventSource for HeadlessEventSource {
 mod tests {
     use super::*;
     use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
-    use cpu_sim::{AudioChannels, AudioSampleRate, VideoFormat};
+    use device_runtime::{AudioChannels, AudioSampleRate, VideoFormat};
 
     #[test]
     fn test_headless_video_captures_frames() {
@@ -250,7 +250,7 @@ mod tests {
 
         // Push a frame to the shared buffer (simulating callback)
         let data = vec![0xFF; 320 * 240 * 4];
-        let config = cpu_sim::VideoConfig {
+        let config = device_runtime::VideoConfig {
             width: 320,
             height: 240,
             format: VideoFormat::Rgba8,

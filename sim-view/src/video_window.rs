@@ -1,4 +1,4 @@
-use cpu_sim::{VideoConfig, VideoFormat};
+use device_runtime::{VideoConfig, VideoFormat};
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::rc::Rc;

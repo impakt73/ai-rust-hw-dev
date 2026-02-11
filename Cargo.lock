@@ -737,6 +737,7 @@ name = "cpu-sim"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "device-runtime",
  "elf",
  "env_logger",
  "host-bus-handler",
@@ -890,7 +891,6 @@ checksum = "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f"
 name = "device-runtime"
 version = "0.1.0"
 dependencies = [
- "cpu-sim",
  "elf",
  "host-bus-handler",
  "log",
@@ -1168,6 +1168,7 @@ name = "fpga-host"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cpu-sim",
  "crossterm",
  "device-runtime",
  "host-bus-handler",
@@ -3200,6 +3201,7 @@ dependencies = [
  "clap",
  "cpal",
  "cpu-sim",
+ "device-runtime",
  "env_logger",
  "log",
  "riscv_core",

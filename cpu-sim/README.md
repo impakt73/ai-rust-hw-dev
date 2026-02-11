@@ -306,7 +306,8 @@ The simulator supports configurable memory latency to test the CPU's ability to 
 #### Using Variable Latency
 
 ```rust
-use cpu_sim::{Simulator, bus::SystemBus};
+use cpu_sim::Simulator;
+use device_runtime::SystemBus;
 
 let runtime = riscv_core::create_cpu_runtime()?;
 let bus = SystemBus::new();
@@ -394,4 +395,3 @@ let result = run_program(
 
 **Special cases:**
 Tests that intentionally test hung detection or long instruction scenarios may use higher limits with documented justification. See `test_audio_pattern` and `test_video_pattern` for examples.
-

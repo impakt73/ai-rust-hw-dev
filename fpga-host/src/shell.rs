@@ -4,7 +4,10 @@
 
 use crate::app::App;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
-use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType};
+use cpu_sim::SimDeviceRuntime;
+use device_runtime::{
+    access_size_name, create_device_runtime, DeviceError, DeviceRuntime, DeviceRuntimeType,
+};
 use host_bus_handler::{AccessSize, BusRequest};
 use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
@@ -281,7 +284,10 @@ fn execute_connect_sim(app: &mut App) -> CommandResult {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match create_device_runtime(DeviceRuntimeType::Sim) {
+    let runtime_result: Result<Box<dyn DeviceRuntime>, DeviceError> = SimDeviceRuntime::new()
+        .map(|runtime| Box::new(runtime) as Box<dyn DeviceRuntime>)
+        .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))));
+    match runtime_result {
         Ok(runtime) => {
             app.device_runtime = Some(runtime);
             CommandResult::ok("Connected to Simulator".to_string())

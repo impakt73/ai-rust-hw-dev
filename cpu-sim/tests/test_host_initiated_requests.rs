@@ -7,6 +7,7 @@
 //! Host → RX → Buffer → Master → Bus → Peripheral
 
 use cpu_sim::*;
+use device_runtime::{LED_BASE, SIM_CONTROL_BASE};
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)

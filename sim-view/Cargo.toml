@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 # Core simulation
 cpu-sim = { path = "../cpu-sim" }
+device-runtime = { path = "../device-runtime" }
 riscv_core = { path = "../riscv_core" }
 
 # GUI and Audio

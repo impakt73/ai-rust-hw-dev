@@ -1,7 +1,7 @@
 use crate::shared_buffers::SharedAudioBuffer;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
-use cpu_sim::AudioConfig;
+use device_runtime::AudioConfig;
 
 pub struct AudioStream {
     /// CPAL audio device

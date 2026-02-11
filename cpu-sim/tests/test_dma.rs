@@ -1,4 +1,5 @@
 use cpu_sim::*;
+use device_runtime::Dma;
 use std::sync::{Arc, Mutex};
 
 #[test]

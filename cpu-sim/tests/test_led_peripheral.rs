@@ -5,6 +5,7 @@
 //! Features: 8-bit output register
 
 use cpu_sim::*;
+use device_runtime::SIM_CONTROL_BASE;
 use riscv_core::instruction::*;
 use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE};
 

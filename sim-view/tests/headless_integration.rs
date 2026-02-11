@@ -349,7 +349,7 @@ fn test_audio_config_change_and_samples() {
     );
     assert_eq!(
         config.channels,
-        cpu_sim::AudioChannels::Stereo,
+        device_runtime::AudioChannels::Stereo,
         "Should be stereo"
     );
     // Sample count can be either 64 (full batch) or 52 (final batch) depending on when config was captured
@@ -386,7 +386,7 @@ fn test_audio_config_change_and_samples() {
         );
         assert_eq!(
             chunk_config.channels,
-            cpu_sim::AudioChannels::Stereo,
+            device_runtime::AudioChannels::Stereo,
             "Chunk config should match expected channels"
         );
     }

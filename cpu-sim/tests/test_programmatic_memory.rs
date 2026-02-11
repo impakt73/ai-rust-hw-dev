@@ -1,4 +1,5 @@
 use cpu_sim::*;
+use device_runtime::SIM_CONTROL_BASE;
 use riscv_core::instruction::*;
 
 /// Test that demonstrates writing programmatic instructions to memory without an ELF file

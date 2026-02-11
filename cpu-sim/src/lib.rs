@@ -1,33 +1,18 @@
 // Internal modules - not part of public API
-mod audio;
-mod bus;
-mod bus_device;
 mod constants;
-mod dma;
-mod dram;
-mod fifo;
 mod hung_detector;
-mod memory;
 pub mod packet_transport; // Public for integration tests
 mod sim;
-mod sim_control;
+mod sim_runtime;
 mod simulator_view;
-mod video;
 
 // Public API exports - only what's needed for external use
-pub use audio::{Audio, AudioChannels, AudioConfig, AudioSampleRate};
-pub use bus::{
-    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
-    UART_BASE, VIDEO_BASE,
-};
-pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use constants::GLOBAL_MAX_CYCLES;
-pub use dma::Dma;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{BootError, SimulationResult, SimulationStepResult};
+pub use sim_runtime::SimDeviceRuntime;
 pub use simulator_view::SimulatorView;
-pub use video::{Video, VideoConfig, VideoFormat};
 
 use sim::Simulator;
 use std::path::Path;
@@ -207,7 +192,8 @@ impl InteractiveSimulator {
     ///
     /// # Examples
     /// ```no_run
-    /// use cpu_sim::{InteractiveSimulator, Video, VIDEO_BASE, VideoConfig};
+    /// use cpu_sim::InteractiveSimulator;
+    /// use device_runtime::{BusDevice, Video, VIDEO_BASE, VideoConfig};
     /// use std::path::Path;
     ///
     /// fn frame_callback(_data: &[u8], config: &VideoConfig) {
@@ -217,7 +203,7 @@ impl InteractiveSimulator {
     /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
     ///
     /// // Register a video device with a callback
-    /// let video: Box<dyn cpu_sim::BusDevice> = Box::new(Video::new(Some(frame_callback)));
+    /// let video: Box<dyn BusDevice> = Box::new(Video::new(Some(frame_callback)));
     /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
     ///
     /// // Now load and run your ELF
@@ -239,7 +225,7 @@ impl InteractiveSimulator {
     pub fn register_device(
         &mut self,
         base_addr: u32,
-        device: Box<dyn crate::BusDevice>,
+        device: Box<dyn device_runtime::BusDevice>,
     ) -> Result<(), String> {
         self.simulator
             .bus

@@ -10,8 +10,12 @@ mod ui;
 
 use app::App;
 use clap::{Parser, Subcommand};
+use cpu_sim::SimDeviceRuntime;
 use crossterm::event::{self, Event};
-use device_runtime::{access_size_name, create_device_runtime, BusEvent, DeviceRuntimeType};
+use device_runtime::{
+    access_size_name, create_device_runtime, BusEvent, DeviceError, DeviceRuntime,
+    DeviceRuntimeType,
+};
 use ratatui::DefaultTerminal;
 use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::io;
@@ -92,14 +96,16 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
 
     // Handle CLI-provided device connection
     if let Some(runtime_args) = args.runtime {
-        let runtime_type = match runtime_args {
-            RuntimeArgs::Fpga { device, baud } => DeviceRuntimeType::Fpga {
+        let runtime_result: Result<Box<dyn DeviceRuntime>, DeviceError> = match runtime_args {
+            RuntimeArgs::Fpga { device, baud } => create_device_runtime(DeviceRuntimeType::Fpga {
                 device: device.to_string_lossy().to_string(),
                 baud,
-            },
-            RuntimeArgs::Sim => DeviceRuntimeType::Sim,
+            }),
+            RuntimeArgs::Sim => SimDeviceRuntime::new()
+                .map(|runtime| Box::new(runtime) as Box<dyn DeviceRuntime>)
+                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e)))),
         };
-        match create_device_runtime(runtime_type) {
+        match runtime_result {
             Ok(runtime) => {
                 let description = runtime.to_string();
                 app.add_log(log::Level::Info, format!("Connected to {}", description));

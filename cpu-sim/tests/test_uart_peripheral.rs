@@ -16,6 +16,7 @@
 //! - One byte transmission: ~4340 cycles (10 bits: start + 8 data + stop)
 
 use cpu_sim::*;
+use device_runtime::SIM_CONTROL_BASE;
 use riscv_core::instruction::*;
 use riscv_shared::bus::{
     uart_rxdata_addr, uart_status_addr, uart_txdata_addr, UART_BASE, UART_RXDATA_OFFSET,

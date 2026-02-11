@@ -12,6 +12,7 @@
 mod common;
 
 use cpu_sim::*;
+use device_runtime::{DRAM_BASE, DRAM_END, SIM_CONTROL_BASE};
 use riscv_core::instruction::*;
 
 /// Helper function to create a termination sequence (write to tohost and halt)

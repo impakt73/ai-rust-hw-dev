@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
+cpu-sim = { path = "../cpu-sim" }
 device-runtime = { path = "../device-runtime" }
 host-bus-handler = { path = "../host-bus-handler" }
 log = "0.4"

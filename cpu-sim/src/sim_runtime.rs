@@ -8,8 +8,8 @@
 //! continuously. Host-initiated bus requests are forwarded directly
 //! to the simulator's internal host bus handler.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
-use cpu_sim::InteractiveSimulator;
+use crate::InteractiveSimulator;
+use device_runtime::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
 use host_bus_handler::BusRequest;
 use std::path::Path;
 use std::sync::mpsc;
@@ -43,7 +43,7 @@ enum RuntimeEvent {
 /// Implements [`DeviceRuntime`] by running the interactive simulator
 /// on a background thread. The main thread communicates via channels
 /// and shared state.
-pub(crate) struct SimDeviceRuntime {
+pub struct SimDeviceRuntime {
     /// Channel to send commands to the background thread
     command_tx: mpsc::Sender<RuntimeCommand>,
     /// Channel to receive events from the background thread
@@ -59,7 +59,7 @@ impl SimDeviceRuntime {
     ///
     /// Initializes the interactive simulator and launches a background thread
     /// to step through instructions.
-    pub(crate) fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =

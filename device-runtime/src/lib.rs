@@ -5,13 +5,33 @@
 //! [`DeviceError`]. Use [`create_device_runtime`] to create a runtime
 //! instance for the desired backend (e.g., FPGA over serial).
 
+mod audio;
+pub mod bus;
+pub mod bus_device;
+mod dma;
+mod dram;
+mod fifo;
 mod fpga;
 pub mod memory;
-mod sim;
+mod sim_control;
+mod video;
 
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
 use std::path::Path;
+pub use {
+    audio::{Audio, AudioChannels, AudioConfig, AudioSampleRate},
+    bus::{
+        is_valid_dram_range, SystemBus, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE,
+        RTL_PERIPH_BASE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, UART_BASE, VIDEO_BASE,
+    },
+    bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext},
+    dma::Dma,
+    dram::Dram,
+    fifo::Fifo,
+    sim_control::SimControl,
+    video::{Video, VideoConfig, VideoFormat},
+};
 
 /// Errors that can occur during device operations
 #[derive(Debug)]
@@ -92,8 +112,6 @@ pub enum DeviceRuntimeType {
         /// Baud rate for serial communication
         baud: u32,
     },
-    /// Software simulator
-    Sim,
 }
 
 /// Create a device runtime for the specified backend.
@@ -103,11 +121,6 @@ pub fn create_device_runtime(
     match runtime_type {
         DeviceRuntimeType::Fpga { device, baud } => {
             let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud)?;
-            Ok(Box::new(runtime))
-        }
-        DeviceRuntimeType::Sim => {
-            let runtime = sim::SimDeviceRuntime::new()
-                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }
     }

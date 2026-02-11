@@ -1,6 +1,6 @@
-use crate::bus::SystemBus;
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use crate::simulator_view::SimulatorView;
+use device_runtime::SystemBus;
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
