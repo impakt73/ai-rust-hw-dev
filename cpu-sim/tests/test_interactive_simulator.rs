@@ -35,6 +35,57 @@ fn test_interactive_simulator_step_without_elf() {
 }
 
 #[test]
+fn test_interactive_simulator_step_cycle() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+
+    let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+    sim.load_elf(&elf_path).expect("Failed to load ELF");
+
+    let max_cycles = 1000;
+    let mut instruction_completed = false;
+
+    for _ in 0..max_cycles {
+        match sim.step_cycle() {
+            Ok(true) => {
+                instruction_completed = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(e) => panic!("Unexpected error during cycle stepping: {}", e),
+        }
+    }
+
+    assert!(
+        instruction_completed,
+        "Instruction should complete within {} cycles",
+        max_cycles
+    );
+
+    let max_instructions = 100;
+    let mut tohost_value = None;
+
+    for _ in 0..max_instructions {
+        match sim.step_instruction() {
+            Ok(result) => {
+                if let Some(value) = result.tohost_value {
+                    tohost_value = Some(value);
+                    break;
+                }
+            }
+            Err(e) => panic!("Unexpected error during instruction stepping: {}", e),
+        }
+    }
+
+    assert_eq!(
+        tohost_value,
+        Some(42),
+        "Program should exit with tohost value 42"
+    );
+}
+
+#[test]
 fn test_interactive_simulator_simple_program() {
     let _ = env_logger::builder().is_test(true).try_init();
 

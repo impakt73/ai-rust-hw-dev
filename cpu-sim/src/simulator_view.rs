@@ -514,12 +514,12 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
-        // Validate address is in RTL peripheral space (0x50000000-0x5FFFFFFF)
+        // Validate address is in RTL peripheral space using the SystemBus mapping
         // This prevents deadlock per Rule 1 (no self-routing)
-        if !(0x50000000..0x60000000).contains(&request.addr) {
+        if !self.bus.is_rtl_peripheral(request.addr) {
             return Err(format!(
-                "Invalid address 0x{:08x}: must be in RTL peripheral space (0x50000000-0x5FFFFFFF)",
-                request.addr
+                "Invalid address 0x{:08x}: must be in RTL peripheral space",
+                request.addr,
             ));
         }
 

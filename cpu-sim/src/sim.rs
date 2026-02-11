@@ -485,6 +485,8 @@ where
     /// * `Ok(false)` - Instruction still in progress, more cycles needed
     /// * `Err(HungStateError)` - Hung state detected
     pub fn step_cycle(&mut self) -> Result<bool, HungStateError> {
+        let start_time = Instant::now();
+
         // Evaluate combinational logic
         self.cpu.eval();
 
@@ -548,6 +550,15 @@ where
             )?;
         }
 
+        let elapsed_us = start_time.elapsed().as_micros() as u64;
+
+        // Accumulate elapsed time
+        self.total_elapsed_time_us = self.total_elapsed_time_us.saturating_add(elapsed_us);
+
+        // Update bus with cumulative elapsed time for devices
+        // This ensures Video and other time-sensitive devices get accurate cumulative time
+        self.bus.update_elapsed_time(self.total_elapsed_time_us);
+
         Ok(instruction_complete)
     }
 
@@ -559,7 +570,7 @@ where
     /// # Errors
     /// Returns `HungStateError` if the CPU is detected to be in a hung state
     pub fn step_instruction(&mut self) -> Result<SimulationStepResult, HungStateError> {
-        let start_time = Instant::now();
+        let start_elapsed_time_us = self.total_elapsed_time_us;
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
@@ -611,14 +622,9 @@ where
         // Check for termination via SimControl device
         let halt_value = self.bus.sim_control.termination_requested();
 
-        let elapsed_us = start_time.elapsed().as_micros() as u64;
-
-        // Accumulate elapsed time
-        self.total_elapsed_time_us = self.total_elapsed_time_us.saturating_add(elapsed_us);
-
-        // Update bus with cumulative elapsed time for devices
-        // This ensures Video and other time-sensitive devices get accurate cumulative time
-        self.bus.update_elapsed_time(self.total_elapsed_time_us);
+        let elapsed_us = self
+            .total_elapsed_time_us
+            .saturating_sub(start_elapsed_time_us);
 
         Ok(SimulationStepResult {
             tohost_value: halt_value,
