@@ -23,7 +23,8 @@ impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory
     ///
     /// This uses a fresh time origin per call, intended for standalone usage or tests.
-    /// Use `SystemBus` and `with_start_time` when you need a shared origin.
+    /// Elapsed time will therefore start near zero for each context. Use `SystemBus`
+    /// and `with_start_time` when you need a shared origin.
     pub fn new(memory: &'a mut Memory) -> Self {
         SystemContext::with_start_time(memory, Instant::now(), 0)
     }
@@ -31,8 +32,10 @@ impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory and elapsed time origin
     ///
     /// The elapsed time is a snapshot taken when the context is created and cached
-    /// for the lifetime of the context to avoid repeated timer calls. If multiple
-    /// operations need the same timestamp, reuse the context or cache `elapsed_time_us`.
+    /// for the lifetime of the context to avoid repeated timer calls. SystemBus creates
+    /// a context per bus operation, so this cost replaces the prior per-cycle updates.
+    /// If multiple operations need the same timestamp, reuse the context or cache
+    /// `elapsed_time_us`.
     pub fn with_start_time(
         memory: &'a mut Memory,
         start_time: Instant,
