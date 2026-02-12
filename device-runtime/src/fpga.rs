@@ -283,12 +283,22 @@ impl FpgaDeviceRuntime {
                 // Tick all bus devices after handling the request
                 bus.clock_cycle_all_devices();
 
+                // Check for termination request
+                if let Some(tohost_value) = bus.sim_control.termination_requested() {
+                    return Ok(Some(BusEvent::Termination { tohost_value }));
+                }
+
                 return Ok(Some(event));
             }
         }
 
         // Tick all bus devices even when no transaction occurred
         bus.clock_cycle_all_devices();
+
+        // Check for termination request
+        if let Some(tohost_value) = bus.sim_control.termination_requested() {
+            return Ok(Some(BusEvent::Termination { tohost_value }));
+        }
 
         Ok(None)
     }

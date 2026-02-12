@@ -144,6 +144,8 @@ pub enum BusEvent {
     },
     /// A host-initiated request timed out
     HostRequestTimeout { addr: u32 },
+    /// CPU requested termination via tohost register
+    Termination { tohost_value: u32 },
 }
 
 /// Pending host-initiated request information for tracking

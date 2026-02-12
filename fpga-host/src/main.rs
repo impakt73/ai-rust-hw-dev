@@ -179,6 +179,16 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                 )
                             );
                         }
+                        BusEvent::Termination { tohost_value } => {
+                            // CPU requested termination via tohost register
+                            app.add_log(
+                                log::Level::Info,
+                                format!(
+                                    "CPU termination requested: tohost = 0x{:08x}",
+                                    tohost_value
+                                ),
+                            );
+                        }
                     }
                 }
                 Ok(None) => {}

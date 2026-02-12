@@ -230,6 +230,9 @@ impl App {
             BusEvent::HostRequestTimeout { addr } => {
                 format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)
             }
+            BusEvent::Termination { tohost_value } => {
+                format!("CPU TERMINATION: tohost = 0x{:08x}", tohost_value)
+            }
         };
         self.add_log(log::Level::Info, msg);
     }
