@@ -6,7 +6,6 @@
 //! instance for the desired backend (e.g., FPGA over serial).
 
 mod fpga;
-pub mod memory;
 mod sim;
 
 use host_bus_handler::AccessSize;

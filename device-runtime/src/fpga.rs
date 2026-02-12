@@ -8,8 +8,8 @@
 //! processing happen on a background thread. The main thread communicates
 //! via channels and shared state.
 
-use crate::memory::Memory;
 use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
+use bus_shared::Memory;
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
