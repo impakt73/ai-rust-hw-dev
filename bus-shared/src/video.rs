@@ -276,7 +276,6 @@ where
         self.video_config = 0;
         self.active_present = None;
         self.last_frame_time_us = None;
-        // Note: frame_index is not reset so frames continue numbering across resets
     }
 
     fn clock_cycle(&mut self, ctx: &mut SystemContext) {
