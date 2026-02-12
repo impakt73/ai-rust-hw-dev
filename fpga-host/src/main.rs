@@ -11,9 +11,8 @@ mod ui;
 use app::App;
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
-use device_runtime::{access_size_name, create_device_runtime, BusEvent, DeviceRuntimeType};
+use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
 use ratatui::DefaultTerminal;
-use riscv_shared::bus::{sysctrl_boot_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
@@ -152,7 +151,6 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
 
         // Poll device runtime if connected
         let mut should_disconnect = false;
-        let mut pending_boot_request: Option<(u32, u32)> = None; // (boot_addr, status_val)
 
         if let Some(ref mut runtime) = app.device_runtime {
             match runtime.poll() {
@@ -164,68 +162,15 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             app.request_count += 1;
                         }
                         BusEvent::HostReadResponse { addr, data, size } => {
-                            // Host-initiated read response - check for pending boot
-                            if let Some(pending_boot) = app.pending_boot.take() {
-                                // This is the STATUS register read response for boot command
-                                let status_val = *data;
-                                let req_addr = *addr;
-
-                                // Verify this is the expected STATUS read
-                                if req_addr != pending_boot.expected_status_addr {
-                                    // Mismatch - log error and don't write BOOT
-                                    app.add_log(
-                                        log::Level::Error,
-                                        format!(
-                                            "Boot flow error: Expected STATUS read at 0x{:08x}, got response for 0x{:08x}",
-                                            pending_boot.expected_status_addr, req_addr
-                                        )
-                                    );
-                                    // Still log the read response
-                                    let width = size.byte_count() as usize * 2;
-                                    let msg = format!(
-                                        "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
-                                        access_size_name(*size),
-                                        req_addr,
-                                        status_val,
-                                        width = width
-                                    );
-                                    app.add_log(log::Level::Info, msg);
-                                } else {
-                                    // Log the STATUS read first
-                                    let width = size.byte_count() as usize * 2;
-                                    let msg = format!(
-                                        "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",
-                                        access_size_name(*size),
-                                        req_addr,
-                                        status_val,
-                                        width = width
-                                    );
-                                    app.add_log(log::Level::Info, msg);
-
-                                    // Verify cpu_booting bit (bit 0) is set
-                                    if (status_val & SYSCTRL_STATUS_CPU_BOOTING) == 0 {
-                                        app.add_log(
-                                            log::Level::Error,
-                                            format!("Boot failed: cpu_booting bit not set (STATUS=0x{:08x})", status_val)
-                                        );
-                                    } else {
-                                        // Schedule the BOOT write to happen after we finish processing this event
-                                        pending_boot_request =
-                                            Some((pending_boot.boot_addr, status_val));
-                                    }
-                                }
-                            } else {
-                                // Normal read response - log with request details
-                                app.log_host_read_response(*addr, *data, *size);
-                            }
+                            // Host-initiated read response
+                            app.log_host_read_response(*addr, *data, *size);
                         }
                         BusEvent::HostWriteResponse { addr, wdata, size } => {
                             // Host-initiated write response - log with request details
                             app.log_host_write_response(*addr, *wdata, *size);
                         }
                         BusEvent::HostRequestTimeout { addr } => {
-                            // Host request timed out - clear pending boot and emit warning in TUI
-                            app.pending_boot = None;
+                            // Host request timed out - emit warning in TUI
                             app.add_log(
                                 log::Level::Warn,
                                 format!(
@@ -244,36 +189,6 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                         should_disconnect = true;
                     } else {
                         app.add_log(log::Level::Error, format!("Device runtime error: {}", e));
-                    }
-                }
-            }
-        }
-
-        // Handle pending boot request (after device runtime borrow has ended)
-        if let Some((boot_addr, status_val)) = pending_boot_request {
-            if let Some(ref mut runtime) = app.device_runtime {
-                let boot_reg_addr = sysctrl_boot_addr();
-                let request = host_bus_handler::BusRequest::write(
-                    boot_reg_addr,
-                    boot_addr,
-                    host_bus_handler::AccessSize::Word,
-                );
-
-                match runtime.send_host_request(request) {
-                    Ok(()) => {
-                        app.add_log(
-                            log::Level::Info,
-                            format!(
-                                "STATUS verified (0x{:08x}), sending boot address 0x{:08x} to 0x{:08x}",
-                                status_val, boot_addr, boot_reg_addr
-                            )
-                        );
-                    }
-                    Err(e) => {
-                        app.add_log(
-                            log::Level::Error,
-                            format!("Failed to send boot write request: {}", e),
-                        );
                     }
                 }
             }

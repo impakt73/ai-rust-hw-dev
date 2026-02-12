@@ -45,17 +45,6 @@ pub struct App {
     pub verbose: bool,
     /// Last loaded ELF entry point (for boot command)
     pub last_entry_point: Option<u32>,
-    /// Pending boot command state (waiting for STATUS read response)
-    pub pending_boot: Option<PendingBoot>,
-}
-
-/// State for a pending boot command that requires sequential requests
-#[derive(Debug, Clone)]
-pub struct PendingBoot {
-    /// The boot address to use after STATUS verification
-    pub boot_addr: u32,
-    /// The expected STATUS register address (for verification)
-    pub expected_status_addr: u32,
 }
 
 impl App {
@@ -72,7 +61,6 @@ impl App {
             scroll_offset: 0,
             verbose: false,
             last_entry_point: None,
-            pending_boot: None,
         }
     }
 
