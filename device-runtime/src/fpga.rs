@@ -283,12 +283,22 @@ impl FpgaDeviceRuntime {
                 // Tick all bus devices after handling the request
                 bus.clock_cycle_all_devices();
 
+                // Check for tohost termination after processing request
+                if let Some(value) = bus.sim_control.acknowledge_termination() {
+                    return Ok(Some(BusEvent::TohostTermination { value }));
+                }
+
                 return Ok(Some(event));
             }
         }
 
         // Tick all bus devices even when no transaction occurred
         bus.clock_cycle_all_devices();
+
+        // Check for tohost termination outside of CPU request processing
+        if let Some(value) = bus.sim_control.acknowledge_termination() {
+            return Ok(Some(BusEvent::TohostTermination { value }));
+        }
 
         Ok(None)
     }

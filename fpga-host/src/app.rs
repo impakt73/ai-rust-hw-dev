@@ -230,6 +230,9 @@ impl App {
             BusEvent::HostRequestTimeout { addr } => {
                 format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)
             }
+            BusEvent::TohostTermination { value } => {
+                format!("TOHOST TERMINATION (value: 0x{:08x})", value)
+            }
         };
         self.add_log(log::Level::Info, msg);
     }
