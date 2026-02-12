@@ -47,6 +47,10 @@ impl BusDevice for MockDevice {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn reset(&mut self, _ctx: &mut SystemContext) {
+        // MockDevice has no persistent state to reset
+    }
 }
 
 /// Mock device with reset and clock_cycle tracking for testing lifecycle hooks
@@ -456,17 +460,17 @@ fn test_multiple_stateful_devices_independent() {
 fn test_device_with_default_reset_and_clock_cycle() {
     let mut bus = SystemBus::new();
 
-    // Register a regular MockDevice (uses default reset/clock_cycle implementations)
+    // Register a regular MockDevice (no-op reset/default clock_cycle implementations)
     let dev = Box::new(MockDevice::new(256, "RegularDevice"));
     bus.register_device(0x6000_0000, dev).unwrap();
 
     // Write a value
     bus.write_word(0x6000_0000, 0x12345678);
 
-    // Call reset (should do nothing for default implementation)
+    // Call reset (MockDevice reset is a no-op)
     bus.reset_all_devices();
 
-    // Value should still be there (default reset does nothing)
+    // Value should still be there (MockDevice reset does nothing)
     assert_eq!(bus.read_word(0x6000_0000), 0x12345678);
 
     // Call clock_cycle (should do nothing for default implementation)

@@ -4,6 +4,9 @@ use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 ///
 /// Provides memory-mapped registers for controlling the simulator,
 /// including the tohost register for signaling program completion.
+///
+/// Uses a one-shot termination mechanism: the tohost value is consumed
+/// when acknowledged via `acknowledge_termination()`.
 pub struct SimControl {
     tohost_value: Option<u32>,
 }
@@ -14,17 +17,19 @@ impl SimControl {
         SimControl { tohost_value: None }
     }
 
-    /// Check if a termination request has been made
+    /// Check if a termination request is pending
     ///
-    /// Returns `Some(value)` if a write to tohost occurred, `None` otherwise.
-    pub fn termination_requested(&self) -> Option<u32> {
-        self.tohost_value
+    /// Returns `true` if a write to tohost occurred and has not yet been acknowledged.
+    pub fn is_termination_pending(&self) -> bool {
+        self.tohost_value.is_some()
     }
 
-    /// Clear the termination request (for reset)
-    #[allow(dead_code)]
-    pub fn clear_termination(&mut self) {
-        self.tohost_value = None;
+    /// Acknowledge and consume the pending termination request
+    ///
+    /// Returns `Some(value)` if a termination was pending, moving the value out
+    /// and clearing the internal state. Returns `None` if no termination was pending.
+    pub fn acknowledge_termination(&mut self) -> Option<u32> {
+        self.tohost_value.take()
     }
 }
 
@@ -70,6 +75,10 @@ impl BusDevice for SimControl {
     fn name(&self) -> &str {
         "SimControl"
     }
+
+    fn reset(&mut self, _ctx: &mut SystemContext) {
+        self.tohost_value = None;
+    }
 }
 
 #[cfg(test)]
@@ -83,10 +92,10 @@ mod tests {
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
-        assert_eq!(sim_control.termination_requested(), None);
+        assert!(!sim_control.is_termination_pending());
 
         sim_control.write_word(&mut ctx, 0, 42).unwrap();
-        assert_eq!(sim_control.termination_requested(), Some(42));
+        assert!(sim_control.is_termination_pending());
     }
 
     #[test]
@@ -119,15 +128,34 @@ mod tests {
     }
 
     #[test]
-    fn test_sim_control_clear_termination() {
+    fn test_sim_control_acknowledge_termination() {
         let mut sim_control = SimControl::new();
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
 
         sim_control.write_word(&mut ctx, 0, 42).unwrap();
-        assert_eq!(sim_control.termination_requested(), Some(42));
+        assert!(sim_control.is_termination_pending());
 
-        sim_control.clear_termination();
-        assert_eq!(sim_control.termination_requested(), None);
+        // Acknowledge consumes the value
+        assert_eq!(sim_control.acknowledge_termination(), Some(42));
+
+        // After acknowledgment, no longer pending
+        assert!(!sim_control.is_termination_pending());
+        assert_eq!(sim_control.acknowledge_termination(), None);
+    }
+
+    #[test]
+    fn test_sim_control_reset_clears_termination() {
+        let mut sim_control = SimControl::new();
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+
+        sim_control.write_word(&mut ctx, 0, 42).unwrap();
+        assert!(sim_control.is_termination_pending());
+
+        sim_control.reset(&mut ctx);
+
+        assert!(!sim_control.is_termination_pending());
+        assert_eq!(sim_control.acknowledge_termination(), None);
     }
 }

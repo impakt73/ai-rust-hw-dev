@@ -390,15 +390,12 @@ pub trait BusDevice {
     /// Reset the device to its initial state
     ///
     /// This method is called when the simulator is reset. Device implementations
-    /// should use this to clear any internal state that needs to be reset when
+    /// must use this to clear any internal state that needs to be reset when
     /// the simulation starts.
     ///
     /// # Arguments
-    /// * `_ctx` - System context providing access to system memory
-    ///
-    /// # Default Implementation
-    /// Does nothing, which is appropriate for devices with no internal state.
-    fn reset(&mut self, _ctx: &mut SystemContext) {}
+    /// * `ctx` - System context providing access to system memory
+    fn reset(&mut self, ctx: &mut SystemContext);
 
     /// Execute device logic for one clock cycle
     ///

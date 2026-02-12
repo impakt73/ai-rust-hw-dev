@@ -112,4 +112,10 @@ impl BusDevice for Fifo {
     fn name(&self) -> &str {
         "FIFO"
     }
+
+    fn reset(&mut self, _ctx: &mut SystemContext) {
+        // FIFO queues are host-communication channels, not CPU-internal state.
+        // They are intentionally preserved across CPU resets so the host can
+        // pre-load RX data before the CPU begins execution.
+    }
 }

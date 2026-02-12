@@ -96,4 +96,8 @@ impl BusDevice for Dram {
     fn name(&self) -> &str {
         "DRAM"
     }
+
+    fn reset(&mut self, _ctx: &mut SystemContext) {
+        // Dram is stateless (delegates to SystemContext), nothing to reset
+    }
 }
