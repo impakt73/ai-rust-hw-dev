@@ -1,4 +1,5 @@
 use crate::memory::Memory;
+use std::time::Instant;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
 use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
@@ -14,30 +15,35 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// warnings and return zero for reads or silently fail for writes.
 pub struct SystemContext<'a> {
     memory: &'a mut Memory,
-    /// Elapsed simulation time in microseconds (host CPU time, not simulated time)
-    elapsed_time_us: u64,
+    /// Start time for elapsed simulation time (host CPU time, not simulated time)
+    start_time: Instant,
+    /// Elapsed time offset in microseconds at start_time
+    start_time_us: u64,
 }
 
 impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory
     pub fn new(memory: &'a mut Memory) -> Self {
-        SystemContext {
-            memory,
-            elapsed_time_us: 0,
-        }
+        SystemContext::with_start_time(memory, Instant::now(), 0)
     }
 
-    /// Create a new SystemContext with access to system memory and elapsed time
-    pub fn with_elapsed_time(memory: &'a mut Memory, elapsed_time_us: u64) -> Self {
+    /// Create a new SystemContext with access to system memory and elapsed time origin
+    pub fn with_start_time(
+        memory: &'a mut Memory,
+        start_time: Instant,
+        start_time_us: u64,
+    ) -> Self {
         SystemContext {
             memory,
-            elapsed_time_us,
+            start_time,
+            start_time_us,
         }
     }
 
     /// Get the elapsed simulation time in microseconds (host CPU time)
     pub fn elapsed_time_us(&self) -> u64 {
-        self.elapsed_time_us
+        self.start_time_us
+            .saturating_add(self.start_time.elapsed().as_micros() as u64)
     }
 
     /// Read a 32-bit word from memory at the given address

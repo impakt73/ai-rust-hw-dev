@@ -294,7 +294,7 @@ impl InteractiveSimulator {
     /// * `Ok(SimulationStepCycleResult)` containing:
     ///   - `instruction_completed`: true if the current instruction completed on this cycle
     ///   - `tohost_value`: Some(value) if halt detected, None otherwise
-    ///   - `elapsed_cpu_time_us`: CPU time elapsed during this cycle in microseconds
+    ///   - `elapsed_cpu_time_us`: CPU time elapsed during this cycle in microseconds (not tracked)
     /// * `Err(String)` - If no ELF is loaded or if a hung state is detected
     ///
     /// # Errors
