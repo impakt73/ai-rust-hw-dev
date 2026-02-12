@@ -3,6 +3,7 @@
 //! These tests validate that the headless backend correctly captures video frames
 //! and audio samples with proper timestamps.
 
+use bus_shared::AudioChannels;
 use sim_view::backend_traits::{TestCommand, ViewerEvent};
 use sim_view::{
     headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend},
@@ -347,11 +348,7 @@ fn test_audio_config_change_and_samples() {
         48000,
         "Sample rate should be 48000 Hz"
     );
-    assert_eq!(
-        config.channels,
-        cpu_sim::AudioChannels::Stereo,
-        "Should be stereo"
-    );
+    assert_eq!(config.channels, AudioChannels::Stereo, "Should be stereo");
     // Sample count can be either 64 (full batch) or 52 (final batch) depending on when config was captured
     assert!(
         config.sample_count == 64 || config.sample_count == 52,
@@ -386,7 +383,7 @@ fn test_audio_config_change_and_samples() {
         );
         assert_eq!(
             chunk_config.channels,
-            cpu_sim::AudioChannels::Stereo,
+            AudioChannels::Stereo,
             "Chunk config should match expected channels"
         );
     }

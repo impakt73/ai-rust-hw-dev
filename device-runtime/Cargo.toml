@@ -5,6 +5,7 @@ edition = "2021"
 description = "Device runtime trait and FPGA implementation for RISC-V CPU host communication"
 
 [dependencies]
+bus-shared = { path = "../bus-shared" }
 cpu-sim = { path = "../cpu-sim" }
 elf = "0.7"
 host-bus-handler = { path = "../host-bus-handler" }

@@ -6,7 +6,6 @@
 //! instance for the desired backend (e.g., FPGA over serial).
 
 mod fpga;
-pub mod memory;
 mod sim;
 
 use host_bus_handler::AccessSize;
@@ -206,7 +205,7 @@ pub trait DeviceRuntime: std::fmt::Display {
 
     /// Load an ELF file into the device's memory.
     ///
-    /// For FPGA runtimes, this populates the internal sparse memory model.
+    /// For FPGA runtimes, this populates the internal memory model.
     /// For simulator runtimes, this loads directly into the simulator's memory.
     ///
     /// Returns the ELF entry point address on success.

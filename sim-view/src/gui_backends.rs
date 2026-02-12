@@ -9,6 +9,7 @@ use crate::backend_traits::{
 };
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
 use crate::video_window::{Key as VwKey, VideoWindow, WindowEvent};
+use bus_shared::AudioConfig;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -92,7 +93,7 @@ impl AudioBackend for GuiAudioBackend {
         self.audio_source = Some(buffer);
     }
 
-    fn set_config(&mut self, config: &cpu_sim::AudioConfig) {
+    fn set_config(&mut self, config: &AudioConfig) {
         if let Err(e) = self.stream.set_config(config) {
             log::error!("Failed to reconfigure audio stream: {}", e);
         }

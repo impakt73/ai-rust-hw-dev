@@ -1,4 +1,4 @@
-use cpu_sim::{VideoConfig, VideoFormat};
+use bus_shared::{VideoConfig, VideoFormat};
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::rc::Rc;

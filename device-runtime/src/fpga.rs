@@ -8,8 +8,8 @@
 //! processing happen on a background thread. The main thread communicates
 //! via channels and shared state.
 
-use crate::memory::SparseMemory;
 use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
+use bus_shared::Memory;
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END};
 use serialport::SerialPort;
@@ -74,15 +74,15 @@ impl FpgaDeviceRuntime {
     /// Create a new FpgaDeviceRuntime connected to the specified serial port.
     ///
     /// Opens the serial port and launches a background thread to handle
-    /// serial I/O and protocol processing. The runtime owns its own sparse
-    /// memory for CPU-initiated request processing.
+    /// serial I/O and protocol processing. The runtime owns its own memory
+    /// for CPU-initiated request processing.
     pub(crate) fn connect(device: &str, baud: u32) -> Result<Self, DeviceError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
             .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
 
-        let memory = SparseMemory::new();
+        let memory = Memory::new();
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
@@ -107,7 +107,7 @@ impl FpgaDeviceRuntime {
     /// Background thread main loop
     fn run_loop(
         mut port: Box<dyn SerialPort>,
-        mut memory: SparseMemory,
+        mut memory: Memory,
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
@@ -196,7 +196,7 @@ impl FpgaDeviceRuntime {
     #[allow(clippy::too_many_arguments)]
     fn poll_once(
         port: &mut Box<dyn SerialPort>,
-        memory: &mut SparseMemory,
+        memory: &mut Memory,
         handler: &mut HostBusHandler,
         rx_buffer: &mut [u8; BUFFER_SIZE],
         rx_buffer_len: &mut usize,
@@ -389,7 +389,7 @@ impl FpgaDeviceRuntime {
     fn process_cpu_request(
         handler: &mut HostBusHandler,
         request: &BusRequest,
-        memory: &mut SparseMemory,
+        memory: &mut Memory,
     ) -> BusEvent {
         let size = request.size.to_size_code();
         let is_dram = is_dram_address(request.addr);
@@ -440,11 +440,11 @@ impl FpgaDeviceRuntime {
         }
     }
 
-    /// Load an ELF file into a new SparseMemory, returning the entry point and memory.
+    /// Load an ELF file into a new Memory, returning the entry point and memory.
     ///
     /// This loads into a temporary memory instance first, so existing memory is
     /// preserved if loading fails.
-    fn load_elf_into_memory(path: &Path) -> Result<(u32, SparseMemory), String> {
+    fn load_elf_into_memory(path: &Path) -> Result<(u32, Memory), String> {
         let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
         let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
             .map_err(|e| format!("Failed to parse ELF: {}", e))?;
@@ -456,7 +456,7 @@ impl FpgaDeviceRuntime {
             )
         })?;
 
-        let mut new_memory = SparseMemory::new();
+        let mut new_memory = Memory::new();
 
         if let Some(phdrs) = elf_file.segments() {
             for phdr in phdrs.iter() {
