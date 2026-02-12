@@ -230,7 +230,9 @@ pub trait DeviceRuntime: std::fmt::Display {
         // Poll until we get the STATUS read response
         let status_val = loop {
             match self.poll()? {
-                Some(BusEvent::HostReadResponse { addr, data, .. }) if addr == status_addr => {
+                Some(BusEvent::HostReadResponse { addr, data, .. })
+                    if addr == status_addr && !self.has_pending_host_request() =>
+                {
                     break data;
                 }
                 Some(BusEvent::HostRequestTimeout { addr }) if addr == status_addr => {
@@ -239,8 +241,12 @@ pub trait DeviceRuntime: std::fmt::Display {
                         format!("Timed out reading STATUS register at 0x{:08x}", status_addr),
                     )));
                 }
-                _ => {
+                Some(_) => {
                     // Continue polling (ignore other events)
+                }
+                None => {
+                    // No event ready; yield briefly to avoid busy-waiting
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
             }
         };
@@ -264,7 +270,9 @@ pub trait DeviceRuntime: std::fmt::Display {
         // Poll until we get the BOOT write acknowledgment
         loop {
             match self.poll()? {
-                Some(BusEvent::HostWriteResponse { addr, .. }) if addr == boot_reg_addr => {
+                Some(BusEvent::HostWriteResponse { addr, .. })
+                    if addr == boot_reg_addr && !self.has_pending_host_request() =>
+                {
                     return Ok(());
                 }
                 Some(BusEvent::HostRequestTimeout { addr }) if addr == boot_reg_addr => {
@@ -276,8 +284,12 @@ pub trait DeviceRuntime: std::fmt::Display {
                         ),
                     )));
                 }
-                _ => {
+                Some(_) => {
                     // Continue polling (ignore other events)
+                }
+                None => {
+                    // No event ready; yield briefly to avoid busy-waiting
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
             }
         }
