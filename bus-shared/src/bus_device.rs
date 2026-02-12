@@ -33,9 +33,9 @@ impl<'a> SystemContext<'a> {
     ///
     /// The elapsed time is a snapshot taken when the context is created and cached
     /// for the lifetime of the context to avoid repeated timer calls. SystemBus creates
-    /// a context per bus operation, so this cost replaces the prior per-cycle updates.
-    /// If multiple operations need the same timestamp, reuse the context or cache
-    /// `elapsed_time_us`.
+    /// a context per bus operation, so this is a single timer call per read/write
+    /// instead of per-cycle updates. For bus-heavy workloads, reuse the context or
+    /// cache `elapsed_time_us` when multiple operations share a timestamp.
     pub fn with_start_time(
         memory: &'a mut Memory,
         start_time: Instant,
