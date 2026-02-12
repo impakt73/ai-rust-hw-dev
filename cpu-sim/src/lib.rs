@@ -15,7 +15,9 @@ pub use bus_shared::{
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{BootError, SimulationResult, SimulationStepResult};
+pub use sim::{
+    BootError, SimulationResult, SimulationStepCycleResult, SimulationStepInstructionResult,
+};
 pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
@@ -243,7 +245,7 @@ impl InteractiveSimulator {
     /// depending on the instruction type and memory latency configuration.
     ///
     /// # Returns
-    /// * `Ok(SimulationStepResult)` containing execution information and optional tohost termination value
+    /// * `Ok(SimulationStepInstructionResult)` containing execution information and optional tohost termination value
     /// * `Err(String)` if no ELF is loaded or if an error occurs during execution
     ///
     /// # Errors
@@ -267,7 +269,7 @@ impl InteractiveSimulator {
     ///     Err(e) => eprintln!("Error: {}", e),
     /// }
     /// ```
-    pub fn step_instruction(&mut self) -> Result<SimulationStepResult, String> {
+    pub fn step_instruction(&mut self) -> Result<SimulationStepInstructionResult, String> {
         // Check if ELF has been loaded
         if !self.elf_loaded {
             return Err(
@@ -281,15 +283,17 @@ impl InteractiveSimulator {
             .map_err(|e| format!("Execution error: {}", e))
     }
 
-    /// Execute a single clock cycle and return whether instruction completed
+    /// Execute a single clock cycle and return the result
     ///
     /// Steps the simulator forward by one clock cycle. This is a lower-level interface
     /// than `step_instruction()`, allowing cycle-by-cycle control for debugging or
     /// timing-sensitive testing.
     ///
     /// # Returns
-    /// * `Ok(true)` - The current instruction completed on this cycle
-    /// * `Ok(false)` - The instruction is still in progress, more cycles needed
+    /// * `Ok(SimulationStepCycleResult)` containing:
+    ///   - `instruction_completed`: true if the current instruction completed on this cycle
+    ///   - `tohost_value`: Some(value) if halt detected, None otherwise
+    ///   - `elapsed_cpu_time_us`: CPU time elapsed during this cycle in microseconds
     /// * `Err(String)` - If no ELF is loaded or if a hung state is detected
     ///
     /// # Errors
@@ -306,11 +310,11 @@ impl InteractiveSimulator {
     /// // Execute cycles until instruction completes
     /// loop {
     ///     match sim.step_cycle() {
-    ///         Ok(true) => {
+    ///         Ok(result) if result.instruction_completed => {
     ///             println!("Instruction completed");
     ///             break;
     ///         }
-    ///         Ok(false) => {
+    ///         Ok(_) => {
     ///             println!("Cycle done, instruction still executing...");
     ///         }
     ///         Err(e) => {
@@ -320,7 +324,7 @@ impl InteractiveSimulator {
     ///     }
     /// }
     /// ```
-    pub fn step_cycle(&mut self) -> Result<bool, String> {
+    pub fn step_cycle(&mut self) -> Result<SimulationStepCycleResult, String> {
         // Check if ELF has been loaded
         if !self.elf_loaded {
             return Err("No ELF file loaded. Call load_elf() before stepping cycles.".to_string());

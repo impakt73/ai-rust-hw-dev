@@ -51,11 +51,11 @@ fn test_interactive_simulator_step_cycle() {
 
     for _ in 0..max_cycles {
         match sim.step_cycle() {
-            Ok(true) => {
+            Ok(result) if result.instruction_completed => {
                 instruction_completed = true;
                 break;
             }
-            Ok(false) => {}
+            Ok(_) => {}
             Err(e) => panic!("Unexpected error during cycle stepping: {}", e),
         }
     }
@@ -180,7 +180,7 @@ fn test_interactive_simulator_step_result() {
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
     sim.load_elf(&elf_path).expect("Failed to load ELF");
 
-    // Step once and verify SimulationStepResult structure
+    // Step once and verify SimulationStepInstructionResult structure
     let result = sim.step_instruction().expect("First step should succeed");
 
     // Check that tohost is None initially (program hasn't terminated)
