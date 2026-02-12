@@ -155,10 +155,11 @@ impl SimDeviceRuntime {
                                 .send(RuntimeEvent::Bus(BusEvent::TohostTermination { value }));
                         }
                     }
-                    Err(e) => {
-                        let _ = event_tx
-                            .send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));
-                        break;
+                    Err(_) => {
+                        // Hung detector fired (e.g., CPU halted by EBREAK).
+                        // The clock cycle was still evaluated, so host bus
+                        // transactions continue to make progress. We just
+                        // ignore the error and keep the thread alive.
                     }
                 }
             } else {

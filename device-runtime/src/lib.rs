@@ -13,6 +13,12 @@ pub use host_bus_handler::BusRequest;
 use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::path::Path;
 
+// Re-exports for integration tests
+pub use host_bus_handler::AccessSize as BusAccessSize;
+pub use riscv_shared::bus::{
+    sysctrl_status_addr as bus_sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED,
+};
+
 /// Errors that can occur during device operations
 #[derive(Debug)]
 pub enum DeviceError {
@@ -220,13 +226,17 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// so they can be executed later via [`boot_cpu`] with the same address.
     ///
     /// # Arguments
-    /// * `boot_pc` - Address at which to load the program (must be in DRAM range)
+    /// * `boot_pc` - Address at which to load the program. Must be within the
+    ///   valid DRAM range; an error is returned if the address or the resulting
+    ///   range falls outside DRAM.
     /// * `data` - Byte slice containing the program data (typically encoded
     ///   RISC-V instructions in little-endian format)
     ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(DeviceError)` if the write fails
+    /// # Errors
+    /// Returns `Err(DeviceError)` if:
+    /// - The address range `[boot_pc, boot_pc + data.len())` is outside the
+    ///   valid DRAM range
+    /// - The background thread is disconnected or times out
     fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError>;
 
     /// Boot the CPU from the specified address.

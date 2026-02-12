@@ -1,4 +1,7 @@
-use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
+use device_runtime::{
+    bus_sysctrl_status_addr, create_device_runtime, BusAccessSize, BusEvent, BusRequest,
+    DeviceRuntimeType, SYSCTRL_STATUS_CPU_HALTED,
+};
 use riscv_core::instruction::{addi, ebreak, lui, sw};
 use std::time::{Duration, Instant};
 
@@ -89,4 +92,33 @@ fn test_load_program_and_tohost_termination() {
         Some(1),
         "Expected tohost termination with value 1"
     );
+
+    // Confirm CPU has halted by reading the system controller STATUS register
+    let status_addr = bus_sysctrl_status_addr();
+    let request = BusRequest::read(status_addr, BusAccessSize::Word);
+    runtime
+        .send_host_request(request)
+        .expect("Failed to send STATUS read request");
+
+    let mut cpu_halted = false;
+    let halt_start = Instant::now();
+    while halt_start.elapsed() < timeout {
+        match runtime.poll() {
+            Ok(Some(BusEvent::HostReadResponse { addr, data, .. }))
+                if addr == status_addr && !runtime.has_pending_host_request() =>
+            {
+                cpu_halted = (data & SYSCTRL_STATUS_CPU_HALTED) != 0;
+                break;
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) => {
+                panic!("Poll error while checking CPU halt: {}", e);
+            }
+        }
+    }
+
+    assert!(cpu_halted, "CPU did not halt after EBREAK");
 }

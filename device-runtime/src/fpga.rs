@@ -146,10 +146,21 @@ impl FpgaDeviceRuntime {
                     }
                 }
                 Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
-                    for (i, &byte) in data.iter().enumerate() {
-                        bus.memory.write_byte(boot_pc + i as u32, byte);
+                    let len = data.len() as u32;
+                    if !data.is_empty() && !is_valid_dram_range(boot_pc, len) {
+                        let _ = result_tx.send(Err(format!(
+                            "Program range [0x{:08x}, 0x{:08x}) is outside DRAM range [0x{:08x}, 0x{:08x}]",
+                            boot_pc,
+                            boot_pc.wrapping_add(len),
+                            DRAM_BASE,
+                            DRAM_END
+                        )));
+                    } else {
+                        for (i, &byte) in data.iter().enumerate() {
+                            bus.memory.write_byte(boot_pc + i as u32, byte);
+                        }
+                        let _ = result_tx.send(Ok(()));
                     }
-                    let _ = result_tx.send(Ok(()));
                 }
                 Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
                 Err(mpsc::TryRecvError::Disconnected) => break, // Main thread dropped sender
