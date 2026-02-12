@@ -27,19 +27,19 @@ fn create_test_runtime() -> Box<dyn device_runtime::DeviceRuntime> {
 /// and then spins in an infinite loop.
 ///
 /// The program:
-///   LUI  x15, SIM_CONTROL_BASE   ; load tohost address
-///   ADDI x14, x0, 1              ; load success code (1)
-///   SW   x15, x14, 0             ; store to tohost
-///   JAL  x0, 0                   ; infinite loop
+///   LUI  x15, SIM_CONTROL_BASE   ; load tohost base address into x15
+///   ADDI x14, x0, 1              ; load success code (1) into x14
+///   SW   x14, 0(x15)             ; store x14 to tohost address
+///   JAL  x0, 0                   ; infinite loop (jump to self)
 ///   EBREAK                       ; (unreachable) breakpoint
 fn build_tohost_program() -> Vec<u8> {
     let sim_control_base: u32 = 0x4000_0000;
     let instructions = vec![
-        lui(15, sim_control_base),
-        addi(14, 0, 1),
-        sw(15, 14, 0),
-        jal(0, 0),
-        ebreak(),
+        lui(15, sim_control_base), // Load SIM_CONTROL_BASE into x15
+        addi(14, 0, 1),            // Load success code (1) into x14
+        sw(15, 14, 0),             // Store x14 to address in x15 (tohost)
+        jal(0, 0),                 // Infinite loop (jump to self)
+        ebreak(),                  // (unreachable) breakpoint
     ];
     instructions
         .iter()

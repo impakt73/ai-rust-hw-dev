@@ -146,11 +146,9 @@ impl FpgaDeviceRuntime {
                     }
                 }
                 Ok(RuntimeCommand::LoadProgram(data, result_tx)) => {
-                    let mut new_bus = SystemBus::new();
                     for (i, &byte) in data.iter().enumerate() {
-                        new_bus.memory.write_byte(DRAM_BASE + i as u32, byte);
+                        bus.memory.write_byte(DRAM_BASE + i as u32, byte);
                     }
-                    bus = new_bus;
                     let _ = result_tx.send(Ok(()));
                 }
                 Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
