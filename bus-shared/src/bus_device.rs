@@ -15,10 +15,8 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// warnings and return zero for reads or silently fail for writes.
 pub struct SystemContext<'a> {
     memory: &'a mut Memory,
-    /// Start time for elapsed simulation time (host CPU time, not simulated time)
-    start_time: Instant,
-    /// Elapsed time offset in microseconds at start_time
-    start_time_us: u64,
+    /// Elapsed simulation time in microseconds (host CPU time, not simulated time)
+    elapsed_time_us: u64,
 }
 
 impl<'a> SystemContext<'a> {
@@ -33,17 +31,16 @@ impl<'a> SystemContext<'a> {
         start_time: Instant,
         start_time_us: u64,
     ) -> Self {
+        let elapsed_time_us = start_time_us.saturating_add(start_time.elapsed().as_micros() as u64);
         SystemContext {
             memory,
-            start_time,
-            start_time_us,
+            elapsed_time_us,
         }
     }
 
     /// Get the elapsed simulation time in microseconds (host CPU time)
     pub fn elapsed_time_us(&self) -> u64 {
-        self.start_time_us
-            .saturating_add(self.start_time.elapsed().as_micros() as u64)
+        self.elapsed_time_us
     }
 
     /// Read a 32-bit word from memory at the given address
