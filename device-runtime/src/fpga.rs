@@ -31,8 +31,8 @@ enum RuntimeCommand {
     SendRequest(BusRequest),
     /// Load an ELF file into memory, with a one-shot channel for the result
     LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
-    /// Load raw program bytes into memory
-    LoadProgram(Vec<u8>, mpsc::Sender<Result<(), String>>),
+    /// Load raw program bytes into memory at a given address
+    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -145,9 +145,9 @@ impl FpgaDeviceRuntime {
                         }
                     }
                 }
-                Ok(RuntimeCommand::LoadProgram(data, result_tx)) => {
+                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
                     for (i, &byte) in data.iter().enumerate() {
-                        bus.memory.write_byte(DRAM_BASE + i as u32, byte);
+                        bus.memory.write_byte(boot_pc + i as u32, byte);
                     }
                     let _ = result_tx.send(Ok(()));
                 }
@@ -610,13 +610,17 @@ impl DeviceRuntime for FpgaDeviceRuntime {
         }
     }
 
-    fn load_program(&mut self, data: &[u8]) -> Result<(), DeviceError> {
+    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
         // Create a one-shot channel for the load result
         let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
 
         // Send the load command to the background thread
         self.command_tx
-            .send(RuntimeCommand::LoadProgram(data.to_vec(), result_tx))
+            .send(RuntimeCommand::LoadProgram(
+                boot_pc,
+                data.to_vec(),
+                result_tx,
+            ))
             .map_err(|e| {
                 DeviceError::IoError(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,

@@ -1,5 +1,5 @@
 use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
-use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
+use riscv_core::instruction::{addi, ebreak, lui, sw};
 use std::time::{Duration, Instant};
 
 /// Create a device runtime based on environment variables.
@@ -24,22 +24,20 @@ fn create_test_runtime() -> Box<dyn device_runtime::DeviceRuntime> {
 }
 
 /// Build a simple program that writes a success code to the tohost address
-/// and then spins in an infinite loop.
+/// and then halts via EBREAK.
 ///
 /// The program:
 ///   LUI  x15, SIM_CONTROL_BASE   ; load tohost base address into x15
 ///   ADDI x14, x0, 1              ; load success code (1) into x14
 ///   SW   x14, 0(x15)             ; store x14 to tohost address
-///   JAL  x0, 0                   ; infinite loop (jump to self)
-///   EBREAK                       ; (unreachable) breakpoint
+///   EBREAK                       ; halt execution
 fn build_tohost_program() -> Vec<u8> {
     let sim_control_base: u32 = 0x4000_0000;
     let instructions = vec![
         lui(15, sim_control_base), // Load SIM_CONTROL_BASE into x15
         addi(14, 0, 1),            // Load success code (1) into x14
         sw(15, 14, 0),             // Store x14 to address in x15 (tohost)
-        jal(0, 0),                 // Infinite loop (jump to self)
-        ebreak(),                  // (unreachable) breakpoint
+        ebreak(),                  // Halt execution
     ];
     instructions
         .iter()
@@ -51,15 +49,15 @@ fn build_tohost_program() -> Vec<u8> {
 fn test_load_program_and_tohost_termination() {
     let mut runtime = create_test_runtime();
 
-    // Load the program bytes
+    // Load the program bytes at DRAM_BASE
+    let boot_pc: u32 = 0x8000_0000;
     let program = build_tohost_program();
     runtime
-        .load_program(&program)
+        .load_program(boot_pc, &program)
         .expect("Failed to load program");
 
-    // Boot the CPU from DRAM_BASE
-    let dram_base: u32 = 0x8000_0000;
-    runtime.boot_cpu(dram_base).expect("Failed to boot CPU");
+    // Boot the CPU from the same address used for load_program
+    runtime.boot_cpu(boot_pc).expect("Failed to boot CPU");
 
     // Poll for tohost termination with a timeout
     let timeout = Duration::from_secs(10);

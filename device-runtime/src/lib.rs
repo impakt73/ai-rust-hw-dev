@@ -214,19 +214,20 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// Returns the ELF entry point address on success.
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError>;
 
-    /// Load raw program bytes into device memory at the DRAM base address.
+    /// Load raw program bytes into device memory at the specified address.
     ///
-    /// The provided bytes are written into memory starting at `DRAM_BASE`
-    /// (0x8000_0000) so they can be executed later via [`boot_cpu`].
+    /// The provided bytes are written into memory starting at `boot_pc`
+    /// so they can be executed later via [`boot_cpu`] with the same address.
     ///
     /// # Arguments
+    /// * `boot_pc` - Address at which to load the program (must be in DRAM range)
     /// * `data` - Byte slice containing the program data (typically encoded
     ///   RISC-V instructions in little-endian format)
     ///
     /// # Returns
     /// * `Ok(())` on success
     /// * `Err(DeviceError)` if the write fails
-    fn load_program(&mut self, data: &[u8]) -> Result<(), DeviceError>;
+    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError>;
 
     /// Boot the CPU from the specified address.
     ///
