@@ -1,0 +1,94 @@
+use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
+use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
+use std::time::{Duration, Instant};
+
+/// Create a device runtime based on environment variables.
+///
+/// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
+/// Otherwise, the simulation backend is used by default.
+fn create_test_runtime() -> Box<dyn device_runtime::DeviceRuntime> {
+    let runtime_type = match (
+        std::env::var("FPGA_DEVICE_PATH"),
+        std::env::var("FPGA_BAUD_RATE"),
+    ) {
+        (Ok(device), Ok(baud_str)) => {
+            let baud: u32 = baud_str
+                .parse()
+                .expect("FPGA_BAUD_RATE must be a valid u32");
+            DeviceRuntimeType::Fpga { device, baud }
+        }
+        _ => DeviceRuntimeType::Sim,
+    };
+
+    create_device_runtime(runtime_type).expect("Failed to create device runtime")
+}
+
+/// Build a simple program that writes a success code to the tohost address
+/// and then spins in an infinite loop.
+///
+/// The program:
+///   LUI  x15, SIM_CONTROL_BASE   ; load tohost address
+///   ADDI x14, x0, 1              ; load success code (1)
+///   SW   x15, x14, 0             ; store to tohost
+///   JAL  x0, 0                   ; infinite loop
+///   EBREAK                       ; (unreachable) breakpoint
+fn build_tohost_program() -> Vec<u8> {
+    let sim_control_base: u32 = 0x4000_0000;
+    let instructions = vec![
+        lui(15, sim_control_base),
+        addi(14, 0, 1),
+        sw(15, 14, 0),
+        jal(0, 0),
+        ebreak(),
+    ];
+    instructions
+        .iter()
+        .flat_map(|inst| inst.to_le_bytes())
+        .collect()
+}
+
+#[test]
+fn test_load_program_and_tohost_termination() {
+    let mut runtime = create_test_runtime();
+
+    // Load the program bytes
+    let program = build_tohost_program();
+    runtime
+        .load_program(&program)
+        .expect("Failed to load program");
+
+    // Boot the CPU from DRAM_BASE
+    let dram_base: u32 = 0x8000_0000;
+    runtime.boot_cpu(dram_base).expect("Failed to boot CPU");
+
+    // Poll for tohost termination with a timeout
+    let timeout = Duration::from_secs(10);
+    let start = Instant::now();
+    let mut tohost_value = None;
+
+    while start.elapsed() < timeout {
+        match runtime.poll() {
+            Ok(Some(BusEvent::TohostTermination { value })) => {
+                tohost_value = Some(value);
+                break;
+            }
+            Ok(Some(_)) => {
+                // Ignore other events, keep polling
+            }
+            Ok(None) => {
+                // No event ready; yield briefly
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) => {
+                panic!("Poll error: {}", e);
+            }
+        }
+    }
+
+    // Verify tohost value matches expected success code
+    assert_eq!(
+        tohost_value,
+        Some(1),
+        "Expected tohost termination with value 1"
+    );
+}

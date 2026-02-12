@@ -374,6 +374,43 @@ impl InteractiveSimulator {
         );
         view.receive_bus_response()
     }
+
+    /// Write a region of memory from a byte slice
+    ///
+    /// Writes bytes into the simulator's memory starting at `start_addr`.
+    /// The data is marked as instructions so the hung detector treats the
+    /// region as valid for the program counter.
+    ///
+    /// After writing, the simulator is reset with boot deferred (CPU left in
+    /// S_BOOT state) so that `boot_cpu` can be called externally.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address (must be in DRAM range)
+    /// * `data` - Byte slice containing the data to write
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` if the reset fails
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
+        {
+            let mut view = SimulatorView::new(
+                &mut self.simulator.bus,
+                &mut self.simulator.hung_detector,
+                &self.simulator.cpu,
+                &mut self.simulator.host_bus_handler,
+            );
+            view.write_memory_region(start_addr, data, true);
+        }
+
+        // Reset with boot deferred so boot_cpu can be called externally
+        self.simulator
+            .reset(start_addr, false)
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
+        self.elf_loaded = true;
+
+        Ok(())
+    }
 }
 /// Load an ELF file into a simulator's memory
 ///

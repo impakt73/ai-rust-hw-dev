@@ -904,6 +904,7 @@ dependencies = [
  "elf",
  "host-bus-handler",
  "log",
+ "riscv_core",
  "riscv_shared",
  "serialport",
 ]
