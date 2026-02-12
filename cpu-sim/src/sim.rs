@@ -55,9 +55,18 @@ struct PendingResponse {
     accepted_cycle: u64,
 }
 
-/// Result of a single simulation step
+/// Result of stepping a single instruction
 #[derive(Debug)]
-pub struct SimulationStepResult {
+pub struct SimulationStepInstructionResult {
+    pub tohost_value: Option<u32>,
+    pub elapsed_cpu_time_us: u64,
+    pub cycles_executed: u64,
+}
+
+/// Result of stepping a single clock cycle
+#[derive(Debug)]
+pub struct SimulationStepCycleResult {
+    pub instruction_completed: bool,
     pub tohost_value: Option<u32>,
     pub elapsed_cpu_time_us: u64,
 }
@@ -529,13 +538,13 @@ where
     /// Execute a single clock cycle
     ///
     /// This method steps the simulation forward by one clock cycle and returns
-    /// whether the current instruction has completed.
+    /// a result indicating whether the current instruction has completed, along
+    /// with timing information and optional termination status.
     ///
     /// # Returns
-    /// * `Ok(true)` - Instruction completed on this cycle
-    /// * `Ok(false)` - Instruction still in progress, more cycles needed
+    /// * `Ok(SimulationStepCycleResult)` - Cycle completed successfully
     /// * `Err(HungStateError)` - Hung state detected
-    pub fn step_cycle(&mut self) -> Result<bool, HungStateError> {
+    pub fn step_cycle(&mut self) -> Result<SimulationStepCycleResult, HungStateError> {
         let start_time = Instant::now();
 
         // Clock edge
@@ -611,23 +620,32 @@ where
         // This ensures Video and other time-sensitive devices get accurate cumulative time
         self.bus.update_elapsed_time(self.total_elapsed_time_us);
 
-        Ok(instruction_complete)
+        // Check for termination via SimControl device
+        let halt_value = self.bus.sim_control.termination_requested();
+
+        Ok(SimulationStepCycleResult {
+            instruction_completed: instruction_complete,
+            tohost_value: halt_value,
+            elapsed_cpu_time_us: elapsed_us,
+        })
     }
 
     /// Execute a single simulation step (one instruction - may take multiple cycles)
-    /// Returns SimulationStepResult containing:
+    /// Returns SimulationStepInstructionResult containing:
     /// - tohost_value: Some(value) if halt detected, None otherwise
     /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
+    /// - cycles_executed: Number of cycles executed for this instruction
     ///
     /// # Errors
     /// Returns `HungStateError` if the CPU is detected to be in a hung state
-    pub fn step_instruction(&mut self) -> Result<SimulationStepResult, HungStateError> {
+    pub fn step_instruction(&mut self) -> Result<SimulationStepInstructionResult, HungStateError> {
         let start_elapsed_time_us = self.total_elapsed_time_us;
+        let start_cycle_count = self.cycle_count;
 
         // Multi-cycle execution loop - continue until instruction completes
         loop {
-            let instruction_complete = self.step_cycle()?;
-            if instruction_complete {
+            let cycle_result = self.step_cycle()?;
+            if cycle_result.instruction_completed {
                 break;
             }
         }
@@ -638,10 +656,12 @@ where
         let elapsed_us = self
             .total_elapsed_time_us
             .saturating_sub(start_elapsed_time_us);
+        let cycles_executed = self.cycle_count.saturating_sub(start_cycle_count);
 
-        Ok(SimulationStepResult {
+        Ok(SimulationStepInstructionResult {
             tohost_value: halt_value,
             elapsed_cpu_time_us: elapsed_us,
+            cycles_executed,
         })
     }
 

@@ -136,7 +136,7 @@ impl SimDeviceRuntime {
             if elf_loaded {
                 // Step one cycle for fine-grained control
                 match simulator.step_cycle() {
-                    Ok(_) => {}
+                    Ok(_result) => {}
                     Err(e) => {
                         let _ = event_tx
                             .send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));
