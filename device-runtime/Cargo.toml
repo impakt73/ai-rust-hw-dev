@@ -14,4 +14,6 @@ riscv_shared = { path = "../riscv_shared" }
 serialport = "4.6"
 
 [dev-dependencies]
+host-bus-handler = { path = "../host-bus-handler" }
 riscv_core = { path = "../riscv_core" }
+riscv_shared = { path = "../riscv_shared" }

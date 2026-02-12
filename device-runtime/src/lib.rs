@@ -13,12 +13,6 @@ pub use host_bus_handler::BusRequest;
 use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::path::Path;
 
-// Re-exports for integration tests
-pub use host_bus_handler::AccessSize as BusAccessSize;
-pub use riscv_shared::bus::{
-    sysctrl_status_addr as bus_sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED,
-};
-
 /// Errors that can occur during device operations
 #[derive(Debug)]
 pub enum DeviceError {

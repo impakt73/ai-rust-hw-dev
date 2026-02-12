@@ -156,11 +156,9 @@ impl SimDeviceRuntime {
                         }
                     }
                     Err(e) => {
-                        // Hung detector fired (e.g., CPU halted by EBREAK).
-                        // The clock cycle was still evaluated, so host bus
-                        // transactions continue to make progress. We log the
-                        // error and keep the thread alive.
-                        log::debug!("Simulation step error (continuing): {}", e);
+                        let _ = event_tx
+                            .send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));
+                        break;
                     }
                 }
             } else {

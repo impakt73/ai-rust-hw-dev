@@ -597,12 +597,14 @@ where
                 let pc = self.cpu.debug_current_pc;
                 let instruction = self.cpu.debug_current_instruction;
                 let fsm_state = self.cpu.debug_fsm_state;
+                let halted = self.cpu.halted != 0;
                 detector.check_cycle(
                     self.cycle_count,
                     pc,
                     instruction,
                     fsm_state,
                     instruction_complete,
+                    halted,
                 )?;
             }
         }

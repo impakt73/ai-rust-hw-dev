@@ -1,8 +1,7 @@
-use device_runtime::{
-    bus_sysctrl_status_addr, create_device_runtime, BusAccessSize, BusEvent, BusRequest,
-    DeviceRuntimeType, SYSCTRL_STATUS_CPU_HALTED,
-};
+use device_runtime::{create_device_runtime, BusEvent, BusRequest, DeviceRuntimeType};
+use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, lui, sw};
+use riscv_shared::bus::{sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED};
 use std::time::{Duration, Instant};
 
 /// Create a device runtime based on environment variables.
@@ -94,8 +93,8 @@ fn test_load_program_and_tohost_termination() {
     );
 
     // Confirm CPU has halted by reading the system controller STATUS register
-    let status_addr = bus_sysctrl_status_addr();
-    let request = BusRequest::read(status_addr, BusAccessSize::Word);
+    let status_addr = sysctrl_status_addr();
+    let request = BusRequest::read(status_addr, AccessSize::Word);
     runtime
         .send_host_request(request)
         .expect("Failed to send STATUS read request");
