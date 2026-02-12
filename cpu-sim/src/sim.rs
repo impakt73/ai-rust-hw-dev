@@ -59,6 +59,7 @@ struct PendingResponse {
 #[derive(Debug)]
 pub struct SimulationStepInstructionResult {
     pub tohost_value: Option<u32>,
+    /// CPU time elapsed during this step in microseconds (not tracked; always 0).
     pub elapsed_cpu_time_us: u64,
     pub cycles_executed: u64,
 }
@@ -68,6 +69,7 @@ pub struct SimulationStepInstructionResult {
 pub struct SimulationStepCycleResult {
     pub instruction_completed: bool,
     pub tohost_value: Option<u32>,
+    /// CPU time elapsed during this cycle in microseconds (not tracked; always 0).
     pub elapsed_cpu_time_us: u64,
 }
 
