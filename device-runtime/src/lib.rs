@@ -10,6 +10,7 @@ mod sim;
 
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
+use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::path::Path;
 
 /// Errors that can occur during device operations
@@ -210,4 +211,75 @@ pub trait DeviceRuntime: std::fmt::Display {
     ///
     /// Returns the ELF entry point address on success.
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError>;
+
+    /// Boot the CPU from the specified address.
+    ///
+    /// This performs a two-phase boot sequence:
+    /// 1. Reads the system controller STATUS register to verify the CPU is in
+    ///    the boot-wait state (`cpu_booting` bit set).
+    /// 2. Writes the boot address to the BOOT register to start execution.
+    ///
+    /// This default implementation uses generic bus request functionality
+    /// (`send_host_request` and `poll`) and works for any `DeviceRuntime`.
+    fn boot_cpu(&mut self, boot_addr: u32) -> Result<(), DeviceError> {
+        // Phase 1: Read STATUS register to verify cpu_booting bit
+        let status_addr = sysctrl_status_addr();
+        let request = BusRequest::read(status_addr, AccessSize::Word);
+        self.send_host_request(request)?;
+
+        // Poll until we get the STATUS read response
+        let status_val = loop {
+            match self.poll()? {
+                Some(BusEvent::HostReadResponse { addr, data, .. }) if addr == status_addr => {
+                    break data;
+                }
+                Some(BusEvent::HostRequestTimeout { addr }) if addr == status_addr => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Timed out reading STATUS register at 0x{:08x}", status_addr),
+                    )));
+                }
+                _ => {
+                    // Continue polling (ignore other events)
+                }
+            }
+        };
+
+        // Verify cpu_booting bit is set
+        if (status_val & SYSCTRL_STATUS_CPU_BOOTING) == 0 {
+            return Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Boot failed: cpu_booting bit not set (STATUS=0x{:08x})",
+                    status_val
+                ),
+            )));
+        }
+
+        // Phase 2: Write boot address to BOOT register
+        let boot_reg_addr = sysctrl_boot_addr();
+        let request = BusRequest::write(boot_reg_addr, boot_addr, AccessSize::Word);
+        self.send_host_request(request)?;
+
+        // Poll until we get the BOOT write acknowledgment
+        loop {
+            match self.poll()? {
+                Some(BusEvent::HostWriteResponse { addr, .. }) if addr == boot_reg_addr => {
+                    return Ok(());
+                }
+                Some(BusEvent::HostRequestTimeout { addr }) if addr == boot_reg_addr => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!(
+                            "Timed out writing boot address to BOOT register at 0x{:08x}",
+                            boot_reg_addr
+                        ),
+                    )));
+                }
+                _ => {
+                    // Continue polling (ignore other events)
+                }
+            }
+        }
+    }
 }

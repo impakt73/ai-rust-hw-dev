@@ -6,7 +6,7 @@ use crate::app::App;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType};
 use host_bus_handler::{AccessSize, BusRequest};
-use riscv_shared::bus::{sysctrl_reset_addr, sysctrl_status_addr, SYSCTRL_RESET_SYSTEM};
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 
 /// Default baud rate for device connections
@@ -493,23 +493,9 @@ fn execute_boot(app: &mut App, address: Option<u32>) -> CommandResult {
         );
     };
 
-    // First, read STATUS register to verify cpu_booting bit is set
-    let status_addr = sysctrl_status_addr();
-    let request = BusRequest::read(status_addr, AccessSize::Word);
-
-    match runtime.send_host_request(request) {
-        Ok(()) => {
-            // Store the boot state so we can continue when STATUS response arrives
-            app.pending_boot = Some(crate::app::PendingBoot {
-                boot_addr,
-                expected_status_addr: status_addr,
-            });
-            CommandResult::ok(format!(
-                "Reading STATUS register (0x{:08x}) to verify cpu_booting bit...",
-                status_addr
-            ))
-        }
-        Err(e) => CommandResult::error(format!("Failed to send STATUS read request: {}", e)),
+    match runtime.boot_cpu(boot_addr) {
+        Ok(()) => CommandResult::ok(format!("CPU booted at address 0x{:08x}", boot_addr)),
+        Err(e) => CommandResult::error(format!("Boot failed: {}", e)),
     }
 }
 
