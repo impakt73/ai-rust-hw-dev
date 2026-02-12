@@ -508,6 +508,7 @@ impl SystemBus {
     /// This should be called when the simulator is reset to allow devices
     /// to clear their internal state.
     pub fn reset_all_devices(&mut self) {
+        // Reset elapsed-time origin; elapsed_time_start_us is an offset applied to elapsed_time_start.
         self.elapsed_time_start = Instant::now();
         self.elapsed_time_start_us = 0;
         let mut ctx = SystemContext::with_start_time(

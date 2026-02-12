@@ -31,7 +31,8 @@ impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory and elapsed time origin
     ///
     /// The elapsed time is a snapshot taken when the context is created and cached
-    /// for the lifetime of the context to avoid repeated timer calls.
+    /// for the lifetime of the context to avoid repeated timer calls. If multiple
+    /// operations need the same timestamp, reuse the context or cache `elapsed_time_us`.
     pub fn with_start_time(
         memory: &'a mut Memory,
         start_time: Instant,
