@@ -21,11 +21,17 @@ pub struct SystemContext<'a> {
 
 impl<'a> SystemContext<'a> {
     /// Create a new SystemContext with access to system memory
+    ///
+    /// This uses a fresh time origin intended for standalone usage or tests.
+    /// SystemBus supplies a shared origin via `with_start_time`.
     pub fn new(memory: &'a mut Memory) -> Self {
         SystemContext::with_start_time(memory, Instant::now(), 0)
     }
 
     /// Create a new SystemContext with access to system memory and elapsed time origin
+    ///
+    /// The elapsed time is computed once when the context is created and cached
+    /// for the lifetime of the context to avoid repeated timer calls.
     pub fn with_start_time(
         memory: &'a mut Memory,
         start_time: Instant,
