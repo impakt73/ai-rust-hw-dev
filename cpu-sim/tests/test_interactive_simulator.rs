@@ -2,6 +2,7 @@ use bus_shared::{
     Audio, AudioConfig, BusDevice, Video, VideoConfig, AUDIO_BASE, FIFO_BASE, VIDEO_BASE,
 };
 use cpu_sim::InteractiveSimulator;
+use riscv_shared::SUCCESS_CODE;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -66,25 +67,25 @@ fn test_interactive_simulator_step_cycle() {
         max_cycles
     );
 
-    let max_instructions = 100;
+    let max_cycles_for_tohost = 10_000;
     let mut tohost_value = None;
 
-    for _ in 0..max_instructions {
-        match sim.step_instruction() {
+    for _ in 0..max_cycles_for_tohost {
+        match sim.step_cycle() {
             Ok(result) => {
                 if let Some(value) = result.tohost_value {
                     tohost_value = Some(value);
                     break;
                 }
             }
-            Err(e) => panic!("Unexpected error during instruction stepping: {}", e),
+            Err(e) => panic!("Unexpected error during cycle stepping: {}", e),
         }
     }
 
     assert_eq!(
         tohost_value,
-        Some(42),
-        "Program should exit with tohost value 42"
+        Some(SUCCESS_CODE),
+        "Program should exit with tohost value {SUCCESS_CODE}"
     );
 }
 
@@ -189,14 +190,10 @@ fn test_interactive_simulator_step_result() {
         "First instruction should not terminate"
     );
 
-    // Check that elapsed time is reasonable (should be non-zero but small)
+    // Check that cycles executed is reasonable (should be non-zero)
     assert!(
-        result.elapsed_cpu_time_us > 0,
-        "Elapsed time should be greater than 0"
-    );
-    assert!(
-        result.elapsed_cpu_time_us < 1000000,
-        "Single instruction should take less than 1 second"
+        result.cycles_executed > 0,
+        "Cycles executed should be greater than 0"
     );
 }
 

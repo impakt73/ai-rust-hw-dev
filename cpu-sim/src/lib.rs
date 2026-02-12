@@ -245,7 +245,8 @@ impl InteractiveSimulator {
     /// depending on the instruction type and memory latency configuration.
     ///
     /// # Returns
-    /// * `Ok(SimulationStepInstructionResult)` containing execution information and optional tohost termination value
+    /// * `Ok(SimulationStepInstructionResult)` containing execution information (cycles executed)
+    ///   and optional tohost termination value
     /// * `Err(String)` if no ELF is loaded or if an error occurs during execution
     ///
     /// # Errors
@@ -293,7 +294,6 @@ impl InteractiveSimulator {
     /// * `Ok(SimulationStepCycleResult)` containing:
     ///   - `instruction_completed`: true if the current instruction completed on this cycle
     ///   - `tohost_value`: Some(value) if halt detected, None otherwise
-    ///   - `elapsed_cpu_time_us`: CPU time elapsed during this cycle in microseconds
     /// * `Err(String)` - If no ELF is loaded or if a hung state is detected
     ///
     /// # Errors
