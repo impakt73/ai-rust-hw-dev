@@ -9,7 +9,7 @@
 //! via channels and shared state.
 
 use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
-use bus_shared::{SystemBus, DRAM_BASE, DRAM_END};
+use bus_shared::{is_valid_dram_range, SystemBus, DRAM_BASE, DRAM_END};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use serialport::SerialPort;
 use std::io::{Read, Write};
@@ -68,15 +68,13 @@ impl FpgaDeviceRuntime {
     /// Create a new FpgaDeviceRuntime connected to the specified serial port.
     ///
     /// Opens the serial port and launches a background thread to handle
-    /// serial I/O and protocol processing. The runtime owns a SystemBus
-    /// for routing CPU-initiated requests to the appropriate device.
+    /// serial I/O and protocol processing. The SystemBus is created on the
+    /// background thread to avoid requiring `Send` on `SystemBus`.
     pub(crate) fn connect(device: &str, baud: u32) -> Result<Self, DeviceError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
             .map_err(|e| DeviceError::OpenFailed(Box::new(e)))?;
-
-        let bus = SystemBus::new();
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
@@ -85,7 +83,7 @@ impl FpgaDeviceRuntime {
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, bus, command_rx, event_tx, pending_clone);
+            Self::run_loop(port, command_rx, event_tx, pending_clone);
         });
 
         Ok(FpgaDeviceRuntime {
@@ -101,16 +99,19 @@ impl FpgaDeviceRuntime {
     /// Background thread main loop
     fn run_loop(
         mut port: Box<dyn SerialPort>,
-        mut bus: SystemBus,
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
     ) {
+        let mut bus = SystemBus::new();
         let mut handler = HostBusHandler::new();
         let mut rx_buffer = [0u8; BUFFER_SIZE];
         let mut rx_buffer_len: usize = 0;
         let mut tx_buffer = [0u8; BUFFER_SIZE];
         let mut tx_buffer_len: usize = 0;
+
+        // Reset all bus devices at startup
+        bus.reset_all_devices();
 
         loop {
             // Check for commands from the main thread (non-blocking)
@@ -278,9 +279,16 @@ impl FpgaDeviceRuntime {
         if handler.has_incoming_request() {
             if let Ok(request) = handler.accept_request() {
                 let event = Self::process_cpu_request(handler, &request, bus);
+
+                // Tick all bus devices after handling the request
+                bus.clock_cycle_all_devices();
+
                 return Ok(Some(event));
             }
         }
+
+        // Tick all bus devices even when no transaction occurred
+        bus.clock_cycle_all_devices();
 
         Ok(None)
     }
@@ -386,7 +394,7 @@ impl FpgaDeviceRuntime {
         bus: &mut SystemBus,
     ) -> BusEvent {
         let size = request.size.to_size_code();
-        let is_dram = (DRAM_BASE..=DRAM_END).contains(&request.addr);
+        let is_dram = is_valid_dram_range(request.addr, request.size.byte_count() as u32);
 
         if request.we {
             match request.size {
@@ -429,7 +437,8 @@ impl FpgaDeviceRuntime {
     /// Load an ELF file into a new SystemBus, returning the entry point and bus.
     ///
     /// This loads into a temporary SystemBus instance first, so the existing bus is
-    /// preserved if loading fails.
+    /// preserved if loading fails. ELF segments are validated to be within the DRAM
+    /// address range and written directly to the bus's backing memory.
     fn load_elf_into_bus(path: &Path) -> Result<(u32, SystemBus), String> {
         let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
         let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
@@ -452,6 +461,20 @@ impl FpgaDeviceRuntime {
                     let offset = phdr.p_offset as usize;
 
                     if file_size > 0 {
+                        // Validate segment address range is within DRAM
+                        let end_addr = vaddr.checked_add(file_size as u32).ok_or_else(|| {
+                            format!(
+                                "Segment address overflow: vaddr=0x{:08x}, size=0x{:x}",
+                                vaddr, file_size
+                            )
+                        })?;
+                        if !is_valid_dram_range(vaddr, file_size as u32) {
+                            return Err(format!(
+                                "Segment [0x{:08x}, 0x{:08x}) is outside DRAM range [0x{:08x}, 0x{:08x}]",
+                                vaddr, end_addr, DRAM_BASE, DRAM_END
+                            ));
+                        }
+
                         let end = match offset.checked_add(file_size) {
                             Some(end) if end <= file_data.len() => end,
                             _ => {
@@ -462,9 +485,10 @@ impl FpgaDeviceRuntime {
                             }
                         };
 
+                        // Write directly to the bus's backing memory (DRAM-only, no device routing)
                         let segment_data = &file_data[offset..end];
                         for (i, &byte) in segment_data.iter().enumerate() {
-                            new_bus.write_byte(vaddr.wrapping_add(i as u32), byte);
+                            new_bus.memory.write_byte(vaddr + i as u32, byte);
                         }
                         log::info!(
                             "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
