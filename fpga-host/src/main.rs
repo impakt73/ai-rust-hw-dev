@@ -179,6 +179,12 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                                 )
                             );
                         }
+                        BusEvent::TohostTermination { value } => {
+                            app.add_log(
+                                log::Level::Info,
+                                format!("Tohost termination detected (value: 0x{:08x})", value),
+                            );
+                        }
                     }
                 }
                 Ok(None) => {}
