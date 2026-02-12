@@ -283,7 +283,7 @@ impl FpgaDeviceRuntime {
                 // Tick all bus devices after handling the request
                 bus.clock_cycle_all_devices();
 
-                // Check for termination request
+                // Check for termination request (takes precedence over the current event).
                 if let Some(tohost_value) = bus.sim_control.termination_requested() {
                     return Ok(Some(BusEvent::Termination { tohost_value }));
                 }
