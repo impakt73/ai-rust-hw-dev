@@ -96,6 +96,7 @@ pub fn default_panic_handler(_info: &PanicInfo) -> ! {
 pub fn write_tohost(value: u32) -> ! {
     unsafe {
         write_volatile(TOHOST_ADDR as *mut u32, value);
+        core::arch::asm!("ebreak");
     }
     #[allow(clippy::empty_loop)]
     loop {}
