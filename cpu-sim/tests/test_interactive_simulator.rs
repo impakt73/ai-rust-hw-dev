@@ -1,3 +1,6 @@
+use bus_shared::{
+    Audio, AudioConfig, BusDevice, Video, VideoConfig, AUDIO_BASE, FIFO_BASE, VIDEO_BASE,
+};
 use cpu_sim::InteractiveSimulator;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -220,13 +223,13 @@ fn test_interactive_simulator_register_video_device() {
         .expect("Failed to find test_video_pattern");
 
     // Storage for captured frames
-    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, cpu_sim::VideoConfig)>>>;
+    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>>;
     let captured_frames: CapturedFrames = Rc::new(RefCell::new(Vec::new()));
 
     let frames_clone = captured_frames.clone();
 
     // Create callback that captures frame data
-    let present_callback = move |data: &[u8], config: &cpu_sim::VideoConfig| {
+    let present_callback = move |data: &[u8], config: &VideoConfig| {
         frames_clone.borrow_mut().push((data.to_vec(), *config));
         log::info!(
             "Frame captured: {}x{} {:?}",
@@ -240,8 +243,8 @@ fn test_interactive_simulator_register_video_device() {
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
     // Register Video device at VIDEO_BASE with callback
-    let video = Box::new(cpu_sim::Video::with_fps(10000, Some(present_callback)));
-    let register_result = sim.register_device(cpu_sim::VIDEO_BASE, video);
+    let video = Box::new(Video::with_fps(10000, Some(present_callback)));
+    let register_result = sim.register_device(VIDEO_BASE, video);
     assert!(
         register_result.is_ok(),
         "Should be able to register Video device: {:?}",
@@ -327,11 +330,9 @@ fn test_interactive_simulator_register_audio_device() {
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
     // Register Audio device at AUDIO_BASE with callback
-    let audio: Box<dyn cpu_sim::BusDevice> = Box::new(cpu_sim::Audio::new(
-        Some(sample_callback),
-        None::<fn(&cpu_sim::AudioConfig)>,
-    ));
-    let register_result = sim.register_device(cpu_sim::AUDIO_BASE, audio);
+    let audio: Box<dyn BusDevice> =
+        Box::new(Audio::new(Some(sample_callback), None::<fn(&AudioConfig)>));
+    let register_result = sim.register_device(AUDIO_BASE, audio);
     assert!(
         register_result.is_ok(),
         "Should be able to register Audio device: {:?}",
@@ -383,10 +384,8 @@ fn test_interactive_simulator_register_device_address_conflict() {
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
     // Try to register a device at the FIFO base address (should conflict)
-    let video: Box<dyn cpu_sim::BusDevice> = Box::new(cpu_sim::Video::new(
-        None::<fn(&[u8], &cpu_sim::VideoConfig)>,
-    ));
-    let register_result = sim.register_device(cpu_sim::FIFO_BASE, video);
+    let video: Box<dyn BusDevice> = Box::new(Video::new(None::<fn(&[u8], &VideoConfig)>));
+    let register_result = sim.register_device(FIFO_BASE, video);
 
     assert!(
         register_result.is_err(),

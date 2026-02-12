@@ -4,7 +4,7 @@
 //! into a thread-safe shared location, where backends can pull the data when needed
 //! (e.g., during window presents or audio buffer fills).
 
-use cpu_sim::{AudioConfig, VideoConfig};
+use bus_shared::{AudioConfig, VideoConfig};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -226,7 +226,7 @@ impl Default for SharedAudioBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cpu_sim::{AudioChannels, AudioSampleRate, VideoFormat};
+    use bus_shared::{AudioChannels, AudioSampleRate, VideoFormat};
 
     #[test]
     fn test_video_buffer_push_pull() {

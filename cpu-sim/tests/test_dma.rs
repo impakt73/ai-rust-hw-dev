@@ -1,4 +1,5 @@
-use cpu_sim::*;
+use bus_shared::Dma;
+use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
 use std::sync::{Arc, Mutex};
 
 #[test]
@@ -39,7 +40,7 @@ fn test_dma_copy() {
         None,                 // vcd_path
         0,                    // mem_latency_cycles
         Some(setup_callback), // Register DMA device
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&SimulatorView, &SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

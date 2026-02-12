@@ -3,9 +3,8 @@ use crate::backend_traits::{
 };
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
 use crate::simulation_thread::{FrameTimingMetrics, SimRequest, SimResponse, SimulationThread};
-use cpu_sim::{
-    Audio, AudioConfig, InteractiveSimulator, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE,
-};
+use bus_shared::{Audio, AudioConfig, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE};
+use cpu_sim::InteractiveSimulator;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

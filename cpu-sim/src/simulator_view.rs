@@ -4,7 +4,7 @@ use riscv_core::Top;
 use std::path::Path;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
+use bus_shared::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// Restricted view of the Simulator for use in callbacks
 ///
@@ -12,7 +12,7 @@ use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// the full Simulator internals. This allows callbacks to interact with memory,
 /// FIFO, and other simulator components while maintaining encapsulation.
 pub struct SimulatorView<'a> {
-    bus: &'a mut crate::bus::SystemBus,
+    bus: &'a mut bus_shared::SystemBus,
     hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
     host_bus_handler: &'a mut HostBusHandler,
@@ -21,7 +21,7 @@ pub struct SimulatorView<'a> {
 impl<'a> SimulatorView<'a> {
     /// Create a new SimulatorView with access to the given components
     pub(crate) fn new(
-        bus: &'a mut crate::bus::SystemBus,
+        bus: &'a mut bus_shared::SystemBus,
         hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
         host_bus_handler: &'a mut HostBusHandler,

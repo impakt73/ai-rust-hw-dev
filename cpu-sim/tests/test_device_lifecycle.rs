@@ -2,7 +2,8 @@
 ///
 /// These tests verify that the Simulator correctly calls reset() and clock_cycle()
 /// on registered devices at the appropriate times.
-use cpu_sim::*;
+use bus_shared::{BusDevice, BusDeviceError, SystemContext, DRAM_BASE, SIM_CONTROL_BASE};
+use cpu_sim::{run_program, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
 use riscv_core::instruction::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
