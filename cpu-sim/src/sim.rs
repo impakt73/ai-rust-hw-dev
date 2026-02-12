@@ -643,13 +643,11 @@ where
         let start_cycle_count = self.cycle_count;
 
         // Multi-cycle execution loop - continue until instruction completes
-        // Capture tohost value from cycle results (one-shot: consumed by step_cycle)
+        // Capture first tohost value from cycle results (one-shot: consumed by step_cycle)
         let mut halt_value = None;
         loop {
             let cycle_result = self.step_cycle()?;
-            if cycle_result.tohost_value.is_some() {
-                halt_value = cycle_result.tohost_value;
-            }
+            halt_value = halt_value.or(cycle_result.tohost_value);
             if cycle_result.instruction_completed {
                 break;
             }
