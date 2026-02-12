@@ -524,6 +524,16 @@ impl Default for SystemBus {
     }
 }
 
+// SAFETY: SystemBus can be safely sent between threads because:
+// 1. All internal devices (Dram, Fifo, SimControl, Memory) are composed of
+//    Send-safe types (HashMap, Vec, primitive types)
+// 2. External devices (Vec<Box<dyn BusDevice>>) may not be Send individually,
+//    but SystemBus is designed to be owned and accessed by a single thread at a time
+// 3. When moved to another thread (e.g., FpgaDeviceRuntime background thread),
+//    all access happens exclusively on that thread
+// 4. This mirrors the existing `unsafe impl Send for InteractiveSimulator` in cpu-sim
+unsafe impl Send for SystemBus {}
+
 #[cfg(test)]
 #[path = "bus_tests.rs"]
 mod tests;

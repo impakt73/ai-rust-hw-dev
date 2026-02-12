@@ -191,7 +191,7 @@ impl App {
                 data,
                 is_dram,
             } => {
-                let suffix = if *is_dram { "" } else { " (non-DRAM)" };
+                let suffix = if *is_dram { "" } else { " (peripheral)" };
                 format!(
                     "[{}] READ {} @ 0x{:08x} => 0x{:0width$x}{}",
                     self.request_count + 1,
@@ -208,7 +208,7 @@ impl App {
                 data,
                 is_dram,
             } => {
-                let suffix = if *is_dram { "" } else { " (non-DRAM, dropped)" };
+                let suffix = if *is_dram { "" } else { " (peripheral)" };
                 format!(
                     "[{}] WRITE {} @ 0x{:08x} <= 0x{:0width$x}{}",
                     self.request_count + 1,
