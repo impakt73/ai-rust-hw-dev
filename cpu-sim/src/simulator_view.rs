@@ -413,6 +413,7 @@ impl<'a> SimulatorView<'a> {
     /// #     fn read_word(&mut self, _ctx: &mut SystemContext, _offset: u32) -> Result<u32, BusDeviceError> { Ok(0) }
     /// #     fn write_word(&mut self, _ctx: &mut SystemContext, _offset: u32, _value: u32) -> Result<(), BusDeviceError> { Ok(()) }
     /// #     fn size(&self) -> u32 { 4 }
+    /// #     fn reset(&mut self, _ctx: &mut SystemContext) {}
     /// # }
     /// run_program(
     ///     1000,

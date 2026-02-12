@@ -621,7 +621,7 @@ where
         self.bus.update_elapsed_time(self.total_elapsed_time_us);
 
         // Check for termination via SimControl device
-        let halt_value = self.bus.sim_control.termination_requested();
+        let halt_value = self.bus.sim_control.acknowledge_termination();
 
         Ok(SimulationStepCycleResult {
             instruction_completed: instruction_complete,
@@ -643,15 +643,17 @@ where
         let start_cycle_count = self.cycle_count;
 
         // Multi-cycle execution loop - continue until instruction completes
+        // Capture tohost value from cycle results (one-shot: consumed by step_cycle)
+        let mut halt_value = None;
         loop {
             let cycle_result = self.step_cycle()?;
+            if cycle_result.tohost_value.is_some() {
+                halt_value = cycle_result.tohost_value;
+            }
             if cycle_result.instruction_completed {
                 break;
             }
         }
-
-        // Check for termination via SimControl device
-        let halt_value = self.bus.sim_control.termination_requested();
 
         let elapsed_us = self
             .total_elapsed_time_us
