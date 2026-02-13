@@ -1,9 +1,9 @@
 // Synchronous Simple Dual-Port RAM Module
-// One write port, one read port, shared clock
+// One write port, one read port, separate clocks
 // Designed to infer to iCE40 Block RAM on FPGA
 //
 // BRAM INFERENCE REQUIREMENTS (iCE40 / Yosys):
-// - Single clock for both read and write
+// - Separate read/write clocks are supported by iCE40 BRAM primitives
 // - Synchronous reads (output registered on clock edge)
 // - Exhaustive assignment to output (no conditional output)
 // - Simple dual-port: one write port, one read port
@@ -16,7 +16,8 @@ module sync_dpram #(
     parameter int DATA_WIDTH = 32,
     parameter int ADDR_WIDTH = 8   // 256 entries by default
 ) (
-    input  logic                    clk,
+    input  logic                    wclk,
+    input  logic                    rclk,
     
     // Write port
     input  logic                    we,
@@ -42,7 +43,7 @@ module sync_dpram #(
     end
 
     // Write port - synchronous write
-    always_ff @(posedge clk) begin
+    always_ff @(posedge wclk) begin
         if (we) begin
             mem[waddr] <= wdata;
         end
@@ -50,7 +51,7 @@ module sync_dpram #(
 
     // Read port - synchronous read (required for BRAM inference)
     // Output is registered, data available one cycle after address
-    always_ff @(posedge clk) begin
+    always_ff @(posedge rclk) begin
         rdata <= mem[raddr];
     end
 
