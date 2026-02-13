@@ -34,19 +34,15 @@ fn test_host_initiated_basic_sync() {
     const LED_BASE: u32 = 0x50000000;
 
     // Program that spins on LED peripheral until it becomes non-zero
-    let instructions = [
+    let mut instructions = vec![
         // Setup: Load LED peripheral address
         lui(15, LED_BASE), // x15 = LED base address (0x50000000)
         // Spin loop: wait for LED value != 0
         lw(14, 15, 0),      // x14 = LED peripheral value
         andi(14, 14, 0xFF), // mask to 8 bits
         beq(14, 0, -8),     // if x14 == 0, loop back to lw
-        // Exit: Write tohost
-        lui(10, SIM_CONTROL_BASE),        // x10 = tohost address
-        addi(11, 0, SUCCESS_CODE as i32), // x11 = success code
-        sw(10, 11, 0),                    // memory[tohost] = SUCCESS_CODE
-        jal(0, 0),                        // infinite loop
     ];
+    common::append_tohost_termination(&mut instructions, 10, 11, SUCCESS_CODE);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -346,19 +342,15 @@ fn test_multiple_host_requests() {
     const LED_BASE: u32 = 0x50000000;
 
     // Program that spins on LED until it reaches a specific value
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, LED_BASE), // x15 = LED base
         addi(14, 0, 3),    // x14 = target count (3)
         // Spin loop: wait until LED value >= 3
         lw(12, 15, 0),      // x12 = LED value
         andi(12, 12, 0xFF), // mask to 8 bits
         blt(12, 14, -8),    // if LED < 3, loop
-        // Exit
-        lui(10, SIM_CONTROL_BASE), // tohost address
-        addi(11, 0, SUCCESS_CODE as i32),
-        sw(10, 11, 0),
-        jal(0, 0),
     ];
+    common::append_tohost_termination(&mut instructions, 10, 11, SUCCESS_CODE);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions

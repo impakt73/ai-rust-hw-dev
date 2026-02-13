@@ -712,15 +712,8 @@ fn test_cpu_tohost_halt() {
     init_test_logger();
 
     // Program: Execute a few instructions, then write to tohost to signal halt
-    let instructions = vec![
-        addi(1, 0, 10),
-        addi(2, 1, 5),
-        add(3, 1, 2),
-        lui(4, SIM_CONTROL_BASE), // x4 = SIM_CONTROL_BASE (tohost address)
-        addi(5, 0, SUCCESS_CODE as i32), // x5 = success code
-        sw(4, 5, 0),              // Store x5 to tohost address
-        jal(0, 0),                // Infinite loop
-    ];
+    let mut instructions = vec![addi(1, 0, 10), addi(2, 1, 5), add(3, 1, 2)];
+    instructions.extend(common::tohost_termination(4, 5, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,

@@ -12,7 +12,6 @@
 mod common;
 
 use cpu_sim::*;
-use riscv_core::instruction::*;
 use riscv_shared::sim_control::SUCCESS_CODE;
 
 /// Helper function to create a termination sequence (write to tohost and halt)
@@ -150,9 +149,7 @@ fn test_write_memory_at_dram_start() {
         .try_init()
         .ok();
 
-    let mut instructions = vec![addi(10, 0, 42)]; // x10 = 42
-    common::append_tohost_termination(&mut instructions, 11, 10, SUCCESS_CODE);
-    let program = common::instructions_to_bytes(&instructions);
+    let program = common::instructions_to_bytes(&common::tohost_termination(11, 10, SUCCESS_CODE));
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
