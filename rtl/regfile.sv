@@ -42,7 +42,8 @@ module regfile (
         .DATA_WIDTH(32),
         .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
     ) bank_a (
-        .clk(clk),
+        .wclk(clk),
+        .rclk(clk),
         .we(we),
         .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
         .wdata(rd_data),
@@ -57,7 +58,8 @@ module regfile (
         .DATA_WIDTH(32),
         .ADDR_WIDTH(8)   // 256 entries (only 32 used, but helps BRAM inference)
     ) bank_b (
-        .clk(clk),
+        .wclk(clk),
+        .rclk(clk),
         .we(we),
         .waddr({3'b000, rd_addr}),   // Zero-extend to 8 bits
         .wdata(rd_data),
