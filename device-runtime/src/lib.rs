@@ -96,6 +96,15 @@ pub enum DeviceRuntimeType {
     Sim,
 }
 
+/// Reset mode for [`DeviceRuntime::reset`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetKind {
+    /// Reset only the CPU core.
+    Cpu,
+    /// Reset the full system (including the system controller).
+    System,
+}
+
 /// Create a device runtime for the specified backend.
 pub fn create_device_runtime(
     runtime_type: DeviceRuntimeType,
@@ -205,6 +214,11 @@ pub trait DeviceRuntime: std::fmt::Display {
 
     /// Check if there is a pending host-initiated request.
     fn has_pending_host_request(&self) -> bool;
+
+    /// Trigger a reset on the target device.
+    ///
+    /// Implementations must provide backend-specific reset handling.
+    fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError>;
 
     /// Load an ELF file into the device's memory.
     ///
