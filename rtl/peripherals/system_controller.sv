@@ -42,23 +42,11 @@ module system_controller (
     localparam [31:0] RESET_CPU    = 32'h00000002;  // CPU reset
     
     // ========================================================================
-    // FSM States (One-Hot Encoding)
-    // ========================================================================
-    localparam logic [4:0] S_CPU_BOOT_WAIT = 5'b00001;  // Wait for boot
-    localparam logic [4:0] S_CPU_BOOT      = 5'b00010;  // Assert cpu_boot
-    localparam logic [4:0] S_IDLE          = 5'b00100;  // Normal operation
-    localparam logic [4:0] S_SYS_RESET     = 5'b01000;  // System reset
-    localparam logic [4:0] S_CPU_RESET     = 5'b10000;  // CPU reset
-    
-    // ========================================================================
     // Internal Registers
     // ========================================================================
-    logic [4:0]  state_reg;              // Current state
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
-    logic        sys_reset_trigger;      // System reset request flag
-    logic        cpu_reset_trigger;      // CPU reset request flag
-    logic        req_cpu_halt_reg;       // One-cycle halt request pulse
+    logic        sys_reset_pending;      // Delayed system reset pulse
     
     // ========================================================================
     // System controller is single-cycle - always ready
@@ -88,143 +76,46 @@ module system_controller (
     end
     
     // ========================================================================
-    // Reset Trigger Flags - Set on write, cleared by FSM
+    // Main Control Registers
     // ========================================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            sys_reset_trigger <= 1'b0;
-            cpu_reset_trigger <= 1'b0;
-            halt_reg          <= 32'h00000000;
-            req_cpu_halt_reg  <= 1'b0;
+            sys_rst       <= 1'b0;
+            cpu_rst_n     <= 1'b1;
+            cpu_boot      <= 1'b0;
+            boot_addr_reg <= 32'h00000000;
+            halt_reg      <= 32'h00000000;
+            req_cpu_halt  <= 1'b0;
+            sys_reset_pending <= 1'b0;
         end else begin
-            req_cpu_halt_reg <= 1'b0;
+            // Default inactive values every cycle; writes can pulse outputs high/low.
+            sys_rst      <= sys_reset_pending;
+            cpu_rst_n    <= 1'b1;
+            cpu_boot     <= 1'b0;
+            req_cpu_halt <= 1'b0;
+            sys_reset_pending <= 1'b0;
 
-            // Set flags on write to RESET register
             if (write_reset) begin
                 if (wdata == RESET_SYSTEM) begin
-                    sys_reset_trigger <= 1'b1;
+                    sys_reset_pending <= 1'b1;
                 end else if (wdata == RESET_CPU) begin
-                    cpu_reset_trigger <= 1'b1;
+                    cpu_rst_n <= 1'b0;
                 end
+            end
+
+            if (write_boot) begin
+                boot_addr_reg <= wdata;
+                cpu_boot      <= 1'b1;
             end
 
             if (write_halt) begin
-                halt_reg         <= wdata;
-                req_cpu_halt_reg <= 1'b1;
-            end
-            
-            // Clear flags when entering respective reset states
-            if (state_reg == S_SYS_RESET) begin
-                sys_reset_trigger <= 1'b0;
-            end
-            if (state_reg == S_CPU_RESET) begin
-                cpu_reset_trigger <= 1'b0;
-            end
-        end
-    end
-
-    assign req_cpu_halt = req_cpu_halt_reg;
-    
-    // ========================================================================
-    // Boot Address Register - Capture on write to BOOT in S_CPU_BOOT_WAIT
-    // ========================================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            boot_addr_reg <= 32'h00000000;
-        end else begin
-            // Capture boot address when written in CPU_BOOT_WAIT state
-            if (state_reg == S_CPU_BOOT_WAIT && write_boot && cpu_booting) begin
-                boot_addr_reg <= wdata;
+                halt_reg      <= wdata;
+                req_cpu_halt  <= 1'b1;
             end
         end
     end
     
-    // ========================================================================
-    // FSM State Register
-    // ========================================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            state_reg <= S_CPU_BOOT_WAIT;
-        end else begin
-            case (state_reg)
-                S_CPU_BOOT_WAIT: begin
-                    // Wait for cpu_booting AND write to BOOT register
-                    if (cpu_booting && write_boot) begin
-                        state_reg <= S_CPU_BOOT;
-                    end
-                end
-                
-                S_CPU_BOOT: begin
-                    // Assert boot signal for one cycle, then go to idle
-                    state_reg <= S_IDLE;
-                end
-                
-                S_IDLE: begin
-                    // Check for reset requests
-                    if (sys_reset_trigger) begin
-                        state_reg <= S_SYS_RESET;
-                    end else if (cpu_reset_trigger) begin
-                        state_reg <= S_CPU_RESET;
-                    end
-                end
-                
-                S_SYS_RESET: begin
-                    // Assert system reset as a one-shot request.
-                    // The reset controller will reset the entire design including
-                    // this module on the next cycle, returning to S_CPU_BOOT_WAIT.
-                    state_reg <= S_SYS_RESET;
-                end
-                
-                S_CPU_RESET: begin
-                    // Assert CPU reset for one cycle, then back to boot wait
-                    state_reg <= S_CPU_BOOT_WAIT;
-                end
-                
-                default: begin
-                    // Safety: return to boot wait
-                    state_reg <= S_CPU_BOOT_WAIT;
-                end
-            endcase
-        end
-    end
-    
-    // ========================================================================
-    // Output Control Logic - Combinational from FSM state
-    // ========================================================================
-    always_comb begin
-        // Default values
-        sys_rst       = 1'b0;
-        cpu_rst_n     = 1'b1;
-        cpu_boot      = 1'b0;
-        cpu_boot_addr = boot_addr_reg;
-        
-        case (state_reg)
-            S_CPU_BOOT_WAIT: begin
-                cpu_rst_n = 1'b0;  // Hold CPU in reset
-            end
-            
-            S_CPU_BOOT: begin
-                cpu_boot  = 1'b1;  // Assert boot signal
-                cpu_rst_n = 1'b1;  // Release CPU from reset
-            end
-            
-            S_IDLE: begin
-                // Normal operation - all resets deasserted
-            end
-            
-            S_SYS_RESET: begin
-                sys_rst = 1'b1;    // Assert system reset
-            end
-            
-            S_CPU_RESET: begin
-                cpu_rst_n = 1'b0;  // Assert CPU reset
-            end
-            
-            default: begin
-                cpu_rst_n = 1'b0;  // Safe default: keep CPU in reset
-            end
-        endcase
-    end
+    assign cpu_boot_addr = boot_addr_reg;
     
     // ========================================================================
     // System LED Control Logic - Registered for clean external timing
