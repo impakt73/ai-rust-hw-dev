@@ -588,8 +588,9 @@ where
         let instruction_complete = self.cpu.instr_complete != 0;
 
         // Check for hung state on every cycle, but skip when CPU is in boot state
-        // (S_BOOT) since it is not expected to make progress on instructions until booted
-        if self.cpu.cpu_booting == 0 {
+        // (S_BOOT) since it is not expected to make progress on instructions until booted.
+        // Also skip once the CPU has halted, since halt is a terminal state.
+        if self.cpu.cpu_booting == 0 && self.cpu.halted == 0 {
             if let Some(ref mut detector) = self.hung_detector {
                 // Use current PC and instruction for hung detection (not completed ones)
                 // debug_current_pc: PC that was used to fetch the current instruction
@@ -597,14 +598,12 @@ where
                 let pc = self.cpu.debug_current_pc;
                 let instruction = self.cpu.debug_current_instruction;
                 let fsm_state = self.cpu.debug_fsm_state;
-                let halted = self.cpu.halted != 0;
                 detector.check_cycle(
                     self.cycle_count,
                     pc,
                     instruction,
                     fsm_state,
                     instruction_complete,
-                    halted,
                 )?;
             }
         }

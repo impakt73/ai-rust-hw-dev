@@ -316,7 +316,6 @@ impl HungDetector {
     /// * `instruction` - Current instruction word
     /// * `fsm_state` - Current FSM state (4-bit value)
     /// * `instruction_complete` - True if an instruction completed this cycle
-    /// * `halted` - True if the CPU is in the halted state (e.g., EBREAK)
     ///
     /// # Returns
     /// * `Ok(())` if no hang detected
@@ -328,7 +327,6 @@ impl HungDetector {
         instruction: u32,
         fsm_state: u8,
         instruction_complete: bool,
-        halted: bool,
     ) -> Result<(), HungStateError> {
         // Per-instruction checks when instruction completes
         if instruction_complete {
@@ -336,9 +334,8 @@ impl HungDetector {
             self.current_instruction_pc = None;
             self.current_instruction_start_cycle = cycle_count;
 
-            // Check for PC stuck (if enabled), but skip when CPU is halted
-            // (e.g., EBREAK) since the CPU is legitimately stuck at the same PC.
-            if self.config.enable_pc_loop_detection && !halted {
+            // Check for PC stuck (if enabled). Callers should skip check_cycle() once CPU halts.
+            if self.config.enable_pc_loop_detection {
                 self.check_pc_loop(pc, instruction)?;
             }
         }
@@ -382,7 +379,7 @@ impl HungDetector {
         // range, providing complete coverage from the very first cycle.
         if self.config.enable_pc_bounds_detection
             && !self.valid_pc_ranges.is_empty()
-            && fsm_state != 0  // Skip IDLE state
+            && fsm_state >= 2  // debug_current_pc is valid from DECODE onward
             && !self.is_pc_valid(pc)
         {
             return Err(HungStateError::PcOutOfBounds {
@@ -452,12 +449,12 @@ mod tests {
 
         // Simulate same PC being executed repeatedly (instruction_complete=true)
         for i in 0..49 {
-            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true, false);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok(), "Should not detect hang at iteration {}", i);
         }
 
         // 50th iteration should trigger hang detection
-        let result = detector.check_cycle(50, 0x8000_0000, 0x00000013, 2, true, false);
+        let result = detector.check_cycle(50, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_err(), "Should detect PC stuck at threshold");
 
         match result {
@@ -475,22 +472,22 @@ mod tests {
 
         // Execute same PC multiple times
         for i in 0..30 {
-            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true, false);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok());
         }
 
         // Change PC (should reset counter)
-        let result = detector.check_cycle(30, 0x8000_0004, 0x00000013, 2, true, false);
+        let result = detector.check_cycle(30, 0x8000_0004, 0x00000013, 2, true);
         assert!(result.is_ok());
 
         // Go back to original PC - counter should be reset
         for i in 31..80 {
-            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true, false);
+            let result = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
             assert!(result.is_ok());
         }
 
         // Should trigger at 50 after reset
-        let result = detector.check_cycle(80, 0x8000_0000, 0x00000013, 2, true, false);
+        let result = detector.check_cycle(80, 0x8000_0000, 0x00000013, 2, true);
         assert!(result.is_err());
     }
 
@@ -500,14 +497,14 @@ mod tests {
         detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
 
         // PC within bounds should be ok (FSM state != 0 to activate checking)
-        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, false, false);
+        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, false);
         assert!(result.is_ok());
 
-        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false, false);
+        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
         assert!(result.is_ok());
 
         // PC below bounds should fail (per-cycle checking)
-        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false, false);
+        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -517,7 +514,7 @@ mod tests {
         }
 
         // PC above bounds should fail (per-cycle checking)
-        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false, false);
+        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, .. }) => {
@@ -527,7 +524,7 @@ mod tests {
         }
 
         // PC out of bounds in IDLE state (fsm_state=0) should NOT fail
-        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 0, false, false);
+        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 0, false);
         assert!(result.is_ok());
     }
 
@@ -537,10 +534,10 @@ mod tests {
         // Don't set valid range
 
         // Any PC should be ok when bounds checking is enabled but range is not set
-        let result = detector.check_cycle(0, 0x0000_0000, 0x00000013, 2, true, false);
+        let result = detector.check_cycle(0, 0x0000_0000, 0x00000013, 2, true);
         assert!(result.is_ok());
 
-        let result = detector.check_cycle(1, 0xFFFF_FFFC, 0x00000013, 2, true, false);
+        let result = detector.check_cycle(1, 0xFFFF_FFFC, 0x00000013, 2, true);
         assert!(result.is_ok());
     }
 
@@ -550,7 +547,7 @@ mod tests {
 
         // Build up some state
         for i in 0..30 {
-            let _ = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true, false);
+            let _ = detector.check_cycle(i, 0x8000_0000, 0x00000013, 2, true);
         }
 
         assert_eq!(detector.pc_stuck_count, 30);
@@ -573,23 +570,15 @@ mod tests {
         detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
 
         // PCs in first range should be ok (per-cycle checking, FSM state != 0)
-        assert!(detector
-            .check_cycle(0, 0x8000_0000, 0, 2, false, false)
-            .is_ok());
-        assert!(detector
-            .check_cycle(1, 0x8000_0FFC, 0, 2, false, false)
-            .is_ok());
+        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, false).is_ok());
+        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
 
         // PCs in second range should be ok (per-cycle checking)
-        assert!(detector
-            .check_cycle(2, 0x8000_2000, 0, 2, false, false)
-            .is_ok());
-        assert!(detector
-            .check_cycle(3, 0x8000_2FFC, 0, 2, false, false)
-            .is_ok());
+        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, false).is_ok());
+        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, false).is_ok());
 
         // PC in gap between ranges should fail (per-cycle checking)
-        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false, false);
+        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false);
         assert!(result.is_err());
         match result {
             Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
@@ -600,7 +589,7 @@ mod tests {
         }
 
         // PC outside all ranges should fail (per-cycle checking)
-        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false, false);
+        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false);
         assert!(result.is_err());
     }
 
@@ -638,12 +627,12 @@ mod tests {
 
         // Simulate instruction taking many cycles without completing
         for cycle in 0..100u64 {
-            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013, 3, false, false);
+            let result = detector.check_cycle(cycle, 0x8000_0000, 0x00000013, 3, false);
             assert!(result.is_ok(), "Should not detect hang at cycle {}", cycle);
         }
 
         // Cycle 101 should trigger long instruction detection
-        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013, 3, false, false);
+        let result = detector.check_cycle(101, 0x8000_0000, 0x00000013, 3, false);
         assert!(result.is_err(), "Should detect long instruction");
 
         match result {
