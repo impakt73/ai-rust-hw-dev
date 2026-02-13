@@ -8,12 +8,7 @@
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
 ///   0x0C - HALT   (RW): termination code + CPU halt request pulse
 ///
-/// FSM States (one-hot):
-///   S_CPU_BOOT_WAIT - Waits for cpu_booting + BOOT write
-///   S_CPU_BOOT      - Asserts cpu_boot for one cycle, then -> S_IDLE
-///   S_IDLE          - Normal operation
-///   S_SYS_RESET     - System reset asserted (stays until external reset)
-///   S_CPU_RESET     - CPU reset for one cycle, then -> S_CPU_BOOT_WAIT
+/// Control outputs are one-cycle pulses on register writes.
 use riscv_core::{create_system_controller_runtime, SystemController};
 
 // Register offsets
@@ -213,11 +208,10 @@ fn test_system_controller_initial_state_after_reset() {
 
     reset_dut(&mut dut);
 
-    // After reset, should be in S_CPU_BOOT_WAIT state
-    // cpu_rst_n should be 0 (holding CPU in reset while waiting for boot)
+    // After reset, cpu_rst_n should be deasserted (inactive high)
     assert_eq!(
-        dut.cpu_rst_n, 0,
-        "cpu_rst_n should be low (CPU held in reset) in S_CPU_BOOT_WAIT"
+        dut.cpu_rst_n, 1,
+        "cpu_rst_n should be high (inactive) after reset"
     );
 
     // sys_rst should be 0 (no system reset)
@@ -268,19 +262,12 @@ fn test_system_controller_boot_requires_cpu_booting() {
 
     reset_dut(&mut dut);
 
-    // cpu_booting is NOT set
+    // cpu_booting is NOT set; BOOT write should still work.
     dut.cpu_booting = 0;
     dut.eval();
-
-    // Write boot address - should be ignored since cpu_booting is not high
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
-
-    // Should still be in S_CPU_BOOT_WAIT with cpu_rst_n = 0
-    assert_eq!(
-        dut.cpu_rst_n, 0,
-        "cpu_rst_n should still be low when boot write occurs without cpu_booting"
-    );
+    assert_eq!(dut.cpu_boot_addr, 0x8000_0000);
+    assert_eq!(dut.cpu_boot, 1, "cpu_boot should pulse on BOOT write");
 }
 
 #[test]
@@ -321,40 +308,19 @@ fn test_system_controller_system_reset() {
 
     reset_dut(&mut dut);
 
-    // First boot the CPU to get to S_IDLE
-    dut.cpu_booting = 1;
-    dut.eval();
-    write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
-
-    // Now trigger a system reset
+    // Trigger a system reset
     write_register(&mut dut, REG_RESET, RESET_SYSTEM);
-    clock_cycle!(dut);
-
-    // sys_rst should be asserted
     assert_eq!(
-        dut.sys_rst, 1,
-        "sys_rst should be asserted after system reset trigger"
+        dut.sys_rst, 0,
+        "sys_rst should remain low in write cycle and pulse next cycle"
     );
-
-    // sys_rst should stay asserted (stays in S_SYS_RESET forever)
-    for _ in 0..10 {
-        clock_cycle!(dut);
-        assert_eq!(
-            dut.sys_rst, 1,
-            "sys_rst should remain asserted in S_SYS_RESET"
-        );
-    }
-
-    // Only external reset can bring it back
-    dut.rst_n = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
-    dut.eval();
+    assert_eq!(dut.sys_rst, 1, "sys_rst should pulse one cycle after write");
     clock_cycle!(dut);
-
-    // After external reset, sys_rst should be deasserted
-    assert_eq!(dut.sys_rst, 0, "sys_rst should be low after external reset");
+    assert_eq!(
+        dut.sys_rst, 0,
+        "sys_rst pulse should deassert after one cycle"
+    );
 }
 
 #[test]
@@ -367,42 +333,18 @@ fn test_system_controller_cpu_reset() {
 
     reset_dut(&mut dut);
 
-    // Boot the CPU to get to S_IDLE
-    dut.cpu_booting = 1;
-    dut.eval();
-    write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut); // S_CPU_BOOT -> S_IDLE
-
-    // Verify CPU is released
-    assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should be high in S_IDLE");
-
     // Trigger CPU reset
     write_register(&mut dut, REG_RESET, RESET_CPU);
-    // After write_register: cpu_reset_trigger is set
-    // Need one more clock cycle for S_IDLE -> S_CPU_RESET
-    clock_cycle!(dut);
-    // Now in S_CPU_RESET for one cycle, then -> S_CPU_BOOT_WAIT
-    clock_cycle!(dut);
-
-    // Now in S_CPU_BOOT_WAIT
-    // cpu_rst_n should be 0 (CPU held in reset again)
     assert_eq!(
         dut.cpu_rst_n, 0,
-        "cpu_rst_n should be low after CPU reset (back to S_CPU_BOOT_WAIT)"
+        "cpu_rst_n should pulse low on RESET_CPU write"
     );
-
-    // Should be able to boot again
-    dut.cpu_booting = 1;
-    dut.eval();
-    let new_boot_addr: u32 = 0x9000_0000;
-    write_register(&mut dut, REG_BOOT, new_boot_addr);
     clock_cycle!(dut);
 
     assert_eq!(
-        dut.cpu_boot_addr, new_boot_addr,
-        "cpu_boot_addr should reflect new boot address after CPU reset"
+        dut.cpu_rst_n, 1,
+        "cpu_rst_n should return high after one-cycle reset pulse"
     );
-    assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should be high after re-boot");
 }
 
 // ============================================================
@@ -542,15 +484,6 @@ fn test_system_controller_reset_clears_state() {
 
     reset_dut(&mut dut);
 
-    // Boot the CPU
-    dut.cpu_booting = 1;
-    dut.eval();
-    write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
-
-    // Verify we're in S_IDLE
-    assert_eq!(dut.cpu_rst_n, 1);
-
     // Apply external reset
     dut.rst_n = 0;
     clock_cycle!(dut);
@@ -558,10 +491,10 @@ fn test_system_controller_reset_clears_state() {
     dut.eval();
     clock_cycle!(dut);
 
-    // Should be back to S_CPU_BOOT_WAIT
+    // Outputs should return to defaults after external reset
     assert_eq!(
-        dut.cpu_rst_n, 0,
-        "After external reset, should be back in S_CPU_BOOT_WAIT"
+        dut.cpu_rst_n, 1,
+        "After external reset, cpu_rst_n should be high (inactive)"
     );
     assert_eq!(dut.sys_rst, 0, "sys_rst should be low after external reset");
 }
@@ -576,30 +509,14 @@ fn test_system_controller_cpu_reset_then_reboot() {
 
     reset_dut(&mut dut);
 
-    // First boot
-    dut.cpu_booting = 1;
-    dut.eval();
-    write_register(&mut dut, REG_BOOT, 0x8000_0000);
-    clock_cycle!(dut);
-    assert_eq!(dut.cpu_rst_n, 1, "CPU should be released after first boot");
-
     // CPU reset
     write_register(&mut dut, REG_RESET, RESET_CPU);
-    // write_register does one clock cycle (trigger set)
-    // One more for S_IDLE -> S_CPU_RESET
+    assert_eq!(dut.cpu_rst_n, 0, "CPU reset should pulse cpu_rst_n low");
     clock_cycle!(dut);
-    // One more for S_CPU_RESET -> S_CPU_BOOT_WAIT
-    clock_cycle!(dut);
-    assert_eq!(
-        dut.cpu_rst_n, 0,
-        "CPU should be held in reset after CPU reset"
-    );
+    assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should deassert after pulse");
 
     // Second boot with different address
-    dut.cpu_booting = 1;
-    dut.eval();
     write_register(&mut dut, REG_BOOT, 0xA000_0000);
-    clock_cycle!(dut);
 
     assert_eq!(
         dut.cpu_boot_addr, 0xA000_0000,
