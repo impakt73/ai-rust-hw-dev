@@ -22,6 +22,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/decoder.sv \
 	$(RTL_DIR)/decompress.sv \
 	$(RTL_DIR)/div_unit.sv \
+	$(RTL_DIR)/ff_sync.sv \
 	$(RTL_DIR)/fetch_buffer.sv \
 	$(RTL_DIR)/host_bus_interface.sv \
 	$(RTL_DIR)/host_rx_buffer.sv \
