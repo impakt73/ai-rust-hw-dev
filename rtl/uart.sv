@@ -147,17 +147,17 @@ module uart #(
     // ============================================================
     
     // RX input synchronizer (2-FF for metastability)
-    logic rx_sync_0, rx_sync_1;
-    
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            rx_sync_0 <= 1'b1;
-            rx_sync_1 <= 1'b1;
-        end else begin
-            rx_sync_0 <= rx_in;
-            rx_sync_1 <= rx_sync_0;
-        end
-    end
+    logic rx_sync_1;
+    ff_sync #(
+        .STAGES(2),
+        .WIDTH(1),
+        .RESET_VALUE(1'b1)
+    ) rx_sync_inst (
+        .clk(clk),
+        .rst_n(rst_n),
+        .din(rx_in),
+        .dout(rx_sync_1)
+    );
     
     // RX State Machine
     typedef enum logic [1:0] {

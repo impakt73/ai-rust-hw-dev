@@ -13,7 +13,8 @@
 
 module ff_sync #(
     parameter int STAGES = 3,
-    parameter int WIDTH  = 1
+    parameter int WIDTH  = 1,
+    parameter logic [WIDTH-1:0] RESET_VALUE = '0
 ) (
     input  logic             clk,
     input  logic             rst_n,
@@ -26,7 +27,7 @@ module ff_sync #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < STAGES; i++) begin
-                sync_regs[i] <= '0;
+                sync_regs[i] <= RESET_VALUE;
             end
         end else begin
             sync_regs[0] <= din;

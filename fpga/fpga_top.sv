@@ -76,18 +76,28 @@ module fpga_top #(
     logic rst_n;
     
     // Synchronize PLL lock to system clock domain (2-FF synchronizer)
-    logic pll_locked_sync1, pll_locked_sync2;
-    always_ff @(posedge sys_clk) begin
-        pll_locked_sync1 <= pll_locked;
-        pll_locked_sync2 <= pll_locked_sync1;
-    end
+    logic pll_locked_sync2;
+    ff_sync #(
+        .STAGES(2),
+        .WIDTH(1)
+    ) pll_locked_sync_inst (
+        .clk(sys_clk),
+        .rst_n(1'b1),
+        .din(pll_locked),
+        .dout(pll_locked_sync2)
+    );
 
     // Synchronize reset button (active low) to system clock domain (2-FF synchronizer)
-    logic rst_n_btn_sync1, rst_n_btn_sync2;
-    always_ff @(posedge sys_clk) begin
-        rst_n_btn_sync1 <= rst_n_btn;
-        rst_n_btn_sync2 <= rst_n_btn_sync1;
-    end
+    logic rst_n_btn_sync2;
+    ff_sync #(
+        .STAGES(2),
+        .WIDTH(1)
+    ) rst_n_btn_sync_inst (
+        .clk(sys_clk),
+        .rst_n(1'b1),
+        .din(rst_n_btn),
+        .dout(rst_n_btn_sync2)
+    );
     
     // Use synchronized button as reset request (active high when button pressed)
     logic reset_request;
