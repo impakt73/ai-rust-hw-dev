@@ -8,9 +8,10 @@
 //! processing happen on a background thread. The main thread communicates
 //! via channels and shared state.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
+use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest, ResetKind};
 use bus_shared::{is_valid_dram_range, SystemBus, DRAM_BASE, DRAM_END};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -24,6 +25,12 @@ const BUFFER_SIZE: usize = 64;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+/// Delay after issuing a system reset so reset packets can reach the target.
+const SYSTEM_RESET_STABILIZATION_DELAY: Duration = Duration::from_secs(1);
+/// Maximum time to drain queued events after a system reset.
+const SYSTEM_RESET_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
+/// Timeout for reset command completion from the background thread.
+const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
@@ -33,6 +40,8 @@ enum RuntimeCommand {
     LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
     /// Load raw program bytes into memory at a given address
     LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
+    /// Trigger device reset
+    Reset(ResetKind, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -161,6 +170,21 @@ impl FpgaDeviceRuntime {
                         }
                         let _ = result_tx.send(Ok(()));
                     }
+                }
+                Ok(RuntimeCommand::Reset(kind, result_tx)) => {
+                    let result = Self::handle_reset_command(
+                        &mut port,
+                        &mut bus,
+                        &mut handler,
+                        &mut rx_buffer,
+                        &mut rx_buffer_len,
+                        &mut tx_buffer,
+                        &mut tx_buffer_len,
+                        &pending_host_request,
+                        &event_tx,
+                        kind,
+                    );
+                    let _ = result_tx.send(result.map_err(|e| e.to_string()));
                 }
                 Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
                 Err(mpsc::TryRecvError::Disconnected) => break, // Main thread dropped sender
@@ -320,6 +344,125 @@ impl FpgaDeviceRuntime {
         }
 
         Ok(None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_reset_command(
+        port: &mut Box<dyn SerialPort>,
+        bus: &mut SystemBus,
+        handler: &mut HostBusHandler,
+        rx_buffer: &mut [u8; BUFFER_SIZE],
+        rx_buffer_len: &mut usize,
+        tx_buffer: &mut [u8; BUFFER_SIZE],
+        tx_buffer_len: &mut usize,
+        pending_host_request: &Arc<Mutex<Option<PendingHostRequest>>>,
+        event_tx: &mpsc::Sender<RuntimeEvent>,
+        kind: ResetKind,
+    ) -> Result<(), DeviceError> {
+        let reset_addr = sysctrl_reset_addr();
+        let reset_value = match kind {
+            ResetKind::Cpu => SYSCTRL_RESET_CPU,
+            ResetKind::System => SYSCTRL_RESET_SYSTEM,
+        };
+        let request = BusRequest::write(reset_addr, reset_value, AccessSize::Word);
+
+        match kind {
+            ResetKind::Cpu => {
+                {
+                    let mut pending = pending_host_request.lock().unwrap();
+                    *pending = Some(PendingHostRequest {
+                        addr: request.addr,
+                        wdata: request.wdata,
+                        sent_at: Instant::now(),
+                    });
+                }
+                if let Err(e) = handler.send_request(request) {
+                    let mut pending = pending_host_request.lock().unwrap();
+                    *pending = None;
+                    return Err(DeviceError::from(e));
+                }
+
+                loop {
+                    match Self::poll_once(
+                        port,
+                        bus,
+                        handler,
+                        rx_buffer,
+                        rx_buffer_len,
+                        tx_buffer,
+                        tx_buffer_len,
+                        pending_host_request,
+                    )? {
+                        Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
+                            return Ok(());
+                        }
+                        Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                            return Err(DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "Timed out writing reset value to RESET register at 0x{:08x}",
+                                    reset_addr
+                                ),
+                            )));
+                        }
+                        Some(event) => {
+                            let _ = event_tx.send(RuntimeEvent::Bus(event));
+                        }
+                        None => thread::sleep(Duration::from_millis(1)),
+                    }
+                }
+            }
+            ResetKind::System => {
+                // We intentionally do not mark this as a pending host request:
+                // a system reset can reset the controller before any response.
+                handler.send_request(request)?;
+
+                if let Some(event) = Self::poll_once(
+                    port,
+                    bus,
+                    handler,
+                    rx_buffer,
+                    rx_buffer_len,
+                    tx_buffer,
+                    tx_buffer_len,
+                    pending_host_request,
+                )? {
+                    let _ = event_tx.send(RuntimeEvent::Bus(event));
+                }
+
+                thread::sleep(SYSTEM_RESET_STABILIZATION_DELAY);
+
+                // Clear host-side communication state after system reset.
+                {
+                    let mut pending = pending_host_request.lock().unwrap();
+                    *pending = None;
+                }
+                handler.reset();
+                *bus = SystemBus::new();
+                bus.reset_all_devices();
+                *rx_buffer_len = 0;
+                *tx_buffer_len = 0;
+
+                // Drain any stale serial bytes after system controller reset.
+                let mut drain_buffer = [0u8; 256];
+                let deadline = Instant::now() + SYSTEM_RESET_DRAIN_TIMEOUT;
+                while Instant::now() < deadline {
+                    match port.read(&mut drain_buffer) {
+                        Ok(0) => break,
+                        Ok(_) => continue,
+                        Err(ref e)
+                            if e.kind() == std::io::ErrorKind::TimedOut
+                                || e.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            break;
+                        }
+                        Err(_) => break,
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 
     /// Fill rx_buffer from serial port (only reads into remaining available space)
@@ -585,6 +728,59 @@ impl DeviceRuntime for FpgaDeviceRuntime {
 
     fn has_pending_host_request(&self) -> bool {
         self.pending_host_request.lock().unwrap().is_some()
+    }
+
+    fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError> {
+        if self.has_pending_host_request() {
+            return Err(DeviceError::HandlerError(
+                host_bus_handler::HandlerError::RequestPending,
+            ));
+        }
+
+        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
+        self.command_tx
+            .send(RuntimeCommand::Reset(kind, result_tx))
+            .map_err(|e| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    format!("Background thread disconnected: {}", e),
+                ))
+            })?;
+
+        match result_rx.recv_timeout(RESET_COMMAND_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(DeviceError::IoError(std::io::Error::other(e)));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Timed out waiting for reset to complete",
+                )));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Background thread terminated during reset",
+                )));
+            }
+        }
+
+        if kind == ResetKind::System {
+            let deadline = Instant::now() + SYSTEM_RESET_DRAIN_TIMEOUT;
+            while Instant::now() < deadline {
+                match self.poll() {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::debug!("Ignoring stale post-reset event error: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {

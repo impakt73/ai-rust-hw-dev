@@ -8,9 +8,10 @@
 //! continuously. Host-initiated bus requests are forwarded directly
 //! to the simulator's internal host bus handler.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest};
+use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest, ResetKind};
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::BusRequest;
+use host_bus_handler::{AccessSize, BusRequest};
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -258,6 +259,43 @@ impl DeviceRuntime for SimDeviceRuntime {
 
     fn has_pending_host_request(&self) -> bool {
         self.pending_host_request.lock().unwrap().is_some()
+    }
+
+    fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError> {
+        if self.has_pending_host_request() {
+            return Err(DeviceError::HandlerError(
+                host_bus_handler::HandlerError::RequestPending,
+            ));
+        }
+
+        let reset_addr = sysctrl_reset_addr();
+        let reset_value = match kind {
+            ResetKind::Cpu => SYSCTRL_RESET_CPU,
+            ResetKind::System => SYSCTRL_RESET_SYSTEM,
+        };
+        let request = BusRequest::write(reset_addr, reset_value, AccessSize::Word);
+        self.send_host_request(request)?;
+
+        loop {
+            match self.poll()? {
+                Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
+                    return Ok(());
+                }
+                Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!(
+                            "Timed out writing reset value to RESET register at 0x{:08x}",
+                            reset_addr
+                        ),
+                    )));
+                }
+                Some(_) => {}
+                None => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
     }
 
     fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {

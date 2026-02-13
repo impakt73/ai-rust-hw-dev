@@ -4,9 +4,8 @@
 
 use crate::app::App;
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
-use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType};
+use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind};
 use host_bus_handler::{AccessSize, BusRequest};
-use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 
 /// Default baud rate for device connections
@@ -130,8 +129,12 @@ pub enum ShellCommand {
         #[arg(value_enum, default_value_t = SizeArg::Word)]
         size: SizeArg,
     },
-    /// Trigger a system-level reset via the system controller
-    Reset,
+    /// Trigger a reset via the system controller
+    Reset {
+        /// Perform a hard system-level reset (default is soft CPU-only reset)
+        #[arg(long)]
+        hard: bool,
+    },
     /// Boot the CPU from a specified address or the last loaded ELF entry point
     Boot {
         /// Boot address (hex with 0x prefix or decimal). If not provided, use last ELF entry point
@@ -229,7 +232,7 @@ impl ShellCommand {
                 size,
             } => execute_write(app, address, data, size),
 
-            ShellCommand::Reset => execute_reset(app),
+            ShellCommand::Reset { hard } => execute_reset(app, hard),
 
             ShellCommand::Boot { address } => execute_boot(app, address),
         }
@@ -452,7 +455,7 @@ fn execute_write(app: &mut App, address: u32, data: u32, size: SizeArg) -> Comma
 }
 
 /// Execute the reset command
-fn execute_reset(app: &mut App) -> CommandResult {
+fn execute_reset(app: &mut App, hard: bool) -> CommandResult {
     let runtime = match app.device_runtime.as_mut() {
         Some(r) => r,
         None => return CommandResult::error("Not connected. Use 'connect' first."),
@@ -462,12 +465,18 @@ fn execute_reset(app: &mut App) -> CommandResult {
         return CommandResult::error("A host request is already pending. Wait for response.");
     }
 
-    let reset_addr = sysctrl_reset_addr();
-    let request = BusRequest::write(reset_addr, SYSCTRL_RESET_SYSTEM, AccessSize::Word);
-
-    match runtime.send_host_request(request) {
-        Ok(()) => CommandResult::ok(format!("Sent reset request to 0x{:08x}", reset_addr)),
-        Err(e) => CommandResult::error(format!("Failed to send reset request: {}", e)),
+    let kind = if hard {
+        ResetKind::System
+    } else {
+        ResetKind::Cpu
+    };
+    match runtime.reset(kind) {
+        Ok(()) => CommandResult::ok(if hard {
+            "System reset completed.".to_string()
+        } else {
+            "CPU reset completed.".to_string()
+        }),
+        Err(e) => CommandResult::error(format!("Failed to reset device: {}", e)),
     }
 }
 
@@ -778,7 +787,11 @@ mod tests {
     fn test_parse_reset() {
         assert!(matches!(
             ShellCommand::parse("reset"),
-            Ok(ParseResult::Command(ShellCommand::Reset))
+            Ok(ParseResult::Command(ShellCommand::Reset { hard: false }))
+        ));
+        assert!(matches!(
+            ShellCommand::parse("reset --hard"),
+            Ok(ParseResult::Command(ShellCommand::Reset { hard: true }))
         ));
     }
 
