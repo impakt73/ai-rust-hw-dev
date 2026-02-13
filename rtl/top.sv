@@ -147,6 +147,7 @@ module top #(
     logic        sysctrl_cpu_rst_n;
     logic        sysctrl_cpu_boot;
     logic [31:0] sysctrl_cpu_boot_addr;
+    logic        sysctrl_req_cpu_halt;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
     
@@ -339,6 +340,7 @@ module top #(
         .clk(clk),
         .rst_n(cpu_combined_rst_n),
         .boot(sysctrl_cpu_boot),
+        .req_halt(sysctrl_req_cpu_halt),
         .boot_addr(sysctrl_cpu_boot_addr),
         
         // Unified memory interface
@@ -469,6 +471,7 @@ module top #(
         .cpu_rst_n(sysctrl_cpu_rst_n),
         .cpu_boot_addr(sysctrl_cpu_boot_addr),
         .cpu_boot(sysctrl_cpu_boot),
+        .req_cpu_halt(sysctrl_req_cpu_halt),
         .sys_led(sys_led_out),
         
         // CPU status inputs
