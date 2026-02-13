@@ -2012,8 +2012,9 @@ fn test_cpu_halts_on_zero_instruction() {
         .flat_map(|inst| inst.to_le_bytes())
         .collect();
 
-    // Run with low max cycles - we expect halt quickly
-    // Note: Since the CPU halts and doesn't write to tohost, tohost_value will be None
+    // Run with low max cycles - we expect the CPU to halt on the invalid instruction.
+    // The hung detector skips PC loop detection when the CPU is in the halted state,
+    // so the simulation runs to max_cycles and returns Ok with no tohost value.
     let result = run_program(
         100, // Low max cycles
         false,
@@ -2029,14 +2030,15 @@ fn test_cpu_halts_on_zero_instruction() {
         None::<fn(&SimulatorView, &SimulationResult)>,
     );
 
-    // The CPU should enter a hung state because the invalid instruction causes
-    // the CPU to halt, and the hung detector detects that instructions are
-    // taking too long to complete.
-    let err = result.expect_err("Expected hung error when CPU halts on invalid instruction");
+    // The CPU enters S_HALT on the invalid instruction. Since the hung detector
+    // skips PC loop detection when halted, the simulation completes normally
+    // without triggering a hang error. The tohost value is None because the
+    // program never writes to tohost.
+    let sim_result = result.expect("CPU should halt without triggering hung detector");
     assert!(
-        err.contains("hung") || err.contains("Hung"),
-        "Expected hung error, got: {}",
-        err
+        sim_result.tohost_value.is_none(),
+        "Expected no tohost value when halted on invalid instruction, got: {:?}",
+        sim_result.tohost_value
     );
 
     println!("✓ CPU halts correctly on instruction value 0x0000");

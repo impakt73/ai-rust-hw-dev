@@ -31,6 +31,8 @@ enum RuntimeCommand {
     SendRequest(BusRequest),
     /// Load an ELF file into memory, with a one-shot channel for the result
     LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
+    /// Load raw program bytes into memory at a given address
+    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -141,6 +143,23 @@ impl FpgaDeviceRuntime {
                         Err(e) => {
                             let _ = result_tx.send(Err(e));
                         }
+                    }
+                }
+                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
+                    let len = data.len() as u32;
+                    if !data.is_empty() && !is_valid_dram_range(boot_pc, len) {
+                        let _ = result_tx.send(Err(format!(
+                            "Program range [0x{:08x}, 0x{:08x}) is outside DRAM range [0x{:08x}, 0x{:08x}]",
+                            boot_pc,
+                            boot_pc.wrapping_add(len),
+                            DRAM_BASE,
+                            DRAM_END
+                        )));
+                    } else {
+                        for (i, &byte) in data.iter().enumerate() {
+                            bus.memory.write_byte(boot_pc + i as u32, byte);
+                        }
+                        let _ = result_tx.send(Ok(()));
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => {} // No commands, continue polling
@@ -597,6 +616,44 @@ impl DeviceRuntime for FpgaDeviceRuntime {
                 Err(DeviceError::IoError(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     "Background thread terminated during ELF load",
+                )))
+            }
+        }
+    }
+
+    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
+        // Create a one-shot channel for the load result
+        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
+
+        // Send the load command to the background thread
+        self.command_tx
+            .send(RuntimeCommand::LoadProgram(
+                boot_pc,
+                data.to_vec(),
+                result_tx,
+            ))
+            .map_err(|e| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    format!("Background thread disconnected: {}", e),
+                ))
+            })?;
+
+        // Wait for the result on the dedicated channel (does not consume bus events)
+        match result_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e,
+            ))),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Timed out waiting for program load to complete",
+            ))),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Background thread terminated during program load",
                 )))
             }
         }

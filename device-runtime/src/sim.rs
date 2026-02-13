@@ -26,6 +26,8 @@ enum RuntimeCommand {
     SendRequest(BusRequest),
     /// Load an ELF file into the simulator, with a one-shot channel for the result
     LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
+    /// Load raw program bytes into the simulator's memory at a given address
+    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -122,6 +124,17 @@ impl SimDeviceRuntime {
                         Ok(entry_point) => {
                             elf_loaded = true;
                             let _ = result_tx.send(Ok(entry_point));
+                        }
+                        Err(e) => {
+                            let _ = result_tx.send(Err(e));
+                        }
+                    }
+                }
+                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
+                    match simulator.write_memory_region(boot_pc, &data) {
+                        Ok(()) => {
+                            elf_loaded = true;
+                            let _ = result_tx.send(Ok(()));
                         }
                         Err(e) => {
                             let _ = result_tx.send(Err(e));
@@ -276,6 +289,44 @@ impl DeviceRuntime for SimDeviceRuntime {
                 Err(DeviceError::IoError(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     "Background thread terminated during ELF load",
+                )))
+            }
+        }
+    }
+
+    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
+        // Create a one-shot channel for the load result
+        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
+
+        // Send the load command to the background thread
+        self.command_tx
+            .send(RuntimeCommand::LoadProgram(
+                boot_pc,
+                data.to_vec(),
+                result_tx,
+            ))
+            .map_err(|e| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    format!("Background thread disconnected: {}", e),
+                ))
+            })?;
+
+        // Wait for the result on the dedicated channel (does not consume bus events)
+        match result_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e,
+            ))),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Timed out waiting for program load to complete",
+            ))),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "Background thread terminated during program load",
                 )))
             }
         }
