@@ -479,6 +479,11 @@ impl<'a> SimulatorView<'a> {
         self.cpu.led_out
     }
 
+    /// Check whether the CPU is currently in the halted state.
+    pub fn is_cpu_halted(&self) -> bool {
+        self.cpu.halted != 0
+    }
+
     /// Send a bus request from the host to the RTL target
     ///
     /// The request will be processed by the RTL host_bus_interface module

@@ -2000,6 +2000,7 @@ fn test_cpu_amo_unsigned_min_max() {
 #[test]
 fn test_cpu_halts_on_zero_instruction() {
     init_test_logger();
+    let cpu_halted = std::cell::Cell::new(false);
 
     // Program with 4 zero instructions (invalid compressed instructions)
     // The CPU should halt when it fetches 0x0000
@@ -2027,7 +2028,9 @@ fn test_cpu_halts_on_zero_instruction() {
             sim.write_memory_region(START_ADDR, &program_bytes, true);
             Ok(START_ADDR)
         },
-        None::<fn(&SimulatorView, &SimulationResult)>,
+        Some(|sim: &SimulatorView, _result: &SimulationResult| {
+            cpu_halted.set(sim.is_cpu_halted());
+        }),
     );
 
     // The CPU enters S_HALT on the invalid instruction. Since the hung detector
@@ -2039,6 +2042,10 @@ fn test_cpu_halts_on_zero_instruction() {
         sim_result.tohost_value.is_none(),
         "Expected no tohost value when halted on invalid instruction, got: {:?}",
         sim_result.tohost_value
+    );
+    assert!(
+        cpu_halted.get(),
+        "Expected CPU to reach halted state on zero instruction"
     );
 
     println!("✓ CPU halts correctly on instruction value 0x0000");
