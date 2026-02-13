@@ -16,13 +16,7 @@ use riscv_core::instruction::*;
 
 /// Helper function to create a termination sequence (write to tohost and halt)
 fn create_termination_program(tohost_value: u32) -> Vec<u8> {
-    let instructions = vec![
-        addi(10, 0, tohost_value as i32), // x10 = value
-        lui(11, SIM_CONTROL_BASE),        // x11 = tohost base
-        sw(11, 10, 0),                    // tohost = value
-        jal(0, 0),                        // Infinite loop (halt)
-    ];
-    common::instructions_to_bytes(&instructions)
+    common::instructions_to_bytes(&common::tohost_termination(11, 10, tohost_value))
 }
 
 /// Test that write_memory_region rejects addresses below DRAM range
@@ -155,12 +149,8 @@ fn test_write_memory_at_dram_start() {
         .try_init()
         .ok();
 
-    let instructions = vec![
-        addi(10, 0, 42),           // x10 = 42
-        lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE (tohost)
-        sw(11, 10, 0),             // tohost = 42
-        jal(0, 0),                 // halt
-    ];
+    let mut instructions = vec![addi(10, 0, 42)]; // x10 = 42
+    common::append_tohost_termination(&mut instructions, 11, 10, 42);
     let program = common::instructions_to_bytes(&instructions);
 
     let result = run_program(

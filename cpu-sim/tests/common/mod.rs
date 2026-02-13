@@ -13,50 +13,70 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
         .collect()
 }
 
+/// Build a standard tohost termination sequence.
+pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 4] {
+    [
+        lui(addr_reg, SIM_CONTROL_BASE),
+        addi(
+            value_reg,
+            0,
+            i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
+        ),
+        sw(addr_reg, value_reg, 0),
+        jal(0, 0),
+    ]
+}
+
+/// Append a standard tohost termination sequence to an instruction vector.
+pub fn append_tohost_termination(
+    instructions: &mut Vec<u32>,
+    addr_reg: u32,
+    value_reg: u32,
+    tohost_value: u32,
+) {
+    instructions.extend(tohost_termination(addr_reg, value_reg, tohost_value));
+}
+
 /// Create a simple test program (equivalent to test.s)
 pub fn create_test_program() -> Vec<u8> {
-    let instructions = vec![
-        addi(1, 0, 10),            // x1 = 10
-        addi(2, 0, 20),            // x2 = 20
-        add(3, 1, 2),              // x3 = 30
-        sub(4, 2, 1),              // x4 = 10
-        lui(5, 0x80001000),        // x5 = 0x80001000
-        sw(5, 1, 0),               // mem[x5] = x1
-        lw(6, 5, 0),               // x6 = mem[x5]
-        addi(10, 0, 42),           // x10 = 42
-        lui(11, SIM_CONTROL_BASE), // x11 = tohost address
-        sw(11, 10, 0),             // tohost = 42
-        jal(0, 0),                 // halt
+    let mut instructions = vec![
+        addi(1, 0, 10),     // x1 = 10
+        addi(2, 0, 20),     // x2 = 20
+        add(3, 1, 2),       // x3 = 30
+        sub(4, 2, 1),       // x4 = 10
+        lui(5, 0x80001000), // x5 = 0x80001000
+        sw(5, 1, 0),        // mem[x5] = x1
+        lw(6, 5, 0),        // x6 = mem[x5]
+        addi(10, 0, 42),    // x10 = 42
     ];
+    append_tohost_termination(&mut instructions, 11, 10, 42);
 
     instructions_to_bytes(&instructions)
 }
 
 /// Create a trace test program (equivalent to trace_test.s)
 pub fn create_trace_test_program() -> Vec<u8> {
-    let instructions = vec![
-        addi(1, 0, 10),            // x1 = 10
-        addi(2, 0, 20),            // x2 = 20
-        addi(3, 0, 5),             // x3 = 5
-        add(4, 1, 2),              // x4 = 30
-        sub(5, 2, 3),              // x5 = 15
-        andi(6, 1, 0xFF),          // x6 = 10
-        ori(7, 2, 0x1),            // x7 = 21
-        lui(8, 0x12345000),        // x8 = 0x12345000
-        sw(0, 1, 0),               // mem[0] = x1
-        lw(9, 0, 0),               // x9 = mem[0]
-        addi(10, 0, 42),           // x10 = 42
-        lui(11, SIM_CONTROL_BASE), // x11 = tohost address
-        sw(11, 10, 0),             // tohost = 42
-        jal(0, 0),                 // halt
+    let mut instructions = vec![
+        addi(1, 0, 10),     // x1 = 10
+        addi(2, 0, 20),     // x2 = 20
+        addi(3, 0, 5),      // x3 = 5
+        add(4, 1, 2),       // x4 = 30
+        sub(5, 2, 3),       // x5 = 15
+        andi(6, 1, 0xFF),   // x6 = 10
+        ori(7, 2, 0x1),     // x7 = 21
+        lui(8, 0x12345000), // x8 = 0x12345000
+        sw(0, 1, 0),        // mem[0] = x1
+        lw(9, 0, 0),        // x9 = mem[0]
+        addi(10, 0, 42),    // x10 = 42
     ];
+    append_tohost_termination(&mut instructions, 11, 10, 42);
 
     instructions_to_bytes(&instructions)
 }
 
 /// Create a register trace audit program (equivalent to register_trace_audit.s)
 pub fn create_register_trace_program() -> Vec<u8> {
-    let instructions = vec![
+    let mut instructions = vec![
         // Fibonacci-like sequence
         addi(1, 0, 1), // x1 = 1
         addi(2, 0, 2), // x2 = 2
@@ -94,11 +114,9 @@ pub fn create_register_trace_program() -> Vec<u8> {
         lw(29, 27, 0),       // x29 = 123
         add(30, 29, 1),      // x30 = 124
         // Success
-        addi(30, 0, 42),           // x30 = 42
-        lui(31, SIM_CONTROL_BASE), // x31 = tohost address
-        sw(31, 30, 0),             // tohost = 42
-        jal(0, 0),                 // halt
+        addi(30, 0, 42), // x30 = 42
     ];
+    append_tohost_termination(&mut instructions, 31, 30, 42);
 
     instructions_to_bytes(&instructions)
 }

@@ -4,22 +4,14 @@
 //! Tests basic compressed instructions, memory operations, control flow,
 //! and critical transitions between compressed and uncompressed instructions.
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost termination sequence using standard (32-bit) instructions
-fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-    vec![
-        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
-        addi(value_reg, 0, 1),           // Load success code (1)
-        sw(addr_reg, value_reg, 0),      // Store value to tohost address (0x4000_0000)
-        jal(0, 0),                       // Infinite loop (jump to self)
-    ]
 }
 
 /// Helper to write compressed instruction bytes at a specific address
@@ -65,7 +57,7 @@ fn test_c_li() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 8) {
+            for &insn in &common::tohost_termination(7, 8, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -113,7 +105,7 @@ fn test_c_addi() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 8) {
+            for &insn in &common::tohost_termination(7, 8, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -162,7 +154,7 @@ fn test_c_add() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 8) {
+            for &insn in &common::tohost_termination(7, 8, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -210,7 +202,7 @@ fn test_c_mv() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 8) {
+            for &insn in &common::tohost_termination(7, 8, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -267,7 +259,7 @@ fn test_compressed_to_compressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 11) {
+            for &insn in &common::tohost_termination(7, 11, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -316,7 +308,7 @@ fn test_compressed_to_uncompressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 11) {
+            for &insn in &common::tohost_termination(7, 11, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -365,7 +357,7 @@ fn test_uncompressed_to_compressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 11) {
+            for &insn in &common::tohost_termination(7, 11, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -416,7 +408,7 @@ fn test_uncompressed_to_uncompressed_regression() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 13) {
+            for &insn in &common::tohost_termination(7, 13, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -472,7 +464,7 @@ fn test_mixed_sequence_across_word_boundary() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &tohost_termination(7, 11) {
+            for &insn in &common::tohost_termination(7, 11, 1) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }

@@ -4,6 +4,8 @@
 //! Address: 0x50000000
 //! Features: 8-bit output register
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE};
@@ -11,16 +13,6 @@ use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE};
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost termination sequence
-fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-    vec![
-        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
-        addi(value_reg, 0, 1),           // Load success code (1)
-        sw(addr_reg, value_reg, 0),      // Store value to tohost address
-        jal(0, 0),                       // Infinite loop (jump to self)
-    ]
 }
 
 // ============================================================================
@@ -47,7 +39,7 @@ fn test_led_basic_write_word() {
         addi(14, 0, 0xAA), // Load value 0xAA
         sw(15, 14, 0),     // Write to LED_OUT (offset 0)
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     // Run using the standard run_program helper with custom termination callback
     const START_ADDR: u32 = 0x8000_0000;
@@ -99,7 +91,7 @@ fn test_led_byte_access() {
         addi(14, 0, 0x55), // Load value 0x55
         sb(15, 14, 0),     // Store byte to LED_OUT
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -149,7 +141,7 @@ fn test_led_halfword_access() {
         addi(14, 0, 0xFF), // Load value 0xFF
         sh(15, 14, 0),     // Store halfword to LED_OUT
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -205,7 +197,7 @@ fn test_led_read_back() {
         addi(12, 0, 0xCC),  // Expected value
                             // If equal, write 1 to tohost, else write 0
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -265,7 +257,7 @@ fn test_led_pattern_sequence() {
         addi(14, 0, 0x55),
         sw(15, 14, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -323,7 +315,7 @@ fn test_led_upper_bits_ignored() {
         andi(13, 13, 0xFF), // Mask to lower 8 bits
         addi(12, 0, 0xAA),  // Expected value
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions

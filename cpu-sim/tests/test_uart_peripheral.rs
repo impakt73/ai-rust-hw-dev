@@ -15,6 +15,8 @@
 //! - Cycles per bit: ~434
 //! - One byte transmission: ~4340 cycles (10 bits: start + 8 data + stop)
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 use riscv_shared::bus::{
@@ -26,26 +28,6 @@ use riscv_shared::bus::{
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost success termination (writes 1 to tohost)
-fn tohost_success() -> Vec<u32> {
-    vec![
-        lui(10, SIM_CONTROL_BASE), // x10 = SIM_CONTROL_BASE (tohost)
-        addi(9, 0, 1),             // x9 = 1 (success)
-        sw(10, 9, 0),              // Write success to tohost
-        jal(0, 0),                 // Infinite loop
-    ]
-}
-
-/// Generate tohost failure termination (writes 0 to tohost)
-fn tohost_failure() -> Vec<u32> {
-    vec![
-        lui(10, SIM_CONTROL_BASE), // x10 = SIM_CONTROL_BASE (tohost)
-        addi(9, 0, 0),             // x9 = 0 (failure)
-        sw(10, 9, 0),              // Write failure to tohost
-        jal(0, 0),                 // Infinite loop
-    ]
 }
 
 // ============================================================================
@@ -87,7 +69,7 @@ fn test_uart_tx_write_byte() {
         addi(14, 0, 0x42),                     // x14 = 0x42 (test byte 'B')
         sw(15, 14, UART_TXDATA_OFFSET as i32), // Write to TXDATA
     ];
-    instructions.extend(tohost_success());
+    instructions.extend(common::tohost_termination(10, 9, 1));
 
     // Run the program
     const START_ADDR: u32 = 0x8000_0000;
@@ -147,10 +129,10 @@ fn test_uart_status_initial_state() {
 
                                                    // Success path
     ];
-    instructions.extend(tohost_success());
+    instructions.extend(common::tohost_termination(10, 9, 1));
 
     // Failure path
-    instructions.extend(tohost_failure());
+    instructions.extend(common::tohost_termination(10, 9, 0));
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -298,10 +280,10 @@ fn test_uart_tx_fifo_full() {
     instructions.push(bne(12, 0, 12)); // If TX_EMPTY is set, jump to failure (3 instructions)
 
     // Success: TX_EMPTY is not set, meaning FIFO has data
-    instructions.extend(tohost_success());
+    instructions.extend(common::tohost_termination(10, 9, 1));
 
     // Failure
-    instructions.extend(tohost_failure());
+    instructions.extend(common::tohost_termination(10, 9, 0));
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions

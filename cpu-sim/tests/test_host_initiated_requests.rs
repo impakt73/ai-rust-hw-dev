@@ -6,22 +6,14 @@
 //! These tests verify the complete path:
 //! Host → RX → Buffer → Master → Bus → Peripheral
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost termination sequence
-fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-    vec![
-        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
-        addi(value_reg, 0, 1),           // Load success code (1)
-        sw(addr_reg, value_reg, 0),      // Store value to tohost address
-        jal(0, 0),                       // Infinite loop (jump to self)
-    ]
 }
 
 // ============================================================================
@@ -41,7 +33,7 @@ fn test_host_initiated_basic_sync() {
     const LED_BASE: u32 = 0x50000000;
 
     // Program that spins on LED peripheral until it becomes non-zero
-    let instructions = vec![
+    let instructions = [
         // Setup: Load LED peripheral address
         lui(15, LED_BASE), // x15 = LED base address (0x50000000)
         // Spin loop: wait for LED value != 0
@@ -226,7 +218,7 @@ fn test_host_initiated_led_read() {
         addi(14, 0, LED_VALUE as i32),
         sw(15, 14, 0), // Write to LED
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -281,7 +273,7 @@ fn test_host_request_address_validation() {
     init_test_logger();
 
     // Simple program that just terminates
-    let instructions = tohost_termination(7, 8);
+    let instructions = common::tohost_termination(7, 8, 1);
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions

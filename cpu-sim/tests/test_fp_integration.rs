@@ -3,22 +3,14 @@
 //! Tests that verify the floating-point extension works correctly in the full CPU context,
 //! including FP load/store, register interactions, FCSR management, and multi-cycle execution.
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost termination sequence
-fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-    vec![
-        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
-        addi(value_reg, 0, 1),           // Load success code (1)
-        sw(addr_reg, value_reg, 0),      // Store value to tohost address (0x4000_0000)
-        jal(0, 0),                       // Infinite loop (jump to self)
-    ]
 }
 
 /// Helper to run programmatic instructions with FP support
@@ -86,7 +78,7 @@ fn test_cpu_flw_fsw_basic() {
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -139,7 +131,7 @@ fn test_cpu_flw_multiple_registers() {
         sw(1, 6, 0x104),
         sw(1, 7, 0x108),
     ];
-    instructions.extend(tohost_termination(11, 12));
+    common::append_tohost_termination(&mut instructions, 11, 12, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -190,7 +182,7 @@ fn test_cpu_fadd_basic() {
         addi(5, 5, 0x100),  // x5 = 0x80000100
         sw(5, 4, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -231,7 +223,7 @@ fn test_cpu_fmul_basic() {
         addi(5, 5, 0x100),  // x5 = 0x80000100
         sw(5, 4, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -271,7 +263,7 @@ fn test_cpu_fcvt_s_w() {
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -307,7 +299,7 @@ fn test_cpu_fcvt_w_s() {
         addi(4, 4, 0x100),  // x4 = 0x80000100
         sw(4, 3, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -354,7 +346,7 @@ fn test_cpu_feq_flt() {
         sw(1, 6, 0x108),
         sw(1, 7, 0x10C),
     ];
-    instructions.extend(tohost_termination(11, 12));
+    common::append_tohost_termination(&mut instructions, 11, 12, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -399,7 +391,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
         addi(3, 3, 0x100),  // x3 = 0x80000100
         sw(3, 2, 0),        // Store result to 0x80000100
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -450,7 +442,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
         sw(1, 4, 0x100),    // Store FSUB result to mem[x1+0x100]
         sw(1, 5, 0x104),    // Store FDIV result to mem[x1+0x104]
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -495,7 +487,7 @@ fn test_cpu_fmin_fmax() {
         sw(1, 4, 0x100),    // Store min to mem[x1+0x100]
         sw(1, 5, 0x104),    // Store max to mem[x1+0x104]
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -539,7 +531,7 @@ fn test_cpu_fsgnj_ops() {
         sw(7, 5, 0x104),    // Store FSGNJN result to mem[x7+0x104]
         sw(7, 6, 0x108),    // Store FSGNJX result to mem[x7+0x108]
     ];
-    instructions.extend(tohost_termination(10, 11));
+    common::append_tohost_termination(&mut instructions, 10, 11, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -593,7 +585,7 @@ fn test_cpu_fle() {
         sw(1, 5, 0x104),    // Store to mem[x1+0x104]
         sw(1, 6, 0x108),    // Store to mem[x1+0x108]
     ];
-    instructions.extend(tohost_termination(10, 11));
+    common::append_tohost_termination(&mut instructions, 10, 11, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -636,7 +628,7 @@ fn test_cpu_fcvt_unsigned() {
         sw(1, 3, 0x100),    // Store FCVT.WU.S result to mem[x1+0x100]
         sw(1, 5, 0x104),    // Store FCVT.S.WU result to mem[x1+0x104]
     ];
-    instructions.extend(tohost_termination(7, 8));
+    common::append_tohost_termination(&mut instructions, 7, 8, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -685,7 +677,7 @@ fn test_cpu_fclass() {
         sw(7, 5, 0x104),    // Store to mem[x7+0x104]
         sw(7, 6, 0x108),    // Store to mem[x7+0x108]
     ];
-    instructions.extend(tohost_termination(10, 11));
+    common::append_tohost_termination(&mut instructions, 10, 11, 1);
 
     run_fp_program_with_options(
         &instructions,
@@ -752,7 +744,7 @@ fn test_cpu_fused_multiply_add_ops() {
         sw(1, 6, 0x108), // Store to mem[x1+0x108]
         sw(1, 7, 0x10C), // Store to mem[x1+0x10C]
     ];
-    instructions.extend(tohost_termination(10, 11));
+    common::append_tohost_termination(&mut instructions, 10, 11, 1);
 
     run_fp_program_with_options(
         &instructions,

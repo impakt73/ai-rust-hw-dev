@@ -7,31 +7,14 @@
 //! cpu-sim infrastructure (SystemBus, VCD dumps, instruction tracing)
 //! rather than maintaining a duplicate CpuTestHarness implementation.
 
+mod common;
+
 use cpu_sim::*;
 use riscv_core::instruction::*;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Generate tohost termination sequence
-///
-/// Generates a sequence of instructions that write a success code to the tohost address.
-/// This is required for multi-cycle CPU implementations to signal program completion.
-///
-/// The sequence uses two registers:
-/// - addr_reg: holds the tohost address (SIM_CONTROL_BASE)
-/// - value_reg: holds the success code (1)
-///
-/// Returns: [LUI addr_reg, ADDI value_reg, SW, JAL (infinite loop)]
-fn tohost_termination(addr_reg: u32, value_reg: u32) -> Vec<u32> {
-    vec![
-        lui(addr_reg, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into addr_reg
-        addi(value_reg, 0, 1),           // Load success code (1)
-        sw(addr_reg, value_reg, 0),      // Store value to tohost address
-        jal(0, 0),                       // Infinite loop (jump to self)
-    ]
 }
 
 /// Helper to run programmatic instructions with options for trace/VCD/callbacks
@@ -90,7 +73,7 @@ fn test_cpu_basic_execution() {
     // 0x04: ADDI x2, x0, 3    ; x2 = 3
     // 0x08: ADD  x3, x1, x2   ; x3 = x1 + x2 = 8
     let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -117,7 +100,7 @@ fn test_cpu_three_instructions() {
     // 0x04: ADD  x2, x1, x1   ; x2 = x1 + x1 = 20
     // 0x08: SUB  x3, x2, x1   ; x3 = x2 - x1 = 10
     let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -145,7 +128,7 @@ fn test_cpu_lui_instruction() {
     // 0x00: LUI x1, 0x12345   ; x1 = 0x12345000
     // 0x04: ADDI x2, x1, 0x678 ; x2 = x1 + 0x678
     let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -182,7 +165,7 @@ fn test_cpu_logic_operations() {
         or(4, 1, 2),
         xor(5, 1, 2),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -235,7 +218,7 @@ fn test_cpu_branch_beq_bne() {
         sw(9, 3, 0),
         sw(9, 5, 4),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -293,7 +276,7 @@ fn test_cpu_branch_blt_bge() {
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -345,7 +328,7 @@ fn test_cpu_branch_bltu_bgeu() {
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -396,7 +379,7 @@ fn test_cpu_load_store() {
         sw(1, 2, 8),
         lw(5, 1, 8),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -453,7 +436,7 @@ fn test_cpu_load_byte() {
         sw(1, 5, 0x18),
         sw(1, 6, 0x1C),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -515,7 +498,7 @@ fn test_cpu_load_halfword() {
         sw(1, 5, 0x18),
         sw(1, 6, 0x1C),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -577,7 +560,7 @@ fn test_cpu_store_byte() {
         sb(1, 5, 3),
         lw(6, 1, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -613,7 +596,7 @@ fn test_cpu_store_halfword() {
         sh(1, 3, 2),
         lw(4, 1, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -656,7 +639,7 @@ fn test_cpu_byte_halfword_mixed() {
         sw(1, 6, 0x18),
         sw(1, 7, 0x1C),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -703,7 +686,7 @@ fn test_cpu_auipc() {
 
     // Program: Test AUIPC instruction
     let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -765,7 +748,7 @@ fn test_cpu_fence_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -791,7 +774,7 @@ fn test_cpu_ecall_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 42)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
     instructions.push(ecall()); // Should halt CPU after tohost write
     instructions.push(addi(2, 0, 99)); // Should not execute
 
@@ -819,7 +802,7 @@ fn test_cpu_ebreak_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 100)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
     instructions.push(ebreak()); // Should halt CPU after tohost write
     instructions.push(addi(2, 0, 200)); // Should not execute
 
@@ -862,7 +845,7 @@ fn test_cpu_csr_read_write() {
         csrrw(4, 0, 0x300),
         sw(8, 4, 8),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -913,7 +896,7 @@ fn test_cpu_csr_set_clear() {
         csrrw(6, 0, 0x301),
         sw(8, 6, 8),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -962,7 +945,7 @@ fn test_cpu_csr_immediate() {
         csrrw(4, 0, 0x302),
         sw(8, 4, 12),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1013,7 +996,7 @@ fn test_cpu_csr_instret() {
         lui(8, DRAM_BASE),  // Instr #5: Load base address
         sw(8, 4, 0),        // Instr #6: Store INSTRET value to memory
     ];
-    instructions.extend(tohost_termination(7, 9)); // Instr #7-10: Termination sequence
+    instructions.extend(common::tohost_termination(7, 9, 1)); // Instr #7-10: Termination sequence
 
     // Expected instruction count at the CSRRS:
     // Before CSRRS executes, 3 instructions have completed (the 3 ADDIs)
@@ -1055,7 +1038,7 @@ fn test_cpu_mul_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1083,7 +1066,7 @@ fn test_cpu_mulh_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1115,7 +1098,7 @@ fn test_cpu_div_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1143,7 +1126,7 @@ fn test_cpu_div_by_zero() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1175,7 +1158,7 @@ fn test_cpu_rem_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1205,7 +1188,7 @@ fn test_cpu_divu_remu_unsigned() {
         sw(8, 3, 0),
         sw(8, 4, 4),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1251,7 +1234,7 @@ fn test_cpu_m_extension_program() {
         lui(10, DRAM_BASE),
         sw(10, 9, 0),
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1423,7 +1406,7 @@ fn test_comprehensive_trace_validation() {
     ];
 
     // Add termination sequence
-    instructions.extend(tohost_termination(15, 16));
+    instructions.extend(common::tohost_termination(15, 16, 1));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -1571,7 +1554,7 @@ fn test_trace_with_branches() {
         addi(5, 0, 99), // 0x18: SKIPPED
         addi(6, 0, 1),  // 0x1C: x6 = 1
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -1655,7 +1638,7 @@ fn test_trace_and_vcd_together() {
 
     // Simple test program
     let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     // Run with VCD enabled
     run_program_with_options(
@@ -1745,7 +1728,7 @@ fn test_cpu_lr_sc_success() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 105)
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1794,7 +1777,7 @@ fn test_cpu_amoswap() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 100)
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1840,7 +1823,7 @@ fn test_cpu_amoadd() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 15)
     ];
-    instructions.extend(tohost_termination(7, 8));
+    instructions.extend(common::tohost_termination(7, 8, 1));
 
     run_program_with_options(
         &instructions,
@@ -1886,7 +1869,7 @@ fn test_cpu_amo_logical() {
         // Load final value
         lw(9, 1, 0), // x9 = mem[x1] (should be 0x3F)
     ];
-    instructions.extend(tohost_termination(10, 11));
+    instructions.extend(common::tohost_termination(10, 11, 1));
 
     run_program_with_options(
         &instructions,
@@ -1928,7 +1911,7 @@ fn test_cpu_amo_min_max() {
         // Load final value
         lw(7, 1, 0), // x7 = mem[x1] (should be 25)
     ];
-    instructions.extend(tohost_termination(10, 11));
+    instructions.extend(common::tohost_termination(10, 11, 1));
 
     run_program_with_options(
         &instructions,
@@ -1970,7 +1953,7 @@ fn test_cpu_amo_unsigned_min_max() {
         // Load final value
         lw(7, 1, 0), // x7 = mem[x1] (should be 75)
     ];
-    instructions.extend(tohost_termination(10, 11));
+    instructions.extend(common::tohost_termination(10, 11, 1));
 
     run_program_with_options(
         &instructions,
