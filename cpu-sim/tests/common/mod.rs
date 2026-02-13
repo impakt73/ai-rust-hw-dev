@@ -4,6 +4,7 @@
 
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
+use riscv_shared::sim_control::SUCCESS_CODE;
 
 /// Helper to convert instructions to bytes
 pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
@@ -47,9 +48,8 @@ pub fn create_test_program() -> Vec<u8> {
         lui(5, 0x80001000), // x5 = 0x80001000
         sw(5, 1, 0),        // mem[x5] = x1
         lw(6, 5, 0),        // x6 = mem[x5]
-        addi(10, 0, 42),    // x10 = 42
     ];
-    append_tohost_termination(&mut instructions, 11, 10, 42);
+    append_tohost_termination(&mut instructions, 11, 10, SUCCESS_CODE);
 
     instructions_to_bytes(&instructions)
 }
@@ -67,9 +67,8 @@ pub fn create_trace_test_program() -> Vec<u8> {
         lui(8, 0x12345000), // x8 = 0x12345000
         sw(0, 1, 0),        // mem[0] = x1
         lw(9, 0, 0),        // x9 = mem[0]
-        addi(10, 0, 42),    // x10 = 42
     ];
-    append_tohost_termination(&mut instructions, 11, 10, 42);
+    append_tohost_termination(&mut instructions, 11, 10, SUCCESS_CODE);
 
     instructions_to_bytes(&instructions)
 }
@@ -113,10 +112,9 @@ pub fn create_register_trace_program() -> Vec<u8> {
         sw(27, 28, 0),       // mem[0x80001000] = 123
         lw(29, 27, 0),       // x29 = 123
         add(30, 29, 1),      // x30 = 124
-        // Success
-        addi(30, 0, 42), // x30 = 42
+                             // Success
     ];
-    append_tohost_termination(&mut instructions, 31, 30, 42);
+    append_tohost_termination(&mut instructions, 31, 30, SUCCESS_CODE);
 
     instructions_to_bytes(&instructions)
 }

@@ -8,6 +8,7 @@ mod common;
 
 use cpu_sim::*;
 use riscv_core::instruction::*;
+use riscv_shared::sim_control::SUCCESS_CODE;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
@@ -57,7 +58,7 @@ fn test_c_li() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 8, 1) {
+            for &insn in &common::tohost_termination(7, 8, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -66,7 +67,7 @@ fn test_c_li() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -105,7 +106,7 @@ fn test_c_addi() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 8, 1) {
+            for &insn in &common::tohost_termination(7, 8, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -114,7 +115,7 @@ fn test_c_addi() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -154,7 +155,7 @@ fn test_c_add() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 8, 1) {
+            for &insn in &common::tohost_termination(7, 8, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -163,7 +164,7 @@ fn test_c_add() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -202,7 +203,7 @@ fn test_c_mv() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 8, 1) {
+            for &insn in &common::tohost_termination(7, 8, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -211,7 +212,7 @@ fn test_c_mv() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -259,7 +260,7 @@ fn test_compressed_to_compressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 11, 1) {
+            for &insn in &common::tohost_termination(7, 11, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -268,7 +269,7 @@ fn test_compressed_to_compressed_transition() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -308,7 +309,7 @@ fn test_compressed_to_uncompressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 11, 1) {
+            for &insn in &common::tohost_termination(7, 11, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -317,7 +318,7 @@ fn test_compressed_to_uncompressed_transition() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -357,7 +358,7 @@ fn test_uncompressed_to_compressed_transition() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 11, 1) {
+            for &insn in &common::tohost_termination(7, 11, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -366,7 +367,7 @@ fn test_uncompressed_to_compressed_transition() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -408,7 +409,7 @@ fn test_uncompressed_to_uncompressed_regression() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 13, 1) {
+            for &insn in &common::tohost_termination(7, 13, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -417,7 +418,7 @@ fn test_uncompressed_to_uncompressed_regression() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);
@@ -464,7 +465,7 @@ fn test_mixed_sequence_across_word_boundary() {
             offset += 4;
 
             // Add tohost termination
-            for &insn in &common::tohost_termination(7, 11, 1) {
+            for &insn in &common::tohost_termination(7, 11, SUCCESS_CODE) {
                 write_standard_instruction(sim, START_ADDR + offset, insn);
                 offset += 4;
             }
@@ -473,7 +474,7 @@ fn test_mixed_sequence_across_word_boundary() {
         },
         Some(|sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
             let value = sim.read_word(0x80000100);

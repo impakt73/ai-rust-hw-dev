@@ -11,6 +11,7 @@ mod common;
 
 use cpu_sim::*;
 use riscv_core::instruction::*;
+use riscv_shared::sim_control::SUCCESS_CODE;
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
@@ -73,7 +74,7 @@ fn test_cpu_basic_execution() {
     // 0x04: ADDI x2, x0, 3    ; x2 = 3
     // 0x08: ADD  x3, x1, x2   ; x3 = x1 + x2 = 8
     let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -83,7 +84,7 @@ fn test_cpu_basic_execution() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -100,7 +101,7 @@ fn test_cpu_three_instructions() {
     // 0x04: ADD  x2, x1, x1   ; x2 = x1 + x1 = 20
     // 0x08: SUB  x3, x2, x1   ; x3 = x2 - x1 = 10
     let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -110,7 +111,7 @@ fn test_cpu_three_instructions() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -128,7 +129,7 @@ fn test_cpu_lui_instruction() {
     // 0x00: LUI x1, 0x12345   ; x1 = 0x12345000
     // 0x04: ADDI x2, x1, 0x678 ; x2 = x1 + 0x678
     let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -138,7 +139,7 @@ fn test_cpu_lui_instruction() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -165,7 +166,7 @@ fn test_cpu_logic_operations() {
         or(4, 1, 2),
         xor(5, 1, 2),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -175,7 +176,7 @@ fn test_cpu_logic_operations() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -218,7 +219,7 @@ fn test_cpu_branch_beq_bne() {
         sw(9, 3, 0),
         sw(9, 5, 4),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -239,7 +240,7 @@ fn test_cpu_branch_beq_bne() {
                 "Second branch should skip addi x5,x0,99, so x5 should be 0"
             );
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -276,7 +277,7 @@ fn test_cpu_branch_blt_bge() {
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -291,7 +292,7 @@ fn test_cpu_branch_blt_bge() {
             assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -328,7 +329,7 @@ fn test_cpu_branch_bltu_bgeu() {
         sw(9, 3, 0),
         sw(9, 4, 4),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -343,7 +344,7 @@ fn test_cpu_branch_bltu_bgeu() {
             assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
             assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -379,7 +380,7 @@ fn test_cpu_load_store() {
         sw(1, 2, 8),
         lw(5, 1, 8),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -436,7 +437,7 @@ fn test_cpu_load_byte() {
         sw(1, 5, 0x18),
         sw(1, 6, 0x1C),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -498,7 +499,7 @@ fn test_cpu_load_halfword() {
         sw(1, 5, 0x18),
         sw(1, 6, 0x1C),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -560,7 +561,7 @@ fn test_cpu_store_byte() {
         sb(1, 5, 3),
         lw(6, 1, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -596,7 +597,7 @@ fn test_cpu_store_halfword() {
         sh(1, 3, 2),
         lw(4, 1, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -639,7 +640,7 @@ fn test_cpu_byte_halfword_mixed() {
         sw(1, 6, 0x18),
         sw(1, 7, 0x1C),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -686,7 +687,7 @@ fn test_cpu_auipc() {
 
     // Program: Test AUIPC instruction
     let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -696,7 +697,7 @@ fn test_cpu_auipc() {
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -716,7 +717,7 @@ fn test_cpu_tohost_halt() {
         addi(2, 1, 5),
         add(3, 1, 2),
         lui(4, SIM_CONTROL_BASE), // x4 = SIM_CONTROL_BASE (tohost address)
-        addi(5, 0, 1),            // x5 = 1 (exit code)
+        addi(5, 0, SUCCESS_CODE as i32), // x5 = success code
         sw(4, 5, 0),              // Store x5 to tohost address
         jal(0, 0),                // Infinite loop
     ];
@@ -731,8 +732,8 @@ fn test_cpu_tohost_halt() {
             // Verify that tohost write was detected
             assert_eq!(
                 result.tohost_value,
-                Some(1),
-                "Expected tohost value to be 1 (exit code)"
+                Some(SUCCESS_CODE),
+                "Expected tohost value to be SUCCESS_CODE (exit code)"
             );
             // Note: We cannot read from TOHOST_ADDR directly as it's write-only
             // The tohost value is captured in result.tohost_value above
@@ -748,7 +749,7 @@ fn test_cpu_fence_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -759,7 +760,7 @@ fn test_cpu_fence_instruction() {
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // FENCE is essentially a NOP for single-cycle CPU
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -774,7 +775,7 @@ fn test_cpu_ecall_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 42)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
     instructions.push(ecall()); // Should halt CPU after tohost write
     instructions.push(addi(2, 0, 99)); // Should not execute
 
@@ -787,7 +788,7 @@ fn test_cpu_ecall_instruction() {
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // After ECALL, CPU should halt
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -802,7 +803,7 @@ fn test_cpu_ebreak_instruction() {
     init_test_logger();
 
     let mut instructions = vec![addi(1, 0, 100)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
     instructions.push(ebreak()); // Should halt CPU after tohost write
     instructions.push(addi(2, 0, 200)); // Should not execute
 
@@ -815,7 +816,7 @@ fn test_cpu_ebreak_instruction() {
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             // After EBREAK, CPU should halt
             assert!(
-                result.tohost_value == Some(1),
+                result.tohost_value == Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -845,7 +846,7 @@ fn test_cpu_csr_read_write() {
         csrrw(4, 0, 0x300),
         sw(8, 4, 8),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -896,7 +897,7 @@ fn test_cpu_csr_set_clear() {
         csrrw(6, 0, 0x301),
         sw(8, 6, 8),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -945,7 +946,7 @@ fn test_cpu_csr_immediate() {
         csrrw(4, 0, 0x302),
         sw(8, 4, 12),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -996,7 +997,7 @@ fn test_cpu_csr_instret() {
         lui(8, DRAM_BASE),  // Instr #5: Load base address
         sw(8, 4, 0),        // Instr #6: Store INSTRET value to memory
     ];
-    instructions.extend(common::tohost_termination(7, 9, 1)); // Instr #7-10: Termination sequence
+    instructions.extend(common::tohost_termination(7, 9, SUCCESS_CODE)); // Instr #7-10: Termination sequence
 
     // Expected instruction count at the CSRRS:
     // Before CSRRS executes, 3 instructions have completed (the 3 ADDIs)
@@ -1038,7 +1039,7 @@ fn test_cpu_mul_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1066,7 +1067,7 @@ fn test_cpu_mulh_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1098,7 +1099,7 @@ fn test_cpu_div_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1126,7 +1127,7 @@ fn test_cpu_div_by_zero() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1158,7 +1159,7 @@ fn test_cpu_rem_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1188,7 +1189,7 @@ fn test_cpu_divu_remu_unsigned() {
         sw(8, 3, 0),
         sw(8, 4, 4),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1234,7 +1235,7 @@ fn test_cpu_m_extension_program() {
         lui(10, DRAM_BASE),
         sw(10, 9, 0),
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1406,7 +1407,7 @@ fn test_comprehensive_trace_validation() {
     ];
 
     // Add termination sequence
-    instructions.extend(common::tohost_termination(15, 16, 1));
+    instructions.extend(common::tohost_termination(15, 16, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -1421,7 +1422,7 @@ fn test_comprehensive_trace_validation() {
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(
                 result.tohost_value,
-                Some(1),
+                Some(SUCCESS_CODE),
                 "Program should terminate with tohost=1"
             );
         }),
@@ -1554,7 +1555,7 @@ fn test_trace_with_branches() {
         addi(5, 0, 99), // 0x18: SKIPPED
         addi(6, 0, 1),  // 0x1C: x6 = 1
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -1567,7 +1568,7 @@ fn test_trace_with_branches() {
             captured_traces.push(trace.clone());
         }),
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1));
+            assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
         }),
     )
     .expect("Simulation should succeed");
@@ -1638,7 +1639,7 @@ fn test_trace_and_vcd_together() {
 
     // Simple test program
     let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Run with VCD enabled
     run_program_with_options(
@@ -1648,7 +1649,7 @@ fn test_trace_and_vcd_together() {
         Some(vcd_path),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1));
+            assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
         }),
     )
     .expect("Simulation should succeed");
@@ -1728,7 +1729,7 @@ fn test_cpu_lr_sc_success() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 105)
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1737,7 +1738,11 @@ fn test_cpu_lr_sc_success() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
             // Verify SC succeeded by checking program completed successfully
             // (In a real test, we would check x4 register value = 0 for success)
             let _mem_value = sim.read_word(mem_addr); // Should be 105
@@ -1777,7 +1782,7 @@ fn test_cpu_amoswap() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 100)
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1786,7 +1791,11 @@ fn test_cpu_amoswap() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
         }),
     )
     .expect("AMOSWAP test should run");
@@ -1823,7 +1832,7 @@ fn test_cpu_amoadd() {
         // Load final value to verify
         lw(5, 1, 0), // x5 = mem[x1] (should be 15)
     ];
-    instructions.extend(common::tohost_termination(7, 8, 1));
+    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1832,7 +1841,11 @@ fn test_cpu_amoadd() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
         }),
     )
     .expect("AMOADD test should run");
@@ -1869,7 +1882,7 @@ fn test_cpu_amo_logical() {
         // Load final value
         lw(9, 1, 0), // x9 = mem[x1] (should be 0x3F)
     ];
-    instructions.extend(common::tohost_termination(10, 11, 1));
+    instructions.extend(common::tohost_termination(10, 11, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1878,7 +1891,11 @@ fn test_cpu_amo_logical() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
         }),
     )
     .expect("AMO logical test should run");
@@ -1911,7 +1928,7 @@ fn test_cpu_amo_min_max() {
         // Load final value
         lw(7, 1, 0), // x7 = mem[x1] (should be 25)
     ];
-    instructions.extend(common::tohost_termination(10, 11, 1));
+    instructions.extend(common::tohost_termination(10, 11, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1920,7 +1937,11 @@ fn test_cpu_amo_min_max() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
         }),
     )
     .expect("AMO MIN/MAX test should run");
@@ -1953,7 +1974,7 @@ fn test_cpu_amo_unsigned_min_max() {
         // Load final value
         lw(7, 1, 0), // x7 = mem[x1] (should be 75)
     ];
-    instructions.extend(common::tohost_termination(10, 11, 1));
+    instructions.extend(common::tohost_termination(10, 11, SUCCESS_CODE));
 
     run_program_with_options(
         &instructions,
@@ -1962,7 +1983,11 @@ fn test_cpu_amo_unsigned_min_max() {
         None,
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
-            assert_eq!(result.tohost_value, Some(1), "Program should complete");
+            assert_eq!(
+                result.tohost_value,
+                Some(SUCCESS_CODE),
+                "Program should complete"
+            );
         }),
     )
     .expect("AMO unsigned MIN/MAX test should run");

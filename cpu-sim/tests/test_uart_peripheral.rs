@@ -24,6 +24,7 @@ use riscv_shared::bus::{
     UART_STATUS_OFFSET, UART_STATUS_RX_EMPTY, UART_STATUS_TX_EMPTY, UART_STATUS_TX_FULL,
     UART_TXDATA_OFFSET,
 };
+use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {
@@ -69,7 +70,7 @@ fn test_uart_tx_write_byte() {
         addi(14, 0, 0x42),                     // x14 = 0x42 (test byte 'B')
         sw(15, 14, UART_TXDATA_OFFSET as i32), // Write to TXDATA
     ];
-    instructions.extend(common::tohost_termination(10, 9, 1));
+    instructions.extend(common::tohost_termination(10, 9, SUCCESS_CODE));
 
     // Run the program
     const START_ADDR: u32 = 0x8000_0000;
@@ -96,7 +97,7 @@ fn test_uart_tx_write_byte() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "Program should exit with success code"
     );
 }
@@ -129,10 +130,10 @@ fn test_uart_status_initial_state() {
 
                                                    // Success path
     ];
-    instructions.extend(common::tohost_termination(10, 9, 1));
+    instructions.extend(common::tohost_termination(10, 9, SUCCESS_CODE));
 
     // Failure path
-    instructions.extend(common::tohost_termination(10, 9, 0));
+    instructions.extend(common::tohost_termination(10, 9, FAILURE_CODE));
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -158,7 +159,7 @@ fn test_uart_status_initial_state() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "STATUS register should show TX_EMPTY=1 and RX_EMPTY=1 initially"
     );
 }
@@ -178,7 +179,7 @@ fn test_uart_loopback_single_byte() {
     // 4. Poll STATUS until !RX_EMPTY (data received in loopback)
     // 5. Read RXDATA into x11
     // 6. Compare received byte with sent byte
-    // 7. Write success (1) or failure (0) to tohost
+    // 7. Write SUCCESS_CODE or FAILURE_CODE to tohost
     //
     // Timing: One byte takes ~4340 cycles. Use extended max cycles to ensure
     // the loopback has time to complete.
@@ -202,16 +203,16 @@ fn test_uart_loopback_single_byte() {
         // Read received byte from RXDATA
         lw(11, 15, UART_RXDATA_OFFSET as i32), // x11 = RXDATA
         // Compare received byte (x11) with sent byte (x14)
-        // If equal, write success (1) to tohost, else failure (0)
+        // If equal, write SUCCESS_CODE to tohost, else FAILURE_CODE
         lui(10, SIM_CONTROL_BASE), // x10 = tohost address
         bne(11, 14, 16),           // If received != sent, jump to failure (skip 4 instructions)
         // Success path
-        addi(9, 0, 1), // x9 = 1 (success)
-        sw(10, 9, 0),  // Write 1 to tohost
-        jal(0, 12),    // Jump past failure code (skip 3 instructions)
+        addi(9, 0, SUCCESS_CODE as i32), // x9 = SUCCESS_CODE
+        sw(10, 9, 0),                    // Write SUCCESS_CODE to tohost
+        jal(0, 12),                      // Jump past failure code (skip 3 instructions)
         // Failure path
-        addi(9, 0, 0), // x9 = 0 (failure)
-        sw(10, 9, 0),  // Write 0 to tohost
+        addi(9, 0, FAILURE_CODE as i32), // x9 = FAILURE_CODE
+        sw(10, 9, 0),                    // Write FAILURE_CODE to tohost
         // Infinite loop (terminal state)
         jal(0, 0), // Loop forever
     ];
@@ -244,7 +245,7 @@ fn test_uart_loopback_single_byte() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "Loopback test should succeed: sent byte (0xA5) should match received byte"
     );
 }
@@ -280,10 +281,10 @@ fn test_uart_tx_fifo_full() {
     instructions.push(bne(12, 0, 12)); // If TX_EMPTY is set, jump to failure (3 instructions)
 
     // Success: TX_EMPTY is not set, meaning FIFO has data
-    instructions.extend(common::tohost_termination(10, 9, 1));
+    instructions.extend(common::tohost_termination(10, 9, SUCCESS_CODE));
 
     // Failure
-    instructions.extend(common::tohost_termination(10, 9, 0));
+    instructions.extend(common::tohost_termination(10, 9, FAILURE_CODE));
 
     const START_ADDR: u32 = 0x8000_0000;
     let program_bytes: Vec<u8> = instructions
@@ -309,7 +310,7 @@ fn test_uart_tx_fifo_full() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "TX_EMPTY should be clear after writing 8 bytes to TX FIFO"
     );
 }
@@ -332,12 +333,12 @@ fn test_uart_rx_read_empty() {
         bne(13, 0, 12), // If x13 != 0, jump to failure (3 instructions)
         // Success: RXDATA returned 0
         lui(10, SIM_CONTROL_BASE),
-        addi(9, 0, 1),
+        addi(9, 0, SUCCESS_CODE as i32),
         sw(10, 9, 0),
         jal(0, 12), // Jump over failure
         // Failure
         lui(10, SIM_CONTROL_BASE),
-        addi(9, 0, 0),
+        addi(9, 0, FAILURE_CODE as i32),
         sw(10, 9, 0),
         jal(0, 0), // Infinite loop
     ];
@@ -366,7 +367,7 @@ fn test_uart_rx_read_empty() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "Reading empty RX FIFO should return 0 and not crash"
     );
 }
@@ -437,11 +438,11 @@ fn test_uart_loopback_pattern() {
         lw(11, 15, UART_RXDATA_OFFSET as i32),
         bne(11, 14, 12), // If mismatch, jump to failure (3 instructions ahead)
         // Success: all patterns matched
-        addi(9, 0, 1),
+        addi(9, 0, SUCCESS_CODE as i32),
         sw(10, 9, 0),
         jal(0, 8), // Jump over failure
         // Failure
-        addi(9, 0, 0),
+        addi(9, 0, FAILURE_CODE as i32),
         sw(10, 9, 0),
         jal(0, 0), // Infinite loop
     ];
@@ -473,7 +474,7 @@ fn test_uart_loopback_pattern() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "All loopback patterns (0x00, 0xFF, 0xAA, 0x55) should match"
     );
 }
@@ -520,12 +521,12 @@ fn test_uart_loopback_multi_byte() {
     }
 
     // Success path
-    instructions.push(addi(9, 0, 1));
+    instructions.push(addi(9, 0, SUCCESS_CODE as i32));
     instructions.push(sw(10, 9, 0));
     instructions.push(jal(0, 8)); // Skip failure
 
     // Failure path
-    instructions.push(addi(9, 0, 0));
+    instructions.push(addi(9, 0, FAILURE_CODE as i32));
     instructions.push(sw(10, 9, 0));
     instructions.push(jal(0, 0)); // Infinite loop
 
@@ -556,7 +557,7 @@ fn test_uart_loopback_multi_byte() {
 
     assert_eq!(
         result.tohost_value,
-        Some(1),
+        Some(SUCCESS_CODE),
         "All 8 bytes (0x01-0x08) should be received correctly via loopback"
     );
 }

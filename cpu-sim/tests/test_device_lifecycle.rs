@@ -5,6 +5,7 @@
 use bus_shared::{BusDevice, BusDeviceError, SystemContext, DRAM_BASE, SIM_CONTROL_BASE};
 use cpu_sim::{run_program, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
 use riscv_core::instruction::*;
+use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -93,16 +94,16 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
 
             // Write a simple program that halts via SimControl
             // x15 = DRAM_BASE  - Load upper immediate for DRAM base
-            // addi x10, x0, 1      - Set exit code to 1 (success)
+            // addi x10, x0, SUCCESS_CODE - Set standard success code
             // lui x11, SIM_CONTROL_BASE  - Load SimControl base address
             // sw x10, 0(x11)       - Write to tohost (triggers halt)
             // jal x0, 0            - Infinite loop (stay here)
             let instructions: Vec<u32> = vec![
-                lui(15, DRAM_BASE),        // x15 = DRAM_BASE
-                addi(10, 0, 1),            // addi x10, x0, 1
-                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
-                sw(11, 10, 0),             // sw x10, 0(x11)
-                jal(0, 0),                 // jal x0, 0
+                lui(15, DRAM_BASE),               // x15 = DRAM_BASE
+                addi(10, 0, SUCCESS_CODE as i32), // addi x10, x0, SUCCESS_CODE
+                lui(11, SIM_CONTROL_BASE),        // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),                    // sw x10, 0(x11)
+                jal(0, 0),                        // jal x0, 0
             ];
             let program_bytes: Vec<u8> = instructions
                 .iter()
@@ -117,7 +118,7 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
 
     // Verify simulation completed
     assert!(result.tohost_value.is_some());
-    assert_eq!(result.tohost_value.unwrap(), 1);
+    assert_eq!(result.tohost_value.unwrap(), SUCCESS_CODE);
 
     // Verify reset was called at least once (during Simulator::reset())
     let final_reset_count = reset_count.load(Ordering::SeqCst);
@@ -274,11 +275,11 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
 
             // Write a simple halt program
             let instructions: Vec<u32> = vec![
-                lui(15, DRAM_BASE),        // x15 = DRAM_BASE
-                addi(10, 0, 1),            // addi x10, x0, 1
-                lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE
-                sw(11, 10, 0),             // sw x10, 0(x11)
-                jal(0, 0),                 // jal x0, 0
+                lui(15, DRAM_BASE),               // x15 = DRAM_BASE
+                addi(10, 0, SUCCESS_CODE as i32), // addi x10, x0, SUCCESS_CODE
+                lui(11, SIM_CONTROL_BASE),        // x11 = SIM_CONTROL_BASE
+                sw(11, 10, 0),                    // sw x10, 0(x11)
+                jal(0, 0),                        // jal x0, 0
             ];
             let program_bytes: Vec<u8> = instructions
                 .iter()
