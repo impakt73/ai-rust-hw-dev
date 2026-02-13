@@ -100,6 +100,20 @@ pub struct FpuFloatToInt;
 #[verilog(src = "../rtl/fpu_sqrt.sv", name = "fpu_sqrt")]
 pub struct FpuSqrt;
 
+// Define FF synchronizer default wrapper module
+#[verilog(
+    src = "../rtl/ff_sync_default_wrapper.sv",
+    name = "ff_sync_default_wrapper"
+)]
+pub struct FfSyncDefaultWrapper;
+
+// Define FF synchronizer parameterized wrapper module (2-stage, 4-bit)
+#[verilog(
+    src = "../rtl/ff_sync_param_wrapper.sv",
+    name = "ff_sync_param_wrapper"
+)]
+pub struct FfSyncParamWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -261,4 +275,15 @@ pub fn create_fpu_float_to_int_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 pub fn create_fpu_sqrt_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fpu_sqrt.sv"])
+}
+
+// Helper function to create a runtime for the FF synchronizer
+pub fn create_ff_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["ff_sync.sv", "ff_sync_default_wrapper.sv"])
+}
+
+// Helper function to create a runtime for parameterized FF synchronizer wrapper
+pub fn create_ff_sync_param_wrapper_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&["ff_sync.sv", "ff_sync_param_wrapper.sv"])
 }
