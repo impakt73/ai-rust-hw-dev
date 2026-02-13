@@ -12,17 +12,11 @@
 mod common;
 
 use cpu_sim::*;
-use riscv_core::instruction::*;
+use riscv_shared::sim_control::SUCCESS_CODE;
 
 /// Helper function to create a termination sequence (write to tohost and halt)
 fn create_termination_program(tohost_value: u32) -> Vec<u8> {
-    let instructions = vec![
-        addi(10, 0, tohost_value as i32), // x10 = value
-        lui(11, SIM_CONTROL_BASE),        // x11 = tohost base
-        sw(11, 10, 0),                    // tohost = value
-        jal(0, 0),                        // Infinite loop (halt)
-    ];
-    common::instructions_to_bytes(&instructions)
+    common::instructions_to_bytes(&common::tohost_termination(11, 10, tohost_value))
 }
 
 /// Test that write_memory_region rejects addresses below DRAM range
@@ -34,7 +28,7 @@ fn test_write_memory_below_dram_range() {
         .try_init()
         .ok();
 
-    let program = create_termination_program(1);
+    let program = create_termination_program(SUCCESS_CODE);
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
@@ -61,7 +55,7 @@ fn test_write_memory_below_dram_range() {
         "Simulation should complete despite invalid write: {:?}",
         result.err()
     );
-    assert_eq!(result.unwrap().tohost_value, Some(1));
+    assert_eq!(result.unwrap().tohost_value, Some(SUCCESS_CODE));
 }
 
 /// Test that write_memory_region rejects addresses spanning below DRAM range
@@ -155,13 +149,7 @@ fn test_write_memory_at_dram_start() {
         .try_init()
         .ok();
 
-    let instructions = vec![
-        addi(10, 0, 42),           // x10 = 42
-        lui(11, SIM_CONTROL_BASE), // x11 = SIM_CONTROL_BASE (tohost)
-        sw(11, 10, 0),             // tohost = 42
-        jal(0, 0),                 // halt
-    ];
-    let program = common::instructions_to_bytes(&instructions);
+    let program = common::instructions_to_bytes(&common::tohost_termination(11, 10, SUCCESS_CODE));
 
     let result = run_program(
         GLOBAL_MAX_CYCLES,
@@ -210,7 +198,7 @@ fn test_write_memory_ending_at_dram_end() {
             sim.write_memory_region(start_addr, &data, false);
 
             // Write valid program to DRAM_BASE
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -242,7 +230,7 @@ fn test_read_byte_below_dram_range() {
         None,
         0,
         |sim| {
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -281,7 +269,7 @@ fn test_read_halfword_outside_dram_range() {
         None,
         0,
         |sim| {
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -321,7 +309,7 @@ fn test_read_word_outside_dram_range() {
         None,
         0,
         |sim| {
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -365,7 +353,7 @@ fn test_dump_memory_region_outside_dram() {
         None,
         0,
         |sim| {
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -418,7 +406,7 @@ fn test_valid_dram_accesses() {
             // Write test data to DRAM
             sim.write_memory_region(DRAM_BASE + 0x1000, &test_data, false);
 
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -470,7 +458,7 @@ fn test_boundary_at_dram_start() {
         None,
         0,
         |sim| {
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
@@ -514,7 +502,7 @@ fn test_boundary_at_dram_end() {
             let data = vec![0x42];
             sim.write_memory_region(DRAM_END, &data, false); // Single byte at DRAM_END
 
-            let program = create_termination_program(1);
+            let program = create_termination_program(SUCCESS_CODE);
             sim.write_memory_region(DRAM_BASE, &program, true);
             Ok(DRAM_BASE)
         },
