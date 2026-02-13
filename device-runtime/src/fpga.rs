@@ -769,8 +769,13 @@ impl DeviceRuntime for FpgaDeviceRuntime {
         if kind == ResetKind::System {
             let deadline = Instant::now() + SYSTEM_RESET_DRAIN_TIMEOUT;
             while Instant::now() < deadline {
-                if self.poll()?.is_none() {
-                    break;
+                match self.poll() {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::debug!("Ignoring stale post-reset event error: {}", e);
+                        break;
+                    }
                 }
             }
         }
