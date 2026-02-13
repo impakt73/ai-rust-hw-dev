@@ -104,6 +104,7 @@ module system_controller (
             end
 
             if (write_boot) begin
+                // BOOT writes are accepted independently of cpu_booting state.
                 boot_addr_reg <= wdata;
                 cpu_boot      <= 1'b1;
             end
