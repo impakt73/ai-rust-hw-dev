@@ -21,6 +21,7 @@ module system_controller (
     output logic        cpu_rst_n,     // CPU reset output (active low)
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
+    output logic        req_cpu_halt,  // Pulse to request CPU halt
     output logic [7:0]  sys_led,       // LED output for external LEDs
     
     // CPU status inputs
@@ -34,6 +35,7 @@ module system_controller (
     localparam [31:0] REG_STATUS = 32'h00;  // Read-only: CPU status
     localparam [31:0] REG_RESET  = 32'h04;  // Write-only: Reset control
     localparam [31:0] REG_BOOT   = 32'h08;  // Write-only: Boot address
+    localparam [31:0] REG_HALT   = 32'h0C;  // Read/write: Halt code
     
     // Reset control values
     localparam [31:0] RESET_SYSTEM = 32'h00000001;  // System reset
@@ -53,8 +55,10 @@ module system_controller (
     // ========================================================================
     logic [4:0]  state_reg;              // Current state
     logic [31:0] boot_addr_reg;          // Stored boot address
+    logic [31:0] halt_reg;               // Stored halt code
     logic        sys_reset_trigger;      // System reset request flag
     logic        cpu_reset_trigger;      // CPU reset request flag
+    logic        req_cpu_halt_reg;       // One-cycle halt request pulse
     
     // ========================================================================
     // System controller is single-cycle - always ready
@@ -66,15 +70,18 @@ module system_controller (
     // ========================================================================
     logic write_boot;
     logic write_reset;
+    logic write_halt;
     
     always_comb begin
         write_boot  = 1'b0;
         write_reset = 1'b0;
+        write_halt  = 1'b0;
         
         if (req && we) begin
             case (addr[7:0])  // Use lower 8 bits for register decode
                 REG_BOOT[7:0]:  write_boot  = 1'b1;
                 REG_RESET[7:0]: write_reset = 1'b1;
+                REG_HALT[7:0]:  write_halt  = 1'b1;
                 default: ;
             endcase
         end
@@ -87,7 +94,11 @@ module system_controller (
         if (!rst_n) begin
             sys_reset_trigger <= 1'b0;
             cpu_reset_trigger <= 1'b0;
+            halt_reg          <= 32'h00000000;
+            req_cpu_halt_reg  <= 1'b0;
         end else begin
+            req_cpu_halt_reg <= 1'b0;
+
             // Set flags on write to RESET register
             if (write_reset) begin
                 if (wdata == RESET_SYSTEM) begin
@@ -95,6 +106,11 @@ module system_controller (
                 end else if (wdata == RESET_CPU) begin
                     cpu_reset_trigger <= 1'b1;
                 end
+            end
+
+            if (write_halt) begin
+                halt_reg         <= wdata;
+                req_cpu_halt_reg <= 1'b1;
             end
             
             // Clear flags when entering respective reset states
@@ -106,6 +122,8 @@ module system_controller (
             end
         end
     end
+
+    assign req_cpu_halt = req_cpu_halt_reg;
     
     // ========================================================================
     // Boot Address Register - Capture on write to BOOT in S_CPU_BOOT_WAIT
@@ -238,6 +256,10 @@ module system_controller (
                 REG_STATUS[7:0]: begin
                     // Bit 0 = cpu_booting, Bit 1 = cpu_halted
                     rdata = {30'h0, cpu_halted, cpu_booting};
+                end
+
+                REG_HALT[7:0]: begin
+                    rdata = halt_reg;
                 end
                 
                 // RESET and BOOT registers are write-only, read as 0

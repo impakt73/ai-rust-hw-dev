@@ -1,7 +1,7 @@
 use device_runtime::{create_device_runtime, BusEvent, BusRequest, DeviceRuntimeType};
 use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, lui, sw};
-use riscv_shared::bus::{sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED};
+use riscv_shared::bus::{sysctrl_halt_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED};
 use std::time::{Duration, Instant};
 
 /// Create a device runtime based on environment variables.
@@ -45,6 +45,34 @@ fn build_tohost_program() -> Vec<u8> {
         .iter()
         .flat_map(|inst| inst.to_le_bytes())
         .collect()
+}
+
+fn read_word_with_timeout(
+    runtime: &mut dyn device_runtime::DeviceRuntime,
+    addr: u32,
+    timeout: Duration,
+) -> u32 {
+    runtime
+        .send_host_request(BusRequest::read(addr, AccessSize::Word))
+        .expect("Failed to send host read request");
+
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        match runtime.poll() {
+            Ok(Some(BusEvent::HostReadResponse {
+                addr: resp_addr,
+                data,
+                ..
+            })) if resp_addr == addr && !runtime.has_pending_host_request() => {
+                return data;
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => std::thread::sleep(Duration::from_millis(1)),
+            Err(e) => panic!("Poll error while reading 0x{addr:08X}: {e}"),
+        }
+    }
+
+    panic!("Timed out waiting for read response at 0x{addr:08X}");
 }
 
 #[test]
@@ -120,4 +148,59 @@ fn test_load_program_and_tohost_termination() {
     }
 
     assert!(cpu_halted, "CPU did not halt after EBREAK");
+}
+
+#[test]
+fn test_load_program_halt_register_termination_code() {
+    let mut runtime = create_test_runtime();
+
+    let boot_pc: u32 = 0x8000_0000;
+    let halt_code: u32 = 0x5A5;
+    let sysctrl_base: u32 = 0x5300_0000;
+    let halt_offset: i32 = 0x0C;
+
+    // Program:
+    //   LUI  x15, SYSCTRL_BASE
+    //   ADDI x14, x0, halt_code
+    //   SW   x14, 0x0C(x15)   ; write HALT register, requesting CPU halt
+    //   ADDI x0,  x0, 0       ; NOP (keeps next fetch PC in valid instruction range)
+    let program: Vec<u8> = vec![
+        lui(15, sysctrl_base),
+        addi(14, 0, halt_code as i32),
+        sw(15, 14, halt_offset),
+        addi(0, 0, 0),
+    ]
+    .iter()
+    .flat_map(|inst| inst.to_le_bytes())
+    .collect();
+
+    runtime
+        .load_program(boot_pc, &program)
+        .expect("Failed to load HALT register test program");
+    runtime.boot_cpu(boot_pc).expect("Failed to boot CPU");
+
+    let status_addr = sysctrl_status_addr();
+    let timeout = Duration::from_secs(10);
+    let start = Instant::now();
+    let mut cpu_halted = false;
+
+    while start.elapsed() < timeout {
+        let status = read_word_with_timeout(runtime.as_mut(), status_addr, timeout);
+        if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
+            cpu_halted = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    assert!(
+        cpu_halted,
+        "CPU did not enter halted state via HALT register"
+    );
+
+    let read_halt_code = read_word_with_timeout(runtime.as_mut(), sysctrl_halt_addr(), timeout);
+    assert_eq!(
+        read_halt_code, halt_code,
+        "HALT register should retain termination code for host retrieval"
+    );
 }

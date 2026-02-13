@@ -19,6 +19,7 @@ module cpu #(
     input  logic        clk,
     input  logic        rst_n,
     input  logic        boot,
+    input  logic        req_halt,
     input  logic [31:0] boot_addr,
     
     // Unified memory interface (used for both instruction fetch and data access)
@@ -661,8 +662,10 @@ module cpu #(
             end
             
             S_FETCH: begin
+                if (req_halt)
+                    next_state = S_HALT;
                 // Wait for instruction memory ready (unified interface)
-                if (imem_ready_internal)
+                else if (imem_ready_internal)
                     next_state = S_DECODE;
                 else
                     next_state = S_FETCH;
@@ -838,7 +841,7 @@ module cpu #(
         
         case (current_state)
             S_FETCH: begin
-                imem_req_internal = 1'b1;
+                imem_req_internal = !req_halt;
                 if (imem_ready_internal)
                     ir_write = 1'b1;
             end

@@ -6,6 +6,7 @@
 ///   0x00 - STATUS (RO): bit 0 = cpu_booting, bit 1 = cpu_halted
 ///   0x04 - RESET  (WO): write 1 = system reset, write 2 = CPU reset
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
+///   0x0C - HALT   (RW): termination code + CPU halt request pulse
 ///
 /// FSM States (one-hot):
 ///   S_CPU_BOOT_WAIT - Waits for cpu_booting + BOOT write
@@ -19,6 +20,7 @@ use riscv_core::{create_system_controller_runtime, SystemController};
 const REG_STATUS: u32 = 0x00;
 const REG_RESET: u32 = 0x04;
 const REG_BOOT: u32 = 0x08;
+const REG_HALT: u32 = 0x0C;
 
 // Reset control values
 const RESET_SYSTEM: u32 = 1;
@@ -146,6 +148,55 @@ fn test_system_controller_status_register_read() {
     dut.cpu_halted = 1;
     let status = read_register(&mut dut, REG_STATUS);
     assert_eq!(status & 0x03, 3, "STATUS should have both bits set");
+}
+
+#[test]
+fn test_system_controller_halt_register_read_write() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    assert_eq!(
+        read_register(&mut dut, REG_HALT),
+        0,
+        "HALT register should reset to zero"
+    );
+
+    let halt_code = 0x1234_ABCD;
+    write_register(&mut dut, REG_HALT, halt_code);
+
+    assert_eq!(
+        read_register(&mut dut, REG_HALT),
+        halt_code,
+        "HALT register should return last written value"
+    );
+}
+
+#[test]
+fn test_system_controller_halt_write_pulses_req_cpu_halt() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    write_register(&mut dut, REG_HALT, 0xCAFE_BABE);
+    assert_eq!(
+        dut.req_cpu_halt, 1,
+        "req_cpu_halt should pulse high for the cycle after HALT write"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.req_cpu_halt, 0,
+        "req_cpu_halt should deassert after the one-cycle pulse"
+    );
 }
 
 // ============================================================

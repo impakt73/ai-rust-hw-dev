@@ -108,6 +108,7 @@ pub const SYSCTRL_SIZE: u32 = 0x0000_0010; // 16 bytes
 pub const SYSCTRL_STATUS_OFFSET: u32 = 0x00;
 pub const SYSCTRL_RESET_OFFSET: u32 = 0x04;
 pub const SYSCTRL_BOOT_OFFSET: u32 = 0x08;
+pub const SYSCTRL_HALT_OFFSET: u32 = 0x0C;
 
 /// System Controller reset control values
 pub const SYSCTRL_RESET_SYSTEM: u32 = 0x0000_0001;
@@ -130,6 +131,11 @@ pub const fn sysctrl_reset_addr() -> u32 {
 /// Helper function to get System Controller BOOT register address
 pub const fn sysctrl_boot_addr() -> u32 {
     SYSCTRL_BASE + SYSCTRL_BOOT_OFFSET
+}
+
+/// Helper function to get System Controller HALT register address
+pub const fn sysctrl_halt_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_HALT_OFFSET
 }
 
 /// Base address for DRAM
