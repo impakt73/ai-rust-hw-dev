@@ -22,16 +22,15 @@ module ff_sync #(
 );
 
     logic [WIDTH-1:0] sync_regs [0:STAGES-1];
-    integer i;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < STAGES; i = i + 1) begin
+            for (int i = 0; i < STAGES; i++) begin
                 sync_regs[i] <= '0;
             end
         end else begin
             sync_regs[0] <= din;
-            for (i = 1; i < STAGES; i = i + 1) begin
+            for (int i = 1; i < STAGES; i++) begin
                 sync_regs[i] <= sync_regs[i-1];
             end
         end
