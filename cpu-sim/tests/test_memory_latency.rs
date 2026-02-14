@@ -19,12 +19,14 @@ fn test_zero_latency_default() {
     // lui x2, SIM_CONTROL_BASE - load tohost address
     // addi x1, x0, 42      - load value 42
     // sw x1, 0(x2)         - write to tohost
-    // jal x0, 0            - infinite loop
+    // ebreak               - halt CPU
+    // jal x0, 0            - fallback infinite loop
     let instructions: Vec<u32> = vec![
         lui(2, SIM_CONTROL_BASE), // x2 = SIM_CONTROL_BASE
         addi(1, 0, 42),           // addi x1, x0, 42
         sw(2, 1, 0),              // sw x1, 0(x2)
-        jal(0, 0),                // jal x0, 0
+        ebreak(),
+        jal(0, 0), // jal x0, 0
     ];
     let program_bytes: Vec<u8> = instructions
         .iter()
@@ -72,12 +74,14 @@ fn test_multi_cycle_memory_latency() {
     // lui x2, SIM_CONTROL_BASE - load tohost address
     // addi x1, x0, 42      - load value 42
     // sw x1, 0(x2)         - write to tohost
-    // jal x0, 0            - infinite loop
+    // ebreak               - halt CPU
+    // jal x0, 0            - fallback infinite loop
     let instructions: Vec<u32> = vec![
         lui(2, SIM_CONTROL_BASE), // x2 = SIM_CONTROL_BASE
         addi(1, 0, 42),           // addi x1, x0, 42
         sw(2, 1, 0),              // sw x1, 0(x2)
-        jal(0, 0),                // jal x0, 0
+        ebreak(),
+        jal(0, 0), // jal x0, 0
     ];
     let program_bytes: Vec<u8> = instructions
         .iter()
@@ -130,7 +134,8 @@ fn test_load_store_with_latency() {
     // 4. lw x2, 0(x4)        (load from DRAM into x2)
     // 5. lui x3, SIM_CONTROL_BASE  (load tohost address)
     // 6. sw x2, 0(x3)        (write to tohost to halt)
-    // 7. jal x0, 0           (infinite loop)
+    // 7. ebreak              (halt CPU)
+    // 8. jal x0, 0           (fallback infinite loop)
     let instructions: Vec<u32> = vec![
         lui(4, DRAM_BASE),        // x4 = DRAM_BASE
         addi(1, 0, 100),          // addi x1, x0, 100
@@ -138,7 +143,8 @@ fn test_load_store_with_latency() {
         lw(2, 4, 0),              // lw x2, 0(x4)
         lui(3, SIM_CONTROL_BASE), // x3 = SIM_CONTROL_BASE
         sw(3, 2, 0),              // sw x2, 0(x3)
-        jal(0, 0),                // jal x0, 0
+        ebreak(),
+        jal(0, 0), // jal x0, 0
     ];
     let program_bytes: Vec<u8> = instructions
         .iter()

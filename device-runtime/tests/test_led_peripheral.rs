@@ -11,10 +11,10 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
-    LONG_TIMEOUT, TEST_BOOT_PC,
+    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination,
+    wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC,
 };
-use riscv_core::instruction::{addi, andi, bne, jal, lui, lw, ori, sb, sh, sub, sw};
+use riscv_core::instruction::{addi, andi, bne, ebreak, jal, lui, lw, ori, sb, sh, sub, sw};
 use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE, SIM_CONTROL_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
@@ -38,8 +38,10 @@ fn test_led_basic_write_word() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -54,8 +56,10 @@ fn test_led_byte_access() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -70,8 +74,10 @@ fn test_led_halfword_access() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -91,9 +97,11 @@ fn test_led_read_back() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
@@ -102,8 +110,10 @@ fn test_led_read_back() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -128,8 +138,10 @@ fn test_led_pattern_sequence() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -150,9 +162,11 @@ fn test_led_upper_bits_ignored() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
@@ -161,6 +175,8 @@ fn test_led_upper_bits_ignored() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(tohost_value, SUCCESS_CODE);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }

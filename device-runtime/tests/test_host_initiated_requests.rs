@@ -13,12 +13,12 @@ mod common;
 
 use common::{
     create_test_runtime, drain_events_until_idle, instructions_to_bytes, load_and_boot,
-    read_word_with_timeout, tohost_termination, wait_for_host_write_response, wait_for_tohost,
+    read_word_with_timeout, tohost_termination, wait_for_cpu_halt, wait_for_host_write_response,
     write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use device_runtime::BusRequest;
 use host_bus_handler::AccessSize;
-use riscv_core::instruction::{addi, andi, beq, blt, bne, jal, lui, lw, sub, sw};
+use riscv_core::instruction::{addi, andi, beq, blt, bne, ebreak, jal, lui, lw, sub, sw};
 use riscv_shared::bus::{LED_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE, SYSCTRL_STATUS_OFFSET};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 use std::time::Duration;
@@ -54,10 +54,9 @@ fn test_host_initiated_basic_sync() {
     write_word_with_timeout(runtime.as_mut(), LED_BASE, 0x01, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should exit with success code after LED fence release"
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
     );
 }
 
@@ -95,11 +94,13 @@ fn test_host_initiated_led_write() {
         // Success
         addi(7, 0, SUCCESS_CODE as i32),
         sw(9, 7, 0), // tohost = SUCCESS_CODE
-        jal(0, 0),   // infinite loop
+        ebreak(),
+        jal(0, 0), // infinite loop
         // Failure
         addi(7, 0, FAILURE_CODE as i32),
         sw(9, 7, 0), // tohost = FAILURE_CODE
-        jal(0, 0),   // infinite loop
+        ebreak(),
+        jal(0, 0), // infinite loop
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
@@ -120,10 +121,9 @@ fn test_host_initiated_led_write() {
     write_word_with_timeout(runtime.as_mut(), LED_BASE, TEST_VALUE, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "LED value should match expected (0xA5)"
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
     );
 }
 
@@ -157,10 +157,9 @@ fn test_host_initiated_led_read() {
         "LED value should be 0xCC"
     );
 
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should exit with success code"
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
     );
 }
 
@@ -199,7 +198,10 @@ fn test_host_request_address_validation() {
         first_wdata, 0x01,
         "First host write response should match request"
     );
-    wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test multiple sequential host-initiated requests.
@@ -233,10 +235,9 @@ fn test_multiple_host_requests() {
     }
 
     // Wait for tohost termination
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should exit with success after 3 LED writes"
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
     );
 }
 

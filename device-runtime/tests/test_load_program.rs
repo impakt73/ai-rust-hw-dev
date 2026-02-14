@@ -2,14 +2,13 @@ mod common;
 
 use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
-    wait_for_tohost, LONG_TIMEOUT,
+    wait_for_cpu_halt, LONG_TIMEOUT,
 };
 use riscv_core::instruction::{addi, ebreak, lui, sw};
 use riscv_shared::bus::{
     sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE,
     SYSCTRL_HALT_OFFSET, SYSCTRL_STATUS_CPU_HALTED,
 };
-use std::time::Duration;
 
 /// Build a simple program that writes a success code to the tohost address
 /// and then halts via EBREAK.
@@ -37,10 +36,7 @@ fn test_load_program_and_tohost_termination() {
     let boot_pc: u32 = DRAM_BASE;
     let program = build_tohost_program();
     load_and_boot(runtime.as_mut(), boot_pc, &program);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    // Verify tohost value matches expected success code
-    assert_eq!(tohost_value, 1, "Expected tohost termination with value 1");
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(1));
 
     // Confirm CPU has halted by reading the system controller STATUS register
     let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), LONG_TIMEOUT);
@@ -70,29 +66,10 @@ fn test_load_program_halt_register_termination_code() {
 
     load_and_boot(runtime.as_mut(), boot_pc, &program);
 
-    let timeout = LONG_TIMEOUT;
-    let start = std::time::Instant::now();
-    let mut cpu_halted = false;
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), None);
 
-    while start.elapsed() < timeout {
-        let remaining = match timeout.checked_sub(start.elapsed()) {
-            Some(remaining) => remaining,
-            None => Duration::from_millis(0),
-        };
-        let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), remaining);
-        if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
-            cpu_halted = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-
-    assert!(
-        cpu_halted,
-        "CPU did not enter halted state via HALT register"
-    );
-
-    let read_halt_code = read_word_with_timeout(runtime.as_mut(), sysctrl_halt_addr(), timeout);
+    let read_halt_code =
+        read_word_with_timeout(runtime.as_mut(), sysctrl_halt_addr(), LONG_TIMEOUT);
     assert_eq!(
         read_halt_code, halt_code,
         "HALT register should retain termination code for host retrieval"
