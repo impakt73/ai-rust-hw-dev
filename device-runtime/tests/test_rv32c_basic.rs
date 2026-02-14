@@ -85,7 +85,10 @@ fn test_c_li() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -110,7 +113,10 @@ fn test_c_addi() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -136,7 +142,10 @@ fn test_c_add() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -165,7 +174,10 @@ fn test_c_mv() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -194,7 +206,10 @@ fn test_compressed_to_compressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -218,7 +233,10 @@ fn test_compressed_to_uncompressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -242,7 +260,10 @@ fn test_uncompressed_to_compressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -268,7 +289,10 @@ fn test_uncompressed_to_uncompressed_regression() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -296,5 +320,8 @@ fn test_mixed_sequence_across_word_boundary() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }

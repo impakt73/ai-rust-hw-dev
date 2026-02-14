@@ -38,7 +38,10 @@ fn test_led_basic_write_word() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -53,7 +56,10 @@ fn test_led_byte_access() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -68,7 +74,10 @@ fn test_led_halfword_access() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -101,7 +110,10 @@ fn test_led_read_back() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -126,7 +138,10 @@ fn test_led_pattern_sequence() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -160,5 +175,8 @@ fn test_led_upper_bits_ignored() {
         TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }

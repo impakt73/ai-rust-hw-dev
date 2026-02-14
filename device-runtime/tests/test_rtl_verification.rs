@@ -32,7 +32,10 @@ fn test_cpu_basic_execution() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -46,7 +49,10 @@ fn test_cpu_three_instructions() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -60,7 +66,10 @@ fn test_cpu_lui_instruction() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -80,7 +89,10 @@ fn test_cpu_logic_operations() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -121,7 +133,10 @@ fn test_cpu_branch_beq_bne() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -157,7 +172,10 @@ fn test_cpu_branch_blt_bge() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -193,7 +211,10 @@ fn test_cpu_branch_bltu_bgeu() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -229,7 +250,10 @@ fn test_cpu_load_store() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -266,7 +290,10 @@ fn test_cpu_load_byte() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -289,5 +316,8 @@ fn test_cpu_load_halfword() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }

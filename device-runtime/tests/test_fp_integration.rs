@@ -42,7 +42,10 @@ fn test_cpu_flw_fsw_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -93,7 +96,10 @@ fn test_cpu_flw_multiple_registers() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -125,7 +131,10 @@ fn test_cpu_fadd_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -153,7 +162,10 @@ fn test_cpu_fmul_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -180,7 +192,10 @@ fn test_cpu_fcvt_s_w() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -203,7 +218,10 @@ fn test_cpu_fcvt_w_s() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -237,7 +255,10 @@ fn test_cpu_feq_flt() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -262,7 +283,10 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 // ============================================================================
@@ -297,7 +321,10 @@ fn test_cpu_fsub_fdiv_fsqrt() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -327,7 +354,10 @@ fn test_cpu_fmin_fmax() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -355,7 +385,10 @@ fn test_cpu_fle() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -383,7 +416,10 @@ fn test_cpu_fsgnj_ops() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -408,7 +444,10 @@ fn test_cpu_fcvt_unsigned() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -435,7 +474,10 @@ fn test_cpu_fclass() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 #[test]
@@ -475,5 +517,8 @@ fn test_cpu_fused_multiply_add_ops() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }

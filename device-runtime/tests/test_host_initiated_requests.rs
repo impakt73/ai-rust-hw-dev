@@ -54,7 +54,10 @@ fn test_host_initiated_basic_sync() {
     write_word_with_timeout(runtime.as_mut(), LED_BASE, 0x01, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test host-initiated LED write with CPU verification.
@@ -118,7 +121,10 @@ fn test_host_initiated_led_write() {
     write_word_with_timeout(runtime.as_mut(), LED_BASE, TEST_VALUE, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test host-initiated LED read.
@@ -151,7 +157,10 @@ fn test_host_initiated_led_read() {
         "LED value should be 0xCC"
     );
 
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test that host request address validation works correctly.
@@ -189,7 +198,10 @@ fn test_host_request_address_validation() {
         first_wdata, 0x01,
         "First host write response should match request"
     );
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test multiple sequential host-initiated requests.
@@ -223,7 +235,10 @@ fn test_multiple_host_requests() {
     }
 
     // Wait for tohost termination
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 }
 
 /// Test that host bus interface works after CPU enters S_HALT.

@@ -36,7 +36,7 @@ fn test_load_program_and_tohost_termination() {
     let boot_pc: u32 = DRAM_BASE;
     let program = build_tohost_program();
     load_and_boot(runtime.as_mut(), boot_pc, &program);
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(1));
 
     // Confirm CPU has halted by reading the system controller STATUS register
     let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), LONG_TIMEOUT);
@@ -66,7 +66,7 @@ fn test_load_program_halt_register_termination_code() {
 
     load_and_boot(runtime.as_mut(), boot_pc, &program);
 
-    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), None);
 
     let read_halt_code =
         read_word_with_timeout(runtime.as_mut(), sysctrl_halt_addr(), LONG_TIMEOUT);
