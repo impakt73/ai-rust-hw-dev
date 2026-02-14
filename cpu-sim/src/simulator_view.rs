@@ -1,5 +1,8 @@
 use crate::hung_detector::HungDetector;
-use host_bus_handler::{BusRequest, BusResponse, HostBusHandler};
+use host_bus_handler::{
+    classify_request_region, request_end_addr, BusRequest, BusResponse, HandlerError,
+    HostBusHandler, RequestAddressRegion,
+};
 use riscv_core::Top;
 use std::path::Path;
 
@@ -16,6 +19,7 @@ pub struct SimulatorView<'a> {
     hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
     host_bus_handler: &'a mut HostBusHandler,
+    direct_response: &'a mut Option<BusResponse>,
 }
 
 impl<'a> SimulatorView<'a> {
@@ -25,12 +29,14 @@ impl<'a> SimulatorView<'a> {
         hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
         host_bus_handler: &'a mut HostBusHandler,
+        direct_response: &'a mut Option<BusResponse>,
     ) -> Self {
         SimulatorView {
             bus,
             hung_detector,
             cpu,
             host_bus_handler,
+            direct_response,
         }
     }
 
@@ -484,17 +490,17 @@ impl<'a> SimulatorView<'a> {
         self.cpu.halted != 0
     }
 
-    /// Send a bus request from the host to the RTL target
+    /// Send a host-initiated bus request.
     ///
-    /// The request will be processed by the RTL host_bus_interface module
-    /// and routed through the bus arbiter to the appropriate peripheral.
+    /// Requests in the RTL peripheral range are sent through the host bus handler.
+    /// Requests in non-RTL ranges are handled immediately by `SystemBus`.
     ///
     /// # Arguments
     /// * `request` - Bus request (read or write) to send to the RTL target
     ///
     /// # Returns
-    /// * `Ok(())` - Request queued successfully
-    /// * `Err(String)` - Request rejected (already pending, or invalid address)
+    /// * `Ok(())` - Request accepted (queued or completed immediately)
+    /// * `Err(String)` - Request rejected (already pending, or invalid spanning range)
     ///
     /// # Examples
     /// ```no_run
@@ -520,19 +526,59 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
-        // Validate address is in RTL peripheral space using the SystemBus mapping
-        // This prevents deadlock per Rule 1 (no self-routing)
-        if !self.bus.is_rtl_peripheral(request.addr) {
+        if request_end_addr(&request).is_none() {
             return Err(format!(
-                "Invalid address 0x{:08x}: must be in RTL peripheral space",
-                request.addr,
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
             ));
         }
 
-        // Send through the handler
-        self.host_bus_handler
-            .send_request(request)
-            .map_err(|e| format!("Host request rejected: {:?}", e))
+        if self.host_bus_handler.has_pending_outgoing_request() || self.direct_response.is_some() {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::RequestPending
+            ));
+        }
+
+        match classify_request_region(&request) {
+            RequestAddressRegion::RtlPeripheral => self
+                .host_bus_handler
+                .send_request(request)
+                .map_err(|e| format!("Host request rejected: {:?}", e)),
+            RequestAddressRegion::NonRtl => {
+                let response = if request.we {
+                    match request.size {
+                        host_bus_handler::AccessSize::Byte => {
+                            self.bus.write_byte(request.addr, request.wdata as u8)
+                        }
+                        host_bus_handler::AccessSize::Halfword => {
+                            self.bus.write_halfword(request.addr, request.wdata as u16)
+                        }
+                        host_bus_handler::AccessSize::Word => {
+                            self.bus.write_word(request.addr, request.wdata)
+                        }
+                    }
+                    BusResponse::write_ack(request.size)
+                } else {
+                    let rdata = match request.size {
+                        host_bus_handler::AccessSize::Byte => {
+                            self.bus.read_byte(request.addr) as u32
+                        }
+                        host_bus_handler::AccessSize::Halfword => {
+                            self.bus.read_halfword(request.addr) as u32
+                        }
+                        host_bus_handler::AccessSize::Word => self.bus.read_word(request.addr),
+                    };
+                    BusResponse::read_data(rdata, request.size)
+                };
+                *self.direct_response = Some(response);
+                Ok(())
+            }
+            RequestAddressRegion::SpansRtlBoundary => Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            )),
+        }
     }
 
     /// Receive a bus response from the RTL target
@@ -574,6 +620,8 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
-        self.host_bus_handler.receive_response()
+        self.direct_response
+            .take()
+            .or_else(|| self.host_bus_handler.receive_response())
     }
 }

@@ -43,6 +43,7 @@
 //!     break; // Exit loop for doc test - in real code, poll for RX bytes
 //! }
 //! ```
+use riscv_shared::bus::{RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
 
 /// Access size for bus operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +166,51 @@ pub enum HandlerError {
     NoRequestAvailable,
     /// No outstanding request to complete
     NoOutstandingRequest,
+    /// Request address range is invalid for host bus handling
+    InvalidAddressRange,
+}
+
+/// Address-region classification for host-initiated requests
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestAddressRegion {
+    /// Entire request range is within RTL peripheral space
+    RtlPeripheral,
+    /// Entire request range is outside RTL peripheral space
+    NonRtl,
+    /// Request range crosses into/out of RTL peripheral space
+    SpansRtlBoundary,
+}
+
+/// Compute the inclusive end address touched by a request.
+///
+/// If `request.addr + size - 1` overflows `u32`, this returns
+/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
+/// and will be rejected by [`HostBusHandler::send_request`].
+pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
+    let size_bytes = u32::from(request.size.byte_count());
+    size_bytes
+        .checked_sub(1)
+        .and_then(|last_byte_offset| request.addr.checked_add(last_byte_offset))
+}
+
+/// Classify which memory region a request touches.
+///
+/// If `request.addr + size - 1` overflows `u32`, this returns
+/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
+/// and will be rejected by [`HostBusHandler::send_request`].
+pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
+    let Some(end_addr) = request_end_addr(request) else {
+        return RequestAddressRegion::NonRtl;
+    };
+
+    let start_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&request.addr);
+    let end_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&end_addr);
+
+    match (start_in_rtl, end_in_rtl) {
+        (true, true) => RequestAddressRegion::RtlPeripheral,
+        (false, false) => RequestAddressRegion::NonRtl,
+        _ => RequestAddressRegion::SpansRtlBoundary,
+    }
 }
 
 /// RX state machine states (mirroring host_rx_buffer.sv)
@@ -657,9 +703,14 @@ impl HostBusHandler {
     /// # Returns
     /// * `Ok(())` if the request was accepted
     /// * `Err(HandlerError::RequestPending)` if there's already an outstanding request
+    /// * `Err(HandlerError::InvalidAddressRange)` if the request range is not fully
+    ///   within RTL peripheral space (`0x5000_0000..0x6000_0000`)
     pub fn send_request(&mut self, request: BusRequest) -> Result<(), HandlerError> {
         if self.outgoing_request.is_some() {
             return Err(HandlerError::RequestPending);
+        }
+        if classify_request_region(&request) != RequestAddressRegion::RtlPeripheral {
+            return Err(HandlerError::InvalidAddressRange);
         }
 
         self.outgoing_request = Some(request);

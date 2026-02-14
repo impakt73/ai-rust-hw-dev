@@ -16,10 +16,12 @@ use common::{
     read_word_with_timeout, tohost_termination, wait_for_cpu_halt, wait_for_host_write_response,
     write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
-use device_runtime::BusRequest;
-use host_bus_handler::AccessSize;
+use device_runtime::{BusRequest, DeviceError};
+use host_bus_handler::{AccessSize, HandlerError};
 use riscv_core::instruction::{addi, andi, beq, blt, bne, ebreak, jal, lui, lw, sub, sw};
-use riscv_shared::bus::{LED_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE, SYSCTRL_STATUS_OFFSET};
+use riscv_shared::bus::{
+    DRAM_BASE, LED_BASE, RTL_PERIPH_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE, SYSCTRL_STATUS_OFFSET,
+};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 use std::time::Duration;
 
@@ -275,4 +277,45 @@ fn test_host_bus_works_after_halt() {
         "STATUS register should show cpu_halted=1, got STATUS=0x{:08x}",
         status
     );
+}
+
+#[test]
+fn test_host_request_routes_non_rtl_to_system_bus() {
+    let mut runtime = create_test_runtime();
+    let addr = DRAM_BASE + 0x100;
+    let value = 0xDEAD_BEEF;
+
+    runtime
+        .send_host_request(BusRequest::write(addr, value, AccessSize::Word))
+        .expect("DRAM write should be routed to SystemBus");
+    let ack = wait_for_host_write_response(runtime.as_mut(), addr, MEDIUM_TIMEOUT);
+    assert_eq!(ack, value);
+
+    runtime
+        .send_host_request(BusRequest::read(addr, AccessSize::Word))
+        .expect("DRAM read should be routed to SystemBus");
+    let read_back = common::wait_for_host_read_response(runtime.as_mut(), addr, MEDIUM_TIMEOUT);
+    assert_eq!(read_back, value);
+}
+
+#[test]
+fn test_host_request_spanning_rtl_boundary_is_rejected() {
+    let mut runtime = create_test_runtime();
+    let request = BusRequest::read(RTL_PERIPH_BASE - 1, AccessSize::Word);
+
+    assert!(matches!(
+        runtime.send_host_request(request),
+        Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange))
+    ));
+}
+
+#[test]
+fn test_host_request_overflow_range_is_rejected() {
+    let mut runtime = create_test_runtime();
+    let request = BusRequest::read(0xFFFF_FFFE, AccessSize::Word);
+
+    assert!(matches!(
+        runtime.send_host_request(request),
+        Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange))
+    ));
 }

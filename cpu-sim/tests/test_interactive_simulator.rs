@@ -1,7 +1,7 @@
 use bus_shared::{
     Audio, AudioConfig, BusDevice, Video, VideoConfig, AUDIO_BASE, FIFO_BASE, VIDEO_BASE,
 };
-use cpu_sim::InteractiveSimulator;
+use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
 use riscv_shared::SUCCESS_CODE;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -209,6 +209,19 @@ fn test_interactive_simulator_load_nonexistent_file() {
     assert!(
         result.is_err(),
         "Loading nonexistent file should return error"
+    );
+}
+
+#[test]
+fn test_interactive_simulator_rejects_overflowing_host_request_range() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+    let result = sim.send_bus_request(BusRequest::read(0xFFFF_FFFE, AccessSize::Word));
+
+    assert!(
+        result.is_err(),
+        "Overflowing request range should be rejected"
     );
 }
 

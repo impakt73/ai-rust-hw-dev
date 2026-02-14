@@ -5,12 +5,16 @@
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
-//! continuously. Host-initiated bus requests are forwarded directly
-//! to the simulator's internal host bus handler.
+//! continuously. Host-initiated bus requests are forwarded through
+//! `InteractiveSimulator::send_bus_request`, which performs internal
+//! address-based routing.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest, ResetKind};
+use crate::{
+    classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
+    PendingHostRequest, ResetKind,
+};
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{AccessSize, BusRequest};
+use host_bus_handler::{AccessSize, BusRequest, HandlerError};
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 use std::sync::mpsc;
@@ -213,6 +217,10 @@ impl SimDeviceRuntime {
 
 impl DeviceRuntime for SimDeviceRuntime {
     fn send_host_request(&mut self, request: BusRequest) -> Result<(), DeviceError> {
+        if classify_host_request_route(&request) == HostRequestRoute::InvalidSpanningRegion {
+            return Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange));
+        }
+
         // Atomically check and set pending request under the same lock
         {
             let mut pending = self.pending_host_request.lock().unwrap();

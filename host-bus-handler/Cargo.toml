@@ -5,3 +5,4 @@ edition = "2021"
 description = "Host-side bus handler for FPGA host bus request protocol"
 
 [dependencies]
+riscv_shared = { path = "../riscv_shared" }
