@@ -69,6 +69,7 @@ where
 // ============================================================================
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_store_byte() {
     init_test_logger();
 
@@ -110,6 +111,7 @@ fn test_cpu_store_byte() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_store_halfword() {
     init_test_logger();
 
@@ -146,6 +148,7 @@ fn test_cpu_store_halfword() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_byte_halfword_mixed() {
     init_test_logger();
 
@@ -208,6 +211,7 @@ fn test_cpu_byte_halfword_mixed() {
 // ============================================================================
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_auipc() {
     init_test_logger();
 
@@ -234,6 +238,7 @@ fn test_cpu_auipc() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_tohost_halt() {
     init_test_logger();
 
@@ -264,6 +269,7 @@ fn test_cpu_tohost_halt() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_fence_instruction() {
     init_test_logger();
 
@@ -290,6 +296,7 @@ fn test_cpu_fence_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_ecall_instruction() {
     init_test_logger();
 
@@ -318,6 +325,7 @@ fn test_cpu_ecall_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_ebreak_instruction() {
     init_test_logger();
 
@@ -350,6 +358,7 @@ fn test_cpu_ebreak_instruction() {
 // ============================================================================
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_csr_read_write() {
     init_test_logger();
 
@@ -398,6 +407,7 @@ fn test_cpu_csr_read_write() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_csr_set_clear() {
     init_test_logger();
 
@@ -449,6 +459,7 @@ fn test_cpu_csr_set_clear() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_csr_immediate() {
     init_test_logger();
 
@@ -495,6 +506,7 @@ fn test_cpu_csr_immediate() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_csr_instret() {
     init_test_logger();
 
@@ -548,6 +560,7 @@ fn test_cpu_csr_instret() {
 // ============================================================================
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_mul_instruction() {
     init_test_logger();
 
@@ -576,6 +589,7 @@ fn test_cpu_mul_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_mulh_instruction() {
     init_test_logger();
 
@@ -608,6 +622,7 @@ fn test_cpu_mulh_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_div_instruction() {
     init_test_logger();
 
@@ -636,6 +651,7 @@ fn test_cpu_div_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_div_by_zero() {
     init_test_logger();
 
@@ -668,6 +684,7 @@ fn test_cpu_div_by_zero() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_rem_instruction() {
     init_test_logger();
 
@@ -696,6 +713,7 @@ fn test_cpu_rem_instruction() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_divu_remu_unsigned() {
     init_test_logger();
 
@@ -735,6 +753,7 @@ fn test_cpu_divu_remu_unsigned() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_m_extension_program() {
     init_test_logger();
 

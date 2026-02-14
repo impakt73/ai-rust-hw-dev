@@ -520,11 +520,13 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
-        // Validate address is in RTL peripheral space using the SystemBus mapping
-        // This prevents deadlock per Rule 1 (no self-routing)
-        if !self.bus.is_rtl_peripheral(request.addr) {
+        // Validate address is in RTL peripheral space or DRAM.
+        // This prevents deadlock per Rule 1 (no self-routing), while allowing
+        // host-side DRAM validation reads/writes after CPU halt.
+        let is_dram = is_valid_dram_range(request.addr, request.size.byte_count() as u32);
+        if !self.bus.is_rtl_peripheral(request.addr) && !is_dram {
             return Err(format!(
-                "Invalid address 0x{:08x}: must be in RTL peripheral space",
+                "Invalid address 0x{:08x}: must be in RTL peripheral space or DRAM",
                 request.addr,
             ));
         }
