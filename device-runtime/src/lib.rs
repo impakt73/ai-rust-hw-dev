@@ -204,12 +204,7 @@ pub(crate) enum HostRequestRoute {
 }
 
 pub(crate) fn classify_host_request_route(request: &BusRequest) -> HostRequestRoute {
-    let size_bytes = request.size.byte_count() as u32;
-    if request
-        .addr
-        .checked_add(size_bytes.saturating_sub(1))
-        .is_none()
-    {
+    if host_bus_handler::request_end_addr(request).is_none() {
         return HostRequestRoute::InvalidSpanningRegion;
     }
 

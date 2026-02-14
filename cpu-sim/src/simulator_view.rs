@@ -1,7 +1,7 @@
 use crate::hung_detector::HungDetector;
 use host_bus_handler::{
-    classify_request_region, BusRequest, BusResponse, HandlerError, HostBusHandler,
-    RequestAddressRegion,
+    classify_request_region, request_end_addr, BusRequest, BusResponse, HandlerError,
+    HostBusHandler, RequestAddressRegion,
 };
 use riscv_core::Top;
 use std::path::Path;
@@ -526,12 +526,7 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
-        let size_bytes = request.size.byte_count() as u32;
-        if request
-            .addr
-            .checked_add(size_bytes.saturating_sub(1))
-            .is_none()
-        {
+        if request_end_addr(&request).is_none() {
             return Err(format!(
                 "Host request rejected: {:?}",
                 HandlerError::InvalidAddressRange

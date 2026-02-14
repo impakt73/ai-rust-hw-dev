@@ -181,14 +181,23 @@ pub enum RequestAddressRegion {
     SpansRtlBoundary,
 }
 
+/// Compute the inclusive end address touched by a request.
+///
+/// If `request.addr + size - 1` overflows `u32`, this returns
+/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
+/// and will be rejected by [`HostBusHandler::send_request`].
+pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
+    let size_bytes = u32::from(request.size.byte_count());
+    request.addr.checked_add(size_bytes - 1)
+}
+
 /// Classify which memory region a request touches.
 ///
 /// If `request.addr + size - 1` overflows `u32`, this returns
 /// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
 /// and will be rejected by [`HostBusHandler::send_request`].
 pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
-    let size_bytes = request.size.byte_count() as u32;
-    let Some(end_addr) = request.addr.checked_add(size_bytes.saturating_sub(1)) else {
+    let Some(end_addr) = request_end_addr(request) else {
         return RequestAddressRegion::NonRtl;
     };
 
