@@ -3,6 +3,9 @@
 //! Tests for the LED controller peripheral (RTL-based).
 //! Address: 0x50000000
 //! Features: 8-bit output register
+//!
+//! NOTE: These tests are being migrated to device-runtime/tests/test_led_peripheral.rs
+//! and are marked as #[ignore] during the transition to maintain coverage.
 
 mod common;
 
@@ -21,6 +24,7 @@ fn init_test_logger() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_constants() {
     // Verify LED controller memory map constants
     assert_eq!(LED_BASE, 0x50000000, "LED base address");
@@ -29,6 +33,7 @@ fn test_led_constants() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_basic_write_word() {
     init_test_logger();
 
@@ -83,6 +88,7 @@ fn test_led_basic_write_word() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_byte_access() {
     init_test_logger();
 
@@ -133,6 +139,7 @@ fn test_led_byte_access() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_halfword_access() {
     init_test_logger();
 
@@ -183,6 +190,7 @@ fn test_led_halfword_access() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_read_back() {
     init_test_logger();
 
@@ -239,6 +247,7 @@ fn test_led_read_back() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_pattern_sequence() {
     init_test_logger();
 
@@ -302,6 +311,7 @@ fn test_led_pattern_sequence() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_led_peripheral.rs"]
 fn test_led_upper_bits_ignored() {
     init_test_logger();
 

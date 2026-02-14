@@ -6,6 +6,9 @@
 //! These tests were migrated from tests/src/cpu_test.rs to leverage the
 //! cpu-sim infrastructure (SystemBus, VCD dumps, instruction tracing)
 //! rather than maintaining a duplicate CpuTestHarness implementation.
+//!
+//! NOTE: A subset of basic tests has been migrated to device-runtime/tests/test_rtl_verification.rs
+//! for backend-agnostic portability. The remaining tests stay here for simulator-specific validation.
 
 mod common;
 
@@ -66,6 +69,7 @@ where
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_basic_execution() {
     init_test_logger();
 
@@ -93,6 +97,7 @@ fn test_cpu_basic_execution() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_three_instructions() {
     init_test_logger();
 
@@ -122,6 +127,7 @@ fn test_cpu_three_instructions() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_lui_instruction() {
     init_test_logger();
 
@@ -150,6 +156,7 @@ fn test_cpu_lui_instruction() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_logic_operations() {
     init_test_logger();
 
@@ -191,6 +198,7 @@ fn test_cpu_logic_operations() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_branch_beq_bne() {
     init_test_logger();
 
@@ -251,6 +259,7 @@ fn test_cpu_branch_beq_bne() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_branch_blt_bge() {
     init_test_logger();
 
@@ -303,6 +312,7 @@ fn test_cpu_branch_blt_bge() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_branch_bltu_bgeu() {
     init_test_logger();
 
@@ -359,6 +369,7 @@ fn test_cpu_branch_bltu_bgeu() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_load_store() {
     init_test_logger();
 
@@ -407,6 +418,7 @@ fn test_cpu_load_store() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_load_byte() {
     init_test_logger();
 
@@ -481,6 +493,7 @@ fn test_cpu_load_byte() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rtl_verification.rs"]
 fn test_cpu_load_halfword() {
     init_test_logger();
 

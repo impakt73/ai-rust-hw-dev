@@ -33,6 +33,7 @@ fn write_standard_instruction(sim: &mut cpu_sim::SimulatorView, addr: u32, insn:
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_c_li() {
     init_test_logger();
 
@@ -79,6 +80,7 @@ fn test_c_li() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_c_addi() {
     init_test_logger();
 
@@ -127,6 +129,7 @@ fn test_c_addi() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_c_add() {
     init_test_logger();
 
@@ -176,6 +179,7 @@ fn test_c_add() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_c_mv() {
     init_test_logger();
 
@@ -228,6 +232,7 @@ fn test_c_mv() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_compressed_to_compressed_transition() {
     init_test_logger();
 
@@ -281,6 +286,7 @@ fn test_compressed_to_compressed_transition() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_compressed_to_uncompressed_transition() {
     init_test_logger();
 
@@ -330,6 +336,7 @@ fn test_compressed_to_uncompressed_transition() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_uncompressed_to_compressed_transition() {
     init_test_logger();
 
@@ -379,6 +386,7 @@ fn test_uncompressed_to_compressed_transition() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_uncompressed_to_uncompressed_regression() {
     init_test_logger();
 
@@ -430,6 +438,7 @@ fn test_uncompressed_to_uncompressed_regression() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_rv32c_basic.rs"]
 fn test_mixed_sequence_across_word_boundary() {
     init_test_logger();
 

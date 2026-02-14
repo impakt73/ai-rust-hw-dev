@@ -5,6 +5,9 @@
 //!
 //! These tests verify the complete path:
 //! Host → RX → Buffer → Master → Bus → Peripheral
+//!
+//! NOTE: These tests are being migrated to device-runtime/tests/test_host_initiated_requests.rs
+//! and are marked as #[ignore] during the transition to maintain coverage.
 
 mod common;
 
@@ -27,6 +30,7 @@ fn init_test_logger() {
 /// The host uses `send_bus_request()` to write to the LED peripheral via the full
 /// Host → RX → Buffer → Master → Bus → Peripheral path.
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_host_initiated_basic_sync() {
     init_test_logger();
 
@@ -104,6 +108,7 @@ fn test_host_initiated_basic_sync() {
 /// 3. CPU reads LED value and compares with expected value in DRAM
 /// 4. CPU reports success or failure via tohost
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_host_initiated_led_write() {
     init_test_logger();
 
@@ -204,6 +209,7 @@ fn test_host_initiated_led_write() {
 /// The CPU writes a value to the LED peripheral, then the host reads it back
 /// via host-initiated bus request.
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_host_initiated_led_read() {
     init_test_logger();
 
@@ -266,6 +272,7 @@ fn test_host_initiated_led_read() {
 /// Host-initiated requests must target RTL peripheral space (0x50000000-0x5FFFFFFF)
 /// to prevent deadlock. Requests to other address ranges should be rejected.
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_host_request_address_validation() {
     init_test_logger();
 
@@ -336,6 +343,7 @@ fn test_host_request_address_validation() {
 /// Verifies that multiple host requests can be sent sequentially,
 /// waiting for each response before sending the next.
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_multiple_host_requests() {
     init_test_logger();
 
@@ -422,6 +430,7 @@ fn test_multiple_host_requests() {
 /// This test verifies that the host bus path remains functional even when
 /// the CPU is halted.
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_host_initiated_requests.rs"]
 fn test_host_bus_works_after_halt() {
     init_test_logger();
 
