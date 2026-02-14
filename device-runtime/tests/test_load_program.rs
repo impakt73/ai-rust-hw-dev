@@ -64,9 +64,11 @@ fn test_load_program_halt_register_termination_code() {
     //   LUI  x15, SYSCTRL_BASE
     //   ADDI x14, x0, halt_code
     //   SW   x14, 0x0C(x15)   ; write HALT register, requesting CPU halt
-    let program: Vec<u8> = [lui(15, sysctrl_base),
+    let program: Vec<u8> = [
+        lui(15, sysctrl_base),
         addi(14, 0, halt_code as i32),
-        sw(15, 14, halt_offset)]
+        sw(15, 14, halt_offset),
+    ]
     .iter()
     .flat_map(|inst| inst.to_le_bytes())
     .collect();

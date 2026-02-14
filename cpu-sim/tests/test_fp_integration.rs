@@ -55,6 +55,7 @@ where
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_flw_fsw_basic() {
     init_test_logger();
 
@@ -106,6 +107,7 @@ fn test_cpu_flw_fsw_basic() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_flw_multiple_registers() {
     init_test_logger();
 
@@ -163,6 +165,7 @@ fn test_cpu_flw_multiple_registers() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fadd_basic() {
     init_test_logger();
 
@@ -205,6 +208,7 @@ fn test_cpu_fadd_basic() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fmul_basic() {
     init_test_logger();
 
@@ -250,6 +254,7 @@ fn test_cpu_fmul_basic() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fcvt_s_w() {
     init_test_logger();
 
@@ -286,6 +291,7 @@ fn test_cpu_fcvt_s_w() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fcvt_w_s() {
     init_test_logger();
 
@@ -326,6 +332,7 @@ fn test_cpu_fcvt_w_s() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_feq_flt() {
     init_test_logger();
 
@@ -380,6 +387,7 @@ fn test_cpu_feq_flt() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fmv_x_w_fmv_w_x() {
     init_test_logger();
 
@@ -421,6 +429,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
 // ============================================================================
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fsub_fdiv_fsqrt() {
     init_test_logger();
 
@@ -467,6 +476,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fmin_fmax() {
     init_test_logger();
 
@@ -512,6 +522,7 @@ fn test_cpu_fmin_fmax() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fsgnj_ops() {
     init_test_logger();
 
@@ -567,6 +578,7 @@ fn test_cpu_fsgnj_ops() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fle() {
     init_test_logger();
 
@@ -612,6 +624,7 @@ fn test_cpu_fle() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fcvt_unsigned() {
     init_test_logger();
 
@@ -659,6 +672,7 @@ fn test_cpu_fcvt_unsigned() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fclass() {
     init_test_logger();
 
@@ -713,6 +727,7 @@ fn test_cpu_fclass() {
 }
 
 #[test]
+#[ignore = "Migrated to device-runtime/tests/test_fp_integration.rs"]
 fn test_cpu_fused_multiply_add_ops() {
     init_test_logger();
 
