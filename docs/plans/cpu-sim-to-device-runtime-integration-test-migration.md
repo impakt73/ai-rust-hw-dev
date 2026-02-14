@@ -177,9 +177,9 @@ Migrated tests must:
 
 ### Phase 3: Migrate Tier B non-ELF with targeted harness growth
 
-1. Add host-memory helper coverage needed for `test_memory_bounds.rs` and `test_programmatic_memory.rs`.
-2. Port only tests that remain backend-agnostic on Sim + FPGA.
-3. Selectively migrate portable `tests.rs` cases; keep simulator-contract checks in cpu-sim.
+1. ✅ Added host-memory helper coverage in `device-runtime/tests/common` for explicit access-size host reads/writes.
+2. ✅ Migrated `test_memory_bounds.rs` and `test_programmatic_memory.rs` from `cpu-sim/tests` to `device-runtime/tests`.
+3. ⏳ Selectively migrate portable `tests.rs` cases; keep simulator-contract checks in cpu-sim.
 
 ### Phase 4: CI and execution model changes
 
@@ -205,8 +205,8 @@ Migrated tests must:
 | `test_simple_byte_store.rs` | ✅ Migrated (cpu-sim source removed) | `test_simple_byte_store.rs` |
 | `test_minimal.rs` (portable subset) | ✅ Partial migration complete (2 cpu-sim tests removed) | `test_minimal.rs` |
 | `test_alloc_only.rs` | ✅ Migrated (cpu-sim source removed) | `test_alloc_only.rs` |
-| `test_memory_bounds.rs` | Migrate after read/write helper hardening | `test_memory_bounds.rs` |
-| `test_programmatic_memory.rs` | Migrate after helper hardening | `test_programmatic_memory.rs` |
+| `test_memory_bounds.rs` | ✅ Migrated (cpu-sim source removed) | `test_memory_bounds.rs` |
+| `test_programmatic_memory.rs` | ✅ Migrated (cpu-sim source removed) | `test_programmatic_memory.rs` |
 | `tests.rs` | Selective migration only (portable subset) | split into thematic files |
 | `test_interactive_simulator.rs` | Keep in cpu-sim | N/A |
 | `test_device_lifecycle.rs` | Keep in cpu-sim | N/A |
