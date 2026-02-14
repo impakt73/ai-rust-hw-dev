@@ -114,6 +114,19 @@ pub struct FfSyncDefaultWrapper;
 )]
 pub struct FfSyncParamWrapper;
 
+// Define Async FIFO wrapper modules for CDC FIFO tests
+#[verilog(
+    src = "../rtl/async_fifo_test_wrapper.sv",
+    name = "async_fifo_test_wrapper"
+)]
+pub struct AsyncFifoTestWrapper;
+
+#[verilog(
+    src = "../rtl/async_fifo_sync3_wrapper.sv",
+    name = "async_fifo_sync3_wrapper"
+)]
+pub struct AsyncFifoSync3Wrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -286,4 +299,24 @@ pub fn create_ff_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::
 pub fn create_ff_sync_param_wrapper_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
 {
     create_runtime(&["ff_sync.sv", "ff_sync_param_wrapper.sv"])
+}
+
+// Helper function to create a runtime for async FIFO wrapper (DEPTH=4, SYNC_STAGES=2)
+pub fn create_async_fifo_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "ff_sync.sv",
+        "sync_dpram.sv",
+        "async_fifo.sv",
+        "async_fifo_test_wrapper.sv",
+    ])
+}
+
+// Helper function to create a runtime for async FIFO wrapper with SYNC_STAGES=3
+pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "ff_sync.sv",
+        "sync_dpram.sv",
+        "async_fifo.sv",
+        "async_fifo_sync3_wrapper.sv",
+    ])
 }
