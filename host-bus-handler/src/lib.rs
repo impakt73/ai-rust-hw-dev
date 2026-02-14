@@ -188,7 +188,9 @@ pub enum RequestAddressRegion {
 /// and will be rejected by [`HostBusHandler::send_request`].
 pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
     let size_bytes = u32::from(request.size.byte_count());
-    request.addr.checked_add(size_bytes - 1)
+    size_bytes
+        .checked_sub(1)
+        .and_then(|last_byte_offset| request.addr.checked_add(last_byte_offset))
 }
 
 /// Classify which memory region a request touches.

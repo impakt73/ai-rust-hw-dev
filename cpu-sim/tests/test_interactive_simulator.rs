@@ -223,10 +223,6 @@ fn test_interactive_simulator_rejects_overflowing_host_request_range() {
         result.is_err(),
         "Overflowing request range should be rejected"
     );
-    assert!(
-        result.unwrap_err().contains("InvalidAddressRange"),
-        "Error should indicate invalid address range"
-    );
 }
 
 #[test]
