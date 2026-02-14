@@ -106,17 +106,6 @@ module top #(
     logic        clock_ready;
     
     // ============================================================
-    // UART Controller Interface Signals
-    // ============================================================
-    logic [31:0] uart_addr;
-    logic [31:0] uart_wdata;
-    logic [31:0] uart_rdata;
-    logic        uart_we;
-    logic [1:0]  uart_size;
-    logic        uart_req;
-    logic        uart_ready;
-    
-    // ============================================================
     // System Controller Interface Signals
     // ============================================================
     logic [31:0] sysctrl_addr;
@@ -241,15 +230,6 @@ module top #(
         .clock_req(clock_req),
         .clock_ready(clock_ready),
         
-        // UART Controller interface
-        .uart_addr(uart_addr),
-        .uart_wdata(uart_wdata),
-        .uart_rdata(uart_rdata),
-        .uart_we(uart_we),
-        .uart_size(uart_size),
-        .uart_req(uart_req),
-        .uart_ready(uart_ready),
-        
         // System Controller interface
         .sysctrl_addr(sysctrl_addr),
         .sysctrl_wdata(sysctrl_wdata),
@@ -360,10 +340,6 @@ module top #(
     
     // Pass through cpu boot state signal
     assign cpu_booting = cpu_is_booting;
-    
-    // UART peripheral removed from top-level RTL integration.
-    assign uart_rdata = 32'h00000000;
-    assign uart_ready = 1'b1;
     
     // ============================================================
     // LED Controller Instantiation

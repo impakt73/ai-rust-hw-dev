@@ -17,7 +17,7 @@ Address Range            | Device              | Type | Description
 0x40005000 - 0x4FFFFFFF  | Reserved (Rust)     | Rust | Reserved for future Rust peripherals
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
 0x51000000 - 0x5100000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
-0x52000000 - 0x520000FF  | UART Controller     | RTL  | UART TX/RX with 8-byte FIFOs
+0x52000000 - 0x52FFFFFF  | Reserved (RTL)      | RTL  | Unmapped RTL peripheral space
 0x53000000 - 0x5300000F  | System Controller   | RTL  | CPU boot and reset control
 0x53000010 - 0x5FFFFFFF  | Reserved (RTL)      | RTL  | Reserved for future RTL peripherals
 0x80000000 - 0xFFFFFFFF  | DRAM                | Both | System memory (2 GiB)
@@ -127,30 +127,6 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 - **Latency:** Single-cycle (ready = 1'b1)
 - **Note:** Clock frequency is configurable via `CLK_FREQ_HZ` parameter
 - **Constants:** `CLOCK_BASE`, `CLOCK_SIZE`, `CLOCK_ELAPSED_US_OFFSET`, `CLOCK_ELAPSED_MS_OFFSET`, `CLOCK_ELAPSED_S_OFFSET`
-
-### UART Controller (0x52000000)
-
-| Offset | Register | Access | Description |
-|--------|----------|--------|-------------|
-| 0x00   | TXDATA   | WO     | Write byte to TX FIFO |
-| 0x04   | RXDATA   | RO     | Read byte from RX FIFO |
-| 0x08   | STATUS   | RO     | FIFO status flags (see below) |
-| 0x0C   | CTRL     | RW     | Control register (reserved) |
-
-**STATUS Register Bits:**
-
-| Bit | Name     | Description |
-|-----|----------|-------------|
-| 0   | TX_FULL  | TX FIFO is full |
-| 1   | TX_EMPTY | TX FIFO is empty (all data transmitted) |
-| 2   | TX_BUSY  | TX shift register is active |
-| 4   | RX_FULL  | RX FIFO is full |
-| 5   | RX_EMPTY | RX FIFO is empty (no data available) |
-| 6   | RX_BUSY  | RX shift register is active |
-| 7   | RX_ERROR | Framing error detected |
-
-- **Size:** 256 bytes
-- **Constants:** `UART_BASE`, `UART_SIZE`, `UART_TXDATA_OFFSET`, `UART_RXDATA_OFFSET`, `UART_STATUS_OFFSET`, `UART_CTRL_OFFSET`
 
 ### System Controller (0x53000000)
 
