@@ -259,6 +259,17 @@ fn test_send_request_rejects_spanning_rtl_boundary() {
     );
 }
 
+#[test]
+fn test_send_request_rejects_spanning_rtl_upper_boundary() {
+    let mut handler = HostBusHandler::new();
+
+    let request = BusRequest::read(0x5FFF_FFFF, AccessSize::Word);
+    assert_eq!(
+        handler.send_request(request),
+        Err(HandlerError::InvalidAddressRange)
+    );
+}
+
 // ============================================================
 // Outgoing Response RX Tests (FPGA → Host for our requests)
 // ============================================================

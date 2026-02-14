@@ -182,6 +182,10 @@ pub enum RequestAddressRegion {
 }
 
 /// Classify which memory region a request touches.
+///
+/// If `request.addr + size - 1` overflows `u32`, this returns
+/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
+/// and will be rejected by [`HostBusHandler::send_request`].
 pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     let size_bytes = request.size.byte_count() as u32;
     let Some(end_addr) = request.addr.checked_add(size_bytes.saturating_sub(1)) else {
@@ -688,6 +692,8 @@ impl HostBusHandler {
     /// # Returns
     /// * `Ok(())` if the request was accepted
     /// * `Err(HandlerError::RequestPending)` if there's already an outstanding request
+    /// * `Err(HandlerError::InvalidAddressRange)` if the request range is not fully
+    ///   within RTL peripheral space (`0x5000_0000..0x6000_0000`)
     pub fn send_request(&mut self, request: BusRequest) -> Result<(), HandlerError> {
         if self.outgoing_request.is_some() {
             return Err(HandlerError::RequestPending);

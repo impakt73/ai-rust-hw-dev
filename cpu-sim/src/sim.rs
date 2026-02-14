@@ -112,6 +112,8 @@ where
     mem_latency_cycles: u32, // Number of cycles to delay memory operations
     // Host bus handler
     pub(crate) host_bus_handler: HostBusHandler,
+    // Immediate response for host requests routed directly to SystemBus
+    pub(crate) host_bus_direct_response: Option<BusResponse>,
     // Pending response for memory latency simulation
     pending_response: Option<PendingResponse>,
     // Hung state detection
@@ -210,6 +212,7 @@ where
             vcd_time: 0,
             mem_latency_cycles,
             host_bus_handler: HostBusHandler::new(),
+            host_bus_direct_response: None,
             pending_response: None,
             hung_detector,
         })
@@ -243,6 +246,7 @@ where
                 &mut self.hung_detector,
                 &self.cpu,
                 &mut self.host_bus_handler,
+                &mut self.host_bus_direct_response,
             );
             callback(&mut view);
         }
@@ -440,6 +444,7 @@ where
 
         // Reset the host bus handler
         self.host_bus_handler.reset();
+        self.host_bus_direct_response = None;
         self.pending_response = None;
 
         // Boot the CPU via host bus requests to the system controller peripheral

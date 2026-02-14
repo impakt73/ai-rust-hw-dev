@@ -5,8 +5,9 @@
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
-//! continuously. Host-initiated bus requests are forwarded directly
-//! to the simulator's internal host bus handler.
+//! continuously. Host-initiated bus requests are forwarded through
+//! `InteractiveSimulator::send_bus_request`, which performs internal
+//! address-based routing.
 
 use crate::{
     classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
@@ -109,49 +110,18 @@ impl SimDeviceRuntime {
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
-                    match classify_host_request_route(&request) {
-                        HostRequestRoute::HostBusHandler => {
-                            if let Err(e) = simulator.send_bus_request(request) {
-                                // Clear pending and notify caller with a failure event
-                                let mut pending = pending_host_request.lock().unwrap();
-                                if let Some(ref p) = *pending {
-                                    let failed_addr = p.addr;
-                                    let _ = event_tx.send(RuntimeEvent::Bus(
-                                        BusEvent::HostRequestTimeout { addr: failed_addr },
-                                    ));
-                                }
-                                *pending = None;
-                                log::warn!("Host request rejected by simulator: {}", e);
-                            }
+                    if let Err(e) = simulator.send_bus_request(request) {
+                        // Clear pending and notify caller with a failure event
+                        let mut pending = pending_host_request.lock().unwrap();
+                        if let Some(ref p) = *pending {
+                            let failed_addr = p.addr;
+                            let _ =
+                                event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
+                                    addr: failed_addr,
+                                }));
                         }
-                        HostRequestRoute::SystemBus => {
-                            let response = simulator.process_system_bus_request(&request);
-                            let mut pending = pending_host_request.lock().unwrap();
-                            if pending.is_some() {
-                                *pending = None;
-                                let event = if response.we {
-                                    BusEvent::HostWriteResponse {
-                                        addr: request.addr,
-                                        wdata: request.wdata,
-                                        size: response.size,
-                                    }
-                                } else {
-                                    BusEvent::HostReadResponse {
-                                        addr: request.addr,
-                                        data: response.rdata,
-                                        size: response.size,
-                                    }
-                                };
-                                let _ = event_tx.send(RuntimeEvent::Bus(event));
-                            }
-                        }
-                        HostRequestRoute::InvalidSpanningRegion => {
-                            let mut pending = pending_host_request.lock().unwrap();
-                            *pending = None;
-                            let _ = event_tx.send(RuntimeEvent::FatalError(
-                                "Invalid host request spanning RTL and non-RTL regions".into(),
-                            ));
-                        }
+                        *pending = None;
+                        log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
                 Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
