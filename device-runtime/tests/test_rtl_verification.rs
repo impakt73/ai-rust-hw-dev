@@ -10,8 +10,8 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination,
-    wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC,
+    create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
+    tohost_termination, wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
@@ -319,5 +319,566 @@ fn test_cpu_load_halfword() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_store_byte() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, DRAM_BASE),
+        addi(2, 0, 0x12),
+        addi(3, 0, 0x34),
+        addi(4, 0, 0x56),
+        addi(5, 0, 0x78),
+        sb(1, 2, 0),
+        sb(1, 3, 1),
+        sb(1, 4, 2),
+        sb(1, 5, 3),
+        lw(6, 1, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0x7856_3412
+    );
+}
+
+#[test]
+fn test_cpu_store_halfword() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, DRAM_BASE),
+        addi(2, 0, 0x234),
+        addi(3, 0, 0x678),
+        sh(1, 2, 0),
+        sh(1, 3, 2),
+        lw(4, 1, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0x0678_0234
+    );
+}
+
+#[test]
+fn test_cpu_byte_halfword_mixed() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, DRAM_BASE),
+        addi(2, 0, -128),
+        sb(1, 2, 0),
+        lb(3, 1, 0),
+        lbu(4, 1, 0),
+        addi(5, 0, -1),
+        sh(1, 5, 4),
+        lh(6, 1, 4),
+        lhu(7, 1, 4),
+        sw(1, 3, 0x10),
+        sw(1, 4, 0x14),
+        sw(1, 6, 0x18),
+        sw(1, 7, 0x1C),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0010, SHORT_TIMEOUT),
+        0xFFFF_FF80
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0014, SHORT_TIMEOUT),
+        0x0000_0080
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0018, SHORT_TIMEOUT),
+        0xFFFF_FFFF
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_001C, SHORT_TIMEOUT),
+        0x0000_FFFF
+    );
+}
+
+#[test]
+fn test_cpu_auipc() {
+    let mut runtime = create_test_runtime();
+    let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_tohost_halt() {
+    let mut runtime = create_test_runtime();
+    let mut instructions = vec![addi(1, 0, 10), addi(2, 1, 5), add(3, 1, 2)];
+    instructions.extend(tohost_termination(4, 5, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_fence_instruction() {
+    let mut runtime = create_test_runtime();
+    let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_ecall_instruction() {
+    let mut runtime = create_test_runtime();
+    let mut instructions = vec![addi(1, 0, 42)];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.push(ecall());
+    instructions.push(addi(2, 0, 99));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_ebreak_instruction() {
+    let mut runtime = create_test_runtime();
+    let mut instructions = vec![addi(1, 0, 100)];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.push(ebreak());
+    instructions.push(addi(2, 0, 200));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_csr_read_write() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 100),
+        csrrw(2, 1, 0x300),
+        lui(8, DRAM_BASE),
+        sw(8, 2, 0),
+        csrrw(3, 0, 0x300),
+        sw(8, 3, 4),
+        csrrw(4, 0, 0x300),
+        sw(8, 4, 8),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        100
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0008, SHORT_TIMEOUT),
+        0
+    );
+}
+
+#[test]
+fn test_cpu_csr_set_clear() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 0b1010),
+        csrrw(0, 1, 0x301),
+        addi(2, 0, 0b0101),
+        csrrs(3, 2, 0x301),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+        addi(4, 0, 0b1000),
+        csrrc(5, 4, 0x301),
+        sw(8, 5, 4),
+        csrrw(6, 0, 0x301),
+        sw(8, 6, 8),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0b1010
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        0b1111
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0008, SHORT_TIMEOUT),
+        0b0111
+    );
+}
+
+#[test]
+fn test_cpu_csr_immediate() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        csrrwi(1, 15, 0x302),
+        lui(8, DRAM_BASE),
+        sw(8, 1, 0),
+        csrrsi(2, 8, 0x302),
+        sw(8, 2, 4),
+        csrrci(3, 4, 0x302),
+        sw(8, 3, 8),
+        csrrw(4, 0, 0x302),
+        sw(8, 4, 12),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        15
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0008, SHORT_TIMEOUT),
+        15
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_000C, SHORT_TIMEOUT),
+        11
+    );
+}
+
+#[test]
+fn test_cpu_csr_instret() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 0),
+        addi(2, 0, 0),
+        addi(3, 0, 0),
+        csrrs(4, 0, 0xC02),
+        lui(8, DRAM_BASE),
+        sw(8, 4, 0),
+    ];
+    instructions.extend(tohost_termination(7, 9, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        3
+    );
+}
+
+#[test]
+fn test_cpu_mul_instruction() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 10),
+        addi(2, 0, 20),
+        mul(3, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        200
+    );
+}
+
+#[test]
+fn test_cpu_mulh_instruction() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, 0x10000),
+        lui(2, 0x10000),
+        mulh(3, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0x0000_0001
+    );
+}
+
+#[test]
+fn test_cpu_div_instruction() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 100),
+        addi(2, 0, 7),
+        div(3, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        14
+    );
+}
+
+#[test]
+fn test_cpu_div_by_zero() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 100),
+        addi(2, 0, 0),
+        div(3, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0xFFFF_FFFF
+    );
+}
+
+#[test]
+fn test_cpu_rem_instruction() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 100),
+        addi(2, 0, 7),
+        rem(3, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        2
+    );
+}
+
+#[test]
+fn test_cpu_divu_remu_unsigned() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, -1),
+        addi(2, 0, 2),
+        divu(3, 1, 2),
+        remu(4, 1, 2),
+        lui(8, DRAM_BASE),
+        sw(8, 3, 0),
+        sw(8, 4, 4),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0x7FFF_FFFF
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        1
+    );
+}
+
+#[test]
+fn test_cpu_m_extension_program() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 12),
+        addi(2, 0, 5),
+        addi(3, 0, 3),
+        addi(4, 0, 17),
+        addi(5, 0, 5),
+        mul(6, 1, 2),
+        div(7, 6, 3),
+        rem(8, 4, 5),
+        add(9, 7, 8),
+        lui(10, DRAM_BASE),
+        sw(10, 9, 0),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        22
     );
 }
