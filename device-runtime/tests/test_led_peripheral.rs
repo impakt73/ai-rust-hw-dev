@@ -12,7 +12,7 @@ mod common;
 
 use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
-    LONG_TIMEOUT,
+    LONG_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::{addi, andi, bne, jal, lui, lw, ori, sb, sh, sub, sw};
 use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE, SIM_CONTROL_BASE};
@@ -33,10 +33,9 @@ fn test_led_basic_write_word() {
     let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0xAA), sw(15, 14, 0)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -50,10 +49,9 @@ fn test_led_byte_access() {
     let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0x55), sb(15, 14, 0)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -67,10 +65,9 @@ fn test_led_halfword_access() {
     let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0xFF), sh(15, 14, 0)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -100,10 +97,9 @@ fn test_led_read_back() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -127,10 +123,9 @@ fn test_led_pattern_sequence() {
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -161,10 +156,9 @@ fn test_led_upper_bits_ignored() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
         runtime.as_mut(),
-        BOOT_PC,
+        TEST_BOOT_PC,
         &instructions_to_bytes(&instructions),
     );
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);

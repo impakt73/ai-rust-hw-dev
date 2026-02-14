@@ -11,7 +11,7 @@ mod common;
 
 use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
-    LONG_TIMEOUT,
+    LONG_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
@@ -29,10 +29,9 @@ fn test_cpu_basic_execution() {
     let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -49,10 +48,9 @@ fn test_cpu_three_instructions() {
     let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -69,10 +67,9 @@ fn test_cpu_lui_instruction() {
     let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -95,10 +92,9 @@ fn test_cpu_logic_operations() {
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -140,10 +136,9 @@ fn test_cpu_branch_beq_bne() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,
@@ -179,10 +174,9 @@ fn test_cpu_branch_blt_bge() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,
@@ -218,10 +212,9 @@ fn test_cpu_branch_bltu_bgeu() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,
@@ -257,10 +250,9 @@ fn test_cpu_load_store() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,
@@ -297,10 +289,9 @@ fn test_cpu_load_byte() {
         jal(0, 0),
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,
@@ -325,10 +316,9 @@ fn test_cpu_load_halfword() {
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         tohost_value, SUCCESS_CODE,

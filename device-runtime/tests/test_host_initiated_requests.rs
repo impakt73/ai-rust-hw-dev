@@ -14,7 +14,7 @@ mod common;
 use common::{
     create_test_runtime, drain_events_until_idle, instructions_to_bytes, load_and_boot,
     read_word_with_timeout, tohost_termination, wait_for_host_write_response, wait_for_tohost,
-    write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT,
+    write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use device_runtime::BusRequest;
 use host_bus_handler::AccessSize;
@@ -43,10 +43,9 @@ fn test_host_initiated_basic_sync() {
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
     // Let CPU spin for a moment before releasing the fence
     std::thread::sleep(Duration::from_millis(10));
@@ -103,17 +102,16 @@ fn test_host_initiated_led_write() {
         jal(0, 0),   // infinite loop
     ];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     // Load program and pre-populate expected value in DRAM
     runtime
-        .load_program(BOOT_PC, &program_bytes)
+        .load_program(TEST_BOOT_PC, &program_bytes)
         .expect("Failed to load program");
     runtime
         .load_program(LED_EXPECTED_ADDR, &TEST_VALUE.to_le_bytes())
         .expect("Failed to load expected value");
-    runtime.boot_cpu(BOOT_PC).expect("Failed to boot CPU");
+    runtime.boot_cpu(TEST_BOOT_PC).expect("Failed to boot CPU");
 
     // Let CPU spin
     std::thread::sleep(Duration::from_millis(10));
@@ -147,10 +145,9 @@ fn test_host_initiated_led_read() {
     instructions.extend(std::iter::repeat_n(addi(0, 0, 0), DELAY_NOPS_FOR_HOST_READ));
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
     // Read back LED value via host bus request
     let led_value = read_word_with_timeout(runtime.as_mut(), LED_BASE, SHORT_TIMEOUT);
@@ -183,10 +180,9 @@ fn test_host_request_address_validation() {
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     std::thread::sleep(Duration::from_millis(10));
 
     let first_req = BusRequest::write(LED_BASE, 0x01, AccessSize::Byte);
@@ -224,10 +220,9 @@ fn test_multiple_host_requests() {
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
     // Let CPU spin
     std::thread::sleep(Duration::from_millis(10));
@@ -260,10 +255,9 @@ fn test_host_bus_works_after_halt() {
     // Program: a single zero instruction (invalid) which will cause the CPU to halt
     let instructions: Vec<u32> = vec![0, 0, 0, 0];
 
-    const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
-    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
     // Wait a bit for CPU to halt
     std::thread::sleep(Duration::from_millis(50));
