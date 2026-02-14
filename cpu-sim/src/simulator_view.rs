@@ -521,8 +521,8 @@ impl<'a> SimulatorView<'a> {
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
         // Validate address is in RTL peripheral space or DRAM.
-        // This prevents deadlock per Rule 1 (no self-routing), while allowing
-        // host-side DRAM validation reads/writes after CPU halt.
+        // This prevents self-routing deadlocks while allowing host-side DRAM
+        // validation reads/writes after CPU halt.
         let is_dram = is_valid_dram_range(request.addr, request.size.byte_count() as u32);
         if !self.bus.is_rtl_peripheral(request.addr) && !is_dram {
             return Err(format!(
