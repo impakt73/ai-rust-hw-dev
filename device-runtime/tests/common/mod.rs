@@ -6,7 +6,7 @@ use device_runtime::{
     create_device_runtime, BusEvent, BusRequest, DeviceRuntime, DeviceRuntimeType,
 };
 use host_bus_handler::AccessSize;
-use riscv_core::instruction::{addi, jal, lui, sw};
+use riscv_core::instruction::{addi, lui, sw};
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use std::time::{Duration, Instant};
 
@@ -16,6 +16,8 @@ pub const SHORT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const MEDIUM_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for long operations such as full program execution and termination.
 pub const LONG_TIMEOUT: Duration = Duration::from_secs(10);
+/// Common test boot PC for loaded instruction programs.
+pub const TEST_BOOT_PC: u32 = 0x8000_0000;
 
 /// Create a device runtime based on environment variables.
 ///
@@ -169,7 +171,8 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 
 /// Build a standard tohost termination sequence.
 ///
-/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE` and then loops.
+/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE` and then executes a NOP instruction.
+/// Execution intentionally continues after this sequence; callers are responsible for any trailing flow.
 pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 4] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
@@ -179,7 +182,7 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
             i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
         ),
         sw(addr_reg, value_reg, 0),
-        jal(0, 0),
+        addi(0, 0, 0),
     ]
 }
 
