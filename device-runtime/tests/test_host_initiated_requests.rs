@@ -163,6 +163,36 @@ fn test_host_initiated_led_read() {
     );
 }
 
+/// Test that host request address validation works correctly.
+///
+/// Verifies valid RTL-space request succeeds and a second request while one is
+/// pending is rejected.
+#[test]
+fn test_host_request_address_validation() {
+    let mut runtime = create_test_runtime();
+
+    let instructions = tohost_termination(7, 8, SUCCESS_CODE);
+
+    const BOOT_PC: u32 = 0x8000_0000;
+    let program_bytes = instructions_to_bytes(&instructions);
+
+    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+
+    let first_req = BusRequest::write(LED_BASE, 0x01, AccessSize::Byte);
+    runtime
+        .send_host_request(first_req)
+        .expect("Request to RTL peripheral space should succeed");
+
+    let second_req = BusRequest::write(LED_BASE + 4, 0x02, AccessSize::Byte);
+    assert!(
+        runtime.send_host_request(second_req).is_err(),
+        "Request while pending should fail"
+    );
+
+    // Drain the first response and then let program terminate.
+    wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+}
+
 /// Test multiple sequential host-initiated requests.
 ///
 /// Verifies that multiple host requests can be sent sequentially.

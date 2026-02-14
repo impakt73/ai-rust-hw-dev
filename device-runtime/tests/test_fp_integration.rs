@@ -431,3 +431,147 @@ fn test_cpu_fle() {
     // assert_eq!(le2, 0, "2.0 <= 1.0 should be false");
     // assert_eq!(le3, 1, "1.0 <= 1.0 should be true");
 }
+
+#[test]
+fn test_cpu_fsgnj_ops() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(7, 0x80001000), // x7 = 0x80001000 (base address)
+        lui(1, 0x3F800000), // x1 = 1.0 (positive)
+        lui(2, 0xBF800000), // x2 = -1.0 (negative)
+        fmv_w_x(1, 1),      // f1 = 1.0
+        fmv_w_x(2, 2),      // f2 = -1.0
+        fsgnj_s(3, 1, 2),   // f3 = abs(1.0) with sign of -1.0 = -1.0
+        fsgnjn_s(4, 1, 2),  // f4 = abs(1.0) with inverted sign of -1.0 = 1.0
+        fsgnjx_s(5, 1, 2),  // f5 = abs(1.0) with XOR of signs = -1.0
+        fmv_x_w(4, 3),      // x4 = bits of f3
+        fmv_x_w(5, 4),      // x5 = bits of f4
+        fmv_x_w(6, 5),      // x6 = bits of f5
+        sw(7, 4, 0x100),    // Store FSGNJ result to mem[x7+0x100]
+        sw(7, 5, 0x104),    // Store FSGNJN result to mem[x7+0x104]
+        sw(7, 6, 0x108),    // Store FSGNJX result to mem[x7+0x108]
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    const BOOT_PC: u32 = 0x8000_0000;
+    let program_bytes = instructions_to_bytes(&instructions);
+
+    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+
+    assert_eq!(
+        tohost_value, SUCCESS_CODE,
+        "Program should terminate with tohost=1"
+    );
+}
+
+#[test]
+fn test_cpu_fcvt_unsigned() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, 0x80001000), // x1 = 0x80001000
+        lui(2, 0x42280000), // x2 = 42.0 in FP
+        sw(1, 2, 0),        // mem[x1] = 42.0
+        flw(1, 1, 0),       // f1 = 42.0
+        fcvt_wu_s(3, 1),    // x3 = (unsigned int)42.0 = 42
+        addi(4, 0, 100),    // x4 = 100 (unsigned int)
+        fcvt_s_wu(2, 4),    // f2 = (float)100 = 100.0
+        fsw(1, 2, 4),       // Store conversion result
+        lw(5, 1, 4),        // x5 = 100.0 as bits
+        sw(1, 3, 0x100),    // Store FCVT.WU.S result to mem[x1+0x100]
+        sw(1, 5, 0x104),    // Store FCVT.S.WU result to mem[x1+0x104]
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    const BOOT_PC: u32 = 0x8000_0000;
+    let program_bytes = instructions_to_bytes(&instructions);
+
+    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+
+    assert_eq!(
+        tohost_value, SUCCESS_CODE,
+        "Program should terminate with tohost=1"
+    );
+}
+
+#[test]
+fn test_cpu_fclass() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(7, 0x80001000), // x7 = 0x80001000 (base address)
+        lui(1, 0x3F800000), // x1 = 1.0 (positive normal)
+        lui(2, 0xBF800000), // x2 = -1.0 (negative normal)
+        lui(3, 0x00000000), // x3 = +0.0 (positive zero)
+        fmv_w_x(1, 1),      // f1 = 1.0
+        fmv_w_x(2, 2),      // f2 = -1.0
+        fmv_w_x(3, 3),      // f3 = +0.0
+        fclass_s(4, 1),     // x4 = classify(1.0) = positive normal (bit 6 = 0x40)
+        fclass_s(5, 2),     // x5 = classify(-1.0) = negative normal (bit 1 = 0x02)
+        fclass_s(6, 3),     // x6 = classify(+0.0) = positive zero (bit 4 = 0x10)
+        sw(7, 4, 0x100),    // Store classify results to mem[x7+0x100]
+        sw(7, 5, 0x104),    // Store to mem[x7+0x104]
+        sw(7, 6, 0x108),    // Store to mem[x7+0x108]
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    const BOOT_PC: u32 = 0x8000_0000;
+    let program_bytes = instructions_to_bytes(&instructions);
+
+    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+
+    assert_eq!(
+        tohost_value, SUCCESS_CODE,
+        "Program should terminate with tohost=1"
+    );
+}
+
+#[test]
+fn test_cpu_fused_multiply_add_ops() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, 0x80001000),   // x1 = 0x80001000
+        lui(2, 0x40000000),   // x2 = 2.0
+        lui(3, 0x40400000),   // x3 = 3.0
+        lui(4, 0x3F800000),   // x4 = 1.0
+        sw(1, 2, 0),          // mem[x1+0] = 2.0
+        sw(1, 3, 4),          // mem[x1+4] = 3.0
+        sw(1, 4, 8),          // mem[x1+8] = 1.0
+        flw(1, 1, 0),         // f1 = 2.0
+        flw(2, 1, 4),         // f2 = 3.0
+        flw(3, 1, 8),         // f3 = 1.0
+        fmadd_s(4, 1, 2, 3),  // f4 = (2.0 * 3.0) + 1.0 = 7.0
+        fmsub_s(5, 1, 2, 3),  // f5 = (2.0 * 3.0) - 1.0 = 5.0
+        fnmsub_s(6, 1, 2, 3), // f6 = -(2.0 * 3.0 - 1.0) = -5.0
+        fnmadd_s(7, 1, 2, 3), // f7 = -(2.0 * 3.0 + 1.0) = -7.0
+        fsw(1, 4, 12),        // Store FMADD result
+        fsw(1, 5, 16),        // Store FMSUB result
+        fsw(1, 6, 20),        // Store FNMSUB result
+        fsw(1, 7, 24),        // Store FNMADD result
+        lw(4, 1, 12),         // Load results into integer regs
+        lw(5, 1, 16),
+        lw(6, 1, 20),
+        lw(7, 1, 24),
+        sw(1, 4, 0x100), // Store all results to mem[x1+0x100]
+        sw(1, 5, 0x104), // Store to mem[x1+0x104]
+        sw(1, 6, 0x108), // Store to mem[x1+0x108]
+        sw(1, 7, 0x10C), // Store to mem[x1+0x10C]
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    const BOOT_PC: u32 = 0x8000_0000;
+    let program_bytes = instructions_to_bytes(&instructions);
+
+    load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
+
+    assert_eq!(
+        tohost_value, SUCCESS_CODE,
+        "Program should terminate with tohost=1"
+    );
+}
