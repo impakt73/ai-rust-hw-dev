@@ -27,7 +27,7 @@ fn test_cpu_basic_execution() {
 
     // Program: Simple arithmetic operations
     let mut instructions = vec![addi(1, 0, 5), addi(2, 0, 3), add(3, 1, 2)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -44,7 +44,7 @@ fn test_cpu_three_instructions() {
 
     // Program: Execute exactly 3 instructions
     let mut instructions = vec![addi(1, 0, 10), add(2, 1, 1), sub(3, 2, 1)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -61,7 +61,7 @@ fn test_cpu_lui_instruction() {
 
     // Program: Test LUI instruction
     let mut instructions = vec![lui(1, 0x12345000), addi(2, 1, 0x678)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -84,7 +84,7 @@ fn test_cpu_logic_operations() {
         or(4, 1, 2),
         xor(5, 1, 2),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -311,7 +311,7 @@ fn test_cpu_load_halfword() {
         sw(1, 3, 0x200),  // Store signed result
         sw(1, 4, 0x204),  // Store unsigned result
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -338,7 +338,7 @@ fn test_cpu_store_byte() {
         sb(1, 5, 3),
         lw(6, 1, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -367,7 +367,7 @@ fn test_cpu_store_halfword() {
         sh(1, 3, 2),
         lw(4, 1, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -403,7 +403,7 @@ fn test_cpu_byte_halfword_mixed() {
         sw(1, 6, 0x18),
         sw(1, 7, 0x1C),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -435,8 +435,14 @@ fn test_cpu_byte_halfword_mixed() {
 #[test]
 fn test_cpu_auipc() {
     let mut runtime = create_test_runtime();
-    let mut instructions = vec![auipc(1, 0x12345000), auipc(2, 0x00001000), addi(0, 0, 0)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    let mut instructions = vec![
+        auipc(1, 0x12345000),
+        auipc(2, 0x00001000),
+        lui(9, DRAM_BASE),
+        sw(9, 1, 0),
+        sw(9, 2, 4),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -447,13 +453,21 @@ fn test_cpu_auipc() {
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
     );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        0x9234_5000
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        0x8000_1004
+    );
 }
 
 #[test]
 fn test_cpu_tohost_halt() {
     let mut runtime = create_test_runtime();
     let mut instructions = vec![addi(1, 0, 10), addi(2, 1, 5), add(3, 1, 2)];
-    instructions.extend(tohost_termination(4, 5, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -470,7 +484,7 @@ fn test_cpu_tohost_halt() {
 fn test_cpu_fence_instruction() {
     let mut runtime = create_test_runtime();
     let mut instructions = vec![addi(1, 0, 10), fence(), addi(2, 1, 5), addi(0, 0, 0)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -487,7 +501,7 @@ fn test_cpu_fence_instruction() {
 fn test_cpu_ecall_instruction() {
     let mut runtime = create_test_runtime();
     let mut instructions = vec![addi(1, 0, 42)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
     instructions.push(ecall());
     instructions.push(addi(2, 0, 99));
 
@@ -506,7 +520,7 @@ fn test_cpu_ecall_instruction() {
 fn test_cpu_ebreak_instruction() {
     let mut runtime = create_test_runtime();
     let mut instructions = vec![addi(1, 0, 100)];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
     instructions.push(ebreak());
     instructions.push(addi(2, 0, 200));
 
@@ -535,7 +549,7 @@ fn test_cpu_csr_read_write() {
         csrrw(4, 0, 0x300),
         sw(8, 4, 8),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -577,7 +591,7 @@ fn test_cpu_csr_set_clear() {
         csrrw(6, 0, 0x301),
         sw(8, 6, 8),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -617,7 +631,7 @@ fn test_cpu_csr_immediate() {
         csrrw(4, 0, 0x302),
         sw(8, 4, 12),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -658,7 +672,7 @@ fn test_cpu_csr_instret() {
         lui(8, DRAM_BASE),
         sw(8, 4, 0),
     ];
-    instructions.extend(tohost_termination(7, 9, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -686,7 +700,7 @@ fn test_cpu_mul_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -714,7 +728,7 @@ fn test_cpu_mulh_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -742,7 +756,7 @@ fn test_cpu_div_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -770,7 +784,7 @@ fn test_cpu_div_by_zero() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -798,7 +812,7 @@ fn test_cpu_rem_instruction() {
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -828,7 +842,7 @@ fn test_cpu_divu_remu_unsigned() {
         sw(8, 3, 0),
         sw(8, 4, 4),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -866,7 +880,7 @@ fn test_cpu_m_extension_program() {
         lui(10, DRAM_BASE),
         sw(10, 9, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(
         runtime.as_mut(),
