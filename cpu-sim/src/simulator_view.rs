@@ -526,6 +526,18 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
+        let size_bytes = request.size.byte_count() as u32;
+        if request
+            .addr
+            .checked_add(size_bytes.saturating_sub(1))
+            .is_none()
+        {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            ));
+        }
+
         if self.host_bus_handler.has_pending_outgoing_request() || self.direct_response.is_some() {
             return Err(format!(
                 "Host request rejected: {:?}",

@@ -308,3 +308,14 @@ fn test_host_request_spanning_rtl_boundary_is_rejected() {
         Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange))
     ));
 }
+
+#[test]
+fn test_host_request_overflow_range_is_rejected() {
+    let mut runtime = create_test_runtime();
+    let request = BusRequest::read(0xFFFF_FFFE, AccessSize::Word);
+
+    assert!(matches!(
+        runtime.send_host_request(request),
+        Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange))
+    ));
+}
