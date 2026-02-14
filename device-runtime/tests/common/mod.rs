@@ -76,6 +76,7 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) {
         if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
             return;
         }
+        std::thread::sleep(Duration::from_millis(1));
     }
 
     panic!("Timed out waiting for cpu halted status bit");
@@ -188,7 +189,7 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 /// Build a standard tohost termination sequence.
 ///
 /// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, halts with EBREAK,
-/// and then includes a `jal x0, 0` fallback loop.
+/// and then includes a `jal x0, 0` fallback loop if halt handling is unavailable.
 pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 5] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
