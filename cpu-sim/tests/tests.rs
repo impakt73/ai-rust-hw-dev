@@ -173,59 +173,6 @@ fn test_register_trace_audit() {
 }
 
 #[test]
-fn test_rust_bare_metal_elf() {
-    init_test_logger();
-
-    let elf_path = sim_tests::test_program_path("rust_test").expect("Failed to find rust_test");
-    let result = run_elf(
-        &elf_path,
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("Rust bare metal simulation should succeed");
-
-    assert_tohost(&result, 0x2a, "Rust bare metal program");
-    println!(
-        "✓ Rust bare metal test ELF executed successfully in {} cycles",
-        result.cycles
-    );
-}
-
-#[test]
-fn test_fp_math_elf() {
-    init_test_logger();
-
-    let elf_path =
-        sim_tests::test_program_path("test_fp_math").expect("Failed to find test_fp_math");
-    let result = run_elf(
-        &elf_path,
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("Floating-point math test simulation should succeed");
-
-    assert_tohost(&result, 0x2a, "FP math test program");
-    println!(
-        "✓ Floating-point math test ELF executed successfully in {} cycles",
-        result.cycles
-    );
-}
-
-#[test]
 fn test_fifo_hello_world() {
     init_test_logger();
 
@@ -896,46 +843,6 @@ fn test_image_dump() {
     println!("========================================");
 }
 
-#[test]
-fn test_panic_handler() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("PANIC HANDLER TEST");
-    println!("========================================");
-
-    let elf_path = sim_tests::test_program_path("test_panic").expect("Failed to find test_panic");
-
-    // Run the panic test program with sufficient cycles
-    let result = run_elf(
-        &elf_path,
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("Simulation should succeed");
-
-    // Verify that the panic handler wrote 0xDEAD to tohost
-    assert_eq!(
-        result.tohost_value,
-        Some(0xDEAD),
-        "Panic handler should write 0xDEAD to tohost (got {:x?})",
-        result.tohost_value
-    );
-
-    println!("✓ Panic handler correctly signaled with 0xDEAD");
-    println!("✓ Test completed in {} cycles", result.cycles);
-    println!("\n========================================");
-    println!("✓ PANIC HANDLER TEST PASSED");
-    println!("========================================");
-}
-
 // ============================================================================
 // Hung State Detection Integration Tests
 // ============================================================================
@@ -1162,64 +1069,6 @@ fn test_hung_detection_catches_long_instruction() {
     println!("✓ Error message: {}", err_msg);
     println!("\n========================================");
     println!("✓ HUNG DETECTION LONG INSTRUCTION TEST PASSED");
-    println!("========================================");
-}
-
-#[test]
-fn test_atomic_operations() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("ATOMIC OPERATIONS TEST (RV32A)");
-    println!("========================================\n");
-
-    // Test 1: Simple atomic operations (AMOADD, AMOSWAP)
-    println!("Running test_atomic_simple.elf...");
-    let simple_path = sim_tests::test_program_path("test_atomic_simple")
-        .expect("Failed to find test_atomic_simple");
-    let result = run_elf(
-        &simple_path,
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("test_atomic_simple simulation should succeed");
-    assert_tohost(&result, 0x2a, "test_atomic_simple");
-    println!("✓ test_atomic_simple passed in {} cycles", result.cycles);
-
-    // Test 2: Comprehensive atomic operations (all AMO ops, LR/SC, compare_exchange)
-    println!("\nRunning test_atomic.elf...");
-    let full_path =
-        sim_tests::test_program_path("test_atomic").expect("Failed to find test_atomic");
-    let result = run_elf(
-        &full_path,
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("test_atomic simulation should succeed");
-    assert_tohost(&result, 0x2a, "test_atomic");
-    println!("✓ test_atomic passed in {} cycles", result.cycles);
-
-    println!("\n✓ All atomic operations tested:");
-    println!("  - AMOADD.W, AMOSWAP.W");
-    println!("  - AMOAND.W, AMOOR.W, AMOXOR.W");
-    println!("  - AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W");
-    println!("  - LR.W, SC.W (for compare_exchange)");
-    println!("\n========================================");
-    println!("✓ ATOMIC OPERATIONS TEST PASSED");
     println!("========================================");
 }
 

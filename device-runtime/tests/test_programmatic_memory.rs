@@ -30,14 +30,18 @@ fn test_programmatic_instruction_loading() {
 fn test_write_memory_region_patterns() {
     let mut runtime = create_test_runtime();
     let checker_program = instructions_to_bytes(&[
-        lui(12, DRAM_BASE), // x12 = DRAM base
+        lui(12, DRAM_BASE),  // x12 = DRAM base
+        addi(13, 12, 0x400), // x13 = DRAM_BASE + 0x400
+        addi(13, 13, 0x400), // x13 = DRAM_BASE + 0x800
+        addi(13, 13, 0x400), // x13 = DRAM_BASE + 0xC00
+        addi(13, 13, 0x400), // x13 = DRAM_BASE + 0x1000
         addi(10, 0, 0x12),
-        sw(12, 10, 0x1000), // seed pattern at +0x1000
+        sw(13, 10, 0), // seed pattern at +0x1000
         addi(10, 0, 0x34),
-        sw(12, 10, 0x1004), // independent region write
+        sw(13, 10, 4), // independent region write at +0x1004
         addi(10, 0, 0xFF),
-        sw(12, 10, 0x1000),  // overwrite first region
-        lbu(10, 12, 0x1000), // read overwritten byte
+        sw(13, 10, 0),  // overwrite first region
+        lbu(10, 13, 0), // read overwritten byte
         lui(11, SIM_CONTROL_BASE),
         sw(11, 10, 0), // tohost = 0xFF
         ebreak(),

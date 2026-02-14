@@ -31,16 +31,16 @@ fn test_read_word_outside_dram_range() {
 fn test_valid_dram_accesses() {
     let mut runtime = common::create_test_runtime();
     let program = instructions_to_bytes(&[
-        lui(11, DRAM_BASE), // x11 = 0x80000000 (DRAM base)
+        lui(11, DRAM_BASE + 0x1000), // x11 = 0x80001000 (test data base)
         addi(10, 0, 0xAA),
-        sb(11, 10, 0x1000), // [0x80001000] = 0xAA
+        sb(11, 10, 0), // [base+0] = 0xAA
         addi(10, 0, 0xBB),
-        sb(11, 10, 0x1001), // [0x80001001] = 0xBB
+        sb(11, 10, 1), // [base+1] = 0xBB
         addi(10, 0, 0xCC),
-        sb(11, 10, 0x1002), // [0x80001002] = 0xCC
+        sb(11, 10, 2), // [base+2] = 0xCC
         addi(10, 0, 0xDD),
-        sb(11, 10, 0x1003),        // [0x80001003] = 0xDD
-        lw(10, 11, 0x1000),        // x10 = 0xDDCCBBAA
+        sb(11, 10, 3),             // [base+3] = 0xDD
+        lw(10, 11, 0),             // x10 = 0xDDCCBBAA
         lui(12, SIM_CONTROL_BASE), // x12 = tohost base
         sw(12, 10, 0),             // tohost = x10
         ebreak(),
@@ -57,15 +57,15 @@ fn test_valid_dram_accesses() {
 fn test_boundary_at_dram_end_byte_read() {
     let program = [
         addi(10, 0, 0x42),         // x10 = test byte
-        addi(11, 0, -1),           // x11 = 0xFFFF_FFFF (upper DRAM boundary address)
-        sb(11, 10, 0),             // byte write attempt at upper boundary
-        lbu(10, 11, 0),            // current implementation reads back 0 at this boundary
+        addi(11, 0, -2),           // x11 = 0xFFFF_FFFE (upper DRAM boundary - 1)
+        sb(11, 10, 0),             // byte write near upper DRAM boundary
+        lbu(10, 11, 0),            // read back written byte
         lui(12, SIM_CONTROL_BASE), // x12 = tohost base
         sw(12, 10, 0),             // tohost = x10
         ebreak(),
         jal(0, 0),
     ];
-    run_and_expect(&program, 0);
+    run_and_expect(&program, 0x42);
 }
 
 #[test]

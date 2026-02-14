@@ -235,69 +235,6 @@ pub fn write_word_with_timeout(
     wait_for_host_write_response(runtime, addr, timeout)
 }
 
-/// Issue a host read request with an explicit access size and wait for matching response.
-pub fn read_with_timeout(
-    runtime: &mut dyn DeviceRuntime,
-    addr: u32,
-    size: AccessSize,
-    timeout: Duration,
-) -> u32 {
-    runtime
-        .send_host_request(BusRequest::read(addr, size))
-        .expect("Failed to send host read request");
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        match runtime.poll() {
-            Ok(Some(BusEvent::HostReadResponse {
-                addr: resp_addr,
-                data,
-                size: resp_size,
-            })) if resp_addr == addr
-                && resp_size == size
-                && !runtime.has_pending_host_request() =>
-            {
-                return data;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => std::thread::sleep(Duration::from_millis(1)),
-            Err(e) => panic!("Poll error while reading 0x{addr:08X}: {e}"),
-        }
-    }
-    panic!("Timed out waiting for read response at 0x{addr:08X}");
-}
-
-/// Issue a host write request with an explicit access size and wait for matching response.
-pub fn write_with_timeout(
-    runtime: &mut dyn DeviceRuntime,
-    addr: u32,
-    data: u32,
-    size: AccessSize,
-    timeout: Duration,
-) -> u32 {
-    runtime
-        .send_host_request(BusRequest::write(addr, data, size))
-        .expect("Failed to send host write request");
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        match runtime.poll() {
-            Ok(Some(BusEvent::HostWriteResponse {
-                addr: resp_addr,
-                wdata,
-                size: resp_size,
-            })) if resp_addr == addr
-                && resp_size == size
-                && !runtime.has_pending_host_request() =>
-            {
-                return wdata;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => std::thread::sleep(Duration::from_millis(1)),
-            Err(e) => panic!("Poll error while writing 0x{addr:08X}: {e}"),
-        }
-    }
-    panic!("Timed out waiting for write response at 0x{addr:08X}");
-}
-
 /// Poll and discard events until the runtime reports idle state.
 ///
 /// Panics if polling fails or if the timeout expires before idle is reached.

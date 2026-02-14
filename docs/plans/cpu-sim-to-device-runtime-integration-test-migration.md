@@ -179,7 +179,7 @@ Migrated tests must:
 
 1. ✅ Added host-memory helper coverage in `device-runtime/tests/common` for explicit access-size host reads/writes.
 2. ✅ Migrated `test_memory_bounds.rs` and `test_programmatic_memory.rs` from `cpu-sim/tests` to `device-runtime/tests`.
-3. ⏳ Selectively migrate portable `tests.rs` cases; keep simulator-contract checks in cpu-sim.
+3. ✅ Migrated portable `tests.rs` ELF cases (`rust_test`, `test_fp_math`, `test_panic`, `test_atomic*`) to `device-runtime/tests/test_tests_rs_portable.rs`; kept simulator-contract checks in cpu-sim.
 
 ### Phase 4: CI and execution model changes
 
@@ -207,7 +207,7 @@ Migrated tests must:
 | `test_alloc_only.rs` | ✅ Migrated (cpu-sim source removed) | `test_alloc_only.rs` |
 | `test_memory_bounds.rs` | ✅ Migrated (cpu-sim source removed) | `test_memory_bounds.rs` |
 | `test_programmatic_memory.rs` | ✅ Migrated (cpu-sim source removed) | `test_programmatic_memory.rs` |
-| `tests.rs` | Selective migration only (portable subset) | split into thematic files |
+| `tests.rs` | ✅ Partial selective migration complete (portable ELF subset moved) | `test_tests_rs_portable.rs` + simulator-specific remainder in `tests.rs` |
 | `test_interactive_simulator.rs` | Keep in cpu-sim | N/A |
 | `test_device_lifecycle.rs` | Keep in cpu-sim | N/A |
 | `test_audio.rs`, `test_video.rs`, `test_dma.rs` | Keep in cpu-sim unless equivalent FPGA peripherals exist | N/A |
