@@ -17,8 +17,6 @@ pub const MEDIUM_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for long operations such as full program execution and termination.
 pub const LONG_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Create and return the integration-test runtime for the selected backend.
-///
 /// Create a device runtime based on environment variables.
 ///
 /// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
