@@ -14,9 +14,9 @@ use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
     LONG_TIMEOUT,
 };
-use riscv_core::instruction::{addi, andi, lui, lw, ori, sb, sh, sw};
-use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE};
-use riscv_shared::sim_control::SUCCESS_CODE;
+use riscv_core::instruction::{addi, andi, bne, jal, lui, lw, ori, sb, sh, sub, sw};
+use riscv_shared::bus::{LED_BASE, LED_OUT_OFFSET, LED_SIZE, SIM_CONTROL_BASE};
+use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 #[test]
 fn test_led_constants() {
@@ -82,15 +82,23 @@ fn test_led_read_back() {
     let mut runtime = create_test_runtime();
 
     // CPU writes, reads back, and verifies - tohost only reached if successful
-    let mut instructions = vec![
+    let instructions = vec![
         lui(15, LED_BASE),
         addi(14, 0, 0xCC),
         sw(15, 14, 0),
         lw(13, 15, 0),
         andi(13, 13, 0xFF),
         addi(12, 0, 0xCC),
+        sub(11, 13, 12),
+        bne(11, 0, 16),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(
@@ -134,7 +142,7 @@ fn test_led_upper_bits_ignored() {
     let mut runtime = create_test_runtime();
 
     // Write value with upper bits set, read back, verify only lower 8 bits
-    let mut instructions = vec![
+    let instructions = vec![
         lui(15, LED_BASE),
         lui(14, 0xFFFFF000),
         ori(14, 14, 0xAA),
@@ -142,8 +150,16 @@ fn test_led_upper_bits_ignored() {
         lw(13, 15, 0),
         andi(13, 13, 0xFF),
         addi(12, 0, 0xAA),
+        sub(11, 13, 12),
+        bne(11, 0, 16),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(

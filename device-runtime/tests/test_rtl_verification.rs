@@ -14,8 +14,8 @@ use common::{
     LONG_TIMEOUT,
 };
 use riscv_core::instruction::*;
-use riscv_shared::bus::DRAM_BASE;
-use riscv_shared::sim_control::SUCCESS_CODE;
+use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 // ============================================================================
 // Basic Execution Tests
@@ -116,7 +116,7 @@ fn test_cpu_branch_beq_bne() {
     let mut runtime = create_test_runtime();
 
     // Program: Test BEQ and BNE instructions
-    let mut instructions = vec![
+    let instructions = vec![
         addi(1, 0, 10),
         addi(2, 0, 10),
         beq(1, 2, 8),
@@ -128,31 +128,27 @@ fn test_cpu_branch_beq_bne() {
         lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 5, 4),
+        or(10, 3, 5),
+        bne(10, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // Verify branches worked - skipped instructions should leave registers at 0
-    // let marker1 = read_word_with_timeout(runtime.as_mut(), 0x80000000, SHORT_TIMEOUT);
-    // let marker2 = read_word_with_timeout(runtime.as_mut(), 0x80000004, SHORT_TIMEOUT);
-    // assert_eq!(
-    //     marker1, 0,
-    //     "First branch should skip addi x3,x0,99, so x3 should be 0"
-    // );
-    // assert_eq!(
-    //     marker2, 0,
-    //     "Second branch should skip addi x5,x0,99, so x5 should be 0"
-    // );
 }
 
 #[test]
@@ -160,7 +156,7 @@ fn test_cpu_branch_blt_bge() {
     let mut runtime = create_test_runtime();
 
     // Program: Test BLT and BGE instructions
-    let mut instructions = vec![
+    let instructions = vec![
         addi(1, 0, 5),
         addi(2, 0, 10),
         blt(1, 2, 8),
@@ -171,25 +167,27 @@ fn test_cpu_branch_blt_bge() {
         lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 4, 4),
+        or(10, 3, 4),
+        bne(10, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // Verify branches worked
-    // let marker1 = read_word_with_timeout(runtime.as_mut(), 0x80000000, SHORT_TIMEOUT);
-    // let marker2 = read_word_with_timeout(runtime.as_mut(), 0x80000004, SHORT_TIMEOUT);
-    // assert_eq!(marker1, 0, "BLT should skip setting x3 to 99");
-    // assert_eq!(marker2, 0, "BGE should skip setting x4 to 99");
 }
 
 #[test]
@@ -197,7 +195,7 @@ fn test_cpu_branch_bltu_bgeu() {
     let mut runtime = create_test_runtime();
 
     // Program: Test BLTU and BGEU instructions (unsigned comparison)
-    let mut instructions = vec![
+    let instructions = vec![
         addi(1, 0, 5),
         addi(2, 0, 10),
         bltu(1, 2, 8),
@@ -208,25 +206,27 @@ fn test_cpu_branch_bltu_bgeu() {
         lui(9, DRAM_BASE),
         sw(9, 3, 0),
         sw(9, 4, 4),
+        or(10, 3, 4),
+        bne(10, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // Verify branches worked
-    // let marker1 = read_word_with_timeout(runtime.as_mut(), 0x80000000, SHORT_TIMEOUT);
-    // let marker2 = read_word_with_timeout(runtime.as_mut(), 0x80000004, SHORT_TIMEOUT);
-    // assert_eq!(marker1, 0, "BLTU should skip setting x3 to 99");
-    // assert_eq!(marker2, 0, "BGEU should skip setting x4 to 99");
 }
 
 // ============================================================================
@@ -238,29 +238,34 @@ fn test_cpu_load_store() {
     let mut runtime = create_test_runtime();
 
     // Program: Test basic load and store
-    let mut instructions = vec![
+    let instructions = vec![
         lui(1, DRAM_BASE),
         addi(2, 0, 42),
         sw(1, 2, 0x100), // Store 42 to 0x80000100
         lw(3, 1, 0x100), // Load back into x3
         lui(4, DRAM_BASE),
         sw(4, 3, 0x200), // Store x3 to 0x80000200 to verify
+        sub(10, 3, 2),
+        bne(10, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000200, SHORT_TIMEOUT);
-    // assert_eq!(value, 42, "Load/store should preserve value");
 }
 
 #[test]
@@ -268,7 +273,7 @@ fn test_cpu_load_byte() {
     let mut runtime = create_test_runtime();
 
     // Program: Test byte load (LB, LBU)
-    let mut instructions = vec![
+    let instructions = vec![
         lui(1, DRAM_BASE),
         addi(2, 0, 0xFF),
         sb(1, 2, 0x100),  // Store byte 0xFF
@@ -276,24 +281,31 @@ fn test_cpu_load_byte() {
         lbu(4, 1, 0x100), // Load unsigned byte (should be 0x000000FF)
         sw(1, 3, 0x200),  // Store signed result
         sw(1, 4, 0x204),  // Store unsigned result
+        addi(12, 0, -1),
+        sub(10, 3, 12),
+        bne(10, 0, 40),
+        addi(12, 0, 0xFF),
+        sub(10, 4, 12),
+        bne(10, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 0),
     ];
-    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     const BOOT_PC: u32 = 0x8000_0000;
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let signed_val = read_word_with_timeout(runtime.as_mut(), 0x80000200, SHORT_TIMEOUT);
-    // let unsigned_val = read_word_with_timeout(runtime.as_mut(), 0x80000204, SHORT_TIMEOUT);
-    // assert_eq!(signed_val, 0xFFFFFFFF, "LB should sign-extend 0xFF");
-    // assert_eq!(unsigned_val, 0x000000FF, "LBU should zero-extend 0xFF");
 }
 
 #[test]
@@ -318,14 +330,8 @@ fn test_cpu_load_halfword() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let signed_val = read_word_with_timeout(runtime.as_mut(), 0x80000200, SHORT_TIMEOUT);
-    // let unsigned_val = read_word_with_timeout(runtime.as_mut(), 0x80000204, SHORT_TIMEOUT);
-    // assert_eq!(signed_val, 0xFFFFFFFF, "LH should sign-extend 0xFFFF");
-    // assert_eq!(unsigned_val, 0x0000FFFF, "LHU should zero-extend 0xFFFF");
 }

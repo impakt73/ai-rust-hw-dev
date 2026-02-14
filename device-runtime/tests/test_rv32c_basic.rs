@@ -10,12 +10,10 @@
 
 mod common;
 
-use common::{
-    create_test_runtime, load_and_boot, tohost_termination, wait_for_tohost, LONG_TIMEOUT,
-};
-use riscv_core::instruction::{add, addi, c_add, c_addi, c_li, c_mv, lui, sw};
-use riscv_shared::bus::DRAM_BASE;
-use riscv_shared::sim_control::SUCCESS_CODE;
+use common::{create_test_runtime, load_and_boot, wait_for_tohost, LONG_TIMEOUT};
+use riscv_core::instruction::{add, addi, bne, c_add, c_addi, c_li, c_mv, jal, lui, sub, sw};
+use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 /// Helper to build a mixed program with compressed and uncompressed instructions.
 /// Returns bytes suitable for load_program.
@@ -46,6 +44,20 @@ fn build_mixed_program(
     bytes
 }
 
+fn check_reg_and_terminate(result_reg: u32, expected: i32) -> [u32; 9] {
+    [
+        addi(12, 0, expected),
+        sub(11, result_reg, 12),
+        bne(11, 0, 20),
+        lui(7, SIM_CONTROL_BASE),
+        addi(8, 0, SUCCESS_CODE as i32),
+        sw(7, 8, 0),
+        jal(0, 12),
+        addi(8, 0, FAILURE_CODE as i32),
+        sw(7, 8, 0),
+    ]
+}
+
 #[test]
 fn test_c_li() {
     let mut runtime = create_test_runtime();
@@ -59,9 +71,8 @@ fn test_c_li() {
 
     let mut standard = vec![(2, lui(15, DRAM_BASE)), (6, sw(15, 10, 0x100))];
 
-    // Add tohost termination starting at offset 10
-    let tohost_insns = tohost_termination(7, 8, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 5);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((10 + (i as u32 * 4), insn));
     }
 
@@ -70,15 +81,10 @@ fn test_c_li() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // Read result from memory
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 5, "x10 should be 5");
 }
 
 #[test]
@@ -95,8 +101,8 @@ fn test_c_addi() {
 
     let mut standard = vec![(4, lui(15, DRAM_BASE)), (8, sw(15, 10, 0x100))];
 
-    let tohost_insns = tohost_termination(7, 8, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 15);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((12 + (i as u32 * 4), insn));
     }
 
@@ -105,14 +111,10 @@ fn test_c_addi() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 15, "x10 should be 15");
 }
 
 #[test]
@@ -130,8 +132,8 @@ fn test_c_add() {
 
     let mut standard = vec![(6, lui(15, DRAM_BASE)), (10, sw(15, 10, 0x100))];
 
-    let tohost_insns = tohost_termination(7, 8, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 10);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((14 + (i as u32 * 4), insn));
     }
 
@@ -140,14 +142,10 @@ fn test_c_add() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 10, "x10 should be 10");
 }
 
 #[test]
@@ -168,8 +166,8 @@ fn test_c_mv() {
         (10, sw(15, 10, 0x100)),
     ];
 
-    let tohost_insns = tohost_termination(7, 8, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 42);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((14 + (i as u32 * 4), insn));
     }
 
@@ -178,14 +176,10 @@ fn test_c_mv() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 42, "x10 should be 42");
 }
 
 // ============================================================================
@@ -206,8 +200,8 @@ fn test_compressed_to_compressed_transition() {
 
     let mut standard = vec![(8, lui(15, DRAM_BASE)), (12, sw(15, 10, 0x100))];
 
-    let tohost_insns = tohost_termination(7, 11, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 10);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((16 + (i as u32 * 4), insn));
     }
 
@@ -216,14 +210,10 @@ fn test_compressed_to_compressed_transition() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 10, "x10 should be 10 after C→C transitions");
 }
 
 #[test]
@@ -239,8 +229,8 @@ fn test_compressed_to_uncompressed_transition() {
         (10, sw(15, 10, 0x100)),
     ];
 
-    let tohost_insns = tohost_termination(7, 11, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 15);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((14 + (i as u32 * 4), insn));
     }
 
@@ -249,14 +239,10 @@ fn test_compressed_to_uncompressed_transition() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 15, "x10 should be 15 after C→U transition");
 }
 
 #[test]
@@ -272,8 +258,8 @@ fn test_uncompressed_to_compressed_transition() {
         (10, sw(15, 10, 0x100)),
     ];
 
-    let tohost_insns = tohost_termination(7, 11, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 15);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((14 + (i as u32 * 4), insn));
     }
 
@@ -282,14 +268,10 @@ fn test_uncompressed_to_compressed_transition() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 15, "x10 should be 15 after U→C transition");
 }
 
 #[test]
@@ -307,8 +289,8 @@ fn test_uncompressed_to_uncompressed_regression() {
         (16, sw(15, 12, 0x100)),
     ];
 
-    let tohost_insns = tohost_termination(7, 13, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(12, 8);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((20 + (i as u32 * 4), insn));
     }
 
@@ -317,14 +299,10 @@ fn test_uncompressed_to_uncompressed_regression() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 8, "x12 should be 8");
 }
 
 #[test]
@@ -344,8 +322,8 @@ fn test_mixed_sequence_across_word_boundary() {
         (14, sw(15, 10, 0x100)),
     ];
 
-    let tohost_insns = tohost_termination(7, 11, SUCCESS_CODE);
-    for (i, &insn) in tohost_insns.iter().enumerate() {
+    let check_insns = check_reg_and_terminate(10, 15);
+    for (i, &insn) in check_insns.iter().enumerate() {
         standard.push((18 + (i as u32 * 4), insn));
     }
 
@@ -354,12 +332,8 @@ fn test_mixed_sequence_across_word_boundary() {
     const BOOT_PC: u32 = 0x8000_0000;
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let value = read_word_with_timeout(runtime.as_mut(), 0x80000100, SHORT_TIMEOUT);
-    // assert_eq!(value, 15, "x10 should be 15 after mixed sequence");
 }

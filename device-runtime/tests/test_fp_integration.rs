@@ -84,16 +84,10 @@ fn test_cpu_flw_multiple_registers() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let val1 = read_word_with_timeout(runtime.as_mut(), 0x80001100, SHORT_TIMEOUT);
-    // let val2 = read_word_with_timeout(runtime.as_mut(), 0x80001104, SHORT_TIMEOUT);
-    // assert_eq!(val2, 0x40000000, "f2 should be 2.0");
-    // assert_eq!(val3, 0x40400000, "f3 should be 3.0");
 }
 
 // ============================================================================
@@ -263,18 +257,10 @@ fn test_cpu_feq_flt() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let eq_same = read_word_with_timeout(runtime.as_mut(), 0x80001100, SHORT_TIMEOUT);
-    // let eq_diff = read_word_with_timeout(runtime.as_mut(), 0x80001104, SHORT_TIMEOUT);
-    // let lt_true = read_word_with_timeout(runtime.as_mut(), 0x80001108, SHORT_TIMEOUT);
-    // assert_eq!(eq_diff, 0, "1.0 == 2.0 should be false");
-    // assert_eq!(lt_true, 1, "1.0 < 2.0 should be true");
-    // assert_eq!(lt_false, 0, "2.0 < 1.0 should be false");
 }
 
 // ============================================================================
@@ -342,14 +328,10 @@ fn test_cpu_fsub_fdiv_fsqrt() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let fsub_result = read_word_with_timeout(runtime.as_mut(), 0x80001100, SHORT_TIMEOUT);
-    // assert_eq!(fdiv_result, 0x40200000, "5.0 / 2.0 should equal 2.5");
 }
 
 #[test]
@@ -381,16 +363,10 @@ fn test_cpu_fmin_fmax() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let min_result = read_word_with_timeout(runtime.as_mut(), 0x80001100, SHORT_TIMEOUT);
-    // let max_result = read_word_with_timeout(runtime.as_mut(), 0x80001104, SHORT_TIMEOUT);
-    // assert_eq!(min_result, 0x3F800000, "min(1.0, 3.0) should be 1.0");
-    // assert_eq!(max_result, 0x40400000, "max(1.0, 3.0) should be 3.0");
 }
 
 #[test]
@@ -420,16 +396,10 @@ fn test_cpu_fle() {
 
     load_and_boot(runtime.as_mut(), BOOT_PC, &program_bytes);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
     assert_eq!(
         tohost_value, SUCCESS_CODE,
         "Program should terminate with tohost=1"
     );
-
-    // let le1 = read_word_with_timeout(runtime.as_mut(), 0x80001100, SHORT_TIMEOUT);
-    // let le2 = read_word_with_timeout(runtime.as_mut(), 0x80001104, SHORT_TIMEOUT);
-    // assert_eq!(le2, 0, "2.0 <= 1.0 should be false");
-    // assert_eq!(le3, 1, "1.0 <= 1.0 should be true");
 }
 
 #[test]
