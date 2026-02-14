@@ -375,6 +375,31 @@ impl InteractiveSimulator {
         view.receive_bus_response()
     }
 
+    /// Process a non-RTL host request directly through the simulator SystemBus.
+    pub fn process_system_bus_request(&mut self, request: &BusRequest) -> BusResponse {
+        if request.we {
+            match request.size {
+                AccessSize::Byte => self
+                    .simulator
+                    .bus
+                    .write_byte(request.addr, request.wdata as u8),
+                AccessSize::Halfword => self
+                    .simulator
+                    .bus
+                    .write_halfword(request.addr, request.wdata as u16),
+                AccessSize::Word => self.simulator.bus.write_word(request.addr, request.wdata),
+            }
+            BusResponse::write_ack(request.size)
+        } else {
+            let rdata = match request.size {
+                AccessSize::Byte => self.simulator.bus.read_byte(request.addr) as u32,
+                AccessSize::Halfword => self.simulator.bus.read_halfword(request.addr) as u32,
+                AccessSize::Word => self.simulator.bus.read_word(request.addr),
+            };
+            BusResponse::read_data(rdata, request.size)
+        }
+    }
+
     /// Write a region of memory from a byte slice
     ///
     /// Writes bytes into the simulator's memory starting at `start_addr`.

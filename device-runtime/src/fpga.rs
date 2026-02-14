@@ -8,9 +8,12 @@
 //! processing happen on a background thread. The main thread communicates
 //! via channels and shared state.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest, ResetKind};
+use crate::{
+    classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
+    PendingHostRequest, ResetKind,
+};
 use bus_shared::{is_valid_dram_range, SystemBus, DRAM_BASE, DRAM_END};
-use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
+use host_bus_handler::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use serialport::SerialPort;
 use std::io::{Read, Write};
@@ -129,18 +132,37 @@ impl FpgaDeviceRuntime {
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
-                    // pending_host_request is already set by the sender before
-                    // enqueuing this command, so we only need to forward to handler
-                    if let Err(e) = handler.send_request(request) {
-                        // Clear pending on failure
-                        {
+                    match classify_host_request_route(&request) {
+                        HostRequestRoute::HostBusHandler => {
+                            // pending_host_request is already set by the sender before
+                            // enqueuing this command, so we only need to forward to handler
+                            if let Err(e) = handler.send_request(request) {
+                                // Clear pending on failure
+                                {
+                                    let mut pending = pending_host_request.lock().unwrap();
+                                    *pending = None;
+                                }
+                                let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
+                                    "Handler error: {:?}",
+                                    e
+                                )));
+                            }
+                        }
+                        HostRequestRoute::SystemBus => {
+                            let event = Self::process_system_bus_request(&request, &mut bus);
+                            let mut pending = pending_host_request.lock().unwrap();
+                            if pending.is_some() {
+                                *pending = None;
+                                let _ = event_tx.send(RuntimeEvent::Bus(event));
+                            }
+                        }
+                        HostRequestRoute::InvalidSpanningRegion => {
                             let mut pending = pending_host_request.lock().unwrap();
                             *pending = None;
+                            let _ = event_tx.send(RuntimeEvent::NonFatalError(
+                                "Invalid host request spanning RTL and non-RTL regions".into(),
+                            ));
                         }
-                        let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
-                            "Handler error: {:?}",
-                            e
-                        )));
                     }
                 }
                 Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
@@ -606,6 +628,33 @@ impl FpgaDeviceRuntime {
         }
     }
 
+    /// Process a host-initiated request directly in SystemBus.
+    fn process_system_bus_request(request: &BusRequest, bus: &mut SystemBus) -> BusEvent {
+        if request.we {
+            match request.size {
+                AccessSize::Byte => bus.write_byte(request.addr, request.wdata as u8),
+                AccessSize::Halfword => bus.write_halfword(request.addr, request.wdata as u16),
+                AccessSize::Word => bus.write_word(request.addr, request.wdata),
+            }
+            BusEvent::HostWriteResponse {
+                addr: request.addr,
+                wdata: request.wdata,
+                size: request.size,
+            }
+        } else {
+            let rdata = match request.size {
+                AccessSize::Byte => bus.read_byte(request.addr) as u32,
+                AccessSize::Halfword => bus.read_halfword(request.addr) as u32,
+                AccessSize::Word => bus.read_word(request.addr),
+            };
+            BusEvent::HostReadResponse {
+                addr: request.addr,
+                data: rdata,
+                size: request.size,
+            }
+        }
+    }
+
     /// Load an ELF file into a new SystemBus, returning the entry point and bus.
     ///
     /// This loads into a temporary SystemBus instance first, so the existing bus is
@@ -678,6 +727,10 @@ impl FpgaDeviceRuntime {
 
 impl DeviceRuntime for FpgaDeviceRuntime {
     fn send_host_request(&mut self, request: BusRequest) -> Result<(), DeviceError> {
+        if classify_host_request_route(&request) == HostRequestRoute::InvalidSpanningRegion {
+            return Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange));
+        }
+
         // Atomically check and set pending request under the same lock
         {
             let mut pending = self.pending_host_request.lock().unwrap();

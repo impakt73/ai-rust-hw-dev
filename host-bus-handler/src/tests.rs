@@ -137,7 +137,7 @@ fn test_send_request_byte_write() {
 fn test_send_request_halfword_write() {
     let mut handler = HostBusHandler::new();
 
-    let request = BusRequest::write(0x12345678, 0xBEEF, AccessSize::Halfword);
+    let request = BusRequest::write(0x50000008, 0xBEEF, AccessSize::Halfword);
     handler.send_request(request).unwrap();
 
     let mut tx_bytes = Vec::new();
@@ -148,10 +148,10 @@ fn test_send_request_halfword_write() {
     // Header: packet_type=0010, size=01 (half), reserved=0, we=1 → 0x25
     assert_eq!(tx_bytes.len(), 7);
     assert_eq!(tx_bytes[0], 0x25); // header
-    assert_eq!(tx_bytes[1], 0x78); // addr[7:0]
-    assert_eq!(tx_bytes[2], 0x56); // addr[15:8]
-    assert_eq!(tx_bytes[3], 0x34); // addr[23:16]
-    assert_eq!(tx_bytes[4], 0x12); // addr[31:24]
+    assert_eq!(tx_bytes[1], 0x08); // addr[7:0]
+    assert_eq!(tx_bytes[2], 0x00); // addr[15:8]
+    assert_eq!(tx_bytes[3], 0x00); // addr[23:16]
+    assert_eq!(tx_bytes[4], 0x50); // addr[31:24]
     assert_eq!(tx_bytes[5], 0xEF); // data[7:0]
     assert_eq!(tx_bytes[6], 0xBE); // data[15:8]
 }
@@ -160,7 +160,7 @@ fn test_send_request_halfword_write() {
 fn test_send_request_word_write() {
     let mut handler = HostBusHandler::new();
 
-    let request = BusRequest::write(0xAABBCCDD, 0xDEADBEEF, AccessSize::Word);
+    let request = BusRequest::write(0x5000000C, 0xDEADBEEF, AccessSize::Word);
     handler.send_request(request).unwrap();
 
     let mut tx_bytes = Vec::new();
@@ -171,10 +171,10 @@ fn test_send_request_word_write() {
     // Header: packet_type=0010, size=10 (word), reserved=0, we=1 → 0x29
     assert_eq!(tx_bytes.len(), 9);
     assert_eq!(tx_bytes[0], 0x29); // header
-    assert_eq!(tx_bytes[1], 0xDD); // addr[7:0]
-    assert_eq!(tx_bytes[2], 0xCC); // addr[15:8]
-    assert_eq!(tx_bytes[3], 0xBB); // addr[23:16]
-    assert_eq!(tx_bytes[4], 0xAA); // addr[31:24]
+    assert_eq!(tx_bytes[1], 0x0C); // addr[7:0]
+    assert_eq!(tx_bytes[2], 0x00); // addr[15:8]
+    assert_eq!(tx_bytes[3], 0x00); // addr[23:16]
+    assert_eq!(tx_bytes[4], 0x50); // addr[31:24]
     assert_eq!(tx_bytes[5], 0xEF); // data[7:0]
     assert_eq!(tx_bytes[6], 0xBE); // data[15:8]
     assert_eq!(tx_bytes[7], 0xAD); // data[23:16]
@@ -235,6 +235,28 @@ fn test_send_request_rejects_when_pending() {
     let request2 = BusRequest::read(0x50000004, AccessSize::Byte);
     let result = handler.send_request(request2);
     assert_eq!(result, Err(HandlerError::RequestPending));
+}
+
+#[test]
+fn test_send_request_rejects_non_rtl_address() {
+    let mut handler = HostBusHandler::new();
+
+    let request = BusRequest::read(0x8000_0000, AccessSize::Word);
+    assert_eq!(
+        handler.send_request(request),
+        Err(HandlerError::InvalidAddressRange)
+    );
+}
+
+#[test]
+fn test_send_request_rejects_spanning_rtl_boundary() {
+    let mut handler = HostBusHandler::new();
+
+    let request = BusRequest::read(0x4FFF_FFFF, AccessSize::Word);
+    assert_eq!(
+        handler.send_request(request),
+        Err(HandlerError::InvalidAddressRange)
+    );
 }
 
 // ============================================================
@@ -702,7 +724,7 @@ fn test_receive_cpu_initiated_write_response() {
 
     // First send a request
     handler
-        .send_request(BusRequest::write(0x80000000, 0x55, AccessSize::Byte))
+        .send_request(BusRequest::write(0x50000000, 0x55, AccessSize::Byte))
         .unwrap();
 
     // Drain TX

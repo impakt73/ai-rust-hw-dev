@@ -10,6 +10,7 @@ mod sim;
 
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
+use host_bus_handler::RequestAddressRegion;
 use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::path::Path;
 
@@ -192,6 +193,21 @@ pub fn bytes_for_size(size: u8) -> u8 {
         0 => 1,
         1 => 2,
         _ => 4,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HostRequestRoute {
+    HostBusHandler,
+    SystemBus,
+    InvalidSpanningRegion,
+}
+
+pub(crate) fn classify_host_request_route(request: &BusRequest) -> HostRequestRoute {
+    match host_bus_handler::classify_request_region(request) {
+        RequestAddressRegion::RtlPeripheral => HostRequestRoute::HostBusHandler,
+        RequestAddressRegion::NonRtl => HostRequestRoute::SystemBus,
+        RequestAddressRegion::SpansRtlBoundary => HostRequestRoute::InvalidSpanningRegion,
     }
 }
 

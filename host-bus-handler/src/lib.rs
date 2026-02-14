@@ -43,6 +43,7 @@
 //!     break; // Exit loop for doc test - in real code, poll for RX bytes
 //! }
 //! ```
+use riscv_shared::bus::{RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
 
 /// Access size for bus operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +166,36 @@ pub enum HandlerError {
     NoRequestAvailable,
     /// No outstanding request to complete
     NoOutstandingRequest,
+    /// Request address range is invalid for host bus handling
+    InvalidAddressRange,
+}
+
+/// Address-region classification for host-initiated requests
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestAddressRegion {
+    /// Entire request range is within RTL peripheral space
+    RtlPeripheral,
+    /// Entire request range is outside RTL peripheral space
+    NonRtl,
+    /// Request range crosses into/out of RTL peripheral space
+    SpansRtlBoundary,
+}
+
+/// Classify which memory region a request touches.
+pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
+    let size_bytes = request.size.byte_count() as u32;
+    let Some(end_addr) = request.addr.checked_add(size_bytes.saturating_sub(1)) else {
+        return RequestAddressRegion::NonRtl;
+    };
+
+    let start_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&request.addr);
+    let end_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&end_addr);
+
+    match (start_in_rtl, end_in_rtl) {
+        (true, true) => RequestAddressRegion::RtlPeripheral,
+        (false, false) => RequestAddressRegion::NonRtl,
+        _ => RequestAddressRegion::SpansRtlBoundary,
+    }
 }
 
 /// RX state machine states (mirroring host_rx_buffer.sv)
@@ -660,6 +691,9 @@ impl HostBusHandler {
     pub fn send_request(&mut self, request: BusRequest) -> Result<(), HandlerError> {
         if self.outgoing_request.is_some() {
             return Err(HandlerError::RequestPending);
+        }
+        if classify_request_region(&request) != RequestAddressRegion::RtlPeripheral {
+            return Err(HandlerError::InvalidAddressRange);
         }
 
         self.outgoing_request = Some(request);

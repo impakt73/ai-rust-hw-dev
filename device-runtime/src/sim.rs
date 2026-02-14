@@ -8,9 +8,12 @@
 //! continuously. Host-initiated bus requests are forwarded directly
 //! to the simulator's internal host bus handler.
 
-use crate::{BusEvent, DeviceError, DeviceRuntime, PendingHostRequest, ResetKind};
+use crate::{
+    classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
+    PendingHostRequest, ResetKind,
+};
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{AccessSize, BusRequest};
+use host_bus_handler::{AccessSize, BusRequest, HandlerError};
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use std::path::Path;
 use std::sync::mpsc;
@@ -106,18 +109,49 @@ impl SimDeviceRuntime {
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
                 Ok(RuntimeCommand::SendRequest(request)) => {
-                    if let Err(e) = simulator.send_bus_request(request) {
-                        // Clear pending and notify caller with a failure event
-                        let mut pending = pending_host_request.lock().unwrap();
-                        if let Some(ref p) = *pending {
-                            let failed_addr = p.addr;
-                            let _ =
-                                event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
-                                    addr: failed_addr,
-                                }));
+                    match classify_host_request_route(&request) {
+                        HostRequestRoute::HostBusHandler => {
+                            if let Err(e) = simulator.send_bus_request(request) {
+                                // Clear pending and notify caller with a failure event
+                                let mut pending = pending_host_request.lock().unwrap();
+                                if let Some(ref p) = *pending {
+                                    let failed_addr = p.addr;
+                                    let _ = event_tx.send(RuntimeEvent::Bus(
+                                        BusEvent::HostRequestTimeout { addr: failed_addr },
+                                    ));
+                                }
+                                *pending = None;
+                                log::warn!("Host request rejected by simulator: {}", e);
+                            }
                         }
-                        *pending = None;
-                        log::warn!("Host request rejected by simulator: {}", e);
+                        HostRequestRoute::SystemBus => {
+                            let response = simulator.process_system_bus_request(&request);
+                            let mut pending = pending_host_request.lock().unwrap();
+                            if pending.is_some() {
+                                *pending = None;
+                                let event = if response.we {
+                                    BusEvent::HostWriteResponse {
+                                        addr: request.addr,
+                                        wdata: request.wdata,
+                                        size: response.size,
+                                    }
+                                } else {
+                                    BusEvent::HostReadResponse {
+                                        addr: request.addr,
+                                        data: response.rdata,
+                                        size: response.size,
+                                    }
+                                };
+                                let _ = event_tx.send(RuntimeEvent::Bus(event));
+                            }
+                        }
+                        HostRequestRoute::InvalidSpanningRegion => {
+                            let mut pending = pending_host_request.lock().unwrap();
+                            *pending = None;
+                            let _ = event_tx.send(RuntimeEvent::FatalError(
+                                "Invalid host request spanning RTL and non-RTL regions".into(),
+                            ));
+                        }
                     }
                 }
                 Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
@@ -213,6 +247,10 @@ impl SimDeviceRuntime {
 
 impl DeviceRuntime for SimDeviceRuntime {
     fn send_host_request(&mut self, request: BusRequest) -> Result<(), DeviceError> {
+        if classify_host_request_route(&request) == HostRequestRoute::InvalidSpanningRegion {
+            return Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange));
+        }
+
         // Atomically check and set pending request under the same lock
         {
             let mut pending = self.pending_host_request.lock().unwrap();
