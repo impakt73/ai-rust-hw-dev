@@ -42,7 +42,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/top.sv
 
 FPGA_SOURCES = \
-	$(FPGA_DIR)/bram_unified.sv \
 	$(FPGA_DIR)/stub_fpu.sv \
 	$(FPGA_DIR)/fpga_top.sv
 
