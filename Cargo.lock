@@ -907,6 +907,7 @@ dependencies = [
  "riscv_core",
  "riscv_shared",
  "serialport",
+ "sim-tests",
 ]
 
 [[package]]

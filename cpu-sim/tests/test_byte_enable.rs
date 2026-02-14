@@ -2,6 +2,7 @@ use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_byte_enable.rs"]
 fn test_byte_enable_heap_directly() {
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -86,6 +87,7 @@ fn test_byte_enable_heap_directly() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_byte_enable.rs"]
 fn test_byte_enable_stack_memory() {
     let _ = env_logger::builder().is_test(true).try_init();
 

@@ -17,3 +17,4 @@ serialport = "4.6"
 host-bus-handler = { path = "../host-bus-handler" }
 riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
+sim-tests = { path = "../sim-tests" }

@@ -8,6 +8,7 @@ use device_runtime::{
 use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
 use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Timeout for quick operations such as simple host register reads/writes.
@@ -46,6 +47,30 @@ pub fn load_and_boot(runtime: &mut dyn DeviceRuntime, boot_pc: u32, program_byte
         .load_program(boot_pc, program_bytes)
         .expect("Failed to load program");
     runtime.boot_cpu(boot_pc).expect("Failed to boot CPU");
+}
+
+/// Resolve a named test program ELF path using `sim-tests`.
+pub fn resolve_test_elf_path(test_program: &str) -> PathBuf {
+    sim_tests::test_program_path(test_program)
+        .unwrap_or_else(|_| panic!("Failed to find {test_program}"))
+}
+
+/// Load an ELF into runtime, boot CPU at ELF entry point, and return that entry.
+pub fn load_and_boot_elf(runtime: &mut dyn DeviceRuntime, elf_path: &Path) -> u32 {
+    let entry = runtime.load_elf(elf_path).expect("Failed to load ELF");
+    runtime.boot_cpu(entry).expect("Failed to boot CPU");
+    entry
+}
+
+/// Resolve and run a named test ELF until CPU halt and return observed tohost value.
+pub fn run_elf_until_halt(
+    runtime: &mut dyn DeviceRuntime,
+    test_program: &str,
+    timeout: Duration,
+) -> Option<u32> {
+    let elf_path = resolve_test_elf_path(test_program);
+    load_and_boot_elf(runtime, &elf_path);
+    wait_for_cpu_halt(runtime, timeout)
 }
 
 /// Wait until a `TohostTermination` event is received and return its value.

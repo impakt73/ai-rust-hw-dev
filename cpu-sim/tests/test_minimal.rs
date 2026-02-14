@@ -2,6 +2,7 @@ use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_minimal.rs"]
 fn test_minimal_postcard_byte_by_byte() {
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -49,6 +50,7 @@ fn test_minimal_postcard_byte_by_byte() {
 }
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_minimal.rs"]
 fn test_minimal_postcard_word_packing() {
     let _ = env_logger::builder().is_test(true).try_init();
 

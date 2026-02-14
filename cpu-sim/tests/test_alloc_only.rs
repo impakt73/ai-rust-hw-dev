@@ -2,6 +2,7 @@ use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_alloc_only.rs"]
 fn test_alloc_only() {
     let _ = env_logger::builder().is_test(true).try_init();
 

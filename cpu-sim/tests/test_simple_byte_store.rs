@@ -2,6 +2,7 @@ use cpu_sim::*;
 use std::sync::{Arc, Mutex};
 
 #[test]
+#[ignore = "migrated to device-runtime/tests/test_simple_byte_store.rs"]
 fn test_simple_byte_store() {
     let _ = env_logger::builder().is_test(true).try_init();
 
