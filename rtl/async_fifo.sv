@@ -48,23 +48,20 @@ module async_fifo #(
     logic empty_next;
 
     function automatic logic [PTR_WIDTH-1:0] bin_to_gray(input logic [PTR_WIDTH-1:0] bin);
-        return bin ^ (bin >> 1);
+        bin_to_gray = bin ^ (bin >> 1);
     endfunction
 
     function automatic logic [PTR_WIDTH-1:0] gray_to_bin(input logic [PTR_WIDTH-1:0] gray);
-        logic [PTR_WIDTH-1:0] bin;
-        bin[PTR_WIDTH-1] = gray[PTR_WIDTH-1];
-        for (int i = PTR_WIDTH - 2; i >= 0; i--) begin
-            bin[i] = bin[i+1] ^ gray[i];
+        integer i;
+        gray_to_bin[PTR_WIDTH-1] = gray[PTR_WIDTH-1];
+        for (i = PTR_WIDTH - 2; i >= 0; i = i - 1) begin
+            gray_to_bin[i] = gray_to_bin[i+1] ^ gray[i];
         end
-        return bin;
     endfunction
 
     function automatic logic [PTR_WIDTH-1:0] full_compare_gray(input logic [PTR_WIDTH-1:0] gray);
-        logic [PTR_WIDTH-1:0] cmp;
-        cmp = gray;
-        cmp[PTR_WIDTH-1 -: 2] = ~gray[PTR_WIDTH-1 -: 2];
-        return cmp;
+        full_compare_gray = gray;
+        full_compare_gray[PTR_WIDTH-1 -: 2] = ~gray[PTR_WIDTH-1 -: 2];
     endfunction
 
     // Parameter validation (simulation only)
