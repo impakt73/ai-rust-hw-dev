@@ -52,7 +52,7 @@ pub fn load_and_boot(runtime: &mut dyn DeviceRuntime, boot_pc: u32, program_byte
 /// Resolve a named test program ELF path using `sim-tests`.
 pub fn resolve_test_elf_path(test_program: &str) -> PathBuf {
     sim_tests::test_program_path(test_program)
-        .unwrap_or_else(|_| panic!("Failed to find {test_program}"))
+        .unwrap_or_else(|e| panic!("Failed to find {test_program}: {e}"))
 }
 
 /// Load an ELF into runtime, boot CPU at ELF entry point, and return that entry.

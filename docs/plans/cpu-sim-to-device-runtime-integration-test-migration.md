@@ -173,7 +173,7 @@ Migrated tests must:
    - `test_simple_byte_store.rs`
    - portable cases from `test_minimal.rs` (`minimal_postcard_test`, `minimal_postcard_test2`)
    - `test_alloc_only.rs`
-4. ✅ Kept simulator-internal ELF tests in `cpu-sim/tests` (audio/video/dma/interactive internals) and ignored cpu-sim tests that now have `device-runtime` equivalents.
+4. ✅ Kept simulator-internal ELF tests in `cpu-sim/tests` (audio/video/dma/interactive internals) and removed cpu-sim test files/cases that now have `device-runtime` equivalents.
 
 ### Phase 3: Migrate Tier B non-ELF with targeted harness growth
 
@@ -201,10 +201,10 @@ Migrated tests must:
 | `test_rv32c_basic.rs` | ✅ Migrated (cpu-sim source removed) | `test_rv32c_basic.rs` |
 | `test_led_peripheral.rs` | ✅ Migrated (cpu-sim source removed) | `test_led_peripheral.rs` |
 | `test_host_initiated_requests.rs` | ✅ Migrated (cpu-sim source removed) | `test_host_initiated_requests.rs` |
-| `test_byte_enable.rs` | ✅ Migrated (cpu-sim tests ignored) | `test_byte_enable.rs` |
-| `test_simple_byte_store.rs` | ✅ Migrated (cpu-sim test ignored) | `test_simple_byte_store.rs` |
-| `test_minimal.rs` (portable subset) | ✅ Partial migration complete (2 tests migrated) | `test_minimal.rs` |
-| `test_alloc_only.rs` | ✅ Migrated (cpu-sim test ignored) | `test_alloc_only.rs` |
+| `test_byte_enable.rs` | ✅ Migrated (cpu-sim source removed) | `test_byte_enable.rs` |
+| `test_simple_byte_store.rs` | ✅ Migrated (cpu-sim source removed) | `test_simple_byte_store.rs` |
+| `test_minimal.rs` (portable subset) | ✅ Partial migration complete (2 cpu-sim tests removed) | `test_minimal.rs` |
+| `test_alloc_only.rs` | ✅ Migrated (cpu-sim source removed) | `test_alloc_only.rs` |
 | `test_memory_bounds.rs` | Migrate after read/write helper hardening | `test_memory_bounds.rs` |
 | `test_programmatic_memory.rs` | Migrate after helper hardening | `test_programmatic_memory.rs` |
 | `tests.rs` | Selective migration only (portable subset) | split into thematic files |
