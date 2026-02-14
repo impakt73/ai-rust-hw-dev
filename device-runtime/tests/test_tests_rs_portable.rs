@@ -3,6 +3,7 @@ mod common;
 use common::{
     create_test_runtime, read_word_with_timeout, run_elf_until_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
 };
+use device_runtime::DeviceRuntime;
 
 #[test]
 fn test_rust_bare_metal_elf() {
@@ -87,7 +88,7 @@ fn test_image_data_dump() {
     const TEST_IMAGE_BASE: u32 = 0x8000_2000;
     const IMAGE_WIDTH: u32 = 4;
 
-    let read_pixel = |runtime: &mut dyn device_runtime::DeviceRuntime, x: u32, y: u32| -> [u8; 4] {
+    let read_pixel = |runtime: &mut dyn DeviceRuntime, x: u32, y: u32| -> [u8; 4] {
         let offset = ((y * IMAGE_WIDTH + x) * 4) as u32;
         read_word_with_timeout(runtime, TEST_IMAGE_BASE + offset, SHORT_TIMEOUT).to_le_bytes()
     };
