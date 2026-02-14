@@ -6,8 +6,8 @@ use device_runtime::{
     create_device_runtime, BusEvent, BusRequest, DeviceRuntime, DeviceRuntimeType,
 };
 use host_bus_handler::AccessSize;
-use riscv_core::instruction::{addi, lui, sw};
-use riscv_shared::bus::SIM_CONTROL_BASE;
+use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
+use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
 use std::time::{Duration, Instant};
 
 /// Timeout for quick operations such as simple host register reads/writes.
@@ -63,6 +63,22 @@ pub fn wait_for_tohost(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> u3
     }
 
     panic!("Timed out waiting for tohost termination");
+}
+
+/// Poll system controller status until CPU halted bit is set.
+///
+/// Panics if polling fails or if the timeout expires first.
+pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let remaining = timeout.saturating_sub(start.elapsed());
+        let status = read_word_with_timeout(runtime, sysctrl_status_addr(), remaining);
+        if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
+            return;
+        }
+    }
+
+    panic!("Timed out waiting for cpu halted status bit");
 }
 
 /// Wait for a host read response matching `addr` and return the read data.
@@ -171,9 +187,9 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 
 /// Build a standard tohost termination sequence.
 ///
-/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE` and then executes a NOP instruction.
-/// Execution intentionally continues after this sequence; callers are responsible for any trailing flow.
-pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 4] {
+/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, halts with EBREAK,
+/// and then includes a `jal x0, 0` fallback loop.
+pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 5] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
         addi(
@@ -182,7 +198,8 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
             i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
         ),
         sw(addr_reg, value_reg, 0),
-        addi(0, 0, 0),
+        ebreak(),
+        jal(0, 0),
     ]
 }
 

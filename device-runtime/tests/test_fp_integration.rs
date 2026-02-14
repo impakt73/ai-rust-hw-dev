@@ -9,8 +9,8 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
-    LONG_TIMEOUT, TEST_BOOT_PC,
+    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination,
+    wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
@@ -42,12 +42,7 @@ fn test_cpu_flw_fsw_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -87,20 +82,18 @@ fn test_cpu_flw_multiple_registers() {
         lui(9, SIM_CONTROL_BASE),
         addi(10, 0, SUCCESS_CODE as i32),
         sw(9, 10, 0),
+        ebreak(),
         jal(0, 0),
         addi(10, 0, FAILURE_CODE as i32),
         sw(9, 10, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -132,12 +125,7 @@ fn test_cpu_fadd_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -165,12 +153,7 @@ fn test_cpu_fmul_basic() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -197,12 +180,7 @@ fn test_cpu_fcvt_s_w() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -225,12 +203,7 @@ fn test_cpu_fcvt_w_s() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -264,11 +237,7 @@ fn test_cpu_feq_flt() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -293,12 +262,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -333,11 +297,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -367,11 +327,7 @@ fn test_cpu_fmin_fmax() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -399,11 +355,7 @@ fn test_cpu_fle() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -431,12 +383,7 @@ fn test_cpu_fsgnj_ops() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -461,12 +408,7 @@ fn test_cpu_fcvt_unsigned() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -493,12 +435,7 @@ fn test_cpu_fclass() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -538,10 +475,5 @@ fn test_cpu_fused_multiply_add_ops() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }

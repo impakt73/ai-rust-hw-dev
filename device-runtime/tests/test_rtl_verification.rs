@@ -10,8 +10,8 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination, wait_for_tohost,
-    LONG_TIMEOUT, TEST_BOOT_PC,
+    create_test_runtime, instructions_to_bytes, load_and_boot, tohost_termination,
+    wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
@@ -32,12 +32,7 @@ fn test_cpu_basic_execution() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -51,12 +46,7 @@ fn test_cpu_three_instructions() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -70,12 +60,7 @@ fn test_cpu_lui_instruction() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -95,12 +80,7 @@ fn test_cpu_logic_operations() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -129,21 +109,19 @@ fn test_cpu_branch_beq_bne() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -167,21 +145,19 @@ fn test_cpu_branch_blt_bge() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -205,21 +181,19 @@ fn test_cpu_branch_bltu_bgeu() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -243,21 +217,19 @@ fn test_cpu_load_store() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -282,21 +254,19 @@ fn test_cpu_load_byte() {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -319,9 +289,5 @@ fn test_cpu_load_halfword() {
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }

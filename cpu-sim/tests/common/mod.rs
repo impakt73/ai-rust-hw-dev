@@ -15,7 +15,7 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 }
 
 /// Build a standard tohost termination sequence.
-pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 4] {
+pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 5] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
         addi(
@@ -24,6 +24,7 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
             i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
         ),
         sw(addr_reg, value_reg, 0),
+        ebreak(),
         jal(0, 0),
     ]
 }

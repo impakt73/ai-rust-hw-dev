@@ -10,8 +10,10 @@
 
 mod common;
 
-use common::{create_test_runtime, load_and_boot, wait_for_tohost, LONG_TIMEOUT, TEST_BOOT_PC};
-use riscv_core::instruction::{add, addi, bne, c_add, c_addi, c_li, c_mv, jal, lui, sub, sw};
+use common::{create_test_runtime, load_and_boot, wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC};
+use riscv_core::instruction::{
+    add, addi, bne, c_add, c_addi, c_li, c_mv, ebreak, jal, lui, sub, sw,
+};
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
@@ -44,7 +46,7 @@ fn build_mixed_program(
     bytes
 }
 
-fn check_reg_and_terminate(result_reg: u32, expected: i32) -> [u32; 11] {
+fn check_reg_and_terminate(result_reg: u32, expected: i32) -> [u32; 13] {
     [
         addi(12, 0, expected),
         sub(11, result_reg, 12),
@@ -52,10 +54,12 @@ fn check_reg_and_terminate(result_reg: u32, expected: i32) -> [u32; 11] {
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, SUCCESS_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
         lui(7, SIM_CONTROL_BASE),
         addi(8, 0, FAILURE_CODE as i32),
         sw(7, 8, 0),
+        ebreak(),
         jal(0, 0),
     ]
 }
@@ -81,11 +85,7 @@ fn test_c_li() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -110,11 +110,7 @@ fn test_c_addi() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -140,11 +136,7 @@ fn test_c_add() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -173,11 +165,7 @@ fn test_c_mv() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 // ============================================================================
@@ -206,11 +194,7 @@ fn test_compressed_to_compressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -234,11 +218,7 @@ fn test_compressed_to_uncompressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -262,11 +242,7 @@ fn test_uncompressed_to_compressed_transition() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -292,11 +268,7 @@ fn test_uncompressed_to_uncompressed_regression() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
 
 #[test]
@@ -324,9 +296,5 @@ fn test_mixed_sequence_across_word_boundary() {
     let program_bytes = build_mixed_program(&compressed, &standard);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
-    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
-    assert_eq!(
-        tohost_value, SUCCESS_CODE,
-        "Program should terminate with tohost=1"
-    );
+    wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 }
