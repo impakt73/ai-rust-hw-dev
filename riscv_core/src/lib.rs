@@ -47,13 +47,6 @@ pub struct Fpu;
 )]
 pub struct LedControllerPeripheral;
 
-// Define UART Peripheral module for RTL testing (with FIFOs)
-#[verilog(
-    src = "../rtl/peripherals/uart_peripheral.sv",
-    name = "uart_peripheral"
-)]
-pub struct UartPeripheral;
-
 // Define UART core module (no FIFOs, ready/valid interface)
 #[verilog(src = "../rtl/uart.sv", name = "uart")]
 pub struct Uart;
@@ -174,7 +167,6 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "sync_fifo.sv",                             // Generic synchronous FIFO
         "host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
-        "peripherals/uart_peripheral.sv", // UART controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/system_controller.sv", // System controller peripheral
         "fetch_buffer.sv",       // RV32C fetch buffer
@@ -216,11 +208,6 @@ pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 // Helper function to create a runtime for the FP RegFile
 pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["fp_regfile.sv"])
-}
-
-// Helper function to create a runtime for the UART peripheral
-pub fn create_uart_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["sync_fifo.sv", "uart.sv", "peripherals/uart_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the UART core

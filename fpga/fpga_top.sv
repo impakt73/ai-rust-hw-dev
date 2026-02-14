@@ -142,9 +142,7 @@ module fpga_top #(
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by UART and Clock Peripheral
-        .UART_BAUD_RATE(115200),
-        .ENABLE_UART_LOOPBACK(1'b1)     // Enable internal loopback for self-test
+        .CLK_FREQ_HZ(25_000_000)        // 25 MHz (PLL output) - used by Clock Peripheral
     ) cpu_inst (
         .clk(sys_clk),
         .rst_n(pll_locked_sync2),
@@ -163,10 +161,6 @@ module fpga_top #(
         
         // System LED (from system controller)
         .sys_led_out(sys_led_out),
-        
-        // CPU's internal UART (loopback enabled via ENABLE_UART_LOOPBACK)
-        .uart_tx(),     // Not connected - internal loopback enabled
-        .uart_rx(1'b1), // Tie high when not used (idle state)
         
         // System control
         .halted(halted),

@@ -38,7 +38,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/peripherals/clock_peripheral.sv \
 	$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller.sv \
-	$(RTL_DIR)/peripherals/uart_peripheral.sv \
 	$(RTL_DIR)/top.sv
 
 FPGA_SOURCES = \

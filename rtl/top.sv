@@ -13,14 +13,9 @@
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
-    // System Clock Frequency (used by UART and Clock Peripheral)
+    // System Clock Frequency (used by Clock Peripheral)
     parameter int CLK_FREQ_HZ = 50_000_000,
-    parameter int RESET_CYCLES = 8,     // Number of cycles to hold reset after release
-    // UART Parameters
-    parameter int UART_BAUD_RATE   = 115200,
-    // UART Loopback: When enabled (default), TX is internally connected to RX
-    // for simulation testing. Disable for FPGA deployment with external pins.
-    parameter bit ENABLE_UART_LOOPBACK = 1'b1
+    parameter int RESET_CYCLES = 8      // Number of cycles to hold reset after release
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -43,12 +38,6 @@ module top #(
     
     // System LED output (directly from system controller)
     output logic [7:0]  sys_led_out,
-    
-    // UART peripheral pins (active only when ENABLE_UART_LOOPBACK = 0)
-    output logic        uart_tx,    // UART transmit output
-    /* verilator lint_off UNUSEDSIGNAL */
-    input  logic        uart_rx,    // UART receive input (unused in loopback mode)
-    /* verilator lint_on UNUSEDSIGNAL */
     
     // System control signals (passed through from CPU)
     output logic        halted,
@@ -126,10 +115,6 @@ module top #(
     logic [1:0]  uart_size;
     logic        uart_req;
     logic        uart_ready;
-    
-    // Internal UART signals for loopback
-    logic uart_tx_internal;  // TX output from UART module
-    logic uart_rx_internal;  // RX input to UART module
     
     // ============================================================
     // System Controller Interface Signals
@@ -376,18 +361,9 @@ module top #(
     // Pass through cpu boot state signal
     assign cpu_booting = cpu_is_booting;
     
-    // ============================================================
-    // UART Loopback or External Connection
-    // ============================================================
-    generate
-        if (ENABLE_UART_LOOPBACK) begin : gen_loopback
-            assign uart_rx_internal = uart_tx_internal;
-            assign uart_tx = uart_tx_internal;
-        end else begin : gen_external
-            assign uart_rx_internal = uart_rx;
-            assign uart_tx = uart_tx_internal;
-        end
-    endgenerate
+    // UART peripheral removed from top-level RTL integration.
+    assign uart_rdata = 32'h00000000;
+    assign uart_ready = 1'b1;
     
     // ============================================================
     // LED Controller Instantiation
@@ -423,31 +399,6 @@ module top #(
         .req(clock_req),
         .size(clock_size),
         .ready(clock_ready)
-    );
-    
-    // ============================================================
-    // UART Controller Instantiation
-    // ============================================================
-    uart_peripheral #(
-        .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .BAUD_RATE(UART_BAUD_RATE),
-        .FIFO_DEPTH(8)
-    ) uart_ctrl (
-        .clk(clk),
-        .rst_n(rst_n_internal),
-        
-        // Bus slave interface
-        .addr(uart_addr),
-        .wdata(uart_wdata),
-        .rdata(uart_rdata),
-        .we(uart_we),
-        .req(uart_req),
-        .size(uart_size),
-        .ready(uart_ready),
-        
-        // Internal signals (connected via loopback or external pins)
-        .tx_out(uart_tx_internal),
-        .rx_in(uart_rx_internal)
     );
     
     // ============================================================
