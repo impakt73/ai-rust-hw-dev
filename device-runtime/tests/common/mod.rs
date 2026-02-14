@@ -1,3 +1,5 @@
+//! Shared test harness and utilities for device-runtime integration tests.
+
 #![allow(dead_code)]
 
 use device_runtime::{
@@ -8,10 +10,15 @@ use riscv_core::instruction::{addi, jal, lui, sw};
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use std::time::{Duration, Instant};
 
+/// Timeout for quick operations such as simple host register reads/writes.
 pub const SHORT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Timeout for medium operations such as reset or boot-state transitions.
 pub const MEDIUM_TIMEOUT: Duration = Duration::from_secs(5);
+/// Timeout for long operations such as full program execution and termination.
 pub const LONG_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Create and return the integration-test runtime for the selected backend.
+///
 /// Create a device runtime based on environment variables.
 ///
 /// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
@@ -33,6 +40,7 @@ pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
     create_device_runtime(runtime_type).expect("Failed to create device runtime")
 }
 
+/// Load program bytes at `boot_pc` and issue a CPU boot from the same address.
 pub fn load_and_boot(runtime: &mut dyn DeviceRuntime, boot_pc: u32, program_bytes: &[u8]) {
     runtime
         .load_program(boot_pc, program_bytes)
@@ -40,6 +48,9 @@ pub fn load_and_boot(runtime: &mut dyn DeviceRuntime, boot_pc: u32, program_byte
     runtime.boot_cpu(boot_pc).expect("Failed to boot CPU");
 }
 
+/// Wait until a `TohostTermination` event is received and return its value.
+///
+/// Panics if polling fails or if the timeout expires first.
 pub fn wait_for_tohost(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> u32 {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -54,6 +65,9 @@ pub fn wait_for_tohost(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> u3
     panic!("Timed out waiting for tohost termination");
 }
 
+/// Wait for a host read response matching `addr` and return the read data.
+///
+/// Panics if polling fails or if the timeout expires first.
 pub fn wait_for_host_read_response(
     runtime: &mut dyn DeviceRuntime,
     addr: u32,
@@ -76,6 +90,9 @@ pub fn wait_for_host_read_response(
     panic!("Timed out waiting for read response at 0x{addr:08X}");
 }
 
+/// Wait for a host write response matching `addr` and return the acknowledged write data.
+///
+/// Panics if polling fails or if the timeout expires first.
 pub fn wait_for_host_write_response(
     runtime: &mut dyn DeviceRuntime,
     addr: u32,
@@ -98,6 +115,9 @@ pub fn wait_for_host_write_response(
     panic!("Timed out waiting for write response at 0x{addr:08X}");
 }
 
+/// Issue a host word read and wait for the matching response.
+///
+/// Panics if request submission fails, polling fails, or the timeout expires first.
 pub fn read_word_with_timeout(
     runtime: &mut dyn DeviceRuntime,
     addr: u32,
@@ -109,6 +129,9 @@ pub fn read_word_with_timeout(
     wait_for_host_read_response(runtime, addr, timeout)
 }
 
+/// Issue a host word write and wait for the matching write acknowledgment.
+///
+/// Panics if request submission fails, polling fails, or the timeout expires first.
 pub fn write_word_with_timeout(
     runtime: &mut dyn DeviceRuntime,
     addr: u32,
@@ -121,6 +144,9 @@ pub fn write_word_with_timeout(
     wait_for_host_write_response(runtime, addr, timeout)
 }
 
+/// Poll and discard events until the runtime reports idle state.
+///
+/// Panics if polling fails or if the timeout expires before idle is reached.
 pub fn drain_events_until_idle(runtime: &mut dyn DeviceRuntime, timeout: Duration) {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -144,6 +170,8 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 }
 
 /// Build a standard tohost termination sequence.
+///
+/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE` and then loops.
 pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 4] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
@@ -158,6 +186,8 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
 }
 
 /// Append a standard tohost termination sequence to an instruction vector.
+///
+/// This extends `instructions` in place with the output of [`tohost_termination`].
 pub fn append_tohost_termination(
     instructions: &mut Vec<u32>,
     addr_reg: u32,

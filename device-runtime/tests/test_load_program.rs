@@ -5,7 +5,10 @@ use common::{
     wait_for_tohost, LONG_TIMEOUT,
 };
 use riscv_core::instruction::{addi, ebreak, lui, sw};
-use riscv_shared::bus::{sysctrl_halt_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_HALTED};
+use riscv_shared::bus::{
+    sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE,
+    SYSCTRL_HALT_OFFSET, SYSCTRL_STATUS_CPU_HALTED,
+};
 use std::time::Duration;
 
 /// Build a simple program that writes a success code to the tohost address
@@ -18,10 +21,10 @@ use std::time::Duration;
 ///   EBREAK                       ; halt execution
 fn build_tohost_program() -> Vec<u8> {
     let instructions = vec![
-        lui(15, 0x4000_0000), // Load SIM_CONTROL_BASE into x15
-        addi(14, 0, 1),       // Load success code (1) into x14
-        sw(15, 14, 0),        // Store x14 to address in x15 (tohost)
-        ebreak(),             // Halt execution
+        lui(15, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into x15
+        addi(14, 0, 1),            // Load success code (1) into x14
+        sw(15, 14, 0),             // Store x14 to address in x15 (tohost)
+        ebreak(),                  // Halt execution
     ];
     instructions_to_bytes(&instructions)
 }
@@ -31,7 +34,7 @@ fn test_load_program_and_tohost_termination() {
     let mut runtime = create_test_runtime();
 
     // Load the program bytes at DRAM_BASE
-    let boot_pc: u32 = 0x8000_0000;
+    let boot_pc: u32 = DRAM_BASE;
     let program = build_tohost_program();
     load_and_boot(runtime.as_mut(), boot_pc, &program);
     let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
@@ -50,21 +53,20 @@ fn test_load_program_and_tohost_termination() {
 fn test_load_program_halt_register_termination_code() {
     let mut runtime = create_test_runtime();
 
-    let boot_pc: u32 = 0x8000_0000;
+    let boot_pc: u32 = DRAM_BASE;
     let halt_code: u32 = 0x5A5;
-    let sysctrl_base: u32 = 0x5300_0000;
-    let halt_offset: i32 = 0x0C;
+    let halt_offset: i32 = i32::try_from(SYSCTRL_HALT_OFFSET).expect("HALT offset must fit i32");
 
     // Program:
     //   LUI  x15, SYSCTRL_BASE
     //   ADDI x14, x0, halt_code
     //   SW   x14, 0x0C(x15)   ; write HALT register, requesting CPU halt
-    let program: Vec<u8> = [lui(15, sysctrl_base),
+    let instructions = vec![
+        lui(15, SYSCTRL_BASE),
         addi(14, 0, halt_code as i32),
-        sw(15, 14, halt_offset)]
-    .iter()
-    .flat_map(|inst| inst.to_le_bytes())
-    .collect();
+        sw(15, 14, halt_offset),
+    ];
+    let program = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), boot_pc, &program);
 
@@ -73,7 +75,11 @@ fn test_load_program_halt_register_termination_code() {
     let mut cpu_halted = false;
 
     while start.elapsed() < timeout {
-        let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), timeout);
+        let remaining = match timeout.checked_sub(start.elapsed()) {
+            Some(remaining) => remaining,
+            None => Duration::from_millis(0),
+        };
+        let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), remaining);
         if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
             cpu_halted = true;
             break;

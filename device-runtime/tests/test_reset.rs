@@ -2,11 +2,11 @@ mod common;
 
 use common::{create_test_runtime, read_word_with_timeout, MEDIUM_TIMEOUT};
 use device_runtime::ResetKind;
-use riscv_shared::bus::{sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
+use riscv_shared::bus::{sysctrl_status_addr, DRAM_BASE, SYSCTRL_STATUS_CPU_BOOTING};
 
 fn initialize_runtime(runtime: &mut dyn device_runtime::DeviceRuntime) {
     runtime
-        .load_program(0x8000_0000, &[])
+        .load_program(DRAM_BASE, &[])
         .expect("Failed to initialize runtime");
 }
 
