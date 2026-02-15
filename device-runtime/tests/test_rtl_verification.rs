@@ -107,9 +107,11 @@ fn test_cpu_branch_beq_bne() {
     let instructions = vec![
         addi(1, 0, 10),
         addi(2, 0, 10),
+        addi(3, 0, 0),
         beq(1, 2, 8),
         addi(3, 0, 99),
         addi(4, 0, 5),
+        addi(5, 0, 0),
         bne(1, 4, 8),
         addi(5, 0, 99),
         addi(6, 0, 1),
@@ -147,8 +149,10 @@ fn test_cpu_branch_blt_bge() {
     let instructions = vec![
         addi(1, 0, 5),
         addi(2, 0, 10),
+        addi(3, 0, 0),
         blt(1, 2, 8),
         addi(3, 0, 99),
+        addi(4, 0, 0),
         bge(2, 1, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
@@ -186,8 +190,10 @@ fn test_cpu_branch_bltu_bgeu() {
     let instructions = vec![
         addi(1, 0, 5),
         addi(2, 0, 10),
+        addi(3, 0, 0),
         bltu(1, 2, 8),
         addi(3, 0, 99),
+        addi(4, 0, 0),
         bgeu(2, 1, 8),
         addi(4, 0, 99),
         addi(5, 0, 1),
@@ -540,6 +546,7 @@ fn test_cpu_csr_read_write() {
     let mut runtime = create_test_runtime();
 
     let mut instructions = vec![
+        csrrw(0, 0, 0x300),
         addi(1, 0, 100),
         csrrw(2, 1, 0x300),
         lui(8, DRAM_BASE),
@@ -621,6 +628,7 @@ fn test_cpu_csr_immediate() {
     let mut runtime = create_test_runtime();
 
     let mut instructions = vec![
+        csrrwi(0, 0, 0x302),
         csrrwi(1, 15, 0x302),
         lui(8, DRAM_BASE),
         sw(8, 1, 0),
