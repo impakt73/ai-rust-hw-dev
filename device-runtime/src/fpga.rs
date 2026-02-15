@@ -84,7 +84,11 @@ impl FpgaDeviceRuntime {
     /// Opens the serial port and launches a background thread to handle
     /// serial I/O and protocol processing. The SystemBus is created on the
     /// background thread to avoid requiring `Send` on `SystemBus`.
-    pub(crate) fn connect(device: &str, baud: u32) -> Result<Self, DeviceError> {
+    pub(crate) fn connect(
+        device: &str,
+        baud: u32,
+        startup_reset: crate::StartupReset,
+    ) -> Result<Self, DeviceError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
@@ -97,7 +101,7 @@ impl FpgaDeviceRuntime {
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, command_rx, event_tx, pending_clone);
+            Self::run_loop(port, command_rx, event_tx, pending_clone, startup_reset);
         });
 
         Ok(FpgaDeviceRuntime {
@@ -116,6 +120,7 @@ impl FpgaDeviceRuntime {
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+        startup_reset: crate::StartupReset,
     ) {
         let mut bus = SystemBus::new();
         let mut handler = HostBusHandler::new();
@@ -126,6 +131,39 @@ impl FpgaDeviceRuntime {
 
         // Reset all bus devices at startup
         bus.reset_all_devices();
+
+        // Perform startup reset on FPGA if configured
+        match startup_reset {
+            crate::StartupReset::None => {
+                // No startup reset, continue with normal operation
+            }
+            crate::StartupReset::Cpu | crate::StartupReset::System => {
+                let reset_kind = match startup_reset {
+                    crate::StartupReset::Cpu => ResetKind::Cpu,
+                    crate::StartupReset::System => ResetKind::System,
+                    crate::StartupReset::None => unreachable!(),
+                };
+
+                if let Err(e) = Self::handle_reset_command(
+                    &mut port,
+                    &mut bus,
+                    &mut handler,
+                    &mut rx_buffer,
+                    &mut rx_buffer_len,
+                    &mut tx_buffer,
+                    &mut tx_buffer_len,
+                    &pending_host_request,
+                    &event_tx,
+                    reset_kind,
+                ) {
+                    // Log startup reset failure but don't terminate thread
+                    let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
+                        "Startup reset failed: {}",
+                        e
+                    )));
+                }
+            }
+        }
 
         loop {
             // Check for commands from the main thread (non-blocking)

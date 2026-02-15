@@ -92,6 +92,8 @@ pub enum DeviceRuntimeType {
         device: String,
         /// Baud rate for serial communication
         baud: u32,
+        /// Startup reset mode (default: None)
+        startup_reset: StartupReset,
     },
     /// Software simulator
     Sim,
@@ -106,13 +108,28 @@ pub enum ResetKind {
     System,
 }
 
+/// Startup reset mode for FPGA device runtime initialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupReset {
+    /// No reset performed at startup.
+    None,
+    /// Reset only the CPU core at startup.
+    Cpu,
+    /// Reset the full system (including the system controller) at startup.
+    System,
+}
+
 /// Create a device runtime for the specified backend.
 pub fn create_device_runtime(
     runtime_type: DeviceRuntimeType,
 ) -> Result<Box<dyn DeviceRuntime>, DeviceError> {
     match runtime_type {
-        DeviceRuntimeType::Fpga { device, baud } => {
-            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud)?;
+        DeviceRuntimeType::Fpga {
+            device,
+            baud,
+            startup_reset,
+        } => {
+            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud, startup_reset)?;
             Ok(Box::new(runtime))
         }
         DeviceRuntimeType::Sim => {

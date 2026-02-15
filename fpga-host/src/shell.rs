@@ -268,6 +268,7 @@ fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult
     let runtime_type = DeviceRuntimeType::Fpga {
         device: device.to_string(),
         baud,
+        startup_reset: device_runtime::StartupReset::None,
     };
     match create_device_runtime(runtime_type) {
         Ok(runtime) => {
