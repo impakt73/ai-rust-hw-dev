@@ -33,7 +33,11 @@ pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
             let baud: u32 = baud_str
                 .parse()
                 .expect("FPGA_BAUD_RATE must be a valid u32");
-            DeviceRuntimeType::Fpga { device, baud }
+            DeviceRuntimeType::Fpga {
+                device,
+                baud,
+                startup_reset: device_runtime::StartupReset::None,
+            }
         }
         _ => DeviceRuntimeType::Sim,
     };

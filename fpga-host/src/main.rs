@@ -95,6 +95,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
             RuntimeArgs::Fpga { device, baud } => DeviceRuntimeType::Fpga {
                 device: device.to_string_lossy().to_string(),
                 baud,
+                startup_reset: device_runtime::StartupReset::None,
             },
             RuntimeArgs::Sim => DeviceRuntimeType::Sim,
         };
