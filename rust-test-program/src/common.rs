@@ -31,7 +31,7 @@ pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 
 /// Simple bump allocator for bare-metal environment.
 ///
-/// This allocator uses a static 8KB heap placed in the .uninit section to avoid
+/// This allocator uses a static 352B heap placed in the .uninit section to avoid
 /// startup zero-initialization and AtomicUsize with Ordering::Relaxed, which is
 /// safe for this single-threaded bare-metal environment where only one CPU core
 /// is active.
@@ -55,7 +55,7 @@ unsafe impl GlobalAlloc for SimpleAllocator {
         // 1. Callers of alloc() must initialize the memory before use
         // 2. This is standard behavior for allocators (malloc doesn't zero either)
         #[link_section = ".uninit"]
-        static mut HEAP: [u8; 8192] = [0; 8192];
+        static mut HEAP: [u8; 352] = [0; 352];
         static OFFSET: AtomicUsize = AtomicUsize::new(0);
 
         let size = layout.size();
@@ -63,7 +63,7 @@ unsafe impl GlobalAlloc for SimpleAllocator {
         let current_offset = OFFSET.load(Ordering::Relaxed);
         let aligned_offset = (current_offset + align - 1) & !(align - 1);
 
-        if aligned_offset + size > 8192 {
+        if aligned_offset + size > 352 {
             core::ptr::null_mut()
         } else {
             // SAFETY: We're computing a pointer within the static HEAP allocation.
