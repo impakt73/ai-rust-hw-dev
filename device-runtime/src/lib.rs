@@ -109,9 +109,10 @@ pub enum ResetKind {
 }
 
 /// Startup reset mode for FPGA device runtime initialization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StartupReset {
     /// No reset performed at startup.
+    #[default]
     None,
     /// Reset only the CPU core at startup.
     Cpu,

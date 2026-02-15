@@ -150,11 +150,11 @@ impl FpgaDeviceRuntime {
                 &event_tx,
                 reset_kind,
             ) {
-                // Log startup reset failure but don't terminate thread
-                let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
+                let _ = event_tx.send(RuntimeEvent::FatalError(format!(
                     "Startup {:?} reset failed: {}",
                     startup_reset, e
                 )));
+                return;
             }
         }
 
