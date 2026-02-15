@@ -239,6 +239,9 @@ pub(crate) fn classify_host_request_route(request: &BusRequest) -> HostRequestRo
 /// serial port for FPGA, simulation bus for software models). The runtime
 /// manages background I/O and provides a non-blocking polling interface.
 pub trait DeviceRuntime: std::fmt::Display {
+    /// Returns whether this runtime supports the RISC-V F extension.
+    fn supports_riscv_f_extension(&self) -> bool;
+
     /// Send a host-initiated bus request.
     ///
     /// Returns Ok(()) if the request was accepted, or Err if there's already

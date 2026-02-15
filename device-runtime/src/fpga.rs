@@ -757,6 +757,10 @@ impl FpgaDeviceRuntime {
 }
 
 impl DeviceRuntime for FpgaDeviceRuntime {
+    fn supports_riscv_f_extension(&self) -> bool {
+        false
+    }
+
     fn send_host_request(&mut self, request: BusRequest) -> Result<(), DeviceError> {
         if classify_host_request_route(&request) == HostRequestRoute::InvalidSpanningRegion {
             return Err(DeviceError::HandlerError(HandlerError::InvalidAddressRange));
