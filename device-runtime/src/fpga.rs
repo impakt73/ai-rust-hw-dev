@@ -133,35 +133,28 @@ impl FpgaDeviceRuntime {
         bus.reset_all_devices();
 
         // Perform startup reset on FPGA if configured
-        match startup_reset {
-            crate::StartupReset::None => {
-                // No startup reset, continue with normal operation
-            }
-            crate::StartupReset::Cpu | crate::StartupReset::System => {
-                let reset_kind = match startup_reset {
-                    crate::StartupReset::Cpu => ResetKind::Cpu,
-                    crate::StartupReset::System => ResetKind::System,
-                    crate::StartupReset::None => unreachable!(),
-                };
-
-                if let Err(e) = Self::handle_reset_command(
-                    &mut port,
-                    &mut bus,
-                    &mut handler,
-                    &mut rx_buffer,
-                    &mut rx_buffer_len,
-                    &mut tx_buffer,
-                    &mut tx_buffer_len,
-                    &pending_host_request,
-                    &event_tx,
-                    reset_kind,
-                ) {
-                    // Log startup reset failure but don't terminate thread
-                    let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
-                        "Startup reset failed: {}",
-                        e
-                    )));
-                }
+        if let Some(reset_kind) = match startup_reset {
+            crate::StartupReset::None => None,
+            crate::StartupReset::Cpu => Some(ResetKind::Cpu),
+            crate::StartupReset::System => Some(ResetKind::System),
+        } {
+            if let Err(e) = Self::handle_reset_command(
+                &mut port,
+                &mut bus,
+                &mut handler,
+                &mut rx_buffer,
+                &mut rx_buffer_len,
+                &mut tx_buffer,
+                &mut tx_buffer_len,
+                &pending_host_request,
+                &event_tx,
+                reset_kind,
+            ) {
+                // Log startup reset failure but don't terminate thread
+                let _ = event_tx.send(RuntimeEvent::NonFatalError(format!(
+                    "Startup {:?} reset failed: {}",
+                    startup_reset, e
+                )));
             }
         }
 
