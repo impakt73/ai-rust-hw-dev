@@ -20,6 +20,20 @@ pub const LONG_TIMEOUT: Duration = Duration::from_secs(10);
 /// Common test boot PC for loaded instruction programs.
 pub const TEST_BOOT_PC: u32 = 0x8000_0000;
 
+fn fpga_startup_reset_from_env(fpga_hard_reset: Option<&str>) -> device_runtime::StartupReset {
+    match fpga_hard_reset {
+        None => device_runtime::StartupReset::Cpu,
+        Some(value) => match value
+            .trim()
+            .parse::<u32>()
+            .expect("FPGA_HARD_RESET must be a valid u32")
+        {
+            0 => device_runtime::StartupReset::Cpu,
+            _ => device_runtime::StartupReset::System,
+        },
+    }
+}
+
 /// Create a device runtime based on environment variables.
 ///
 /// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
@@ -36,7 +50,9 @@ pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
             DeviceRuntimeType::Fpga {
                 device,
                 baud,
-                startup_reset: device_runtime::StartupReset::None,
+                startup_reset: fpga_startup_reset_from_env(
+                    std::env::var("FPGA_HARD_RESET").ok().as_deref(),
+                ),
             }
         }
         _ => DeviceRuntimeType::Sim,
@@ -292,4 +308,43 @@ pub fn append_tohost_termination(
     tohost_value: u32,
 ) {
     instructions.extend(tohost_termination(addr_reg, value_reg, tohost_value));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fpga_startup_reset_from_env;
+
+    #[test]
+    fn test_fpga_startup_reset_defaults_to_cpu_when_env_is_unset() {
+        assert_eq!(
+            fpga_startup_reset_from_env(None),
+            device_runtime::StartupReset::Cpu
+        );
+    }
+
+    #[test]
+    fn test_fpga_startup_reset_uses_cpu_when_env_is_zero() {
+        assert_eq!(
+            fpga_startup_reset_from_env(Some("0")),
+            device_runtime::StartupReset::Cpu
+        );
+    }
+
+    #[test]
+    fn test_fpga_startup_reset_uses_system_when_env_is_nonzero() {
+        assert_eq!(
+            fpga_startup_reset_from_env(Some("1")),
+            device_runtime::StartupReset::System
+        );
+        assert_eq!(
+            fpga_startup_reset_from_env(Some("2")),
+            device_runtime::StartupReset::System
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "FPGA_HARD_RESET must be a valid u32")]
+    fn test_fpga_startup_reset_panics_on_invalid_value() {
+        let _ = fpga_startup_reset_from_env(Some("invalid"));
+    }
 }
