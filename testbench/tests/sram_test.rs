@@ -5,8 +5,6 @@ fn clock_cycle(dut: &mut SramTestWrapper) {
     dut.eval();
     dut.clk = 1;
     dut.eval();
-    dut.clk = 0;
-    dut.eval();
 }
 
 #[test]
@@ -86,4 +84,36 @@ fn test_sram_byte_write_mask() {
         dut.rdata, 0x11AA3344,
         "single-byte masked write should update only selected byte lane"
     );
+}
+
+#[test]
+fn test_sram_read_during_write_same_addr_is_read_first() {
+    let runtime = create_sram_runtime().expect("Failed to create SRAM runtime");
+    let mut dut = runtime
+        .create_model_simple::<SramTestWrapper>()
+        .expect("Failed to create SRAM model");
+
+    // Seed initial value.
+    dut.we = 1;
+    dut.wmask = 0xF;
+    dut.waddr = 2;
+    dut.wdata = 0x11112222;
+    dut.raddr = 2;
+    clock_cycle(&mut dut);
+
+    // Same-cycle read/write to same address should return old data on this edge.
+    dut.wmask = 0xF;
+    dut.waddr = 2;
+    dut.wdata = 0x33334444;
+    dut.raddr = 2;
+    clock_cycle(&mut dut);
+    assert_eq!(
+        dut.rdata, 0x11112222,
+        "read-during-write same address must return pre-write value (read-first)"
+    );
+
+    // Next cycle returns the newly written value.
+    dut.we = 0;
+    clock_cycle(&mut dut);
+    assert_eq!(dut.rdata, 0x33334444, "next cycle should observe new value");
 }

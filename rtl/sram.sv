@@ -1,5 +1,14 @@
-// Single-clock SRAM with 32-bit words and byte write masking
-// Designed to infer block RAM on FPGA targets
+// Single-clock SRAM with 32-bit words and byte write masking.
+// Designed to infer block RAM on FPGA targets.
+//
+// READ-DURING-WRITE BEHAVIOR:
+// - Read-first semantics are intentional for this module.
+// - When we=1 and waddr==raddr in the same clock edge, rdata captures the
+//   pre-write memory contents.
+//
+// BRAM INITIALIZATION NOTE:
+// - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
+//   which is supported by this project's target FPGA/toolchain.
 module sram #(
     parameter int ADDR_WIDTH = 8
 ) (
@@ -27,6 +36,8 @@ module sram #(
             if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
             if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
         end
+        // Read-first behavior: same-cycle read and write to same address returns
+        // the old memory contents.
         rdata <= mem[raddr];
     end
 
