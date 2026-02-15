@@ -914,7 +914,7 @@ fn test_cpu_m_extension_program() {
 fn test_sram_peripheral_word_read_write() {
     let mut runtime = create_test_runtime();
 
-    let instructions = vec![
+    let mut instructions = vec![
         lui(1, SRAM_BASE_ADDR),
         lui(2, 0x1234_5000),
         ori(2, 2, 0x678),
@@ -923,7 +923,6 @@ fn test_sram_peripheral_word_read_write() {
         lui(9, DRAM_BASE),
         sw(9, 3, 0),
     ];
-    let mut instructions = instructions;
     instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
     load_and_boot(

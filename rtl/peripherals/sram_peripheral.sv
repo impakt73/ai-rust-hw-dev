@@ -175,24 +175,24 @@ module sram_peripheral (
     // Timing for writes:
     // Cycle N:   req=1, we=1, ready=1  (Write completes in same cycle)
     
-    logic req_r;
-    logic we_r;
+    logic read_pending;
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            req_r <= 1'b0;
-            we_r  <= 1'b0;
+            read_pending <= 1'b0;
+        end else if (read_pending && req) begin
+            read_pending <= 1'b0;
+        end else if (req && !we) begin
+            read_pending <= 1'b1;
         end else begin
-            // Sample req and we to detect read operations
-            req_r <= req && !we;  // Set when read request active
-            we_r  <= we;
+            read_pending <= 1'b0;
         end
     end
     
     // Ready logic:
     // - Writes: Ready immediately (same cycle as req && we)
-    // - Reads: Ready one cycle after read request (req_r indicates data is ready)
-    assign ready = (req && we) || req_r;
+    // - Reads: Ready one cycle after read request while request is still active
+    assign ready = (req && we) || (req && read_pending);
     
     // Read data output - use extracted data
     assign rdata = extracted_rdata;
