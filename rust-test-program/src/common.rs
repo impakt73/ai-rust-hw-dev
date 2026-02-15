@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -33,19 +34,23 @@ pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 /// Embedded allocator for bare-metal environment.
 pub struct SimpleAllocator;
 
+const HEAP_SIZE: usize = 8192;
+
 #[link_section = ".uninit"]
-static mut HEAP_MEMORY: [u8; 8192] = [0; 8192];
+static mut HEAP_MEMORY: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 static HEAP: Heap = Heap::empty();
 static HEAP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 unsafe impl GlobalAlloc for SimpleAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if !HEAP_INITIALIZED.load(Ordering::Relaxed) {
+        // Fast path avoids entering a critical section after one-time initialization.
+        // The second check inside the critical section handles concurrent first-time allocs.
+        if !HEAP_INITIALIZED.load(Ordering::Acquire) {
             critical_section::with(|_| {
-                if !HEAP_INITIALIZED.load(Ordering::Relaxed) {
-                    let heap_start = addr_of_mut!(HEAP_MEMORY) as usize;
-                    HEAP.init(heap_start, 8192);
-                    HEAP_INITIALIZED.store(true, Ordering::Relaxed);
+                if !HEAP_INITIALIZED.load(Ordering::Acquire) {
+                    let heap_start = addr_of_mut!(HEAP_MEMORY).cast::<u8>() as usize;
+                    HEAP.init(heap_start, HEAP_SIZE);
+                    HEAP_INITIALIZED.store(true, Ordering::Release);
                 }
             });
         }
