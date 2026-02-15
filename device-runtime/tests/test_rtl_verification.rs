@@ -14,9 +14,9 @@ use common::{
     tohost_termination, wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
-const SRAM_BASE_ADDR: u32 = 0x5200_0000;
+const SRAM_BASE_ADDR: u32 = SRAM_BASE;
 
 // ============================================================================
 // Basic Execution Tests

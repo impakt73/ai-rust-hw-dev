@@ -180,12 +180,8 @@ module sram_peripheral (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             read_pending <= 1'b0;
-        end else if (read_pending && req) begin
-            read_pending <= 1'b0;
-        end else if (req && !we) begin
-            read_pending <= 1'b1;
         end else begin
-            read_pending <= 1'b0;
+            read_pending <= req && !we;
         end
     end
     

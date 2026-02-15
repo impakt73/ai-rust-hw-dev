@@ -9,7 +9,7 @@ mod simulator_view;
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
     BusDeviceError, Dma, RegistrationError, SystemBus, SystemContext, Video, VideoConfig,
-    VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE, UART_BASE,
+    VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
     VIDEO_BASE,
 };
 pub use constants::GLOBAL_MAX_CYCLES;

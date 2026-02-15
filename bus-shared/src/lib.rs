@@ -11,7 +11,7 @@ mod video;
 pub use audio::{Audio, AudioChannels, AudioConfig, AudioSampleRate};
 pub use bus::{
     is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, RTL_PERIPH_BASE,
-    RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, UART_BASE, VIDEO_BASE,
+    RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
