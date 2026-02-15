@@ -5,7 +5,8 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr::{addr_of_mut, read_volatile, write_volatile};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
+use embedded_alloc::LlffHeap as Heap;
 
 // Re-export constants from riscv_shared
 // Note: Some re-exports may be unused in this module but are used by test programs that import from common
@@ -29,53 +30,31 @@ pub use riscv_shared::VideoFormat;
 #[allow(unused_imports)]
 pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 
-/// Simple bump allocator for bare-metal environment.
-///
-/// This allocator uses a static 8KB heap placed in the .uninit section to avoid
-/// startup zero-initialization and AtomicUsize with Ordering::Relaxed, which is
-/// safe for this single-threaded bare-metal environment where only one CPU core
-/// is active.
-///
-/// Using the .uninit section eliminates the costly zero-initialization loop in
-/// the riscv-rt startup code, significantly reducing cycle count for programs
-/// using heap allocation.
-///
-/// For multi-threaded usage, this would need:
-/// 1. Ordering::SeqCst or Ordering::AcqRel for atomic operations
-/// 2. Proper synchronization primitives (e.g., Mutex) around heap access
-/// 3. Consideration of deallocation (currently a no-op)
+/// Embedded allocator for bare-metal environment.
 pub struct SimpleAllocator;
+
+#[link_section = ".uninit"]
+static mut HEAP_MEMORY: [u8; 8192] = [0; 8192];
+static HEAP: Heap = Heap::empty();
+static HEAP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 unsafe impl GlobalAlloc for SimpleAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: Using .uninit section to avoid zero-initialization on startup.
-        // The .uninit section is explicitly NOT zeroed by riscv-rt's startup code,
-        // unlike .bss which is always zeroed. This significantly reduces startup cycles.
-        // The allocated memory is uninitialized, which is fine because:
-        // 1. Callers of alloc() must initialize the memory before use
-        // 2. This is standard behavior for allocators (malloc doesn't zero either)
-        #[link_section = ".uninit"]
-        static mut HEAP: [u8; 8192] = [0; 8192];
-        static OFFSET: AtomicUsize = AtomicUsize::new(0);
-
-        let size = layout.size();
-        let align = layout.align();
-        let current_offset = OFFSET.load(Ordering::Relaxed);
-        let aligned_offset = (current_offset + align - 1) & !(align - 1);
-
-        if aligned_offset + size > 8192 {
-            core::ptr::null_mut()
-        } else {
-            // SAFETY: We're computing a pointer within the static HEAP allocation.
-            // The pointer arithmetic is valid as long as aligned_offset + size <= 8192,
-            // which we've already checked above.
-            let ptr = addr_of_mut!(HEAP).cast::<u8>().add(aligned_offset);
-            OFFSET.store(aligned_offset + size, Ordering::Relaxed);
-            ptr
+        if !HEAP_INITIALIZED.load(Ordering::Relaxed) {
+            critical_section::with(|_| {
+                if !HEAP_INITIALIZED.load(Ordering::Relaxed) {
+                    let heap_start = addr_of_mut!(HEAP_MEMORY) as usize;
+                    HEAP.init(heap_start, 8192);
+                    HEAP_INITIALIZED.store(true, Ordering::Relaxed);
+                }
+            });
         }
+        HEAP.alloc(layout)
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        HEAP.dealloc(ptr, layout);
+    }
 }
 
 /// Default panic handler for bare-metal programs - write to tohost to signal panic

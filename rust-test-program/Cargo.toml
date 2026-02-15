@@ -27,7 +27,10 @@ path = "src/simple_test.rs"
 test = false
 
 [dependencies]
-riscv-rt = "0.17.0"
+riscv-rt = { version = "0.17.0", features = ["no-mhartid"] }
+riscv = { version = "0.16.0", features = ["critical-section-single-hart"] }
+critical-section = "1.2.0"
+embedded-alloc = "0.6.0"
 riscv_shared = { path = "../riscv_shared", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
@@ -146,4 +149,3 @@ test = false
 name = "test_led_loop"
 path = "src/test_led_loop.rs"
 test = false
-
