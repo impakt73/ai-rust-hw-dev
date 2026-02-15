@@ -171,6 +171,8 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
+        "peripherals/sram_peripheral.sv", // SRAM peripheral
+        "sram.sv",               // SRAM module used by SRAM peripheral
         "peripherals/system_controller.sv", // System controller peripheral
         "fetch_buffer.sv",       // RV32C fetch buffer
         "decompress.sv",         // RV32C decompressor

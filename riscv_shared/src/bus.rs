@@ -42,39 +42,9 @@ pub const fn led_out_addr() -> u32 {
     LED_BASE + LED_OUT_OFFSET
 }
 
-/// UART Controller Peripheral (RTL)
-pub const UART_BASE: u32 = 0x5200_0000;
-pub const UART_SIZE: u32 = 0x0000_0100; // 256 bytes
-
-/// UART register offsets
-pub const UART_TXDATA_OFFSET: u32 = 0x00;
-pub const UART_RXDATA_OFFSET: u32 = 0x04;
-pub const UART_STATUS_OFFSET: u32 = 0x08;
-pub const UART_CTRL_OFFSET: u32 = 0x0C;
-
-/// UART status register bit masks
-pub const UART_STATUS_TX_FULL: u32 = 1 << 0;
-pub const UART_STATUS_TX_EMPTY: u32 = 1 << 1;
-pub const UART_STATUS_TX_BUSY: u32 = 1 << 2;
-pub const UART_STATUS_RX_FULL: u32 = 1 << 4;
-pub const UART_STATUS_RX_EMPTY: u32 = 1 << 5;
-pub const UART_STATUS_RX_BUSY: u32 = 1 << 6;
-pub const UART_STATUS_RX_ERROR: u32 = 1 << 7;
-
-/// Helper function to get UART TXDATA register address
-pub const fn uart_txdata_addr() -> u32 {
-    UART_BASE + UART_TXDATA_OFFSET
-}
-
-/// Helper function to get UART RXDATA register address
-pub const fn uart_rxdata_addr() -> u32 {
-    UART_BASE + UART_RXDATA_OFFSET
-}
-
-/// Helper function to get UART STATUS register address
-pub const fn uart_status_addr() -> u32 {
-    UART_BASE + UART_STATUS_OFFSET
-}
+/// SRAM Peripheral (RTL)
+pub const SRAM_BASE: u32 = 0x5200_0000;
+pub const SRAM_SIZE: u32 = 0x0000_2000; // 8KB
 
 /// Clock Peripheral (RTL)
 pub const CLOCK_BASE: u32 = 0x5100_0000;

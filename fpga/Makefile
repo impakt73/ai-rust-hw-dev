@@ -33,10 +33,12 @@ RTL_SOURCES = \
 	$(RTL_DIR)/sync_fifo.sv \
 	$(RTL_DIR)/reset_controller.sv \
 	$(RTL_DIR)/uart.sv \
+	$(RTL_DIR)/sram.sv \
 	$(RTL_DIR)/writeback_mux.sv \
 	$(RTL_DIR)/cpu.sv \
 	$(RTL_DIR)/peripherals/clock_peripheral.sv \
 	$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
+	$(RTL_DIR)/peripherals/sram_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller.sv \
 	$(RTL_DIR)/top.sv
 
