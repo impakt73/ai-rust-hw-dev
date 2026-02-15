@@ -16,13 +16,24 @@ use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
+macro_rules! create_fp_runtime_or_skip {
+    () => {{
+        let runtime = create_test_runtime();
+        if !runtime.supports_riscv_f_extension() {
+            eprintln!("Skipping FP integration test: runtime does not support RISC-V F extension");
+            return;
+        }
+        runtime
+    }};
+}
+
 // ============================================================================
 // FP Load/Store Tests
 // ============================================================================
 
 #[test]
 fn test_cpu_flw_fsw_basic() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FLW and FSW instructions
     // Store a floating point value to memory, then load it back
@@ -50,7 +61,7 @@ fn test_cpu_flw_fsw_basic() {
 
 #[test]
 fn test_cpu_flw_multiple_registers() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Load different FP values into multiple FP registers
     let instructions = vec![
@@ -108,7 +119,7 @@ fn test_cpu_flw_multiple_registers() {
 
 #[test]
 fn test_cpu_fadd_basic() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FADD.S instruction in CPU context
     let mut instructions = vec![
@@ -139,7 +150,7 @@ fn test_cpu_fadd_basic() {
 
 #[test]
 fn test_cpu_fmul_basic() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FMUL.S instruction
     let mut instructions = vec![
@@ -174,7 +185,7 @@ fn test_cpu_fmul_basic() {
 
 #[test]
 fn test_cpu_fcvt_s_w() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FCVT.S.W (integer to FP conversion)
     let mut instructions = vec![
@@ -200,7 +211,7 @@ fn test_cpu_fcvt_s_w() {
 
 #[test]
 fn test_cpu_fcvt_w_s() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FCVT.W.S (FP to integer conversion)
     let mut instructions = vec![
@@ -230,7 +241,7 @@ fn test_cpu_fcvt_w_s() {
 
 #[test]
 fn test_cpu_feq_flt() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FEQ.S and FLT.S comparisons
     let mut instructions = vec![
@@ -267,7 +278,7 @@ fn test_cpu_feq_flt() {
 
 #[test]
 fn test_cpu_fmv_x_w_fmv_w_x() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FMV.X.W and FMV.W.X (bitwise moves)
     let mut instructions = vec![
@@ -295,7 +306,7 @@ fn test_cpu_fmv_x_w_fmv_w_x() {
 
 #[test]
 fn test_cpu_fsub_fdiv_fsqrt() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FSUB.S, FDIV.S, FSQRT.S
     let mut instructions = vec![
@@ -329,7 +340,7 @@ fn test_cpu_fsub_fdiv_fsqrt() {
 
 #[test]
 fn test_cpu_fmin_fmax() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FMIN.S and FMAX.S
     let mut instructions = vec![
@@ -362,7 +373,7 @@ fn test_cpu_fmin_fmax() {
 
 #[test]
 fn test_cpu_fle() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Test FLE.S (less than or equal)
     let mut instructions = vec![
@@ -393,7 +404,7 @@ fn test_cpu_fle() {
 
 #[test]
 fn test_cpu_fsgnj_ops() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     let mut instructions = vec![
         lui(7, 0x80001000), // x7 = 0x80001000 (base address)
@@ -424,7 +435,7 @@ fn test_cpu_fsgnj_ops() {
 
 #[test]
 fn test_cpu_fcvt_unsigned() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     let mut instructions = vec![
         lui(1, 0x80001000), // x1 = 0x80001000
@@ -452,7 +463,7 @@ fn test_cpu_fcvt_unsigned() {
 
 #[test]
 fn test_cpu_fclass() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     let mut instructions = vec![
         lui(7, 0x80001000), // x7 = 0x80001000 (base address)
@@ -482,7 +493,7 @@ fn test_cpu_fclass() {
 
 #[test]
 fn test_cpu_fused_multiply_add_ops() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_fp_runtime_or_skip!();
 
     let mut instructions = vec![
         lui(1, 0x80001000),   // x1 = 0x80001000
