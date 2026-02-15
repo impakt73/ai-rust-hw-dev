@@ -14,9 +14,8 @@ module sram #(
 
     logic [31:0] mem [0:(1<<ADDR_WIDTH)-1];
 
-    integer i;
     initial begin
-        for (i = 0; i < (1 << ADDR_WIDTH); i = i + 1) begin
+        for (int i = 0; i < (1 << ADDR_WIDTH); i = i + 1) begin
             mem[i] = 32'b0;
         end
     end
