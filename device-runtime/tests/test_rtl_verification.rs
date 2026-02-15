@@ -16,6 +16,7 @@ use common::{
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
+const SRAM_BASE_ADDR: u32 = 0x5200_0000;
 
 // ============================================================================
 // Basic Execution Tests
@@ -902,5 +903,123 @@ fn test_cpu_m_extension_program() {
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
         22
+    );
+}
+
+// ============================================================================
+// SRAM Peripheral Tests
+// ============================================================================
+
+#[test]
+fn test_sram_peripheral_word_read_write() {
+    let mut runtime = create_test_runtime();
+
+    let instructions = vec![
+        lui(1, SRAM_BASE_ADDR),
+        lui(2, 0x1234_5000),
+        ori(2, 2, 0x678),
+        sw(1, 2, 0),
+        lw(3, 1, 0),
+        lui(9, DRAM_BASE),
+        sw(9, 3, 0),
+    ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR, SHORT_TIMEOUT),
+        0x1234_5678
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0x1234_5678
+    );
+}
+
+#[test]
+fn test_sram_peripheral_subword_masking_and_alignment() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, SRAM_BASE_ADDR),
+        addi(2, 0, 0x12),
+        sb(1, 2, 0),
+        addi(2, 0, 0x34),
+        sb(1, 2, 1),
+        addi(2, 0, 0x56),
+        sb(1, 2, 2),
+        addi(2, 0, 0x78),
+        sb(1, 2, 3),
+        lw(3, 1, 0),
+        addi(4, 0, 0x78),
+        sh(1, 4, 2),
+        lw(5, 1, 0),
+        lui(9, DRAM_BASE),
+        sw(9, 3, 0),
+        sw(9, 5, 4),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0x7856_3412
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        0x0078_3412
+    );
+}
+
+#[test]
+fn test_sram_peripheral_boundary_word_access() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, SRAM_BASE_ADDR),
+        addi(2, 0, 0x7FF),
+        slli(2, 2, 2),
+        add(3, 1, 2),
+        addi(4, 0, 0x55),
+        sw(3, 4, 0),
+        lw(5, 3, 0),
+        lui(9, DRAM_BASE),
+        sw(9, 5, 0),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0x0000_0055
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR + 0x1FFC, SHORT_TIMEOUT),
+        0x0000_0055
     );
 }

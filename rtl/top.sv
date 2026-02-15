@@ -106,6 +106,17 @@ module top #(
     logic        clock_ready;
     
     // ============================================================
+    // SRAM Peripheral Interface Signals
+    // ============================================================
+    logic [31:0] sram_addr;
+    logic [31:0] sram_wdata;
+    logic [31:0] sram_rdata;
+    logic        sram_we;
+    logic [1:0]  sram_size;
+    logic        sram_req;
+    logic        sram_ready;
+    
+    // ============================================================
     // System Controller Interface Signals
     // ============================================================
     logic [31:0] sysctrl_addr;
@@ -229,6 +240,15 @@ module top #(
         .clock_size(clock_size),
         .clock_req(clock_req),
         .clock_ready(clock_ready),
+        
+        // SRAM Peripheral interface
+        .sram_addr(sram_addr),
+        .sram_wdata(sram_wdata),
+        .sram_rdata(sram_rdata),
+        .sram_we(sram_we),
+        .sram_size(sram_size),
+        .sram_req(sram_req),
+        .sram_ready(sram_ready),
         
         // System Controller interface
         .sysctrl_addr(sysctrl_addr),
@@ -375,6 +395,22 @@ module top #(
         .req(clock_req),
         .size(clock_size),
         .ready(clock_ready)
+    );
+    
+    // ============================================================
+    // SRAM Peripheral Instantiation
+    // ============================================================
+    sram_peripheral sram_periph (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        
+        .addr(sram_addr),
+        .wdata(sram_wdata),
+        .rdata(sram_rdata),
+        .we(sram_we),
+        .req(sram_req),
+        .size(sram_size),
+        .ready(sram_ready)
     );
     
     // ============================================================
