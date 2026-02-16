@@ -4,7 +4,7 @@ use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
     wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
-use riscv_core::instruction::{addi, beq, ebreak, jal, lbu, lui, sw};
+use riscv_core::instruction::{addi, beq, ebreak, jal, lbu, lhu, lui, lw, sb, sw};
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
 
 /// Test that demonstrates loading and executing programmatic instructions without an ELF file.
@@ -59,34 +59,55 @@ fn test_write_memory_region_patterns() {
 fn test_runtime_write_and_read_memory_region_sram_without_cpu_program() {
     let mut runtime = create_test_runtime();
     let addr = SRAM_BASE + 0x100;
-    let payload = vec![0xAB, 0xCD, 0x12, 0x34, 0x56];
+    let base = vec![0xEE; 9];
+    let payload = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
 
     runtime
         .load_program(TEST_BOOT_PC, &[])
         .expect("Failed to prepare runtime for host SRAM access");
 
     runtime
-        .write_memory_region(addr, &payload)
+        .write_memory_region(addr, &base)
+        .expect("Failed to initialize SRAM base pattern");
+    runtime
+        .write_memory_region(addr + 1, &payload)
         .expect("Failed to write SRAM via runtime");
-    let read_back = runtime
-        .read_memory_region(addr, payload.len() as u32)
-        .expect("Failed to read SRAM via runtime");
 
+    let read_full = runtime
+        .read_memory_region(addr, 9)
+        .expect("Failed to read full SRAM window via runtime");
+    assert_eq!(
+        read_full,
+        vec![0xEE, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0xEE]
+    );
+
+    let read_back = runtime
+        .read_memory_region(addr + 1, payload.len() as u32)
+        .expect("Failed to read SRAM via runtime");
     assert_eq!(read_back, payload);
 }
 
 #[test]
 fn test_runtime_write_sram_then_cpu_reads_it() {
     let mut runtime = create_test_runtime();
-    let payload = [0x78];
+    let payload = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+
     let checker_program = instructions_to_bytes(&[
         lui(12, SRAM_BASE),
-        lbu(10, 12, 0),
-        beq(10, 0, -4),
-        lui(11, DRAM_BASE),
-        sw(11, 10, 0),
-        0,
-        0,
+        lbu(9, 12, 6),
+        beq(9, 0, -4),
+        lw(10, 12, 0),  // 0x04030201
+        lhu(11, 12, 4), // 0x00000605
+        lbu(13, 12, 6), // 0x00000007
+        lui(14, DRAM_BASE),
+        sw(14, 10, 0),
+        sw(14, 11, 4),
+        sw(14, 13, 8),
+        lui(15, SIM_CONTROL_BASE),
+        addi(16, 0, 1),
+        sw(15, 16, 0),
+        ebreak(),
+        jal(0, 0),
     ]);
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &checker_program);
 
@@ -97,7 +118,15 @@ fn test_runtime_write_sram_then_cpu_reads_it() {
     let _ = wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
-        0x78
+        0x0403_0201
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        0x0000_0605
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        0x0000_0007
     );
 }
 
@@ -107,8 +136,20 @@ fn test_cpu_writes_sram_then_runtime_reads_it() {
 
     let writer_program = instructions_to_bytes(&[
         lui(12, SRAM_BASE),
-        addi(10, 0, 0x7E),
-        sw(12, 10, 0),
+        addi(10, 0, 0x11),
+        sb(12, 10, 0),
+        addi(10, 0, 0x22),
+        sb(12, 10, 1),
+        addi(10, 0, 0x33),
+        sb(12, 10, 2),
+        addi(10, 0, 0x44),
+        sb(12, 10, 3),
+        addi(10, 0, 0x55),
+        sb(12, 10, 4),
+        addi(10, 0, 0x66),
+        sb(12, 10, 5),
+        addi(10, 0, 0x77),
+        sb(12, 10, 6),
         lui(11, SIM_CONTROL_BASE),
         addi(10, 0, 1),
         sw(11, 10, 0),
@@ -120,7 +161,7 @@ fn test_cpu_writes_sram_then_runtime_reads_it() {
     assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(1));
 
     let read_back = runtime
-        .read_memory_region(SRAM_BASE, 4)
+        .read_memory_region(SRAM_BASE, 7)
         .expect("Failed to read SRAM via runtime");
-    assert_eq!(read_back, vec![0x7E, 0x00, 0x00, 0x00]);
+    assert_eq!(read_back, vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]);
 }

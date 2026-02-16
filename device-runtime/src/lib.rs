@@ -290,61 +290,60 @@ pub trait DeviceRuntime: std::fmt::Display {
 
     /// Write a memory region using host-initiated bus requests.
     ///
-    /// This default implementation performs read-modify-write word transactions,
-    /// allowing access to both DRAM and memory-mapped RTL peripherals
-    /// (for example SRAM) even when subword host accesses are not supported.
+    /// This default implementation issues the largest request size possible at
+    /// each step (word, then halfword, then byte), without touching addresses
+    /// outside the requested region.
     fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), DeviceError> {
-        for (offset, &byte) in data.iter().enumerate() {
+        let mut offset = 0usize;
+        while offset < data.len() {
             let addr = start_addr.wrapping_add(offset as u32);
-            let word_addr = addr & !0x3;
-            let shift = (addr & 0x3) * 8;
-
-            self.send_host_request(BusRequest::read(word_addr, AccessSize::Word))?;
-            let word = loop {
-                match self.poll()? {
-                    Some(BusEvent::HostReadResponse {
-                        addr: resp_addr,
-                        data: read_data,
-                        ..
-                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
-                        break read_data;
-                    }
-                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                        if resp_addr == word_addr =>
-                    {
-                        return Err(DeviceError::IoError(std::io::Error::new(
-                            std::io::ErrorKind::TimedOut,
-                            format!("Timed out reading word at address 0x{word_addr:08x}"),
-                        )));
-                    }
-                    Some(_) => {}
-                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
-                }
+            let remaining = data.len() - offset;
+            let (size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
+                (AccessSize::Word, 4usize)
+            } else if remaining >= 2 && (addr & 0x1) == 0 {
+                (AccessSize::Halfword, 2usize)
+            } else {
+                (AccessSize::Byte, 1usize)
             };
-
-            let byte_mask = 0xFF_u32 << shift;
-            let merged_word = (word & !byte_mask) | ((byte as u32) << shift);
-            self.send_host_request(BusRequest::write(word_addr, merged_word, AccessSize::Word))?;
+            let wdata = match step {
+                4 => u32::from_le_bytes([
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ]),
+                2 => u16::from_le_bytes([data[offset], data[offset + 1]]) as u32,
+                1 => data[offset] as u32,
+                _ => unreachable!(),
+            };
+            self.send_host_request(BusRequest::write(addr, wdata, size))?;
 
             loop {
                 match self.poll()? {
                     Some(BusEvent::HostWriteResponse {
-                        addr: resp_addr, ..
-                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
+                        addr: resp_addr,
+                        size: resp_size,
+                        ..
+                    }) if resp_addr == addr
+                        && resp_size == size
+                        && !self.has_pending_host_request() =>
+                    {
                         break;
                     }
-                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                        if resp_addr == word_addr =>
-                    {
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
                         return Err(DeviceError::IoError(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
-                            format!("Timed out writing word at address 0x{word_addr:08x}"),
+                            format!(
+                                "Timed out writing {} at address 0x{addr:08x}",
+                                access_size_name(size)
+                            ),
                         )));
                     }
                     Some(_) => {}
                     None => std::thread::sleep(std::time::Duration::from_millis(1)),
                 }
             }
+            offset += step;
         }
 
         Ok(())
@@ -352,40 +351,53 @@ pub trait DeviceRuntime: std::fmt::Display {
 
     /// Read a memory region using host-initiated bus requests.
     ///
-    /// This default implementation performs word reads and extracts bytes,
-    /// allowing access to both DRAM and memory-mapped RTL peripherals
-    /// (for example SRAM) even when subword host accesses are not supported.
+    /// This default implementation issues the largest request size possible at
+    /// each step (word, then halfword, then byte), without touching addresses
+    /// outside the requested region.
     fn read_memory_region(&mut self, start_addr: u32, size: u32) -> Result<Vec<u8>, DeviceError> {
         let mut data = Vec::with_capacity(size as usize);
-
-        for offset in 0..size {
+        let mut offset = 0u32;
+        while offset < size {
             let addr = start_addr.wrapping_add(offset);
-            let word_addr = addr & !0x3;
-            let shift = (addr & 0x3) * 8;
-            self.send_host_request(BusRequest::read(word_addr, AccessSize::Word))?;
+            let remaining = size - offset;
+            let (request_size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
+                (AccessSize::Word, 4u32)
+            } else if remaining >= 2 && (addr & 0x1) == 0 {
+                (AccessSize::Halfword, 2u32)
+            } else {
+                (AccessSize::Byte, 1u32)
+            };
+            self.send_host_request(BusRequest::read(addr, request_size))?;
 
-            let byte = loop {
+            let read_data = loop {
                 match self.poll()? {
                     Some(BusEvent::HostReadResponse {
                         addr: resp_addr,
                         data: read_data,
+                        size: resp_size,
                         ..
-                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
-                        break ((read_data >> shift) & 0xFF) as u8;
-                    }
-                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                        if resp_addr == word_addr =>
+                    }) if resp_addr == addr
+                        && resp_size == request_size
+                        && !self.has_pending_host_request() =>
                     {
+                        break read_data;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
                         return Err(DeviceError::IoError(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
-                            format!("Timed out reading word at address 0x{word_addr:08x}"),
+                            format!(
+                                "Timed out reading {} at address 0x{addr:08x}",
+                                access_size_name(request_size)
+                            ),
                         )));
                     }
                     Some(_) => {}
                     None => std::thread::sleep(std::time::Duration::from_millis(1)),
                 }
             };
-            data.push(byte);
+            let bytes = read_data.to_le_bytes();
+            data.extend_from_slice(&bytes[..step as usize]);
+            offset += step;
         }
 
         Ok(data)
