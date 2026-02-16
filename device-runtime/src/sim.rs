@@ -15,8 +15,7 @@ use crate::{
 };
 use cpu_sim::InteractiveSimulator;
 use host_bus_handler::{AccessSize, BusRequest, HandlerError};
-use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
-use std::path::Path;
+use riscv_shared::bus::{sysctrl_reset_addr, DRAM_BASE, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,10 +28,6 @@ const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
-    /// Load an ELF file into the simulator, with a one-shot channel for the result
-    LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
-    /// Load raw program bytes into the simulator's memory at a given address
-    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -102,6 +97,16 @@ impl SimDeviceRuntime {
                 return;
             }
         };
+        // Prime simulator host-bus/reset state before serving runtime requests.
+        // InteractiveSimulator performs this setup as part of write_memory_region(),
+        // so an empty DRAM write is sufficient and keeps memory unchanged.
+        if let Err(e) = simulator.write_memory_region(DRAM_BASE, &[]) {
+            let _ = event_tx.send(RuntimeEvent::FatalError(format!(
+                "Failed to initialize simulator reset state: {}",
+                e
+            )));
+            return;
+        }
 
         loop {
             // Check for commands from the main thread (non-blocking)
@@ -120,26 +125,6 @@ impl SimDeviceRuntime {
                         }
                         *pending = None;
                         log::warn!("Host request rejected by simulator: {}", e);
-                    }
-                }
-                Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
-                    match simulator.load_elf_no_boot(&path) {
-                        Ok(entry_point) => {
-                            let _ = result_tx.send(Ok(entry_point));
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(Err(e));
-                        }
-                    }
-                }
-                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
-                    match simulator.write_memory_region(boot_pc, &data) {
-                        Ok(()) => {
-                            let _ = result_tx.send(Ok(()));
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(Err(e));
-                        }
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -296,78 +281,6 @@ impl DeviceRuntime for SimDeviceRuntime {
                 None => {
                     thread::sleep(Duration::from_millis(1));
                 }
-            }
-        }
-    }
-
-    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
-        // Create a one-shot channel for the ELF load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<u32, String>>();
-
-        // Send the ELF load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadElf(path.to_path_buf(), result_tx))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(entry_point)) => Ok(entry_point),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for ELF load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during ELF load",
-                )))
-            }
-        }
-    }
-
-    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
-        // Create a one-shot channel for the load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
-
-        // Send the load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadProgram(
-                boot_pc,
-                data.to_vec(),
-                result_tx,
-            ))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for program load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during program load",
-                )))
             }
         }
     }
