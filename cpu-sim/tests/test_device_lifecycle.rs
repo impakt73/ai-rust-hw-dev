@@ -106,7 +106,7 @@ fn test_device_reset_called_during_simulation() -> Result<(), String> {
                 .flat_map(|inst| inst.to_le_bytes())
                 .collect();
 
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -190,7 +190,7 @@ fn test_device_clock_cycle_called_every_cycle() -> Result<(), String> {
                 .flat_map(|inst| inst.to_le_bytes())
                 .collect();
 
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,
@@ -274,7 +274,7 @@ fn test_multiple_devices_receive_lifecycle_calls() -> Result<(), String> {
                 .flat_map(|inst| inst.to_le_bytes())
                 .collect();
 
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&SimulatorView, &SimulationResult)>,

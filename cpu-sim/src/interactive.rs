@@ -136,7 +136,6 @@ impl InteractiveSimulator {
         let entry_point = {
             let mut view = SimulatorView::new(
                 &mut self.simulator.bus,
-                &mut self.simulator.hung_detector,
                 &self.simulator.cpu,
                 &mut self.simulator.host_bus_handler,
                 &mut self.simulator.host_bus_direct_response,
@@ -312,7 +311,6 @@ impl InteractiveSimulator {
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &mut self.simulator.hung_detector,
             &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
@@ -330,7 +328,6 @@ impl InteractiveSimulator {
     pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &mut self.simulator.hung_detector,
             &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
@@ -341,8 +338,6 @@ impl InteractiveSimulator {
     /// Write a region of memory from a byte slice
     ///
     /// Writes bytes into the simulator's memory starting at `start_addr`.
-    /// The data is marked as instructions so the hung detector treats the
-    /// region as valid for the program counter.
     ///
     /// After writing, the simulator is reset with boot deferred (CPU left in
     /// S_BOOT state) so that `boot_cpu` can be called externally.
@@ -358,12 +353,11 @@ impl InteractiveSimulator {
         {
             let mut view = SimulatorView::new(
                 &mut self.simulator.bus,
-                &mut self.simulator.hung_detector,
                 &self.simulator.cpu,
                 &mut self.simulator.host_bus_handler,
                 &mut self.simulator.host_bus_direct_response,
             );
-            view.write_memory_region(start_addr, data, true);
+            view.write_memory_region(start_addr, data);
         }
 
         // Reset with boot deferred so boot_cpu can be called externally

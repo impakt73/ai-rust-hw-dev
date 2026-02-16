@@ -12,8 +12,6 @@ const BOOT_TIMEOUT_CYCLES: u32 = 10_000;
 /// Errors that can occur during the CPU boot/reset sequence
 #[derive(Debug)]
 pub enum BootError {
-    /// The boot address is outside valid PC ranges (wraps HungStateError)
-    InvalidBootAddress(HungStateError),
     /// A boot phase timed out waiting for a condition
     Timeout { phase: &'static str, cycles: u32 },
     /// The CPU STATUS register indicates an unexpected state
@@ -23,7 +21,6 @@ pub enum BootError {
 impl std::fmt::Display for BootError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BootError::InvalidBootAddress(e) => write!(f, "Invalid boot address: {}", e),
             BootError::Timeout { phase, cycles } => {
                 write!(f, "Boot timeout in '{}' after {} cycles", phase, cycles)
             }
@@ -39,12 +36,6 @@ impl std::fmt::Display for BootError {
 }
 
 impl std::error::Error for BootError {}
-
-impl From<HungStateError> for BootError {
-    fn from(e: HungStateError) -> Self {
-        BootError::InvalidBootAddress(e)
-    }
-}
 
 /// Pending response for a host-initiated request (awaiting completion after latency)
 #[derive(Debug, Clone)]
@@ -243,7 +234,6 @@ where
         if let Some(ref mut callback) = self.inst_complete_callback {
             let mut view = SimulatorView::new(
                 &mut self.bus,
-                &mut self.hung_detector,
                 &self.cpu,
                 &mut self.host_bus_handler,
                 &mut self.host_bus_direct_response,
@@ -395,13 +385,8 @@ where
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
-    /// * `Err(BootError)` if boot address validation fails, a timeout occurs, or CPU state is unexpected
+    /// * `Err(BootError)` if a timeout occurs, or CPU state is unexpected
     pub fn reset(&mut self, boot_pc: u32, boot_cpu: bool) -> Result<(), BootError> {
-        // Validate boot address before reset if hung detector is configured
-        if let Some(ref detector) = self.hung_detector {
-            detector.validate_boot_addr(boot_pc)?;
-        }
-
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
         // and the FPGA side never sends more than one request at a time

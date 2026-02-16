@@ -57,7 +57,7 @@ where
         vcd_path,
         0, // Zero latency for RTL verification tests
         |sim| {
-            sim.write_memory_region(START_ADDR, &program_bytes, true);
+            sim.write_memory_region(START_ADDR, &program_bytes);
             Ok(START_ADDR)
         },
         termination_callback,
@@ -846,7 +846,7 @@ fn test_cpu_halts_on_zero_instruction() {
         None,
         0, // Zero latency
         |sim| {
-            sim.write_memory_region(START_ADDR, &program_bytes, true);
+            sim.write_memory_region(START_ADDR, &program_bytes);
             Ok(START_ADDR)
         },
         Some(|sim: &SimulatorView, _result: &SimulationResult| {

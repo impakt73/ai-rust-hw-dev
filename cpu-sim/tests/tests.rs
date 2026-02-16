@@ -72,7 +72,7 @@ fn test_comprehensive_elf() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -100,7 +100,7 @@ fn test_instruction_trace() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -148,7 +148,7 @@ fn test_register_trace_audit() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -236,7 +236,7 @@ fn test_trace_callback() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -644,50 +644,6 @@ fn test_vcd_generation() {
 // Hung State Detection Integration Tests
 // ============================================================================
 
-#[test]
-fn test_hung_detection_with_elf_auto_range() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("HUNG DETECTION: PROGRAMMATIC AUTO-RANGE TEST");
-    println!("========================================");
-
-    // Test that run_program works correctly with hung detection enabled
-    let program = create_test_program();
-
-    // This should succeed with hung detection enabled
-    let result = run_program(
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
-            Ok(0x8000_0000)
-        },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    );
-
-    assert!(
-        result.is_ok(),
-        "Should successfully run program: {:?}",
-        result.err()
-    );
-
-    println!("✓ Valid PC range automatically set for programmatic execution");
-    println!("✓ Hung detection enabled by default");
-    println!(
-        "✓ Simulation completed in {} cycles",
-        result.unwrap().cycles
-    );
-    println!("\n========================================");
-    println!("✓ HUNG DETECTION PROGRAMMATIC AUTO-RANGE TEST PASSED");
-    println!("========================================");
-}
-
 // Tests that verify hung states ARE detected (not just false positives)
 #[test]
 fn test_hung_detection_catches_infinite_loop() {
@@ -717,7 +673,7 @@ fn test_hung_detection_catches_infinite_loop() {
         None, // No VCD
         0,    // Zero latency
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes, true);
+            sim.write_memory_region(start_addr, &program_bytes);
             Ok(start_addr)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -736,62 +692,6 @@ fn test_hung_detection_catches_infinite_loop() {
     println!("✓ Error message: {}", err_msg);
     println!("\n========================================");
     println!("✓ HUNG DETECTION INFINITE LOOP TEST PASSED");
-    println!("========================================");
-}
-
-#[test]
-fn test_hung_detection_catches_out_of_bounds_pc() {
-    init_test_logger();
-
-    println!("\n========================================");
-    println!("HUNG DETECTION: OUT OF BOUNDS PC");
-    println!("========================================");
-
-    use riscv_core::instruction::jal;
-
-    // Create a jump that goes outside the loaded program
-    // We'll load a single instruction and jump far beyond it
-    let start_addr = 0x8000_0000;
-
-    // Jump forward by 0x10000 bytes (64KB), which is way outside our 4-byte program
-    let jump_instr = jal(0, 0x10000);
-    let program_bytes: Vec<u8> = [jump_instr]
-        .iter()
-        .flat_map(|inst| inst.to_le_bytes())
-        .collect();
-
-    // write_memory_region will set valid PC range to [start_addr, start_addr + 4)
-    // The jump will go to start_addr + 0x10000, which is outside this range
-    let result = run_program(
-        GLOBAL_MAX_CYCLES,
-        false,
-        false,
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,
-        0,
-        |sim| {
-            sim.write_memory_region(start_addr, &program_bytes, true);
-            Ok(start_addr)
-        },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    );
-
-    // Should get an error about PC out of bounds
-    assert!(result.is_err(), "Should detect PC out of bounds");
-    let err_msg = result.unwrap_err();
-    assert!(
-        err_msg.contains("outside valid")
-            || err_msg.contains("PcOutOfBounds")
-            || err_msg.contains("Hung state"),
-        "Error should mention PC out of bounds, got: {}",
-        err_msg
-    );
-
-    println!("✓ Successfully detected out-of-bounds PC jump");
-    println!("✓ Error message: {}", err_msg);
-    println!("\n========================================");
-    println!("✓ HUNG DETECTION OUT OF BOUNDS TEST PASSED");
     println!("========================================");
 }
 
@@ -841,11 +741,11 @@ fn test_hung_detection_catches_long_instruction() {
         None,
         mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes, true);
+            sim.write_memory_region(start_addr, &program_bytes);
 
             // Write data at data_addr (0x80000100)
             let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
-            sim.write_memory_region(data_addr, &data, false);
+            sim.write_memory_region(data_addr, &data);
 
             Ok(start_addr)
         },
@@ -1237,7 +1137,7 @@ fn test_global_max_cycles_safety_margin() {
         None,
         0,
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -1292,7 +1192,7 @@ fn test_global_max_cycles_safety_margin() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &instructions);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
