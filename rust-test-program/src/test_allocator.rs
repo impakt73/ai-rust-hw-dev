@@ -10,7 +10,7 @@ use core::panic::PanicInfo;
 use riscv_rt::entry;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -19,6 +19,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     // Create a Vec with known data to test if the allocator works correctly
     #[allow(clippy::useless_vec)]
     let v = vec![

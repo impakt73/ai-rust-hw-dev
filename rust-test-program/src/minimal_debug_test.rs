@@ -11,7 +11,7 @@ use riscv_rt::entry;
 use serde::Serialize;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -26,6 +26,7 @@ struct SimpleStruct {
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     let simple = SimpleStruct {
         a: 0x12345678,
         b: 0xABCDEF00,

@@ -2,10 +2,9 @@
 
 #![allow(dead_code)]
 
-use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
-use core::ptr::{addr_of_mut, read_volatile, write_volatile};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::ptr::{addr_of, read_volatile, write_volatile};
+pub use embedded_alloc::LlffHeap as Heap;
 
 // Re-export constants from riscv_shared
 // Note: Some re-exports may be unused in this module but are used by test programs that import from common
@@ -29,53 +28,20 @@ pub use riscv_shared::VideoFormat;
 #[allow(unused_imports)]
 pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 
-/// Simple bump allocator for bare-metal environment.
-///
-/// This allocator uses a static 8KB heap placed in the .uninit section to avoid
-/// startup zero-initialization and AtomicUsize with Ordering::Relaxed, which is
-/// safe for this single-threaded bare-metal environment where only one CPU core
-/// is active.
-///
-/// Using the .uninit section eliminates the costly zero-initialization loop in
-/// the riscv-rt startup code, significantly reducing cycle count for programs
-/// using heap allocation.
-///
-/// For multi-threaded usage, this would need:
-/// 1. Ordering::SeqCst or Ordering::AcqRel for atomic operations
-/// 2. Proper synchronization primitives (e.g., Mutex) around heap access
-/// 3. Consideration of deallocation (currently a no-op)
-pub struct SimpleAllocator;
-
-unsafe impl GlobalAlloc for SimpleAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: Using .uninit section to avoid zero-initialization on startup.
-        // The .uninit section is explicitly NOT zeroed by riscv-rt's startup code,
-        // unlike .bss which is always zeroed. This significantly reduces startup cycles.
-        // The allocated memory is uninitialized, which is fine because:
-        // 1. Callers of alloc() must initialize the memory before use
-        // 2. This is standard behavior for allocators (malloc doesn't zero either)
-        #[link_section = ".uninit"]
-        static mut HEAP: [u8; 8192] = [0; 8192];
-        static OFFSET: AtomicUsize = AtomicUsize::new(0);
-
-        let size = layout.size();
-        let align = layout.align();
-        let current_offset = OFFSET.load(Ordering::Relaxed);
-        let aligned_offset = (current_offset + align - 1) & !(align - 1);
-
-        if aligned_offset + size > 8192 {
-            core::ptr::null_mut()
-        } else {
-            // SAFETY: We're computing a pointer within the static HEAP allocation.
-            // The pointer arithmetic is valid as long as aligned_offset + size <= 8192,
-            // which we've already checked above.
-            let ptr = addr_of_mut!(HEAP).cast::<u8>().add(aligned_offset);
-            OFFSET.store(aligned_offset + size, Ordering::Relaxed);
-            ptr
-        }
+/// Initialize a provided global heap from linker-provided riscv-rt heap symbols.
+pub fn init_heap(heap: &'static Heap) {
+    unsafe extern "C" {
+        static _heap_size: u8;
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    let heap_start = riscv_rt::heap_start() as usize;
+    // `_heap_size` is an absolute linker symbol whose address encodes the heap size.
+    // Do not dereference it; use its address value directly.
+    let heap_size = addr_of!(_heap_size) as usize;
+
+    unsafe {
+        heap.init(heap_start, heap_size);
+    }
 }
 
 /// Default panic handler for bare-metal programs - write to tohost to signal panic

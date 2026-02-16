@@ -12,7 +12,7 @@ use riscv_rt::entry;
 use riscv_shared::protocol::*;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -38,6 +38,7 @@ where
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     // Step 1: Send initial Debug packet to host
     let debug = DebugPacket {
         header: PacketHeader::new(PacketType::Debug, 0),
