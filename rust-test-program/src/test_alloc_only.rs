@@ -12,7 +12,7 @@ use riscv_rt::entry;
 use core::alloc::{GlobalAlloc, Layout};
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -21,9 +21,10 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     unsafe {
         let layout = Layout::from_size_align(8, 1).unwrap();
-        let ptr = ALLOCATOR.alloc(layout);
+        let ptr = HEAP.alloc(layout);
 
         // Write known pattern
         core::ptr::write(ptr.add(0), 0x12u8);

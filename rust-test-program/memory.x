@@ -13,3 +13,6 @@ REGION_ALIAS("REGION_STACK", RAM);
 
 /* Stack grows downward from the end of RAM */
 _stack_start = ORIGIN(RAM) + LENGTH(RAM);
+
+/* Reserve a 1K heap for global allocator initialization via riscv-rt symbols */
+_heap_size = 1K;

@@ -2,12 +2,9 @@
 
 #![allow(dead_code)]
 
-use core::alloc::{GlobalAlloc, Layout};
-use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
-use core::ptr::{addr_of_mut, read_volatile, write_volatile};
-use core::sync::atomic::{AtomicBool, Ordering};
-use embedded_alloc::LlffHeap as Heap;
+use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
+pub use embedded_alloc::LlffHeap as Heap;
 
 // Re-export constants from riscv_shared
 // Note: Some re-exports may be unused in this module but are used by test programs that import from common
@@ -31,34 +28,18 @@ pub use riscv_shared::VideoFormat;
 #[allow(unused_imports)]
 pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 
-/// Embedded allocator for bare-metal environment.
-pub struct SimpleAllocator;
-
-const HEAP_SIZE: usize = 8192;
-
-#[link_section = ".uninit"]
-static mut HEAP_MEMORY: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-static HEAP: Heap = Heap::empty();
-static HEAP_INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-unsafe impl GlobalAlloc for SimpleAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // Fast path avoids entering a critical section after one-time initialization.
-        // The second check inside the critical section handles concurrent first-time allocs.
-        if !HEAP_INITIALIZED.load(Ordering::Acquire) {
-            critical_section::with(|_| {
-                if !HEAP_INITIALIZED.load(Ordering::Acquire) {
-                    let heap_start = addr_of_mut!(HEAP_MEMORY).cast::<u8>() as usize;
-                    HEAP.init(heap_start, HEAP_SIZE);
-                    HEAP_INITIALIZED.store(true, Ordering::Release);
-                }
-            });
-        }
-        HEAP.alloc(layout)
+/// Initialize a provided global heap from linker-provided riscv-rt heap symbols.
+pub fn init_heap(heap: &'static Heap) {
+    unsafe extern "C" {
+        static mut __sheap: u8;
+        static _heap_size: u8;
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        HEAP.dealloc(ptr, layout);
+    let heap_start = addr_of_mut!(__sheap) as usize;
+    let heap_size = addr_of!(_heap_size) as usize;
+
+    unsafe {
+        heap.init(heap_start, heap_size);
     }
 }
 

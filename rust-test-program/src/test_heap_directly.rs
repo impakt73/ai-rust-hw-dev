@@ -12,7 +12,7 @@ use riscv_rt::entry;
 use core::alloc::{GlobalAlloc, Layout};
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -21,10 +21,11 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     // Test 1: Write directly to allocated memory - ONE BYTE AT A TIME
     unsafe {
         let layout = Layout::from_size_align(8, 1).unwrap();
-        let ptr = ALLOCATOR.alloc(layout);
+        let ptr = HEAP.alloc(layout);
 
         // Send the pointer address to FIFO for debugging
         common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO"); // Debug marker

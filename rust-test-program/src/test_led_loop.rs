@@ -4,7 +4,7 @@
 mod common;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};

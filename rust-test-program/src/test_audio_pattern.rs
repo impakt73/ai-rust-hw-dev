@@ -4,7 +4,7 @@
 mod common;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, write_stereo_sample,

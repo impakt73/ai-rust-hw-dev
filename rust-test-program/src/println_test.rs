@@ -10,7 +10,7 @@ use riscv_rt::entry;
 use riscv_shared::rvprintln;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -19,6 +19,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() -> ! {
+    common::init_heap(&HEAP);
     // Test basic println functionality
     rvprintln!("Hello from RISC-V CPU!");
 

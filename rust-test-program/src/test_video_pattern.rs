@@ -4,7 +4,7 @@
 mod common;
 
 #[global_allocator]
-static ALLOCATOR: common::SimpleAllocator = common::SimpleAllocator;
+static HEAP: common::Heap = common::Heap::empty();
 
 use common::{trigger_present, wait_for_frame_ready, wait_for_present_ready};
 use core::panic::PanicInfo;
