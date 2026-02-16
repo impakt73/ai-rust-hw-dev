@@ -33,6 +33,8 @@ const SYSTEM_RESET_STABILIZATION_DELAY: Duration = Duration::from_secs(1);
 const SYSTEM_RESET_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// Timeout for reset command completion from the background thread.
 const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+/// Timeout for runtime startup readiness handshake.
+const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
@@ -91,13 +93,40 @@ impl FpgaDeviceRuntime {
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, command_rx, event_tx, pending_clone, startup_reset);
+            Self::run_loop(
+                port,
+                command_rx,
+                event_tx,
+                pending_clone,
+                startup_reset,
+                ready_tx,
+            );
         });
+
+        match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(DeviceError::IoError(std::io::Error::other(e)));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Timed out waiting for FPGA runtime initialization",
+                )));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "FPGA runtime initialization channel disconnected",
+                )));
+            }
+        }
 
         Ok(FpgaDeviceRuntime {
             device_path: device.to_string(),
@@ -116,6 +145,7 @@ impl FpgaDeviceRuntime {
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         startup_reset: crate::StartupReset,
+        ready_tx: mpsc::Sender<Result<(), String>>,
     ) {
         let mut bus = SystemBus::new();
         let mut handler = HostBusHandler::new();
@@ -145,12 +175,22 @@ impl FpgaDeviceRuntime {
                 &event_tx,
                 reset_kind,
             ) {
-                let _ = event_tx.send(RuntimeEvent::FatalError(format!(
-                    "Startup {:?} reset failed: {}",
-                    startup_reset, e
-                )));
+                let message = format!("Startup {:?} reset failed: {}", startup_reset, e);
+                if ready_tx.send(Err(message.clone())).is_err() {
+                    log::warn!(
+                        "Failed to report FPGA startup reset failure: caller may have disconnected"
+                    );
+                }
+                let _ = event_tx.send(RuntimeEvent::FatalError(message));
                 return;
             }
+        }
+        // Signal readiness after startup initialization completes, regardless of
+        // whether a startup reset was configured.
+        if ready_tx.send(Ok(())).is_err() {
+            log::warn!(
+                "Failed to report FPGA runtime readiness: caller may have disconnected or timed out"
+            );
         }
 
         loop {
