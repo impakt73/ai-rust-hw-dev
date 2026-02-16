@@ -311,15 +311,18 @@ pub trait DeviceRuntime: std::fmt::Display {
                 ),
             ))
         })?;
-        start_addr.checked_add(len).ok_or_else(|| {
-            DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Requested write of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
-                    data.len()
-                ),
-            ))
-        })?;
+        if len > 0 {
+            let last_offset = len - 1;
+            start_addr.checked_add(last_offset).ok_or_else(|| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Requested write of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                        data.len()
+                    ),
+                ))
+            })?;
+        }
 
         let mut offset = 0usize;
         while offset < data.len() {
@@ -398,15 +401,18 @@ pub trait DeviceRuntime: std::fmt::Display {
         size: u32,
         mut event_callback: Option<&mut dyn FnMut(BusEvent)>,
     ) -> Result<Vec<u8>, DeviceError> {
-        start_addr.checked_add(size).ok_or_else(|| {
-            DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Requested read of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
-                    size
-                ),
-            ))
-        })?;
+        if size > 0 {
+            let last_offset = size - 1;
+            start_addr.checked_add(last_offset).ok_or_else(|| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Requested read of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                        size
+                    ),
+                ))
+            })?;
+        }
         let mut data = Vec::with_capacity(size as usize);
         let mut offset = 0u32;
         while offset < size {

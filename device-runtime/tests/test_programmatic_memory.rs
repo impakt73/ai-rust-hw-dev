@@ -6,6 +6,10 @@ use common::{
 };
 use riscv_core::instruction::{addi, beq, ebreak, jal, lbu, lhu, lui, lw, sb, sw};
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
+use std::time::{Duration, Instant};
+
+const CALLBACK_TEST_TIMEOUT_SECS: u64 = 2;
+const CALLBACK_TEST_POLL_INTERVAL_MS: u64 = 5;
 
 /// Test that demonstrates loading and executing programmatic instructions without an ELF file.
 #[test]
@@ -169,10 +173,22 @@ fn test_cpu_writes_sram_then_runtime_reads_it() {
 #[test]
 fn test_runtime_memory_region_callback_receives_unrelated_events() {
     let mut runtime = create_test_runtime();
+    const FENCE_ADDR: u32 = DRAM_BASE + 0x2000;
+
+    runtime
+        .load_program(TEST_BOOT_PC, &[])
+        .expect("Failed to prepare runtime");
+    runtime
+        .write_memory_region(FENCE_ADDR, &[0], None)
+        .expect("Failed to initialize fence memory");
+
     let program = instructions_to_bytes(&[
         lui(10, SIM_CONTROL_BASE),
         addi(11, 0, 0x2A),
         sw(10, 11, 0),
+        lui(12, FENCE_ADDR),
+        addi(13, 0, 1),
+        sw(12, 13, 0),
         ebreak(),
         jal(0, 0),
     ]);
@@ -185,10 +201,50 @@ fn test_runtime_memory_region_callback_receives_unrelated_events() {
         }
     };
 
-    let read_back = runtime
-        .read_memory_region(DRAM_BASE, 1, Some(&mut callback))
-        .expect("read_memory_region should succeed while forwarding unrelated events");
+    let deadline = Instant::now() + Duration::from_secs(CALLBACK_TEST_TIMEOUT_SECS);
+    let expected_fence = [1u8];
+    loop {
+        let read_back = runtime
+            .read_memory_region(FENCE_ADDR, 1, Some(&mut callback))
+            .expect("read_memory_region should succeed while forwarding unrelated events");
+        if read_back.as_slice() == expected_fence {
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!("Timed out waiting for CPU fence update");
+        }
+        std::thread::sleep(Duration::from_millis(CALLBACK_TEST_POLL_INTERVAL_MS));
+    }
 
-    assert_eq!(read_back.len(), 1);
     assert_eq!(observed_tohost, Some(0x2A));
+}
+
+#[test]
+fn test_runtime_memory_region_u32_max_boundary_accesses_are_valid() {
+    let mut runtime = create_test_runtime();
+    runtime
+        .load_program(TEST_BOOT_PC, &[])
+        .expect("Failed to prepare runtime");
+
+    runtime
+        .write_memory_region(u32::MAX, &[0xA5], None)
+        .expect("1-byte write at 0xFFFF_FFFF should be valid");
+    assert_eq!(
+        runtime
+            .read_memory_region(u32::MAX, 1, None)
+            .expect("1-byte read at 0xFFFF_FFFF should be valid")
+            .len(),
+        1
+    );
+
+    runtime
+        .write_memory_region(u32::MAX - 1, &[0x34, 0x12], None)
+        .expect("2-byte write ending at 0xFFFF_FFFF should be valid");
+    assert_eq!(
+        runtime
+            .read_memory_region(u32::MAX - 1, 2, None)
+            .expect("2-byte read ending at 0xFFFF_FFFF should be valid")
+            .len(),
+        2
+    );
 }
