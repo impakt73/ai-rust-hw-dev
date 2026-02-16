@@ -274,7 +274,6 @@ where
     let entry_point = {
         let mut view = SimulatorView::new(
             &mut sim.bus,
-            &mut sim.hung_detector,
             &sim.cpu,
             &mut sim.host_bus_handler,
             &mut sim.host_bus_direct_response,
@@ -292,7 +291,6 @@ where
     if let Some(callback) = termination_callback {
         let view = SimulatorView::new(
             &mut sim.bus,
-            &mut sim.hung_detector,
             &sim.cpu,
             &mut sim.host_bus_handler,
             &mut sim.host_bus_direct_response,

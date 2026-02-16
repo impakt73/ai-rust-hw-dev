@@ -1,4 +1,3 @@
-use crate::hung_detector::HungDetector;
 use host_bus_handler::{
     classify_request_region, request_end_addr, BusRequest, BusResponse, HandlerError,
     HostBusHandler, RequestAddressRegion,
@@ -16,7 +15,6 @@ use bus_shared::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 /// FIFO, and other simulator components while maintaining encapsulation.
 pub struct SimulatorView<'a> {
     bus: &'a mut bus_shared::SystemBus,
-    hung_detector: &'a mut Option<HungDetector>,
     cpu: &'a Top<'static>,
     host_bus_handler: &'a mut HostBusHandler,
     direct_response: &'a mut Option<BusResponse>,
@@ -26,14 +24,12 @@ impl<'a> SimulatorView<'a> {
     /// Create a new SimulatorView with access to the given components
     pub(crate) fn new(
         bus: &'a mut bus_shared::SystemBus,
-        hung_detector: &'a mut Option<HungDetector>,
         cpu: &'a Top<'static>,
         host_bus_handler: &'a mut HostBusHandler,
         direct_response: &'a mut Option<BusResponse>,
     ) -> Self {
         SimulatorView {
             bus,
-            hung_detector,
             cpu,
             host_bus_handler,
             direct_response,
@@ -134,13 +130,10 @@ impl<'a> SimulatorView<'a> {
     /// This allows external code to populate the simulator's memory with arbitrary data,
     /// such as programmatically generated instructions or test data.
     ///
-    /// If `is_instructions` is true, the memory range will be marked as valid for the PC
-    /// (program counter) for hung state detection purposes.
-    ///
     /// # Arguments
     /// * `start_addr` - Starting address of the memory region to write (absolute address)
     /// * `data` - Byte slice containing the data to write
-    /// * `is_instructions` - If true, marks this region as valid for PC execution
+    /// * `is_instructions` - Reserved for API compatibility
     ///
     /// # Examples
     /// ```no_run
@@ -165,7 +158,7 @@ impl<'a> SimulatorView<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], is_instructions: bool) {
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], _is_instructions: bool) {
         // Validate the entire range before writing
         if !data.is_empty() {
             let size = data.len() as u32;
@@ -185,15 +178,6 @@ impl<'a> SimulatorView<'a> {
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
             self.bus.memory.write_byte(addr, byte);
-        }
-
-        // Update valid PC ranges for hung detection based on whether this is instruction or data memory
-        if !data.is_empty() {
-            if let Some(ref mut detector) = self.hung_detector {
-                let new_start = start_addr;
-                let new_end = start_addr.wrapping_add(data.len() as u32);
-                detector.update_pc_range(new_start, new_end, is_instructions);
-            }
         }
     }
 

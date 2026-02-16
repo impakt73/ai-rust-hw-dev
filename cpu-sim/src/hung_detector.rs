@@ -6,38 +6,6 @@
 /// catching problematic conditions quickly.
 use std::collections::VecDeque;
 
-/// Represents a contiguous range of valid instruction memory
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MemoryRange {
-    pub start: u32,
-    pub end: u32, // exclusive
-}
-
-impl MemoryRange {
-    /// Check if an address is within this range
-    pub fn contains(&self, addr: u32) -> bool {
-        addr >= self.start && addr < self.end
-    }
-
-    /// Check if this range overlaps with another range
-    pub fn overlaps(&self, other: &MemoryRange) -> bool {
-        self.start < other.end && other.start < self.end
-    }
-
-    /// Check if this range is adjacent to another range
-    pub fn adjacent_to(&self, other: &MemoryRange) -> bool {
-        self.end == other.start || other.end == self.start
-    }
-
-    /// Merge two overlapping or adjacent ranges
-    pub fn merge(&self, other: &MemoryRange) -> MemoryRange {
-        MemoryRange {
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
-        }
-    }
-}
-
 /// Configuration for the hung state detector
 #[derive(Debug, Clone)]
 pub struct HungDetectorConfig {
@@ -54,9 +22,6 @@ pub struct HungDetectorConfig {
     /// Enable PC loop detection
     pub enable_pc_loop_detection: bool,
 
-    /// Enable out-of-bounds PC detection
-    pub enable_pc_bounds_detection: bool,
-
     /// Enable detection of instructions that take too many cycles
     pub enable_long_instruction_detection: bool,
 }
@@ -68,7 +33,6 @@ impl Default for HungDetectorConfig {
             pc_stuck_threshold: 50,
             max_cycles_per_instruction: 10000,
             enable_pc_loop_detection: true,
-            enable_pc_bounds_detection: true,
             enable_long_instruction_detection: true,
         }
     }
@@ -83,12 +47,6 @@ pub enum HungStateError {
         instruction: u32,
         count: u32,
         history: Vec<u32>,
-    },
-
-    /// PC has jumped outside valid instruction memory
-    PcOutOfBounds {
-        pc: u32,
-        valid_ranges: Vec<MemoryRange>,
     },
 
     /// Current instruction has taken too many cycles to complete
@@ -119,20 +77,6 @@ impl std::fmt::Display for HungStateError {
                     history.len(),
                     history.iter().map(|p| format!("0x{:08x}", p)).collect::<Vec<_>>()
                 )
-            }
-            HungStateError::PcOutOfBounds { pc, valid_ranges } => {
-                write!(
-                    f,
-                    "CPU hung: PC 0x{:08x} is outside valid instruction memory. Valid ranges: ",
-                    pc
-                )?;
-                for (i, range) in valid_ranges.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "[0x{:08x}, 0x{:08x})", range.start, range.end)?;
-                }
-                Ok(())
             }
             HungStateError::LongInstruction {
                 pc,
@@ -184,9 +128,6 @@ pub struct HungDetector {
     current_instruction_pc: Option<u32>,
     current_instruction_word: u32,
     current_instruction_start_cycle: u64,
-
-    // Multiple non-contiguous valid PC ranges
-    valid_pc_ranges: Vec<MemoryRange>,
 }
 
 impl HungDetector {
@@ -200,7 +141,6 @@ impl HungDetector {
             current_instruction_pc: None,
             current_instruction_word: 0,
             current_instruction_start_cycle: 0,
-            valid_pc_ranges: Vec::new(),
         }
     }
 
@@ -210,105 +150,10 @@ impl HungDetector {
         Self::new(HungDetectorConfig::default())
     }
 
-    /// Add or update a valid PC range for bounds checking
-    ///
-    /// If the new range overlaps or is adjacent to existing ranges, they will be merged.
-    /// This allows building up non-contiguous executable regions properly.
-    ///
-    /// # Arguments
-    /// * `start` - Start address of valid instruction memory (inclusive)
-    /// * `end` - End address of valid instruction memory (exclusive)
-    /// * `is_instructions` - If true, marks this range as containing instructions;
-    ///   if false, removes this range from valid PC ranges
-    pub fn update_pc_range(&mut self, start: u32, end: u32, is_instructions: bool) {
-        if !is_instructions {
-            // Remove or split existing ranges that overlap with this data region
-            let data_range = MemoryRange { start, end };
-            let mut new_ranges = Vec::new();
-
-            for range in &self.valid_pc_ranges {
-                if !range.overlaps(&data_range) {
-                    // No overlap, keep the range
-                    new_ranges.push(*range);
-                } else {
-                    // Overlaps - need to split or remove
-                    if range.start < data_range.start {
-                        // Keep the part before the data region
-                        new_ranges.push(MemoryRange {
-                            start: range.start,
-                            end: range.end.min(data_range.start),
-                        });
-                    }
-                    if range.end > data_range.end {
-                        // Keep the part after the data region
-                        new_ranges.push(MemoryRange {
-                            start: range.start.max(data_range.end),
-                            end: range.end,
-                        });
-                    }
-                }
-            }
-            self.valid_pc_ranges = new_ranges;
-        } else {
-            // Add instruction range, merging with overlapping/adjacent ranges
-            let new_range = MemoryRange { start, end };
-            let mut merged_range = new_range;
-            let mut remaining_ranges = Vec::new();
-
-            for range in &self.valid_pc_ranges {
-                if range.overlaps(&merged_range) || range.adjacent_to(&merged_range) {
-                    // Merge this range into the new range
-                    merged_range = merged_range.merge(range);
-                } else {
-                    // Keep this range separate
-                    remaining_ranges.push(*range);
-                }
-            }
-
-            remaining_ranges.push(merged_range);
-            self.valid_pc_ranges = remaining_ranges;
-        }
-    }
-
-    /// Get all valid PC ranges
-    #[allow(dead_code)]
-    pub(crate) fn get_valid_pc_ranges(&self) -> &[MemoryRange] {
-        &self.valid_pc_ranges
-    }
-
-    /// Check if a PC is within any valid range
-    fn is_pc_valid(&self, pc: u32) -> bool {
-        self.valid_pc_ranges.iter().any(|range| range.contains(pc))
-    }
-
-    /// Validate a boot address before reset
-    ///
-    /// Checks if the boot address falls within the valid PC ranges.
-    /// This should be called before resetting the CPU to ensure the boot
-    /// address is valid, preventing PC out-of-bounds errors during initialization.
-    ///
-    /// # Arguments
-    /// * `boot_addr` - The boot address to validate
-    ///
-    /// # Returns
-    /// * `Ok(())` if the boot address is valid or no PC ranges are configured
-    /// * `Err(HungStateError::PcOutOfBounds)` if the boot address is outside valid ranges
-    pub fn validate_boot_addr(&self, boot_addr: u32) -> Result<(), HungStateError> {
-        // Only validate if we have PC ranges configured
-        if !self.valid_pc_ranges.is_empty() && !self.is_pc_valid(boot_addr) {
-            return Err(HungStateError::PcOutOfBounds {
-                pc: boot_addr,
-                valid_ranges: self.valid_pc_ranges.clone(),
-            });
-        }
-        Ok(())
-    }
-
     /// Check for hung state on every cycle
     ///
     /// This detects cases where the FSM gets stuck and never completes an instruction,
-    /// checks if PC is within valid instruction memory bounds, and tracks PC loops when
-    /// instructions complete.
+    /// and tracks PC loops when instructions complete.
     ///
     /// # Arguments
     /// * `cycle_count` - Total simulation cycle count
@@ -364,30 +209,6 @@ impl HungDetector {
             }
         }
 
-        // Per-cycle PC bounds checking (if enabled)
-        //
-        // Now that we use debug_current_pc instead of debug_pc (completed_pc_reg),
-        // we can check PC bounds on every cycle. The debug_current_pc signal represents
-        // the PC that was used to fetch the current instruction being executed.
-        //
-        // Hardware behavior with new debug_current_pc:
-        // - Uses instr_pc_reg (PC captured in DECODE) if available, otherwise current pc
-        // - This gives us the actual PC for the instruction being executed
-        // - Valid from DECODE state onward for each instruction
-        //
-        // Boot address validation (in reset()) ensures the initial PC starts in a valid
-        // range, providing complete coverage from the very first cycle.
-        if self.config.enable_pc_bounds_detection
-            && !self.valid_pc_ranges.is_empty()
-            && fsm_state >= 2  // debug_current_pc is valid from DECODE onward
-            && !self.is_pc_valid(pc)
-        {
-            return Err(HungStateError::PcOutOfBounds {
-                pc,
-                valid_ranges: self.valid_pc_ranges.clone(),
-            });
-        }
-
         Ok(())
     }
 
@@ -435,7 +256,6 @@ impl HungDetector {
         self.current_instruction_pc = None;
         self.current_instruction_word = 0;
         self.current_instruction_start_cycle = 0;
-        // Note: We don't clear valid_pc_ranges as they persist across resets
     }
 }
 
@@ -492,56 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pc_bounds_detection() {
-        let mut detector = HungDetector::new_default();
-        detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
-
-        // PC within bounds should be ok (FSM state != 0 to activate checking)
-        let result = detector.check_cycle(0, 0x8000_0000, 0x00000013, 2, false);
-        assert!(result.is_ok());
-
-        let result = detector.check_cycle(1, 0x8000_FFFC, 0x00000013, 2, false);
-        assert!(result.is_ok());
-
-        // PC below bounds should fail (per-cycle checking)
-        let result = detector.check_cycle(2, 0x7FFF_FFFC, 0x00000013, 2, false);
-        assert!(result.is_err());
-        match result {
-            Err(HungStateError::PcOutOfBounds { pc, .. }) => {
-                assert_eq!(pc, 0x7FFF_FFFC);
-            }
-            _ => panic!("Expected PcOutOfBounds error"),
-        }
-
-        // PC above bounds should fail (per-cycle checking)
-        let result = detector.check_cycle(3, 0x8001_0000, 0x00000013, 2, false);
-        assert!(result.is_err());
-        match result {
-            Err(HungStateError::PcOutOfBounds { pc, .. }) => {
-                assert_eq!(pc, 0x8001_0000);
-            }
-            _ => panic!("Expected PcOutOfBounds error"),
-        }
-
-        // PC out of bounds in IDLE state (fsm_state=0) should NOT fail
-        let result = detector.check_cycle(4, 0x0000_0000, 0x00000013, 0, false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_pc_bounds_disabled_when_range_not_set() {
-        let mut detector = HungDetector::new_default();
-        // Don't set valid range
-
-        // Any PC should be ok when bounds checking is enabled but range is not set
-        let result = detector.check_cycle(0, 0x0000_0000, 0x00000013, 2, true);
-        assert!(result.is_ok());
-
-        let result = detector.check_cycle(1, 0xFFFF_FFFC, 0x00000013, 2, true);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_reset() {
         let mut detector = HungDetector::new_default();
 
@@ -553,66 +323,12 @@ mod tests {
         assert_eq!(detector.pc_stuck_count, 30);
         assert!(!detector.pc_history.is_empty());
 
-        // Reset should clear everything except PC ranges
+        // Reset should clear detector state
         detector.reset();
 
         assert_eq!(detector.pc_stuck_count, 0);
         assert!(detector.pc_history.is_empty());
         assert!(detector.last_pc.is_none());
-    }
-
-    #[test]
-    fn test_multi_range_pc_bounds() {
-        let mut detector = HungDetector::new_default();
-
-        // Add two non-contiguous instruction ranges
-        detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
-        detector.update_pc_range(0x8000_2000, 0x8000_3000, true);
-
-        // PCs in first range should be ok (per-cycle checking, FSM state != 0)
-        assert!(detector.check_cycle(0, 0x8000_0000, 0, 2, false).is_ok());
-        assert!(detector.check_cycle(1, 0x8000_0FFC, 0, 2, false).is_ok());
-
-        // PCs in second range should be ok (per-cycle checking)
-        assert!(detector.check_cycle(2, 0x8000_2000, 0, 2, false).is_ok());
-        assert!(detector.check_cycle(3, 0x8000_2FFC, 0, 2, false).is_ok());
-
-        // PC in gap between ranges should fail (per-cycle checking)
-        let result = detector.check_cycle(4, 0x8000_1500, 0, 2, false);
-        assert!(result.is_err());
-        match result {
-            Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
-                assert_eq!(pc, 0x8000_1500);
-                assert_eq!(valid_ranges.len(), 2);
-            }
-            _ => panic!("Expected PcOutOfBounds error"),
-        }
-
-        // PC outside all ranges should fail (per-cycle checking)
-        let result = detector.check_cycle(5, 0x8000_4000, 0, 2, false);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_range_merging() {
-        let mut detector = HungDetector::new_default();
-
-        // Add two adjacent ranges - they should merge
-        detector.update_pc_range(0x8000_0000, 0x8000_1000, true);
-        detector.update_pc_range(0x8000_1000, 0x8000_2000, true);
-
-        let ranges = detector.get_valid_pc_ranges();
-        assert_eq!(ranges.len(), 1, "Adjacent ranges should merge");
-        assert_eq!(ranges[0].start, 0x8000_0000);
-        assert_eq!(ranges[0].end, 0x8000_2000);
-
-        // Add overlapping range - should extend
-        detector.update_pc_range(0x8000_1800, 0x8000_2800, true);
-
-        let ranges = detector.get_valid_pc_ranges();
-        assert_eq!(ranges.len(), 1, "Overlapping ranges should merge");
-        assert_eq!(ranges[0].start, 0x8000_0000);
-        assert_eq!(ranges[0].end, 0x8000_2800);
     }
 
     #[test]
@@ -647,45 +363,6 @@ mod tests {
                 assert_eq!(fsm_state, 3);
             }
             _ => panic!("Expected LongInstruction error"),
-        }
-    }
-
-    #[test]
-    fn test_validate_boot_addr() {
-        let mut detector = HungDetector::new_default();
-
-        // Without any PC ranges configured, any boot address should be valid
-        assert!(detector.validate_boot_addr(0x0000_0000).is_ok());
-        assert!(detector.validate_boot_addr(0x8000_0000).is_ok());
-        assert!(detector.validate_boot_addr(0xFFFF_FFFC).is_ok());
-
-        // Add a valid PC range
-        detector.update_pc_range(0x8000_0000, 0x8001_0000, true);
-
-        // Boot address within range should be valid
-        assert!(detector.validate_boot_addr(0x8000_0000).is_ok());
-        assert!(detector.validate_boot_addr(0x8000_FFFC).is_ok());
-
-        // Boot address outside range should fail
-        let result = detector.validate_boot_addr(0x7FFF_FFFC);
-        assert!(result.is_err());
-        match result {
-            Err(HungStateError::PcOutOfBounds { pc, valid_ranges }) => {
-                assert_eq!(pc, 0x7FFF_FFFC);
-                assert_eq!(valid_ranges.len(), 1);
-                assert_eq!(valid_ranges[0].start, 0x8000_0000);
-                assert_eq!(valid_ranges[0].end, 0x8001_0000);
-            }
-            _ => panic!("Expected PcOutOfBounds error"),
-        }
-
-        let result = detector.validate_boot_addr(0x8001_0000);
-        assert!(result.is_err());
-        match result {
-            Err(HungStateError::PcOutOfBounds { pc, .. }) => {
-                assert_eq!(pc, 0x8001_0000);
-            }
-            _ => panic!("Expected PcOutOfBounds error"),
         }
     }
 }
