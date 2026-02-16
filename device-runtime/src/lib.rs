@@ -293,10 +293,41 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// This default implementation issues the largest request size possible at
     /// each step (word, then halfword, then byte), without touching addresses
     /// outside the requested region.
-    fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), DeviceError> {
+    ///
+    /// `event_callback` receives non-matching bus events encountered while waiting
+    /// for host responses. If `None`, non-matching events are ignored.
+    fn write_memory_region(
+        &mut self,
+        start_addr: u32,
+        data: &[u8],
+        mut event_callback: Option<&mut dyn FnMut(BusEvent)>,
+    ) -> Result<(), DeviceError> {
+        let len = u32::try_from(data.len()).map_err(|_| {
+            DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Requested write of {} bytes at address 0x{start_addr:08x} exceeds 32-bit addressable range",
+                    data.len()
+                ),
+            ))
+        })?;
+        start_addr.checked_add(len).ok_or_else(|| {
+            DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Requested write of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                    data.len()
+                ),
+            ))
+        })?;
+
         let mut offset = 0usize;
         while offset < data.len() {
-            let addr = start_addr.wrapping_add(offset as u32);
+            let offset_u32 = u32::try_from(offset)
+                .expect("offset must fit in u32 after upfront length validation");
+            let addr = start_addr
+                .checked_add(offset_u32)
+                .expect("address overflow prevented by upfront range validation");
             let remaining = data.len() - offset;
             let (size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
                 (AccessSize::Word, 4usize)
@@ -339,7 +370,11 @@ pub trait DeviceRuntime: std::fmt::Display {
                             ),
                         )));
                     }
-                    Some(_) => {}
+                    Some(event) => {
+                        if let Some(callback) = event_callback.as_mut() {
+                            callback(event);
+                        }
+                    }
                     None => std::thread::sleep(std::time::Duration::from_millis(1)),
                 }
             }
@@ -354,11 +389,30 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// This default implementation issues the largest request size possible at
     /// each step (word, then halfword, then byte), without touching addresses
     /// outside the requested region.
-    fn read_memory_region(&mut self, start_addr: u32, size: u32) -> Result<Vec<u8>, DeviceError> {
+    ///
+    /// `event_callback` receives non-matching bus events encountered while waiting
+    /// for host responses. If `None`, non-matching events are ignored.
+    fn read_memory_region(
+        &mut self,
+        start_addr: u32,
+        size: u32,
+        mut event_callback: Option<&mut dyn FnMut(BusEvent)>,
+    ) -> Result<Vec<u8>, DeviceError> {
+        start_addr.checked_add(size).ok_or_else(|| {
+            DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Requested read of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                    size
+                ),
+            ))
+        })?;
         let mut data = Vec::with_capacity(size as usize);
         let mut offset = 0u32;
         while offset < size {
-            let addr = start_addr.wrapping_add(offset);
+            let addr = start_addr
+                .checked_add(offset)
+                .expect("address overflow prevented by upfront range validation");
             let remaining = size - offset;
             let (request_size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
                 (AccessSize::Word, 4u32)
@@ -391,7 +445,11 @@ pub trait DeviceRuntime: std::fmt::Display {
                             ),
                         )));
                     }
-                    Some(_) => {}
+                    Some(event) => {
+                        if let Some(callback) = event_callback.as_mut() {
+                            callback(event);
+                        }
+                    }
                     None => std::thread::sleep(std::time::Duration::from_millis(1)),
                 }
             };

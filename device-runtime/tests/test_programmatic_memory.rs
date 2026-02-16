@@ -67,14 +67,14 @@ fn test_runtime_write_and_read_memory_region_sram_without_cpu_program() {
         .expect("Failed to prepare runtime for host SRAM access");
 
     runtime
-        .write_memory_region(addr, &base)
+        .write_memory_region(addr, &base, None)
         .expect("Failed to initialize SRAM base pattern");
     runtime
-        .write_memory_region(addr + 1, &payload)
+        .write_memory_region(addr + 1, &payload, None)
         .expect("Failed to write SRAM via runtime");
 
     let read_full = runtime
-        .read_memory_region(addr, 9)
+        .read_memory_region(addr, 9, None)
         .expect("Failed to read full SRAM window via runtime");
     assert_eq!(
         read_full,
@@ -82,7 +82,7 @@ fn test_runtime_write_and_read_memory_region_sram_without_cpu_program() {
     );
 
     let read_back = runtime
-        .read_memory_region(addr + 1, payload.len() as u32)
+        .read_memory_region(addr + 1, payload.len() as u32, None)
         .expect("Failed to read SRAM via runtime");
     assert_eq!(read_back, payload);
 }
@@ -112,7 +112,7 @@ fn test_runtime_write_sram_then_cpu_reads_it() {
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &checker_program);
 
     runtime
-        .write_memory_region(SRAM_BASE, &payload)
+        .write_memory_region(SRAM_BASE, &payload, None)
         .expect("Failed to write SRAM via runtime");
 
     let _ = wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
@@ -161,7 +161,34 @@ fn test_cpu_writes_sram_then_runtime_reads_it() {
     assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(1));
 
     let read_back = runtime
-        .read_memory_region(SRAM_BASE, 7)
+        .read_memory_region(SRAM_BASE, 7, None)
         .expect("Failed to read SRAM via runtime");
     assert_eq!(read_back, vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]);
+}
+
+#[test]
+fn test_runtime_memory_region_callback_receives_unrelated_events() {
+    let mut runtime = create_test_runtime();
+    let program = instructions_to_bytes(&[
+        lui(10, SIM_CONTROL_BASE),
+        addi(11, 0, 0x2A),
+        sw(10, 11, 0),
+        ebreak(),
+        jal(0, 0),
+    ]);
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program);
+
+    let mut observed_tohost = None;
+    let mut callback = |event: device_runtime::BusEvent| {
+        if let device_runtime::BusEvent::TohostTermination { value } = event {
+            observed_tohost = Some(value);
+        }
+    };
+
+    let read_back = runtime
+        .read_memory_region(DRAM_BASE, 1, Some(&mut callback))
+        .expect("read_memory_region should succeed while forwarding unrelated events");
+
+    assert_eq!(read_back.len(), 1);
+    assert_eq!(observed_tohost, Some(0x2A));
 }
