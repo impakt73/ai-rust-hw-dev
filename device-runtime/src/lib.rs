@@ -288,6 +288,109 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// - The background thread is disconnected or times out
     fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError>;
 
+    /// Write a memory region using host-initiated bus requests.
+    ///
+    /// This default implementation performs read-modify-write word transactions,
+    /// allowing access to both DRAM and memory-mapped RTL peripherals
+    /// (for example SRAM) even when subword host accesses are not supported.
+    fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), DeviceError> {
+        for (offset, &byte) in data.iter().enumerate() {
+            let addr = start_addr.wrapping_add(offset as u32);
+            let word_addr = addr & !0x3;
+            let shift = (addr & 0x3) * 8;
+
+            self.send_host_request(BusRequest::read(word_addr, AccessSize::Word))?;
+            let word = loop {
+                match self.poll()? {
+                    Some(BusEvent::HostReadResponse {
+                        addr: resp_addr,
+                        data: read_data,
+                        ..
+                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
+                        break read_data;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
+                        if resp_addr == word_addr =>
+                    {
+                        return Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("Timed out reading word at address 0x{word_addr:08x}"),
+                        )));
+                    }
+                    Some(_) => {}
+                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            };
+
+            let byte_mask = 0xFF_u32 << shift;
+            let merged_word = (word & !byte_mask) | ((byte as u32) << shift);
+            self.send_host_request(BusRequest::write(word_addr, merged_word, AccessSize::Word))?;
+
+            loop {
+                match self.poll()? {
+                    Some(BusEvent::HostWriteResponse {
+                        addr: resp_addr, ..
+                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
+                        break;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
+                        if resp_addr == word_addr =>
+                    {
+                        return Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("Timed out writing word at address 0x{word_addr:08x}"),
+                        )));
+                    }
+                    Some(_) => {}
+                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Read a memory region using host-initiated bus requests.
+    ///
+    /// This default implementation performs word reads and extracts bytes,
+    /// allowing access to both DRAM and memory-mapped RTL peripherals
+    /// (for example SRAM) even when subword host accesses are not supported.
+    fn read_memory_region(&mut self, start_addr: u32, size: u32) -> Result<Vec<u8>, DeviceError> {
+        let mut data = Vec::with_capacity(size as usize);
+
+        for offset in 0..size {
+            let addr = start_addr.wrapping_add(offset);
+            let word_addr = addr & !0x3;
+            let shift = (addr & 0x3) * 8;
+            self.send_host_request(BusRequest::read(word_addr, AccessSize::Word))?;
+
+            let byte = loop {
+                match self.poll()? {
+                    Some(BusEvent::HostReadResponse {
+                        addr: resp_addr,
+                        data: read_data,
+                        ..
+                    }) if resp_addr == word_addr && !self.has_pending_host_request() => {
+                        break ((read_data >> shift) & 0xFF) as u8;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr })
+                        if resp_addr == word_addr =>
+                    {
+                        return Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("Timed out reading word at address 0x{word_addr:08x}"),
+                        )));
+                    }
+                    Some(_) => {}
+                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            };
+            data.push(byte);
+        }
+
+        Ok(data)
+    }
+
     /// Boot the CPU from the specified address.
     ///
     /// This performs a two-phase boot sequence:
