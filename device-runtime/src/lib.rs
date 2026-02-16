@@ -339,6 +339,8 @@ pub trait DeviceRuntime: std::fmt::Display {
             }
         }
 
+        // Ensure deterministic boot-wait state after loading segments.
+        self.reset(ResetKind::Cpu)?;
         Ok(entry_point)
     }
 
