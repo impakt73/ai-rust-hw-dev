@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use core::panic::PanicInfo;
-use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
+use core::ptr::{addr_of, read_volatile, write_volatile};
 pub use embedded_alloc::LlffHeap as Heap;
 
 // Re-export constants from riscv_shared
@@ -31,11 +31,12 @@ pub use riscv_shared::{AudioChannels, AudioConfig, AudioSampleRate};
 /// Initialize a provided global heap from linker-provided riscv-rt heap symbols.
 pub fn init_heap(heap: &'static Heap) {
     unsafe extern "C" {
-        static mut __sheap: u8;
         static _heap_size: u8;
     }
 
-    let heap_start = addr_of_mut!(__sheap) as usize;
+    let heap_start = riscv_rt::heap_start() as usize;
+    // `_heap_size` is an absolute linker symbol whose address encodes the heap size.
+    // Do not dereference it; use its address value directly.
     let heap_size = addr_of!(_heap_size) as usize;
 
     unsafe {

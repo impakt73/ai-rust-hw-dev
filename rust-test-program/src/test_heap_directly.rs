@@ -8,7 +8,7 @@ mod common;
 use core::panic::PanicInfo;
 use riscv_rt::entry;
 
-// Simple bump allocator
+// Use the shared embedded allocator for direct allocation checks.
 use core::alloc::{GlobalAlloc, Layout};
 
 #[global_allocator]
