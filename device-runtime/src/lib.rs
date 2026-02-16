@@ -288,6 +288,185 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// - The background thread is disconnected or times out
     fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError>;
 
+    /// Write a memory region using host-initiated bus requests.
+    ///
+    /// This default implementation issues the largest request size possible at
+    /// each step (word, then halfword, then byte), without touching addresses
+    /// outside the requested region.
+    ///
+    /// `event_callback` receives non-matching bus events encountered while waiting
+    /// for host responses. If `None`, non-matching events are ignored.
+    fn write_memory_region(
+        &mut self,
+        start_addr: u32,
+        data: &[u8],
+        mut event_callback: Option<&mut dyn FnMut(BusEvent)>,
+    ) -> Result<(), DeviceError> {
+        let len = u32::try_from(data.len()).map_err(|_| {
+            DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Requested write of {} bytes at address 0x{start_addr:08x} exceeds 32-bit addressable range",
+                    data.len()
+                ),
+            ))
+        })?;
+        if len > 0 {
+            let last_offset = len - 1;
+            start_addr.checked_add(last_offset).ok_or_else(|| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Requested write of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                        data.len()
+                    ),
+                ))
+            })?;
+        }
+
+        let mut offset = 0usize;
+        while offset < data.len() {
+            let offset_u32 = u32::try_from(offset)
+                .expect("offset must fit in u32 after upfront length validation");
+            let addr = start_addr
+                .checked_add(offset_u32)
+                .expect("address overflow prevented by upfront range validation");
+            let remaining = data.len() - offset;
+            let (size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
+                (AccessSize::Word, 4usize)
+            } else if remaining >= 2 && (addr & 0x1) == 0 {
+                (AccessSize::Halfword, 2usize)
+            } else {
+                (AccessSize::Byte, 1usize)
+            };
+            let wdata = match step {
+                4 => u32::from_le_bytes([
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ]),
+                2 => u16::from_le_bytes([data[offset], data[offset + 1]]) as u32,
+                1 => data[offset] as u32,
+                _ => unreachable!(),
+            };
+            self.send_host_request(BusRequest::write(addr, wdata, size))?;
+
+            loop {
+                match self.poll()? {
+                    Some(BusEvent::HostWriteResponse {
+                        addr: resp_addr,
+                        size: resp_size,
+                        ..
+                    }) if resp_addr == addr
+                        && resp_size == size
+                        && !self.has_pending_host_request() =>
+                    {
+                        break;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
+                        return Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "Timed out writing {} at address 0x{addr:08x}",
+                                access_size_name(size)
+                            ),
+                        )));
+                    }
+                    Some(event) => {
+                        if let Some(callback) = event_callback.as_mut() {
+                            callback(event);
+                        }
+                    }
+                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            }
+            offset += step;
+        }
+
+        Ok(())
+    }
+
+    /// Read a memory region using host-initiated bus requests.
+    ///
+    /// This default implementation issues the largest request size possible at
+    /// each step (word, then halfword, then byte), without touching addresses
+    /// outside the requested region.
+    ///
+    /// `event_callback` receives non-matching bus events encountered while waiting
+    /// for host responses. If `None`, non-matching events are ignored.
+    fn read_memory_region(
+        &mut self,
+        start_addr: u32,
+        size: u32,
+        mut event_callback: Option<&mut dyn FnMut(BusEvent)>,
+    ) -> Result<Vec<u8>, DeviceError> {
+        if size > 0 {
+            let last_offset = size - 1;
+            start_addr.checked_add(last_offset).ok_or_else(|| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "Requested read of {} bytes at address 0x{start_addr:08x} overflows 32-bit address space",
+                        size
+                    ),
+                ))
+            })?;
+        }
+        let mut data = Vec::with_capacity(size as usize);
+        let mut offset = 0u32;
+        while offset < size {
+            let addr = start_addr
+                .checked_add(offset)
+                .expect("address overflow prevented by upfront range validation");
+            let remaining = size - offset;
+            let (request_size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
+                (AccessSize::Word, 4u32)
+            } else if remaining >= 2 && (addr & 0x1) == 0 {
+                (AccessSize::Halfword, 2u32)
+            } else {
+                (AccessSize::Byte, 1u32)
+            };
+            self.send_host_request(BusRequest::read(addr, request_size))?;
+
+            let read_data = loop {
+                match self.poll()? {
+                    Some(BusEvent::HostReadResponse {
+                        addr: resp_addr,
+                        data: read_data,
+                        size: resp_size,
+                        ..
+                    }) if resp_addr == addr
+                        && resp_size == request_size
+                        && !self.has_pending_host_request() =>
+                    {
+                        break read_data;
+                    }
+                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
+                        return Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "Timed out reading {} at address 0x{addr:08x}",
+                                access_size_name(request_size)
+                            ),
+                        )));
+                    }
+                    Some(event) => {
+                        if let Some(callback) = event_callback.as_mut() {
+                            callback(event);
+                        }
+                    }
+                    None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            };
+            let bytes = read_data.to_le_bytes();
+            data.extend_from_slice(&bytes[..step as usize]);
+            offset += step;
+        }
+
+        Ok(data)
+    }
+
     /// Boot the CPU from the specified address.
     ///
     /// This performs a two-phase boot sequence:
