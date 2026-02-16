@@ -23,6 +23,8 @@ use std::time::{Duration, Instant};
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+/// Timeout for simulator runtime initialization handshake.
+const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
@@ -64,13 +66,25 @@ impl SimDeviceRuntime {
     pub(crate) fn new() -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(command_rx, event_tx, pending_clone);
+            Self::run_loop(command_rx, event_tx, pending_clone, ready_tx);
         });
+
+        match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err("Timed out waiting for simulator runtime initialization".to_string());
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Simulator runtime initialization channel disconnected".to_string());
+            }
+        }
 
         Ok(SimDeviceRuntime {
             command_tx,
@@ -85,11 +99,13 @@ impl SimDeviceRuntime {
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+        ready_tx: mpsc::Sender<Result<(), String>>,
     ) {
         // Create the interactive simulator
         let mut simulator = match InteractiveSimulator::new() {
             Ok(sim) => sim,
             Err(e) => {
+                let _ = ready_tx.send(Err(format!("Failed to create simulator: {}", e)));
                 let _ = event_tx.send(RuntimeEvent::FatalError(format!(
                     "Failed to create simulator: {}",
                     e
@@ -99,12 +115,17 @@ impl SimDeviceRuntime {
         };
         // Initialize simulator reset/controller state before serving runtime requests.
         if let Err(e) = simulator.reset() {
+            let _ = ready_tx.send(Err(format!(
+                "Failed to initialize simulator reset state: {}",
+                e
+            )));
             let _ = event_tx.send(RuntimeEvent::FatalError(format!(
                 "Failed to initialize simulator reset state: {}",
                 e
             )));
             return;
         }
+        let _ = ready_tx.send(Ok(()));
 
         loop {
             // Check for commands from the main thread (non-blocking)
