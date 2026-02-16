@@ -15,7 +15,7 @@ use crate::{
 };
 use cpu_sim::InteractiveSimulator;
 use host_bus_handler::{AccessSize, BusRequest, HandlerError};
-use riscv_shared::bus::{sysctrl_reset_addr, DRAM_BASE, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -97,10 +97,8 @@ impl SimDeviceRuntime {
                 return;
             }
         };
-        // Prime simulator host-bus/reset state before serving runtime requests.
-        // InteractiveSimulator performs this setup as part of write_memory_region(),
-        // so an empty DRAM write is sufficient and keeps memory unchanged.
-        if let Err(e) = simulator.write_memory_region(DRAM_BASE, &[]) {
+        // Initialize simulator reset/controller state before serving runtime requests.
+        if let Err(e) = simulator.reset() {
             let _ = event_tx.send(RuntimeEvent::FatalError(format!(
                 "Failed to initialize simulator reset state: {}",
                 e
