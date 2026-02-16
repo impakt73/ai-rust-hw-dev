@@ -13,8 +13,6 @@ REGION_ALIAS("REGION_BSS", RAM);
 REGION_ALIAS("REGION_HEAP", SRAM);
 REGION_ALIAS("REGION_STACK", SRAM);
 
-/* Stack grows downward from the end of SRAM */
-_stack_start = ORIGIN(SRAM) + LENGTH(SRAM);
 _hart_stack_size = 1K;
 
 /* Reserve a 1K heap for global allocator initialization via riscv-rt symbols */
