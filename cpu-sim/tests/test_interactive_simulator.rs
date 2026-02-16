@@ -26,15 +26,11 @@ fn test_interactive_simulator_step_without_elf() {
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
-    // Test that stepping without loading an ELF returns an error
-    let result = sim.step_instruction();
+    // Test that stepping a cycle without loading an ELF is allowed
+    let result = sim.step_cycle();
     assert!(
-        result.is_err(),
-        "Should return error when stepping without loaded ELF"
-    );
-    assert!(
-        result.unwrap_err().contains("No ELF file loaded"),
-        "Error message should indicate no ELF loaded"
+        result.is_ok(),
+        "Should allow stepping cycles without loaded ELF"
     );
 }
 
