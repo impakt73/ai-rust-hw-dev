@@ -218,6 +218,7 @@ impl InteractiveSimulator {
     ///
     /// Steps the simulator forward by one instruction. This may take multiple clock cycles
     /// depending on the instruction type and memory latency configuration.
+    /// This can be called before loading an ELF when external boot controls are used.
     ///
     /// # Returns
     /// * `Ok(SimulationStepInstructionResult)` containing execution information (elapsed time
@@ -255,6 +256,7 @@ impl InteractiveSimulator {
     /// Steps the simulator forward by one clock cycle. This is a lower-level interface
     /// than `step_instruction()`, allowing cycle-by-cycle control for debugging or
     /// timing-sensitive testing.
+    /// This can be called before loading an ELF when external boot controls are used.
     ///
     /// # Returns
     /// * `Ok(SimulationStepCycleResult)` containing:
