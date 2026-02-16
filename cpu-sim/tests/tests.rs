@@ -72,7 +72,7 @@ fn test_comprehensive_elf() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -100,7 +100,7 @@ fn test_instruction_trace() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -148,7 +148,7 @@ fn test_register_trace_audit() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -236,7 +236,7 @@ fn test_trace_callback() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -673,7 +673,7 @@ fn test_hung_detection_catches_infinite_loop() {
         None, // No VCD
         0,    // Zero latency
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes, true);
+            sim.write_memory_region(start_addr, &program_bytes);
             Ok(start_addr)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -741,11 +741,11 @@ fn test_hung_detection_catches_long_instruction() {
         None,
         mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes, true);
+            sim.write_memory_region(start_addr, &program_bytes);
 
             // Write data at data_addr (0x80000100)
             let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
-            sim.write_memory_region(data_addr, &data, false);
+            sim.write_memory_region(data_addr, &data);
 
             Ok(start_addr)
         },
@@ -1137,7 +1137,7 @@ fn test_global_max_cycles_safety_margin() {
         None,
         0,
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -1192,7 +1192,7 @@ fn test_global_max_cycles_safety_margin() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions, true);
+            sim.write_memory_region(0x8000_0000, &instructions);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

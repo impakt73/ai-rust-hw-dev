@@ -357,7 +357,7 @@ impl InteractiveSimulator {
                 &mut self.simulator.host_bus_handler,
                 &mut self.simulator.host_bus_direct_response,
             );
-            view.write_memory_region(start_addr, data, true);
+            view.write_memory_region(start_addr, data);
         }
 
         // Reset with boot deferred so boot_cpu can be called externally

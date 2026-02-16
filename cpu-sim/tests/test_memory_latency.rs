@@ -42,7 +42,7 @@ fn test_zero_latency_default() {
         None,
         0, // Zero latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -97,7 +97,7 @@ fn test_multi_cycle_memory_latency() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -160,7 +160,7 @@ fn test_load_store_with_latency() {
         None,
         2, // 2-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program_bytes, true);
+            sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
@@ -199,7 +199,7 @@ fn test_comprehensive_elf_with_latency() {
         None,
         2, // 2-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program, true);
+            sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

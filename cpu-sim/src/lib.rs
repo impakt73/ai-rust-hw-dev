@@ -70,8 +70,8 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
                     };
 
                     let segment_data = &file_data[offset..end];
-                    // Write to memory (passing true for is_instructions if segment is executable)
-                    sim.write_memory_region(vaddr, segment_data, is_executable);
+                    // Write segment bytes to memory
+                    sim.write_memory_region(vaddr, segment_data);
                     log::info!(
                         "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes{}",
                         vaddr,
@@ -83,7 +83,6 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
         }
     }
 
-    // PC range is automatically set by write_memory_region calls above for executable segments
     Ok(entry_point)
 }
 
@@ -231,7 +230,7 @@ where
 ///         let bytes: Vec<u8> = instructions.iter()
 ///             .flat_map(|i| i.to_le_bytes())
 ///             .collect();
-///         sim.write_memory_region(start_addr, &bytes, true); // true = instructions
+///         sim.write_memory_region(start_addr, &bytes);
 ///         Ok(start_addr)
 ///     },
 ///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>

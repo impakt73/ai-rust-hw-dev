@@ -133,7 +133,6 @@ impl<'a> SimulatorView<'a> {
     /// # Arguments
     /// * `start_addr` - Starting address of the memory region to write (absolute address)
     /// * `data` - Byte slice containing the data to write
-    /// * `is_instructions` - Reserved for API compatibility
     ///
     /// # Examples
     /// ```no_run
@@ -150,7 +149,7 @@ impl<'a> SimulatorView<'a> {
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
     ///     |sim| {
-    ///         sim.write_memory_region(0x8000_0000, &instructions, true);
+    ///         sim.write_memory_region(0x8000_0000, &instructions);
     ///         Ok(0x8000_0000)
     ///     },
     ///     None::<fn(&SimulatorView, &SimulationResult)>,
@@ -158,7 +157,7 @@ impl<'a> SimulatorView<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8], _is_instructions: bool) {
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
         // Validate the entire range before writing
         if !data.is_empty() {
             let size = data.len() as u32;
