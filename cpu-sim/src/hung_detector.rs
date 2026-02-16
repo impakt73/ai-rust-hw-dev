@@ -1,7 +1,7 @@
 /// Hung State Detector
 ///
 /// Provides multiple safety mechanisms to detect when the CPU simulator
-/// has entered a hung state (infinite loop, stuck FSM, or invalid PC).
+/// has entered a hung state (infinite loop or stuck FSM).
 /// This allows tests to use very high max_cycles limits while still
 /// catching problematic conditions quickly.
 use std::collections::VecDeque;
