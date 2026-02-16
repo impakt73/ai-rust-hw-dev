@@ -103,8 +103,6 @@ impl SimDeviceRuntime {
             }
         };
 
-        let mut elf_loaded = false;
-
         loop {
             // Check for commands from the main thread (non-blocking)
             match command_rx.try_recv() {
@@ -127,7 +125,6 @@ impl SimDeviceRuntime {
                 Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
                     match simulator.load_elf_no_boot(&path) {
                         Ok(entry_point) => {
-                            elf_loaded = true;
                             let _ = result_tx.send(Ok(entry_point));
                         }
                         Err(e) => {
@@ -138,7 +135,6 @@ impl SimDeviceRuntime {
                 Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
                     match simulator.write_memory_region(boot_pc, &data) {
                         Ok(()) => {
-                            elf_loaded = true;
                             let _ = result_tx.send(Ok(()));
                         }
                         Err(e) => {
@@ -150,25 +146,19 @@ impl SimDeviceRuntime {
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
 
-            // Only step the simulator if an ELF has been loaded
-            if elf_loaded {
-                // Step one cycle for fine-grained control
-                match simulator.step_cycle() {
-                    Ok(result) => {
-                        if let Some(value) = result.tohost_value {
-                            let _ = event_tx
-                                .send(RuntimeEvent::Bus(BusEvent::TohostTermination { value }));
-                        }
-                    }
-                    Err(e) => {
-                        let _ = event_tx
-                            .send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));
-                        break;
+            // Step one cycle for fine-grained control
+            match simulator.step_cycle() {
+                Ok(result) => {
+                    if let Some(value) = result.tohost_value {
+                        let _ =
+                            event_tx.send(RuntimeEvent::Bus(BusEvent::TohostTermination { value }));
                     }
                 }
-            } else {
-                // No ELF loaded, sleep briefly to avoid busy-waiting
-                thread::sleep(Duration::from_millis(1));
+                Err(e) => {
+                    let _ =
+                        event_tx.send(RuntimeEvent::FatalError(format!("Simulation error: {}", e)));
+                    break;
+                }
             }
 
             // Check for timeout on pending host requests
