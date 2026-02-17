@@ -14,7 +14,8 @@ use crate::{
     PendingHostRequest, ResetKind,
 };
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{BusRequest, HandlerError};
+use host_bus_handler::{AccessSize, BusRequest, HandlerError};
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -31,7 +32,7 @@ const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
-    /// Perform simulator reset with boot deferred.
+    /// Perform a simulator-wide reset with boot deferred.
     Reset(mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
@@ -131,19 +132,6 @@ impl SimDeviceRuntime {
         let _ = ready_tx.send(Ok(()));
 
         loop {
-            // Drop any unexpected host responses when no request is pending.
-            // Otherwise, a stale response could be misattributed to a future
-            // request (responses do not include address metadata).
-            {
-                let pending = pending_host_request.lock().unwrap();
-                if pending.is_none() {
-                    drop(pending);
-                    while simulator.receive_bus_response().is_some() {
-                        log::warn!("Dropping stale host response with no pending request");
-                    }
-                }
-            }
-
             // Check for commands from the main thread (non-blocking)
             match command_rx.try_recv() {
                 Ok(RuntimeCommand::Shutdown) => break,
@@ -296,37 +284,62 @@ impl DeviceRuntime for SimDeviceRuntime {
                 host_bus_handler::HandlerError::RequestPending,
             ));
         }
-        // The interactive simulator exposes a single reset primitive that performs
-        // a full simulator reset with boot deferred, so both reset kinds map to
-        // this same backend operation.
-        let reset_kind_name = match kind {
-            ResetKind::Cpu => "CPU",
-            ResetKind::System => "system",
-        };
-        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
-        self.command_tx
-            .send(RuntimeCommand::Reset(result_tx))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-        match result_rx.recv_timeout(RESET_COMMAND_TIMEOUT) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!("Timed out waiting for {reset_kind_name} reset"),
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread terminated during {reset_kind_name} reset"),
-                )))
+
+        match kind {
+            ResetKind::Cpu => {
+                let reset_addr = sysctrl_reset_addr();
+                let request = BusRequest::write(reset_addr, SYSCTRL_RESET_CPU, AccessSize::Word);
+                self.send_host_request(request)?;
+
+                loop {
+                    match self.poll()? {
+                        Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
+                            return Ok(());
+                        }
+                        Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                            return Err(DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "Timed out writing CPU reset to RESET register at 0x{:08x}",
+                                    reset_addr
+                                ),
+                            )));
+                        }
+                        Some(_) => {}
+                        None => thread::sleep(Duration::from_millis(1)),
+                    }
+                }
+            }
+            ResetKind::System => {
+                let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
+                self.command_tx
+                    .send(RuntimeCommand::Reset(result_tx))
+                    .map_err(|e| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            format!("Background thread disconnected: {}", e),
+                        ))
+                    })?;
+
+                match result_rx.recv_timeout(RESET_COMMAND_TIMEOUT) {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        e,
+                    ))),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Timed out waiting for system reset",
+                        )))
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "Background thread terminated during system reset",
+                        )))
+                    }
+                }
             }
         }
     }
