@@ -158,26 +158,55 @@ impl<'a> SimulatorView<'a> {
     /// # }
     /// ```
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
-        // Validate the entire range before writing
-        if !data.is_empty() {
-            let size = data.len() as u32;
-            if !is_valid_dram_range(start_addr, size) {
-                log::warn!(
-                    "write_memory_region: Address range 0x{:08x} - 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), operation rejected",
-                    start_addr,
-                    start_addr.wrapping_add(size).wrapping_sub(1),
-                    DRAM_BASE,
-                    DRAM_END
-                );
-                return;
-            }
-        }
-
         // Write to memory using absolute addresses
+        // This writes to the sparse Memory storage for both DRAM and RTL peripheral addresses.
+        // For DRAM, the CPU will read from this storage via the external memory interface.
+        // For RTL peripherals (SRAM), we write to Memory as a shadow copy for ELF initialization,
+        // then copy to actual SRAM storage via direct memory access before boot.
         for (offset, &byte) in data.iter().enumerate() {
             let addr = start_addr.wrapping_add(offset as u32);
             self.bus.memory.write_byte(addr, byte);
         }
+    }
+
+    /// Copy SRAM-range data from Memory to actual SRAM peripheral.
+    ///
+    /// This method is needed when ELFs are loaded via `write_memory_region` which writes
+    /// to Memory (sparse storage). For SRAM addresses, we must explicitly copy to the
+    /// RTL SRAM peripheral via host bus writes.
+    ///
+    /// This is called automatically after ELF loading in cpu-sim's `load_elf` function.
+    ///
+    /// Returns Ok(()) on success, Err on bus communication failure.
+    pub fn copy_memory_to_sram(&mut self) -> Result<(), String> {
+        const SRAM_BASE: u32 = 0x5200_0000;
+        const SRAM_SIZE: u32 = 0x2000; // 8KB
+        const SRAM_END: u32 = SRAM_BASE + SRAM_SIZE;
+
+        let mut non_zero_words = 0usize;
+
+        // Scan Memory for SRAM-range data and copy to actual SRAM via host bus
+        let mut addr = SRAM_BASE;
+        while addr < SRAM_END {
+            let word = self.bus.memory.read_word(addr);
+
+            // Only write non-zero words (SRAM initializes to zero in RTL)
+            if word != 0 {
+                let request = BusRequest::write(addr, word, host_bus_handler::AccessSize::Word);
+                self.send_bus_request(request)?;
+                non_zero_words += 1;
+            }
+
+            addr += 4;
+        }
+
+        if non_zero_words > 0 {
+            log::info!(
+                "Copied {} non-zero words from Memory to SRAM peripheral",
+                non_zero_words
+            );
+        }
+        Ok(())
     }
 
     /// Dump a region of memory as a byte iterator

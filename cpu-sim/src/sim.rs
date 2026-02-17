@@ -371,6 +371,61 @@ where
         }
     }
 
+    /// Initialize RTL SRAM from Rust Memory shadow copy.
+    ///
+    /// Copies non-zero data from Memory (0x52000000-0x52001FFF) to actual RTL SRAM
+    /// via host bus writes. This enables ELF programs linked to SRAM addresses to execute.
+    ///
+    /// When ELFs are loaded via cpu-sim's load_elf(), data is written to Memory storage.
+    /// This function copies that data to the actual SRAM peripheral via host bus writes.
+    ///
+    /// When ELFs are loaded via device-runtime, data is already written to SRAM via host
+    /// bus writes, but Memory storage remains empty. In this case, this function does nothing
+    /// (all words are zero in Memory).
+    ///
+    /// Must be called during reset, after reset controller completes but before CPU boots.
+    /// Returns Ok(()) on success, Err on timeout waiting for bus responses.
+    fn initialize_sram_from_memory(&mut self) -> Result<(), BootError> {
+        const SRAM_BASE: u32 = 0x5200_0000;
+        const SRAM_SIZE: u32 = 0x2000; // 8KB
+        const SRAM_END: u32 = SRAM_BASE + SRAM_SIZE;
+
+        let mut non_zero_words = 0usize;
+
+        // Copy ONLY non-zero words from Memory shadow to actual SRAM storage
+        // If ELF was loaded via device-runtime, Memory is empty and this does nothing.
+        // If ELF was loaded via cpu-sim's load_elf(), this copies the data to SRAM.
+        let mut addr = SRAM_BASE;
+        while addr < SRAM_END {
+            let word = self.bus.memory.read_word(addr);
+
+            // Only write non-zero words (SRAM initializes to zero in RTL)
+            if word != 0 {
+                let request = BusRequest::write(addr, word, AccessSize::Word);
+                self.host_bus_handler
+                    .send_request(request)
+                    .map_err(|_| BootError::Timeout {
+                        phase: "SRAM init: send request",
+                        cycles: 0,
+                    })?;
+
+                // Wait for write response
+                self.wait_for_bus_response("SRAM init write")?;
+                non_zero_words += 1;
+            }
+
+            addr += 4;
+        }
+
+        if non_zero_words > 0 {
+            log::info!(
+                "Initialized SRAM: wrote {} non-zero words from Memory shadow",
+                non_zero_words
+            );
+        }
+        Ok(())
+    }
+
     /// Reset the CPU
     /// The boot address is set to the boot_pc while reset is asserted so that
     /// the PC samples this value through the asynchronous reset and then holds it
@@ -448,6 +503,12 @@ where
                 });
             }
         }
+
+        // Initialize SRAM from Memory shadow copy (for ELF programs linked to SRAM)
+        // This copies data written to Memory during ELF loading to actual RTL SRAM.
+        // Only non-zero words are copied (device-runtime loads leave Memory empty).
+        // Must be done after reset controller completes but before CPU boots.
+        self.initialize_sram_from_memory()?;
 
         // If boot_cpu is false, skip the boot sequence and leave the CPU in boot state
         // so the calling code can handle it externally via bus requests
