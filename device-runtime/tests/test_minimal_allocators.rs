@@ -5,7 +5,7 @@ mod common;
 use common::{create_test_runtime, run_elf_until_halt, LONG_TIMEOUT};
 
 #[test]
-fn test_minimal_debug_double_write() {
+fn test_minimal_debug_test() {
     let mut runtime = create_test_runtime();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "minimal_debug_test", LONG_TIMEOUT),
