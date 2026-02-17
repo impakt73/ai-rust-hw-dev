@@ -309,9 +309,15 @@ pub trait DeviceRuntime: std::fmt::Display {
                         ),
                     ))
                 })?;
-                if file_size == 0 {
-                    continue;
-                }
+                let mem_size = usize::try_from(phdr.p_memsz).map_err(|_| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Segment memory size 0x{:x} does not fit in usize",
+                            phdr.p_memsz
+                        ),
+                    ))
+                })?;
                 let offset = usize::try_from(phdr.p_offset).map_err(|_| {
                     DeviceError::IoError(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -335,7 +341,36 @@ pub trait DeviceRuntime: std::fmt::Display {
                         ),
                     ))
                 })?;
-                self.write_memory_region(vaddr, segment_data, None)?;
+                if file_size > 0 {
+                    self.write_memory_region(vaddr, segment_data, None)?;
+                }
+
+                if mem_size > file_size {
+                    let zero_start = vaddr.checked_add(file_size as u32).ok_or_else(|| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "Zero-fill start address overflow: vaddr=0x{vaddr:x}, file_size=0x{file_size:x}"
+                            ),
+                        ))
+                    })?;
+                    let mut remaining = mem_size - file_size;
+                    let mut addr = zero_start;
+                    let zero_chunk = [0u8; 256];
+                    while remaining > 0 {
+                        let chunk_len = remaining.min(zero_chunk.len());
+                        self.write_memory_region(addr, &zero_chunk[..chunk_len], None)?;
+                        addr = addr.checked_add(chunk_len as u32).ok_or_else(|| {
+                            DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "Zero-fill address overflow: addr=0x{addr:x}, chunk_len=0x{chunk_len:x}"
+                                ),
+                            ))
+                        })?;
+                        remaining -= chunk_len;
+                    }
+                }
             }
         }
 

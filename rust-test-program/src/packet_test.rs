@@ -7,7 +7,7 @@ mod common;
 
 use alloc::string::String;
 use core::panic::PanicInfo;
-use postcard::to_allocvec;
+use postcard::to_slice;
 use riscv_rt::entry;
 use riscv_shared::protocol::*;
 
@@ -23,7 +23,8 @@ fn send_packet<T>(packet: &T) -> Result<(), &'static str>
 where
     T: serde::Serialize,
 {
-    let bytes = to_allocvec(packet).map_err(|_| "Serialization failed")?;
+    let mut buffer = [0u8; 128];
+    let bytes = to_slice(packet, &mut buffer).map_err(|_| "Serialization failed")?;
 
     for chunk in bytes.chunks(4) {
         let mut word: u32 = 0;

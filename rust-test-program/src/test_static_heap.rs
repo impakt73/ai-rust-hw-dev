@@ -7,7 +7,6 @@ mod common;
 static HEAP: common::Heap = common::Heap::empty();
 
 use core::panic::PanicInfo;
-use core::ptr::addr_of_mut;
 use riscv_rt::entry;
 
 #[panic_handler]
@@ -15,15 +14,13 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-// Test direct access to static mut array using .uninit section to avoid BSS zero-initialization
-#[link_section = ".uninit"]
-static mut STATIC_HEAP: [u8; 8192] = [0; 8192];
+const DRAM_HEAP_BASE: *mut u8 = 0x8000_0000 as *mut u8;
 
 #[entry]
 fn main() -> ! {
     // Test 1: Write directly to static mut HEAP using ptr::write
     unsafe {
-        let ptr = addr_of_mut!(STATIC_HEAP).cast::<u8>();
+        let ptr = DRAM_HEAP_BASE;
 
         core::ptr::write(ptr.add(0), 0x12u8);
         core::ptr::write(ptr.add(1), 0x34u8);
@@ -46,7 +43,7 @@ fn main() -> ! {
 
     // Test 2: Write to HEAP using pointer arithmetic
     unsafe {
-        let ptr = addr_of_mut!(STATIC_HEAP).cast::<u8>();
+        let ptr = DRAM_HEAP_BASE;
         core::ptr::write(ptr.add(10), 0xAAu8);
         core::ptr::write(ptr.add(11), 0xBBu8);
         core::ptr::write(ptr.add(12), 0xCCu8);

@@ -35,6 +35,13 @@ riscv_shared = { path = "../riscv_shared", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [[bin]]
 name = "minimal_postcard_test"
 path = "src/minimal_postcard_test.rs"
