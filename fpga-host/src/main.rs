@@ -99,7 +99,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
             },
             RuntimeArgs::Sim => DeviceRuntimeType::Sim,
         };
-        match create_device_runtime(runtime_type) {
+        match create_device_runtime(runtime_type, None) {
             Ok(runtime) => {
                 let description = runtime.to_string();
                 app.add_log(log::Level::Info, format!("Connected to {}", description));

@@ -1,7 +1,6 @@
 use bus_shared::{Audio, AudioConfig, AUDIO_BASE};
 use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 mod audio_test_common;
 use audio_test_common::generate_stereo_sample;
@@ -14,8 +13,8 @@ fn test_audio_pattern() {
         .expect("Failed to find test_audio_pattern");
 
     // Storage for captured samples and config changes
-    let captured_samples: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
-    let captured_configs: Rc<RefCell<Vec<AudioConfig>>> = Rc::new(RefCell::new(Vec::new()));
+    let captured_samples: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
+    let captured_configs: Arc<Mutex<Vec<AudioConfig>>> = Arc::new(Mutex::new(Vec::new()));
 
     // Setup callback to register Audio device
     let samples_for_setup = captured_samples.clone();
@@ -28,10 +27,10 @@ fn test_audio_pattern() {
         // Create sample callback that captures sample data
         // With DMA, we receive batches of samples in each callback
         let sample_callback = move |samples: &[i16]| {
-            samples_for_callback.borrow_mut().push(samples.to_vec());
-            let batch_count = samples_for_callback.borrow().len();
-            let total_samples: usize = samples_for_callback
-                .borrow()
+            let mut batches = samples_for_callback.lock().expect("samples lock poisoned");
+            batches.push(samples.to_vec());
+            let batch_count = batches.len();
+            let total_samples: usize = batches
                 .iter()
                 .map(|v| v.len() / 2) // Divide by 2 for stereo (2 channels per sample)
                 .sum();
@@ -46,7 +45,10 @@ fn test_audio_pattern() {
 
         // Create config callback that captures config changes
         let config_callback = move |config: &AudioConfig| {
-            configs_for_callback.borrow_mut().push(*config);
+            configs_for_callback
+                .lock()
+                .expect("configs lock poisoned")
+                .push(*config);
             log::info!(
                 "Audio config: {}Hz, {:?}, {} samples",
                 config.sample_rate.to_hz(),
@@ -78,8 +80,8 @@ fn test_audio_pattern() {
         println!("Cycles: {}", result.cycles);
         println!("Test program completed successfully");
 
-        let sample_batches = samples_for_verify.borrow();
-        let configs = configs_for_verify.borrow();
+        let sample_batches = samples_for_verify.lock().expect("samples lock poisoned");
+        let configs = configs_for_verify.lock().expect("configs lock poisoned");
 
         println!("✓ Captured {} config changes", configs.len());
         println!("✓ Captured {} DMA batches", sample_batches.len());

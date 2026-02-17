@@ -8,6 +8,7 @@ use cpu_sim::InteractiveSimulator;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -51,6 +52,9 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     /// Audio backend (wrapped in Rc<RefCell<>> for backward compatibility)
     audio_backend: Rc<RefCell<A>>,
 
+    /// Pending audio configuration updates from simulation callbacks
+    audio_config_rx: mpsc::Receiver<AudioConfig>,
+
     /// Event source (generic)
     event_source: E,
 
@@ -76,7 +80,7 @@ pub struct SimViewer<V: VideoBackend, A: AudioBackend, E: EventSource> {
     frame_step_target: Option<u64>,
 
     /// Flag to track if a frame was presented in the current step
-    frame_presented_this_step: Rc<RefCell<bool>>,
+    frame_presented_this_step: Arc<Mutex<bool>>,
 
     /// Performance metrics for logging
     perf_metrics: PerformanceMetrics,
@@ -116,7 +120,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         // Wrap backends in Rc<RefCell<>> for backward compatibility
         let video_backend = Rc::new(RefCell::new(video_backend));
         let audio_backend = Rc::new(RefCell::new(audio_backend));
-        let frame_presented_this_step = Rc::new(RefCell::new(false));
+        let frame_presented_this_step = Arc::new(Mutex::new(false));
+        let (audio_config_tx, audio_config_rx) = mpsc::channel();
 
         // Create shared frame timing metrics for simulation thread
         let frame_timing = Arc::new(Mutex::new(FrameTimingMetrics::default()));
@@ -126,13 +131,15 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
 
         // Create Video device with callback that pushes to shared buffer
         let video_buffer_for_callback = video_buffer.clone();
-        let frame_presented_clone = Rc::clone(&frame_presented_this_step);
+        let frame_presented_clone = Arc::clone(&frame_presented_this_step);
         let frame_timing_clone = Arc::clone(&frame_timing);
         let video_callback = move |data: &[u8], video_config: &VideoConfig| {
             // Push frame data to shared buffer
             video_buffer_for_callback.push_frame(data.to_vec(), *video_config);
             // Mark that a frame was presented
-            *frame_presented_clone.borrow_mut() = true;
+            if let Ok(mut frame_presented) = frame_presented_clone.lock() {
+                *frame_presented = true;
+            }
 
             // Track frame timing in simulation thread context
             if let Ok(mut metrics) = frame_timing_clone.lock() {
@@ -158,7 +165,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         };
 
         let audio_buffer_for_config = audio_buffer.clone();
-        let audio_backend_for_config = Rc::clone(&audio_backend);
+        let audio_config_tx_for_callback = audio_config_tx.clone();
         let config_callback = move |audio_config: &AudioConfig| {
             log::info!(
                 "Audio config changed: {} Hz, {:?}, {} samples",
@@ -168,10 +175,10 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             );
             // Update config in shared buffer
             audio_buffer_for_config.set_config(*audio_config);
-            // Also notify backend directly (for stream reconfiguration)
-            audio_backend_for_config
-                .borrow_mut()
-                .set_config(audio_config);
+            // Forward config update to main thread for backend reconfiguration
+            if audio_config_tx_for_callback.send(*audio_config).is_err() {
+                log::warn!("Failed to forward audio config update to viewer thread");
+            }
         };
         let audio_device = Box::new(Audio::new(Some(sample_callback), Some(config_callback)));
 
@@ -186,6 +193,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             sim_thread,
             video_backend,
             audio_backend,
+            audio_config_rx,
             event_source,
             config,
             state: ViewerState::Idle,
@@ -296,6 +304,13 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.video_backend.borrow_mut().set_title(&title);
     }
 
+    /// Apply pending audio configuration updates from simulation callbacks.
+    fn apply_pending_audio_config_updates(&mut self) {
+        while let Ok(audio_config) = self.audio_config_rx.try_recv() {
+            self.audio_backend.borrow_mut().set_config(&audio_config);
+        }
+    }
+
     /// Format a cycle count in a human-friendly way (e.g., "1.5M", "234K")
     fn format_cycles(cycles: u64) -> String {
         if cycles >= 1_000_000 {
@@ -389,8 +404,12 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             return Ok(false);
         }
 
+        self.apply_pending_audio_config_updates();
+
         // Reset frame presented flag before stepping
-        *self.frame_presented_this_step.borrow_mut() = false;
+        if let Ok(mut frame_presented) = self.frame_presented_this_step.lock() {
+            *frame_presented = false;
+        }
 
         // If running or paused, send step request to simulation thread and wait for response
         // When paused, stepping is equivalent to running for one iteration then pausing again
@@ -457,7 +476,11 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         }
 
         // Check if a frame was presented during this step (set by video callback)
-        let frame_presented = *self.frame_presented_this_step.borrow();
+        let frame_presented = self
+            .frame_presented_this_step
+            .lock()
+            .map(|frame_presented| *frame_presented)
+            .unwrap_or(false);
 
         // Update video backend (pull frames from shared buffer and display/capture)
         self.video_backend.borrow_mut().update()?;
@@ -511,6 +534,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 self.sim_thread.send_request(SimRequest::Pause)?;
                 break;
             }
+
+            self.apply_pending_audio_config_updates();
 
             // Check for responses from simulation thread (non-blocking)
             if let Some(response) = self.sim_thread.try_recv_response()? {

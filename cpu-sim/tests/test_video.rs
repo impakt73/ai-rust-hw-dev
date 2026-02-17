@@ -1,7 +1,6 @@
 use bus_shared::{Video, VideoConfig, VideoFormat, VIDEO_BASE};
 use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison
 fn pixel_to_rgba8(pixel_data: &[u8], format: VideoFormat) -> [u8; 4] {
@@ -50,22 +49,21 @@ fn test_video_pattern() {
         .expect("Failed to find test_video_pattern");
 
     // Storage for captured frames
-    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>>;
-    let captured_frames: CapturedFrames = Rc::new(RefCell::new(Vec::new()));
+    type CapturedFrames = Arc<Mutex<Vec<(Vec<u8>, VideoConfig)>>>;
+    let captured_frames: CapturedFrames = Arc::new(Mutex::new(Vec::new()));
 
     // Setup callback to register Video device
     let frames_for_setup = captured_frames.clone();
     let setup_callback = move |view: &mut SimulatorView| {
-        let frames_for_callback = frames_for_setup.clone();
+        let frames_for_callback = Arc::clone(&frames_for_setup);
 
         // Create callback that captures frame data in memory
         let present_callback = move |data: &[u8], config: &VideoConfig| {
-            frames_for_callback
-                .borrow_mut()
-                .push((data.to_vec(), *config));
+            let mut frames = frames_for_callback.lock().expect("frames lock poisoned");
+            frames.push((data.to_vec(), *config));
             log::info!(
                 "Frame {} captured ({}x{} {:?}, {} bytes)",
-                frames_for_callback.borrow().len() - 1,
+                frames.len() - 1,
                 config.width,
                 config.height,
                 config.format,
@@ -95,7 +93,7 @@ fn test_video_pattern() {
         println!("Cycles: {}", result.cycles);
         println!("Test program completed successfully");
 
-        let frames = frames_for_verify.borrow();
+        let frames = frames_for_verify.lock().expect("frames lock poisoned");
         assert_eq!(frames.len(), 3, "Should have captured 3 frames");
 
         println!("✓ Captured {} frames", frames.len());

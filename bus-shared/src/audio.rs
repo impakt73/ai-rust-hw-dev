@@ -335,8 +335,8 @@ where
 
 impl<S, C> BusDevice for Audio<S, C>
 where
-    S: FnMut(&[i16]),
-    C: FnMut(&AudioConfig),
+    S: FnMut(&[i16]) + Send,
+    C: FnMut(&AudioConfig) + Send,
 {
     fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
@@ -422,8 +422,7 @@ where
 mod tests {
     use super::*;
     use crate::memory::Memory;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_audio_sample_rate() {
@@ -510,13 +509,16 @@ mod tests {
 
     #[test]
     fn test_audio_mono_dma_read() {
-        // Use Rc<RefCell<>> to capture callback data
-        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        // Use Arc<Mutex<>> to capture callback data
+        let sample_data: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
         let sample_data_clone = sample_data.clone();
 
         let mut audio = Audio::new(
             Some(move |samples: &[i16]| {
-                sample_data_clone.borrow_mut().push(samples.to_vec());
+                sample_data_clone
+                    .lock()
+                    .expect("sample_data lock poisoned")
+                    .push(samples.to_vec());
             }),
             None::<fn(&AudioConfig)>,
         );
@@ -556,7 +558,7 @@ mod tests {
         assert_eq!(audio.read_word(&mut ctx, 0x08).unwrap(), 0b11);
 
         // Verify callback was invoked once with all samples
-        let captured = sample_data.borrow();
+        let captured = sample_data.lock().expect("sample_data lock poisoned");
         assert_eq!(captured.len(), 1, "Should have received 1 callback");
         assert_eq!(captured[0].len(), 4, "Should have 4 samples");
         assert_eq!(captured[0][0], 0x1234);
@@ -567,12 +569,15 @@ mod tests {
 
     #[test]
     fn test_audio_stereo_dma_read() {
-        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
         let sample_data_clone = sample_data.clone();
 
         let mut audio = Audio::new(
             Some(move |samples: &[i16]| {
-                sample_data_clone.borrow_mut().push(samples.to_vec());
+                sample_data_clone
+                    .lock()
+                    .expect("sample_data lock poisoned")
+                    .push(samples.to_vec());
             }),
             None::<fn(&AudioConfig)>,
         );
@@ -610,7 +615,7 @@ mod tests {
         }
 
         // Verify callback was invoked once with all samples
-        let captured = sample_data.borrow();
+        let captured = sample_data.lock().expect("sample_data lock poisoned");
         assert_eq!(captured.len(), 1, "Should have received 1 callback");
         assert_eq!(
             captured[0].len(),
@@ -625,13 +630,16 @@ mod tests {
 
     #[test]
     fn test_audio_config_callback() {
-        let config_data: Rc<RefCell<Vec<AudioConfig>>> = Rc::new(RefCell::new(Vec::new()));
+        let config_data: Arc<Mutex<Vec<AudioConfig>>> = Arc::new(Mutex::new(Vec::new()));
         let config_data_clone = config_data.clone();
 
         let mut audio = Audio::new(
             None::<fn(&[i16])>,
             Some(move |config: &AudioConfig| {
-                config_data_clone.borrow_mut().push(*config);
+                config_data_clone
+                    .lock()
+                    .expect("config_data lock poisoned")
+                    .push(*config);
             }),
         );
         let mut memory = Memory::new();
@@ -646,7 +654,7 @@ mod tests {
         audio.write_word(&mut ctx, 0x04, config2).unwrap();
 
         // Verify callback was invoked twice
-        let captured = config_data.borrow();
+        let captured = config_data.lock().expect("config_data lock poisoned");
         assert_eq!(captured.len(), 2, "Should have received 2 config changes");
         assert_eq!(captured[0].sample_rate, AudioSampleRate::Hz48000);
         assert_eq!(captured[0].channels, AudioChannels::Mono);
@@ -712,13 +720,16 @@ mod tests {
 
     #[test]
     fn test_audio_buffer_ready_status() {
-        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
         let sample_data_clone = sample_data.clone();
 
         let mut audio = Audio::with_buffer_ahead_multiplier(
             2.0,
             Some(move |samples: &[i16]| {
-                sample_data_clone.borrow_mut().push(samples.to_vec());
+                sample_data_clone
+                    .lock()
+                    .expect("sample_data lock poisoned")
+                    .push(samples.to_vec());
             }),
             None::<fn(&AudioConfig)>,
         );
@@ -763,14 +774,17 @@ mod tests {
 
     #[test]
     fn test_audio_buffer_ready_threshold() {
-        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
         let sample_data_clone = sample_data.clone();
 
         // Use small multiplier to test threshold
         let mut audio = Audio::with_buffer_ahead_multiplier(
             0.0001, // Very small multiplier: 48000 * 0.0001 = 4.8 samples (rounds to 4)
             Some(move |samples: &[i16]| {
-                sample_data_clone.borrow_mut().push(samples.to_vec());
+                sample_data_clone
+                    .lock()
+                    .expect("sample_data lock poisoned")
+                    .push(samples.to_vec());
             }),
             None::<fn(&AudioConfig)>,
         );
@@ -806,13 +820,16 @@ mod tests {
 
     #[test]
     fn test_audio_buffer_ready_reset_on_config_change() {
-        let sample_data: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+        let sample_data: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
         let sample_data_clone = sample_data.clone();
 
         let mut audio = Audio::with_buffer_ahead_multiplier(
             0.0001, // Small threshold to trigger quickly
             Some(move |samples: &[i16]| {
-                sample_data_clone.borrow_mut().push(samples.to_vec());
+                sample_data_clone
+                    .lock()
+                    .expect("sample_data lock poisoned")
+                    .push(samples.to_vec());
             }),
             None::<fn(&AudioConfig)>,
         );
