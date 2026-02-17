@@ -1,25 +1,11 @@
 mod common;
 
-use common::{create_register_trace_program, create_test_program, create_trace_test_program};
+use common::{
+    assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
+    init_test_logger,
+};
 use cpu_sim::*;
 use std::sync::{Arc, Mutex};
-
-/// Helper function to initialize test logger (idempotent)
-fn init_test_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Helper function to assert tohost value matches expected
-fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
-    assert_eq!(
-        result.tohost_value,
-        Some(expected),
-        "Expected tohost value 0x{:x} ({}) from {}",
-        expected,
-        expected,
-        test_name
-    );
-}
 
 #[test]
 fn test_instruction_trace() {
@@ -153,28 +139,6 @@ fn test_trace_callback() {
     println!("========================================");
     println!("Total instructions traced: {}", captured_traces.len());
 
-    // DEBUG: Print ALL captured traces with full details
-    println!("\nDEBUG: All captured instruction traces:");
-    for (i, trace) in captured_traces.iter().enumerate() {
-        println!(
-            "  [{}] PC=0x{:08x}, Type={:?}",
-            i, trace.pc, trace.inst_type
-        );
-        if let Some(rd) = &trace.rd {
-            println!("      rd: x{} = 0x{:08x}", rd.reg, rd.value);
-        }
-        if let Some(rs1) = &trace.rs1 {
-            println!("      rs1: x{} = 0x{:08x}", rs1.reg, rs1.value);
-        }
-        if let Some(rs2) = &trace.rs2 {
-            println!("      rs2: x{} = 0x{:08x}", rs2.reg, rs2.value);
-        }
-        if let Some(imm) = &trace.immediate {
-            println!("      immediate: {}", imm);
-        }
-    }
-    println!();
-
     // Track which expected instructions we've found
     let mut found_addi_x1 = false;
     let mut found_addi_x2 = false;
@@ -293,15 +257,44 @@ fn test_trace_callback() {
 
     println!("========================================");
 
-    // Assert that we found the expected instructions
-    assert!(found_addi_x1, "Should find addi x1, x0, 10");
-    assert!(found_addi_x2, "Should find addi x2, x0, 20");
-    assert!(found_addi_x3, "Should find addi x3, x0, 5");
-    assert!(found_add_x4, "Should find add x4, x1, x2");
-    assert!(found_sub_x5, "Should find sub x5, x2, x3");
-    assert!(found_lui, "Should find LUI instruction");
-    assert!(found_sw, "Should find SW instruction");
-    assert!(found_lw, "Should find LW instruction");
+    // Collect traces found/missing for the failure message, then assert.
+    let missing: Vec<&str> = [
+        (!found_addi_x1, "addi x1, x0, 10"),
+        (!found_addi_x2, "addi x2, x0, 20"),
+        (!found_addi_x3, "addi x3, x0, 5"),
+        (!found_add_x4, "add x4, x1, x2"),
+        (!found_sub_x5, "sub x5, x2, x3"),
+        (!found_lui, "LUI instruction"),
+        (!found_sw, "SW instruction"),
+        (!found_lw, "LW instruction"),
+    ]
+    .into_iter()
+    .filter_map(|(not_found, name)| if not_found { Some(name) } else { None })
+    .collect();
+
+    if !missing.is_empty() {
+        // Print full trace dump only when assertions are about to fail
+        println!("\nDEBUG: All captured instruction traces:");
+        for (i, trace) in captured_traces.iter().enumerate() {
+            println!(
+                "  [{}] PC=0x{:08x}, Type={:?}",
+                i, trace.pc, trace.inst_type
+            );
+            if let Some(rd) = &trace.rd {
+                println!("      rd: x{} = 0x{:08x}", rd.reg, rd.value);
+            }
+            if let Some(rs1) = &trace.rs1 {
+                println!("      rs1: x{} = 0x{:08x}", rs1.reg, rs1.value);
+            }
+            if let Some(rs2) = &trace.rs2 {
+                println!("      rs2: x{} = 0x{:08x}", rs2.reg, rs2.value);
+            }
+            if let Some(imm) = &trace.immediate {
+                println!("      immediate: {}", imm);
+            }
+        }
+        panic!("Missing expected instructions: {:?}", missing);
+    }
 
     println!("✓ Trace callback test passed in {} cycles", result.cycles);
     println!("✓ All expected instructions found and validated");
@@ -311,7 +304,6 @@ fn test_trace_callback() {
 #[test]
 fn test_vcd_generation() {
     use std::fs;
-    use std::path::PathBuf;
 
     init_test_logger();
 
@@ -322,15 +314,17 @@ fn test_vcd_generation() {
 
     let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
 
-    // Create a temporary VCD file path in the target directory
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let vcd_path = manifest_dir.join("../target/test_vcd_output.vcd");
+    // Use a per-process unique path in the system temp dir so that parallel
+    // test runs and non-default CARGO_TARGET_DIR settings don't collide.
+    let vcd_path = std::env::temp_dir().join(format!(
+        "cpu_sim_test_vcd_{}_{}.vcd",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time before UNIX_EPOCH")
+            .as_nanos()
+    ));
     let vcd_path_str = vcd_path.to_str().expect("VCD path should be valid UTF-8");
-
-    // Remove any existing VCD file from previous test runs
-    if vcd_path.exists() {
-        fs::remove_file(&vcd_path).expect("Should be able to remove old VCD file");
-    }
 
     println!("Running simulation with VCD enabled...");
     let result = run_elf(

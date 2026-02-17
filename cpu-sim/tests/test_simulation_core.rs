@@ -1,26 +1,9 @@
 mod common;
 
-use common::create_test_program;
+use common::{assert_tohost, create_test_program, init_test_logger};
 use cpu_sim::*;
 
-/// Helper function to initialize test logger (idempotent)
-fn init_test_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
-
-/// Helper function to assert tohost value matches expected
-fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
-    assert_eq!(
-        result.tohost_value,
-        Some(expected),
-        "Expected tohost value 0x{:x} ({}) from {}",
-        expected,
-        expected,
-        test_name
-    );
-}
-
-/// Helper function to run program with FSM state printing enabled for debugging
+/// Comprehensive test that runs a full in-memory program for basic simulation verification.
 #[allow(dead_code)]
 #[test]
 fn test_comprehensive_elf() {

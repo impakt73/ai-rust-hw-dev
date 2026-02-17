@@ -1,9 +1,7 @@
-use cpu_sim::*;
+mod common;
 
-/// Helper function to initialize test logger (idempotent)
-fn init_test_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
+use common::init_test_logger;
+use cpu_sim::*;
 
 #[test]
 fn test_packet_protocol_infrastructure() {

@@ -1,9 +1,7 @@
-use cpu_sim::*;
+mod common;
 
-/// Helper function to initialize test logger (idempotent)
-fn init_test_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
+use common::init_test_logger;
+use cpu_sim::*;
 
 #[test]
 fn test_hung_detection_catches_infinite_loop() {
@@ -117,7 +115,7 @@ fn test_hung_detection_catches_long_instruction() {
     let err_msg = result.unwrap_err();
     assert!(
         err_msg.contains("LongInstruction")
-            || err_msg.contains("taken") && err_msg.contains("cycles"),
+            || (err_msg.contains("taken") && err_msg.contains("cycles")),
         "Error should mention long instruction, got: {}",
         err_msg
     );
