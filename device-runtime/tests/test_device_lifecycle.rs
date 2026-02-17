@@ -3,9 +3,12 @@
 mod common;
 
 use bus_shared::{BusDevice, BusDeviceError, SystemContext, DRAM_BASE};
-use common::{append_tohost_termination, instructions_to_bytes, load_and_boot, wait_for_cpu_halt};
+use common::{
+    append_tohost_termination, create_test_runtime_with_registrations, instructions_to_bytes,
+    load_and_boot, wait_for_cpu_halt,
+};
 use common::{LONG_TIMEOUT, TEST_BOOT_PC};
-use device_runtime::{create_device_runtime, BusDeviceRegistration, DeviceRuntimeType};
+use device_runtime::BusDeviceRegistration;
 use riscv_core::instruction::{addi, lui};
 use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -62,11 +65,10 @@ impl BusDevice for LifecycleTestDevice {
     }
 }
 
-fn create_sim_runtime_with_devices(
+fn create_runtime_with_devices(
     registrations: Vec<BusDeviceRegistration>,
 ) -> Box<dyn device_runtime::DeviceRuntime> {
-    create_device_runtime(DeviceRuntimeType::Sim, Some(registrations))
-        .expect("Failed to create sim runtime with custom devices")
+    create_test_runtime_with_registrations(Some(registrations))
 }
 
 #[test]
@@ -79,7 +81,7 @@ fn test_device_reset_called_during_simulation() {
         Arc::clone(&reset_count),
         Arc::clone(&clock_cycle_count),
     ));
-    let mut runtime = create_sim_runtime_with_devices(vec![BusDeviceRegistration {
+    let mut runtime = create_runtime_with_devices(vec![BusDeviceRegistration {
         base_addr: 0x7000_0000,
         device,
     }]);
@@ -113,7 +115,7 @@ fn test_device_clock_cycle_called_every_cycle() {
         Arc::clone(&reset_count),
         Arc::clone(&clock_cycle_count),
     ));
-    let mut runtime = create_sim_runtime_with_devices(vec![BusDeviceRegistration {
+    let mut runtime = create_runtime_with_devices(vec![BusDeviceRegistration {
         base_addr: 0x7000_0000,
         device,
     }]);
@@ -158,7 +160,7 @@ fn test_multiple_devices_receive_lifecycle_calls() {
         Arc::clone(&reset_count_2),
         Arc::clone(&clock_cycle_count_2),
     ));
-    let mut runtime = create_sim_runtime_with_devices(vec![
+    let mut runtime = create_runtime_with_devices(vec![
         BusDeviceRegistration {
             base_addr: 0x7000_0000,
             device: device1,

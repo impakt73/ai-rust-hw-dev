@@ -3,7 +3,8 @@
 #![allow(dead_code)]
 
 use device_runtime::{
-    create_device_runtime, BusEvent, BusRequest, DeviceRuntime, DeviceRuntimeType,
+    create_device_runtime, BusDeviceRegistration, BusEvent, BusRequest, DeviceRuntime,
+    DeviceRuntimeType,
 };
 use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
@@ -39,6 +40,14 @@ fn fpga_startup_reset_from_env(fpga_hard_reset: Option<&str>) -> device_runtime:
 /// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
 /// Otherwise, the simulation backend is used by default.
 pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
+    create_test_runtime_with_registrations(None)
+}
+
+/// Create a device runtime based on environment variables with optional custom
+/// bus-device registrations.
+pub fn create_test_runtime_with_registrations(
+    registrations: Option<Vec<BusDeviceRegistration>>,
+) -> Box<dyn DeviceRuntime> {
     let runtime_type = match (
         std::env::var("FPGA_DEVICE_PATH"),
         std::env::var("FPGA_BAUD_RATE"),
@@ -58,7 +67,7 @@ pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
         _ => DeviceRuntimeType::Sim,
     };
 
-    create_device_runtime(runtime_type, None).expect("Failed to create device runtime")
+    create_device_runtime(runtime_type, registrations).expect("Failed to create device runtime")
 }
 
 /// Load program bytes at `boot_pc` and issue a CPU boot from the same address.
