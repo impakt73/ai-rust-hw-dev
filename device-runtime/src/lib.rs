@@ -8,6 +8,7 @@
 mod fpga;
 mod sim;
 
+use bus_shared::BusDevice;
 use host_bus_handler::AccessSize;
 pub use host_bus_handler::BusRequest;
 use host_bus_handler::RequestAddressRegion;
@@ -120,9 +121,18 @@ pub enum StartupReset {
     System,
 }
 
+/// A custom bus device registration to install before runtime reset/init.
+pub struct BusDeviceRegistration {
+    /// Base address for the device in the system bus memory map.
+    pub base_addr: u32,
+    /// Device implementation to register.
+    pub device: Box<dyn BusDevice>,
+}
+
 /// Create a device runtime for the specified backend.
 pub fn create_device_runtime(
     runtime_type: DeviceRuntimeType,
+    bus_devices: Vec<BusDeviceRegistration>,
 ) -> Result<Box<dyn DeviceRuntime>, DeviceError> {
     match runtime_type {
         DeviceRuntimeType::Fpga {
@@ -130,11 +140,12 @@ pub fn create_device_runtime(
             baud,
             startup_reset,
         } => {
-            let runtime = fpga::FpgaDeviceRuntime::connect(&device, baud, startup_reset)?;
+            let runtime =
+                fpga::FpgaDeviceRuntime::connect(&device, baud, startup_reset, bus_devices)?;
             Ok(Box::new(runtime))
         }
         DeviceRuntimeType::Sim => {
-            let runtime = sim::SimDeviceRuntime::new()
+            let runtime = sim::SimDeviceRuntime::new(bus_devices)
                 .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }

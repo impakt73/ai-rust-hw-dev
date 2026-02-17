@@ -9,8 +9,8 @@
 //! via channels and shared state.
 
 use crate::{
-    classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
-    PendingHostRequest, ResetKind,
+    classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
+    HostRequestRoute, PendingHostRequest, ResetKind,
 };
 use bus_shared::{is_valid_dram_range, SystemBus};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
@@ -85,6 +85,7 @@ impl FpgaDeviceRuntime {
         device: &str,
         baud: u32,
         startup_reset: crate::StartupReset,
+        bus_devices: Vec<BusDeviceRegistration>,
     ) -> Result<Self, DeviceError> {
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
@@ -106,6 +107,7 @@ impl FpgaDeviceRuntime {
                 pending_clone,
                 startup_reset,
                 ready_tx,
+                bus_devices,
             );
         });
 
@@ -146,8 +148,15 @@ impl FpgaDeviceRuntime {
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         startup_reset: crate::StartupReset,
         ready_tx: mpsc::Sender<Result<(), String>>,
+        bus_devices: Vec<BusDeviceRegistration>,
     ) {
         let mut bus = SystemBus::new();
+        if let Err(e) = Self::register_bus_devices(&mut bus, bus_devices) {
+            let message = format!("Failed to register custom bus devices: {}", e);
+            let _ = ready_tx.send(Err(message.clone()));
+            let _ = event_tx.send(RuntimeEvent::FatalError(message));
+            return;
+        }
         let mut handler = HostBusHandler::new();
         let mut rx_buffer = [0u8; BUFFER_SIZE];
         let mut rx_buffer_len: usize = 0;
@@ -498,7 +507,14 @@ impl FpgaDeviceRuntime {
                     *pending = None;
                 }
                 handler.reset();
+                let bus_devices = bus
+                    .take_external_devices()
+                    .into_iter()
+                    .map(|(base_addr, device)| BusDeviceRegistration { base_addr, device })
+                    .collect();
                 *bus = SystemBus::new();
+                Self::register_bus_devices(bus, bus_devices)
+                    .map_err(|e| DeviceError::IoError(std::io::Error::other(e)))?;
                 bus.reset_all_devices();
                 *rx_buffer_len = 0;
                 *tx_buffer_len = 0;
@@ -691,6 +707,22 @@ impl FpgaDeviceRuntime {
                 size: request.size,
             }
         }
+    }
+
+    fn register_bus_devices(
+        bus: &mut SystemBus,
+        bus_devices: Vec<BusDeviceRegistration>,
+    ) -> Result<(), String> {
+        for registration in bus_devices {
+            bus.register_device(registration.base_addr, registration.device)
+                .map_err(|e| {
+                    format!(
+                        "device at 0x{:08x} failed registration: {}",
+                        registration.base_addr, e
+                    )
+                })?;
+        }
+        Ok(())
     }
 }
 

@@ -204,7 +204,7 @@ where
 
 impl<F> BusDevice for Video<F>
 where
-    F: FnMut(&[u8], &VideoConfig),
+    F: FnMut(&[u8], &VideoConfig) + Send,
 {
     fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {

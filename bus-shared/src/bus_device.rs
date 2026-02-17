@@ -267,7 +267,7 @@ impl std::error::Error for BusDeviceError {}
 ///
 /// All methods receive a SystemContext parameter that provides access to
 /// system memory. This allows devices to perform DMA-like operations.
-pub trait BusDevice {
+pub trait BusDevice: Send {
     /// Read a 32-bit word from the device at the given offset
     ///
     /// # Arguments

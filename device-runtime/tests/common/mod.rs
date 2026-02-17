@@ -58,7 +58,7 @@ pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
         _ => DeviceRuntimeType::Sim,
     };
 
-    create_device_runtime(runtime_type).expect("Failed to create device runtime")
+    create_device_runtime(runtime_type, Vec::new()).expect("Failed to create device runtime")
 }
 
 /// Load program bytes at `boot_pc` and issue a CPU boot from the same address.

@@ -10,8 +10,8 @@
 //! address-based routing.
 
 use crate::{
-    classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
-    PendingHostRequest, ResetKind,
+    classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
+    HostRequestRoute, PendingHostRequest, ResetKind,
 };
 use cpu_sim::InteractiveSimulator;
 use host_bus_handler::{AccessSize, BusRequest, HandlerError};
@@ -67,7 +67,7 @@ impl SimDeviceRuntime {
     ///
     /// Initializes the interactive simulator and launches a background thread
     /// to step through instructions.
-    pub(crate) fn new() -> Result<Self, String> {
+    pub(crate) fn new(bus_devices: Vec<BusDeviceRegistration>) -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -76,7 +76,7 @@ impl SimDeviceRuntime {
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(command_rx, event_tx, pending_clone, ready_tx);
+            Self::run_loop(command_rx, event_tx, pending_clone, ready_tx, bus_devices);
         });
 
         match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
@@ -104,6 +104,7 @@ impl SimDeviceRuntime {
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         ready_tx: mpsc::Sender<Result<(), String>>,
+        bus_devices: Vec<BusDeviceRegistration>,
     ) {
         // Create the interactive simulator
         let mut simulator = match InteractiveSimulator::new() {
@@ -117,6 +118,18 @@ impl SimDeviceRuntime {
                 return;
             }
         };
+        for registration in bus_devices {
+            if let Err(e) = simulator.register_device(registration.base_addr, registration.device) {
+                let message = format!(
+                    "Failed to register device at 0x{:08x}: {}",
+                    registration.base_addr, e
+                );
+                let _ = ready_tx.send(Err(message.clone()));
+                let _ = event_tx.send(RuntimeEvent::FatalError(message));
+                return;
+            }
+        }
+
         // Initialize simulator reset/controller state before serving runtime requests.
         if let Err(e) = simulator.reset() {
             let _ = ready_tx.send(Err(format!(

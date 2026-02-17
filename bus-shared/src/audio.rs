@@ -335,8 +335,8 @@ where
 
 impl<S, C> BusDevice for Audio<S, C>
 where
-    S: FnMut(&[i16]),
-    C: FnMut(&AudioConfig),
+    S: FnMut(&[i16]) + Send,
+    C: FnMut(&AudioConfig) + Send,
 {
     fn read_word(&mut self, ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
         match offset {
