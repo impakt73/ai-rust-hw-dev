@@ -288,8 +288,7 @@ where
 mod tests {
     use super::*;
     use crate::memory::Memory;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_video_format_bytes_per_pixel() {
@@ -385,13 +384,15 @@ mod tests {
 
     #[test]
     fn test_video_present_operation() {
-        // Use Rc<RefCell<>> to capture callback data
-        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
-        let callback_data: CallbackData = Rc::new(RefCell::new(None));
+        // Use Arc<Mutex<>> to capture callback data
+        type CallbackData = Arc<Mutex<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Arc::new(Mutex::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
-            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+            *callback_data_clone
+                .lock()
+                .expect("callback_data lock poisoned") = Some((data.to_vec(), *config));
         }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
@@ -434,7 +435,7 @@ mod tests {
         assert_eq!(status & 0b10, 0b10); // PRESENT_READY = 1
 
         // Verify callback was invoked with correct data
-        let captured = callback_data.borrow();
+        let captured = callback_data.lock().expect("callback_data lock poisoned");
         let (data, cfg) = captured.as_ref().unwrap();
         assert_eq!(data.as_slice(), &test_data);
         assert_eq!(cfg.width, 2);
@@ -512,12 +513,14 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_rgb8_data() {
-        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
-        let callback_data: CallbackData = Rc::new(RefCell::new(None));
+        type CallbackData = Arc<Mutex<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Arc::new(Mutex::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
-            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+            *callback_data_clone
+                .lock()
+                .expect("callback_data lock poisoned") = Some((data.to_vec(), *config));
         }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
@@ -549,7 +552,7 @@ mod tests {
         }
 
         // Verify callback was invoked with RGB8 data
-        let captured = callback_data.borrow();
+        let captured = callback_data.lock().expect("callback_data lock poisoned");
         let (data, cfg) = captured.as_ref().unwrap();
         assert_eq!(data.as_slice(), &test_data);
         assert_eq!(cfg.width, 2);
@@ -559,12 +562,14 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_rgb565_data() {
-        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
-        let callback_data: CallbackData = Rc::new(RefCell::new(None));
+        type CallbackData = Arc<Mutex<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Arc::new(Mutex::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
-            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+            *callback_data_clone
+                .lock()
+                .expect("callback_data lock poisoned") = Some((data.to_vec(), *config));
         }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
@@ -604,7 +609,7 @@ mod tests {
         }
 
         // Verify callback was invoked with RGB565 data
-        let captured = callback_data.borrow();
+        let captured = callback_data.lock().expect("callback_data lock poisoned");
         let (data, cfg) = captured.as_ref().unwrap();
         assert_eq!(data.len(), 8); // 4 pixels × 2 bytes
         assert_eq!(cfg.width, 2);
@@ -614,12 +619,14 @@ mod tests {
 
     #[test]
     fn test_video_callback_receives_r8_data() {
-        type CallbackData = Rc<RefCell<Option<(Vec<u8>, VideoConfig)>>>;
-        let callback_data: CallbackData = Rc::new(RefCell::new(None));
+        type CallbackData = Arc<Mutex<Option<(Vec<u8>, VideoConfig)>>>;
+        let callback_data: CallbackData = Arc::new(Mutex::new(None));
         let callback_data_clone = callback_data.clone();
 
         let mut video = Video::new(Some(move |data: &[u8], config: &VideoConfig| {
-            *callback_data_clone.borrow_mut() = Some((data.to_vec(), *config));
+            *callback_data_clone
+                .lock()
+                .expect("callback_data lock poisoned") = Some((data.to_vec(), *config));
         }));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
@@ -651,7 +658,7 @@ mod tests {
         }
 
         // Verify callback was invoked with R8 data
-        let captured = callback_data.borrow();
+        let captured = callback_data.lock().expect("callback_data lock poisoned");
         let (data, cfg) = captured.as_ref().unwrap();
         assert_eq!(data.as_slice(), &test_data);
         assert_eq!(cfg.width, 2);

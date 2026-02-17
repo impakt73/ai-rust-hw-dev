@@ -85,6 +85,6 @@ fn test_custom_bus_device_registration_and_access() {
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
     assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(42));
-    assert!(write_count.load(Ordering::Relaxed) > 0);
-    assert!(read_count.load(Ordering::Relaxed) > 0);
+    assert_eq!(write_count.load(Ordering::Relaxed), 1);
+    assert_eq!(read_count.load(Ordering::Relaxed), 1);
 }

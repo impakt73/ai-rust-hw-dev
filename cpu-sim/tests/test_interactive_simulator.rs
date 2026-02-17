@@ -3,9 +3,8 @@ use bus_shared::{
 };
 use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
 use riscv_shared::SUCCESS_CODE;
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_interactive_simulator_load_elf() {
@@ -229,14 +228,17 @@ fn test_interactive_simulator_register_video_device() {
         .expect("Failed to find test_video_pattern");
 
     // Storage for captured frames
-    type CapturedFrames = Rc<RefCell<Vec<(Vec<u8>, VideoConfig)>>>;
-    let captured_frames: CapturedFrames = Rc::new(RefCell::new(Vec::new()));
+    type CapturedFrames = Arc<Mutex<Vec<(Vec<u8>, VideoConfig)>>>;
+    let captured_frames: CapturedFrames = Arc::new(Mutex::new(Vec::new()));
 
     let frames_clone = captured_frames.clone();
 
     // Create callback that captures frame data
     let present_callback = move |data: &[u8], config: &VideoConfig| {
-        frames_clone.borrow_mut().push((data.to_vec(), *config));
+        frames_clone
+            .lock()
+            .expect("frames lock poisoned")
+            .push((data.to_vec(), *config));
         log::info!(
             "Frame captured: {}x{} {:?}",
             config.width,
@@ -306,7 +308,7 @@ fn test_interactive_simulator_register_video_device() {
     );
 
     // Verify we captured at least one frame
-    let frames = captured_frames.borrow();
+    let frames = captured_frames.lock().expect("frames lock poisoned");
     assert!(
         !frames.is_empty(),
         "Should have captured at least one video frame"
@@ -323,13 +325,16 @@ fn test_interactive_simulator_register_audio_device() {
         .expect("Failed to find test_audio_pattern");
 
     // Storage for captured samples
-    let captured_samples: Rc<RefCell<Vec<Vec<i16>>>> = Rc::new(RefCell::new(Vec::new()));
+    let captured_samples: Arc<Mutex<Vec<Vec<i16>>>> = Arc::new(Mutex::new(Vec::new()));
 
     let samples_clone = captured_samples.clone();
 
     // Create callback that captures sample data
     let sample_callback = move |samples: &[i16]| {
-        samples_clone.borrow_mut().push(samples.to_vec());
+        samples_clone
+            .lock()
+            .expect("samples lock poisoned")
+            .push(samples.to_vec());
     };
 
     // Create simulator and register audio device
@@ -374,7 +379,7 @@ fn test_interactive_simulator_register_audio_device() {
     );
 
     // Verify we captured audio samples
-    let samples = captured_samples.borrow();
+    let samples = captured_samples.lock().expect("samples lock poisoned");
     assert!(
         !samples.is_empty(),
         "Should have captured at least one audio sample"
