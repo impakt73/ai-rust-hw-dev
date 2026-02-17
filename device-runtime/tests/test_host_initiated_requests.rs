@@ -25,9 +25,6 @@ use riscv_shared::bus::{
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 use std::time::Duration;
 
-/// Extra CPU delay so the host can issue/read a host-bus transaction before program termination.
-const DELAY_NOPS_FOR_HOST_READ: usize = 64;
-
 /// Test basic synchronization using host-initiated LED write.
 ///
 /// The CPU polls the LED register waiting for a non-zero value.
@@ -144,12 +141,16 @@ fn test_host_initiated_led_read() {
         addi(14, 0, LED_VALUE as i32),
         sw(15, 14, 0), // Write to LED
     ];
-    instructions.extend(std::iter::repeat_n(addi(0, 0, 0), DELAY_NOPS_FOR_HOST_READ));
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
+
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
 
     // Read back LED value via host bus request
     let led_value = read_word_with_timeout(runtime.as_mut(), LED_BASE, SHORT_TIMEOUT);
@@ -157,11 +158,6 @@ fn test_host_initiated_led_read() {
         led_value & 0xFF,
         LED_VALUE as u32,
         "LED value should be 0xCC"
-    );
-
-    assert_eq!(
-        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
-        Some(SUCCESS_CODE)
     );
 }
 

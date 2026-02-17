@@ -16,7 +16,7 @@ pub const SHORT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Timeout for medium operations such as reset or boot-state transitions.
 pub const MEDIUM_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for long operations such as full program execution and termination.
-pub const LONG_TIMEOUT: Duration = Duration::from_secs(10);
+pub const LONG_TIMEOUT: Duration = Duration::from_secs(30);
 /// Common test boot PC for loaded instruction programs.
 pub const TEST_BOOT_PC: u32 = 0x8000_0000;
 

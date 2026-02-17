@@ -67,10 +67,6 @@ fn test_runtime_write_and_read_memory_region_sram_without_cpu_program() {
     let payload = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
 
     runtime
-        .load_program(TEST_BOOT_PC, &[])
-        .expect("Failed to prepare runtime for host SRAM access");
-
-    runtime
         .write_memory_region(addr, &base, None)
         .expect("Failed to initialize SRAM base pattern");
     runtime
@@ -176,9 +172,6 @@ fn test_runtime_memory_region_callback_receives_unrelated_events() {
     const FENCE_ADDR: u32 = DRAM_BASE + 0x2000;
 
     runtime
-        .load_program(TEST_BOOT_PC, &[])
-        .expect("Failed to prepare runtime");
-    runtime
         .write_memory_region(FENCE_ADDR, &[0], None)
         .expect("Failed to initialize fence memory");
 
@@ -217,15 +210,13 @@ fn test_runtime_memory_region_callback_receives_unrelated_events() {
     }
 
     assert_eq!(observed_tohost, Some(0x2A));
+
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), None);
 }
 
 #[test]
 fn test_runtime_memory_region_u32_max_boundary_accesses_are_valid() {
     let mut runtime = create_test_runtime();
-    runtime
-        .load_program(TEST_BOOT_PC, &[])
-        .expect("Failed to prepare runtime");
-
     runtime
         .write_memory_region(u32::MAX, &[0xA5], None)
         .expect("1-byte write at 0xFFFF_FFFF should be valid");
