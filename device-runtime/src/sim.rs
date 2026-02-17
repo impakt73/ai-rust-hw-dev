@@ -67,7 +67,7 @@ impl SimDeviceRuntime {
     ///
     /// Initializes the interactive simulator and launches a background thread
     /// to step through instructions.
-    pub(crate) fn new(bus_devices: Vec<BusDeviceRegistration>) -> Result<Self, String> {
+    pub(crate) fn new(bus_devices: Option<Vec<BusDeviceRegistration>>) -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -104,7 +104,7 @@ impl SimDeviceRuntime {
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         ready_tx: mpsc::Sender<Result<(), String>>,
-        bus_devices: Vec<BusDeviceRegistration>,
+        bus_devices: Option<Vec<BusDeviceRegistration>>,
     ) {
         // Create the interactive simulator
         let mut simulator = match InteractiveSimulator::new() {
@@ -118,15 +118,19 @@ impl SimDeviceRuntime {
                 return;
             }
         };
-        for registration in bus_devices {
-            if let Err(e) = simulator.register_device(registration.base_addr, registration.device) {
-                let message = format!(
-                    "Failed to register device at 0x{:08x}: {}",
-                    registration.base_addr, e
-                );
-                let _ = ready_tx.send(Err(message.clone()));
-                let _ = event_tx.send(RuntimeEvent::FatalError(message));
-                return;
+        if let Some(bus_devices) = bus_devices {
+            for registration in bus_devices {
+                if let Err(e) =
+                    simulator.register_device(registration.base_addr, registration.device)
+                {
+                    let message = format!(
+                        "Failed to register device at 0x{:08x}: {}",
+                        registration.base_addr, e
+                    );
+                    let _ = ready_tx.send(Err(message.clone()));
+                    let _ = event_tx.send(RuntimeEvent::FatalError(message));
+                    return;
+                }
             }
         }
 

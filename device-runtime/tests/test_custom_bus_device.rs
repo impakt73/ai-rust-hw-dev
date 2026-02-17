@@ -64,10 +64,10 @@ fn test_custom_bus_device_registration_and_access() {
 
     let mut runtime = create_device_runtime(
         DeviceRuntimeType::Sim,
-        vec![BusDeviceRegistration {
+        Some(vec![BusDeviceRegistration {
             base_addr: DUMMY_DEVICE_BASE,
             device: Box::new(bus_device),
-        }],
+        }]),
     )
     .expect("Failed to create simulator runtime");
 

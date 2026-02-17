@@ -194,31 +194,6 @@ impl SystemBus {
         })
     }
 
-    /// Remove and return all externally registered devices with their base addresses.
-    ///
-    /// Internal devices remain registered in the memory map.
-    pub fn take_external_devices(&mut self) -> Vec<(u32, Box<dyn BusDevice>)> {
-        let mut external_bases = self
-            .memory_map
-            .iter()
-            .filter_map(|entry| match entry.id {
-                DeviceId::External(idx) => Some((idx, entry.base)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        external_bases.sort_unstable_by_key(|(idx, _)| *idx);
-
-        self.memory_map
-            .retain(|entry| !matches!(entry.id, DeviceId::External(_)));
-        let external_devices = std::mem::take(&mut self.external_devices);
-
-        external_bases
-            .into_iter()
-            .zip(external_devices)
-            .map(|((_, base), device)| (base, device))
-            .collect()
-    }
-
     /// Find the device ID for the given address
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.

@@ -132,7 +132,7 @@ pub struct BusDeviceRegistration {
 /// Create a device runtime for the specified backend.
 pub fn create_device_runtime(
     runtime_type: DeviceRuntimeType,
-    bus_devices: Vec<BusDeviceRegistration>,
+    bus_devices: Option<Vec<BusDeviceRegistration>>,
 ) -> Result<Box<dyn DeviceRuntime>, DeviceError> {
     match runtime_type {
         DeviceRuntimeType::Fpga {

@@ -270,7 +270,7 @@ fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult
         baud,
         startup_reset: device_runtime::StartupReset::None,
     };
-    match create_device_runtime(runtime_type, Vec::new()) {
+    match create_device_runtime(runtime_type, None) {
         Ok(runtime) => {
             app.device_runtime = Some(runtime);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
@@ -285,7 +285,7 @@ fn execute_connect_sim(app: &mut App) -> CommandResult {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match create_device_runtime(DeviceRuntimeType::Sim, Vec::new()) {
+    match create_device_runtime(DeviceRuntimeType::Sim, None) {
         Ok(runtime) => {
             app.device_runtime = Some(runtime);
             CommandResult::ok("Connected to Simulator".to_string())
