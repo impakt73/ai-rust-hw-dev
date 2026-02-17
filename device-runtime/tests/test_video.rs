@@ -1,5 +1,11 @@
+mod common;
+
 use bus_shared::{Video, VideoConfig, VideoFormat, VIDEO_BASE};
-use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView};
+use common::{
+    create_test_runtime_with_registrations, load_and_boot_elf, read_word_with_timeout,
+    wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
+};
+use device_runtime::BusDeviceRegistration;
 use std::sync::{Arc, Mutex};
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison
@@ -43,8 +49,6 @@ fn get_pixel_rgba8(
 
 #[test]
 fn test_video_pattern() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
     let elf_path = sim_tests::test_program_path("test_video_pattern")
         .expect("Failed to find test_video_pattern");
 
@@ -52,76 +56,67 @@ fn test_video_pattern() {
     type CapturedFrames = Arc<Mutex<Vec<(Vec<u8>, VideoConfig)>>>;
     let captured_frames: CapturedFrames = Arc::new(Mutex::new(Vec::new()));
 
-    // Setup callback to register Video device
-    let frames_for_setup = captured_frames.clone();
-    let setup_callback = move |view: &mut SimulatorView| {
-        let frames_for_callback = Arc::clone(&frames_for_setup);
-
-        // Create callback that captures frame data in memory
-        let present_callback = move |data: &[u8], config: &VideoConfig| {
-            let mut frames = frames_for_callback.lock().expect("frames lock poisoned");
-            frames.push((data.to_vec(), *config));
-            log::info!(
-                "Frame {} captured ({}x{} {:?}, {} bytes)",
-                frames.len() - 1,
-                config.width,
-                config.height,
-                config.format,
-                data.len()
-            );
-        };
-
-        // Register Video device at VIDEO_BASE with 60 FPS (real-time pacing)
-        // Frame pacing is now based on elapsed host time, not CPU cycles
-        let video = Box::new(Video::with_fps(60, Some(present_callback)));
-        view.register_device(VIDEO_BASE, video)
-            .expect("Failed to register Video device");
-        log::info!("Video device registered at 0x{:08x}", VIDEO_BASE);
-    };
-
-    // Termination callback to verify captured frames
-    let frames_for_verify = captured_frames.clone();
-    let termination_callback = move |_view: &SimulatorView, result: &SimulationResult| {
-        // Verify the program completed successfully
-        assert_eq!(
-            result.tohost_value,
-            Some(42),
-            "Video test should exit with success code 42"
+    // Create callback that captures frame data in memory
+    let frames_for_callback = Arc::clone(&captured_frames);
+    let present_callback = move |data: &[u8], config: &VideoConfig| {
+        let mut frames = frames_for_callback.lock().expect("frames lock poisoned");
+        frames.push((data.to_vec(), *config));
+        log::info!(
+            "Frame {} captured ({}x{} {:?}, {} bytes)",
+            frames.len() - 1,
+            config.width,
+            config.height,
+            config.format,
+            data.len()
         );
-
-        println!("\n=== Video Pattern Test Results ===");
-        println!("Cycles: {}", result.cycles);
-        println!("Test program completed successfully");
-
-        let frames = frames_for_verify.lock().expect("frames lock poisoned");
-        assert_eq!(frames.len(), 3, "Should have captured 3 frames");
-
-        println!("✓ Captured {} frames", frames.len());
-
-        // Verify frame contents directly from memory
-        verify_frame_0_checkerboard(&frames[0].0, &frames[0].1);
-        verify_frame_1_diagonal_stripes(&frames[1].0, &frames[1].1);
-        verify_frame_2_gradient(&frames[2].0, &frames[2].1);
-
-        println!("✓ All frame patterns verified successfully");
     };
 
-    let result = run_elf(
-        &elf_path,
-        10_000_000, // High limit for video frame rendering (increased for serialized bus protocol)
-        false,      // print_inst_trace
-        false,      // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None,                       // vcd_path
-        0,                          // mem_latency_cycles
-        Some(setup_callback),       // Register Video device
-        Some(termination_callback), // Verify frames after completion
-    )
-    .expect("Simulation should succeed");
+    // Register Video device at VIDEO_BASE at runtime creation.
+    let video = Box::new(Video::with_fps(60, Some(present_callback)));
+    let mut runtime = create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
+        base_addr: VIDEO_BASE,
+        device: video,
+    }]));
 
+    // Startup-time memory transactions can be performed before loading/booting.
+    let startup_status = read_word_with_timeout(runtime.as_mut(), VIDEO_BASE + 0x08, SHORT_TIMEOUT);
+    assert_ne!(
+        startup_status & (1 << 1),
+        0,
+        "PRESENT_READY should be set before boot"
+    );
+
+    load_and_boot_elf(runtime.as_mut(), &elf_path);
+
+    // Handle termination by waiting for halt, then performing host memory transactions.
+    let tohost_value = wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    assert_eq!(
+        tohost_value,
+        Some(42),
+        "Video test should exit with success code 42"
+    );
+    let final_status = read_word_with_timeout(runtime.as_mut(), VIDEO_BASE + 0x08, SHORT_TIMEOUT);
+    assert_ne!(
+        final_status & (1 << 1),
+        0,
+        "PRESENT_READY should be set after completion"
+    );
+
+    println!("\n=== Video Pattern Test Results ===");
+    println!("Test program completed successfully");
+
+    let frames = captured_frames.lock().expect("frames lock poisoned");
+    assert_eq!(frames.len(), 3, "Should have captured 3 frames");
+
+    println!("✓ Captured {} frames", frames.len());
+
+    // Verify frame contents directly from memory
+    verify_frame_0_checkerboard(&frames[0].0, &frames[0].1);
+    verify_frame_1_diagonal_stripes(&frames[1].0, &frames[1].1);
+    verify_frame_2_gradient(&frames[2].0, &frames[2].1);
+
+    println!("✓ All frame patterns verified successfully");
     println!("\n=== Video Pattern Test Summary ===");
-    println!("Total cycles: {}", result.cycles);
     println!("Test passed: 3 frames rendered and verified");
 }
 
