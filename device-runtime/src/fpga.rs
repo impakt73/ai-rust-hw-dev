@@ -79,8 +79,8 @@ impl FpgaDeviceRuntime {
     /// Create a new FpgaDeviceRuntime connected to the specified serial port.
     ///
     /// Opens the serial port and launches a background thread to handle
-    /// serial I/O and protocol processing. The SystemBus is created on the
-    /// background thread to avoid requiring `Send` on `SystemBus`.
+    /// serial I/O and protocol processing. The SystemBus is created and owned
+    /// by the background thread so all bus mutation stays confined to one thread.
     pub(crate) fn connect(
         device: &str,
         baud: u32,

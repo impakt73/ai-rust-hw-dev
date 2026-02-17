@@ -304,6 +304,13 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         self.video_backend.borrow_mut().set_title(&title);
     }
 
+    /// Apply pending audio configuration updates from simulation callbacks.
+    fn apply_pending_audio_config_updates(&mut self) {
+        while let Ok(audio_config) = self.audio_config_rx.try_recv() {
+            self.audio_backend.borrow_mut().set_config(&audio_config);
+        }
+    }
+
     /// Format a cycle count in a human-friendly way (e.g., "1.5M", "234K")
     fn format_cycles(cycles: u64) -> String {
         if cycles >= 1_000_000 {
@@ -397,10 +404,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
             return Ok(false);
         }
 
-        // Apply pending audio configuration updates from simulation callbacks.
-        while let Ok(audio_config) = self.audio_config_rx.try_recv() {
-            self.audio_backend.borrow_mut().set_config(&audio_config);
-        }
+        self.apply_pending_audio_config_updates();
 
         // Reset frame presented flag before stepping
         if let Ok(mut frame_presented) = self.frame_presented_this_step.lock() {
@@ -530,6 +534,8 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
                 self.sim_thread.send_request(SimRequest::Pause)?;
                 break;
             }
+
+            self.apply_pending_audio_config_updates();
 
             // Check for responses from simulation thread (non-blocking)
             if let Some(response) = self.sim_thread.try_recv_response()? {
