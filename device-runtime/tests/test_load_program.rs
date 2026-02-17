@@ -6,7 +6,7 @@ use common::{
 };
 use riscv_core::instruction::{addi, ebreak, lui, sw};
 use riscv_shared::bus::{
-    sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE,
+    sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE, SYSCTRL_BASE,
     SYSCTRL_HALT_OFFSET, SYSCTRL_STATUS_CPU_HALTED,
 };
 
@@ -73,5 +73,28 @@ fn test_load_program_halt_register_termination_code() {
     assert_eq!(
         read_halt_code, halt_code,
         "HALT register should retain termination code for host retrieval"
+    );
+}
+
+#[test]
+fn test_load_program_runs_from_sram_and_reports_tohost() {
+    let mut runtime = create_test_runtime();
+    let boot_pc: u32 = SRAM_BASE;
+    let tohost_value: i32 = 0x2A;
+    let program = instructions_to_bytes(&[
+        lui(15, SIM_CONTROL_BASE),
+        addi(14, 0, tohost_value),
+        sw(15, 14, 0),
+        ebreak(),
+    ]);
+
+    runtime
+        .load_program(boot_pc, &program)
+        .expect("Failed to load SRAM program");
+    runtime.boot_cpu(boot_pc).expect("Failed to boot from SRAM");
+
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(tohost_value as u32)
     );
 }

@@ -261,13 +261,86 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// Implementations must provide backend-specific reset handling.
     fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError>;
 
-    /// Load an ELF file into the device's memory.
+    /// Load an ELF file into the device memory via [`write_memory_region`].
     ///
-    /// For FPGA runtimes, this populates the internal memory model.
-    /// For simulator runtimes, this loads directly into the simulator's memory.
+    /// This default implementation parses loadable ELF program headers
+    /// (`PT_LOAD`) and writes each loadable file-backed segment to the
+    /// segment virtual address.
     ///
     /// Returns the ELF entry point address on success.
-    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError>;
+    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
+        let file_data = std::fs::read(path).map_err(DeviceError::IoError)?;
+        let elf_file =
+            elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data).map_err(|e| {
+                DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to parse ELF: {e}"),
+                ))
+            })?;
+
+        let entry_point = u32::try_from(elf_file.ehdr.e_entry).map_err(|_| {
+            DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "ELF entry point 0x{:x} does not fit in u32",
+                    elf_file.ehdr.e_entry
+                ),
+            ))
+        })?;
+
+        if let Some(phdrs) = elf_file.segments() {
+            for phdr in phdrs.iter() {
+                if phdr.p_type != elf::abi::PT_LOAD {
+                    continue;
+                }
+
+                let vaddr = u32::try_from(phdr.p_vaddr).map_err(|_| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Segment vaddr 0x{:x} does not fit in u32", phdr.p_vaddr),
+                    ))
+                })?;
+                let file_size = usize::try_from(phdr.p_filesz).map_err(|_| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Segment file size 0x{:x} does not fit in usize",
+                            phdr.p_filesz
+                        ),
+                    ))
+                })?;
+                if file_size == 0 {
+                    continue;
+                }
+                let offset = usize::try_from(phdr.p_offset).map_err(|_| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Segment offset 0x{:x} does not fit in usize", phdr.p_offset),
+                    ))
+                })?;
+                let end = offset.checked_add(file_size).ok_or_else(|| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}"
+                        ),
+                    ))
+                })?;
+                let segment_data = file_data.get(offset..end).ok_or_else(|| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Segment out of bounds: offset=0x{offset:x}, size=0x{file_size:x}, file_len=0x{:x}",
+                            file_data.len()
+                        ),
+                    ))
+                })?;
+                self.write_memory_region(vaddr, segment_data, None)?;
+            }
+        }
+
+        Ok(entry_point)
+    }
 
     /// Load raw program bytes into device memory at the specified address.
     ///
@@ -275,18 +348,17 @@ pub trait DeviceRuntime: std::fmt::Display {
     /// so they can be executed later via [`boot_cpu`] with the same address.
     ///
     /// # Arguments
-    /// * `boot_pc` - Address at which to load the program. Must be within the
-    ///   valid DRAM range; an error is returned if the address or the resulting
-    ///   range falls outside DRAM.
+    /// * `boot_pc` - Address at which to load the program.
     /// * `data` - Byte slice containing the program data (typically encoded
     ///   RISC-V instructions in little-endian format)
     ///
     /// # Errors
     /// Returns `Err(DeviceError)` if:
-    /// - The address range `[boot_pc, boot_pc + data.len())` is outside the
-    ///   valid DRAM range
+    /// - The requested range overflows 32-bit address space
     /// - The background thread is disconnected or times out
-    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError>;
+    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
+        self.write_memory_region(boot_pc, data, None)
+    }
 
     /// Write a memory region using host-initiated bus requests.
     ///

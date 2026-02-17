@@ -12,12 +12,11 @@ use crate::{
     classify_host_request_route, BusEvent, DeviceError, DeviceRuntime, HostRequestRoute,
     PendingHostRequest, ResetKind,
 };
-use bus_shared::{is_valid_dram_range, SystemBus, DRAM_BASE, DRAM_END};
+use bus_shared::{is_valid_dram_range, SystemBus};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
 use serialport::SerialPort;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -34,15 +33,13 @@ const SYSTEM_RESET_STABILIZATION_DELAY: Duration = Duration::from_secs(1);
 const SYSTEM_RESET_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// Timeout for reset command completion from the background thread.
 const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+/// Timeout for runtime startup readiness handshake.
+const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
-    /// Load an ELF file into memory, with a one-shot channel for the result
-    LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
-    /// Load raw program bytes into memory at a given address
-    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
     /// Trigger device reset
     Reset(ResetKind, mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
@@ -96,13 +93,40 @@ impl FpgaDeviceRuntime {
 
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(port, command_rx, event_tx, pending_clone, startup_reset);
+            Self::run_loop(
+                port,
+                command_rx,
+                event_tx,
+                pending_clone,
+                startup_reset,
+                ready_tx,
+            );
         });
+
+        match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(DeviceError::IoError(std::io::Error::other(e)));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Timed out waiting for FPGA runtime initialization",
+                )));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(DeviceError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "FPGA runtime initialization channel disconnected",
+                )));
+            }
+        }
 
         Ok(FpgaDeviceRuntime {
             device_path: device.to_string(),
@@ -121,6 +145,7 @@ impl FpgaDeviceRuntime {
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         startup_reset: crate::StartupReset,
+        ready_tx: mpsc::Sender<Result<(), String>>,
     ) {
         let mut bus = SystemBus::new();
         let mut handler = HostBusHandler::new();
@@ -150,12 +175,22 @@ impl FpgaDeviceRuntime {
                 &event_tx,
                 reset_kind,
             ) {
-                let _ = event_tx.send(RuntimeEvent::FatalError(format!(
-                    "Startup {:?} reset failed: {}",
-                    startup_reset, e
-                )));
+                let message = format!("Startup {:?} reset failed: {}", startup_reset, e);
+                if ready_tx.send(Err(message.clone())).is_err() {
+                    log::warn!(
+                        "Failed to report FPGA startup reset failure: caller may have disconnected"
+                    );
+                }
+                let _ = event_tx.send(RuntimeEvent::FatalError(message));
                 return;
             }
+        }
+        // Signal readiness after startup initialization completes, regardless of
+        // whether a startup reset was configured.
+        if ready_tx.send(Ok(())).is_err() {
+            log::warn!(
+                "Failed to report FPGA runtime readiness: caller may have disconnected or timed out"
+            );
         }
 
         loop {
@@ -194,34 +229,6 @@ impl FpgaDeviceRuntime {
                                 "Invalid host request spanning RTL and non-RTL regions".into(),
                             ));
                         }
-                    }
-                }
-                Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
-                    match Self::load_elf_into_bus(&path) {
-                        Ok((entry_point, new_bus)) => {
-                            bus = new_bus;
-                            let _ = result_tx.send(Ok(entry_point));
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(Err(e));
-                        }
-                    }
-                }
-                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
-                    let len = data.len() as u32;
-                    if !data.is_empty() && !is_valid_dram_range(boot_pc, len) {
-                        let _ = result_tx.send(Err(format!(
-                            "Program range [0x{:08x}, 0x{:08x}) is outside DRAM range [0x{:08x}, 0x{:08x}]",
-                            boot_pc,
-                            boot_pc.wrapping_add(len),
-                            DRAM_BASE,
-                            DRAM_END
-                        )));
-                    } else {
-                        for (i, &byte) in data.iter().enumerate() {
-                            bus.memory.write_byte(boot_pc + i as u32, byte);
-                        }
-                        let _ = result_tx.send(Ok(()));
                     }
                 }
                 Ok(RuntimeCommand::Reset(kind, result_tx)) => {
@@ -685,75 +692,6 @@ impl FpgaDeviceRuntime {
             }
         }
     }
-
-    /// Load an ELF file into a new SystemBus, returning the entry point and bus.
-    ///
-    /// This loads into a temporary SystemBus instance first, so the existing bus is
-    /// preserved if loading fails. ELF segments are validated to be within the DRAM
-    /// address range and written directly to the bus's backing memory.
-    fn load_elf_into_bus(path: &Path) -> Result<(u32, SystemBus), String> {
-        let file_data = std::fs::read(path).map_err(|e| format!("Failed to read ELF: {}", e))?;
-        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
-            .map_err(|e| format!("Failed to parse ELF: {}", e))?;
-
-        let entry_point: u32 = elf_file.ehdr.e_entry.try_into().map_err(|_| {
-            format!(
-                "ELF entry point 0x{:x} does not fit in u32",
-                elf_file.ehdr.e_entry
-            )
-        })?;
-
-        let mut new_bus = SystemBus::new();
-
-        if let Some(phdrs) = elf_file.segments() {
-            for phdr in phdrs.iter() {
-                if phdr.p_type == elf::abi::PT_LOAD {
-                    let vaddr = phdr.p_vaddr as u32;
-                    let file_size = phdr.p_filesz as usize;
-                    let offset = phdr.p_offset as usize;
-
-                    if file_size > 0 {
-                        // Validate segment address range is within DRAM
-                        let end_addr = vaddr.checked_add(file_size as u32).ok_or_else(|| {
-                            format!(
-                                "Segment address overflow: vaddr=0x{:08x}, size=0x{:x}",
-                                vaddr, file_size
-                            )
-                        })?;
-                        if !is_valid_dram_range(vaddr, file_size as u32) {
-                            return Err(format!(
-                                "Segment [0x{:08x}, 0x{:08x}) is outside DRAM range [0x{:08x}, 0x{:08x}]",
-                                vaddr, end_addr, DRAM_BASE, DRAM_END
-                            ));
-                        }
-
-                        let end = match offset.checked_add(file_size) {
-                            Some(end) if end <= file_data.len() => end,
-                            _ => {
-                                return Err(format!(
-                                    "Segment out of bounds: offset=0x{:x}, size=0x{:x}, file_len=0x{:x}",
-                                    offset, file_size, file_data.len()
-                                ));
-                            }
-                        };
-
-                        // Write directly to the bus's backing memory (DRAM-only, no device routing)
-                        let segment_data = &file_data[offset..end];
-                        for (i, &byte) in segment_data.iter().enumerate() {
-                            new_bus.memory.write_byte(vaddr + i as u32, byte);
-                        }
-                        log::info!(
-                            "Loaded segment: vaddr=0x{:08x}, size=0x{:x} bytes",
-                            vaddr,
-                            file_size
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok((entry_point, new_bus))
-    }
 }
 
 impl DeviceRuntime for FpgaDeviceRuntime {
@@ -869,78 +807,6 @@ impl DeviceRuntime for FpgaDeviceRuntime {
         }
 
         Ok(())
-    }
-
-    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
-        // Create a one-shot channel for the ELF load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<u32, String>>();
-
-        // Send the ELF load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadElf(path.to_path_buf(), result_tx))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(entry_point)) => Ok(entry_point),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for ELF load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during ELF load",
-                )))
-            }
-        }
-    }
-
-    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
-        // Create a one-shot channel for the load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
-
-        // Send the load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadProgram(
-                boot_pc,
-                data.to_vec(),
-                result_tx,
-            ))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for program load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during program load",
-                )))
-            }
-        }
     }
 }
 

@@ -33,12 +33,17 @@ fn test_panic_handler() {
 }
 
 #[test]
-fn test_atomic_operations() {
+fn test_atomic_simple() {
     let mut runtime = create_test_runtime();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_atomic_simple", LONG_TIMEOUT),
         Some(0x2a)
     );
+}
+
+#[test]
+fn test_atomic_operations() {
+    let mut runtime = create_test_runtime();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_atomic", LONG_TIMEOUT),
         Some(0x2a)

@@ -130,6 +130,16 @@ impl InteractiveSimulator {
         self.load_elf_internal(path, false)
     }
 
+    /// Reset simulator state with boot deferred.
+    ///
+    /// This initializes internal reset/controller state without issuing a boot
+    /// command, so external host-driven boot flows can start from a clean state.
+    pub fn reset(&mut self) -> Result<(), String> {
+        self.simulator
+            .reset(0, false)
+            .map_err(|e| format!("Reset failed: {}", e))
+    }
+
     /// Internal helper for loading an ELF file with optional boot
     fn load_elf_internal(&mut self, path: &Path, boot_cpu: bool) -> Result<u32, String> {
         // Load ELF into simulator memory using the helper function

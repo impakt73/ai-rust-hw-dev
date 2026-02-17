@@ -15,8 +15,7 @@ use crate::{
 };
 use cpu_sim::InteractiveSimulator;
 use host_bus_handler::{AccessSize, BusRequest, HandlerError};
-use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
-use std::path::Path;
+use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -24,15 +23,17 @@ use std::time::{Duration, Instant};
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+/// Timeout for simulator runtime initialization handshake.
+const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Timeout for reset command completion.
+const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
     /// Send a host-initiated bus request
     SendRequest(BusRequest),
-    /// Load an ELF file into the simulator, with a one-shot channel for the result
-    LoadElf(std::path::PathBuf, mpsc::Sender<Result<u32, String>>),
-    /// Load raw program bytes into the simulator's memory at a given address
-    LoadProgram(u32, Vec<u8>, mpsc::Sender<Result<(), String>>),
+    /// Perform a simulator-wide reset with boot deferred.
+    Reset(mpsc::Sender<Result<(), String>>),
     /// Shut down the background thread
     Shutdown,
 }
@@ -69,13 +70,25 @@ impl SimDeviceRuntime {
     pub(crate) fn new() -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let pending_host_request: Arc<Mutex<Option<PendingHostRequest>>> =
             Arc::new(Mutex::new(None));
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(command_rx, event_tx, pending_clone);
+            Self::run_loop(command_rx, event_tx, pending_clone, ready_tx);
         });
+
+        match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err("Timed out waiting for simulator runtime initialization".to_string());
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Simulator runtime initialization channel disconnected".to_string());
+            }
+        }
 
         Ok(SimDeviceRuntime {
             command_tx,
@@ -90,11 +103,13 @@ impl SimDeviceRuntime {
         command_rx: mpsc::Receiver<RuntimeCommand>,
         event_tx: mpsc::Sender<RuntimeEvent>,
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
+        ready_tx: mpsc::Sender<Result<(), String>>,
     ) {
         // Create the interactive simulator
         let mut simulator = match InteractiveSimulator::new() {
             Ok(sim) => sim,
             Err(e) => {
+                let _ = ready_tx.send(Err(format!("Failed to create simulator: {}", e)));
                 let _ = event_tx.send(RuntimeEvent::FatalError(format!(
                     "Failed to create simulator: {}",
                     e
@@ -102,6 +117,19 @@ impl SimDeviceRuntime {
                 return;
             }
         };
+        // Initialize simulator reset/controller state before serving runtime requests.
+        if let Err(e) = simulator.reset() {
+            let _ = ready_tx.send(Err(format!(
+                "Failed to initialize simulator reset state: {}",
+                e
+            )));
+            let _ = event_tx.send(RuntimeEvent::FatalError(format!(
+                "Failed to initialize simulator reset state: {}",
+                e
+            )));
+            return;
+        }
+        let _ = ready_tx.send(Ok(()));
 
         loop {
             // Check for commands from the main thread (non-blocking)
@@ -122,25 +150,12 @@ impl SimDeviceRuntime {
                         log::warn!("Host request rejected by simulator: {}", e);
                     }
                 }
-                Ok(RuntimeCommand::LoadElf(path, result_tx)) => {
-                    match simulator.load_elf_no_boot(&path) {
-                        Ok(entry_point) => {
-                            let _ = result_tx.send(Ok(entry_point));
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(Err(e));
-                        }
-                    }
-                }
-                Ok(RuntimeCommand::LoadProgram(boot_pc, data, result_tx)) => {
-                    match simulator.write_memory_region(boot_pc, &data) {
-                        Ok(()) => {
-                            let _ = result_tx.send(Ok(()));
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(Err(e));
-                        }
-                    }
+                Ok(RuntimeCommand::Reset(result_tx)) => {
+                    let _ = result_tx.send(
+                        simulator
+                            .reset()
+                            .map_err(|e| format!("Reset failed: {}", e)),
+                    );
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => break,
@@ -270,104 +285,61 @@ impl DeviceRuntime for SimDeviceRuntime {
             ));
         }
 
-        let reset_addr = sysctrl_reset_addr();
-        let reset_value = match kind {
-            ResetKind::Cpu => SYSCTRL_RESET_CPU,
-            ResetKind::System => SYSCTRL_RESET_SYSTEM,
-        };
-        let request = BusRequest::write(reset_addr, reset_value, AccessSize::Word);
-        self.send_host_request(request)?;
+        match kind {
+            ResetKind::Cpu => {
+                let reset_addr = sysctrl_reset_addr();
+                let request = BusRequest::write(reset_addr, SYSCTRL_RESET_CPU, AccessSize::Word);
+                self.send_host_request(request)?;
 
-        loop {
-            match self.poll()? {
-                Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
-                    return Ok(());
-                }
-                Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
-                    return Err(DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        format!(
-                            "Timed out writing reset value to RESET register at 0x{:08x}",
-                            reset_addr
-                        ),
-                    )));
-                }
-                Some(_) => {}
-                None => {
-                    thread::sleep(Duration::from_millis(1));
+                loop {
+                    match self.poll()? {
+                        Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
+                            return Ok(());
+                        }
+                        Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                            return Err(DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "Timed out writing CPU reset to RESET register at 0x{:08x}",
+                                    reset_addr
+                                ),
+                            )));
+                        }
+                        Some(_) => {}
+                        None => thread::sleep(Duration::from_millis(1)),
+                    }
                 }
             }
-        }
-    }
+            ResetKind::System => {
+                let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
+                self.command_tx
+                    .send(RuntimeCommand::Reset(result_tx))
+                    .map_err(|e| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            format!("Background thread disconnected: {}", e),
+                        ))
+                    })?;
 
-    fn load_elf(&mut self, path: &Path) -> Result<u32, DeviceError> {
-        // Create a one-shot channel for the ELF load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<u32, String>>();
-
-        // Send the ELF load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadElf(path.to_path_buf(), result_tx))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(entry_point)) => Ok(entry_point),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for ELF load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during ELF load",
-                )))
-            }
-        }
-    }
-
-    fn load_program(&mut self, boot_pc: u32, data: &[u8]) -> Result<(), DeviceError> {
-        // Create a one-shot channel for the load result
-        let (result_tx, result_rx) = mpsc::channel::<Result<(), String>>();
-
-        // Send the load command to the background thread
-        self.command_tx
-            .send(RuntimeCommand::LoadProgram(
-                boot_pc,
-                data.to_vec(),
-                result_tx,
-            ))
-            .map_err(|e| {
-                DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    format!("Background thread disconnected: {}", e),
-                ))
-            })?;
-
-        // Wait for the result on the dedicated channel (does not consume bus events)
-        match result_rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e,
-            ))),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(DeviceError::IoError(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Timed out waiting for program load to complete",
-            ))),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(DeviceError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "Background thread terminated during program load",
-                )))
+                match result_rx.recv_timeout(RESET_COMMAND_TIMEOUT) {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(e)) => Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        e,
+                    ))),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Timed out waiting for system reset",
+                        )))
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        Err(DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "Background thread terminated during system reset",
+                        )))
+                    }
+                }
             }
         }
     }
