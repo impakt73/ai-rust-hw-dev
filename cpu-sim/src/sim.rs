@@ -456,6 +456,13 @@ where
             return Ok(());
         }
 
+        self.boot(boot_pc)?;
+        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
+        Ok(())
+    }
+
+    /// Boot the CPU from S_BOOT by writing the system-controller BOOT register.
+    pub fn boot(&mut self, boot_pc: u32) -> Result<(), BootError> {
         // Step 1: Read STATUS register to confirm CPU is waiting to be booted
         let status_addr = riscv_shared::bus::sysctrl_status_addr();
         let status_request = BusRequest::read(status_addr, AccessSize::Word);
@@ -480,8 +487,6 @@ where
 
         // Wait for write acknowledgement - CPU boot process is now complete
         self.wait_for_bus_response("BOOT write")?;
-
-        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
     }
 
@@ -658,21 +663,18 @@ where
 
     /// Run the simulation for up to max_cycles
     ///
-    /// **Note:** This method performs a CPU reset internally before starting execution,
-    /// so callers do not need to call `reset()` before calling `run()`.
+    /// **Note:** This method does not reset or boot the CPU. Callers are responsible
+    /// for invoking `reset()`/`boot()` before calling `run()`.
     ///
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     ///
     /// # Arguments
-    /// * `boot_pc` - The program counter value to start execution from
+    /// * `boot_pc` - Unused legacy parameter kept for API compatibility
     /// * `max_cycles` - Maximum number of cycles to run
     ///
     /// # Errors
     /// Returns error if hung state is detected or other simulation errors occur
-    pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
-        self.reset(boot_pc, true)
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
+    pub fn run(&mut self, _boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;

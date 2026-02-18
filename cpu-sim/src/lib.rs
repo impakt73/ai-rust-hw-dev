@@ -268,6 +268,10 @@ where
         0, // verilator_optimization (default 0 for compatibility)
     )?;
 
+    // Reset first so setup callback can initialize memory/FIFO on a clean state
+    sim.reset(0, false)
+        .map_err(|e| format!("Reset failed: {}", e))?;
+
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback
     let entry_point = {
@@ -282,8 +286,11 @@ where
 
     log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
 
-    // Run simulation with entry point as boot PC
-    // Note: run() handles reset internally, so we don't call reset() here
+    // Boot CPU at entry point, then run simulation
+    sim.boot(entry_point)
+        .map_err(|e| format!("Boot failed: {}", e))?;
+
+    // Run simulation with entry point as legacy boot_pc argument
     let result = sim.run(entry_point, max_cycles)?;
 
     // Execute optional post-execution callback with read-only SimulatorView and result

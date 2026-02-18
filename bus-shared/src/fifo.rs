@@ -114,8 +114,27 @@ impl BusDevice for Fifo {
     }
 
     fn reset(&mut self, _ctx: &mut SystemContext) {
-        // FIFO queues are host-communication channels, not CPU-internal state.
-        // They are intentionally preserved across CPU resets so the host can
-        // pre-load RX data before the CPU begins execution.
+        self.tx.clear();
+        self.rx.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Memory;
+
+    #[test]
+    fn test_reset_clears_tx_and_rx_queues() {
+        let mut fifo = Fifo::new();
+        fifo.write_data(0x1111_1111);
+        fifo.rx.push_back(0x2222_2222);
+
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+        fifo.reset(&mut ctx);
+
+        assert!(fifo.tx.is_empty());
+        assert!(fifo.rx.is_empty());
     }
 }
