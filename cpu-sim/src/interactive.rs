@@ -142,6 +142,12 @@ impl InteractiveSimulator {
 
     /// Internal helper for loading an ELF file with optional boot
     fn load_elf_internal(&mut self, path: &Path, boot_cpu: bool) -> Result<u32, String> {
+        // Reset first so setup work (ELF load, optional FIFO preload by caller) happens
+        // on a clean post-reset state.
+        self.simulator
+            .reset()
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
         // Load ELF into simulator memory using the helper function
         let entry_point = {
             let mut view = SimulatorView::new(
@@ -158,10 +164,7 @@ impl InteractiveSimulator {
             entry_point
         );
 
-        // Reset the simulator, then optionally boot to the ELF entry point
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
+        // Optionally boot to the ELF entry point
         if boot_cpu {
             self.simulator
                 .boot(entry_point)

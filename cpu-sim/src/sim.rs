@@ -375,7 +375,7 @@ where
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
-    /// * `Err(BootError)` if a timeout occurs, or CPU state is unexpected
+    /// * `Err(BootError)` if a timeout occurs while waiting for reset completion
     pub fn reset(&mut self) -> Result<(), BootError> {
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
@@ -415,6 +415,7 @@ where
         self.bus.reset_all_devices();
 
         // Reset cumulative elapsed time
+        self.cycle_count = 0;
         self.total_elapsed_time_us = 0;
 
         // Reset the host bus handler
@@ -443,7 +444,21 @@ where
         Ok(())
     }
 
-    /// Boot the CPU from S_BOOT by writing the system-controller BOOT register.
+    /// Boot the CPU from the S_BOOT state by writing the system-controller BOOT register.
+    ///
+    /// This method assumes [`Self::reset`] has completed and the CPU is waiting for a
+    /// host boot command. It first reads the system-controller status register to verify
+    /// the CPU is still in boot-wait state, then writes `boot_pc` to the BOOT register.
+    ///
+    /// # Arguments
+    /// * `boot_pc` - Program counter value to boot from.
+    ///
+    /// # Returns
+    /// * `Ok(())` if boot sequence completes successfully.
+    ///
+    /// # Errors
+    /// * [`BootError::Timeout`] if a host-bus response times out.
+    /// * [`BootError::UnexpectedStatus`] if the CPU is not in the expected boot-wait state.
     pub fn boot(&mut self, boot_pc: u32) -> Result<(), BootError> {
         // Step 1: Read STATUS register to confirm CPU is waiting to be booted
         let status_addr = riscv_shared::bus::sysctrl_status_addr();
@@ -651,7 +666,8 @@ where
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     ///
     /// # Arguments
-    /// * `boot_pc` - Unused legacy parameter kept for API compatibility
+    /// * `boot_pc` - Legacy parameter retained for API compatibility with older callers.
+    ///   This argument is ignored by `run` and has no effect on simulation behavior.
     /// * `max_cycles` - Maximum number of cycles to run
     ///
     /// # Errors
