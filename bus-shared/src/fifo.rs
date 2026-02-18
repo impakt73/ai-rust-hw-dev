@@ -6,6 +6,13 @@ use std::collections::VecDeque;
 /// capacity to warn about potential hardware mismatches
 const TX_FIFO_CAPACITY: usize = 1024;
 
+/// Callback type for FIFO data-received events.
+///
+/// Called in `clock_cycle` when the TX queue (CPU → Host) contains data.
+/// Receives mutable access to both the TX queue (drain it) and the RX queue
+/// (optionally inject reply data for Host → CPU communication).
+type FifoDataReceivedCallback = Box<dyn FnMut(&mut VecDeque<u32>, &mut VecDeque<u32>) + Send>;
+
 /// FIFO peripheral for UART-style communication
 /// Provides buffered I/O between the simulated CPU and host
 pub struct Fifo {
@@ -13,14 +20,33 @@ pub struct Fifo {
     pub tx: VecDeque<u32>,
     /// Data sent FROM Host -> CPU (as u32 words)
     pub rx: VecDeque<u32>,
+    /// Optional callback invoked in `clock_cycle` when TX data is available.
+    /// Receives mutable references to both TX (CPU→Host) and RX (Host→CPU) queues,
+    /// allowing the host to drain TX data and optionally inject RX data.
+    data_received_callback: Option<FifoDataReceivedCallback>,
 }
 
 impl Fifo {
-    /// Create a new FIFO with empty TX and RX queues
+    /// Create a new FIFO with empty TX and RX queues and no callback
     pub fn new() -> Self {
         Fifo {
             tx: VecDeque::new(),
             rx: VecDeque::new(),
+            data_received_callback: None,
+        }
+    }
+
+    /// Create a new FIFO with an optional data-received callback.
+    ///
+    /// The callback is invoked in `clock_cycle` whenever the TX queue (CPU → Host)
+    /// contains data available for consumption. It receives mutable references to
+    /// both the TX and RX queues so the host can drain received data and optionally
+    /// inject reply data into the RX queue.
+    pub fn new_with_callback(callback: FifoDataReceivedCallback) -> Self {
+        Fifo {
+            tx: VecDeque::new(),
+            rx: VecDeque::new(),
+            data_received_callback: Some(callback),
         }
     }
 
@@ -116,6 +142,14 @@ impl BusDevice for Fifo {
     fn reset(&mut self, _ctx: &mut SystemContext) {
         self.tx.clear();
         self.rx.clear();
+    }
+
+    fn clock_cycle(&mut self, _ctx: &mut SystemContext) {
+        if !self.tx.is_empty() {
+            if let Some(callback) = &mut self.data_received_callback {
+                callback(&mut self.tx, &mut self.rx);
+            }
+        }
     }
 }
 

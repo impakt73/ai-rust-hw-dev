@@ -126,10 +126,11 @@ fn test_packet_protocol_end_to_end() {
     let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
     let packets_sent_clone = packets_sent.clone();
 
-    // Callback that handles bidirectional packet communication
-    let inst_complete_callback = move |view: &mut SimulatorView| {
+    // Build a FIFO with a callback that handles bidirectional packet communication
+    let fifo_callback = move |tx: &mut std::collections::VecDeque<u32>,
+                              rx: &mut std::collections::VecDeque<u32>| {
         // Collect all TX data
-        while let Some(word) = view.fifo_read_tx() {
+        while let Some(word) = tx.pop_front() {
             fifo_tx_data_clone.lock().unwrap().push(word);
         }
 
@@ -145,7 +146,7 @@ fn test_packet_protocol_end_to_end() {
                 sequence: 100,
                 timestamp: 12345,
             };
-            view.send_packet_to_rx(&echo_request)
+            cpu_sim::packet_transport::send_echo_packet(&echo_request, rx)
                 .expect("Failed to send Echo packet to CPU");
             println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
 
@@ -155,7 +156,7 @@ fn test_packet_protocol_end_to_end() {
                 value: 1000,
                 tag: 55,
             };
-            view.send_packet_to_rx(&data_request)
+            cpu_sim::packet_transport::send_data_u32_packet(&data_request, rx)
                 .expect("Failed to send DataU32 packet to CPU");
             println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
 
@@ -163,17 +164,22 @@ fn test_packet_protocol_end_to_end() {
         }
     };
 
+    let fifo = Fifo::new_with_callback(Box::new(fifo_callback));
+
     // Run the simulation
     let result = run_elf(
         &elf_path,
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        Some(|sim: &mut SimulatorView| {
+            sim.replace_device(FIFO_BASE, Box::new(fifo))
+                .expect("Failed to replace FIFO device");
+        }),
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
@@ -315,27 +321,32 @@ fn test_println_macro() {
     let elf_path =
         sim_tests::test_program_path("println_test").expect("Failed to find println_test");
 
-    // Create a callback to collect FIFO data from CPU
-    let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    // Create a FIFO with callback to collect TX words
+    let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u32>::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |view: &mut SimulatorView| {
-        // Drain all words from TX FIFO and collect them
-        while let Some(word) = view.fifo_read_tx() {
-            fifo_data_clone.lock().unwrap().push(word);
-        }
-    };
+    let fifo = Fifo::new_with_callback(Box::new(
+        move |tx: &mut std::collections::VecDeque<u32>,
+              _rx: &mut std::collections::VecDeque<u32>| {
+            while let Some(word) = tx.pop_front() {
+                fifo_data_clone.lock().unwrap().push(word);
+            }
+        },
+    ));
 
-    // Run the simulation with inst_complete callback
+    // Run the simulation with a setup callback to register our FIFO
     let result = run_elf(
         &elf_path,
         GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        Some(|sim: &mut SimulatorView| {
+            sim.replace_device(FIFO_BASE, Box::new(fifo))
+                .expect("Failed to replace FIFO device");
+        }),
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");

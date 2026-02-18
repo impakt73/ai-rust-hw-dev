@@ -11,21 +11,24 @@ fn test_fifo_hello_world() {
     init_test_logger();
 
     let program = create_fifo_echo_program();
-    let (fifo_data, callback) = create_fifo_collector();
+    let (fifo_data, mut fifo) = create_fifo_collector();
 
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
+    // Pre-populate the FIFO RX queue before the simulation starts
+    push_string_to_fifo_rx(&mut fifo.rx, test_string);
+
     let result = run_program(
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
-        Some(callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program);
-            // Write test string to FIFO RX before booting
-            sim.fifo_write_rx_string(test_string);
+            // Replace the default FIFO with our callback-enabled one
+            sim.replace_device(FIFO_BASE, Box::new(fifo))?;
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

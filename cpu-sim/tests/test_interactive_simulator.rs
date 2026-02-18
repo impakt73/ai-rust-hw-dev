@@ -408,7 +408,7 @@ fn test_interactive_simulator_register_device_address_conflict() {
 
     assert!(
         register_result.is_err(),
-        "Should not be able to register device at FIFO_BASE (conflicts with internal FIFO)"
+        "Should not be able to register device at FIFO_BASE (conflicts with FIFO device)"
     );
 
     // Verify error message mentions the conflict

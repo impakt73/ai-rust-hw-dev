@@ -9,7 +9,7 @@ mod simulator_view;
 // Public API exports - only what's needed for external use
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
-    BusDeviceError, Dma, RegistrationError, SystemBus, SystemContext, Video, VideoConfig,
+    BusDeviceError, Dma, Fifo, RegistrationError, SystemBus, SystemContext, Video, VideoConfig,
     VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
     VIDEO_BASE,
 };
@@ -24,6 +24,35 @@ pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
 use std::path::Path;
+
+/// Push a string to a FIFO RX queue (for sending data to the CPU).
+///
+/// Packs the string bytes into u32 words (little-endian) and appends them to
+/// the provided queue. A null-terminator word is added when the string length
+/// falls on a 4-byte boundary so the CPU can detect the end of the string.
+///
+/// # Arguments
+/// * `rx` - The FIFO RX queue to push data into (Host → CPU direction)
+/// * `s` - The string to send
+pub fn push_string_to_fifo_rx(rx: &mut std::collections::VecDeque<u32>, s: &str) {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut word: u32 = 0;
+        for j in 0..4 {
+            if i + j < bytes.len() {
+                word |= (bytes[i + j] as u32) << (j * 8);
+            }
+        }
+        rx.push_back(word);
+        i += 4;
+    }
+    // Null-terminator word when string ends on a word boundary
+    if bytes.len().is_multiple_of(4) {
+        rx.push_back(0);
+    }
+}
+
 /// Load an ELF file into a simulator's memory
 ///
 /// This is a private helper function used by run_elf to load ELF files.
@@ -127,7 +156,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With setup callback to write to FIFO after ELF is loaded
+/// // With setup callback for additional configuration after ELF loading
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
@@ -139,7 +168,11 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///     0,
 ///     Some(|sim: &mut cpu_sim::SimulatorView| {
 ///         // Additional setup after ELF is loaded
-///         sim.fifo_write_rx_string("test data");
+///         let fifo = cpu_sim::Fifo::new_with_callback(Box::new(|tx, _rx| {
+///             while let Some(_word) = tx.pop_front() {}
+///         }));
+///         sim.replace_device(cpu_sim::FIFO_BASE, Box::new(fifo))
+///             .expect("Failed to replace FIFO device");
 ///     }),
 ///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;

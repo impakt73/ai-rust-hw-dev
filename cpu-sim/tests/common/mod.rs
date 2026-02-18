@@ -2,11 +2,13 @@
 
 #![allow(dead_code)]
 
-use cpu_sim::{SimulationResult, SimulatorView};
+use bus_shared::Fifo;
+use cpu_sim::SimulationResult;
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
 use riscv_shared::FIFO_DATA;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 /// Initialize the test logger (idempotent – safe to call from multiple tests).
@@ -26,22 +28,20 @@ pub fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) 
     );
 }
 
-/// Create a FIFO data collector callback and the shared buffer it writes into.
+/// Create a FIFO data collector and the shared buffer it writes into.
 ///
-/// The callback drains the simulator's TX FIFO on each call and appends the
-/// bytes (little-endian) to the returned `Arc<Mutex<Vec<u8>>>`.
-pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut SimulatorView)) {
+/// Returns a `Fifo` whose internal callback drains TX words on each `clock_cycle`
+/// call and appends the raw bytes (little-endian) to the returned
+/// `Arc<Mutex<Vec<u8>>>`. Register the returned `Fifo` as an external device at
+/// `FIFO_BASE` via `sim.replace_device(FIFO_BASE, Box::new(fifo))` in the setup
+/// callback.
+pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, Fifo) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback = move |view: &mut SimulatorView| {
-        while let Some(word) = view.fifo_read_tx() {
-            let bytes = [
-                (word & 0xFF) as u8,
-                ((word >> 8) & 0xFF) as u8,
-                ((word >> 16) & 0xFF) as u8,
-                ((word >> 24) & 0xFF) as u8,
-            ];
+    let callback = move |tx: &mut VecDeque<u32>, _rx: &mut VecDeque<u32>| {
+        while let Some(word) = tx.pop_front() {
+            let bytes = word.to_le_bytes();
             fifo_data_clone
                 .lock()
                 .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
@@ -49,7 +49,7 @@ pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut Simulato
         }
     };
 
-    (fifo_data, callback)
+    (fifo_data, Fifo::new_with_callback(Box::new(callback)))
 }
 
 /// Convert raw FIFO bytes to a UTF-8 string, stripping trailing null bytes.
