@@ -269,8 +269,7 @@ where
     )?;
 
     // Reset first so setup callback can initialize memory/FIFO on a clean state
-    sim.reset(0, false)
-        .map_err(|e| format!("Reset failed: {}", e))?;
+    sim.reset().map_err(|e| format!("Reset failed: {}", e))?;
 
     // Execute pre-execution callback to load program and get entry point
     // Create a SimulatorView for the setup callback

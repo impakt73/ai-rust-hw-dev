@@ -371,22 +371,12 @@ where
         }
     }
 
-    /// Reset the CPU
-    /// The boot address is set to the boot_pc while reset is asserted so that
-    /// the PC samples this value through the asynchronous reset and then holds it
-    /// when reset is released.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - The program counter value to start execution from
-    /// * `boot_cpu` - Whether to perform the CPU boot sequence (STATUS read + BOOT write).
-    ///   When false, only the hardware reset is performed and the CPU is left in the boot
-    ///   state (S_BOOT), allowing the calling code to handle the boot sequence externally
-    ///   via bus requests.
+    /// Reset the CPU hardware and leave it in boot state (S_BOOT).
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
     /// * `Err(BootError)` if a timeout occurs, or CPU state is unexpected
-    pub fn reset(&mut self, boot_pc: u32, boot_cpu: bool) -> Result<(), BootError> {
+    pub fn reset(&mut self) -> Result<(), BootError> {
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
         // and the FPGA side never sends more than one request at a time
@@ -449,15 +439,7 @@ where
             }
         }
 
-        // If boot_cpu is false, skip the boot sequence and leave the CPU in boot state
-        // so the calling code can handle it externally via bus requests
-        if !boot_cpu {
-            log::info!("CPU hardware reset complete (boot deferred)");
-            return Ok(());
-        }
-
-        self.boot(boot_pc)?;
-        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
+        log::info!("CPU hardware reset complete (boot deferred)");
         Ok(())
     }
 

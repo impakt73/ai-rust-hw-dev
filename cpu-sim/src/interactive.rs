@@ -136,7 +136,7 @@ impl InteractiveSimulator {
     /// command, so external host-driven boot flows can start from a clean state.
     pub fn reset(&mut self) -> Result<(), String> {
         self.simulator
-            .reset(0, false)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))
     }
 
@@ -158,10 +158,15 @@ impl InteractiveSimulator {
             entry_point
         );
 
-        // Reset the simulator to the entry point
+        // Reset the simulator, then optionally boot to the ELF entry point
         self.simulator
-            .reset(entry_point, boot_cpu)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))?;
+        if boot_cpu {
+            self.simulator
+                .boot(entry_point)
+                .map_err(|e| format!("Boot failed: {}", e))?;
+        }
 
         Ok(entry_point)
     }
@@ -371,8 +376,11 @@ impl InteractiveSimulator {
         }
 
         self.simulator
-            .reset(start_addr, true)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))?;
+        self.simulator
+            .boot(start_addr)
+            .map_err(|e| format!("Boot failed: {}", e))?;
 
         Ok(())
     }
@@ -404,7 +412,7 @@ impl InteractiveSimulator {
 
         // Reset with boot deferred so boot_cpu can be called externally
         self.simulator
-            .reset(start_addr, false)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))?;
 
         Ok(())
