@@ -241,6 +241,22 @@ fn test_device_registration_adjacent_devices_ok() {
 }
 
 #[test]
+fn test_replace_device_updates_existing_external_device() {
+    let mut bus = SystemBus::new();
+
+    let dev1 = Box::new(MockDevice::new(8, "Device1"));
+    bus.register_device(0x6000_0000, dev1).unwrap();
+    bus.write_word(0x6000_0000, 0x1111_1111);
+    assert_eq!(bus.read_word(0x6000_0000), 0x1111_1111);
+
+    let dev2 = Box::new(MockDevice::new(8, "Device2"));
+    bus.replace_device(0x6000_0000, dev2).unwrap();
+
+    // Replaced device starts with empty state
+    assert_eq!(bus.read_word(0x6000_0000), 0);
+}
+
+#[test]
 fn test_device_registration_invalid_alignment() {
     let mut bus = SystemBus::new();
 

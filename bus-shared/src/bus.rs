@@ -1,6 +1,6 @@
 use crate::bus_device::{ranges_overlap, BusDevice, RegistrationError, SystemContext};
 use crate::dram::Dram;
-use crate::fifo::Fifo;
+use crate::fifo::{Fifo, FifoReceiveCallback};
 use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
@@ -15,8 +15,6 @@ pub use riscv_shared::bus::{
 enum DeviceId {
     /// Internal DRAM device (SystemBus.dram field)
     Dram,
-    /// Internal FIFO device (SystemBus.fifo field)
-    Fifo,
     /// Internal SimControl device (SystemBus.sim_control field)
     SimControl,
     /// External device (index into SystemBus.external_devices Vec)
@@ -38,7 +36,6 @@ pub struct SystemBus {
 
     // Internal devices as concrete public fields (for SimulatorView access)
     pub dram: Dram,
-    pub fifo: Fifo,
     pub sim_control: SimControl,
 
     // External devices (owned by the bus)
@@ -53,16 +50,20 @@ pub struct SystemBus {
 
 impl SystemBus {
     /// Create a new system bus with internal devices initialized
-    ///
-    /// The bus owns DRAM, FIFO, and SimControl as concrete fields,
-    /// pre-registered in the memory map. External devices can be added later.
     pub fn new() -> Self {
+        Self::with_fifo_callback(None)
+    }
+
+    /// Create a new system bus with a FIFO device callback
+    pub fn with_fifo_callback(fifo_receive_callback: Option<FifoReceiveCallback>) -> Self {
         let memory = Memory::new();
         let dram = Dram::new();
-        let fifo = Fifo::new();
         let sim_control = SimControl::new();
+        let fifo = Box::new(Fifo::with_receive_callback(fifo_receive_callback));
+        let fifo_size = fifo.size();
+        let external_devices: Vec<Box<dyn BusDevice>> = vec![fifo];
 
-        // Pre-populate memory map with internal devices
+        // Pre-populate memory map with internal devices and FIFO external device
         let memory_map = vec![
             MemoryMapEntry {
                 base: SIM_CONTROL_BASE,
@@ -71,8 +72,8 @@ impl SystemBus {
             },
             MemoryMapEntry {
                 base: FIFO_BASE,
-                end: FIFO_BASE.saturating_add(fifo.size()),
-                id: DeviceId::Fifo,
+                end: FIFO_BASE.saturating_add(fifo_size),
+                id: DeviceId::External(0),
             },
             MemoryMapEntry {
                 base: DRAM_BASE,
@@ -84,9 +85,8 @@ impl SystemBus {
         SystemBus {
             memory,
             dram,
-            fifo,
             sim_control,
-            external_devices: Vec::new(),
+            external_devices,
             memory_map,
             elapsed_time_us: 0,
         }
@@ -141,7 +141,6 @@ impl SystemBus {
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
                     DeviceId::Dram => self.dram.name(),
-                    DeviceId::Fifo => self.fifo.name(),
                     DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
@@ -177,6 +176,61 @@ impl SystemBus {
         Ok(())
     }
 
+    /// Replace an external device at an existing base address.
+    ///
+    /// If no device exists at `base_addr`, this behaves like `register_device`.
+    pub fn replace_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), RegistrationError> {
+        let size = device.size();
+        if size == 0 {
+            return Err(RegistrationError::ZeroSize);
+        }
+        if !size.is_multiple_of(4) {
+            return Err(RegistrationError::InvalidAlignment { size });
+        }
+        if !base_addr.is_multiple_of(4) {
+            return Err(RegistrationError::InvalidBaseAlignment { base_addr });
+        }
+
+        if let Some((entry_idx, entry)) = self
+            .memory_map
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.base == base_addr)
+        {
+            if let DeviceId::External(device_idx) = entry.id {
+                let end = base_addr.saturating_add(size);
+                for (idx, other) in self.memory_map.iter().enumerate() {
+                    if idx != entry_idx && ranges_overlap(base_addr, end, other.base, other.end) {
+                        let existing_name = match other.id {
+                            DeviceId::Dram => self.dram.name(),
+                            DeviceId::SimControl => self.sim_control.name(),
+                            DeviceId::External(existing_idx) => {
+                                self.external_devices[existing_idx].name()
+                            }
+                        };
+                        return Err(RegistrationError::AddressOverlap {
+                            new_base: base_addr,
+                            new_end: end,
+                            existing_base: other.base,
+                            existing_end: other.end,
+                            existing_name: existing_name.to_string(),
+                        });
+                    }
+                }
+
+                self.external_devices[device_idx] = device;
+                self.memory_map[entry_idx].end = end;
+                return Ok(());
+            }
+        }
+
+        self.register_device(base_addr, device)
+    }
+
     /// Get immutable access to registered devices (for introspection/debugging)
     ///
     /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
@@ -186,7 +240,6 @@ impl SystemBus {
             let size = entry.end.wrapping_sub(entry.base);
             let name = match entry.id {
                 DeviceId::Dram => self.dram.name(),
-                DeviceId::Fifo => self.fifo.name(),
                 DeviceId::SimControl => self.sim_control.name(),
                 DeviceId::External(idx) => self.external_devices[idx].name(),
             };
@@ -226,7 +279,6 @@ impl SystemBus {
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_word(&mut self.dram, &mut ctx, offset),
-                DeviceId::Fifo => BusDevice::read_word(&mut self.fifo, &mut ctx, offset),
                 DeviceId::SimControl => {
                     BusDevice::read_word(&mut self.sim_control, &mut ctx, offset)
                 }
@@ -268,7 +320,6 @@ impl SystemBus {
 
             let result = match id {
                 DeviceId::Dram => BusDevice::write_word(&mut self.dram, &mut ctx, offset, value),
-                DeviceId::Fifo => BusDevice::write_word(&mut self.fifo, &mut ctx, offset, value),
                 DeviceId::SimControl => {
                     BusDevice::write_word(&mut self.sim_control, &mut ctx, offset, value)
                 }
@@ -309,7 +360,6 @@ impl SystemBus {
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_halfword(&mut self.dram, &mut ctx, offset),
-                DeviceId::Fifo => BusDevice::read_halfword(&mut self.fifo, &mut ctx, offset),
                 DeviceId::SimControl => {
                     BusDevice::read_halfword(&mut self.sim_control, &mut ctx, offset)
                 }
@@ -356,9 +406,6 @@ impl SystemBus {
                 DeviceId::Dram => {
                     BusDevice::write_halfword(&mut self.dram, &mut ctx, offset, value)
                 }
-                DeviceId::Fifo => {
-                    BusDevice::write_halfword(&mut self.fifo, &mut ctx, offset, value)
-                }
                 DeviceId::SimControl => {
                     BusDevice::write_halfword(&mut self.sim_control, &mut ctx, offset, value)
                 }
@@ -399,7 +446,6 @@ impl SystemBus {
 
             let result = match id {
                 DeviceId::Dram => BusDevice::read_byte(&mut self.dram, &mut ctx, offset),
-                DeviceId::Fifo => BusDevice::read_byte(&mut self.fifo, &mut ctx, offset),
                 DeviceId::SimControl => {
                     BusDevice::read_byte(&mut self.sim_control, &mut ctx, offset)
                 }
@@ -442,7 +488,6 @@ impl SystemBus {
 
             let result = match id {
                 DeviceId::Dram => BusDevice::write_byte(&mut self.dram, &mut ctx, offset, value),
-                DeviceId::Fifo => BusDevice::write_byte(&mut self.fifo, &mut ctx, offset, value),
                 DeviceId::SimControl => {
                     BusDevice::write_byte(&mut self.sim_control, &mut ctx, offset, value)
                 }
@@ -474,7 +519,6 @@ impl SystemBus {
 
             // Reset internal devices
             self.dram.reset(&mut ctx);
-            self.fifo.reset(&mut ctx);
             self.sim_control.reset(&mut ctx);
 
             // Reset external devices
@@ -496,7 +540,6 @@ impl SystemBus {
 
         // Tick internal devices
         self.dram.clock_cycle(&mut ctx);
-        self.fifo.clock_cycle(&mut ctx);
         self.sim_control.clock_cycle(&mut ctx);
 
         // Tick external devices

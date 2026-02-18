@@ -2,7 +2,8 @@
 
 #![allow(dead_code)]
 
-use cpu_sim::{SimulationResult, SimulatorView};
+use bus_shared::Fifo;
+use cpu_sim::{FifoReceiveCallback, SimulationResult};
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
@@ -27,29 +28,24 @@ pub fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) 
 }
 
 /// Create a FIFO data collector callback and the shared buffer it writes into.
-///
-/// The callback drains the simulator's TX FIFO on each call and appends the
-/// bytes (little-endian) to the returned `Arc<Mutex<Vec<u8>>>`.
-pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut SimulatorView)) {
+pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, FifoReceiveCallback) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback = move |view: &mut SimulatorView| {
-        while let Some(word) = view.fifo_read_tx() {
-            let bytes = [
-                (word & 0xFF) as u8,
-                ((word >> 8) & 0xFF) as u8,
-                ((word >> 16) & 0xFF) as u8,
-                ((word >> 24) & 0xFF) as u8,
-            ];
-            fifo_data_clone
-                .lock()
-                .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
-                .extend_from_slice(&bytes);
-        }
+    let callback = move |word: u32| {
+        let bytes = [
+            (word & 0xFF) as u8,
+            ((word >> 8) & 0xFF) as u8,
+            ((word >> 16) & 0xFF) as u8,
+            ((word >> 24) & 0xFF) as u8,
+        ];
+        fifo_data_clone
+            .lock()
+            .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
+            .extend_from_slice(&bytes);
     };
 
-    (fifo_data, callback)
+    (fifo_data, Box::new(callback))
 }
 
 /// Convert raw FIFO bytes to a UTF-8 string, stripping trailing null bytes.
@@ -59,6 +55,44 @@ pub fn fifo_data_to_string(data: &[u8]) -> String {
         None => &[],
     };
     String::from_utf8(trimmed.to_vec()).expect("FIFO data should be valid UTF-8")
+}
+
+/// Push a word into a FIFO device's RX queue.
+pub fn preload_fifo_rx_word(fifo: &mut Fifo, word: u32) {
+    fifo.rx.push_back(word);
+}
+
+/// Write a string to a FIFO RX queue with word packing and optional null terminator.
+pub fn preload_fifo_rx_string(fifo: &mut Fifo, s: &str) {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let mut word: u32 = 0;
+        for j in 0..4 {
+            if i + j < bytes.len() {
+                word |= (bytes[i + j] as u32) << (j * 8);
+            }
+        }
+        preload_fifo_rx_word(fifo, word);
+        i += 4;
+    }
+
+    if bytes.len().is_multiple_of(4) {
+        preload_fifo_rx_word(fifo, 0);
+    }
+}
+
+/// Serialize a packet and preload it into a FIFO RX queue.
+pub fn preload_packet_to_fifo_rx<T: serde::Serialize>(fifo: &mut Fifo, packet: &T) {
+    let bytes = postcard::to_allocvec(packet).expect("Packet serialization should succeed");
+    for chunk in bytes.chunks(4) {
+        let mut word: u32 = 0;
+        for (idx, byte) in chunk.iter().enumerate() {
+            word |= (*byte as u32) << (idx * 8);
+        }
+        preload_fifo_rx_word(fifo, word);
+    }
 }
 
 /// Helper to convert instructions to bytes

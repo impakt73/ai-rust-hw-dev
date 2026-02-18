@@ -1,8 +1,9 @@
 mod common;
 
+use bus_shared::Fifo;
 use common::{
     assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
-    init_test_logger,
+    init_test_logger, preload_fifo_rx_string,
 };
 use cpu_sim::*;
 
@@ -18,14 +19,16 @@ fn test_fifo_hello_world() {
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
-        Some(callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
             sim.write_memory_region(0x8000_0000, &program);
-            // Write test string to FIFO RX before booting
-            sim.fifo_write_rx_string(test_string);
+            let mut fifo = Fifo::with_receive_callback(Some(callback));
+            preload_fifo_rx_string(&mut fifo, test_string);
+            sim.replace_device(FIFO_BASE, Box::new(fifo))
+                .expect("Failed to replace FIFO device");
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

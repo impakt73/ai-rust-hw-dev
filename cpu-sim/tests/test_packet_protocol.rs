@@ -1,6 +1,7 @@
 mod common;
 
-use common::init_test_logger;
+use bus_shared::Fifo;
+use common::{init_test_logger, preload_packet_to_fifo_rx};
 use cpu_sim::*;
 
 #[test]
@@ -121,47 +122,7 @@ fn test_packet_protocol_end_to_end() {
     // Shared state for collecting FIFO TX data
     let fifo_tx_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_tx_data_clone = fifo_tx_data.clone();
-
-    // Track whether we've sent the test packets yet
-    let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
-    let packets_sent_clone = packets_sent.clone();
-
-    // Callback that handles bidirectional packet communication
-    let inst_complete_callback = move |view: &mut SimulatorView| {
-        // Collect all TX data
-        while let Some(word) = view.fifo_read_tx() {
-            fifo_tx_data_clone.lock().unwrap().push(word);
-        }
-
-        // After collecting some data, send test packets once
-        let tx_word_count = fifo_tx_data_clone.lock().unwrap().len();
-        let mut sent = packets_sent_clone.lock().unwrap();
-        if !*sent && tx_word_count > 0 {
-            // Initial Debug packet received, now send Echo and DataU32 packets
-
-            // Send Echo packet (seq=100)
-            let echo_request = EchoPacket {
-                header: PacketHeader::new(PacketType::Echo, 0),
-                sequence: 100,
-                timestamp: 12345,
-            };
-            view.send_packet_to_rx(&echo_request)
-                .expect("Failed to send Echo packet to CPU");
-            println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
-
-            // Send DataU32 packet (value=1000)
-            let data_request = DataU32Packet {
-                header: PacketHeader::new(PacketType::DataU32, 0),
-                value: 1000,
-                tag: 55,
-            };
-            view.send_packet_to_rx(&data_request)
-                .expect("Failed to send DataU32 packet to CPU");
-            println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
-
-            *sent = true;
-        }
-    };
+    let fifo_callback = move |word: u32| fifo_tx_data_clone.lock().unwrap().push(word);
 
     // Run the simulation
     let result = run_elf(
@@ -169,11 +130,32 @@ fn test_packet_protocol_end_to_end() {
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        Some(|sim: &mut SimulatorView| {
+            let mut fifo = Fifo::with_receive_callback(Some(Box::new(fifo_callback)));
+
+            let echo_request = EchoPacket {
+                header: PacketHeader::new(PacketType::Echo, 0),
+                sequence: 100,
+                timestamp: 12345,
+            };
+            preload_packet_to_fifo_rx(&mut fifo, &echo_request);
+            println!("\nStep 2: Preloaded Echo packet (seq=100) to CPU");
+
+            let data_request = DataU32Packet {
+                header: PacketHeader::new(PacketType::DataU32, 0),
+                value: 1000,
+                tag: 55,
+            };
+            preload_packet_to_fifo_rx(&mut fifo, &data_request);
+            println!("Step 3: Preloaded DataU32 packet (value=1000) to CPU");
+
+            sim.replace_device(FIFO_BASE, Box::new(fifo))
+                .expect("Failed to replace FIFO device");
+        }),
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
@@ -318,23 +300,21 @@ fn test_println_macro() {
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |view: &mut SimulatorView| {
-        // Drain all words from TX FIFO and collect them
-        while let Some(word) = view.fifo_read_tx() {
-            fifo_data_clone.lock().unwrap().push(word);
-        }
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
     };
 
-    // Run the simulation with inst_complete callback
-    let result = run_elf(
+    // Run the simulation with FIFO callback
+    let result = run_elf_with_fifo_callback(
         &elf_path,
         GLOBAL_MAX_CYCLES,
         true,  // print_inst_trace
         false, // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                           // vcd_path
-        0,                              // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        Some(Box::new(fifo_callback)),
         None::<fn(&mut SimulatorView)>, // setup_callback
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )

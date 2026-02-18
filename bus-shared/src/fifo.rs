@@ -8,19 +8,34 @@ const TX_FIFO_CAPACITY: usize = 1024;
 
 /// FIFO peripheral for UART-style communication
 /// Provides buffered I/O between the simulated CPU and host
+pub type FifoReceiveCallback = Box<dyn FnMut(u32) + Send>;
+
+/// FIFO peripheral for UART-style communication
+/// Provides buffered I/O between the simulated CPU and host
 pub struct Fifo {
     /// Data sent FROM CPU -> Host (as u32 words)
     pub tx: VecDeque<u32>,
     /// Data sent FROM Host -> CPU (as u32 words)
     pub rx: VecDeque<u32>,
+    /// Optional callback invoked from clock_cycle when new TX data is available
+    receive_callback: Option<FifoReceiveCallback>,
+    /// Queue of TX words that have not yet been delivered to the callback
+    pending_callback_words: VecDeque<u32>,
 }
 
 impl Fifo {
     /// Create a new FIFO with empty TX and RX queues
     pub fn new() -> Self {
+        Self::with_receive_callback(None)
+    }
+
+    /// Create a new FIFO with an optional receive callback
+    pub fn with_receive_callback(receive_callback: Option<FifoReceiveCallback>) -> Self {
         Fifo {
             tx: VecDeque::new(),
             rx: VecDeque::new(),
+            receive_callback,
+            pending_callback_words: VecDeque::new(),
         }
     }
 
@@ -60,6 +75,7 @@ impl Fifo {
             );
         }
         self.tx.push_back(val);
+        self.pending_callback_words.push_back(val);
     }
 }
 
@@ -116,6 +132,15 @@ impl BusDevice for Fifo {
     fn reset(&mut self, _ctx: &mut SystemContext) {
         self.tx.clear();
         self.rx.clear();
+        self.pending_callback_words.clear();
+    }
+
+    fn clock_cycle(&mut self, _ctx: &mut SystemContext) {
+        if let Some(ref mut callback) = self.receive_callback {
+            while let Some(word) = self.pending_callback_words.pop_front() {
+                callback(word);
+            }
+        }
     }
 }
 
@@ -123,6 +148,7 @@ impl BusDevice for Fifo {
 mod tests {
     use super::*;
     use crate::Memory;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_reset_clears_tx_and_rx_queues() {
@@ -136,5 +162,26 @@ mod tests {
 
         assert!(fifo.tx.is_empty());
         assert!(fifo.rx.is_empty());
+    }
+
+    #[test]
+    fn test_clock_cycle_invokes_receive_callback_for_new_tx_data() {
+        let received_words = Arc::new(Mutex::new(Vec::new()));
+        let received_words_clone = Arc::clone(&received_words);
+        let mut fifo = Fifo::with_receive_callback(Some(Box::new(move |word| {
+            received_words_clone.lock().unwrap().push(word);
+        })));
+
+        fifo.write_data(0x1122_3344);
+        fifo.write_data(0x5566_7788);
+
+        let mut memory = Memory::new();
+        let mut ctx = SystemContext::new(&mut memory);
+        fifo.clock_cycle(&mut ctx);
+
+        assert_eq!(
+            *received_words.lock().unwrap(),
+            vec![0x1122_3344, 0x5566_7788]
+        );
     }
 }

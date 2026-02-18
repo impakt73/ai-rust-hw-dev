@@ -9,9 +9,9 @@ mod simulator_view;
 // Public API exports - only what's needed for external use
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
-    BusDeviceError, Dma, RegistrationError, SystemBus, SystemContext, Video, VideoConfig,
-    VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
-    VIDEO_BASE,
+    BusDeviceError, Dma, FifoReceiveCallback, RegistrationError, SystemBus, SystemContext, Video,
+    VideoConfig, VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE,
+    SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
@@ -127,7 +127,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With setup callback to write to FIFO after ELF is loaded
+/// // With setup callback for additional initialization after ELF is loaded
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
@@ -139,7 +139,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///     0,
 ///     Some(|sim: &mut cpu_sim::SimulatorView| {
 ///         // Additional setup after ELF is loaded
-///         sim.fifo_write_rx_string("test data");
+///         let _ = sim;
 ///     }),
 ///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;
@@ -164,7 +164,8 @@ where
     P: FnOnce(&mut SimulatorView),
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
-    run_program(
+    run_elf_with_fifo_callback(
+        elf_path,
         max_cycles,
         print_inst_trace,
         print_fsm_state,
@@ -172,6 +173,41 @@ where
         trace_callback,
         vcd_path,
         mem_latency_cycles,
+        None,
+        setup_callback,
+        termination_callback,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_elf_with_fifo_callback<F, T, P, C>(
+    elf_path: &Path,
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
+    fifo_receive_callback: Option<FifoReceiveCallback>,
+    setup_callback: Option<P>,
+    termination_callback: Option<C>,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(&mut SimulatorView),
+    T: FnMut(&InstructionTrace),
+    P: FnOnce(&mut SimulatorView),
+    C: FnOnce(&SimulatorView, &SimulationResult),
+{
+    run_program_with_fifo_callback(
+        max_cycles,
+        print_inst_trace,
+        print_fsm_state,
+        inst_complete_callback,
+        trace_callback,
+        vcd_path,
+        mem_latency_cycles,
+        fifo_receive_callback,
         |sim| {
             // Load ELF into simulator memory
             let entry_point =
@@ -257,8 +293,41 @@ where
     P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
     C: FnOnce(&SimulatorView, &SimulationResult),
 {
+    run_program_with_fifo_callback(
+        max_cycles,
+        print_inst_trace,
+        print_fsm_state,
+        inst_complete_callback,
+        trace_callback,
+        vcd_path,
+        mem_latency_cycles,
+        None,
+        setup_callback,
+        termination_callback,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_program_with_fifo_callback<F, T, P, C>(
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
+    fifo_receive_callback: Option<FifoReceiveCallback>,
+    setup_callback: P,
+    termination_callback: Option<C>,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(&mut SimulatorView),
+    T: FnMut(&InstructionTrace),
+    P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
+    C: FnOnce(&SimulatorView, &SimulationResult),
+{
     // Initialize CPU Simulator (runtime, bus, and hung detector created internally)
-    let mut sim = Simulator::new(
+    let mut sim = Simulator::new_with_fifo_callback(
         print_inst_trace,
         print_fsm_state,
         inst_complete_callback,
@@ -266,9 +335,10 @@ where
         vcd_path,
         mem_latency_cycles,
         0, // verilator_optimization (default 0 for compatibility)
+        fifo_receive_callback,
     )?;
 
-    // Reset first so setup callback can initialize memory/FIFO on a clean state
+    // Reset first so setup callback can initialize memory/devices on a clean state
     sim.reset().map_err(|e| format!("Reset failed: {}", e))?;
 
     // Execute pre-execution callback to load program and get entry point

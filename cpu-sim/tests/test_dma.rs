@@ -1,5 +1,8 @@
 use bus_shared::Dma;
-use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
+use cpu_sim::{
+    run_elf_with_fifo_callback, InstructionTrace, SimulationResult, SimulatorView,
+    GLOBAL_MAX_CYCLES,
+};
 use std::sync::{Arc, Mutex};
 
 #[test]
@@ -15,10 +18,8 @@ fn test_dma_copy() {
     // Track DMA activity via FIFO for debugging (optional)
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |view: &mut SimulatorView| {
-        while let Some(word) = view.fifo_read_tx() {
-            fifo_data_clone.lock().unwrap().push(word);
-        }
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
     };
 
     // Setup callback to register DMA device
@@ -30,15 +31,16 @@ fn test_dma_copy() {
         log::info!("DMA device registered at 0x{:08x}", DMA_BASE);
     };
 
-    let result = run_elf(
+    let result = run_elf_with_fifo_callback(
         &elf_path,
         GLOBAL_MAX_CYCLES, // Max cycles
         false,             // print_inst_trace
         false,             // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
-        None,                 // vcd_path
-        0,                    // mem_latency_cycles
+        None, // vcd_path
+        0,    // mem_latency_cycles
+        Some(Box::new(fifo_callback)),
         Some(setup_callback), // Register DMA device
         None::<fn(&SimulatorView, &SimulationResult)>,
     )

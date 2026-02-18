@@ -1,6 +1,6 @@
 use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use crate::simulator_view::SimulatorView;
-use bus_shared::SystemBus;
+use bus_shared::{FifoReceiveCallback, SystemBus};
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
@@ -140,8 +140,32 @@ where
         mem_latency_cycles: u32,
         verilator_optimization: usize,
     ) -> Result<Self, String> {
-        // Create system bus with internal DRAM (always default)
-        let bus = SystemBus::new();
+        Self::new_with_fifo_callback(
+            print_inst_trace,
+            print_fsm_state,
+            inst_complete_callback,
+            trace_callback,
+            vcd_path,
+            mem_latency_cycles,
+            verilator_optimization,
+            None,
+        )
+    }
+
+    /// Create a new simulator with optional callbacks and FIFO receive callback
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_fifo_callback(
+        print_inst_trace: bool,
+        print_fsm_state: bool,
+        inst_complete_callback: Option<F>,
+        trace_callback: Option<T>,
+        vcd_path: Option<&str>,
+        mem_latency_cycles: u32,
+        verilator_optimization: usize,
+        fifo_receive_callback: Option<FifoReceiveCallback>,
+    ) -> Result<Self, String> {
+        // Create system bus with internal DRAM and external FIFO
+        let bus = SystemBus::with_fifo_callback(fifo_receive_callback);
 
         // Create hung detector config (always default)
         let hung_detector = Some(HungDetector::new(HungDetectorConfig::default()));
