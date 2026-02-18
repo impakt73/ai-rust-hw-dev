@@ -350,7 +350,7 @@ fn test_vcd_generation() {
     println!("========================================");
     println!("Testing VCD file creation and basic validation...\n");
 
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+    let program = create_test_program();
 
     // Use a per-process unique path in the system temp dir so that parallel
     // test runs and non-default CARGO_TARGET_DIR settings don't collide.
@@ -365,16 +365,18 @@ fn test_vcd_generation() {
     let vcd_path_str = vcd_path.to_str().expect("VCD path should be valid UTF-8");
 
     println!("Running simulation with VCD enabled...");
-    let result = run_elf(
-        &elf_path,
+    let result = run_program(
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
         None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         Some(vcd_path_str),
-        0,                              // mem_latency_cycles
-        None::<fn(&mut SimulatorView)>, // setup_callback
+        0, // mem_latency_cycles
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &program);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with VCD should succeed");

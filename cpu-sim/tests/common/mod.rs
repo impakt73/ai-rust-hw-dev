@@ -6,6 +6,7 @@ use cpu_sim::{SimulationResult, SimulatorView};
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
+use riscv_shared::FIFO_DATA;
 use std::sync::{Arc, Mutex};
 
 /// Initialize the test logger (idempotent – safe to call from multiple tests).
@@ -91,6 +92,97 @@ pub fn append_tohost_termination(
     tohost_value: u32,
 ) {
     instructions.extend(tohost_termination(addr_reg, value_reg, tohost_value));
+}
+
+/// Create a minimal program that immediately exits with SUCCESS_CODE via tohost.
+///
+/// This is the raw-instruction equivalent of `simple_test.rs`.
+pub fn create_simple_exit_program() -> Vec<u8> {
+    let mut instructions = Vec::new();
+    append_tohost_termination(&mut instructions, 1, 2, SUCCESS_CODE);
+    instructions_to_bytes(&instructions)
+}
+
+/// Create a loop program that executes `iterations` NOP-like cycles then exits.
+///
+/// Useful for measuring cycle counts when a non-trivial program is required.
+pub fn create_loop_program(iterations: u32) -> Vec<u8> {
+    // Instruction layout (program base = 0x8000_0000):
+    //   0: addi x1, x0, N     (x1 = iterations)
+    // loop [PC = base+4]:
+    //   1: addi x1, x1, -1    (x1--)
+    //   2: bne  x1, x0, -4    (if x1 != 0 goto instr 1)
+    // tohost termination (instrs 3..7):
+    //   append_tohost_termination(&mut instructions, 2, 3, SUCCESS_CODE)
+    let count =
+        i32::try_from(iterations).expect("iterations must fit in a 12-bit signed immediate");
+    let mut instructions = vec![
+        addi(1, 0, count), // x1 = iterations
+        // loop:
+        addi(1, 1, -1), // x1--
+        bne(1, 0, -4),  // branch back to addi(1,1,-1) if x1 != 0
+    ];
+    append_tohost_termination(&mut instructions, 2, 3, SUCCESS_CODE);
+    instructions_to_bytes(&instructions)
+}
+
+/// Create a FIFO echo program (raw-instruction equivalent of `hello_world.rs`).
+///
+/// Reads words from the FIFO RX queue and echoes them to TX until the queue is
+/// empty or a zero word is received, then terminates with SUCCESS_CODE.
+///
+/// Instruction layout (program base assumed to be 0x8000_0000):
+///
+/// ```text
+///   0: lui  x1, 0x4000_3000    // x1 = FIFO_DATA address
+///   1: addi x2, x1, 4          // x2 = FIFO_STATUS address
+/// loop [PC = base+8]:
+///   2: lw   x3, 0(x2)          // x3 = FIFO_STATUS
+///   3: andi x4, x3, 1          // x4 = RX_VALID bit
+///   4: beq  x4, x0, +20        // if RX empty  → done
+///   5: lw   x5, 0(x1)          // x5 = word from FIFO_DATA
+///   6: beq  x5, x0, +12        // if zero word → done
+///   7: sw   x5, 0(x1)          // echo: write x5 to FIFO TX
+///   8: jal  x0, -24            // loop back to instr 2
+/// done [PC = base+36]:
+///   9: lui  x6, SIM_CONTROL_BASE
+///  10: addi x7, x0, SUCCESS_CODE
+///  11: sw   x7, 0(x6)
+///  12: ebreak
+///  13: jal  x0, 0              // infinite loop (halt)
+/// ```
+pub fn create_fifo_echo_program() -> Vec<u8> {
+    // FIFO_DATA     = 0x4000_3000  (lower 12 bits == 0, safe for LUI)
+    // FIFO_STATUS   = FIFO_DATA + 4
+    // SIM_CONTROL_BASE = 0x4000_0000
+
+    // Branch / jump offsets (all relative to the *branch/jump instruction* PC):
+    //   beq at instr 4 (PC = base+16): target = instr 9 (PC = base+36) → offset = +20
+    //   beq at instr 6 (PC = base+24): target = instr 9 (PC = base+36) → offset = +12
+    //   jal at instr 8 (PC = base+32): target = instr 2 (PC = base+8)  → offset = -24
+    let instructions = vec![
+        lui(1, FIFO_DATA), // x1 = FIFO_DATA (0x4000_3000)
+        addi(2, 1, 4),     // x2 = FIFO_STATUS
+        // loop:
+        lw(3, 2, 0),   // x3 = FIFO_STATUS
+        andi(4, 3, 1), // x4 = RX_VALID
+        beq(4, 0, 20), // RX empty → done
+        lw(5, 1, 0),   // x5 = FIFO word
+        beq(5, 0, 12), // zero word → done
+        sw(1, 5, 0),   // echo to TX
+        jal(0, -24),   // loop
+        // done:
+        lui(6, SIM_CONTROL_BASE), // x6 = SIM_CONTROL_BASE
+        addi(
+            7,
+            0,
+            i32::try_from(SUCCESS_CODE).expect("SUCCESS_CODE fits i32"),
+        ),
+        sw(6, 7, 0), // tohost = SUCCESS_CODE
+        ebreak(),
+        jal(0, 0),
+    ];
+    instructions_to_bytes(&instructions)
 }
 
 /// Create a simple test program (equivalent to test.s)

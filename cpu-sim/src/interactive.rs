@@ -345,6 +345,38 @@ impl InteractiveSimulator {
         view.receive_bus_response()
     }
 
+    /// Load a program from raw bytes into the simulator and boot the CPU
+    ///
+    /// Writes the provided bytes into simulator memory starting at `start_addr`,
+    /// then resets the CPU and boots it from that address.  This is the
+    /// direct-instruction equivalent of `load_elf` and lets tests drive the
+    /// simulator with hand-crafted instruction sequences.
+    ///
+    /// # Arguments
+    /// * `start_addr` - Starting address for the program (must be in DRAM range)
+    /// * `data` - Raw instruction bytes to load
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` if the reset / boot sequence fails
+    pub fn load_program(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
+        {
+            let mut view = SimulatorView::new(
+                &mut self.simulator.bus,
+                &self.simulator.cpu,
+                &mut self.simulator.host_bus_handler,
+                &mut self.simulator.host_bus_direct_response,
+            );
+            view.write_memory_region(start_addr, data);
+        }
+
+        self.simulator
+            .reset(start_addr, true)
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
+        Ok(())
+    }
+
     /// Write a region of memory from a byte slice
     ///
     /// Writes bytes into the simulator's memory starting at `start_addr`.
