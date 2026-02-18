@@ -2,9 +2,63 @@
 
 #![allow(dead_code)]
 
+use cpu_sim::{SimulationResult, SimulatorView};
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
+use std::sync::{Arc, Mutex};
+
+/// Initialize the test logger (idempotent – safe to call from multiple tests).
+pub fn init_test_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
+/// Assert that a simulation result has the expected tohost value.
+pub fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) {
+    assert_eq!(
+        result.tohost_value,
+        Some(expected),
+        "Expected tohost value 0x{:x} ({}) from {}",
+        expected,
+        expected,
+        test_name
+    );
+}
+
+/// Create a FIFO data collector callback and the shared buffer it writes into.
+///
+/// The callback drains the simulator's TX FIFO on each call and appends the
+/// bytes (little-endian) to the returned `Arc<Mutex<Vec<u8>>>`.
+pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, impl FnMut(&mut SimulatorView)) {
+    let fifo_data = Arc::new(Mutex::new(Vec::new()));
+    let fifo_data_clone = Arc::clone(&fifo_data);
+
+    let callback = move |view: &mut SimulatorView| {
+        while let Some(word) = view.fifo_read_tx() {
+            let bytes = [
+                (word & 0xFF) as u8,
+                ((word >> 8) & 0xFF) as u8,
+                ((word >> 16) & 0xFF) as u8,
+                ((word >> 24) & 0xFF) as u8,
+            ];
+            fifo_data_clone
+                .lock()
+                .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
+                .extend_from_slice(&bytes);
+        }
+    };
+
+    (fifo_data, callback)
+}
+
+/// Convert raw FIFO bytes to a UTF-8 string, stripping trailing null bytes.
+pub fn fifo_data_to_string(data: &[u8]) -> String {
+    let trimmed = match data.iter().rposition(|&b| b != 0) {
+        Some(idx) => &data[..=idx],
+        None => &[],
+    };
+    String::from_utf8(trimmed.to_vec()).expect("FIFO data should be valid UTF-8")
+}
 
 /// Helper to convert instructions to bytes
 pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
