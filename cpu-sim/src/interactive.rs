@@ -368,6 +368,10 @@ impl InteractiveSimulator {
     /// * `Ok(())` on success
     /// * `Err(String)` if the reset / boot sequence fails
     pub fn load_program(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
+        self.simulator
+            .reset()
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
         {
             let mut view = SimulatorView::new(
                 &mut self.simulator.bus,
@@ -378,9 +382,6 @@ impl InteractiveSimulator {
             view.write_memory_region(start_addr, data);
         }
 
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
         self.simulator
             .boot(start_addr)
             .map_err(|e| format!("Boot failed: {}", e))?;
@@ -403,6 +404,11 @@ impl InteractiveSimulator {
     /// * `Ok(())` on success
     /// * `Err(String)` if the reset fails
     pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
+        // Reset with boot deferred so boot_cpu can be called externally
+        self.simulator
+            .reset()
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
         {
             let mut view = SimulatorView::new(
                 &mut self.simulator.bus,
@@ -412,11 +418,6 @@ impl InteractiveSimulator {
             );
             view.write_memory_region(start_addr, data);
         }
-
-        // Reset with boot deferred so boot_cpu can be called externally
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
 
         Ok(())
     }

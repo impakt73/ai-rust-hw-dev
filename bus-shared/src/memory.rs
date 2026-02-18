@@ -61,6 +61,11 @@ impl Memory {
         self.data
             .insert(addr.wrapping_add(1), ((data >> 8) & 0xFF) as u8);
     }
+
+    /// Clear all memory contents
+    pub fn reset(&mut self) {
+        self.data.clear();
+    }
 }
 
 impl Default for Memory {
