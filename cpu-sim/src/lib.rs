@@ -289,8 +289,7 @@ where
     sim.boot(entry_point)
         .map_err(|e| format!("Boot failed: {}", e))?;
 
-    // Run simulation with entry point as legacy boot_pc argument
-    let result = sim.run(entry_point, max_cycles)?;
+    let result = sim.run(max_cycles)?;
 
     // Execute optional post-execution callback with read-only SimulatorView and result
     if let Some(callback) = termination_callback {

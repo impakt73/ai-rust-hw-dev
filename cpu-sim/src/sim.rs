@@ -666,13 +666,11 @@ where
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     ///
     /// # Arguments
-    /// * `boot_pc` - Legacy parameter retained for API compatibility with older callers.
-    ///   This argument is ignored by `run` and has no effect on simulation behavior.
     /// * `max_cycles` - Maximum number of cycles to run
     ///
     /// # Errors
     /// Returns error if hung state is detected or other simulation errors occur
-    pub fn run(&mut self, _boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
+    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;
