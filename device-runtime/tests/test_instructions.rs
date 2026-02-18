@@ -1,11 +1,11 @@
-//! RTL Verification Tests (Subset)
+//! CPU Instruction Verification Tests
 //!
-//! Basic instruction verification tests migrated from cpu-sim/tests/test_rtl_verification.rs
-//! to use backend-agnostic device-runtime APIs.
+//! Comprehensive instruction verification tests for the RISC-V CPU implementation.
+//! Tests cover basic execution, arithmetic/logic operations, branches, loads/stores,
+//! CSR operations, M extension (multiply/divide), and SRAM access patterns.
 //!
-//! This file contains the first 10 tests covering basic execution, LUI, logic operations,
-//! branches, and load/store operations. Additional RTL verification tests remain in cpu-sim
-//! for simulator-specific validation.
+//! These tests use programmatic instruction sequences (not ELF binaries) to verify
+//! individual instruction behavior and common instruction patterns.
 
 mod common;
 
