@@ -1,6 +1,9 @@
+mod common;
+
 use bus_shared::{
     Audio, AudioConfig, BusDevice, Video, VideoConfig, AUDIO_BASE, FIFO_BASE, VIDEO_BASE,
 };
+use common::create_simple_exit_program;
 use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
 use riscv_shared::SUCCESS_CODE;
 use std::path::PathBuf;
@@ -37,10 +40,11 @@ fn test_interactive_simulator_step_without_elf() {
 fn test_interactive_simulator_step_cycle() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+    let program = create_simple_exit_program();
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-    sim.load_elf(&elf_path).expect("Failed to load ELF");
+    sim.load_program(0x8000_0000, &program)
+        .expect("Failed to load program");
 
     let max_cycles = 1000;
     let mut instruction_completed = false;
@@ -88,10 +92,11 @@ fn test_interactive_simulator_step_cycle() {
 fn test_interactive_simulator_simple_program() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+    let program = create_simple_exit_program();
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-    sim.load_elf(&elf_path).expect("Failed to load ELF");
+    sim.load_program(0x8000_0000, &program)
+        .expect("Failed to load program");
 
     // Step through instructions until we hit tohost or max iterations
     let max_instructions = 100;
@@ -130,12 +135,13 @@ fn test_interactive_simulator_multiple_programs() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Test that we can load multiple programs sequentially
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+    let program = create_simple_exit_program();
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
     // Load and run first program
-    sim.load_elf(&elf_path).expect("Failed to load first ELF");
+    sim.load_program(0x8000_0000, &program)
+        .expect("Failed to load first program");
     let mut tohost_1 = None;
     for _ in 0..100 {
         match sim.step_instruction() {
@@ -151,7 +157,8 @@ fn test_interactive_simulator_multiple_programs() {
     assert_eq!(tohost_1, Some(42), "First program should exit with 42");
 
     // Load and run second program
-    sim.load_elf(&elf_path).expect("Failed to load second ELF");
+    sim.load_program(0x8000_0000, &program)
+        .expect("Failed to load second program");
     let mut tohost_2 = None;
     for _ in 0..100 {
         match sim.step_instruction() {
@@ -171,10 +178,11 @@ fn test_interactive_simulator_multiple_programs() {
 fn test_interactive_simulator_step_result() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
+    let program = create_simple_exit_program();
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-    sim.load_elf(&elf_path).expect("Failed to load ELF");
+    sim.load_program(0x8000_0000, &program)
+        .expect("Failed to load program");
 
     // Step once and verify SimulationStepInstructionResult structure
     let result = sim.step_instruction().expect("First step should succeed");

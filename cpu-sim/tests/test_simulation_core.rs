@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_tohost, create_test_program, init_test_logger};
+use common::{assert_tohost, create_loop_program, create_test_program, init_test_logger};
 use cpu_sim::*;
 
 /// Comprehensive test that runs a full in-memory program for basic simulation verification.
@@ -66,10 +66,9 @@ fn test_global_max_cycles_safety_margin() {
         (result1.cycles as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
     );
 
-    // Test 2: Run an ELF file (println_macro is typically the highest)
-    let elf_path = sim_tests::test_program_path("hello_world").expect("Failed to find hello_world");
-    let result2 = run_elf(
-        &elf_path,
+    // Test 2: Run a loop-based program that exercises more cycles than the simple test
+    let loop_program = create_loop_program(500);
+    let result2 = run_program(
         GLOBAL_MAX_CYCLES,
         false,
         false,
@@ -77,13 +76,16 @@ fn test_global_max_cycles_safety_margin() {
         None::<fn(&InstructionTrace)>,
         None,
         0,
-        None::<fn(&mut SimulatorView)>,
+        |sim| {
+            sim.write_memory_region(0x8000_0000, &loop_program);
+            Ok(0x8000_0000)
+        },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
     )
-    .expect("ELF test should succeed");
+    .expect("Loop program test should succeed");
 
     println!(
-        "  Hello ELF cycles:          {:6} / {} ({:.1}%)",
+        "  Loop program cycles:        {:6} / {} ({:.1}%)",
         result2.cycles,
         GLOBAL_MAX_CYCLES,
         (result2.cycles as f64 / GLOBAL_MAX_CYCLES as f64) * 100.0
