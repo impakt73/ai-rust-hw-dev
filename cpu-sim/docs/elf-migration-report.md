@@ -11,7 +11,7 @@ instructions.
 | `test_simulation_core.rs` | `test_global_max_cycles_safety_margin` | `hello_world` | ✅ Migrated |
 | `test_trace.rs` | `test_vcd_generation` | `simple_test` | ✅ Migrated |
 | `test_fifo.rs` | `test_fifo_hello_world` | `hello_world` | ✅ Migrated |
-| `test_dma.rs` | `test_dma_copy` | `test_dma_copy` | ✅ Migrated |
+| `test_dma.rs` | `test_dma_copy` | `test_dma_copy` | ❌ Cannot migrate |
 | `test_interactive_simulator.rs` | `test_interactive_simulator_step_cycle` | `simple_test` | ✅ Migrated |
 | `test_interactive_simulator.rs` | `test_interactive_simulator_simple_program` | `simple_test` | ✅ Migrated |
 | `test_interactive_simulator.rs` | `test_interactive_simulator_multiple_programs` | `simple_test` | ✅ Migrated |
@@ -83,23 +83,6 @@ the original Rust code is safely omitted.
 
 ---
 
-### `test_dma_copy` (`test_dma.rs`)
-
-**Original:** Loaded `test_dma_copy` — a bare-metal Rust program that writes a 64-byte
-sequential pattern to `SRC_BASE`, clears `DST_BASE`, triggers a DMA copy, polls for completion,
-and verifies each byte.
-
-**Replacement:** A new `create_dma_copy_program()` helper implements the same sequence in 38
-RISC-V instructions using three loops (write-pattern, clear, verify) and direct writes to the
-DMA peripheral registers:
-
-- Loops use `SB`/`LBU` for byte-level access (same as the original Rust code).
-- DMA control sequence: write `DMA_SRC_ADDR`, `DMA_DST_ADDR`, `DMA_SIZE`, then `DMA_DISPATCH`.
-- Completion detection: poll `DMA_STATUS` until BUSY bit (bit 0) clears.
-- Failure path: writes tohost = 1 on any byte mismatch.
-
----
-
 ### `test_interactive_simulator_step_cycle`, `test_interactive_simulator_simple_program`, `test_interactive_simulator_multiple_programs`, `test_interactive_simulator_step_result` (`test_interactive_simulator.rs`)
 
 **Original:** All four tests loaded `simple_test` (a bare-metal Rust program that immediately
@@ -127,6 +110,20 @@ ELF loader.
 
 The following tests fundamentally require ELF files and cannot be replaced with directly
 specified instruction sequences.
+
+---
+
+### `test_dma_copy` (`test_dma.rs`)
+
+**ELF used:** `test_dma_copy`
+
+**Reason:** The program involves three nested loops (write-pattern, clear, verify) plus DMA
+peripheral configuration and a polling loop — 38 instructions total with non-trivial
+inter-loop branch offsets. Encoding this in raw assembly is too complex to maintain alongside
+the test: branch offsets must be recomputed by hand whenever any instruction is inserted or
+removed, the register allocation is opaque without symbolic names, and there is no way to add
+intermediate debug output. The program complexity is better managed as Rust source in
+`rust-test-program/src/test_dma_copy.rs`.
 
 ---
 

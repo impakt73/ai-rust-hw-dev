@@ -1,16 +1,13 @@
-mod common;
-
 use bus_shared::Dma;
-use common::{create_dma_copy_program, init_test_logger};
-use cpu_sim::{run_program, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
+use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
 use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_dma_copy() {
     let _ = env_logger::builder().is_test(true).try_init();
-    init_test_logger();
 
-    let program = create_dma_copy_program();
+    let elf_path =
+        sim_tests::test_program_path("test_dma_copy").expect("Failed to find test_dma_copy");
 
     // DMA device base address (from riscv_shared)
     use riscv_shared::dma::DMA_BASE;
@@ -24,24 +21,25 @@ fn test_dma_copy() {
         }
     };
 
-    let result = run_program(
+    // Setup callback to register DMA device
+    let setup_callback = |view: &mut SimulatorView| {
+        // Register DMA device at DMA_BASE
+        let dma = Box::new(Dma::new());
+        view.register_device(DMA_BASE, dma)
+            .expect("Failed to register DMA device");
+        log::info!("DMA device registered at 0x{:08x}", DMA_BASE);
+    };
+
+    let result = run_elf(
+        &elf_path,
         GLOBAL_MAX_CYCLES, // Max cycles
         false,             // print_inst_trace
         false,             // print_fsm_state
         Some(inst_complete_callback),
         None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        |sim| {
-            // Register DMA device at DMA_BASE
-            let dma = Box::new(Dma::new());
-            sim.register_device(DMA_BASE, dma)
-                .expect("Failed to register DMA device");
-            log::info!("DMA device registered at 0x{:08x}", DMA_BASE);
-
-            sim.write_memory_region(0x8000_0000, &program);
-            Ok(0x8000_0000)
-        },
+        None,                 // vcd_path
+        0,                    // mem_latency_cycles
+        Some(setup_callback), // Register DMA device
         None::<fn(&SimulatorView, &SimulationResult)>,
     )
     .expect("Simulation should succeed");
