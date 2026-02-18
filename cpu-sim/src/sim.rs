@@ -371,22 +371,12 @@ where
         }
     }
 
-    /// Reset the CPU
-    /// The boot address is set to the boot_pc while reset is asserted so that
-    /// the PC samples this value through the asynchronous reset and then holds it
-    /// when reset is released.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - The program counter value to start execution from
-    /// * `boot_cpu` - Whether to perform the CPU boot sequence (STATUS read + BOOT write).
-    ///   When false, only the hardware reset is performed and the CPU is left in the boot
-    ///   state (S_BOOT), allowing the calling code to handle the boot sequence externally
-    ///   via bus requests.
+    /// Reset the CPU hardware and leave it in boot state (S_BOOT).
     ///
     /// # Returns
     /// * `Ok(())` if reset succeeds
-    /// * `Err(BootError)` if a timeout occurs, or CPU state is unexpected
-    pub fn reset(&mut self, boot_pc: u32, boot_cpu: bool) -> Result<(), BootError> {
+    /// * `Err(BootError)` if a timeout occurs while waiting for reset completion
+    pub fn reset(&mut self) -> Result<(), BootError> {
         // Initialize host bus interface signals
         // host_tx_ready is always 1 because the handler can buffer requests/responses
         // and the FPGA side never sends more than one request at a time
@@ -425,6 +415,7 @@ where
         self.bus.reset_all_devices();
 
         // Reset cumulative elapsed time
+        self.cycle_count = 0;
         self.total_elapsed_time_us = 0;
 
         // Reset the host bus handler
@@ -449,13 +440,26 @@ where
             }
         }
 
-        // If boot_cpu is false, skip the boot sequence and leave the CPU in boot state
-        // so the calling code can handle it externally via bus requests
-        if !boot_cpu {
-            log::info!("CPU hardware reset complete (boot deferred)");
-            return Ok(());
-        }
+        log::info!("CPU hardware reset complete (boot deferred)");
+        Ok(())
+    }
 
+    /// Boot the CPU from the S_BOOT state by writing the system-controller BOOT register.
+    ///
+    /// This method assumes [`Self::reset`] has completed and the CPU is waiting for a
+    /// host boot command. It first reads the system-controller status register to verify
+    /// the CPU is still in boot-wait state, then writes `boot_pc` to the BOOT register.
+    ///
+    /// # Arguments
+    /// * `boot_pc` - Program counter value to boot from.
+    ///
+    /// # Returns
+    /// * `Ok(())` if boot sequence completes successfully.
+    ///
+    /// # Errors
+    /// * [`BootError::Timeout`] if a host-bus response times out.
+    /// * [`BootError::UnexpectedStatus`] if the CPU is not in the expected boot-wait state.
+    pub fn boot(&mut self, boot_pc: u32) -> Result<(), BootError> {
         // Step 1: Read STATUS register to confirm CPU is waiting to be booted
         let status_addr = riscv_shared::bus::sysctrl_status_addr();
         let status_request = BusRequest::read(status_addr, AccessSize::Word);
@@ -480,8 +484,6 @@ where
 
         // Wait for write acknowledgement - CPU boot process is now complete
         self.wait_for_bus_response("BOOT write")?;
-
-        log::info!("CPU reset complete with boot PC: 0x{:08x}", boot_pc);
         Ok(())
     }
 
@@ -658,21 +660,17 @@ where
 
     /// Run the simulation for up to max_cycles
     ///
-    /// **Note:** This method performs a CPU reset internally before starting execution,
-    /// so callers do not need to call `reset()` before calling `run()`.
+    /// **Note:** This method does not reset or boot the CPU. Callers are responsible
+    /// for invoking `reset()`/`boot()` before calling `run()`.
     ///
     /// Returns Ok(SimulationResult) on normal completion or Err on error
     ///
     /// # Arguments
-    /// * `boot_pc` - The program counter value to start execution from
     /// * `max_cycles` - Maximum number of cycles to run
     ///
     /// # Errors
     /// Returns error if hung state is detected or other simulation errors occur
-    pub fn run(&mut self, boot_pc: u32, max_cycles: u64) -> Result<SimulationResult, String> {
-        self.reset(boot_pc, true)
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
+    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;

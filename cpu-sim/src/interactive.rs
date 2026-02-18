@@ -136,12 +136,18 @@ impl InteractiveSimulator {
     /// command, so external host-driven boot flows can start from a clean state.
     pub fn reset(&mut self) -> Result<(), String> {
         self.simulator
-            .reset(0, false)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))
     }
 
     /// Internal helper for loading an ELF file with optional boot
     fn load_elf_internal(&mut self, path: &Path, boot_cpu: bool) -> Result<u32, String> {
+        // Reset first so setup work (ELF load, optional FIFO preload by caller) happens
+        // on a clean post-reset state.
+        self.simulator
+            .reset()
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
         // Load ELF into simulator memory using the helper function
         let entry_point = {
             let mut view = SimulatorView::new(
@@ -158,10 +164,12 @@ impl InteractiveSimulator {
             entry_point
         );
 
-        // Reset the simulator to the entry point
-        self.simulator
-            .reset(entry_point, boot_cpu)
-            .map_err(|e| format!("Reset failed: {}", e))?;
+        // Optionally boot to the ELF entry point
+        if boot_cpu {
+            self.simulator
+                .boot(entry_point)
+                .map_err(|e| format!("Boot failed: {}", e))?;
+        }
 
         Ok(entry_point)
     }
@@ -371,8 +379,11 @@ impl InteractiveSimulator {
         }
 
         self.simulator
-            .reset(start_addr, true)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))?;
+        self.simulator
+            .boot(start_addr)
+            .map_err(|e| format!("Boot failed: {}", e))?;
 
         Ok(())
     }
@@ -404,7 +415,7 @@ impl InteractiveSimulator {
 
         // Reset with boot deferred so boot_cpu can be called externally
         self.simulator
-            .reset(start_addr, false)
+            .reset()
             .map_err(|e| format!("Reset failed: {}", e))?;
 
         Ok(())
