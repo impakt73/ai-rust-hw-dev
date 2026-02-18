@@ -152,6 +152,8 @@ to check alu_a and alu_b..."*
 
 ### Integration Verification Workflow
 
+**Do NOT run tests or lints at the start of a session.** CI ensures sessions always begin with a clean, passing state. Only run tests and lints after making code changes.
+
 When implementing cross-layer changes:
 
 1. **RTL Modification:**

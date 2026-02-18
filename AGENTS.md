@@ -48,6 +48,15 @@ What files do you need to modify?
 
 ## Critical Rules for ALL Agents
 
+### Session Start Behavior
+
+**Do NOT run tests or lints at the start of a session before making any changes.**
+
+- CI checks guarantee that all tests and lints pass before an agent session begins.
+- Assume the codebase is always in a clean, passing state at session start.
+- Running tests/lints as a baseline before making any changes is redundant and wastes time.
+- **Only run tests and lints AFTER making code changes** to verify that your specific changes are correct.
+
 ### Debugging Methodology
 
 **For hardware-related work (FPGA Architect, HW-SW Integration):**

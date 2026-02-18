@@ -223,6 +223,8 @@ impl Drop for Simulation {
 
 ## 7. Code Quality Workflow (MANDATORY)
 
+**Do NOT run tests or lints at the start of a session.** CI ensures sessions always begin with a clean, passing state. Only run tests and lints after making code changes.
+
 **Before every commit, you MUST:**
 
 1. **Format your code:**

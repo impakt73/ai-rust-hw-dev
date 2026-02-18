@@ -86,6 +86,8 @@ to check alu_a and alu_b..."*
 
 When working with Rust-based verification code (testbenches, simulation harnesses):
 
+**Do NOT run tests or lints at the start of a session.** CI ensures sessions always begin with a clean, passing state. Only run tests and lints after making code changes.
+
 **Code Quality Requirements:**
 *   ✅ **ALWAYS** run `cargo fmt` before committing any Rust code changes
 *   ✅ **ALWAYS** run `cargo clippy -- -D warnings` before committing
