@@ -118,6 +118,22 @@ impl SimDeviceRuntime {
                 return;
             }
         };
+        let has_fifo_registration = bus_devices
+            .as_ref()
+            .is_some_and(|devices| devices.iter().any(|d| d.base_addr == cpu_sim::FIFO_BASE));
+
+        if !has_fifo_registration {
+            if let Err(e) = simulator.register_device(
+                cpu_sim::FIFO_BASE,
+                Box::new(cpu_sim::Fifo::new_with_callback(Box::new(|_, _| {}))),
+            ) {
+                let message = format!("Failed to register default FIFO device: {}", e);
+                let _ = ready_tx.send(Err(message.clone()));
+                let _ = event_tx.send(RuntimeEvent::FatalError(message));
+                return;
+            }
+        }
+
         if let Some(bus_devices) = bus_devices {
             for registration in bus_devices {
                 if let Err(e) =

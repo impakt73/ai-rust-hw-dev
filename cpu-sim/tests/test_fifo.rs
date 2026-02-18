@@ -18,14 +18,16 @@ fn test_fifo_hello_world() {
         GLOBAL_MAX_CYCLES,
         false, // print_inst_trace
         false, // print_fsm_state
-        Some(callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None, // vcd_path
         0,    // mem_latency_cycles
-        |sim| {
+        move |sim| {
             sim.write_memory_region(0x8000_0000, &program);
-            // Write test string to FIFO RX before booting
-            sim.fifo_write_rx_string(test_string);
+            let mut fifo = Fifo::new_with_callback(callback);
+            cpu_sim::push_string_to_fifo_rx(&mut fifo.rx, test_string);
+            sim.register_device(FIFO_BASE, Box::new(fifo))
+                .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
             Ok(0x8000_0000)
         },
         None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,

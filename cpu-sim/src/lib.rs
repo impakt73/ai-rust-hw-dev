@@ -9,9 +9,9 @@ mod simulator_view;
 // Public API exports - only what's needed for external use
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
-    BusDeviceError, Dma, RegistrationError, SystemBus, SystemContext, Video, VideoConfig,
-    VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
-    VIDEO_BASE,
+    BusDeviceError, Dma, Fifo, FifoDataReceivedCallback, RegistrationError, SystemBus,
+    SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE,
+    LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
@@ -23,7 +23,29 @@ pub use sim::{
 pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
+use std::collections::VecDeque;
 use std::path::Path;
+
+/// Push a UTF-8 string into a FIFO RX queue as little-endian u32 words.
+///
+/// If the input length is a multiple of 4 bytes, a trailing zero word is appended.
+pub fn push_string_to_fifo_rx(fifo_rx: &mut VecDeque<u32>, s: &str) {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut word = 0u32;
+        for j in 0..4 {
+            if i + j < bytes.len() {
+                word |= (bytes[i + j] as u32) << (j * 8);
+            }
+        }
+        fifo_rx.push_back(word);
+        i += 4;
+    }
+    if bytes.len().is_multiple_of(4) {
+        fifo_rx.push_back(0);
+    }
+}
 /// Load an ELF file into a simulator's memory
 ///
 /// This is a private helper function used by run_elf to load ELF files.
@@ -127,7 +149,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 /// )?;
 /// assert_eq!(result.tohost_value, Some(0x2a));
 ///
-/// // With setup callback to write to FIFO after ELF is loaded
+/// // With setup callback for additional initialization after ELF is loaded
 /// run_elf(
 ///     Path::new("test.elf"),
 ///     1000,
@@ -139,7 +161,7 @@ fn load_elf(sim: &mut SimulatorView, path: &Path) -> Result<u32, Box<dyn std::er
 ///     0,
 ///     Some(|sim: &mut cpu_sim::SimulatorView| {
 ///         // Additional setup after ELF is loaded
-///         sim.fifo_write_rx_string("test data");
+///         sim.write_memory_region(0x8000_1000, &[1, 2, 3, 4]);
 ///     }),
 ///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
 /// )?;

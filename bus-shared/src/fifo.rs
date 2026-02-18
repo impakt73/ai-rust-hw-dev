@@ -6,6 +6,13 @@ use std::collections::VecDeque;
 /// capacity to warn about potential hardware mismatches
 const TX_FIFO_CAPACITY: usize = 1024;
 
+/// Callback invoked whenever CPU→Host FIFO data is available.
+///
+/// The callback receives mutable access to:
+/// - `tx`: words written by CPU (CPU→Host)
+/// - `rx`: words to be read by CPU (Host→CPU)
+pub type FifoDataReceivedCallback = Box<dyn FnMut(&mut VecDeque<u32>, &mut VecDeque<u32>) + Send>;
+
 /// FIFO peripheral for UART-style communication
 /// Provides buffered I/O between the simulated CPU and host
 pub struct Fifo {
@@ -13,14 +20,16 @@ pub struct Fifo {
     pub tx: VecDeque<u32>,
     /// Data sent FROM Host -> CPU (as u32 words)
     pub rx: VecDeque<u32>,
+    on_data_received: FifoDataReceivedCallback,
 }
 
 impl Fifo {
     /// Create a new FIFO with empty TX and RX queues
-    pub fn new() -> Self {
+    pub fn new_with_callback(on_data_received: FifoDataReceivedCallback) -> Self {
         Fifo {
             tx: VecDeque::new(),
             rx: VecDeque::new(),
+            on_data_received,
         }
     }
 
@@ -60,12 +69,7 @@ impl Fifo {
             );
         }
         self.tx.push_back(val);
-    }
-}
-
-impl Default for Fifo {
-    fn default() -> Self {
-        Self::new()
+        (self.on_data_received)(&mut self.tx, &mut self.rx);
     }
 }
 
@@ -126,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_reset_clears_tx_and_rx_queues() {
-        let mut fifo = Fifo::new();
+        let mut fifo = Fifo::new_with_callback(Box::new(|_, _| {}));
         fifo.write_data(0x1111_1111);
         fifo.rx.push_back(0x2222_2222);
 

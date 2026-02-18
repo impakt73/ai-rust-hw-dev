@@ -1,6 +1,5 @@
 use bus_shared::Dma;
 use cpu_sim::{run_elf, InstructionTrace, SimulationResult, SimulatorView, GLOBAL_MAX_CYCLES};
-use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_dma_copy() {
@@ -12,21 +11,17 @@ fn test_dma_copy() {
     // DMA device base address (from riscv_shared)
     use riscv_shared::dma::DMA_BASE;
 
-    // Track DMA activity via FIFO for debugging (optional)
-    let fifo_data = Arc::new(Mutex::new(Vec::new()));
-    let fifo_data_clone = fifo_data.clone();
-    let inst_complete_callback = move |view: &mut SimulatorView| {
-        while let Some(word) = view.fifo_read_tx() {
-            fifo_data_clone.lock().unwrap().push(word);
-        }
-    };
-
     // Setup callback to register DMA device
     let setup_callback = |view: &mut SimulatorView| {
         // Register DMA device at DMA_BASE
         let dma = Box::new(Dma::new());
         view.register_device(DMA_BASE, dma)
             .expect("Failed to register DMA device");
+        view.register_device(
+            cpu_sim::FIFO_BASE,
+            Box::new(cpu_sim::Fifo::new_with_callback(Box::new(|_, _| {}))),
+        )
+        .expect("Failed to register FIFO device");
         log::info!("DMA device registered at 0x{:08x}", DMA_BASE);
     };
 
@@ -35,7 +30,7 @@ fn test_dma_copy() {
         GLOBAL_MAX_CYCLES, // Max cycles
         false,             // print_inst_trace
         false,             // print_fsm_state
-        Some(inst_complete_callback),
+        None::<fn(&mut SimulatorView)>,
         None::<fn(&InstructionTrace)>,
         None,                 // vcd_path
         0,                    // mem_latency_cycles
@@ -54,10 +49,4 @@ fn test_dma_copy() {
     println!("\n=== DMA Copy Test ===");
     println!("Cycles: {}", result.cycles);
     println!("Test passed: DMA successfully copied data and verification succeeded");
-
-    // Optional: Print any FIFO output for debugging
-    let words = fifo_data.lock().unwrap();
-    if !words.is_empty() {
-        println!("FIFO output: {:08x?}", &words);
-    }
 }
