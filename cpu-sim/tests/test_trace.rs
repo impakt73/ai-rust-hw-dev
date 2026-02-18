@@ -846,7 +846,17 @@ fn test_trace_and_vcd_together() {
     println!("COMBINED TRACE + VCD TEST");
     println!("========================================\n");
 
-    let vcd_path = "/tmp/test_trace_vcd.vcd";
+    // Use a per-process unique path in the system temp dir so that parallel
+    // test runs and non-default CARGO_TARGET_DIR settings don't collide.
+    let vcd_path = std::env::temp_dir().join(format!(
+        "cpu_sim_trace_vcd_{}_{}.vcd",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time before UNIX_EPOCH")
+            .as_nanos()
+    ));
+    let vcd_path_str = vcd_path.to_str().expect("VCD path should be valid UTF-8");
 
     // Simple test program
     let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
@@ -857,7 +867,7 @@ fn test_trace_and_vcd_together() {
         &instructions,
         GLOBAL_MAX_CYCLES,
         false,
-        Some(vcd_path),
+        Some(vcd_path_str),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
@@ -867,12 +877,13 @@ fn test_trace_and_vcd_together() {
 
     // Verify VCD file was created
     assert!(
-        std::path::Path::new(vcd_path).exists(),
-        "VCD file should be created"
+        vcd_path.exists(),
+        "VCD file should be created at {}",
+        vcd_path_str
     );
 
     // Read VCD file
-    let vcd_contents = std::fs::read_to_string(vcd_path).expect("Should be able to read VCD file");
+    let vcd_contents = std::fs::read_to_string(&vcd_path).expect("Should be able to read VCD file");
 
     // Validate VCD contains essential signals
     assert!(
@@ -890,7 +901,7 @@ fn test_trace_and_vcd_together() {
     assert!(vcd_contents.contains("#0"), "VCD should have timestamps");
 
     // Clean up
-    std::fs::remove_file(vcd_path).expect("Should be able to remove VCD file");
+    std::fs::remove_file(&vcd_path).expect("Should be able to remove VCD file");
 
     println!("✓ VCD file generated successfully");
     println!("✓ VCD contains all expected signals");

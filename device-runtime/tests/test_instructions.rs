@@ -1037,20 +1037,22 @@ fn test_cpu_lr_sc_success() {
     // 2. Load-Reserved from DRAM_BASE into x2
     // 3. Add 5 to the loaded value (x2 = 100 + 5 = 105)
     // 4. Store-Conditional the new value back to DRAM_BASE
-    // 5. Check that SC succeeded (x4 should be 0)
+    // 5. Store SC result (x4 = 0 on success) and final memory value for verification
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, 100),
-        sw(1, 2, 0), // mem[x1] = 100
+        sw(1, 2, 0), // mem[x1+0] = 100
         // LR/SC sequence
         lr_w(2, 1),    // x2 = mem[x1] (100), set reservation
         addi(3, 2, 5), // x3 = x2 + 5 = 105
-        sc_w(4, 1, 3), // mem[x1] = x3 (105), x4 = success status
-        // Load final value to verify
-        lw(5, 1, 0), // x5 = mem[x1] (should be 105)
+        sc_w(4, 1, 3), // mem[x1] = x3 (105), x4 = 0 on success
+        // Store results for host verification
+        sw(1, 4, 0x100), // mem[x1+0x100] = x4 (SC status, 0 = success)
+        lw(5, 1, 0),     // x5 = mem[x1+0] (should be 105)
+        sw(1, 5, 0x104), // mem[x1+0x104] = x5 (final memory value)
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
@@ -1062,6 +1064,18 @@ fn test_cpu_lr_sc_success() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+    // SC must have succeeded (status = 0)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        0,
+        "SC status should be 0 (success)"
+    );
+    // Final memory value must be the SC-written value (105)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        105,
+        "Memory should contain 105 after LR/SC"
     );
 }
 
@@ -1071,20 +1085,22 @@ fn test_cpu_amoswap() {
 
     // Program: Atomic swap operation
     // 1. Store initial value 42 to DRAM_BASE
-    // 2. Atomic swap with value 100
-    // 3. Verify old value was returned and new value was stored
+    // 2. Atomic swap with value 100: returns old value (42), writes new value (100)
+    // 3. Store returned old value and final memory value for verification
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, 42),
-        sw(1, 2, 0), // mem[x1] = 42
+        sw(1, 2, 0), // mem[x1+0] = 42
         // Atomic swap
         addi(3, 0, 100),    // x3 = 100 (new value)
-        amoswap_w(4, 1, 3), // x4 = mem[x1] (42), mem[x1] = x3 (100)
-        // Load final value to verify
-        lw(5, 1, 0), // x5 = mem[x1] (should be 100)
+        amoswap_w(4, 1, 3), // x4 = mem[x1] (42), mem[x1] = 100
+        // Store results for host verification
+        sw(1, 4, 0x100), // mem[x1+0x100] = x4 (old value, should be 42)
+        lw(5, 1, 0),     // x5 = mem[x1+0] (should be 100)
+        sw(1, 5, 0x104), // mem[x1+0x104] = x5 (new value)
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
@@ -1096,6 +1112,18 @@ fn test_cpu_amoswap() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+    // AMOSWAP must return the original value (42)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        42,
+        "AMOSWAP should return old value 42"
+    );
+    // Memory must contain the new value (100)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        100,
+        "Memory should contain new value 100 after AMOSWAP"
     );
 }
 
@@ -1105,20 +1133,22 @@ fn test_cpu_amoadd() {
 
     // Program: Atomic add operation (atomic counter)
     // 1. Store initial counter value 10 to DRAM_BASE
-    // 2. Atomic add 5 to the counter
-    // 3. Verify old value was returned and new value is 15
+    // 2. Atomic add 5: returns old value (10), writes new value (15)
+    // 3. Store returned old value and final memory value for verification
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
         // Store initial value
         addi(2, 0, 10),
-        sw(1, 2, 0), // mem[x1] = 10
+        sw(1, 2, 0), // mem[x1+0] = 10
         // Atomic add
         addi(3, 0, 5),     // x3 = 5
         amoadd_w(4, 1, 3), // x4 = mem[x1] (10), mem[x1] = 10 + 5 = 15
-        // Load final value to verify
-        lw(5, 1, 0), // x5 = mem[x1] (should be 15)
+        // Store results for host verification
+        sw(1, 4, 0x100), // mem[x1+0x100] = x4 (old value, should be 10)
+        lw(5, 1, 0),     // x5 = mem[x1+0] (should be 15)
+        sw(1, 5, 0x104), // mem[x1+0x104] = x5 (new value)
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
@@ -1131,6 +1161,18 @@ fn test_cpu_amoadd() {
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
     );
+    // AMOADD must return the original value (10)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        10,
+        "AMOADD should return old value 10"
+    );
+    // Memory must contain the sum (15)
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        15,
+        "Memory should contain 15 after AMOADD"
+    );
 }
 
 #[test]
@@ -1138,24 +1180,29 @@ fn test_cpu_amo_logical() {
     let mut runtime = create_test_runtime();
 
     // Program: Test AMOXOR, AMOAND, AMOOR
-    // All operate on the same memory location with different values
+    // All operate on the same memory location with different values.
+    // Store each returned old value and final result for verification.
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
-        // Test AMOXOR: mem = 0xFF, xor with 0x0F -> mem = 0xF0
+        // Test AMOXOR: mem = 0xFF, xor with 0x0F -> old=0xFF, mem = 0xF0
         addi(2, 0, 0xFF),
-        sw(1, 2, 0), // mem[x1] = 0xFF
+        sw(1, 2, 0), // mem[x1+0] = 0xFF
         addi(3, 0, 0x0F),
-        amoxor_w(4, 1, 3), // x4 = 0xFF, mem[x1] = 0xF0
-        // Test AMOAND: mem = 0xF0, and with 0x3C -> mem = 0x30
+        amoxor_w(4, 1, 3), // x4 = 0xFF (old), mem[x1] = 0xF0
+        sw(1, 4, 0x100),   // store old value of AMOXOR
+        // Test AMOAND: mem = 0xF0, and with 0x3C -> old=0xF0, mem = 0x30
         addi(5, 0, 0x3C),
-        amoand_w(6, 1, 5), // x6 = 0xF0, mem[x1] = 0x30
-        // Test AMOOR: mem = 0x30, or with 0x0F -> mem = 0x3F
+        amoand_w(6, 1, 5), // x6 = 0xF0 (old), mem[x1] = 0x30
+        sw(1, 6, 0x104),   // store old value of AMOAND
+        // Test AMOOR: mem = 0x30, or with 0x0F -> old=0x30, mem = 0x3F
         addi(7, 0, 0x0F),
-        amoor_w(8, 1, 7), // x8 = 0x30, mem[x1] = 0x3F
+        amoor_w(8, 1, 7), // x8 = 0x30 (old), mem[x1] = 0x3F
+        sw(1, 8, 0x108),  // store old value of AMOOR
         // Load final value
-        lw(9, 1, 0), // x9 = mem[x1] (should be 0x3F)
+        lw(9, 1, 0),     // x9 = mem[x1] (should be 0x3F)
+        sw(1, 9, 0x10C), // store final value
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
@@ -1167,6 +1214,26 @@ fn test_cpu_amo_logical() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        0xFF,
+        "AMOXOR should return old value 0xFF"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        0xF0,
+        "AMOAND should return old value 0xF0"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x108, SHORT_TIMEOUT),
+        0x30,
+        "AMOOR should return old value 0x30"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x10C, SHORT_TIMEOUT),
+        0x3F,
+        "Final memory value should be 0x3F after AMOXOR+AMOAND+AMOOR"
     );
 }
 
@@ -1175,20 +1242,24 @@ fn test_cpu_amo_min_max() {
     let mut runtime = create_test_runtime();
 
     // Program: Test AMOMIN, AMOMAX (signed)
+    // Store returned old values and final result for verification.
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
-        // Test AMOMIN: mem = 20, min with 15 -> mem = 15
+        // Test AMOMIN: mem = 20, min with 15 -> old=20, mem = 15
         addi(2, 0, 20),
-        sw(1, 2, 0), // mem[x1] = 20
+        sw(1, 2, 0), // mem[x1+0] = 20
         addi(3, 0, 15),
-        amomin_w(4, 1, 3), // x4 = 20, mem[x1] = 15
-        // Test AMOMAX: mem = 15, max with 25 -> mem = 25
+        amomin_w(4, 1, 3), // x4 = 20 (old), mem[x1] = 15
+        sw(1, 4, 0x100),   // store old value of AMOMIN
+        // Test AMOMAX: mem = 15, max with 25 -> old=15, mem = 25
         addi(5, 0, 25),
-        amomax_w(6, 1, 5), // x6 = 15, mem[x1] = 25
+        amomax_w(6, 1, 5), // x6 = 15 (old), mem[x1] = 25
+        sw(1, 6, 0x104),   // store old value of AMOMAX
         // Load final value
-        lw(7, 1, 0), // x7 = mem[x1] (should be 25)
+        lw(7, 1, 0),     // x7 = mem[x1] (should be 25)
+        sw(1, 7, 0x108), // store final value
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
@@ -1200,6 +1271,21 @@ fn test_cpu_amo_min_max() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        20,
+        "AMOMIN should return old value 20"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        15,
+        "AMOMAX should return old value 15"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x108, SHORT_TIMEOUT),
+        25,
+        "Final memory value should be 25 after AMOMIN+AMOMAX"
     );
 }
 
@@ -1208,20 +1294,24 @@ fn test_cpu_amo_unsigned_min_max() {
     let mut runtime = create_test_runtime();
 
     // Program: Test AMOMINU, AMOMAXU (unsigned)
+    // Store returned old values and final result for verification.
 
     let mut instructions = vec![
         // Setup: x1 = DRAM_BASE (memory address)
         lui(1, DRAM_BASE),
-        // Test AMOMINU: mem = 100, minu with 50 -> mem = 50
+        // Test AMOMINU: mem = 100, minu with 50 -> old=100, mem = 50
         addi(2, 0, 100),
-        sw(1, 2, 0), // mem[x1] = 100
+        sw(1, 2, 0), // mem[x1+0] = 100
         addi(3, 0, 50),
-        amominu_w(4, 1, 3), // x4 = 100, mem[x1] = 50
-        // Test AMOMAXU: mem = 50, maxu with 75 -> mem = 75
+        amominu_w(4, 1, 3), // x4 = 100 (old), mem[x1] = 50
+        sw(1, 4, 0x100),    // store old value of AMOMINU
+        // Test AMOMAXU: mem = 50, maxu with 75 -> old=50, mem = 75
         addi(5, 0, 75),
-        amomaxu_w(6, 1, 5), // x6 = 50, mem[x1] = 75
+        amomaxu_w(6, 1, 5), // x6 = 50 (old), mem[x1] = 75
+        sw(1, 6, 0x104),    // store old value of AMOMAXU
         // Load final value
-        lw(7, 1, 0), // x7 = mem[x1] (should be 75)
+        lw(7, 1, 0),     // x7 = mem[x1] (should be 75)
+        sw(1, 7, 0x108), // store final value
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
@@ -1233,6 +1323,21 @@ fn test_cpu_amo_unsigned_min_max() {
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
         Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        100,
+        "AMOMINU should return old value 100"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        50,
+        "AMOMAXU should return old value 50"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x108, SHORT_TIMEOUT),
+        75,
+        "Final memory value should be 75 after AMOMINU+AMOMAXU"
     );
 }
 
