@@ -1022,3 +1022,244 @@ fn test_sram_peripheral_boundary_word_access() {
         0x0000_0055
     );
 }
+
+// ============================================================================
+// RV32A Atomic Extension Tests
+// ============================================================================
+
+#[test]
+fn test_cpu_lr_sc_success() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Successful LR/SC sequence
+    // Memory location: DRAM_BASE (0x80000000)
+    // 1. Store initial value 100 to DRAM_BASE
+    // 2. Load-Reserved from DRAM_BASE into x2
+    // 3. Add 5 to the loaded value (x2 = 100 + 5 = 105)
+    // 4. Store-Conditional the new value back to DRAM_BASE
+    // 5. Check that SC succeeded (x4 should be 0)
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Store initial value
+        addi(2, 0, 100),
+        sw(1, 2, 0), // mem[x1] = 100
+        // LR/SC sequence
+        lr_w(2, 1),    // x2 = mem[x1] (100), set reservation
+        addi(3, 2, 5), // x3 = x2 + 5 = 105
+        sc_w(4, 1, 3), // mem[x1] = x3 (105), x4 = success status
+        // Load final value to verify
+        lw(5, 1, 0), // x5 = mem[x1] (should be 105)
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_amoswap() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Atomic swap operation
+    // 1. Store initial value 42 to DRAM_BASE
+    // 2. Atomic swap with value 100
+    // 3. Verify old value was returned and new value was stored
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Store initial value
+        addi(2, 0, 42),
+        sw(1, 2, 0), // mem[x1] = 42
+        // Atomic swap
+        addi(3, 0, 100),    // x3 = 100 (new value)
+        amoswap_w(4, 1, 3), // x4 = mem[x1] (42), mem[x1] = x3 (100)
+        // Load final value to verify
+        lw(5, 1, 0), // x5 = mem[x1] (should be 100)
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_amoadd() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Atomic add operation (atomic counter)
+    // 1. Store initial counter value 10 to DRAM_BASE
+    // 2. Atomic add 5 to the counter
+    // 3. Verify old value was returned and new value is 15
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Store initial value
+        addi(2, 0, 10),
+        sw(1, 2, 0), // mem[x1] = 10
+        // Atomic add
+        addi(3, 0, 5),     // x3 = 5
+        amoadd_w(4, 1, 3), // x4 = mem[x1] (10), mem[x1] = 10 + 5 = 15
+        // Load final value to verify
+        lw(5, 1, 0), // x5 = mem[x1] (should be 15)
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_amo_logical() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Test AMOXOR, AMOAND, AMOOR
+    // All operate on the same memory location with different values
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Test AMOXOR: mem = 0xFF, xor with 0x0F -> mem = 0xF0
+        addi(2, 0, 0xFF),
+        sw(1, 2, 0), // mem[x1] = 0xFF
+        addi(3, 0, 0x0F),
+        amoxor_w(4, 1, 3), // x4 = 0xFF, mem[x1] = 0xF0
+        // Test AMOAND: mem = 0xF0, and with 0x3C -> mem = 0x30
+        addi(5, 0, 0x3C),
+        amoand_w(6, 1, 5), // x6 = 0xF0, mem[x1] = 0x30
+        // Test AMOOR: mem = 0x30, or with 0x0F -> mem = 0x3F
+        addi(7, 0, 0x0F),
+        amoor_w(8, 1, 7), // x8 = 0x30, mem[x1] = 0x3F
+        // Load final value
+        lw(9, 1, 0), // x9 = mem[x1] (should be 0x3F)
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_amo_min_max() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Test AMOMIN, AMOMAX (signed)
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Test AMOMIN: mem = 20, min with 15 -> mem = 15
+        addi(2, 0, 20),
+        sw(1, 2, 0), // mem[x1] = 20
+        addi(3, 0, 15),
+        amomin_w(4, 1, 3), // x4 = 20, mem[x1] = 15
+        // Test AMOMAX: mem = 15, max with 25 -> mem = 25
+        addi(5, 0, 25),
+        amomax_w(6, 1, 5), // x6 = 15, mem[x1] = 25
+        // Load final value
+        lw(7, 1, 0), // x7 = mem[x1] (should be 25)
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+#[test]
+fn test_cpu_amo_unsigned_min_max() {
+    let mut runtime = create_test_runtime();
+
+    // Program: Test AMOMINU, AMOMAXU (unsigned)
+
+    let mut instructions = vec![
+        // Setup: x1 = DRAM_BASE (memory address)
+        lui(1, DRAM_BASE),
+        // Test AMOMINU: mem = 100, minu with 50 -> mem = 50
+        addi(2, 0, 100),
+        sw(1, 2, 0), // mem[x1] = 100
+        addi(3, 0, 50),
+        amominu_w(4, 1, 3), // x4 = 100, mem[x1] = 50
+        // Test AMOMAXU: mem = 50, maxu with 75 -> mem = 75
+        addi(5, 0, 75),
+        amomaxu_w(6, 1, 5), // x6 = 50, mem[x1] = 75
+        // Load final value
+        lw(7, 1, 0), // x7 = mem[x1] (should be 75)
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+}
+
+// ============================================================================
+// Invalid Instruction Tests
+// ============================================================================
+
+/// Test that CPU halts when fetching an instruction value of 0
+///
+/// When memory returns 0x0000, the decompressor identifies this as an invalid
+/// compressed instruction (C.ADDI4SPN with nzuimm=0), sets is_valid=0.
+/// The CPU should transition to S_HALT state when it detects this.
+#[test]
+fn test_cpu_halts_on_zero_instruction() {
+    let mut runtime = create_test_runtime();
+
+    // Load 16 zero bytes (four zero words = four invalid compressed instructions)
+    // The CPU should halt when it fetches 0x0000
+    let program_bytes: Vec<u8> = vec![0u8; 16];
+
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
+
+    // The CPU enters S_HALT on the invalid instruction.
+    // wait_for_cpu_halt returns None because the program never writes to tohost.
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        None,
+        "Expected CPU to halt without writing to tohost on zero instruction"
+    );
+}
