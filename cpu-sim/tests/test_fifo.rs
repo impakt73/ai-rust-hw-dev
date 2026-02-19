@@ -24,8 +24,9 @@ fn test_fifo_hello_world() {
         0,    // mem_latency_cycles
         move |sim| {
             sim.write_memory_region(0x8000_0000, &program);
-            let mut fifo = Fifo::new_with_callback(callback);
-            cpu_sim::push_string_to_fifo_rx(&mut fifo.rx, test_string);
+            let fifo_source = FifoDataSource::new();
+            cpu_sim::push_string_to_fifo_rx(&fifo_source, test_string);
+            let fifo = Fifo::new_with_callback(fifo_source, callback);
             sim.register_device(FIFO_BASE, Box::new(fifo))
                 .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
             Ok(0x8000_0000)

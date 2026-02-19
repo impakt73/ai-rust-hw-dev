@@ -17,11 +17,6 @@ fn test_dma_copy() {
         let dma = Box::new(Dma::new());
         view.register_device(DMA_BASE, dma)
             .expect("Failed to register DMA device");
-        view.register_device(
-            cpu_sim::FIFO_BASE,
-            Box::new(cpu_sim::Fifo::new_with_callback(Box::new(|_, _| {}))),
-        )
-        .expect("Failed to register FIFO device");
         log::info!("DMA device registered at 0x{:08x}", DMA_BASE);
     };
 

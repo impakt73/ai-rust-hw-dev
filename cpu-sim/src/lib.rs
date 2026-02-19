@@ -9,9 +9,9 @@ mod simulator_view;
 // Public API exports - only what's needed for external use
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
-    BusDeviceError, Dma, Fifo, FifoDataReceivedCallback, RegistrationError, SystemBus,
-    SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE,
-    LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+    BusDeviceError, Dma, Fifo, FifoDataReceivedCallback, FifoDataSource, RegistrationError,
+    SystemBus, SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END,
+    FIFO_BASE, LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
@@ -23,13 +23,12 @@ pub use sim::{
 pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
-use std::collections::VecDeque;
 use std::path::Path;
 
 /// Push a UTF-8 string into a FIFO RX queue as little-endian u32 words.
 ///
 /// If the input length is a multiple of 4 bytes, a trailing zero word is appended.
-pub fn push_string_to_fifo_rx(fifo_rx: &mut VecDeque<u32>, s: &str) {
+pub fn push_string_to_fifo_rx(fifo_source: &FifoDataSource, s: &str) {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -39,11 +38,11 @@ pub fn push_string_to_fifo_rx(fifo_rx: &mut VecDeque<u32>, s: &str) {
                 word |= (bytes[i + j] as u32) << (j * 8);
             }
         }
-        fifo_rx.push_back(word);
+        fifo_source.write_word(word);
         i += 4;
     }
     if bytes.len().is_multiple_of(4) {
-        fifo_rx.push_back(0);
+        fifo_source.write_word(0);
     }
 }
 /// Load an ELF file into a simulator's memory

@@ -126,13 +126,12 @@ fn test_packet_protocol_end_to_end() {
     let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
     let packets_sent_clone = packets_sent.clone();
 
+    let fifo_source = FifoDataSource::new();
+    let fifo_source_for_callback = fifo_source.clone();
+
     // Callback that handles bidirectional packet communication
-    let fifo_callback = move |tx: &mut std::collections::VecDeque<u32>,
-                              rx: &mut std::collections::VecDeque<u32>| {
-        // Collect all TX data
-        while let Some(word) = tx.pop_front() {
-            fifo_tx_data_clone.lock().unwrap().push(word);
-        }
+    let fifo_callback = move |word: u32| {
+        fifo_tx_data_clone.lock().unwrap().push(word);
 
         // After collecting some data, send test packets once
         let tx_word_count = fifo_tx_data_clone.lock().unwrap().len();
@@ -146,8 +145,12 @@ fn test_packet_protocol_end_to_end() {
                 sequence: 100,
                 timestamp: 12345,
             };
-            cpu_sim::packet_transport::send_echo_packet(&echo_request, rx)
-                .expect("Failed to send Echo packet to CPU");
+            let mut temp_rx = std::collections::VecDeque::new();
+            cpu_sim::packet_transport::send_echo_packet(&echo_request, &mut temp_rx)
+                .expect("Failed to serialize Echo packet for CPU");
+            while let Some(word) = temp_rx.pop_front() {
+                fifo_source_for_callback.write_word(word);
+            }
             println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
 
             // Send DataU32 packet (value=1000)
@@ -156,8 +159,12 @@ fn test_packet_protocol_end_to_end() {
                 value: 1000,
                 tag: 55,
             };
-            cpu_sim::packet_transport::send_data_u32_packet(&data_request, rx)
-                .expect("Failed to send DataU32 packet to CPU");
+            let mut temp_rx = std::collections::VecDeque::new();
+            cpu_sim::packet_transport::send_data_u32_packet(&data_request, &mut temp_rx)
+                .expect("Failed to serialize DataU32 packet for CPU");
+            while let Some(word) = temp_rx.pop_front() {
+                fifo_source_for_callback.write_word(word);
+            }
             println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
 
             *sent = true;
@@ -177,7 +184,10 @@ fn test_packet_protocol_end_to_end() {
         Some(move |view: &mut SimulatorView| {
             view.register_device(
                 FIFO_BASE,
-                Box::new(Fifo::new_with_callback(Box::new(fifo_callback))),
+                Box::new(Fifo::new_with_callback(
+                    fifo_source,
+                    Box::new(fifo_callback),
+                )),
             )
             .expect("Failed to register FIFO device");
         }),
@@ -325,11 +335,9 @@ fn test_println_macro() {
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_callback = move |tx: &mut std::collections::VecDeque<u32>,
-                              _rx: &mut std::collections::VecDeque<u32>| {
-        while let Some(word) = tx.pop_front() {
-            fifo_data_clone.lock().unwrap().push(word);
-        }
+    let fifo_source = FifoDataSource::new();
+    let fifo_callback = move |word: u32| {
+        fifo_data_clone.lock().unwrap().push(word);
     };
 
     // Run the simulation with inst_complete callback
@@ -345,7 +353,10 @@ fn test_println_macro() {
         Some(move |view: &mut SimulatorView| {
             view.register_device(
                 FIFO_BASE,
-                Box::new(Fifo::new_with_callback(Box::new(fifo_callback))),
+                Box::new(Fifo::new_with_callback(
+                    fifo_source,
+                    Box::new(fifo_callback),
+                )),
             )
             .expect("Failed to register FIFO device");
         }),
