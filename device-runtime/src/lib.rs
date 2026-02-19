@@ -311,6 +311,7 @@ pub trait DeviceRuntime: std::fmt::Display {
                         format!("Segment vaddr 0x{:x} does not fit in u32", phdr.p_vaddr),
                     ))
                 })?;
+                
                 let file_size = usize::try_from(phdr.p_filesz).map_err(|_| {
                     DeviceError::IoError(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -320,33 +321,67 @@ pub trait DeviceRuntime: std::fmt::Display {
                         ),
                     ))
                 })?;
-                if file_size == 0 {
+                
+                let mem_size = usize::try_from(phdr.p_memsz).map_err(|_| {
+                    DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Segment mem size 0x{:x} does not fit in usize",
+                            phdr.p_memsz
+                        ),
+                    ))
+                })?;
+                
+                // Skip completely empty segments
+                if mem_size == 0 {
                     continue;
                 }
-                let offset = usize::try_from(phdr.p_offset).map_err(|_| {
-                    DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Segment offset 0x{:x} does not fit in usize", phdr.p_offset),
-                    ))
-                })?;
-                let end = offset.checked_add(file_size).ok_or_else(|| {
-                    DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!(
-                            "Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}"
-                        ),
-                    ))
-                })?;
-                let segment_data = file_data.get(offset..end).ok_or_else(|| {
-                    DeviceError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!(
-                            "Segment out of bounds: offset=0x{offset:x}, size=0x{file_size:x}, file_len=0x{:x}",
-                            file_data.len()
-                        ),
-                    ))
-                })?;
-                self.write_memory_region(vaddr, segment_data, None)?;
+                
+                // Load file data if present (file_size > 0)
+                if file_size > 0 {
+                    let offset = usize::try_from(phdr.p_offset).map_err(|_| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Segment offset 0x{:x} does not fit in usize", phdr.p_offset),
+                        ))
+                    })?;
+                    let end = offset.checked_add(file_size).ok_or_else(|| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}"
+                            ),
+                        ))
+                    })?;
+                    let segment_data = file_data.get(offset..end).ok_or_else(|| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "Segment out of bounds: offset=0x{offset:x}, size=0x{file_size:x}, file_len=0x{:x}",
+                                file_data.len()
+                            ),
+                        ))
+                    })?;
+                    self.write_memory_region(vaddr, segment_data, None)?;
+                }
+                
+                // Zero-initialize remaining bytes if mem_size > file_size (BSS/stack)
+                if mem_size > file_size {
+                    let zero_start = vaddr.checked_add(u32::try_from(file_size).map_err(|_| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("file_size 0x{:x} does not fit in u32", file_size),
+                        ))
+                    })?).ok_or_else(|| {
+                        DeviceError::IoError(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("BSS start address overflow: vaddr=0x{vaddr:x}, file_size=0x{file_size:x}"),
+                        ))
+                    })?;
+                    let zero_size = mem_size - file_size;
+                    let zeros = vec![0u8; zero_size];
+                    self.write_memory_region(zero_start, &zeros, None)?;
+                }
             }
         }
 

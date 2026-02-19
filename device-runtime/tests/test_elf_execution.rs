@@ -144,6 +144,15 @@ fn test_rust_bare_metal_elf() {
 }
 
 #[test]
+fn test_simple_test_elf() {
+    let mut runtime = create_test_runtime_with_fifo();
+    assert_eq!(
+        run_elf_until_halt(runtime.as_mut(), "simple_test", LONG_TIMEOUT),
+        Some(0x2a)
+    );
+}
+
+#[test]
 fn test_fp_math_elf() {
     let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(

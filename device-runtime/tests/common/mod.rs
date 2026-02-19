@@ -130,6 +130,7 @@ pub fn wait_for_tohost(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> u3
 pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> Option<u32> {
     let start = Instant::now();
     let mut tohost_value = None;
+    let mut observed_running_state = false;
 
     while start.elapsed() < timeout {
         let remaining = timeout.saturating_sub(start.elapsed());
@@ -173,7 +174,38 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
         let status = status.unwrap_or_else(|| {
             panic!("Timed out waiting for SYSCTRL status read response while waiting for cpu halt")
         });
+        
+        // Track if we've seen the CPU in running state
+        if (status & SYSCTRL_STATUS_CPU_HALTED) == 0 {
+            observed_running_state = true;
+        }
+        
         if (status & SYSCTRL_STATUS_CPU_HALTED) != 0 {
+            // If we detected halt immediately without seeing running state,
+            // and we haven't received a tohost value yet, give the simulator
+            // a bit more time to emit the tohost event before returning
+            if !observed_running_state && tohost_value.is_none() {
+                std::thread::sleep(Duration::from_millis(10));
+                // Try one more poll cycle to catch any pending tohost event
+                continue;
+            }
+            
+            // Try to flush any pending tohost events that might be in flight
+            if tohost_value.is_none() {
+                let flush_start = Instant::now();
+                while flush_start.elapsed() < Duration::from_millis(10) {
+                    match runtime.poll() {
+                        Ok(Some(BusEvent::TohostTermination { value })) => {
+                            tohost_value = Some(value);
+                            break;
+                        }
+                        Ok(Some(_)) => {}
+                        Ok(None) => std::thread::sleep(Duration::from_millis(1)),
+                        Err(e) => panic!("Poll error while flushing tohost event: {e}"),
+                    }
+                }
+            }
+            
             return tohost_value;
         }
         std::thread::sleep(Duration::from_millis(1));
