@@ -3213,6 +3213,7 @@ dependencies = [
  "clap",
  "cpal",
  "cpu-sim",
+ "elf",
  "env_logger",
  "log",
  "riscv_core",

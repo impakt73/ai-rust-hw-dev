@@ -267,6 +267,44 @@ impl InteractiveSimulator {
         view.receive_bus_response()
     }
 
+    /// Load multiple memory segments and boot the CPU at the specified entry point.
+    ///
+    /// This is the core primitive for loading programs with multiple non-contiguous
+    /// memory regions (e.g., ELF files). The simulator is reset once, all segments
+    /// are written, and then the CPU is booted at `entry_point`.
+    ///
+    /// # Arguments
+    /// * `entry_point` - CPU entry point address to boot from after loading
+    /// * `segments`    - Slice of `(vaddr, data)` pairs; each pair is written to
+    ///   the simulator memory at the given virtual address
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` if the reset or boot sequence fails
+    pub fn load_segments(&mut self, entry_point: u32, segments: &[(u32, &[u8])]) -> Result<(), String> {
+        self.simulator
+            .reset()
+            .map_err(|e| format!("Reset failed: {}", e))?;
+
+        {
+            let mut view = SimulatorView::new(
+                &mut self.simulator.bus,
+                &self.simulator.cpu,
+                &mut self.simulator.host_bus_handler,
+                &mut self.simulator.host_bus_direct_response,
+            );
+            for &(vaddr, data) in segments {
+                view.write_memory_region(vaddr, data);
+            }
+        }
+
+        self.simulator
+            .boot(entry_point)
+            .map_err(|e| format!("Boot failed: {}", e))?;
+
+        Ok(())
+    }
+
     /// Load a program from raw bytes into the simulator and boot the CPU
     ///
     /// Writes the provided bytes into simulator memory starting at `start_addr`,

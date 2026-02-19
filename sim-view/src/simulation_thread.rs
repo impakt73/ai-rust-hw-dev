@@ -4,7 +4,7 @@
 //! RISC-V simulator in a separate thread, decoupled from the UI thread.
 
 use cpu_sim::InteractiveSimulator;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -139,7 +139,7 @@ impl SimulationThread {
             if let Some(request) = request {
                 match request {
                     SimRequest::LoadELF(path) => {
-                        match simulator.load_elf(&path) {
+                        match Self::load_elf_into_simulator(&mut simulator, &path) {
                             Ok(_entry_point) => {
                                 total_cycles = 0;
                                 batch_count = 0;
@@ -257,6 +257,81 @@ impl SimulationThread {
                 }
             }
         }
+    }
+
+    /// Load an ELF file into the simulator and boot the CPU at the entry point.
+    ///
+    /// Parses the ELF file, extracts all PT_LOAD segments, writes them into
+    /// simulator memory via [`InteractiveSimulator::load_segments`], and boots
+    /// the CPU at the ELF entry point.
+    fn load_elf_into_simulator(
+        simulator: &mut InteractiveSimulator,
+        path: &Path,
+    ) -> Result<u32, String> {
+        let file_data =
+            std::fs::read(path).map_err(|e| format!("Failed to read ELF file: {}", e))?;
+        let elf_file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(&file_data)
+            .map_err(|e| format!("Failed to parse ELF: {}", e))?;
+
+        let entry_point = u32::try_from(elf_file.ehdr.e_entry).map_err(|_| {
+            format!(
+                "ELF entry point 0x{:x} does not fit in u32",
+                elf_file.ehdr.e_entry
+            )
+        })?;
+
+        let mut segments: Vec<(u32, Vec<u8>)> = Vec::new();
+        if let Some(phdrs) = elf_file.segments() {
+            for phdr in phdrs.iter() {
+                if phdr.p_type != elf::abi::PT_LOAD {
+                    continue;
+                }
+                let vaddr = u32::try_from(phdr.p_vaddr).map_err(|_| {
+                    format!(
+                        "Segment vaddr 0x{:x} does not fit in u32",
+                        phdr.p_vaddr
+                    )
+                })?;
+                let file_size = usize::try_from(phdr.p_filesz).map_err(|_| {
+                    format!(
+                        "Segment file size 0x{:x} does not fit in usize",
+                        phdr.p_filesz
+                    )
+                })?;
+                if file_size == 0 {
+                    continue;
+                }
+                let offset = usize::try_from(phdr.p_offset).map_err(|_| {
+                    format!(
+                        "Segment offset 0x{:x} does not fit in usize",
+                        phdr.p_offset
+                    )
+                })?;
+                let end = offset.checked_add(file_size).ok_or_else(|| {
+                    format!(
+                        "Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}"
+                    )
+                })?;
+                let segment_data = file_data.get(offset..end).ok_or_else(|| {
+                    format!(
+                        "Segment out of bounds: offset=0x{offset:x}, size=0x{file_size:x}, file_len=0x{:x}",
+                        file_data.len()
+                    )
+                })?;
+                segments.push((vaddr, segment_data.to_vec()));
+            }
+        }
+
+        let segment_refs: Vec<(u32, &[u8])> =
+            segments.iter().map(|(a, d)| (*a, d.as_slice())).collect();
+        simulator.load_segments(entry_point, &segment_refs)?;
+
+        log::info!(
+            "ELF loaded: {} segment(s), entry point 0x{:08x}",
+            segments.len(),
+            entry_point
+        );
+        Ok(entry_point)
     }
 
     /// Execute a batch of instructions
