@@ -441,7 +441,7 @@ fn test_c_flw_max_offset() {
 
 #[test]
 fn test_c_fsw_basic() {
-    // C.FSW x9, f10, 8
+    // C.FSW f10, 8(x9)
     let insn_16: u16 = c_fsw(9, 10, 8);
     let expected = fsw(9, 10, 8);
     test_decompress(insn_16, expected, true, true);
@@ -449,7 +449,7 @@ fn test_c_fsw_basic() {
 
 #[test]
 fn test_c_fsw_max_offset() {
-    // C.FSW x8, f15, 124
+    // C.FSW f15, 124(x8)
     let insn_16: u16 = c_fsw(8, 15, 124);
     let expected = fsw(8, 15, 124);
     test_decompress(insn_16, expected, true, true);
