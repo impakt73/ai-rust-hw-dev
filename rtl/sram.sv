@@ -6,6 +6,10 @@
 // - When we=1 and waddr==raddr in the same clock edge, rdata captures the
 //   pre-write memory contents.
 //
+// SECOND READ PORT (raddr2 / rdata2):
+// - Provides a second independent registered read to support unaligned
+//   instruction fetches that span two consecutive words in the SRAM.
+//
 // BRAM INITIALIZATION NOTE:
 // - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
 //   which is supported by this project's target FPGA/toolchain.
@@ -18,7 +22,9 @@ module sram #(
     input  logic [ADDR_WIDTH-1:0] waddr,
     input  logic [31:0]           wdata,
     input  logic [ADDR_WIDTH-1:0] raddr,
-    output logic [31:0]           rdata
+    output logic [31:0]           rdata,
+    input  logic [ADDR_WIDTH-1:0] raddr2,
+    output logic [31:0]           rdata2
 );
 
     logic [31:0] mem [0:(1<<ADDR_WIDTH)-1];
@@ -38,7 +44,8 @@ module sram #(
         end
         // Read-first behavior: same-cycle read and write to same address returns
         // the old memory contents.
-        rdata <= mem[raddr];
+        rdata  <= mem[raddr];
+        rdata2 <= mem[raddr2];
     end
 
 endmodule

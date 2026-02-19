@@ -5,7 +5,9 @@ module sram_test_wrapper (
     input  logic [3:0]  waddr,
     input  logic [31:0] wdata,
     input  logic [3:0]  raddr,
-    output logic [31:0] rdata
+    output logic [31:0] rdata,
+    input  logic [3:0]  raddr2,
+    output logic [31:0] rdata2
 );
     sram #(
         .ADDR_WIDTH(4)
@@ -16,6 +18,8 @@ module sram_test_wrapper (
         .waddr(waddr),
         .wdata(wdata),
         .raddr(raddr),
-        .rdata(rdata)
+        .rdata(rdata),
+        .raddr2(raddr2),
+        .rdata2(rdata2)
     );
 endmodule

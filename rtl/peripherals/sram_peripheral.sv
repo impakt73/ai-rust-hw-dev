@@ -117,7 +117,10 @@ module sram_peripheral (
     // SRAM Instantiation
     // ============================================================
     // The sram module has registered read output, providing 1-cycle latency
+    // Two read ports: rdata for the word at word_addr, rdata2 for word_addr+1
+    // Used together to support unaligned word reads (addr[1]=1)
     logic [31:0] sram_rdata;
+    logic [31:0] sram_rdata2;
     
     sram #(
         .ADDR_WIDTH(ADDR_WIDTH)
@@ -128,7 +131,9 @@ module sram_peripheral (
         .waddr(word_addr),
         .wdata(aligned_wdata),  // Use aligned data
         .raddr(word_addr),
-        .rdata(sram_rdata)
+        .rdata(sram_rdata),
+        .raddr2(word_addr + 1'b1),
+        .rdata2(sram_rdata2)
     );
     
     // ============================================================
@@ -156,7 +161,16 @@ module sram_peripheral (
                 endcase
             end
             2'b10: begin  // Word access
-                extracted_rdata = sram_rdata;
+                // For half-word-aligned addresses (addr[1]=1), the 32-bit value
+                // spans two consecutive SRAM words.  Combine the upper half of the
+                // current word with the lower half of the next word so that the
+                // caller sees data starting at the requested address — matching
+                // the byte-addressable DRAM behaviour expected by the CPU fetch
+                // buffer for unaligned instruction fetches.
+                if (addr[1])
+                    extracted_rdata = {sram_rdata2[15:0], sram_rdata[31:16]};
+                else
+                    extracted_rdata = sram_rdata;
             end
             default: extracted_rdata = 32'h0;
         endcase

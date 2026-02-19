@@ -644,11 +644,7 @@ module cpu #(
     // ============================================================
     // Internal Memory Address Assignments
     // ============================================================
-    // Instruction fetch address is always word-aligned so that both SRAM
-    // (which indexes by word_addr = addr[12:2]) and DRAM (byte-addressable)
-    // return the same 32-bit word.  The fetch buffer extracts the correct
-    // half-word based on pc[1].
-    assign imem_addr_internal = {pc[31:2], 2'b00};
+    assign imem_addr_internal = pc;
     assign instruction = ir_reg;  // Use registered instruction
     
     // ============================================================
