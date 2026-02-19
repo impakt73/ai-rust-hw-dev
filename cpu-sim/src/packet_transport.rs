@@ -1,6 +1,6 @@
-use postcard::to_allocvec;
-/// Packet transport utilities for FIFO-based communication
 use riscv_shared::protocol::*;
+/// Packet transport utilities for FIFO-based communication
+use rkyv::{from_bytes, rancor::Error, to_bytes};
 use std::collections::VecDeque;
 
 /// Helper macro to send any packet type
@@ -8,8 +8,8 @@ macro_rules! impl_send_packet {
     ($name:ident, $packet_type:ty) => {
         #[allow(dead_code)]
         pub fn $name(packet: &$packet_type, fifo_rx: &mut VecDeque<u32>) -> Result<(), String> {
-            let bytes: Vec<u8> =
-                to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
+            let bytes =
+                to_bytes::<Error>(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
 
             let mut i = 0;
             while i < bytes.len() {
@@ -52,25 +52,19 @@ macro_rules! impl_receive_packet {
                 }
             }
 
-            // Try to deserialize using take_from_bytes which returns remaining bytes
-            match postcard::take_from_bytes::<$packet_type>(&bytes) {
-                Ok((packet, remaining)) => {
-                    // Success! Calculate how many bytes were consumed
-                    let consumed_bytes = bytes.len() - remaining.len();
-                    // Remove the consumed words (rounding up to complete words)
-                    // Use ceiling division to round up to word boundary
-                    // Example: 10 bytes = div_ceil(10, 4) = 3 words (12 bytes)
-                    let consumed_words = consumed_bytes.div_ceil(4);
+            // Try to deserialize progressively larger prefixes to find packet boundary.
+            for consumed_words in 1..=available_words {
+                let consumed_bytes = consumed_words * 4;
+                if let Ok(packet) = from_bytes::<$packet_type, Error>(&bytes[..consumed_bytes]) {
                     for _ in 0..consumed_words {
                         fifo_tx.pop_front();
                     }
-                    Ok(Some(packet))
-                }
-                Err(_) => {
-                    // Not enough data yet or invalid packet
-                    Ok(None)
+                    return Ok(Some(packet));
                 }
             }
+
+            // Not enough data yet or invalid packet
+            Ok(None)
         }
     };
 }

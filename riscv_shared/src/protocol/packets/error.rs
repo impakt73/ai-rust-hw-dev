@@ -1,11 +1,11 @@
 use crate::protocol::header::PacketHeader;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 extern crate alloc;
 use alloc::string::String;
 
 /// Error code enumeration
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ErrorCode {
     InvalidMagic = 1,          // Bad magic number
@@ -20,7 +20,7 @@ pub enum ErrorCode {
 }
 
 /// Report errors in packet processing
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct ErrorPacket {
     pub header: PacketHeader,
     pub error_code: ErrorCode,

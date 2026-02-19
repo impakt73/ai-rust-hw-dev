@@ -1,8 +1,8 @@
 use crate::protocol::header::PacketHeader;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Reset type enumeration
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ResetType {
     Soft = 0, // Software-triggered reset
@@ -10,7 +10,7 @@ pub enum ResetType {
 }
 
 /// Request CPU reset
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct ResetPacket {
     pub header: PacketHeader,
     pub reset_type: ResetType,
@@ -18,14 +18,14 @@ pub struct ResetPacket {
 }
 
 /// Request simulation halt/termination
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct HaltPacket {
     pub header: PacketHeader,
     pub exit_code: i32, // Exit code (0 = success, non-zero = error)
 }
 
 /// Query or report system status
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct StatusPacket {
     pub header: PacketHeader,
     pub cycle_count: u64,  // Current cycle count

@@ -1,11 +1,11 @@
 use crate::protocol::header::PacketHeader;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 extern crate alloc;
 use alloc::{string::String, vec::Vec};
 
 /// Transfer a single unsigned 32-bit value
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct DataU32Packet {
     pub header: PacketHeader,
     pub value: u32,
@@ -13,7 +13,7 @@ pub struct DataU32Packet {
 }
 
 /// Transfer a single signed 32-bit value
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct DataI32Packet {
     pub header: PacketHeader,
     pub value: i32,
@@ -21,7 +21,7 @@ pub struct DataI32Packet {
 }
 
 /// Transfer arbitrary binary data
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct DataBufferPacket {
     pub header: PacketHeader,
     pub buffer_id: u32, // Buffer identifier
@@ -30,7 +30,7 @@ pub struct DataBufferPacket {
 }
 
 /// Transfer UTF-8 text strings
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 pub struct DataStringPacket {
     pub header: PacketHeader,
     pub string_id: u32, // String identifier

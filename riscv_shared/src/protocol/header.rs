@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Magic number for packet validation (0x52565043 = "RVPC" in ASCII)
 pub const PACKET_MAGIC: u32 = 0x52565043;
 
 /// Common packet header (8 bytes)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PacketHeader {
     /// Magic number for packet validation (0x52565043 = "RVPC" in ASCII)
     pub magic: u32,
@@ -32,7 +32,7 @@ impl PacketHeader {
 }
 
 /// Packet type enumeration
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketType {
     // Basic communication packets

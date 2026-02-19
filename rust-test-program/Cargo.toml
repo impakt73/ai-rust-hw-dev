@@ -32,8 +32,7 @@ riscv = { version = "0.16.0", features = ["critical-section-single-hart"] }
 critical-section = "1.2.0"
 embedded-alloc = "0.6.0"
 riscv_shared = { path = "../riscv_shared", default-features = false }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-postcard = { version = "1.0", default-features = false, features = ["alloc"] }
+rkyv = { version = "0.8.15", default-features = false, features = ["alloc"] }
 
 [[bin]]
 name = "minimal_postcard_test"

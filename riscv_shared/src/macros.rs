@@ -6,19 +6,19 @@
 use crate::protocol::{DebugLevel, DebugPacket, PacketHeader, PacketType};
 use alloc::string::String;
 use core::ptr::write_volatile;
-use postcard::to_allocvec;
+use rkyv::{api::high::to_bytes_in, rancor::Error, ser::writer::Buffer};
 
 /// MMIO addresses for FIFO communication
 const FIFO_DATA: u32 = crate::fifo::FIFO_DATA;
 
 /// Send a DebugPacket to the host via MMIO FIFO
 ///
-/// This function serializes a DebugPacket using postcard and writes it
+/// This function serializes a DebugPacket using rkyv and writes it
 /// word-by-word to the FIFO_DATA register.
 ///
 /// # Error Handling
 ///
-/// If postcard serialization fails, the function silently returns without
+/// If serialization fails, the function silently returns without
 /// sending any data. In a bare-metal `no_std` environment, there are limited
 /// options for error handling, and the macro invocation sites cannot easily
 /// handle errors. The function is designed to be fail-safe: if serialization
@@ -32,7 +32,10 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
     };
 
     // Serialize packet to bytes
-    if let Ok(bytes) = to_allocvec(&packet) {
+    let mut scratch = [core::mem::MaybeUninit::<u8>::uninit(); 512];
+    let writer = Buffer::from(&mut scratch[..]);
+
+    if let Ok(bytes) = to_bytes_in::<_, Error>(&packet, writer) {
         // Send bytes in 4-byte chunks (u32 words)
         for chunk in bytes.chunks(4) {
             let mut word: u32 = 0;

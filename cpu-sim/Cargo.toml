@@ -10,6 +10,5 @@ riscv_shared = { path = "../riscv_shared" }
 host-bus-handler = { path = "../host-bus-handler" }
 log = "0.4"
 env_logger = "0.10"
-serde = { version = "1.0", features = ["derive"] }
-postcard = "1.0"
+rkyv = "0.8.15"
 image = "0.25"
