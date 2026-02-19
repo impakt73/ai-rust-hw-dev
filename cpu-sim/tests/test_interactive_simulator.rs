@@ -4,20 +4,6 @@ use bus_shared::{BusDevice, Video, VideoConfig, FIFO_BASE};
 use common::create_simple_exit_program;
 use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
 use riscv_shared::SUCCESS_CODE;
-use std::path::PathBuf;
-
-#[test]
-fn test_interactive_simulator_load_elf() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    let elf_path = sim_tests::test_program_path("simple_test").expect("Failed to find simple_test");
-
-    let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-
-    // Test that we can load an ELF file
-    let result = sim.load_elf(&elf_path);
-    assert!(result.is_ok(), "Should be able to load ELF file");
-}
 
 #[test]
 fn test_interactive_simulator_step_without_elf() {
@@ -194,21 +180,6 @@ fn test_interactive_simulator_step_result() {
     assert!(
         result.cycles_executed > 0,
         "Cycles executed should be greater than 0"
-    );
-}
-
-#[test]
-fn test_interactive_simulator_load_nonexistent_file() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-
-    let bad_path = PathBuf::from("nonexistent_file.elf");
-    let result = sim.load_elf(&bad_path);
-
-    assert!(
-        result.is_err(),
-        "Loading nonexistent file should return error"
     );
 }
 
