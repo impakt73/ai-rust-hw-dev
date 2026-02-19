@@ -57,7 +57,6 @@ pub enum WindowEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Escape,
-    Space,
     R,
 }
 
@@ -293,10 +292,6 @@ impl ApplicationHandler for VideoWindowApp {
                     WinitKey::Named(NamedKey::Escape) => {
                         self.event_queue
                             .push_back(WindowEvent::KeyPressed(Key::Escape, modifiers));
-                    }
-                    WinitKey::Named(NamedKey::Space) => {
-                        self.event_queue
-                            .push_back(WindowEvent::KeyPressed(Key::Space, modifiers));
                     }
                     WinitKey::Character(ref c) if c == "r" || c == "R" => {
                         self.event_queue

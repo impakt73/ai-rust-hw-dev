@@ -2,6 +2,7 @@
 use sim_view::{gui_backends, headless_backends, viewer};
 
 use clap::Parser;
+use device_runtime::{DeviceRuntimeType, StartupReset};
 use gui_backends::{GuiAudioBackend, GuiEventSource, GuiVideoBackend};
 use headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend};
 use std::path::PathBuf;
@@ -45,10 +46,73 @@ struct Args {
     /// Run in headless mode (no GUI, for testing)
     #[arg(long)]
     headless: bool,
+
+    /// Runtime backend to use
+    #[arg(long, value_enum, default_value_t = RuntimeBackend::Sim)]
+    runtime: RuntimeBackend,
+
+    /// FPGA serial device path (required when --runtime fpga)
+    #[arg(long)]
+    fpga_device: Option<PathBuf>,
+
+    /// FPGA serial baud rate
+    #[arg(long, default_value_t = 115200)]
+    fpga_baud: u32,
+
+    /// Startup reset mode for FPGA runtime
+    #[arg(long, value_enum, default_value_t = StartupResetArg::Cpu)]
+    fpga_startup_reset: StartupResetArg,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum RuntimeBackend {
+    Sim,
+    Fpga,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum StartupResetArg {
+    None,
+    Cpu,
+    System,
+}
+
+impl From<StartupResetArg> for StartupReset {
+    fn from(value: StartupResetArg) -> Self {
+        match value {
+            StartupResetArg::None => StartupReset::None,
+            StartupResetArg::Cpu => StartupReset::Cpu,
+            StartupResetArg::System => StartupReset::System,
+        }
+    }
+}
+
+fn runtime_type_from_args(args: &Args) -> Result<DeviceRuntimeType, String> {
+    match args.runtime {
+        RuntimeBackend::Sim => Ok(DeviceRuntimeType::Sim),
+        RuntimeBackend::Fpga => {
+            let device = args
+                .fpga_device
+                .as_ref()
+                .ok_or_else(|| "--fpga-device is required when --runtime fpga".to_string())?;
+            Ok(DeviceRuntimeType::Fpga {
+                device: device.to_string_lossy().to_string(),
+                baud: args.fpga_baud,
+                startup_reset: args.fpga_startup_reset.into(),
+            })
+        }
+    }
 }
 
 fn main() {
     let args = Args::parse();
+    let runtime_type = match runtime_type_from_args(&args) {
+        Ok(runtime_type) => runtime_type,
+        Err(e) => {
+            eprintln!("✗ Error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Initialize logger
     let log_level = if args.verbose { "debug" } else { "info" };
@@ -59,13 +123,12 @@ fn main() {
     // Run in headless or GUI mode
     let result = if args.headless {
         log::info!("Running in headless mode (no GUI)");
-        run_headless_mode(args)
+        run_headless_mode(args, runtime_type)
     } else {
         log::info!("Controls:");
         log::info!("  - Ctrl+R: Reload last ELF file");
-        log::info!("  - Space: Pause/Resume simulation");
         log::info!("  - Escape: Exit");
-        run_gui_mode(args)
+        run_gui_mode(args, runtime_type)
     };
 
     // Handle errors
@@ -75,13 +138,14 @@ fn main() {
     }
 }
 
-fn run_gui_mode(args: Args) -> Result<(), String> {
+fn run_gui_mode(args: Args, runtime_type: DeviceRuntimeType) -> Result<(), String> {
     // Create viewer configuration
     let config = viewer::ViewerConfig {
         initial_width: args.width,
         initial_height: args.height,
         max_cycles: args.max_cycles,
         print_inst_trace: args.print_inst_trace,
+        runtime_type,
     };
 
     // Create GUI backends
@@ -103,13 +167,14 @@ fn run_gui_mode(args: Args) -> Result<(), String> {
     viewer.run()
 }
 
-fn run_headless_mode(args: Args) -> Result<(), String> {
+fn run_headless_mode(args: Args, runtime_type: DeviceRuntimeType) -> Result<(), String> {
     // Create viewer configuration
     let config = viewer::ViewerConfig {
         initial_width: args.width,
         initial_height: args.height,
         max_cycles: args.max_cycles,
         print_inst_trace: args.print_inst_trace,
+        runtime_type,
     };
 
     // Create headless backends
@@ -124,7 +189,7 @@ fn run_headless_mode(args: Args) -> Result<(), String> {
     if let Some(elf_path) = args.elf {
         viewer.load_elf(&elf_path)?;
     } else {
-        log::warn!("No ELF file specified for headless mode");
+        return Err("Headless mode requires an ELF file".to_string());
     }
 
     // Run main loop
