@@ -12,13 +12,7 @@ fn test_dma_copy() {
         device: Box::new(Dma::new()),
     }]));
 
-    let elf_path =
-        sim_tests::test_program_path("test_dma_copy").expect("Failed to find test_dma_copy");
-
-    let entry = runtime.load_elf(&elf_path).expect("Failed to load ELF");
-    runtime.boot_cpu(entry).expect("Failed to boot CPU");
-
-    let tohost_value = common::wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    let tohost_value = common::run_elf_until_halt(runtime.as_mut(), "test_dma_copy", LONG_TIMEOUT);
 
     assert_eq!(
         tohost_value,

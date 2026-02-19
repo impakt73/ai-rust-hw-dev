@@ -1,17 +1,21 @@
 mod common;
 
 use bus_shared::{Fifo, FifoDataSource};
-use common::{create_test_runtime_with_registrations, LONG_TIMEOUT};
+use common::{
+    create_test_runtime_with_registrations, load_and_boot_elf, resolve_test_elf_path, LONG_TIMEOUT,
+};
 use cpu_sim::packet_transport;
 use device_runtime::BusDeviceRegistration;
-use riscv_shared::protocol::{DataU32Packet, DebugLevel, EchoPacket, PacketHeader, PacketType};
+use riscv_shared::protocol::{
+    DataU32Packet, DebugLevel, EchoPacket, PacketHeader, PacketType, PACKET_MAGIC,
+};
 use riscv_shared::FIFO_BASE;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_packet_protocol_end_to_end() {
-    let elf_path = sim_tests::test_program_path("packet_test").expect("Failed to find packet_test");
+    let elf_path = resolve_test_elf_path("packet_test");
 
     // Shared state for collecting FIFO TX data
     let fifo_tx_data: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
@@ -26,11 +30,16 @@ fn test_packet_protocol_end_to_end() {
 
     // Callback that handles bidirectional packet communication
     let fifo_callback = move |word: u32| {
-        fifo_tx_data_clone.lock().unwrap().push(word);
+        fifo_tx_data_clone
+            .lock()
+            .expect("fifo_tx_data lock poisoned in callback")
+            .push(word);
 
-        let tx_word_count = fifo_tx_data_clone.lock().unwrap().len();
-        let mut sent = packets_sent_clone.lock().unwrap();
-        if !*sent && tx_word_count > 0 {
+        // On first invocation, send the test packets back into the FIFO source
+        let mut sent = packets_sent_clone
+            .lock()
+            .expect("packets_sent lock poisoned in callback");
+        if !*sent {
             // Send Echo packet (seq=100)
             let echo_request = EchoPacket {
                 header: PacketHeader::new(PacketType::Echo, 0),
@@ -75,8 +84,7 @@ fn test_packet_protocol_end_to_end() {
         )),
     }]));
 
-    let entry = runtime.load_elf(&elf_path).expect("Failed to load ELF");
-    runtime.boot_cpu(entry).expect("Failed to boot CPU");
+    load_and_boot_elf(runtime.as_mut(), &elf_path);
     let tohost_value = common::wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -86,19 +94,19 @@ fn test_packet_protocol_end_to_end() {
     );
 
     // Parse and verify received packets
-    let fifo_words = fifo_tx_data.lock().unwrap();
+    let fifo_words = fifo_tx_data.lock().expect("fifo_tx_data lock poisoned");
     let mut fifo_tx: VecDeque<u32> = fifo_words.iter().copied().collect();
 
     let debug_pkt = packet_transport::receive_debug_packet(&mut fifo_tx)
         .expect("Failed to parse Debug packet")
         .expect("Should receive Debug packet");
-    assert_eq!(debug_pkt.header.magic, 0x52565043);
+    assert_eq!(debug_pkt.header.magic, PACKET_MAGIC);
     assert_eq!(debug_pkt.message, "CPU Started");
 
     let echo_pkt = packet_transport::receive_echo_packet(&mut fifo_tx)
         .expect("Failed to parse Echo packet")
         .expect("Should receive Echo packet");
-    assert_eq!(echo_pkt.header.magic, 0x52565043);
+    assert_eq!(echo_pkt.header.magic, PACKET_MAGIC);
     assert_eq!(
         echo_pkt.sequence, 101,
         "Echo sequence should be incremented"
@@ -107,13 +115,13 @@ fn test_packet_protocol_end_to_end() {
     let data_pkt = packet_transport::receive_data_u32_packet(&mut fifo_tx)
         .expect("Failed to parse DataU32 packet")
         .expect("Should receive DataU32 packet");
-    assert_eq!(data_pkt.header.magic, 0x52565043);
+    assert_eq!(data_pkt.header.magic, PACKET_MAGIC);
     assert_eq!(data_pkt.value, 2000, "DataU32 value should be doubled");
 
     let assert_pkt = packet_transport::receive_assert_packet(&mut fifo_tx)
         .expect("Failed to parse Assert packet")
         .expect("Should receive Assert packet");
-    assert_eq!(assert_pkt.header.magic, 0x52565043);
+    assert_eq!(assert_pkt.header.magic, PACKET_MAGIC);
     assert!(
         assert_pkt.passed,
         "Assert packet should indicate test passed"
@@ -122,15 +130,17 @@ fn test_packet_protocol_end_to_end() {
 
 #[test]
 fn test_println_macro() {
-    let elf_path =
-        sim_tests::test_program_path("println_test").expect("Failed to find println_test");
+    let elf_path = resolve_test_elf_path("println_test");
 
     // Collect FIFO TX words from CPU
     let fifo_data: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
     let fifo_source = Arc::new(Mutex::new(FifoDataSource::new()));
     let fifo_callback = move |word: u32| {
-        fifo_data_clone.lock().unwrap().push(word);
+        fifo_data_clone
+            .lock()
+            .expect("fifo_data lock poisoned in callback")
+            .push(word);
     };
 
     let mut runtime = create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
@@ -141,8 +151,7 @@ fn test_println_macro() {
         )),
     }]));
 
-    let entry = runtime.load_elf(&elf_path).expect("Failed to load ELF");
-    runtime.boot_cpu(entry).expect("Failed to boot CPU");
+    load_and_boot_elf(runtime.as_mut(), &elf_path);
     let tohost_value = common::wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
@@ -151,7 +160,7 @@ fn test_println_macro() {
         "Program should complete with success code 42"
     );
 
-    let fifo_words = fifo_data.lock().unwrap();
+    let fifo_words = fifo_data.lock().expect("fifo_data lock poisoned");
     let mut fifo_tx: VecDeque<u32> = fifo_words.iter().copied().collect();
 
     let expected_messages = [
@@ -166,7 +175,7 @@ fn test_println_macro() {
             .expect("Should receive DebugPacket");
         assert_eq!(pkt.level, *expected_level);
         assert_eq!(pkt.message, *expected_msg);
-        assert_eq!(pkt.header.magic, 0x52565043);
+        assert_eq!(pkt.header.magic, PACKET_MAGIC);
         assert_eq!(pkt.header.packet_type, PacketType::Debug);
     }
 }
