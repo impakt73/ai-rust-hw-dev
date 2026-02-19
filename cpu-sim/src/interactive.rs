@@ -267,49 +267,28 @@ impl InteractiveSimulator {
         view.receive_bus_response()
     }
 
-    /// Load multiple memory segments and boot the CPU at the specified entry point.
+    /// Boot the CPU from the specified program counter address.
     ///
-    /// This is the core primitive for loading programs with multiple non-contiguous
-    /// memory regions (e.g., ELF files). The simulator is reset once, all segments
-    /// are written, and then the CPU is booted at `entry_point`.
+    /// Issues a boot command to the CPU. This should be called after
+    /// [`reset`] and all [`write_memory_region`] calls have completed.
     ///
     /// # Arguments
-    /// * `entry_point` - CPU entry point address to boot from after loading
-    /// * `segments`    - Slice of `(vaddr, data)` pairs; each pair is written to
-    ///   the simulator memory at the given virtual address
+    /// * `boot_pc` - Address to boot the CPU from (must be in DRAM range)
     ///
     /// # Returns
     /// * `Ok(())` on success
-    /// * `Err(String)` if the reset or boot sequence fails
-    pub fn load_segments(&mut self, entry_point: u32, segments: &[(u32, &[u8])]) -> Result<(), String> {
+    /// * `Err(String)` if the boot sequence fails
+    pub fn boot_cpu(&mut self, boot_pc: u32) -> Result<(), String> {
         self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
-        {
-            let mut view = SimulatorView::new(
-                &mut self.simulator.bus,
-                &self.simulator.cpu,
-                &mut self.simulator.host_bus_handler,
-                &mut self.simulator.host_bus_direct_response,
-            );
-            for &(vaddr, data) in segments {
-                view.write_memory_region(vaddr, data);
-            }
-        }
-
-        self.simulator
-            .boot(entry_point)
-            .map_err(|e| format!("Boot failed: {}", e))?;
-
-        Ok(())
+            .boot(boot_pc)
+            .map_err(|e| format!("Boot failed: {}", e))
     }
 
     /// Load a program from raw bytes into the simulator and boot the CPU
     ///
     /// Writes the provided bytes into simulator memory starting at `start_addr`,
     /// then resets the CPU and boots it from that address.  This is the
-    /// direct-instruction equivalent of `load_elf` and lets tests drive the
+    /// direct-instruction equivalent of loading an ELF and lets tests drive the
     /// simulator with hand-crafted instruction sequences.
     ///
     /// # Arguments
@@ -320,57 +299,27 @@ impl InteractiveSimulator {
     /// * `Ok(())` on success
     /// * `Err(String)` if the reset / boot sequence fails
     pub fn load_program(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
-        {
-            let mut view = SimulatorView::new(
-                &mut self.simulator.bus,
-                &self.simulator.cpu,
-                &mut self.simulator.host_bus_handler,
-                &mut self.simulator.host_bus_direct_response,
-            );
-            view.write_memory_region(start_addr, data);
-        }
-
-        self.simulator
-            .boot(start_addr)
-            .map_err(|e| format!("Boot failed: {}", e))?;
-
-        Ok(())
+        self.reset()?;
+        self.write_memory_region(start_addr, data);
+        self.boot_cpu(start_addr)
     }
 
     /// Write a region of memory from a byte slice
     ///
     /// Writes bytes into the simulator's memory starting at `start_addr`.
-    ///
-    /// After writing, the simulator is reset with boot deferred (CPU left in
-    /// S_BOOT state) so that `boot_cpu` can be called externally.
+    /// The caller is responsible for calling [`reset`] before writing and
+    /// [`boot_cpu`] afterwards.
     ///
     /// # Arguments
     /// * `start_addr` - Starting address (must be in DRAM range)
     /// * `data` - Byte slice containing the data to write
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` if the reset fails
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
-        // Reset with boot deferred so boot_cpu can be called externally
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
-        {
-            let mut view = SimulatorView::new(
-                &mut self.simulator.bus,
-                &self.simulator.cpu,
-                &mut self.simulator.host_bus_handler,
-                &mut self.simulator.host_bus_direct_response,
-            );
-            view.write_memory_region(start_addr, data);
-        }
-
-        Ok(())
+    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
+        let mut view = SimulatorView::new(
+            &mut self.simulator.bus,
+            &self.simulator.cpu,
+            &mut self.simulator.host_bus_handler,
+            &mut self.simulator.host_bus_direct_response,
+        );
+        view.write_memory_region(start_addr, data);
     }
 }

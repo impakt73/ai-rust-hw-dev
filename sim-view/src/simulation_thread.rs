@@ -261,9 +261,9 @@ impl SimulationThread {
 
     /// Load an ELF file into the simulator and boot the CPU at the entry point.
     ///
-    /// Parses the ELF file, extracts all PT_LOAD segments, writes them into
-    /// simulator memory via [`InteractiveSimulator::load_segments`], and boots
-    /// the CPU at the ELF entry point.
+    /// Parses the ELF file, extracts all PT_LOAD segments, resets the simulator,
+    /// writes each segment via [`InteractiveSimulator::write_memory_region`], and
+    /// finally boots the CPU at the ELF entry point.
     fn load_elf_into_simulator(
         simulator: &mut InteractiveSimulator,
         path: &Path,
@@ -280,6 +280,8 @@ impl SimulationThread {
             )
         })?;
 
+        // Collect segments before touching the simulator so that errors are
+        // detected before any state is mutated.
         let mut segments: Vec<(u32, Vec<u8>)> = Vec::new();
         if let Some(phdrs) = elf_file.segments() {
             for phdr in phdrs.iter() {
@@ -322,9 +324,12 @@ impl SimulationThread {
             }
         }
 
-        let segment_refs: Vec<(u32, &[u8])> =
-            segments.iter().map(|(a, d)| (*a, d.as_slice())).collect();
-        simulator.load_segments(entry_point, &segment_refs)?;
+        // Reset once, write all segments, then boot.
+        simulator.reset()?;
+        for (vaddr, data) in &segments {
+            simulator.write_memory_region(*vaddr, data);
+        }
+        simulator.boot_cpu(entry_point)?;
 
         log::info!(
             "ELF loaded: {} segment(s), entry point 0x{:08x}",
