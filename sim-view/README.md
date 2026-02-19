@@ -4,7 +4,7 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 
 ## Overview
 
-`sim-view` provides an interactive GUI application that executes RISC-V ELF programs on the CPU simulator and displays live video and audio output. It leverages the `InteractiveSimulator` API from `cpu-sim` to provide step-by-step execution control with real-time multimedia output.
+`sim-view` provides an interactive GUI application that executes RISC-V ELF programs through `device-runtime` and displays live video and audio output. The runtime can target either the software simulator backend or an FPGA backend.
 
 ## Features
 
@@ -12,11 +12,10 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 - **Real-time audio playback** using cpal audio stream (supports i16, f32, u16 sample formats)
 - **Interactive controls**:
   - **Escape**: Exit the viewer
-  - **Space**: Pause/Resume simulation
   - **Ctrl+R**: Reload the last ELF file (useful during development)
 - **Dynamic window sizing** based on video configuration from the program
 - **Dynamic audio format** based on audio configuration from the program
-- **State management**: Idle → Running → Paused → Halted transitions
+- **State management**: Idle → Running → Halted transitions
 
 ## Installation
 
@@ -68,12 +67,16 @@ Arguments:
   [ELF_FILE]  Path to the RISC-V ELF executable to run on startup (optional)
 
 Options:
-  -m, --max-cycles <MAX_CYCLES>    Maximum cycles to run before auto-terminating (0 = unlimited) [default: 0]
+  -m, --max-cycles <MAX_CYCLES>    Retained for compatibility (device-runtime controls execution)
   -v, --verbose                    Enable verbose logging
       --print-inst-trace           Print instruction trace (prints every instruction executed)
       --width <WIDTH>              Initial window width [default: 320]
       --height <HEIGHT>            Initial window height [default: 240]
       --headless                   Run in headless mode (no GUI, for testing)
+      --runtime <RUNTIME>          Runtime backend to use [default: sim] [possible values: sim, fpga]
+      --fpga-device <FPGA_DEVICE>  FPGA serial device path (required when --runtime fpga)
+      --fpga-baud <FPGA_BAUD>      FPGA serial baud rate [default: 115200]
+      --fpga-startup-reset <FPGA_STARTUP_RESET>  Startup reset mode for FPGA runtime [default: none] [possible values: none, cpu, system]
   -h, --help                       Print help
 ```
 
@@ -206,10 +209,6 @@ See the test programs in the `rust-test-program/` directory for examples.
 ### Keyboard Controls
 
 - **Escape**: Exit the viewer
-- **Space**: Pause/Resume simulation
-  - When paused, the window title shows `[PAUSED]`
-  - When running, the window title shows `[RUNNING]`
-  - When halted (program finished), the window title shows `[HALTED]`
 - **Ctrl+R**: Reload the last ELF file
   - Useful during development to quickly test changes
   - Resets the simulation state
@@ -220,8 +219,7 @@ The viewer tracks four states:
 
 1. **Idle**: No program loaded (initial state)
 2. **Running**: Program is executing
-3. **Paused**: Program is loaded but execution is paused
-4. **Halted**: Program has terminated (tohost written or max cycles reached)
+3. **Halted**: Program has terminated (tohost written)
 
 ## Supported Formats
 
@@ -281,9 +279,7 @@ These programs are automatically built from source when you run tests.
 
 ### Simulation runs too fast/slow
 
-- Adjust the `instructions_per_frame` constant in `viewer.rs`
-- Use `--max-cycles` to limit execution
-- Use Space to pause and step through manually (requires code changes for single-step)
+- Use `--max-cycles` to set compatibility behavior for older workflows
 
 ## Future Enhancements
 
@@ -294,13 +290,13 @@ Potential improvements for future versions:
 3. **Recording** - Record video/audio to file
 4. **Performance overlay** - Show FPS, cycle count, instruction count
 5. **Variable simulation speed** - Speed up/slow down with hotkeys
-6. **Single-step mode** - Step one instruction at a time
+6. **Single-step mode** - Not supported with device-runtime + FPGA backend
 7. **Debugger integration** - Breakpoints, register inspection
 8. **VCD waveform viewer** - Integrated waveform display
 
 ## Dependencies
 
-- **cpu-sim**: Core RISC-V CPU simulator with InteractiveSimulator API
+- **device-runtime**: Unified runtime abstraction for simulator and FPGA backends
 - **riscv_core**: RISC-V instruction definitions and trace structures
 - **softbuffer**: Cross-platform software framebuffer library
 - **winit**: Cross-platform window creation library

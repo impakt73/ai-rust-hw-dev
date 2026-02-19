@@ -68,7 +68,6 @@ pub enum ViewerEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Escape,
-    Space,
     R,
 }
 
@@ -87,8 +86,5 @@ pub struct KeyModifiers {
 #[allow(dead_code)] // Used by integration tests
 pub enum TestCommand {
     LoadELF(PathBuf),
-    Pause,
-    Resume,
-    StepFrames(u64),
     Terminate,
 }
