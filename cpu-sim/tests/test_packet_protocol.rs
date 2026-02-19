@@ -126,7 +126,7 @@ fn test_packet_protocol_end_to_end() {
     let packets_sent = std::sync::Arc::new(std::sync::Mutex::new(false));
     let packets_sent_clone = packets_sent.clone();
 
-    let fifo_source = FifoDataSource::new();
+    let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
     let fifo_source_for_callback = fifo_source.clone();
 
     // Callback that handles bidirectional packet communication
@@ -149,7 +149,10 @@ fn test_packet_protocol_end_to_end() {
             cpu_sim::packet_transport::send_echo_packet(&echo_request, &mut temp_rx)
                 .expect("Failed to serialize Echo packet for CPU");
             while let Some(word) = temp_rx.pop_front() {
-                fifo_source_for_callback.write_word(word);
+                fifo_source_for_callback
+                    .lock()
+                    .expect("FIFO source lock poisoned in callback")
+                    .write_word(word);
             }
             println!("\nStep 2: Sent Echo packet (seq=100) to CPU");
 
@@ -163,7 +166,10 @@ fn test_packet_protocol_end_to_end() {
             cpu_sim::packet_transport::send_data_u32_packet(&data_request, &mut temp_rx)
                 .expect("Failed to serialize DataU32 packet for CPU");
             while let Some(word) = temp_rx.pop_front() {
-                fifo_source_for_callback.write_word(word);
+                fifo_source_for_callback
+                    .lock()
+                    .expect("FIFO source lock poisoned in callback")
+                    .write_word(word);
             }
             println!("Step 3: Sent DataU32 packet (value=1000) to CPU");
 
@@ -335,7 +341,7 @@ fn test_println_macro() {
     // Create a callback to collect FIFO data from CPU
     let fifo_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
-    let fifo_source = FifoDataSource::new();
+    let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
     let fifo_callback = move |word: u32| {
         fifo_data_clone.lock().unwrap().push(word);
     };

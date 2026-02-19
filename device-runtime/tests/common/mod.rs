@@ -8,7 +8,7 @@ use device_runtime::{
 };
 use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
-use riscv_shared::bus::{sysctrl_status_addr, FIFO_BASE, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
+use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -40,13 +40,7 @@ fn fpga_startup_reset_from_env(fpga_hard_reset: Option<&str>) -> device_runtime:
 /// If `FPGA_DEVICE_PATH` and `FPGA_BAUD_RATE` are set, the FPGA backend is used.
 /// Otherwise, the simulation backend is used by default.
 pub fn create_test_runtime() -> Box<dyn DeviceRuntime> {
-    create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
-        base_addr: FIFO_BASE,
-        device: Box::new(bus_shared::Fifo::new_with_callback(
-            bus_shared::FifoDataSource::new(),
-            Box::new(|_| {}),
-        )),
-    }]))
+    create_test_runtime_with_registrations(None)
 }
 
 /// Create a device runtime based on environment variables with optional custom

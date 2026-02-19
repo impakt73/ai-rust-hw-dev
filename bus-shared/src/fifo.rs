@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 /// Callback invoked whenever the CPU writes a word to FIFO DATA.
 pub type FifoDataReceivedCallback = Box<dyn FnMut(u32) + Send>;
 
-/// Shared host→CPU FIFO data source.
-#[derive(Clone, Default)]
+/// Host→CPU FIFO data source.
+#[derive(Default)]
 pub struct FifoDataSource {
-    host_to_cpu: Arc<Mutex<VecDeque<u32>>>,
+    host_to_cpu: VecDeque<u32>,
 }
 
 impl FifoDataSource {
@@ -18,50 +18,41 @@ impl FifoDataSource {
     }
 
     /// Push a word that the CPU can later read from FIFO DATA.
-    pub fn write_word(&self, word: u32) {
-        self.host_to_cpu
-            .lock()
-            .expect("FifoDataSource lock poisoned in write_word")
-            .push_back(word);
+    pub fn write_word(&mut self, word: u32) {
+        self.host_to_cpu.push_back(word);
     }
 
     /// Pop the next word for CPU consumption.
-    pub fn read_word(&self) -> Option<u32> {
-        self.host_to_cpu
-            .lock()
-            .expect("FifoDataSource lock poisoned in read_word")
-            .pop_front()
+    fn read_word(&mut self) -> Option<u32> {
+        self.host_to_cpu.pop_front()
     }
 
     /// Returns whether host→CPU queue is empty.
-    pub fn is_empty(&self) -> bool {
-        self.host_to_cpu
-            .lock()
-            .expect("FifoDataSource lock poisoned in is_empty")
-            .is_empty()
+    fn is_empty(&self) -> bool {
+        self.host_to_cpu.is_empty()
     }
 
     /// Clear all pending host→CPU words.
-    pub fn clear(&self) {
-        self.host_to_cpu
-            .lock()
-            .expect("FifoDataSource lock poisoned in clear")
-            .clear();
+    fn clear(&mut self) {
+        self.host_to_cpu.clear();
     }
 }
+
+/// Shared host→CPU FIFO data source.
+pub type SharedFifoDataSource = Arc<Mutex<FifoDataSource>>;
 
 /// FIFO peripheral for UART-style communication
 /// Provides host→CPU data via shared source and CPU→host notification via callback.
 pub struct Fifo {
     /// Data sent FROM Host -> CPU (as u32 words)
-    pub host_to_cpu: FifoDataSource,
+    host_to_cpu: SharedFifoDataSource,
     on_data_received: FifoDataReceivedCallback,
 }
 
 impl Fifo {
     /// Create a new FIFO backed by a shared host→CPU data source.
     pub fn new_with_callback(
-        host_to_cpu: FifoDataSource,
+        host_to_cpu: SharedFifoDataSource,
         on_data_received: FifoDataReceivedCallback,
     ) -> Self {
         Fifo {
@@ -73,8 +64,17 @@ impl Fifo {
     /// Read the STATUS register
     /// Bit 0 (RX_VALID): 1 if RX has data, 0 if empty
     /// Bit 1 (TX_READY): Always 1 (simulated buffer is infinite)
-    pub fn read_status(&self) -> u32 {
-        let rx_valid = if self.host_to_cpu.is_empty() { 0 } else { 1 };
+    fn read_status(&self) -> u32 {
+        let rx_valid = if self
+            .host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in read_status")
+            .is_empty()
+        {
+            0
+        } else {
+            1
+        };
         let tx_ready = 1; // Always ready (infinite buffer)
         (tx_ready << 1) | rx_valid
     }
@@ -82,8 +82,13 @@ impl Fifo {
     /// Read the DATA register
     /// Pops a u32 word from the RX queue
     /// Returns 0 if RX is empty
-    pub fn read_data(&mut self) -> u32 {
-        match self.host_to_cpu.read_word() {
+    fn read_data(&mut self) -> u32 {
+        match self
+            .host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in read_data")
+            .read_word()
+        {
             Some(val) => val,
             None => {
                 log::warn!(
@@ -97,7 +102,7 @@ impl Fifo {
 
     /// Write to the DATA register
     /// Forwards a u32 word to host callback immediately.
-    pub fn write_data(&mut self, val: u32) {
+    fn write_data(&mut self, val: u32) {
         (self.on_data_received)(val);
     }
 }
@@ -147,7 +152,10 @@ impl BusDevice for Fifo {
     }
 
     fn reset(&mut self, _ctx: &mut SystemContext) {
-        self.host_to_cpu.clear();
+        self.host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in reset")
+            .clear();
     }
 }
 
@@ -158,15 +166,18 @@ mod tests {
 
     #[test]
     fn test_reset_clears_host_to_cpu_queue() {
-        let source = FifoDataSource::new();
+        let source = Arc::new(Mutex::new(FifoDataSource::new()));
         let mut fifo = Fifo::new_with_callback(source.clone(), Box::new(|_| {}));
         fifo.write_data(0x1111_1111);
-        source.write_word(0x2222_2222);
+        source
+            .lock()
+            .expect("test source lock poisoned")
+            .write_word(0x2222_2222);
 
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
         fifo.reset(&mut ctx);
 
-        assert!(source.is_empty());
+        assert!(source.lock().expect("test source lock poisoned").is_empty());
     }
 }

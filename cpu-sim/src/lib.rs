@@ -10,8 +10,8 @@ mod simulator_view;
 pub use bus_shared::{
     is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
     BusDeviceError, Dma, Fifo, FifoDataReceivedCallback, FifoDataSource, RegistrationError,
-    SystemBus, SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE, DRAM_BASE, DRAM_END,
-    FIFO_BASE, LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+    SharedFifoDataSource, SystemBus, SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE,
+    DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
@@ -28,7 +28,7 @@ use std::path::Path;
 /// Push a UTF-8 string into a FIFO RX queue as little-endian u32 words.
 ///
 /// If the input length is a multiple of 4 bytes, a trailing zero word is appended.
-pub fn push_string_to_fifo_rx(fifo_source: &FifoDataSource, s: &str) {
+pub fn push_string_to_fifo_rx(fifo_source: &SharedFifoDataSource, s: &str) {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -38,11 +38,17 @@ pub fn push_string_to_fifo_rx(fifo_source: &FifoDataSource, s: &str) {
                 word |= (bytes[i + j] as u32) << (j * 8);
             }
         }
-        fifo_source.write_word(word);
+        fifo_source
+            .lock()
+            .expect("push_string_to_fifo_rx source lock poisoned")
+            .write_word(word);
         i += 4;
     }
     if bytes.len().is_multiple_of(4) {
-        fifo_source.write_word(0);
+        fifo_source
+            .lock()
+            .expect("push_string_to_fifo_rx source lock poisoned")
+            .write_word(0);
     }
 }
 /// Load an ELF file into a simulator's memory

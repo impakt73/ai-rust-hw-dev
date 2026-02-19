@@ -24,7 +24,7 @@ fn test_fifo_hello_world() {
         0,    // mem_latency_cycles
         move |sim| {
             sim.write_memory_region(0x8000_0000, &program);
-            let fifo_source = FifoDataSource::new();
+            let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
             cpu_sim::push_string_to_fifo_rx(&fifo_source, test_string);
             let fifo = Fifo::new_with_callback(fifo_source, callback);
             sim.register_device(FIFO_BASE, Box::new(fifo))
