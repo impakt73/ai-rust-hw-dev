@@ -148,7 +148,6 @@ impl EventSource for GuiEventSource {
 fn convert_key(key: VwKey) -> Key {
     match key {
         VwKey::Escape => Key::Escape,
-        VwKey::Space => Key::Space,
         VwKey::R => Key::R,
     }
 }

@@ -3212,7 +3212,7 @@ dependencies = [
  "bus-shared",
  "clap",
  "cpal",
- "cpu-sim",
+ "device-runtime",
  "elf",
  "env_logger",
  "log",

@@ -144,11 +144,6 @@ fn test_frame_stepping() {
         .expect("Failed to find test_video_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Step 3 frames (this ELF produces exactly 3 frames)
-    viewer
-        .push_event(ViewerEvent::TestCommand(TestCommand::StepFrames(3)))
-        .expect("Failed to push event");
-
     // Run until exactly 3 frames are captured or safety limit
     let mut steps = 0;
     loop {

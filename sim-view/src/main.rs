@@ -63,7 +63,6 @@ fn main() {
     } else {
         log::info!("Controls:");
         log::info!("  - Ctrl+R: Reload last ELF file");
-        log::info!("  - Space: Pause/Resume simulation");
         log::info!("  - Escape: Exit");
         run_gui_mode(args)
     };

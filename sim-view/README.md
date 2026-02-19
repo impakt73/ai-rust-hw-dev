@@ -4,7 +4,7 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 
 ## Overview
 
-`sim-view` provides an interactive GUI application that executes RISC-V ELF programs on the CPU simulator and displays live video and audio output. It leverages the `InteractiveSimulator` API from `cpu-sim` to provide step-by-step execution control with real-time multimedia output.
+`sim-view` provides an interactive GUI application that executes RISC-V ELF programs on a `device-runtime` backend and displays live video and audio output.
 
 ## Features
 
@@ -12,11 +12,10 @@ Real-time video and audio viewer for programs running on the simulated RISC-V CP
 - **Real-time audio playback** using cpal audio stream (supports i16, f32, u16 sample formats)
 - **Interactive controls**:
   - **Escape**: Exit the viewer
-  - **Space**: Pause/Resume simulation
   - **Ctrl+R**: Reload the last ELF file (useful during development)
 - **Dynamic window sizing** based on video configuration from the program
 - **Dynamic audio format** based on audio configuration from the program
-- **State management**: Idle → Running → Paused → Halted transitions
+- **State management**: Idle → Running → Halted transitions
 
 ## Installation
 
@@ -172,16 +171,16 @@ cargo run --package sim-view -- --max-cycles 100000 path/to/program.elf
     - Handles sample format conversions (i16, f32, u16)
     - Implements thread-safe sample buffering
 
-12. **SimulatorController** (`simulator_controller.rs`)
-    - Wraps the `InteractiveSimulator` from cpu-sim
+12. **SimulationThread** (`simulation_thread.rs`)
+    - Uses `device-runtime` for simulation backend access
     - Registers Video and Audio devices at `VIDEO_BASE` and `AUDIO_BASE`
-    - Manages ELF loading and simulation stepping
+    - Manages ELF loading and runtime execution
     - Provides thread-safe queues for video/audio data
 
 13. **SimViewer<V, A, E>** (`viewer.rs`)
     - Main application logic and event loop
     - Generic over VideoBackend, AudioBackend, and EventSource traits
-    - State management (Idle, Running, Paused, Halted)
+    - State management (Idle, Running, Halted)
     - Coordinates between simulator and backends
     - Implements keyboard controls and UI feedback
 
@@ -206,22 +205,20 @@ See the test programs in the `rust-test-program/` directory for examples.
 ### Keyboard Controls
 
 - **Escape**: Exit the viewer
-- **Space**: Pause/Resume simulation
-  - When paused, the window title shows `[PAUSED]`
-  - When running, the window title shows `[RUNNING]`
-  - When halted (program finished), the window title shows `[HALTED]`
 - **Ctrl+R**: Reload the last ELF file
   - Useful during development to quickly test changes
   - Resets the simulation state
+- Window title states:
+  - `[RUNNING]` while the program is executing
+  - `[HALTED]` after program completion (tohost or max cycles)
 
 ### Window States
 
-The viewer tracks four states:
+The viewer tracks three states:
 
 1. **Idle**: No program loaded (initial state)
 2. **Running**: Program is executing
-3. **Paused**: Program is loaded but execution is paused
-4. **Halted**: Program has terminated (tohost written or max cycles reached)
+3. **Halted**: Program has terminated (tohost written or max cycles reached)
 
 ## Supported Formats
 
@@ -283,7 +280,6 @@ These programs are automatically built from source when you run tests.
 
 - Adjust the `instructions_per_frame` constant in `viewer.rs`
 - Use `--max-cycles` to limit execution
-- Use Space to pause and step through manually (requires code changes for single-step)
 
 ## Future Enhancements
 
@@ -294,13 +290,13 @@ Potential improvements for future versions:
 3. **Recording** - Record video/audio to file
 4. **Performance overlay** - Show FPS, cycle count, instruction count
 5. **Variable simulation speed** - Speed up/slow down with hotkeys
-6. **Single-step mode** - Step one instruction at a time
+6. **Advanced runtime controls**
 7. **Debugger integration** - Breakpoints, register inspection
 8. **VCD waveform viewer** - Integrated waveform display
 
 ## Dependencies
 
-- **cpu-sim**: Core RISC-V CPU simulator with InteractiveSimulator API
+- **device-runtime**: Runtime abstraction used by sim-view for simulation execution
 - **riscv_core**: RISC-V instruction definitions and trace structures
 - **softbuffer**: Cross-platform software framebuffer library
 - **winit**: Cross-platform window creation library
