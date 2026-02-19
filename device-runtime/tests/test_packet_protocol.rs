@@ -2,7 +2,8 @@ mod common;
 
 use bus_shared::{Fifo, FifoDataSource};
 use common::{
-    create_test_runtime_with_registrations, load_and_boot_elf, resolve_test_elf_path, LONG_TIMEOUT,
+    create_test_runtime_with_registrations, load_and_boot_elf, resolve_test_elf_path,
+    wait_for_tohost, LONG_TIMEOUT,
 };
 use cpu_sim::packet_transport;
 use device_runtime::BusDeviceRegistration;
@@ -85,11 +86,10 @@ fn test_packet_protocol_end_to_end() {
     }]));
 
     load_and_boot_elf(runtime.as_mut(), &elf_path);
-    let tohost_value = common::wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
-        tohost_value,
-        Some(42),
+        tohost_value, 42,
         "Program should complete with success code 42"
     );
 
@@ -152,11 +152,10 @@ fn test_println_macro() {
     }]));
 
     load_and_boot_elf(runtime.as_mut(), &elf_path);
-    let tohost_value = common::wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT);
+    let tohost_value = wait_for_tohost(runtime.as_mut(), LONG_TIMEOUT);
 
     assert_eq!(
-        tohost_value,
-        Some(42),
+        tohost_value, 42,
         "Program should complete with success code 42"
     );
 

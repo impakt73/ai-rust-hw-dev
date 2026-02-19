@@ -9,7 +9,11 @@ use alloc::string::String;
 use core::panic::PanicInfo;
 use riscv_rt::entry;
 use riscv_shared::protocol::*;
-use rkyv::{rancor::Error, to_bytes};
+use rkyv::{
+    api::high::to_bytes_in_with_alloc,
+    rancor::Error,
+    ser::{allocator::Arena, writer::Buffer},
+};
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
@@ -19,17 +23,16 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-fn send_packet<T>(packet: &T) -> Result<(), &'static str>
-where
-    T: for<'a> rkyv::Serialize<
-        rkyv::api::high::HighSerializer<
-            rkyv::util::AlignedVec,
-            rkyv::ser::allocator::ArenaHandle<'a>,
-            Error,
-        >,
+fn send_packet(
+    packet: &impl for<'a, 'b> rkyv::Serialize<
+        rkyv::api::high::HighSerializer<Buffer<'b>, rkyv::ser::allocator::ArenaHandle<'a>, Error>,
     >,
-{
-    let bytes = to_bytes::<Error>(packet).map_err(|_| "Serialization failed")?;
+) -> Result<(), &'static str> {
+    let mut scratch = [core::mem::MaybeUninit::<u8>::uninit(); 128];
+    let writer = Buffer::from(&mut scratch[..]);
+    let mut arena = Arena::with_capacity(256);
+    let bytes = to_bytes_in_with_alloc::<_, _, Error>(packet, writer, arena.acquire())
+        .map_err(|_| "Serialization failed")?;
 
     for chunk in bytes.chunks(4) {
         let mut word: u32 = 0;

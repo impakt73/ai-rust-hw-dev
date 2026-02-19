@@ -7,7 +7,12 @@ mod common;
 
 use core::panic::PanicInfo;
 use riscv_rt::entry;
-use rkyv::{rancor::Error, to_bytes, Archive, Serialize};
+use rkyv::{
+    api::serialize_using,
+    rancor::Error,
+    ser::{writer::Buffer, Serializer},
+    Archive, Serialize,
+};
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
@@ -32,7 +37,10 @@ fn main() -> ! {
         b: 0xABCDEF00,
     };
 
-    if let Ok(bytes) = to_bytes::<Error>(&simple) {
+    let mut scratch = [core::mem::MaybeUninit::<u8>::uninit(); 64];
+    let mut serializer = Serializer::new(Buffer::from(&mut scratch[..]), (), ());
+    if serialize_using::<_, Error>(&simple, &mut serializer).is_ok() {
+        let bytes = serializer.into_writer();
         // Write bytes in chunks of 4, just like packet_test.rs
         for chunk in bytes.chunks(4) {
             let mut word: u32 = 0;

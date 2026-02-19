@@ -13,7 +13,7 @@ REGION_ALIAS("REGION_BSS", RAM);
 REGION_ALIAS("REGION_HEAP", SRAM);
 REGION_ALIAS("REGION_STACK", SRAM);
 
-_hart_stack_size = 1K;
+_hart_stack_size = 2K;
 
-/* Reserve a 1K heap for global allocator initialization via riscv-rt symbols */
-_heap_size = 1K;
+/* Reserve a 6K heap for global allocator initialization via riscv-rt symbols */
+_heap_size = 6K;

@@ -6,7 +6,11 @@
 use crate::protocol::{DebugLevel, DebugPacket, PacketHeader, PacketType};
 use alloc::string::String;
 use core::ptr::write_volatile;
-use rkyv::{api::high::to_bytes_in, rancor::Error, ser::writer::Buffer};
+use rkyv::{
+    api::high::to_bytes_in_with_alloc,
+    rancor::Error,
+    ser::{allocator::Arena, writer::Buffer},
+};
 
 /// MMIO addresses for FIFO communication
 const FIFO_DATA: u32 = crate::fifo::FIFO_DATA;
@@ -32,10 +36,11 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
     };
 
     // Serialize packet to bytes
-    let mut scratch = [core::mem::MaybeUninit::<u8>::uninit(); 512];
+    let mut scratch = [core::mem::MaybeUninit::<u8>::uninit(); 128];
     let writer = Buffer::from(&mut scratch[..]);
+    let mut arena = Arena::with_capacity(256);
 
-    if let Ok(bytes) = to_bytes_in::<_, Error>(&packet, writer) {
+    if let Ok(bytes) = to_bytes_in_with_alloc::<_, _, Error>(&packet, writer, arena.acquire()) {
         // Send bytes in 4-byte chunks (u32 words)
         for chunk in bytes.chunks(4) {
             let mut word: u32 = 0;
