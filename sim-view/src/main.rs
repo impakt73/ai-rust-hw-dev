@@ -60,7 +60,7 @@ struct Args {
     fpga_baud: u32,
 
     /// Startup reset mode for FPGA runtime
-    #[arg(long, value_enum, default_value_t = StartupResetArg::None)]
+    #[arg(long, value_enum, default_value_t = StartupResetArg::Cpu)]
     fpga_startup_reset: StartupResetArg,
 }
 

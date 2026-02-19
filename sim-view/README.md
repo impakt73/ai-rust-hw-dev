@@ -76,7 +76,7 @@ Options:
       --runtime <RUNTIME>          Runtime backend to use [default: sim] [possible values: sim, fpga]
       --fpga-device <FPGA_DEVICE>  FPGA serial device path (required when --runtime fpga)
       --fpga-baud <FPGA_BAUD>      FPGA serial baud rate [default: 115200]
-      --fpga-startup-reset <FPGA_STARTUP_RESET>  Startup reset mode for FPGA runtime [default: none] [possible values: none, cpu, system]
+      --fpga-startup-reset <FPGA_STARTUP_RESET>  Startup reset mode for FPGA runtime [default: cpu] [possible values: none, cpu, system]
   -h, --help                       Print help
 ```
 

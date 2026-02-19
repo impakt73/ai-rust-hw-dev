@@ -212,7 +212,7 @@ impl<V: VideoBackend + 'static, A: AudioBackend + 'static, E: EventSource> SimVi
         log::info!("Loading ELF: {}", path.display());
 
         self.runtime
-            .reset(ResetKind::System)
+            .reset(ResetKind::Cpu)
             .map_err(|e| format!("Failed to reset runtime before ELF load: {e}"))?;
 
         let entry = self

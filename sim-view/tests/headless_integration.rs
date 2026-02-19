@@ -84,6 +84,80 @@ fn test_headless_event_injection() {
 }
 
 #[test]
+fn test_video_pattern_frame_count_on_completion() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
+
+    let config = ViewerConfig {
+        initial_width: 320,
+        initial_height: 240,
+        max_cycles: 1000000,
+        print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
+    };
+
+    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
+
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+    viewer.run().expect("Viewer run failed");
+
+    let frames = viewer.get_video_frames();
+    assert_eq!(
+        frames.len(),
+        3,
+        "test_video_pattern should produce exactly 3 frames, got {}",
+        frames.len()
+    );
+}
+
+#[test]
+fn test_video_pattern_sequential_frames_differ() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
+
+    let config = ViewerConfig {
+        initial_width: 320,
+        initial_height: 240,
+        max_cycles: 1000000,
+        print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
+    };
+
+    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
+
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+    viewer.run().expect("Viewer run failed");
+
+    let frames = viewer.get_video_frames();
+    assert!(
+        frames.len() >= 2,
+        "Should capture at least two frames, got {}",
+        frames.len()
+    );
+
+    let differences_found = frames
+        .windows(2)
+        .filter(|window| window[0].data != window[1].data)
+        .count();
+
+    assert!(
+        differences_found > 0,
+        "Expected at least one differing consecutive frame out of {} frames",
+        frames.len()
+    );
+}
+
+#[test]
 fn test_audio_config_change_and_samples() {
     let _ = env_logger::builder().is_test(true).try_init();
 
