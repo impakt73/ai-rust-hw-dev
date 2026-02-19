@@ -19,7 +19,8 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() -> ! {
-    common::init_heap(&HEAP);
+    // Use DRAM for heap to avoid consuming limited on-device SRAM.
+    unsafe { HEAP.init(0x8000_0000, 4096) };
     // Create a Vec with known data to test if the allocator works correctly
     #[allow(clippy::useless_vec)]
     let v = vec![

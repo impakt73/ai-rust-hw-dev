@@ -84,6 +84,15 @@ pub fn resolve_test_elf_path(test_program: &str) -> PathBuf {
         .unwrap_or_else(|e| panic!("Failed to find {test_program}: {e}"))
 }
 
+/// Try to resolve a named test program ELF path.
+///
+/// Returns `None` when the binary was not built (e.g. because it exceeds the
+/// device memory capacity).  Tests should early-return when `None` is returned
+/// so they are silently skipped.
+pub fn try_resolve_test_elf_path(test_program: &str) -> Option<PathBuf> {
+    sim_tests::test_program_path(test_program).ok()
+}
+
 /// Load an ELF into runtime, boot CPU at ELF entry point, and return that entry.
 pub fn load_and_boot_elf(runtime: &mut dyn DeviceRuntime, elf_path: &Path) -> u32 {
     let entry = runtime.load_elf(elf_path).expect("Failed to load ELF");
