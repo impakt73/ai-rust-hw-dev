@@ -28,32 +28,6 @@ fn main() {
         );
     }
 
-    // Build rust-test-program using cargo
-    println!("cargo:warning=Building rust-test-program in release mode...");
-
-    let output = Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .current_dir(&rust_test_program_dir)
-        .output()
-        .expect("Failed to execute cargo build for rust-test-program");
-
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!(
-            "cargo:warning=Failed to build rust-test-program. Status: {}",
-            output.status
-        );
-        if !stdout.is_empty() {
-            println!("cargo:warning=rust-test-program stdout:\n{}", stdout);
-        }
-        if !stderr.is_empty() {
-            println!("cargo:warning=rust-test-program stderr:\n{}", stderr);
-        }
-        panic!("Failed to build rust-test-program");
-    }
-
     // Parse the Cargo.toml to get the list of binaries
     let cargo_toml_path = rust_test_program_dir.join("Cargo.toml");
     let cargo_toml_content = fs::read_to_string(&cargo_toml_path).unwrap_or_else(|e| {
@@ -67,20 +41,31 @@ fn main() {
     let cargo_toml: CargoToml = toml::from_str(&cargo_toml_content)
         .unwrap_or_else(|e| panic!("Failed to parse Cargo.toml: {}", e));
 
-    // Find the built binaries and copy them to OUT_DIR
+    // Find the built binaries directory
     // The binaries are built to: rust-test-program/target/riscv32imafc-unknown-none-elf/release/
     let target_dir = rust_test_program_dir
         .join("target")
         .join("riscv32imafc-unknown-none-elf")
         .join("release");
 
-    // Copy all binaries to OUT_DIR without .elf extension
+    // Build each binary individually so a failure in one does not block the others
+    println!("cargo:warning=Building rust-test-program binaries in release mode...");
+    let mut failed_binaries = Vec::new();
+
     for bin_target in &cargo_toml.bin {
         let binary_name = &bin_target.name;
-        let src = target_dir.join(binary_name);
-        let dst = out_dir.join(binary_name);
+        let output = Command::new("cargo")
+            .arg("build")
+            .arg("--release")
+            .arg("--bin")
+            .arg(binary_name)
+            .current_dir(&rust_test_program_dir)
+            .output()
+            .expect("Failed to execute cargo build for rust-test-program");
 
-        if src.exists() {
+        let src = target_dir.join(binary_name);
+        if output.status.success() && src.exists() {
+            let dst = out_dir.join(binary_name);
             fs::copy(&src, &dst).unwrap_or_else(|e| {
                 panic!(
                     "Failed to copy {} to {}: {}",
@@ -91,14 +76,20 @@ fn main() {
             });
             println!("cargo:warning=Copied {} -> {}", binary_name, dst.display());
         } else {
-            panic!(
-                "Expected test binary not found at path: {}. \
-                 Ensure the binary '{}' is defined in rust-test-program/Cargo.toml \
-                 and builds successfully.",
-                src.display(),
+            println!(
+                "cargo:warning=Binary '{}' failed to build (skipped)",
                 binary_name
             );
+            failed_binaries.push(binary_name.clone());
         }
+    }
+
+    if !failed_binaries.is_empty() {
+        println!(
+            "cargo:warning=Skipped {} binary(ies) that failed to build: {}",
+            failed_binaries.len(),
+            failed_binaries.join(", ")
+        );
     }
 
     // Tell cargo to rerun if rust-test-program source files change

@@ -71,8 +71,12 @@ module fetch_buffer (
         if (buffer_valid) begin
             // We have a buffered half-word from previous fetch
             current_half = buffered_half;
+        end else if (pc[1]) begin
+            // PC is at a half-word boundary: the instruction starts in the
+            // upper half of the word-aligned fetch.
+            current_half = imem_data[31:16];
         end else begin
-            // Use lower half-word from current fetch
+            // PC is word-aligned: use lower half-word from current fetch
             current_half = imem_data[15:0];
         end
         
