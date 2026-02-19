@@ -123,6 +123,12 @@ pub struct AsyncFifoSync3Wrapper;
 #[verilog(src = "../rtl/sram_test_wrapper.sv", name = "sram_test_wrapper")]
 pub struct SramTestWrapper;
 
+#[verilog(
+    src = "../rtl/sram_peripheral_test_wrapper.sv",
+    name = "sram_peripheral_test_wrapper"
+)]
+pub struct SramPeripheralTestWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -315,4 +321,12 @@ pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 pub fn create_sram_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["sram.sv", "sram_test_wrapper.sv"])
+}
+
+pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "sram.sv",
+        "peripherals/sram_peripheral.sv",
+        "sram_peripheral_test_wrapper.sv",
+    ])
 }
