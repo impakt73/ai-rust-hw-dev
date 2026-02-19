@@ -1,34 +1,80 @@
 use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
-/// Maximum capacity for TX FIFO buffer
-/// While the software implementation can grow indefinitely, we define a logical
-/// capacity to warn about potential hardware mismatches
-const TX_FIFO_CAPACITY: usize = 1024;
+/// Callback invoked whenever the CPU writes a word to FIFO DATA.
+pub type FifoDataReceivedCallback = Box<dyn FnMut(u32) + Send>;
+
+/// Host→CPU FIFO data source.
+#[derive(Default)]
+pub struct FifoDataSource {
+    host_to_cpu: VecDeque<u32>,
+}
+
+impl FifoDataSource {
+    /// Create an empty host→CPU data source.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push a word that the CPU can later read from FIFO DATA.
+    pub fn write_word(&mut self, word: u32) {
+        self.host_to_cpu.push_back(word);
+    }
+
+    /// Pop the next word for CPU consumption.
+    fn read_word(&mut self) -> Option<u32> {
+        self.host_to_cpu.pop_front()
+    }
+
+    /// Returns whether host→CPU queue is empty.
+    fn is_empty(&self) -> bool {
+        self.host_to_cpu.is_empty()
+    }
+
+    /// Clear all pending host→CPU words.
+    fn clear(&mut self) {
+        self.host_to_cpu.clear();
+    }
+}
+
+/// Shared host→CPU FIFO data source.
+pub type SharedFifoDataSource = Arc<Mutex<FifoDataSource>>;
 
 /// FIFO peripheral for UART-style communication
-/// Provides buffered I/O between the simulated CPU and host
+/// Provides host→CPU data via shared source and CPU→host notification via callback.
 pub struct Fifo {
-    /// Data sent FROM CPU -> Host (as u32 words)
-    pub tx: VecDeque<u32>,
     /// Data sent FROM Host -> CPU (as u32 words)
-    pub rx: VecDeque<u32>,
+    host_to_cpu: SharedFifoDataSource,
+    on_data_received: FifoDataReceivedCallback,
 }
 
 impl Fifo {
-    /// Create a new FIFO with empty TX and RX queues
-    pub fn new() -> Self {
+    /// Create a new FIFO backed by a shared host→CPU data source.
+    pub fn new_with_callback(
+        host_to_cpu: SharedFifoDataSource,
+        on_data_received: FifoDataReceivedCallback,
+    ) -> Self {
         Fifo {
-            tx: VecDeque::new(),
-            rx: VecDeque::new(),
+            host_to_cpu,
+            on_data_received,
         }
     }
 
     /// Read the STATUS register
     /// Bit 0 (RX_VALID): 1 if RX has data, 0 if empty
     /// Bit 1 (TX_READY): Always 1 (simulated buffer is infinite)
-    pub fn read_status(&self) -> u32 {
-        let rx_valid = if self.rx.is_empty() { 0 } else { 1 };
+    fn read_status(&self) -> u32 {
+        let rx_valid = if self
+            .host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in read_status")
+            .is_empty()
+        {
+            0
+        } else {
+            1
+        };
         let tx_ready = 1; // Always ready (infinite buffer)
         (tx_ready << 1) | rx_valid
     }
@@ -36,8 +82,13 @@ impl Fifo {
     /// Read the DATA register
     /// Pops a u32 word from the RX queue
     /// Returns 0 if RX is empty
-    pub fn read_data(&mut self) -> u32 {
-        match self.rx.pop_front() {
+    fn read_data(&mut self) -> u32 {
+        match self
+            .host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in read_data")
+            .read_word()
+        {
             Some(val) => val,
             None => {
                 log::warn!(
@@ -50,22 +101,9 @@ impl Fifo {
     }
 
     /// Write to the DATA register
-    /// Pushes a u32 word to the TX queue
-    pub fn write_data(&mut self, val: u32) {
-        if self.tx.len() >= TX_FIFO_CAPACITY {
-            log::warn!(
-                "FIFO TX queue write while at capacity ({}). \
-                 This may indicate the status register was not checked before writing.",
-                TX_FIFO_CAPACITY
-            );
-        }
-        self.tx.push_back(val);
-    }
-}
-
-impl Default for Fifo {
-    fn default() -> Self {
-        Self::new()
+    /// Forwards a u32 word to host callback immediately.
+    fn write_data(&mut self, val: u32) {
+        (self.on_data_received)(val);
     }
 }
 
@@ -114,8 +152,10 @@ impl BusDevice for Fifo {
     }
 
     fn reset(&mut self, _ctx: &mut SystemContext) {
-        self.tx.clear();
-        self.rx.clear();
+        self.host_to_cpu
+            .lock()
+            .expect("Fifo host_to_cpu lock poisoned in reset")
+            .clear();
     }
 }
 
@@ -125,16 +165,19 @@ mod tests {
     use crate::Memory;
 
     #[test]
-    fn test_reset_clears_tx_and_rx_queues() {
-        let mut fifo = Fifo::new();
+    fn test_reset_clears_host_to_cpu_queue() {
+        let source = Arc::new(Mutex::new(FifoDataSource::new()));
+        let mut fifo = Fifo::new_with_callback(source.clone(), Box::new(|_| {}));
         fifo.write_data(0x1111_1111);
-        fifo.rx.push_back(0x2222_2222);
+        source
+            .lock()
+            .expect("test source lock poisoned")
+            .write_word(0x2222_2222);
 
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
         fifo.reset(&mut ctx);
 
-        assert!(fifo.tx.is_empty());
-        assert!(fifo.rx.is_empty());
+        assert!(source.lock().expect("test source lock poisoned").is_empty());
     }
 }

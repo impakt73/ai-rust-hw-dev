@@ -397,25 +397,14 @@ fn test_interactive_simulator_register_audio_device() {
 }
 
 #[test]
-fn test_interactive_simulator_register_device_address_conflict() {
+fn test_interactive_simulator_can_register_device_at_fifo_base() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 
-    // Try to register a device at the FIFO base address (should conflict)
+    // Registering at FIFO_BASE should succeed because FIFO is now an external device.
     let video: Box<dyn BusDevice> = Box::new(Video::new(None::<fn(&[u8], &VideoConfig)>));
     let register_result = sim.register_device(FIFO_BASE, video);
 
-    assert!(
-        register_result.is_err(),
-        "Should not be able to register device at FIFO_BASE (conflicts with internal FIFO)"
-    );
-
-    // Verify error message mentions the conflict
-    let err_msg = register_result.unwrap_err();
-    assert!(
-        err_msg.contains("overlap") || err_msg.contains("Overlap") || err_msg.contains("conflict"),
-        "Error message should mention overlap/conflict: {}",
-        err_msg
-    );
+    assert!(register_result.is_ok());
 }

@@ -16,7 +16,7 @@ pub use bus::{
 pub use bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
 pub use dma::Dma;
 pub use dram::Dram;
-pub use fifo::Fifo;
+pub use fifo::{Fifo, FifoDataReceivedCallback, FifoDataSource, SharedFifoDataSource};
 pub use memory::Memory;
 pub use sim_control::SimControl;
 pub use video::{Video, VideoConfig, VideoFormat};

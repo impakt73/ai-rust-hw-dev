@@ -21,9 +21,21 @@
 mod common;
 
 use common::{
-    create_test_runtime, read_word_with_timeout, run_elf_until_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
+    create_test_runtime_with_registrations, read_word_with_timeout, run_elf_until_halt,
+    LONG_TIMEOUT, SHORT_TIMEOUT,
 };
-use device_runtime::DeviceRuntime;
+use device_runtime::{BusDeviceRegistration, DeviceRuntime};
+use riscv_shared::FIFO_BASE;
+
+fn create_test_runtime_with_fifo() -> Box<dyn DeviceRuntime> {
+    create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
+        base_addr: FIFO_BASE,
+        device: Box::new(bus_shared::Fifo::new_with_callback(
+            std::sync::Arc::new(std::sync::Mutex::new(bus_shared::FifoDataSource::new())),
+            Box::new(|_| {}),
+        )),
+    }]))
+}
 
 // ============================================================================
 // Allocation and Heap Tests
@@ -31,7 +43,7 @@ use device_runtime::DeviceRuntime;
 
 #[test]
 fn test_alloc_only() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_alloc_only", LONG_TIMEOUT),
         Some(42)
@@ -40,7 +52,7 @@ fn test_alloc_only() {
 
 #[test]
 fn test_minimal_debug_test() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "minimal_debug_test", LONG_TIMEOUT),
         Some(42)
@@ -49,7 +61,7 @@ fn test_minimal_debug_test() {
 
 #[test]
 fn test_allocator() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_allocator", LONG_TIMEOUT),
         Some(42)
@@ -58,7 +70,7 @@ fn test_allocator() {
 
 #[test]
 fn test_static_heap() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_static_heap", LONG_TIMEOUT),
         Some(42)
@@ -71,7 +83,7 @@ fn test_static_heap() {
 
 #[test]
 fn test_byte_enable_heap_directly() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_heap_directly", LONG_TIMEOUT),
         Some(42)
@@ -80,7 +92,7 @@ fn test_byte_enable_heap_directly() {
 
 #[test]
 fn test_byte_enable_stack_memory() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_stack_memory", LONG_TIMEOUT),
         Some(42)
@@ -89,7 +101,7 @@ fn test_byte_enable_stack_memory() {
 
 #[test]
 fn test_simple_byte_store() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_byte_store_simple", LONG_TIMEOUT),
         Some(42)
@@ -102,7 +114,7 @@ fn test_simple_byte_store() {
 
 #[test]
 fn test_minimal_postcard_byte_by_byte() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "minimal_postcard_test", LONG_TIMEOUT),
         Some(42)
@@ -111,7 +123,7 @@ fn test_minimal_postcard_byte_by_byte() {
 
 #[test]
 fn test_minimal_postcard_word_packing() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "minimal_postcard_test2", LONG_TIMEOUT),
         Some(42)
@@ -124,7 +136,7 @@ fn test_minimal_postcard_word_packing() {
 
 #[test]
 fn test_rust_bare_metal_elf() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "rust_test", LONG_TIMEOUT),
         Some(0x2a)
@@ -133,7 +145,7 @@ fn test_rust_bare_metal_elf() {
 
 #[test]
 fn test_fp_math_elf() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_fp_math", LONG_TIMEOUT),
         Some(0x2a)
@@ -142,7 +154,7 @@ fn test_fp_math_elf() {
 
 #[test]
 fn test_panic_handler() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_panic", LONG_TIMEOUT),
         Some(0xDEAD)
@@ -155,7 +167,7 @@ fn test_panic_handler() {
 
 #[test]
 fn test_atomic_simple() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_atomic_simple", LONG_TIMEOUT),
         Some(0x2a)
@@ -164,7 +176,7 @@ fn test_atomic_simple() {
 
 #[test]
 fn test_atomic_operations() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_atomic", LONG_TIMEOUT),
         Some(0x2a)
@@ -177,7 +189,7 @@ fn test_atomic_operations() {
 
 #[test]
 fn test_memory_pattern_dump() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_memory_pattern", LONG_TIMEOUT),
         Some(0x2a)
@@ -209,7 +221,7 @@ fn test_memory_pattern_dump() {
 
 #[test]
 fn test_image_data_dump() {
-    let mut runtime = create_test_runtime();
+    let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_image_data", LONG_TIMEOUT),
         Some(0x2a)
