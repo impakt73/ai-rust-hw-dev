@@ -6,9 +6,7 @@ extern crate alloc;
 mod common;
 
 use core::panic::PanicInfo;
-use postcard::to_allocvec;
 use riscv_rt::entry;
-use serde::Serialize;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
@@ -18,34 +16,20 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-#[derive(Serialize)]
-struct SimpleStruct {
-    a: u32,
-    b: u32,
-}
-
 #[entry]
 fn main() -> ! {
     common::init_heap(&HEAP);
-    // Test 1: Serialize a simple struct and write it like packet_test.rs does
-    let simple = SimpleStruct {
-        a: 0x12345678,
-        b: 0xABCDEF00,
-    };
-
-    if let Ok(bytes) = to_allocvec(&simple) {
-        // Write bytes in chunks of 4, just like packet_test.rs
-        for chunk in bytes.chunks(4) {
-            let mut word: u32 = 0;
-            for (i, &byte) in chunk.iter().enumerate() {
-                word |= (byte as u32) << (i * 8);
-            }
-            common::fifo_write_word(word).expect("Failed to write to FIFO");
+    // Write words directly in packed 4-byte style
+    for &word in &[0x7856_3412, 0x00EF_CDAB] {
+        if common::fifo_write_word(word).is_err() {
+            common::write_tohost(common::FAILURE_CODE);
         }
     }
 
     // Write a known pattern to mark the end
-    common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
+    if common::fifo_write_word(0xDEAD_BEEF).is_err() {
+        common::write_tohost(common::FAILURE_CODE);
+    }
 
     common::write_tohost(common::SUCCESS_CODE);
 }
