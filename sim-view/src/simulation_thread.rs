@@ -289,10 +289,7 @@ impl SimulationThread {
                     continue;
                 }
                 let vaddr = u32::try_from(phdr.p_vaddr).map_err(|_| {
-                    format!(
-                        "Segment vaddr 0x{:x} does not fit in u32",
-                        phdr.p_vaddr
-                    )
+                    format!("Segment vaddr 0x{:x} does not fit in u32", phdr.p_vaddr)
                 })?;
                 let file_size = usize::try_from(phdr.p_filesz).map_err(|_| {
                     format!(
@@ -304,15 +301,10 @@ impl SimulationThread {
                     continue;
                 }
                 let offset = usize::try_from(phdr.p_offset).map_err(|_| {
-                    format!(
-                        "Segment offset 0x{:x} does not fit in usize",
-                        phdr.p_offset
-                    )
+                    format!("Segment offset 0x{:x} does not fit in usize", phdr.p_offset)
                 })?;
                 let end = offset.checked_add(file_size).ok_or_else(|| {
-                    format!(
-                        "Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}"
-                    )
+                    format!("Segment range overflow: offset=0x{offset:x}, size=0x{file_size:x}")
                 })?;
                 let segment_data = file_data.get(offset..end).ok_or_else(|| {
                     format!(
