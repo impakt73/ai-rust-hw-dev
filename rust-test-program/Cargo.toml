@@ -26,6 +26,9 @@ name = "simple_test"
 path = "src/simple_test.rs"
 test = false
 
+[profile.release]
+panic = "abort"
+
 [dependencies]
 riscv-rt = { version = "0.17.0", features = ["no-mhartid"] }
 riscv = { version = "0.16.0", features = ["critical-section-single-hart"] }
@@ -63,11 +66,6 @@ test = false
 [[bin]]
 name = "test_stack_memory"
 path = "src/test_stack_memory.rs"
-test = false
-
-[[bin]]
-name = "test_static_heap"
-path = "src/test_static_heap.rs"
 test = false
 
 [[bin]]

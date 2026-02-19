@@ -90,6 +90,15 @@ module decompress (
                 insn_32 = {5'b0, uimm_lw_sw, rs1_full, 3'b010, rd_full, 7'b0000011};
             end
             
+            3'b011: begin  // C.FLW (RV32FC)
+                // Format: 011 uimm[5:3] rs1' uimm[2|6] rd' 00
+                // Same bit positions as C.LW
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
+                
+                // FLW rd', offset(rs1')
+                insn_32 = {5'b0, uimm_lw_sw, rs1_full, 3'b010, rd_full, 7'b0000111};
+            end
+            
             3'b110: begin  // C.SW
                 // Format: 110 uimm[5:3] rs1' uimm[2|6] rs2' 00
                 // Same bit mapping as C.LW: insn[5]=uimm[6], insn[12:10]=uimm[5:3], insn[6]=uimm[2]
@@ -97,6 +106,15 @@ module decompress (
                 
                 // SW rs2', offset(rs1')
                 insn_32 = {5'b0, uimm_lw_sw[6:5], rs2_full, rs1_full, 3'b010, uimm_lw_sw[4:0], 7'b0100011};
+            end
+            
+            3'b111: begin  // C.FSW (RV32FC)
+                // Format: 111 uimm[5:3] rs1' uimm[2|6] rs2' 00
+                // Same bit positions as C.SW
+                uimm_lw_sw = {insn_16[5], insn_16[12:10], insn_16[6], 2'b00};
+                
+                // FSW rs2', offset(rs1')
+                insn_32 = {5'b0, uimm_lw_sw[6:5], rs2_full, rs1_full, 3'b010, uimm_lw_sw[4:0], 7'b0100111};
             end
             
             default: is_valid = 1'b0;  // Reserved/illegal
@@ -335,6 +353,15 @@ module decompress (
                 end
             end
             
+            3'b011: begin  // C.FLWSP (RV32FC)
+                // Format: 011 uimm[5] rd uimm[4:2|7:6] 10
+                // Same bit positions as C.LWSP
+                uimm_lwsp = {insn_16[3:2], insn_16[12], insn_16[6:4], 2'b00};
+                
+                // FLW rd, offset(x2)
+                insn_32 = {4'b0, uimm_lwsp, 5'd2, 3'b010, rd_rs1, 7'b0000111};
+            end
+            
             3'b100: begin  // C.JR, C.MV, C.EBREAK, C.JALR, C.ADD
                 if (insn_16[12] == 1'b0) begin
                     if (rs2 == 5'b0) begin
@@ -385,6 +412,15 @@ module decompress (
                 
                 // SW rs2, offset(x2)
                 insn_32 = {4'b0, uimm_swsp[7:5], rs2, 5'd2, 3'b010, uimm_swsp[4:0], 7'b0100011};
+            end
+            
+            3'b111: begin  // C.FSWSP (RV32FC)
+                // Format: 111 uimm[5:2|7:6] rs2 10
+                // Same bit positions as C.SWSP
+                uimm_swsp = {insn_16[8:7], insn_16[12:9], 2'b00};
+                
+                // FSW rs2, offset(x2)
+                insn_32 = {4'b0, uimm_swsp[7:5], rs2, 5'd2, 3'b010, uimm_swsp[4:0], 7'b0100111};
             end
             
             default: is_valid = 1'b0;  // Reserved/illegal
