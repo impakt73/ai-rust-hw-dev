@@ -132,7 +132,7 @@ module sram_peripheral (
         .wdata(aligned_wdata),  // Use aligned data
         .raddr(word_addr),
         .rdata(sram_rdata),
-        .raddr2(word_addr + 1'b1),
+        .raddr2(word_addr + {{(ADDR_WIDTH-1){1'b0}}, 1'b1}),
         .rdata2(sram_rdata2)
     );
     
