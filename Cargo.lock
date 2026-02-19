@@ -745,8 +745,6 @@ name = "cpu-sim"
 version = "0.1.0"
 dependencies = [
  "bus-shared",
- "clap",
- "elf",
  "env_logger",
  "host-bus-handler",
  "image",
@@ -755,7 +753,6 @@ dependencies = [
  "riscv_core",
  "riscv_shared",
  "serde",
- "sim-tests",
 ]
 
 [[package]]

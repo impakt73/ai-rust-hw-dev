@@ -1,9 +1,8 @@
 use crate::sim::Simulator;
 use crate::{
-    load_elf, BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult,
+    BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult,
     SimulationStepInstructionResult, SimulatorView,
 };
-use std::path::Path;
 
 // Type alias for InteractiveSimulator's internal simulator type
 type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)>;
@@ -11,17 +10,16 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 /// Interactive wrapper around the Simulator for step-by-step execution
 ///
 /// This structure provides a controlled interface for interactive use of the simulator,
-/// allowing users to load ELF files and step through execution instruction-by-instruction.
-/// Unlike the `run_elf` and `run_program` functions which run to completion,
+/// allowing users to load programs and step through execution instruction-by-instruction.
+/// Unlike the `run_program` function which runs to completion,
 /// `InteractiveSimulator` gives you fine-grained control over execution.
 ///
 /// # Examples
 /// ```no_run
 /// use cpu_sim::InteractiveSimulator;
-/// use std::path::Path;
 ///
 /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-/// sim.load_elf(Path::new("program.elf")).expect("Failed to load ELF");
+/// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
 ///
 /// // Step through instructions one at a time
 /// loop {
@@ -85,51 +83,6 @@ impl InteractiveSimulator {
         Ok(InteractiveSimulator { simulator })
     }
 
-    /// Load an ELF file into the simulator and reset to the entry point
-    ///
-    /// This function loads the ELF file into simulator memory, extracts the entry point,
-    /// and resets the CPU to prepare for execution. After calling this function,
-    /// you can use `step_instruction()` to execute the program.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the RISC-V ELF executable file
-    ///
-    /// # Returns
-    /// * `Ok(entry_point)` with the ELF entry point address on success
-    /// * `Err(String)` if the ELF file cannot be loaded or is invalid
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::InteractiveSimulator;
-    /// # use std::path::Path;
-    /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// let entry = sim.load_elf(Path::new("test.elf")).expect("Failed to load ELF");
-    /// println!("Entry point: 0x{:08x}", entry);
-    /// ```
-    pub fn load_elf(&mut self, path: &Path) -> Result<u32, String> {
-        self.load_elf_internal(path, true)
-    }
-
-    /// Load an ELF file into the simulator and reset without booting the CPU
-    ///
-    /// This function loads the ELF file into simulator memory, extracts the entry point,
-    /// and performs a hardware reset but skips the CPU boot sequence. The CPU is left in
-    /// the boot state (S_BOOT), allowing the calling code to handle the boot externally
-    /// via bus requests (e.g., reading STATUS and writing BOOT address).
-    ///
-    /// This is used by the fpga-host integration where the boot sequence is managed
-    /// by the host application.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the RISC-V ELF executable file
-    ///
-    /// # Returns
-    /// * `Ok(entry_point)` with the ELF entry point address on success
-    /// * `Err(String)` if the ELF file cannot be loaded or is invalid
-    pub fn load_elf_no_boot(&mut self, path: &Path) -> Result<u32, String> {
-        self.load_elf_internal(path, false)
-    }
-
     /// Reset simulator state with boot deferred.
     ///
     /// This initializes internal reset/controller state without issuing a boot
@@ -140,45 +93,10 @@ impl InteractiveSimulator {
             .map_err(|e| format!("Reset failed: {}", e))
     }
 
-    /// Internal helper for loading an ELF file with optional boot
-    fn load_elf_internal(&mut self, path: &Path, boot_cpu: bool) -> Result<u32, String> {
-        // Reset first so setup work (ELF load, optional FIFO preload by caller) happens
-        // on a clean post-reset state.
-        self.simulator
-            .reset()
-            .map_err(|e| format!("Reset failed: {}", e))?;
-
-        // Load ELF into simulator memory using the helper function
-        let entry_point = {
-            let mut view = SimulatorView::new(
-                &mut self.simulator.bus,
-                &self.simulator.cpu,
-                &mut self.simulator.host_bus_handler,
-                &mut self.simulator.host_bus_direct_response,
-            );
-            load_elf(&mut view, path).map_err(|e| format!("Error loading ELF: {}", e))?
-        };
-
-        log::info!(
-            "ELF loaded successfully, entry point: 0x{:08x}",
-            entry_point
-        );
-
-        // Optionally boot to the ELF entry point
-        if boot_cpu {
-            self.simulator
-                .boot(entry_point)
-                .map_err(|e| format!("Boot failed: {}", e))?;
-        }
-
-        Ok(entry_point)
-    }
-
     /// Register a custom bus device at the specified base address
     ///
     /// This allows you to register custom peripherals (like Video or Audio devices)
-    /// that will be accessible via memory-mapped I/O before loading an ELF file.
-    /// Devices must be registered before calling `load_elf()`.
+    /// that will be accessible via memory-mapped I/O before loading a program.
     ///
     /// # Arguments
     /// * `base_addr` - Base address for the device in the system memory map (must be word-aligned)
@@ -204,8 +122,8 @@ impl InteractiveSimulator {
     /// let video: Box<dyn BusDevice> = Box::new(Video::new(Some(frame_callback)));
     /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
     ///
-    /// // Now load and run your ELF
-    /// sim.load_elf(Path::new("program.elf")).expect("Failed to load ELF");
+    /// // Now load and run your program
+    /// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
     /// loop {
     ///     match sim.step_instruction() {
     ///         Ok(result) => {
@@ -235,7 +153,6 @@ impl InteractiveSimulator {
     ///
     /// Steps the simulator forward by one instruction. This may take multiple clock cycles
     /// depending on the instruction type and memory latency configuration.
-    /// This can be called before loading an ELF when external boot controls are used.
     ///
     /// # Returns
     /// * `Ok(SimulationStepInstructionResult)` containing execution information (elapsed time
@@ -247,9 +164,8 @@ impl InteractiveSimulator {
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::InteractiveSimulator;
-    /// # use std::path::Path;
     /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_elf(Path::new("test.elf")).unwrap();
+    /// sim.load_program(0x8000_0000, &[]).unwrap();
     ///
     /// // Execute one instruction
     /// match sim.step_instruction() {
@@ -273,7 +189,6 @@ impl InteractiveSimulator {
     /// Steps the simulator forward by one clock cycle. This is a lower-level interface
     /// than `step_instruction()`, allowing cycle-by-cycle control for debugging or
     /// timing-sensitive testing.
-    /// This can be called before loading an ELF when external boot controls are used.
     ///
     /// # Returns
     /// * `Ok(SimulationStepCycleResult)` containing:
@@ -287,9 +202,8 @@ impl InteractiveSimulator {
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::InteractiveSimulator;
-    /// # use std::path::Path;
     /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_elf(Path::new("test.elf")).unwrap();
+    /// sim.load_program(0x8000_0000, &[]).unwrap();
     ///
     /// // Execute cycles until instruction completes
     /// loop {
