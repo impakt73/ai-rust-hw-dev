@@ -2,7 +2,6 @@
 mod constants;
 mod hung_detector;
 mod interactive;
-pub mod packet_transport; // Public for integration tests
 mod sim;
 mod simulator_view;
 

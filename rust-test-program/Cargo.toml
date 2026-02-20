@@ -17,11 +17,6 @@ path = "src/hello_world.rs"
 test = false
 
 [[bin]]
-name = "packet_test"
-path = "src/packet_test.rs"
-test = false
-
-[[bin]]
 name = "simple_test"
 path = "src/simple_test.rs"
 test = false
@@ -35,23 +30,7 @@ riscv = { version = "0.16.0", features = ["critical-section-single-hart"] }
 critical-section = "1.2.0"
 embedded-alloc = "0.6.0"
 riscv_shared = { path = "../riscv_shared", default-features = false }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-postcard = { version = "1.0", default-features = false, features = ["alloc"] }
-
-[[bin]]
-name = "minimal_postcard_test"
-path = "src/minimal_postcard_test.rs"
-test = false
-
-[[bin]]
-name = "minimal_postcard_test2"
-path = "src/minimal_postcard_test2.rs"
-test = false
-
-[[bin]]
-name = "minimal_debug_test"
-path = "src/minimal_debug_test.rs"
-test = false
+ufmt = "0.2"
 
 [[bin]]
 name = "test_allocator"

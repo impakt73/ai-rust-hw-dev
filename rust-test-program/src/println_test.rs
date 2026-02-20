@@ -7,7 +7,8 @@ mod common;
 
 use core::panic::PanicInfo;
 use riscv_rt::entry;
-use riscv_shared::rvprintln;
+use riscv_shared::fifo::FifoUwrite;
+use ufmt::uwriteln;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
@@ -20,14 +21,12 @@ fn panic(info: &PanicInfo) -> ! {
 #[entry]
 fn main() -> ! {
     common::init_heap(&HEAP);
-    // Test basic println functionality
-    rvprintln!("Hello from RISC-V CPU!");
+    let mut fifo = FifoUwrite::new();
+    let _ = uwriteln!(&mut fifo, "Hello from RISC-V CPU!");
 
-    // Test formatted output with arguments
-    rvprintln!("The answer is {}", 42);
+    let _ = uwriteln!(&mut fifo, "The answer is {}", 42);
 
-    // Test multiple messages
-    rvprintln!("Testing println macro");
+    let _ = uwriteln!(&mut fifo, "Testing println macro");
 
     // Signal success
     common::write_tohost(common::SUCCESS_CODE);

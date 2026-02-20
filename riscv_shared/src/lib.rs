@@ -6,19 +6,11 @@
 //! - Memory-mapped register offsets and bit definitions
 //! - Configuration types for Audio and Video devices
 //! - Helper functions for test pattern generation
-//! - FIFO protocol definitions for host-CPU communication
-//! - Formatted print macros for bare-metal programs
+//! - FIFO helper utilities for host-CPU communication
 //!
-//! This crate is `no_std` compatible and requires `alloc`.
+//! This crate is `no_std` compatible.
 
 #![no_std]
-
-// Re-export alloc for macro use
-pub extern crate alloc;
-
-// Protocol and macros modules (no_std compatible, requires alloc)
-pub mod macros;
-pub mod protocol;
 
 // Hardware peripheral modules
 pub mod audio;
