@@ -2,12 +2,23 @@
 //!
 //! This module contains the main application state and event handling logic.
 
+use bus_shared::{Fifo, FifoDataSource, SharedFifoDataSource, FIFO_BASE};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use device_runtime::{access_size_name, bytes_for_size, size_name, BusEvent, DeviceRuntime};
+use device_runtime::{
+    access_size_name, bytes_for_size, size_name, BusDeviceRegistration, BusEvent, DeviceRuntime,
+};
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
-/// Maximum number of log lines to retain
+/// Maximum number of FIFO lines drained per event-loop tick to keep the TUI responsive.
+const MAX_FIFO_LINES_PER_TICK: usize = 64;
+
+/// Capacity of the bounded FIFO line channel.
+/// Lines are dropped (not sent) when the channel is full, preventing unbounded memory growth.
+const FIFO_CHANNEL_CAPACITY: usize = 256;
+
 const MAX_LOG_LINES: usize = 1000;
 
 /// Maximum number of command history entries to retain
@@ -45,6 +56,8 @@ pub struct App {
     pub verbose: bool,
     /// Last loaded ELF entry point (for boot command)
     pub last_entry_point: Option<u32>,
+    /// Receiver for lines printed by the CPU program via the FIFO
+    pub fifo_line_rx: Option<mpsc::Receiver<String>>,
 }
 
 impl App {
@@ -61,6 +74,7 @@ impl App {
             scroll_offset: 0,
             verbose: false,
             last_entry_point: None,
+            fifo_line_rx: None,
         }
     }
 
@@ -234,7 +248,11 @@ impl App {
                 format!("TOHOST TERMINATION (value: 0x{:08x})", value)
             }
         };
-        self.add_log(log::Level::Info, msg);
+        let level = match event {
+            BusEvent::Read { .. } | BusEvent::Write { .. } => log::Level::Debug,
+            _ => log::Level::Info,
+        };
+        self.add_log(level, msg);
     }
 
     /// Log a host-initiated read response with the request details
@@ -261,6 +279,35 @@ impl App {
             width = width
         );
         self.add_log(log::Level::Info, msg);
+    }
+
+    /// Drain any lines received from the CPU program via the FIFO and log them.
+    ///
+    /// Lines are buffered in the FIFO callback until a newline is received.
+    /// At most [`MAX_FIFO_LINES_PER_TICK`] lines are drained per call to avoid
+    /// UI lag when the CPU prints bursts of output.
+    /// This should be called each iteration of the main event loop.
+    pub fn poll_fifo(&mut self) {
+        let mut lines = Vec::new();
+        let mut should_clear = false;
+        if let Some(ref rx) = self.fifo_line_rx {
+            for _ in 0..MAX_FIFO_LINES_PER_TICK {
+                match rx.try_recv() {
+                    Ok(line) => lines.push(line),
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        should_clear = true;
+                        break;
+                    }
+                }
+            }
+        }
+        for line in lines {
+            self.add_log(log::Level::Info, line);
+        }
+        if should_clear {
+            self.fifo_line_rx = None;
+        }
     }
 
     /// Navigate to previous command in history
@@ -328,4 +375,40 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Create a FIFO bus device and a channel for receiving lines printed by the CPU program.
+///
+/// The FIFO callback buffers incoming bytes until a newline character is received,
+/// then attempts to send the completed line through a bounded sync channel. Lines
+/// are silently dropped when the channel is full ([`FIFO_CHANNEL_CAPACITY`]) so
+/// that a fast-printing CPU never blocks the bus thread.
+///
+/// Returns a `(BusDeviceRegistration, Receiver<String>)` pair. The registration
+/// should be passed to [`create_device_runtime`][device_runtime::create_device_runtime].
+/// The receiver should be stored in [`App::fifo_line_rx`] so the main event loop
+/// can drain and display CPU program output.
+pub fn create_fifo_device() -> (BusDeviceRegistration, mpsc::Receiver<String>) {
+    let (tx, rx) = mpsc::sync_channel::<String>(FIFO_CHANNEL_CAPACITY);
+    let data_source: SharedFifoDataSource = Arc::new(Mutex::new(FifoDataSource::new()));
+    let mut line_buffer: Vec<u8> = Vec::new();
+    let callback: bus_shared::FifoDataReceivedCallback = Box::new(move |byte: u8| {
+        if byte == b'\n' {
+            let line = String::from_utf8_lossy(&line_buffer).into_owned();
+            // try_send: drop the line rather than blocking the bus thread when full
+            let _ = tx.try_send(line);
+            line_buffer.clear();
+        } else if byte != b'\r' {
+            // Cap line buffer to avoid unbounded growth if CPU never sends a newline
+            if line_buffer.len() < 4096 {
+                line_buffer.push(byte);
+            }
+        }
+    });
+    let fifo = Fifo::new_with_callback(data_source, callback);
+    let registration = BusDeviceRegistration {
+        base_addr: FIFO_BASE,
+        device: Box::new(fifo),
+    };
+    (registration, rx)
 }

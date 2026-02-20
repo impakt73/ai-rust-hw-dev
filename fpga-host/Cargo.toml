@@ -9,6 +9,7 @@ name = "fpga-host"
 path = "src/main.rs"
 
 [dependencies]
+bus-shared = { path = "../bus-shared" }
 clap = { version = "4.4", features = ["derive"] }
 device-runtime = { path = "../device-runtime" }
 host-bus-handler = { path = "../host-bus-handler" }
