@@ -28,23 +28,17 @@ pub fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) 
 
 /// Create a FIFO data collector callback and the shared buffer it writes into.
 ///
-/// The callback receives CPU→Host words and appends little-endian bytes to the
+/// The callback receives CPU→Host bytes and appends them to the
 /// returned `Arc<Mutex<Vec<u8>>>`.
 pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, FifoDataReceivedCallback) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback: FifoDataReceivedCallback = Box::new(move |word| {
-        let bytes = [
-            (word & 0xFF) as u8,
-            ((word >> 8) & 0xFF) as u8,
-            ((word >> 16) & 0xFF) as u8,
-            ((word >> 24) & 0xFF) as u8,
-        ];
+    let callback: FifoDataReceivedCallback = Box::new(move |byte| {
         fifo_data_clone
             .lock()
             .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
-            .extend_from_slice(&bytes);
+            .push(byte);
     });
 
     (fifo_data, callback)
@@ -126,8 +120,8 @@ pub fn create_loop_program(iterations: u32) -> Vec<u8> {
 
 /// Create a FIFO echo program (raw-instruction equivalent of `hello_world.rs`).
 ///
-/// Reads words from the FIFO RX queue and echoes them to TX until the queue is
-/// empty or a zero word is received, then terminates with SUCCESS_CODE.
+/// Reads bytes from the FIFO RX queue and echoes them to TX until the queue is
+/// empty or a zero byte is received, then terminates with SUCCESS_CODE.
 ///
 /// Instruction layout (program base assumed to be 0x8000_0000):
 ///
@@ -138,9 +132,9 @@ pub fn create_loop_program(iterations: u32) -> Vec<u8> {
 ///   2: lw   x3, 0(x2)          // x3 = FIFO_STATUS
 ///   3: andi x4, x3, 1          // x4 = RX_VALID bit
 ///   4: beq  x4, x0, +20        // if RX empty  → done
-///   5: lw   x5, 0(x1)          // x5 = word from FIFO_DATA
-///   6: beq  x5, x0, +12        // if zero word → done
-///   7: sw   x5, 0(x1)          // echo: write x5 to FIFO TX
+///   5: lbu  x5, 0(x1)          // x5 = byte from FIFO_DATA
+///   6: beq  x5, x0, +12        // if zero byte → done
+///   7: sb   x5, 0(x1)          // echo: write x5 to FIFO TX
 ///   8: jal  x0, -24            // loop back to instr 2
 /// done [PC = base+36]:
 ///   9: lui  x6, SIM_CONTROL_BASE
@@ -165,9 +159,9 @@ pub fn create_fifo_echo_program() -> Vec<u8> {
         lw(3, 2, 0),   // x3 = FIFO_STATUS
         andi(4, 3, 1), // x4 = RX_VALID
         beq(4, 0, 20), // RX empty → done
-        lw(5, 1, 0),   // x5 = FIFO word
-        beq(5, 0, 12), // zero word → done
-        sw(1, 5, 0),   // echo to TX
+        lbu(5, 1, 0),  // x5 = FIFO byte
+        beq(5, 0, 12), // zero byte → done
+        sb(1, 5, 0),   // echo to TX
         jal(0, -24),   // loop
         // done:
         lui(6, SIM_CONTROL_BASE), // x6 = SIM_CONTROL_BASE

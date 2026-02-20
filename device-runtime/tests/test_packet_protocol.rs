@@ -17,8 +17,8 @@ use std::sync::{Arc, Mutex};
 fn test_packet_protocol_end_to_end() {
     let elf_path = resolve_test_elf_path("packet_test");
 
-    // Shared state for collecting FIFO TX data
-    let fifo_tx_data: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+    // Shared state for collecting FIFO TX data (bytes)
+    let fifo_tx_data: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let fifo_tx_data_clone = fifo_tx_data.clone();
 
     // Track whether we've sent the test packets yet
@@ -28,12 +28,12 @@ fn test_packet_protocol_end_to_end() {
     let fifo_source = Arc::new(Mutex::new(FifoDataSource::new()));
     let fifo_source_for_callback = fifo_source.clone();
 
-    // Callback that handles bidirectional packet communication
-    let fifo_callback = move |word: u32| {
+    // Callback that handles bidirectional packet communication (byte-granular)
+    let fifo_callback = move |byte: u8| {
         fifo_tx_data_clone
             .lock()
             .expect("fifo_tx_data lock poisoned in callback")
-            .push(word);
+            .push(byte);
 
         // On first invocation, send the test packets back into the FIFO source
         let mut sent = packets_sent_clone
@@ -49,11 +49,15 @@ fn test_packet_protocol_end_to_end() {
             let mut temp_rx = VecDeque::new();
             packet_transport::send_echo_packet(&echo_request, &mut temp_rx)
                 .expect("Failed to serialize Echo packet for CPU");
+            // Convert words to bytes for FIFO
             while let Some(w) = temp_rx.pop_front() {
-                fifo_source_for_callback
+                let bytes = w.to_le_bytes();
+                let mut source = fifo_source_for_callback
                     .lock()
-                    .expect("FIFO source lock poisoned in callback")
-                    .write_word(w);
+                    .expect("FIFO source lock poisoned in callback");
+                for byte in bytes {
+                    source.write_byte(byte);
+                }
             }
 
             // Send DataU32 packet (value=1000)
@@ -65,11 +69,15 @@ fn test_packet_protocol_end_to_end() {
             let mut temp_rx = VecDeque::new();
             packet_transport::send_data_u32_packet(&data_request, &mut temp_rx)
                 .expect("Failed to serialize DataU32 packet for CPU");
+            // Convert words to bytes for FIFO
             while let Some(w) = temp_rx.pop_front() {
-                fifo_source_for_callback
+                let bytes = w.to_le_bytes();
+                let mut source = fifo_source_for_callback
                     .lock()
-                    .expect("FIFO source lock poisoned in callback")
-                    .write_word(w);
+                    .expect("FIFO source lock poisoned in callback");
+                for byte in bytes {
+                    source.write_byte(byte);
+                }
             }
 
             *sent = true;
@@ -94,8 +102,20 @@ fn test_packet_protocol_end_to_end() {
     );
 
     // Parse and verify received packets
-    let fifo_words = fifo_tx_data.lock().expect("fifo_tx_data lock poisoned");
-    let mut fifo_tx: VecDeque<u32> = fifo_words.iter().copied().collect();
+    // Convert bytes to words for packet parsing
+    let fifo_bytes = fifo_tx_data.lock().expect("fifo_tx_data lock poisoned");
+    let mut fifo_tx: VecDeque<u32> = VecDeque::new();
+    let mut i = 0;
+    while i < fifo_bytes.len() {
+        let mut word = 0u32;
+        for j in 0..4 {
+            if i + j < fifo_bytes.len() {
+                word |= (fifo_bytes[i + j] as u32) << (j * 8);
+            }
+        }
+        fifo_tx.push_back(word);
+        i += 4;
+    }
 
     let debug_pkt = packet_transport::receive_debug_packet(&mut fifo_tx)
         .expect("Failed to parse Debug packet")
@@ -132,15 +152,15 @@ fn test_packet_protocol_end_to_end() {
 fn test_println_macro() {
     let elf_path = resolve_test_elf_path("println_test");
 
-    // Collect FIFO TX words from CPU
-    let fifo_data: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+    // Collect FIFO TX bytes from CPU
+    let fifo_data: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = fifo_data.clone();
     let fifo_source = Arc::new(Mutex::new(FifoDataSource::new()));
-    let fifo_callback = move |word: u32| {
+    let fifo_callback = move |byte: u8| {
         fifo_data_clone
             .lock()
             .expect("fifo_data lock poisoned in callback")
-            .push(word);
+            .push(byte);
     };
 
     let mut runtime = create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
@@ -160,8 +180,20 @@ fn test_println_macro() {
         "Program should complete with success code 42"
     );
 
-    let fifo_words = fifo_data.lock().expect("fifo_data lock poisoned");
-    let mut fifo_tx: VecDeque<u32> = fifo_words.iter().copied().collect();
+    // Convert bytes to words for packet parsing
+    let fifo_bytes = fifo_data.lock().expect("fifo_data lock poisoned");
+    let mut fifo_tx: VecDeque<u32> = VecDeque::new();
+    let mut i = 0;
+    while i < fifo_bytes.len() {
+        let mut word = 0u32;
+        for j in 0..4 {
+            if i + j < fifo_bytes.len() {
+                word |= (fifo_bytes[i + j] as u32) << (j * 8);
+            }
+        }
+        fifo_tx.push_back(word);
+        i += 4;
+    }
 
     let expected_messages = [
         ("Hello from RISC-V CPU!\n", DebugLevel::Info),

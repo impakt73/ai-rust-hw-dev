@@ -24,30 +24,22 @@ pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
 
-/// Push a UTF-8 string into a FIFO RX queue as little-endian u32 words.
+/// Push a UTF-8 string into a FIFO RX queue as individual bytes.
 ///
-/// If the input length is a multiple of 4 bytes, a trailing zero word is appended.
+/// Appends a null terminator (0x00) if the string length is a multiple of 4 bytes.
 pub fn push_string_to_fifo_rx(fifo_source: &SharedFifoDataSource, s: &str) {
     let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let mut word = 0u32;
-        for j in 0..4 {
-            if i + j < bytes.len() {
-                word |= (bytes[i + j] as u32) << (j * 8);
-            }
-        }
-        fifo_source
-            .lock()
-            .expect("push_string_to_fifo_rx source lock poisoned")
-            .write_word(word);
-        i += 4;
+    let mut source = fifo_source
+        .lock()
+        .expect("push_string_to_fifo_rx source lock poisoned");
+
+    for &byte in bytes {
+        source.write_byte(byte);
     }
+
+    // Add null terminator if string length is multiple of 4
     if bytes.len().is_multiple_of(4) {
-        fifo_source
-            .lock()
-            .expect("push_string_to_fifo_rx source lock poisoned")
-            .write_word(0);
+        source.write_byte(0);
     }
 }
 /// Unified program execution function that supports programmatic instruction loading
