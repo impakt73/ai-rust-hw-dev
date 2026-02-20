@@ -28,6 +28,7 @@ test = false
 
 [profile.release]
 panic = "abort"
+opt-level = "z"
 
 [dependencies]
 riscv-rt = { version = "0.17.0", features = ["no-mhartid"] }

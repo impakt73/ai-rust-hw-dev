@@ -859,11 +859,9 @@ module cpu #(
             // This state captures register data after BRAM synchronous read
             S_REG_READ: begin
                 // BRAM data is now available, capture it
-                // FENCE doesn't use register operands, so skip register capture
-                if (!is_fence_reg) begin
-                    a_reg_write = 1'b1;
-                    b_reg_write = 1'b1;
-                end
+                // Always capture register data, even for FENCE (harmless)
+                a_reg_write = 1'b1;
+                b_reg_write = 1'b1;
                 // FP register reads (for FP operations) - using registered signals
                 if (fp_reg_write_reg || fp_to_int_reg || int_to_fp_reg || is_fp_store_reg) begin
                     fa_reg_write = 1'b1;
