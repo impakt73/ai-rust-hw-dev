@@ -13,6 +13,7 @@ use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, trigger_present,
     wait_for_frame_ready, wait_for_present_ready, write_stereo_sample,
 };
+use core::hint::black_box;
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
 use riscv_rt::entry;
@@ -38,8 +39,8 @@ const AUDIO_FREQUENCY_DIV: u32 = 16;
 
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGB8 (3 bytes per pixel)
-fn write_pixel(framebuffer_base: u32, x: u32, y: u32, r: u8, g: u8, b: u8) {
-    riscv_shared::write_pixel_rgb8(framebuffer_base, WIDTH, x, y, r, g, b);
+fn write_pixel(framebuffer: &mut [u16], x: u32, y: u32, r: u8, g: u8, b: u8) {
+    riscv_shared::write_pixel_rgb8(framebuffer.as_mut_ptr() as u32, WIDTH, x, y, r, g, b);
 }
 
 /// Color palette for the scrolling checkerboard
@@ -56,7 +57,7 @@ const COLORS: [(u8, u8, u8); 8] = [
 
 /// Render scrolling checkerboard pattern
 /// The pattern scrolls diagonally based on the frame index
-fn render_scrolling_checkerboard(framebuffer_base: u32, frame_index: u32) {
+fn render_scrolling_checkerboard(framebuffer: &mut [u16], frame_index: u32) {
     // Checkerboard size
     const CHECKER_SIZE: u32 = 8;
 
@@ -78,17 +79,18 @@ fn render_scrolling_checkerboard(framebuffer_base: u32, frame_index: u32) {
             let (r, g, b) = COLORS[color_index];
 
             if is_light {
-                write_pixel(framebuffer_base, x, y, r, g, b);
+                write_pixel(framebuffer, x, y, r, g, b);
             } else {
                 // Dark checker - use dimmed color
-                write_pixel(framebuffer_base, x, y, r / 4, g / 4, b / 4);
+                write_pixel(framebuffer, x, y, r / 4, g / 4, b / 4);
             }
         }
     }
 }
 
 /// Precompute audio buffer with sine wave samples (called once at startup)
-fn precompute_audio_buffer(audio_buffer_base: u32) {
+fn precompute_audio_buffer(audio_buffer: &mut [u32]) {
+    let audio_buffer_base = audio_buffer.as_mut_ptr() as u32;
     // Precompute 1024 stereo samples
     for i in 0..AUDIO_BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
@@ -100,61 +102,73 @@ fn precompute_audio_buffer(audio_buffer_base: u32) {
     }
 }
 
+fn configure_video_buffer(framebuffer: &mut [u16], config_register: u32) {
+    unsafe {
+        write_volatile(VIDEO_ADDR as *mut u32, framebuffer.as_mut_ptr() as u32);
+        write_volatile(VIDEO_CONFIG as *mut u32, config_register);
+    }
+}
+
+fn configure_audio_buffer(audio_buffer: &mut [u32], config_register: u32) {
+    unsafe {
+        write_volatile(AUDIO_ADDR as *mut u32, audio_buffer.as_mut_ptr() as u32);
+        write_volatile(AUDIO_CONFIG as *mut u32, config_register);
+    }
+}
+
 #[entry]
 fn main() -> ! {
-    unsafe {
-        common::init_heap(&HEAP);
-        let mut framebuffer = vec![0u8; (WIDTH * HEIGHT * 3) as usize];
-        let framebuffer_base = framebuffer.as_mut_ptr() as u32;
-        let mut audio_buffer = vec![0u8; (AUDIO_BUFFER_SIZE_SAMPLES * 4) as usize];
-        let audio_buffer_base = audio_buffer.as_mut_ptr() as u32;
+    common::init_heap(&HEAP);
+    let framebuffer_words = (WIDTH * HEIGHT * 3).div_ceil(2) as usize;
+    let mut framebuffer = vec![0u16; framebuffer_words];
+    let mut audio_buffer = vec![0u32; AUDIO_BUFFER_SIZE_SAMPLES as usize];
 
-        // Configure Video device
-        let video_config = VideoConfig {
-            width: WIDTH,
-            height: HEIGHT,
-            format: VideoFormat::Rgb8,
-        };
-        write_volatile(VIDEO_ADDR as *mut u32, framebuffer_base);
-        write_volatile(VIDEO_CONFIG as *mut u32, video_config.to_register());
+    // Configure Video device
+    let video_config = VideoConfig {
+        width: WIDTH,
+        height: HEIGHT,
+        format: VideoFormat::Rgb8,
+    };
+    let video_config_register = video_config.to_register();
+    configure_video_buffer(framebuffer.as_mut_slice(), video_config_register);
 
-        // Precompute the audio buffer once at startup
-        precompute_audio_buffer(audio_buffer_base);
+    // Precompute the audio buffer once at startup
+    precompute_audio_buffer(audio_buffer.as_mut_slice());
 
-        // Configure Audio device
-        // 48000Hz, Stereo, 1024 samples
-        let audio_config = AudioConfig {
-            sample_rate: AudioSampleRate::Hz48000,
-            channels: AudioChannels::Stereo,
-            sample_count: AUDIO_BUFFER_SIZE_SAMPLES,
-        };
-        write_volatile(AUDIO_ADDR as *mut u32, audio_buffer_base);
-        write_volatile(AUDIO_CONFIG as *mut u32, audio_config.to_register());
+    // Configure Audio device
+    // 48000Hz, Stereo, 1024 samples
+    let audio_config = AudioConfig {
+        sample_rate: AudioSampleRate::Hz48000,
+        channels: AudioChannels::Stereo,
+        sample_count: AUDIO_BUFFER_SIZE_SAMPLES,
+    };
+    let audio_config_register = audio_config.to_register();
+    configure_audio_buffer(audio_buffer.as_mut_slice(), audio_config_register);
 
-        // Initialize frame counter
-        let mut frame_index: u32 = 0;
+    // Initialize frame counter
+    let mut frame_index: u32 = 0;
 
-        // Main infinite loop
-        loop {
-            // Wait for video to be ready for a new frame
-            wait_for_frame_ready();
+    // Main infinite loop
+    loop {
+        // Wait for video to be ready for a new frame
+        wait_for_frame_ready();
 
-            // Render the scrolling checkerboard pattern
-            render_scrolling_checkerboard(framebuffer_base, frame_index);
+        // Render the scrolling checkerboard pattern
+        render_scrolling_checkerboard(framebuffer.as_mut_slice(), frame_index);
 
-            // Wait until we can present
-            wait_for_present_ready();
+        // Wait until we can present
+        wait_for_present_ready();
 
-            // Trigger the present operation
-            trigger_present();
+        // Trigger the present operation
+        trigger_present();
 
-            // Increment frame index for next frame
-            frame_index += 1;
+        // Increment frame index for next frame
+        frame_index += 1;
 
-            // Check if audio DMA is ready and sample buffer is ready, then trigger with precomputed buffer
-            if is_dma_ready() && is_sample_buffer_ready() {
-                trigger_dma();
-            }
+        // Check if audio DMA is ready and sample buffer is ready, then trigger with precomputed buffer
+        if is_dma_ready() && is_sample_buffer_ready() {
+            black_box(audio_buffer.as_mut_slice());
+            trigger_dma();
         }
     }
 }
