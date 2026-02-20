@@ -1,11 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod common;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use alloc::vec;
 use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, trigger_present,
     wait_for_frame_ready, wait_for_present_ready, write_stereo_sample,
@@ -27,13 +30,6 @@ fn panic(info: &PanicInfo) -> ! {
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
-/// Framebuffer base address in DRAM
-const FRAMEBUFFER_BASE: u32 = 0x8000_1000;
-
-/// Audio buffer base address in DRAM (after framebuffer)
-/// Framebuffer is 64*64*3 = 12288 bytes (0x3000), so start audio buffer at 0x8000_1000 + 0x3000 = 0x8000_4000
-const AUDIO_BUFFER_BASE: u32 = 0x8000_4000;
-
 /// Audio buffer size: 1024 stereo samples as requested
 const AUDIO_BUFFER_SIZE_SAMPLES: u32 = 1024;
 
@@ -42,8 +38,8 @@ const AUDIO_FREQUENCY_DIV: u32 = 16;
 
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGB8 (3 bytes per pixel)
-fn write_pixel(x: u32, y: u32, r: u8, g: u8, b: u8) {
-    riscv_shared::write_pixel_rgb8(FRAMEBUFFER_BASE, WIDTH, x, y, r, g, b);
+fn write_pixel(framebuffer_base: u32, x: u32, y: u32, r: u8, g: u8, b: u8) {
+    riscv_shared::write_pixel_rgb8(framebuffer_base, WIDTH, x, y, r, g, b);
 }
 
 /// Color palette for the scrolling checkerboard
@@ -60,7 +56,7 @@ const COLORS: [(u8, u8, u8); 8] = [
 
 /// Render scrolling checkerboard pattern
 /// The pattern scrolls diagonally based on the frame index
-fn render_scrolling_checkerboard(frame_index: u32) {
+fn render_scrolling_checkerboard(framebuffer_base: u32, frame_index: u32) {
     // Checkerboard size
     const CHECKER_SIZE: u32 = 8;
 
@@ -82,17 +78,17 @@ fn render_scrolling_checkerboard(frame_index: u32) {
             let (r, g, b) = COLORS[color_index];
 
             if is_light {
-                write_pixel(x, y, r, g, b);
+                write_pixel(framebuffer_base, x, y, r, g, b);
             } else {
                 // Dark checker - use dimmed color
-                write_pixel(x, y, r / 4, g / 4, b / 4);
+                write_pixel(framebuffer_base, x, y, r / 4, g / 4, b / 4);
             }
         }
     }
 }
 
 /// Precompute audio buffer with sine wave samples (called once at startup)
-fn precompute_audio_buffer() {
+fn precompute_audio_buffer(audio_buffer_base: u32) {
     // Precompute 1024 stereo samples
     for i in 0..AUDIO_BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
@@ -100,24 +96,30 @@ fn precompute_audio_buffer() {
         let right_sample = generate_sine_sample(i + AUDIO_FREQUENCY_DIV / 4, AUDIO_FREQUENCY_DIV);
 
         let offset = i * 4; // 4 bytes per stereo sample
-        write_stereo_sample(AUDIO_BUFFER_BASE, offset, left_sample, right_sample);
+        write_stereo_sample(audio_buffer_base, offset, left_sample, right_sample);
     }
 }
 
 #[entry]
 fn main() -> ! {
     unsafe {
+        common::init_heap(&HEAP);
+        let mut framebuffer = vec![0u8; (WIDTH * HEIGHT * 3) as usize];
+        let framebuffer_base = framebuffer.as_mut_ptr() as u32;
+        let mut audio_buffer = vec![0u8; (AUDIO_BUFFER_SIZE_SAMPLES * 4) as usize];
+        let audio_buffer_base = audio_buffer.as_mut_ptr() as u32;
+
         // Configure Video device
         let video_config = VideoConfig {
             width: WIDTH,
             height: HEIGHT,
             format: VideoFormat::Rgb8,
         };
-        write_volatile(VIDEO_ADDR as *mut u32, FRAMEBUFFER_BASE);
+        write_volatile(VIDEO_ADDR as *mut u32, framebuffer_base);
         write_volatile(VIDEO_CONFIG as *mut u32, video_config.to_register());
 
         // Precompute the audio buffer once at startup
-        precompute_audio_buffer();
+        precompute_audio_buffer(audio_buffer_base);
 
         // Configure Audio device
         // 48000Hz, Stereo, 1024 samples
@@ -126,7 +128,7 @@ fn main() -> ! {
             channels: AudioChannels::Stereo,
             sample_count: AUDIO_BUFFER_SIZE_SAMPLES,
         };
-        write_volatile(AUDIO_ADDR as *mut u32, AUDIO_BUFFER_BASE);
+        write_volatile(AUDIO_ADDR as *mut u32, audio_buffer_base);
         write_volatile(AUDIO_CONFIG as *mut u32, audio_config.to_register());
 
         // Initialize frame counter
@@ -138,7 +140,7 @@ fn main() -> ! {
             wait_for_frame_ready();
 
             // Render the scrolling checkerboard pattern
-            render_scrolling_checkerboard(frame_index);
+            render_scrolling_checkerboard(framebuffer_base, frame_index);
 
             // Wait until we can present
             wait_for_present_ready();

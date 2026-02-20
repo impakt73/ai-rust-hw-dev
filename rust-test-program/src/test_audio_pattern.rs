@@ -1,11 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod common;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use alloc::vec;
 use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, write_stereo_sample,
 };
@@ -19,17 +22,19 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-/// Buffer base address in DRAM
-const BUFFER_BASE: u32 = 0x8000_2000;
-
 #[entry]
 fn main() -> ! {
     unsafe {
+        common::init_heap(&HEAP);
+
         // Configure Audio device
         // Use a small buffer (64 samples) for the test
         const BUFFER_SIZE_SAMPLES: u32 = 64;
         const TOTAL_SAMPLES: u32 = 500; // Generate 500 total samples
         const FREQUENCY_DIV: u32 = 4; // Sine wave frequency divider
+
+        let mut buffer = vec![0u8; (BUFFER_SIZE_SAMPLES * 4) as usize];
+        let buffer_base = buffer.as_mut_ptr() as u32;
 
         let config = AudioConfig {
             sample_rate: AudioSampleRate::Hz48000,
@@ -37,7 +42,7 @@ fn main() -> ! {
             sample_count: BUFFER_SIZE_SAMPLES,
         };
 
-        write_volatile(AUDIO_ADDR as *mut u32, BUFFER_BASE);
+        write_volatile(AUDIO_ADDR as *mut u32, buffer_base);
         write_volatile(AUDIO_CONFIG as *mut u32, config.to_register());
 
         let mut samples_written: u32 = 0;
@@ -61,7 +66,7 @@ fn main() -> ! {
                     generate_sine_sample(sample_index + FREQUENCY_DIV / 4, FREQUENCY_DIV);
 
                 let offset = i * 4; // 4 bytes per stereo sample
-                write_stereo_sample(BUFFER_BASE, offset, left_sample, right_sample);
+                write_stereo_sample(buffer_base, offset, left_sample, right_sample);
             }
 
             // Update config to specify how many samples to read in this DMA operation

@@ -1,11 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod common;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use alloc::vec;
 use common::{
     generate_sine_sample, is_dma_ready, is_sample_buffer_ready, trigger_dma, write_stereo_sample,
 };
@@ -19,9 +22,6 @@ fn panic(info: &PanicInfo) -> ! {
     common::default_panic_handler(info)
 }
 
-/// Buffer base address in DRAM
-const BUFFER_BASE: u32 = 0x8000_2000;
-
 /// Audio configuration
 /// Use 1024 stereo samples as requested
 const BUFFER_SIZE_SAMPLES: u32 = 1024;
@@ -31,7 +31,7 @@ const BUFFER_SIZE_SAMPLES: u32 = 1024;
 const FREQUENCY_DIV: u32 = 16;
 
 /// Fill the audio buffer with sine wave samples (called once at startup)
-fn precompute_audio_buffer() {
+fn precompute_audio_buffer(buffer_base: u32) {
     // Precompute 1024 stereo samples
     for i in 0..BUFFER_SIZE_SAMPLES {
         // Generate sine wave samples with phase shift for stereo effect
@@ -39,15 +39,19 @@ fn precompute_audio_buffer() {
         let right_sample = generate_sine_sample(i + FREQUENCY_DIV / 4, FREQUENCY_DIV);
 
         let offset = i * 4; // 4 bytes per stereo sample
-        write_stereo_sample(BUFFER_BASE, offset, left_sample, right_sample);
+        write_stereo_sample(buffer_base, offset, left_sample, right_sample);
     }
 }
 
 #[entry]
 fn main() -> ! {
     unsafe {
+        common::init_heap(&HEAP);
+        let mut buffer = vec![0u8; (BUFFER_SIZE_SAMPLES * 4) as usize];
+        let buffer_base = buffer.as_mut_ptr() as u32;
+
         // Precompute the audio buffer once at startup
-        precompute_audio_buffer();
+        precompute_audio_buffer(buffer_base);
 
         // Configure Audio device
         // 48000Hz, Stereo, 1024 samples
@@ -57,7 +61,7 @@ fn main() -> ! {
             sample_count: BUFFER_SIZE_SAMPLES,
         };
 
-        write_volatile(AUDIO_ADDR as *mut u32, BUFFER_BASE);
+        write_volatile(AUDIO_ADDR as *mut u32, buffer_base);
         write_volatile(AUDIO_CONFIG as *mut u32, config.to_register());
 
         // Main infinite loop

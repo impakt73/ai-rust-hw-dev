@@ -1,11 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod common;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use alloc::vec;
 use common::{trigger_present, wait_for_frame_ready, wait_for_present_ready};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
@@ -21,21 +24,18 @@ fn panic(info: &PanicInfo) -> ! {
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
-/// Framebuffer base address in DRAM
-const FRAMEBUFFER_BASE: u32 = 0x8000_1000;
-
 /// Checkerboard pattern size (in pixels)
 const CHECKER_SIZE: u32 = 8;
 
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGB8 (3 bytes per pixel)
-fn write_pixel(x: u32, y: u32, r: u8, g: u8, b: u8) {
-    riscv_shared::write_pixel_rgb8(FRAMEBUFFER_BASE, WIDTH, x, y, r, g, b);
+fn write_pixel(framebuffer_base: u32, x: u32, y: u32, r: u8, g: u8, b: u8) {
+    riscv_shared::write_pixel_rgb8(framebuffer_base, WIDTH, x, y, r, g, b);
 }
 
 /// Render a black and white scrolling checkerboard pattern
 /// The pattern scrolls by 1 pixel per frame in both x and y dimensions
-fn render_scrolling_checkerboard(offset_x: u32, offset_y: u32) {
+fn render_scrolling_checkerboard(framebuffer_base: u32, offset_x: u32, offset_y: u32) {
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             // Apply scrolling offset (modulo to wrap around)
@@ -51,10 +51,10 @@ fn render_scrolling_checkerboard(offset_x: u32, offset_y: u32) {
 
             if is_white {
                 // White pixel
-                write_pixel(x, y, 255, 255, 255);
+                write_pixel(framebuffer_base, x, y, 255, 255, 255);
             } else {
                 // Black pixel
-                write_pixel(x, y, 0, 0, 0);
+                write_pixel(framebuffer_base, x, y, 0, 0, 0);
             }
         }
     }
@@ -63,13 +63,17 @@ fn render_scrolling_checkerboard(offset_x: u32, offset_y: u32) {
 #[entry]
 fn main() -> ! {
     unsafe {
+        common::init_heap(&HEAP);
+        let mut framebuffer = vec![0u8; (WIDTH * HEIGHT * 3) as usize];
+        let framebuffer_base = framebuffer.as_mut_ptr() as u32;
+
         // Configure Video device
         let config = VideoConfig {
             width: WIDTH,
             height: HEIGHT,
             format: VideoFormat::Rgb8,
         };
-        write_volatile(VIDEO_ADDR as *mut u32, FRAMEBUFFER_BASE);
+        write_volatile(VIDEO_ADDR as *mut u32, framebuffer_base);
         write_volatile(VIDEO_CONFIG as *mut u32, config.to_register());
 
         // Initialize scroll offset
@@ -82,7 +86,7 @@ fn main() -> ! {
 
             // Render the scrolling checkerboard pattern
             // Scroll by 1 pixel per frame in both dimensions
-            render_scrolling_checkerboard(scroll_offset, scroll_offset);
+            render_scrolling_checkerboard(framebuffer_base, scroll_offset, scroll_offset);
 
             // Wait until we can present
             wait_for_present_ready();
