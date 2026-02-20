@@ -2,7 +2,7 @@
 //!
 //! This module provides the interactive command shell functionality.
 
-use crate::app::App;
+use crate::app::{create_fifo_device, App};
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind};
 use host_bus_handler::{AccessSize, BusRequest};
@@ -270,8 +270,10 @@ fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult
         baud,
         startup_reset: device_runtime::StartupReset::None,
     };
-    match create_device_runtime(runtime_type, None) {
+    let (fifo_reg, fifo_rx) = create_fifo_device();
+    match create_device_runtime(runtime_type, Some(vec![fifo_reg])) {
         Ok(runtime) => {
+            app.fifo_line_rx = Some(fifo_rx);
             app.device_runtime = Some(runtime);
             CommandResult::ok(format!("Connected to {} at {} baud", device, baud))
         }
@@ -285,8 +287,10 @@ fn execute_connect_sim(app: &mut App) -> CommandResult {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
-    match create_device_runtime(DeviceRuntimeType::Sim, None) {
+    let (fifo_reg, fifo_rx) = create_fifo_device();
+    match create_device_runtime(DeviceRuntimeType::Sim, Some(vec![fifo_reg])) {
         Ok(runtime) => {
+            app.fifo_line_rx = Some(fifo_rx);
             app.device_runtime = Some(runtime);
             CommandResult::ok("Connected to Simulator".to_string())
         }
@@ -299,6 +303,7 @@ fn execute_disconnect(app: &mut App) -> CommandResult {
     if let Some(runtime) = app.device_runtime.take() {
         let device = runtime.to_string();
         drop(runtime); // Explicitly close
+        app.fifo_line_rx = None;
         CommandResult::ok(format!("Disconnected from {}", device))
     } else {
         CommandResult::ok("Not connected.")
