@@ -67,7 +67,7 @@ jobs:
     
     - name: Build rust-test-program
       working-directory: rust-test-program
-      run: cargo build --verbose
+      run: cargo build --release --verbose
     
     - name: Check rust-test-program formatting
       working-directory: rust-test-program
@@ -75,7 +75,7 @@ jobs:
     
     - name: Run clippy on rust-test-program
       working-directory: rust-test-program
-      run: cargo clippy -- -D warnings
+      run: cargo clippy --release -- -D warnings
     
     - name: Verify FPGA synthesis
       working-directory: fpga

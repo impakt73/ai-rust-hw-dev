@@ -1,11 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod common;
 
 #[global_allocator]
 static HEAP: common::Heap = common::Heap::empty();
 
+use alloc::vec;
 use common::{trigger_present, wait_for_frame_ready, wait_for_present_ready};
 use core::panic::PanicInfo;
 use core::ptr::write_volatile;
@@ -21,21 +24,18 @@ fn panic(info: &PanicInfo) -> ! {
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 64;
 
-/// Framebuffer base address in DRAM
-const FRAMEBUFFER_BASE: u32 = 0x8000_1000;
-
 /// Checkerboard pattern size (in pixels)
 const CHECKER_SIZE: u32 = 8;
 
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGB8 (3 bytes per pixel)
-fn write_pixel(x: u32, y: u32, r: u8, g: u8, b: u8) {
-    riscv_shared::write_pixel_rgb8(FRAMEBUFFER_BASE, WIDTH, x, y, r, g, b);
+fn write_pixel(framebuffer: &mut [u16], x: u32, y: u32, r: u8, g: u8, b: u8) {
+    riscv_shared::write_pixel_rgb8(framebuffer.as_mut_ptr() as u32, WIDTH, x, y, r, g, b);
 }
 
 /// Render a black and white scrolling checkerboard pattern
 /// The pattern scrolls by 1 pixel per frame in both x and y dimensions
-fn render_scrolling_checkerboard(offset_x: u32, offset_y: u32) {
+fn render_scrolling_checkerboard(framebuffer: &mut [u16], offset_x: u32, offset_y: u32) {
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             // Apply scrolling offset (modulo to wrap around)
@@ -51,47 +51,56 @@ fn render_scrolling_checkerboard(offset_x: u32, offset_y: u32) {
 
             if is_white {
                 // White pixel
-                write_pixel(x, y, 255, 255, 255);
+                write_pixel(framebuffer, x, y, 255, 255, 255);
             } else {
                 // Black pixel
-                write_pixel(x, y, 0, 0, 0);
+                write_pixel(framebuffer, x, y, 0, 0, 0);
             }
         }
     }
 }
 
+fn configure_video_buffer(framebuffer: &mut [u16], config_register: u32) {
+    unsafe {
+        write_volatile(VIDEO_ADDR as *mut u32, framebuffer.as_mut_ptr() as u32);
+        write_volatile(VIDEO_CONFIG as *mut u32, config_register);
+    }
+}
+
 #[entry]
 fn main() -> ! {
-    unsafe {
-        // Configure Video device
-        let config = VideoConfig {
-            width: WIDTH,
-            height: HEIGHT,
-            format: VideoFormat::Rgb8,
-        };
-        write_volatile(VIDEO_ADDR as *mut u32, FRAMEBUFFER_BASE);
-        write_volatile(VIDEO_CONFIG as *mut u32, config.to_register());
+    common::init_heap(&HEAP);
+    let framebuffer_words = (WIDTH * HEIGHT * 3).div_ceil(2) as usize;
+    let mut framebuffer = vec![0u16; framebuffer_words];
 
-        // Initialize scroll offset
-        let mut scroll_offset: u32 = 0;
+    // Configure Video device
+    let config = VideoConfig {
+        width: WIDTH,
+        height: HEIGHT,
+        format: VideoFormat::Rgb8,
+    };
+    let config_register = config.to_register();
+    configure_video_buffer(framebuffer.as_mut_slice(), config_register);
 
-        // Main infinite loop
-        loop {
-            // Wait for video to be ready for a new frame
-            wait_for_frame_ready();
+    // Initialize scroll offset
+    let mut scroll_offset: u32 = 0;
 
-            // Render the scrolling checkerboard pattern
-            // Scroll by 1 pixel per frame in both dimensions
-            render_scrolling_checkerboard(scroll_offset, scroll_offset);
+    // Main infinite loop
+    loop {
+        // Wait for video to be ready for a new frame
+        wait_for_frame_ready();
 
-            // Wait until we can present
-            wait_for_present_ready();
+        // Render the scrolling checkerboard pattern
+        // Scroll by 1 pixel per frame in both dimensions
+        render_scrolling_checkerboard(framebuffer.as_mut_slice(), scroll_offset, scroll_offset);
 
-            // Trigger the present operation
-            trigger_present();
+        // Wait until we can present
+        wait_for_present_ready();
 
-            // Increment scroll offset for next frame (wraps around at 16 pixels)
-            scroll_offset = (scroll_offset + 1) % (CHECKER_SIZE * 2);
-        }
+        // Trigger the present operation
+        trigger_present();
+
+        // Increment scroll offset for next frame (wraps around at 16 pixels)
+        scroll_offset = (scroll_offset + 1) % (CHECKER_SIZE * 2);
     }
 }
