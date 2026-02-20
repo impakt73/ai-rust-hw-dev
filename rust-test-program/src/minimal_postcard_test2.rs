@@ -34,18 +34,16 @@ fn main() -> ! {
     };
 
     if let Ok(bytes) = to_allocvec(&simple) {
-        // Write bytes in chunks of 4, just like packet_test.rs
-        for chunk in bytes.chunks(4) {
-            let mut word: u32 = 0;
-            for (i, &byte) in chunk.iter().enumerate() {
-                word |= (byte as u32) << (i * 8);
-            }
-            common::fifo_write_word(word).expect("Failed to write to FIFO");
+        // Write bytes directly
+        for &byte in &bytes {
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
         }
     }
 
     // Write a known pattern to mark the end
-    common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
+    for byte in 0xDEAD_BEEFu32.to_le_bytes() {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     common::write_tohost(common::SUCCESS_CODE);
 }

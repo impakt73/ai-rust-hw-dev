@@ -33,7 +33,9 @@ fn main() -> ! {
     }
 
     // Write marker
-    common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
+    for byte in 0xAAAA_AAAAu32.to_le_bytes() {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     // Read and send to FIFO
     for &byte in &stack_array {
@@ -41,13 +43,17 @@ fn main() -> ! {
     }
 
     // Write marker
-    common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
+    for byte in 0xBBBB_BBBBu32.to_le_bytes() {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     // Test 2: Direct assignment
     let stack_array2: [u8; 8] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
 
     // Write marker
-    common::fifo_write_word(0xCCCCCCCC).expect("Failed to write to FIFO");
+    for byte in 0xCCCC_CCCCu32.to_le_bytes() {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     // Read and send to FIFO
     for &byte in &stack_array2 {

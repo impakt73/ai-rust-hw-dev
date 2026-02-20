@@ -27,7 +27,7 @@ fn main() -> ! {
     ];
 
     // Write the vec length
-    common::fifo_write_word(v.len() as u32).expect("Failed to write to FIFO");
+    common::fifo_write_byte(v.len() as u8).expect("Failed to write to FIFO");
 
     // Write each byte
     for &byte in v.iter() {

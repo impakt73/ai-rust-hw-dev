@@ -28,8 +28,12 @@ fn main() -> ! {
         let ptr = HEAP.alloc(layout);
 
         // Send the pointer address to FIFO for debugging
-        common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO"); // Debug marker
-        common::fifo_write_word(ptr as u32).expect("Failed to write to FIFO"); // Pointer address
+        for byte in 0xDEAD_BEEFu32.to_le_bytes() {
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+        } // Debug marker
+        for byte in (ptr as u32).to_le_bytes() {
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+        } // Pointer address
 
         // Write first byte
         core::ptr::write(ptr.add(0), 0x12u8);
@@ -63,7 +67,9 @@ fn main() -> ! {
         core::ptr::write(ptr.add(7), 0xF0u8);
 
         // Write marker
-        common::fifo_write_word(0xAAAAAAAA).expect("Failed to write to FIFO");
+        for byte in 0xAAAA_AAAAu32.to_le_bytes() {
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+        }
 
         // Read back all and write to FIFO
         for i in 0..8 {
@@ -72,7 +78,9 @@ fn main() -> ! {
         }
 
         // Write marker
-        common::fifo_write_word(0xBBBBBBBB).expect("Failed to write to FIFO");
+        for byte in 0xBBBB_BBBBu32.to_le_bytes() {
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+        }
     }
 
     common::write_tohost(common::SUCCESS_CODE);

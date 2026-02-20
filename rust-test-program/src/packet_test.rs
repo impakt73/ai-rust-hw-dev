@@ -30,7 +30,9 @@ where
         for (i, &byte) in chunk.iter().enumerate() {
             word |= (byte as u32) << (i * 8);
         }
-        common::fifo_write_word(word).map_err(|_| "FIFO write failed")?;
+        for byte in word.to_le_bytes() {
+            common::fifo_write_byte(byte).map_err(|_| "FIFO write failed")?;
+        }
     }
 
     Ok(())
@@ -53,10 +55,10 @@ fn main() -> ! {
 
     // Step 2: Consume FIFO data from host (Echo packet)
     // LIMITATION: This simplified test does NOT deserialize incoming packets from the host.
-    // It only consumes FIFO words to prevent blocking. Actual packet deserialization on the
+    // It only consumes FIFO bytes to prevent blocking. Actual packet deserialization on the
     // CPU side requires additional complexity not included in this initial implementation.
-    // Echo packet is approximately 5 words (20 bytes for header + sequence + timestamp)
-    let _echo_words = common::read_fifo_words(10);
+    // Echo packet is approximately 20 bytes (header + sequence + timestamp)
+    let _echo_bytes = common::read_fifo_bytes(20);
 
     // Step 3: Send Echo response with known expected values
     // Since incoming packets are not parsed, we send hardcoded responses based on the test's
@@ -72,9 +74,9 @@ fn main() -> ! {
     }
 
     // Step 4: Consume FIFO data from host (DataU32 packet)
-    // LIMITATION: Again, we're not deserializing - just consuming FIFO words to prevent blocking.
-    // DataU32 packet is approximately 4 words (16 bytes for header + value + tag)
-    let _data_words = common::read_fifo_words(10);
+    // LIMITATION: Again, we're not deserializing - just consuming FIFO bytes to prevent blocking.
+    // DataU32 packet is approximately 16 bytes (header + value + tag)
+    let _data_bytes = common::read_fifo_bytes(16);
 
     // Step 5: Send DataU32 response with known expected values
     // Hardcoded response value (2000 = 1000 * 2 as if we parsed and doubled it)

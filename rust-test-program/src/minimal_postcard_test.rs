@@ -41,7 +41,9 @@ fn main() -> ! {
     }
 
     // Test 2: Write a known pattern
-    common::fifo_write_word(0xDEADBEEF).expect("Failed to write to FIFO");
+    for byte in 0xDEAD_BEEFu32.to_le_bytes() {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     common::write_tohost(common::SUCCESS_CODE);
 }

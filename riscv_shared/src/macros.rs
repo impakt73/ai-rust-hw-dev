@@ -14,7 +14,7 @@ const FIFO_DATA: u32 = crate::fifo::FIFO_DATA;
 /// Send a DebugPacket to the host via MMIO FIFO
 ///
 /// This function serializes a DebugPacket using postcard and writes it
-/// word-by-word to the FIFO_DATA register.
+/// byte-by-byte to the FIFO_DATA register.
 ///
 /// # Error Handling
 ///
@@ -33,14 +33,16 @@ pub fn send_debug_message(level: DebugLevel, message: String) {
 
     // Serialize packet to bytes
     if let Ok(bytes) = to_allocvec(&packet) {
-        // Send bytes in 4-byte chunks (u32 words)
+        // Send bytes in 4-byte chunks with zero-padding to preserve packet framing.
         for chunk in bytes.chunks(4) {
             let mut word: u32 = 0;
             for (i, &byte) in chunk.iter().enumerate() {
                 word |= (byte as u32) << (i * 8);
             }
-            unsafe {
-                write_volatile(FIFO_DATA as *mut u32, word);
+            for byte in word.to_le_bytes() {
+                unsafe {
+                    write_volatile(FIFO_DATA as *mut u8, byte);
+                }
             }
         }
     }

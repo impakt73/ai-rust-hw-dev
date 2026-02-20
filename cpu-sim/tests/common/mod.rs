@@ -120,8 +120,8 @@ pub fn create_loop_program(iterations: u32) -> Vec<u8> {
 
 /// Create a FIFO echo program (raw-instruction equivalent of `hello_world.rs`).
 ///
-/// Reads words from the FIFO RX queue and echoes them to TX until the queue is
-/// empty or a zero word is received, then terminates with SUCCESS_CODE.
+/// Reads bytes from the FIFO RX queue and echoes them to TX until the queue is
+/// empty or a zero byte is received, then terminates with SUCCESS_CODE.
 ///
 /// Instruction layout (program base assumed to be 0x8000_0000):
 ///
@@ -129,12 +129,12 @@ pub fn create_loop_program(iterations: u32) -> Vec<u8> {
 ///   0: lui  x1, 0x4000_3000    // x1 = FIFO_DATA address
 ///   1: addi x2, x1, 4          // x2 = FIFO_STATUS address
 /// loop [PC = base+8]:
-///   2: lw   x3, 0(x2)          // x3 = FIFO_STATUS
+///   2: lbu  x3, 0(x2)          // x3 = FIFO_STATUS
 ///   3: andi x4, x3, 1          // x4 = RX_VALID bit
 ///   4: beq  x4, x0, +20        // if RX empty  → done
-///   5: lw   x5, 0(x1)          // x5 = word from FIFO_DATA
-///   6: beq  x5, x0, +12        // if zero word → done
-///   7: sw   x5, 0(x1)          // echo: write x5 to FIFO TX
+///   5: lbu  x5, 0(x1)          // x5 = byte from FIFO_DATA
+///   6: beq  x5, x0, +12        // if zero byte → done
+///   7: sb   x5, 0(x1)          // echo: write x5 to FIFO TX
 ///   8: jal  x0, -24            // loop back to instr 2
 /// done [PC = base+36]:
 ///   9: lui  x6, SIM_CONTROL_BASE
@@ -156,12 +156,12 @@ pub fn create_fifo_echo_program() -> Vec<u8> {
         lui(1, FIFO_DATA), // x1 = FIFO_DATA (0x4000_3000)
         addi(2, 1, 4),     // x2 = FIFO_STATUS
         // loop:
-        lw(3, 2, 0),   // x3 = FIFO_STATUS
+        lbu(3, 2, 0),  // x3 = FIFO_STATUS
         andi(4, 3, 1), // x4 = RX_VALID
         beq(4, 0, 20), // RX empty → done
-        lw(5, 1, 0),   // x5 = FIFO word
-        beq(5, 0, 12), // zero word → done
-        sw(1, 5, 0),   // echo to TX
+        lbu(5, 1, 0),  // x5 = FIFO byte
+        beq(5, 0, 12), // zero byte → done
+        sb(1, 5, 0),   // echo to TX
         jal(0, -24),   // loop
         // done:
         lui(6, SIM_CONTROL_BASE), // x6 = SIM_CONTROL_BASE
