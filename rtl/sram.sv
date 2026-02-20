@@ -10,7 +10,8 @@
 // - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
 //   which is supported by this project's target FPGA/toolchain.
 module sram #(
-    parameter int ADDR_WIDTH = 8
+    parameter int ADDR_WIDTH = 8,
+    parameter int DEPTH      = (1 << ADDR_WIDTH)
 ) (
     input  logic                  clk,
     input  logic                  we,
@@ -21,24 +22,42 @@ module sram #(
     output logic [31:0]           rdata
 );
 
-    logic [31:0] mem [0:(1<<ADDR_WIDTH)-1];
+    logic [31:0] mem [0:DEPTH-1];
 
     initial begin
-        for (int i = 0; i < (1 << ADDR_WIDTH); i = i + 1) begin
+        for (int i = 0; i < DEPTH; i = i + 1) begin
             mem[i] = 32'b0;
         end
     end
 
-    always_ff @(posedge clk) begin
-        if (we) begin
-            if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
-            if (wmask[1]) mem[waddr][15:8]  <= wdata[15:8];
-            if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
-            if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
+    if (DEPTH >= (1 << ADDR_WIDTH)) begin : gen_full_range
+        always_ff @(posedge clk) begin
+            if (we) begin
+                if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
+                if (wmask[1]) mem[waddr][15:8]  <= wdata[15:8];
+                if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
+                if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
+            end
+            // Read-first behavior: same-cycle read and write to same address returns
+            // the old memory contents.
+            rdata <= mem[raddr];
         end
-        // Read-first behavior: same-cycle read and write to same address returns
-        // the old memory contents.
-        rdata <= mem[raddr];
+    end else begin : gen_bounded_range
+        always_ff @(posedge clk) begin
+            if (we && (waddr < ADDR_WIDTH'(DEPTH))) begin
+                if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
+                if (wmask[1]) mem[waddr][15:8]  <= wdata[15:8];
+                if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
+                if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
+            end
+            // Read-first behavior: same-cycle read and write to same address returns
+            // the old memory contents.
+            if (raddr < ADDR_WIDTH'(DEPTH)) begin
+                rdata <= mem[raddr];
+            end else begin
+                rdata <= 32'b0;
+            end
+        end
     end
 
 endmodule

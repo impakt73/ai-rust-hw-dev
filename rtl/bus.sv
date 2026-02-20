@@ -5,7 +5,7 @@
 // Address Map:
 // - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
 // - Clock Peripheral:    0x51000000 - 0x5100000F (16 bytes)
-// - SRAM Peripheral:     0x52000000 - 0x52001FFF (8KB)
+// - SRAM Peripheral:     0x52000000 - 0x52002FFF (12KB)
 // - System Controller:   0x53000000 - 0x5300000F (16 bytes)
 // - External Memory:     Everything else (DRAM + Rust peripherals)
 //
@@ -84,7 +84,7 @@ module bus (
     localparam CLOCK_BASE = 32'h51000000;
     localparam CLOCK_LIMIT = 32'h51000010; // CLOCK_BASE + 16 bytes
     localparam SRAM_BASE  = 32'h52000000;
-    localparam SRAM_LIMIT = 32'h52002000;  // SRAM_BASE + 8KB
+    localparam SRAM_LIMIT = 32'h52003000;  // SRAM_BASE + 12KB
     localparam SYSCTRL_BASE  = 32'h53000000;
     localparam SYSCTRL_LIMIT = 32'h53000010; // SYSCTRL_BASE + 16 bytes
     // RTL peripheral range (for detecting unmapped RTL addresses)

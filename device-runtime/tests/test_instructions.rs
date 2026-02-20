@@ -994,6 +994,7 @@ fn test_sram_peripheral_boundary_word_access() {
     let mut instructions = vec![
         lui(1, SRAM_BASE_ADDR),
         addi(2, 0, 0x7FF),
+        addi(2, 2, 0x400),
         slli(2, 2, 2),
         add(3, 1, 2),
         addi(4, 0, 0x55),
@@ -1018,7 +1019,7 @@ fn test_sram_peripheral_boundary_word_access() {
         0x0000_0055
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR + 0x1FFC, SHORT_TIMEOUT),
+        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR + 0x2FFC, SHORT_TIMEOUT),
         0x0000_0055
     );
 }
