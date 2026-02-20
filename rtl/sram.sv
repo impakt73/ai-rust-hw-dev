@@ -23,14 +23,13 @@ module sram #(
 );
 
     logic [31:0] mem [0:DEPTH-1];
-
     initial begin
         for (int i = 0; i < DEPTH; i = i + 1) begin
             mem[i] = 32'b0;
         end
     end
 
-    if (DEPTH >= (1 << ADDR_WIDTH)) begin : gen_full_range
+    if (DEPTH == (1 << ADDR_WIDTH)) begin : gen_full_range
         always_ff @(posedge clk) begin
             if (we) begin
                 if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
@@ -44,7 +43,7 @@ module sram #(
         end
     end else begin : gen_bounded_range
         always_ff @(posedge clk) begin
-            if (we && (waddr < ADDR_WIDTH'(DEPTH))) begin
+            if (we && ({1'b0, waddr} < (ADDR_WIDTH+1)'(DEPTH))) begin
                 if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
                 if (wmask[1]) mem[waddr][15:8]  <= wdata[15:8];
                 if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
@@ -52,7 +51,7 @@ module sram #(
             end
             // Read-first behavior: same-cycle read and write to same address returns
             // the old memory contents.
-            if (raddr < ADDR_WIDTH'(DEPTH)) begin
+            if ({1'b0, raddr} < (ADDR_WIDTH+1)'(DEPTH)) begin
                 rdata <= mem[raddr];
             end else begin
                 rdata <= 32'b0;
