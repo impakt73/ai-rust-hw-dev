@@ -182,31 +182,22 @@ fn test_audio_config_change_and_samples() {
         .expect("Failed to find test_audio_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Run until program completes or we get sufficient audio data
-    let mut steps = 0;
-    loop {
-        if !viewer.step().expect("Step failed") {
-            break;
-        }
+    // Run until the program halts (no artificial step limit).
+    // viewer.run() loops until TohostTermination is received, so the program
+    // always completes regardless of how fast the main thread polls.
+    // apply_pending_audio_config_updates() is called on every step(), ensuring
+    // the audio config is captured before we drain the sample buffer.
+    viewer.run().expect("Viewer run failed");
 
-        // Pull audio samples for headless capture
-        viewer.update_audio_capture();
-
-        steps += 1;
-
-        // Safety limit - test_audio_pattern should complete within this
-        if steps > 50000 {
-            break;
-        }
-    }
+    // Drain any samples that arrived in the shared buffer during the run.
+    viewer.update_audio_capture();
 
     // Get the audio backend to check results
     let audio_chunks = viewer.get_audio_chunks();
     let audio_config = viewer.get_audio_config();
 
     println!(
-        "Audio config change test: {} steps, {} audio chunks captured",
-        steps,
+        "Audio config change test: {} audio chunks captured",
         audio_chunks.len()
     );
 
