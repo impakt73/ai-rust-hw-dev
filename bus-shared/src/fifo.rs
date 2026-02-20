@@ -72,18 +72,13 @@ impl Fifo {
     /// Bit 0 (RX_VALID): 1 if RX has data, 0 if empty
     /// Bit 1 (TX_READY): 1 while queue is below capacity
     fn read_status(&self) -> u32 {
-        let queue_len = self
+        let source = self
             .host_to_cpu
             .lock()
-            .expect("Fifo host_to_cpu lock poisoned in read_status")
-            .host_to_cpu
-            .len();
-        let rx_valid = if queue_len == 0 { 0 } else { 1 };
-        let tx_ready = if queue_len < FIFO_MAX_BUFFER_SIZE {
-            1
-        } else {
-            0
-        };
+            .expect("Fifo host_to_cpu lock poisoned in read_status");
+        let queue_len = source.host_to_cpu.len();
+        let rx_valid = u32::from(queue_len > 0);
+        let tx_ready = u32::from(queue_len < FIFO_MAX_BUFFER_SIZE);
         (tx_ready << 1) | rx_valid
     }
 

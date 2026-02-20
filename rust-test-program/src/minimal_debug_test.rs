@@ -34,7 +34,12 @@ fn main() -> ! {
 
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write the raw bytes vector length first as a marker
-        common::fifo_write_byte(bytes.len() as u8).expect("Failed to write length to FIFO");
+        let len_bytes = u32::try_from(bytes.len())
+            .expect("serialized length must fit in u32")
+            .to_le_bytes();
+        for byte in len_bytes {
+            common::fifo_write_byte(byte).expect("Failed to write length to FIFO");
+        }
 
         // Write each individual byte of the serialized data
         for &byte in bytes.iter() {
