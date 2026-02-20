@@ -31,6 +31,11 @@ impl FifoDataSource {
     fn clear(&mut self) {
         self.host_to_cpu.clear();
     }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.host_to_cpu.is_empty()
+    }
 }
 
 /// Shared host→CPU FIFO data source.
@@ -201,11 +206,7 @@ mod tests {
         let mut ctx = SystemContext::new(&mut memory);
         fifo.reset(&mut ctx);
 
-        assert!(source
-            .lock()
-            .expect("test source lock poisoned")
-            .host_to_cpu
-            .is_empty());
+        assert!(source.lock().expect("test source lock poisoned").is_empty());
     }
 
     #[test]

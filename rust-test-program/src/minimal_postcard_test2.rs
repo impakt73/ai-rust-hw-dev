@@ -27,7 +27,7 @@ struct SimpleStruct {
 #[entry]
 fn main() -> ! {
     common::init_heap(&HEAP);
-    // Test 1: Serialize a simple struct and write it like packet_test.rs does
+    // Test 1: Serialize a simple struct and write the raw serialized bytes
     let simple = SimpleStruct {
         a: 0x12345678,
         b: 0xABCDEF00,
