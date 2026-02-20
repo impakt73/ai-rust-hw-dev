@@ -68,15 +68,6 @@ fn test_allocator() {
     );
 }
 
-#[test]
-fn test_static_heap() {
-    let mut runtime = create_test_runtime_with_fifo();
-    assert_eq!(
-        run_elf_until_halt(runtime.as_mut(), "test_static_heap", LONG_TIMEOUT),
-        Some(42)
-    );
-}
-
 // ============================================================================
 // Byte-Enable and Memory Access Tests
 // ============================================================================

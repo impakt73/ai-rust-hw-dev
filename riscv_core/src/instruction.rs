@@ -440,6 +440,52 @@ pub fn c_sw(rs1: u32, rs2: u32, offset: u32) -> u16 {
     insn
 }
 
+/// C.FLW (RV32FC): flw fd', offset(rs1') where fd' and rs1' are f8-f15 / x8-x15
+pub fn c_flw(fd: u32, rs1: u32, offset: u32) -> u16 {
+    assert!(
+        (8..=15).contains(&fd) && (8..=15).contains(&rs1),
+        "fd/rs1 must be in 8-15 (compressed register range)"
+    );
+    assert!(
+        offset.is_multiple_of(4) && offset <= 124,
+        "offset must be multiple of 4 and <=124"
+    );
+
+    let u = offset >> 2; // uimm bits [6:2]
+    let mut insn: u16 = 0;
+    // Same bit positions as C.LW, but funct3 = 011
+    insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
+    insn |= ((u & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
+    insn |= (((fd - 8) & 0x7) as u16) << 2; // insn[4:2] = fd'
+    insn |= (0b011u16) << 13; // funct3 = 011
+    insn
+}
+
+/// C.FSW (RV32FC): fsw fs2', offset(rs1') where fs2' and rs1' are f8-f15 / x8-x15
+pub fn c_fsw(rs1: u32, fs2: u32, offset: u32) -> u16 {
+    assert!(
+        (8..=15).contains(&rs1) && (8..=15).contains(&fs2),
+        "rs1/fs2 must be in 8-15 (compressed register range)"
+    );
+    assert!(
+        offset.is_multiple_of(4) && offset <= 124,
+        "offset must be multiple of 4 and <=124"
+    );
+
+    let u = offset >> 2; // uimm bits [6:2]
+    let mut insn: u16 = 0;
+    // Same bit positions as C.SW, but funct3 = 111
+    insn |= (((u >> 4) & 0x1) as u16) << 5; // insn[5] = uimm[6]
+    insn |= ((u & 0x1) as u16) << 6; // insn[6] = uimm[2]
+    insn |= (((u >> 1) & 0x7) as u16) << 10; // insn[12:10] = uimm[5:3]
+    insn |= (((rs1 - 8) & 0x7) as u16) << 7; // insn[9:7] = rs1'
+    insn |= (((fs2 - 8) & 0x7) as u16) << 2; // insn[4:2] = fs2'
+    insn |= (0b111u16) << 13; // funct3 = 111
+    insn
+}
+
 /// C.NOP (ADDI x0, x0, 0)
 pub fn c_nop() -> u16 {
     0b0000_0000_0000_0001u16
@@ -674,6 +720,22 @@ pub fn c_lwsp(rd: u32, offset: u32) -> u16 {
     insn
 }
 
+/// C.FLWSP (RV32FC): flw fd, offset(x2)
+pub fn c_flwsp(fd: u32, offset: u32) -> u16 {
+    assert!(fd < 32, "fd must be a valid FP register");
+    assert!(offset.is_multiple_of(4) && offset <= 255);
+    let u = offset >> 2; // uimm bits
+                         // Same bit positions as C.LWSP
+    let mut insn: u16 = 0;
+    insn |= ((u & 0x7) as u16) << 4; // insn[6:4] = u[3:1]
+    insn |= (((u >> 3) & 0x1) as u16) << 12; // insn[12] = u[4]
+    insn |= (((u >> 4) & 0x3) as u16) << 2; // insn[3:2] = u[6:5]
+    insn |= ((fd & 0x1F) as u16) << 7; // fd
+    insn |= 0b10u16; // opcode
+    insn |= (0b011u16) << 13; // funct3 = 011
+    insn
+}
+
 /// C.JR: jalr x0, 0(rs1)
 pub fn c_jr(rs1: u32) -> u16 {
     // Allow rs1==0 (illegal) for tests
@@ -739,6 +801,21 @@ pub fn c_swsp(rs2: u32, offset: u32) -> u16 {
     insn |= ((rs2 & 0x1F) as u16) << 2; // rs2
     insn |= 0b10u16;
     insn |= (0b110u16) << 13; // funct3 = 110
+    insn
+}
+
+/// C.FSWSP (RV32FC): fsw fs2, offset(x2)
+pub fn c_fswsp(fs2: u32, offset: u32) -> u16 {
+    assert!(fs2 < 32, "fs2 must be a valid FP register");
+    assert!(offset.is_multiple_of(4) && offset <= 252);
+    let u = offset >> 2; // uimm bits
+                         // Same bit positions as C.SWSP
+    let mut insn: u16 = 0;
+    insn |= (((u >> 4) & 0x3) as u16) << 7; // insn[8:7]
+    insn |= ((u & 0xF) as u16) << 9; // insn[12:9]
+    insn |= ((fs2 & 0x1F) as u16) << 2; // fs2
+    insn |= 0b10u16;
+    insn |= (0b111u16) << 13; // funct3 = 111
     insn
 }
 

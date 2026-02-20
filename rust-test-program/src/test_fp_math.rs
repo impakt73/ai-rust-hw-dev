@@ -23,9 +23,10 @@ fn panic(info: &PanicInfo) -> ! {
 /// Entry point
 #[entry]
 fn main() -> ! {
+    // Use black_box to prevent the compiler from optimizing out floating-point operations
     // Test basic floating-point arithmetic
-    let a: f32 = 3.0;
-    let b: f32 = 2.0;
+    let a: f32 = core::hint::black_box(3.0_f32);
+    let b: f32 = core::hint::black_box(2.0_f32);
 
     // Addition: 3.0 + 2.0 = 5.0
     let sum = a + b;
@@ -44,16 +45,16 @@ fn main() -> ! {
     assert_eq_f32(quot, 3.0);
 
     // Test more complex expressions
-    let x: f32 = 1.5;
-    let y: f32 = 2.5;
+    let x: f32 = core::hint::black_box(1.5_f32);
+    let y: f32 = core::hint::black_box(2.5_f32);
 
     // (1.5 * 2.5) + 3.0 = 3.75 + 3.0 = 6.75
     let result = (x * y) + a;
     assert_eq_f32(result, 6.75);
 
     // Test comparisons
-    let c: f32 = 4.0;
-    let d: f32 = 4.0;
+    let c: f32 = core::hint::black_box(4.0_f32);
+    let d: f32 = core::hint::black_box(4.0_f32);
 
     if c == d {
         // Equality test passed
@@ -67,26 +68,26 @@ fn main() -> ! {
     assert_eq_f32(max_val, 3.0);
 
     // Test conversions
-    let int_val: i32 = 42;
+    let int_val: i32 = core::hint::black_box(42_i32);
     let float_from_int = int_val as f32;
     assert_eq_f32(float_from_int, 42.0);
 
-    let float_val: f32 = 7.8;
+    let float_val: f32 = core::hint::black_box(7.8_f32);
     let int_from_float = float_val as i32;
     if int_from_float != 7 {
         common::write_tohost(0xDEAD); // Failure
     }
 
     // Test negative numbers
-    let neg: f32 = -5.5;
+    let neg: f32 = core::hint::black_box(-5.5_f32);
 
     // Multiplication with negative: -5.5 * 2.0 = -11.0
     let neg_prod = neg * b;
     assert_eq_f32(neg_prod, -11.0);
 
     // Test division with result verification
-    let div_test: f32 = 10.0;
-    let div_by: f32 = 2.5;
+    let div_test: f32 = core::hint::black_box(10.0_f32);
+    let div_by: f32 = core::hint::black_box(2.5_f32);
     let div_result = div_test / div_by;
     assert_eq_f32(div_result, 4.0);
 
