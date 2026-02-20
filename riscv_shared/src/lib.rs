@@ -8,12 +8,9 @@
 //! - Helper functions for test pattern generation
 //! - FIFO helper utilities for host-CPU communication
 //!
-//! This crate is `no_std` compatible and requires `alloc`.
+//! This crate is `no_std` compatible.
 
 #![no_std]
-
-// Re-export alloc for macro use
-pub extern crate alloc;
 
 // Hardware peripheral modules
 pub mod audio;
