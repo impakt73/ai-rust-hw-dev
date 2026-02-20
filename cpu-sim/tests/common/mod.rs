@@ -129,7 +129,7 @@ pub fn create_loop_program(iterations: u32) -> Vec<u8> {
 ///   0: lui  x1, 0x4000_3000    // x1 = FIFO_DATA address
 ///   1: addi x2, x1, 4          // x2 = FIFO_STATUS address
 /// loop [PC = base+8]:
-///   2: lbu  x3, 0(x2)          // x3 = FIFO_STATUS
+///   2: lw   x3, 0(x2)          // x3 = FIFO_STATUS
 ///   3: andi x4, x3, 1          // x4 = RX_VALID bit
 ///   4: beq  x4, x0, +20        // if RX empty  → done
 ///   5: lbu  x5, 0(x1)          // x5 = byte from FIFO_DATA
@@ -156,7 +156,7 @@ pub fn create_fifo_echo_program() -> Vec<u8> {
         lui(1, FIFO_DATA), // x1 = FIFO_DATA (0x4000_3000)
         addi(2, 1, 4),     // x2 = FIFO_STATUS
         // loop:
-        lbu(3, 2, 0),  // x3 = FIFO_STATUS
+        lw(3, 2, 0),   // x3 = FIFO_STATUS
         andi(4, 3, 1), // x4 = RX_VALID
         beq(4, 0, 20), // RX empty → done
         lbu(5, 1, 0),  // x5 = FIFO byte

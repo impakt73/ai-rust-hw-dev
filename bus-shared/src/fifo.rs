@@ -2,8 +2,6 @@ use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-const FIFO_MAX_BUFFER_SIZE: usize = 4096;
-
 /// Callback invoked whenever the CPU writes a byte to FIFO DATA.
 pub type FifoDataReceivedCallback = Box<dyn FnMut(u8) + Send>;
 
@@ -21,14 +19,6 @@ impl FifoDataSource {
 
     /// Push a byte that the CPU can later read from FIFO DATA.
     pub fn write_byte(&mut self, byte: u8) {
-        if self.host_to_cpu.len() >= FIFO_MAX_BUFFER_SIZE {
-            log::warn!(
-                "FIFO RX queue full ({} bytes), dropping byte 0x{:02x}",
-                FIFO_MAX_BUFFER_SIZE,
-                byte
-            );
-            return;
-        }
         self.host_to_cpu.push_back(byte);
     }
 
@@ -70,7 +60,7 @@ impl Fifo {
 
     /// Read the STATUS register
     /// Bit 0 (RX_VALID): 1 if RX has data, 0 if empty
-    /// Bit 1 (TX_READY): 1 while queue is below capacity
+    /// Bit 1 (TX_READY): Always 1 (CPU writes are consumed immediately)
     fn read_status(&self) -> u32 {
         let source = self
             .host_to_cpu
@@ -78,7 +68,7 @@ impl Fifo {
             .expect("Fifo host_to_cpu lock poisoned in read_status");
         let queue_len = source.host_to_cpu.len();
         let rx_valid = u32::from(queue_len > 0);
-        let tx_ready = u32::from(queue_len < FIFO_MAX_BUFFER_SIZE);
+        let tx_ready = 1;
         (tx_ready << 1) | rx_valid
     }
 
@@ -112,7 +102,11 @@ impl Fifo {
 
 impl BusDevice for Fifo {
     fn read_word(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u32, BusDeviceError> {
-        Err(BusDeviceError::UnsupportedSize { offset, size: 4 })
+        match offset {
+            0x00 => Err(BusDeviceError::UnsupportedSize { offset, size: 4 }),
+            0x04 => Ok(self.read_status()),
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
     }
 
     fn write_word(
@@ -121,7 +115,11 @@ impl BusDevice for Fifo {
         offset: u32,
         _value: u32,
     ) -> Result<(), BusDeviceError> {
-        Err(BusDeviceError::UnsupportedSize { offset, size: 4 })
+        match offset {
+            0x00 => Err(BusDeviceError::UnsupportedSize { offset, size: 4 }),
+            0x04 => Err(BusDeviceError::WriteToReadOnly { offset }),
+            _ => Err(BusDeviceError::InvalidAddress { offset }),
+        }
     }
 
     fn read_halfword(
@@ -144,7 +142,7 @@ impl BusDevice for Fifo {
     fn read_byte(&mut self, _ctx: &mut SystemContext, offset: u32) -> Result<u8, BusDeviceError> {
         match offset {
             0x00 => Ok(self.read_data_byte()),
-            0x04 => Ok(self.read_status() as u8),
+            0x04 => Err(BusDeviceError::UnsupportedSize { offset, size: 1 }),
             _ => Err(BusDeviceError::InvalidAddress { offset }),
         }
     }
@@ -160,10 +158,7 @@ impl BusDevice for Fifo {
                 self.write_data_byte(value);
                 Ok(())
             }
-            0x04 => {
-                // STATUS register is read-only
-                Err(BusDeviceError::WriteToReadOnly { offset })
-            }
+            0x04 => Err(BusDeviceError::UnsupportedSize { offset, size: 1 }),
             _ => Err(BusDeviceError::InvalidAddress { offset }),
         }
     }
@@ -171,7 +166,7 @@ impl BusDevice for Fifo {
     fn size(&self) -> u32 {
         // FIFO has 2 word-aligned registers within its address window:
         //   - DATA   at offset 0x00 (byte read/write only)
-        //   - STATUS at offset 0x04 (byte read-only)
+        //   - STATUS at offset 0x04 (word read-only)
         8
     }
 
@@ -214,20 +209,13 @@ mod tests {
     }
 
     #[test]
-    fn test_data_source_is_bounded() {
-        let mut source = FifoDataSource::new();
-        for _ in 0..(FIFO_MAX_BUFFER_SIZE + 16) {
-            source.write_byte(0xAA);
-        }
-        assert_eq!(source.host_to_cpu.len(), FIFO_MAX_BUFFER_SIZE);
-    }
-
-    #[test]
-    fn test_word_and_halfword_access_are_unsupported() {
+    fn test_access_size_rules() {
         let source = Arc::new(Mutex::new(FifoDataSource::new()));
         let mut fifo = Fifo::new_with_callback(source, Box::new(|_| {}));
         let mut memory = Memory::new();
         let mut ctx = SystemContext::new(&mut memory);
+
+        assert_eq!(fifo.read_word(&mut ctx, 0x04).unwrap(), 0b10);
 
         assert!(matches!(
             fifo.read_word(&mut ctx, 0x00),
@@ -238,12 +226,28 @@ mod tests {
             Err(BusDeviceError::UnsupportedSize { size: 4, .. })
         ));
         assert!(matches!(
+            fifo.write_word(&mut ctx, 0x04, 0x1234_5678),
+            Err(BusDeviceError::WriteToReadOnly { .. })
+        ));
+        assert!(matches!(
             fifo.read_halfword(&mut ctx, 0x00),
+            Err(BusDeviceError::UnsupportedSize { size: 2, .. })
+        ));
+        assert!(matches!(
+            fifo.read_halfword(&mut ctx, 0x04),
             Err(BusDeviceError::UnsupportedSize { size: 2, .. })
         ));
         assert!(matches!(
             fifo.write_halfword(&mut ctx, 0x00, 0x1234),
             Err(BusDeviceError::UnsupportedSize { size: 2, .. })
+        ));
+        assert!(matches!(
+            fifo.read_byte(&mut ctx, 0x04),
+            Err(BusDeviceError::UnsupportedSize { size: 1, .. })
+        ));
+        assert!(matches!(
+            fifo.write_byte(&mut ctx, 0x04, 0x12),
+            Err(BusDeviceError::UnsupportedSize { size: 1, .. })
         ));
     }
 }

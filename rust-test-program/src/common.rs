@@ -90,8 +90,8 @@ pub enum FifoWriteError {
 #[inline(never)]
 pub fn fifo_write_byte(byte: u8) -> Result<(), FifoWriteError> {
     unsafe {
-        let status = read_volatile(FIFO_STATUS as *const u8);
-        if status & (TX_READY as u8) != 0 {
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & TX_READY != 0 {
             write_volatile(FIFO_DATA as *mut u8, byte);
             Ok(())
         } else {
@@ -108,8 +108,8 @@ pub fn fifo_write_byte(byte: u8) -> Result<(), FifoWriteError> {
 #[inline(never)]
 pub fn fifo_read_byte() -> Result<u8, FifoReadError> {
     unsafe {
-        let status = read_volatile(FIFO_STATUS as *const u8);
-        if status & (RX_VALID as u8) != 0 {
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & RX_VALID != 0 {
             Ok(read_volatile(FIFO_DATA as *const u8))
         } else {
             Err(FifoReadError::Empty)
