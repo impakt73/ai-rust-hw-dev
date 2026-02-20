@@ -38,7 +38,7 @@ fn main() -> ! {
 
         // Write each individual byte of the serialized data
         for &byte in bytes.iter() {
-            common::fifo_write_word(byte as u32).expect("Failed to write byte to FIFO");
+            common::fifo_write_byte(byte).expect("Failed to write byte to FIFO");
         }
 
         // Write a marker

@@ -36,7 +36,7 @@ fn main() -> ! {
     if let Ok(bytes) = to_allocvec(&simple) {
         // Write each byte individually to FIFO to see if duplication happens
         for &byte in bytes.iter() {
-            common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
         }
     }
 

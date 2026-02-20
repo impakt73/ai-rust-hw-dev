@@ -37,7 +37,7 @@ fn main() -> ! {
 
     // Read and send to FIFO
     for &byte in &stack_array {
-        common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
     }
 
     // Write marker
@@ -51,7 +51,7 @@ fn main() -> ! {
 
     // Read and send to FIFO
     for &byte in &stack_array2 {
-        common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
     }
 
     common::write_tohost(common::SUCCESS_CODE);

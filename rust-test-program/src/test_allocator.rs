@@ -31,7 +31,7 @@ fn main() -> ! {
 
     // Write each byte
     for &byte in v.iter() {
-        common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
     }
 
     common::write_tohost(common::SUCCESS_CODE);

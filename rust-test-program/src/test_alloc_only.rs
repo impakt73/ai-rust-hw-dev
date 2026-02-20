@@ -42,7 +42,7 @@ fn main() -> ! {
         // Read back and write to FIFO
         for i in 0..8 {
             let byte = core::ptr::read(ptr.add(i));
-            common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+            common::fifo_write_byte(byte).expect("Failed to write to FIFO");
         }
 
         // Write marker

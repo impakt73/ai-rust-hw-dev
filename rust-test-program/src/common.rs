@@ -100,6 +100,24 @@ pub fn fifo_write_word(word: u32) -> Result<(), FifoWriteError> {
     }
 }
 
+/// Write a byte to the FIFO, checking TX_READY status first
+///
+/// # Errors
+///
+/// Returns `FifoWriteError::Full` if the TX FIFO is not ready to accept data
+#[inline(never)]
+pub fn fifo_write_byte(byte: u8) -> Result<(), FifoWriteError> {
+    unsafe {
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & TX_READY != 0 {
+            write_volatile(FIFO_DATA as *mut u8, byte);
+            Ok(())
+        } else {
+            Err(FifoWriteError::Full)
+        }
+    }
+}
+
 /// Read a word from the FIFO, checking RX_VALID status first
 ///
 /// # Errors
@@ -111,6 +129,23 @@ pub fn fifo_read_word() -> Result<u32, FifoReadError> {
         let status = read_volatile(FIFO_STATUS as *const u32);
         if status & RX_VALID != 0 {
             Ok(read_volatile(FIFO_DATA as *const u32))
+        } else {
+            Err(FifoReadError::Empty)
+        }
+    }
+}
+
+/// Read a byte from the FIFO, checking RX_VALID status first
+///
+/// # Errors
+///
+/// Returns `FifoReadError::Empty` if the RX FIFO has no data available
+#[inline(never)]
+pub fn fifo_read_byte() -> Result<u8, FifoReadError> {
+    unsafe {
+        let status = read_volatile(FIFO_STATUS as *const u32);
+        if status & RX_VALID != 0 {
+            Ok(read_volatile(FIFO_DATA as *const u8))
         } else {
             Err(FifoReadError::Empty)
         }

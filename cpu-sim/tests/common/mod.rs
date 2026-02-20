@@ -28,23 +28,17 @@ pub fn assert_tohost(result: &SimulationResult, expected: u32, test_name: &str) 
 
 /// Create a FIFO data collector callback and the shared buffer it writes into.
 ///
-/// The callback receives CPU→Host words and appends little-endian bytes to the
+/// The callback receives CPU→Host bytes and appends them to the
 /// returned `Arc<Mutex<Vec<u8>>>`.
 pub fn create_fifo_collector() -> (Arc<Mutex<Vec<u8>>>, FifoDataReceivedCallback) {
     let fifo_data = Arc::new(Mutex::new(Vec::new()));
     let fifo_data_clone = Arc::clone(&fifo_data);
 
-    let callback: FifoDataReceivedCallback = Box::new(move |word| {
-        let bytes = [
-            (word & 0xFF) as u8,
-            ((word >> 8) & 0xFF) as u8,
-            ((word >> 16) & 0xFF) as u8,
-            ((word >> 24) & 0xFF) as u8,
-        ];
+    let callback: FifoDataReceivedCallback = Box::new(move |byte| {
         fifo_data_clone
             .lock()
             .expect("Failed to lock FIFO data mutex in create_fifo_collector callback")
-            .extend_from_slice(&bytes);
+            .push(byte);
     });
 
     (fifo_data, callback)
