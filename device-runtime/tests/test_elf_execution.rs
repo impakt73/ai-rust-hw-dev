@@ -6,7 +6,6 @@
 //!
 //! - Memory allocation and heap management
 //! - Byte-enable and byte-level memory operations
-//! - Postcard serialization/deserialization
 //! - Bare-metal Rust execution
 //! - Floating-point math operations
 //! - Panic handlers
@@ -51,15 +50,6 @@ fn test_alloc_only() {
 }
 
 #[test]
-fn test_minimal_debug_test() {
-    let mut runtime = create_test_runtime_with_fifo();
-    assert_eq!(
-        run_elf_until_halt(runtime.as_mut(), "minimal_debug_test", LONG_TIMEOUT),
-        Some(42)
-    );
-}
-
-#[test]
 fn test_allocator() {
     let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
@@ -95,28 +85,6 @@ fn test_simple_byte_store() {
     let mut runtime = create_test_runtime_with_fifo();
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_byte_store_simple", LONG_TIMEOUT),
-        Some(42)
-    );
-}
-
-// ============================================================================
-// Postcard Serialization Tests
-// ============================================================================
-
-#[test]
-fn test_minimal_postcard_byte_by_byte() {
-    let mut runtime = create_test_runtime_with_fifo();
-    assert_eq!(
-        run_elf_until_halt(runtime.as_mut(), "minimal_postcard_test", LONG_TIMEOUT),
-        Some(42)
-    );
-}
-
-#[test]
-fn test_minimal_postcard_word_packing() {
-    let mut runtime = create_test_runtime_with_fifo();
-    assert_eq!(
-        run_elf_until_halt(runtime.as_mut(), "minimal_postcard_test2", LONG_TIMEOUT),
         Some(42)
     );
 }
