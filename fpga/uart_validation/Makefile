@@ -15,9 +15,9 @@ BUILD_DIR = build
 
 # Source files
 RTL_SOURCES = \
-	$(RTL_DIR)/ff_sync.sv \
-	$(RTL_DIR)/sync_fifo.sv \
-	$(RTL_DIR)/uart.sv
+	$(RTL_DIR)/primitives/ff_sync.sv \
+	$(RTL_DIR)/primitives/sync_fifo.sv \
+	$(RTL_DIR)/io/uart.sv
 
 FPGA_SOURCES = \
 	$(FPGA_DIR)/uart_validation_top.sv
