@@ -4,6 +4,7 @@ use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
 // CLKS_PER_BIT = 50_000_000 / 115200 ≈ 434
 const CLKS_PER_BIT: u32 = 434;
 const CLKS_PER_BIT_1M: u32 = 50;
+const UART_BYTE_TIMEOUT_BITS: u32 = 15;
 
 // Clock cycle macro for UART tests
 macro_rules! clock_cycle {
@@ -1208,7 +1209,7 @@ fn test_uart_bidirectional_end_to_end_at_1m_baud() {
         src.tx_valid = 0;
         src.eval();
 
-        let mut timeout = CLKS_PER_BIT_1M * 15;
+        let mut timeout = CLKS_PER_BIT_1M * UART_BYTE_TIMEOUT_BITS;
         while dst.rx_valid == 0 && timeout > 0 {
             step_link(src, dst);
             timeout -= 1;
