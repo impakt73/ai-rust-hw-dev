@@ -13,7 +13,7 @@ pub mod trace;
 pub mod instruction;
 
 // Define the Cpu module (CPU core)
-#[verilog(src = "../rtl/cpu.sv", name = "cpu")]
+#[verilog(src = "../rtl/cpu/cpu.sv", name = "cpu")]
 pub struct Cpu;
 
 // Define the Top module (top-level wrapper with RTL peripherals)
@@ -21,23 +21,23 @@ pub struct Cpu;
 pub struct Top;
 
 // Define ALU module
-#[verilog(src = "../rtl/alu.sv", name = "alu")]
+#[verilog(src = "../rtl/cpu/alu.sv", name = "alu")]
 pub struct Alu;
 
 // Define RegFile module
-#[verilog(src = "../rtl/regfile.sv", name = "regfile")]
+#[verilog(src = "../rtl/cpu/regfile.sv", name = "regfile")]
 pub struct RegFile;
 
 // Define Decompress module
-#[verilog(src = "../rtl/decompress.sv", name = "decompress")]
+#[verilog(src = "../rtl/cpu/decompress.sv", name = "decompress")]
 pub struct Decompress;
 
 // Define FP RegFile module
-#[verilog(src = "../rtl/fp_regfile.sv", name = "fp_regfile")]
+#[verilog(src = "../rtl/fpu/fp_regfile.sv", name = "fp_regfile")]
 pub struct FpRegFile;
 
 // Define FPU module
-#[verilog(src = "../rtl/fpu.sv", name = "fpu")]
+#[verilog(src = "../rtl/fpu/fpu.sv", name = "fpu")]
 pub struct Fpu;
 
 // Define LED Controller module
@@ -48,11 +48,11 @@ pub struct Fpu;
 pub struct LedControllerPeripheral;
 
 // Define UART core module (no FIFOs, ready/valid interface)
-#[verilog(src = "../rtl/uart.sv", name = "uart")]
+#[verilog(src = "../rtl/io/uart.sv", name = "uart")]
 pub struct Uart;
 
 // Define UART wrapper module configured for 1M baud
-#[verilog(src = "../rtl/uart_1m_baud_wrapper.sv", name = "uart_1m_baud_wrapper")]
+#[verilog(src = "../rtl/wrappers/uart_1m_baud_wrapper.sv", name = "uart_1m_baud_wrapper")]
 pub struct Uart1MBaud;
 
 // Define Clock Peripheral module
@@ -70,65 +70,65 @@ pub struct ClockPeripheral;
 pub struct SystemController;
 
 // Define Host Bus Interface module
-#[verilog(src = "../rtl/host_bus_interface.sv", name = "host_bus_interface")]
+#[verilog(src = "../rtl/io/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
 
 // Define Host RX Buffer module (bidirectional packet buffering)
-#[verilog(src = "../rtl/host_rx_buffer.sv", name = "host_rx_buffer")]
+#[verilog(src = "../rtl/io/host_rx_buffer.sv", name = "host_rx_buffer")]
 pub struct HostRxBuffer;
 
 // Define Bus Arbiter module
-#[verilog(src = "../rtl/bus_arbiter.sv", name = "bus_arbiter")]
+#[verilog(src = "../rtl/memory/bus_arbiter.sv", name = "bus_arbiter")]
 pub struct BusArbiter;
 
 // Define FPU submodules
-#[verilog(src = "../rtl/fpu_classifier.sv", name = "fpu_classifier")]
+#[verilog(src = "../rtl/fpu/fpu_classifier.sv", name = "fpu_classifier")]
 pub struct FpuClassifier;
 
-#[verilog(src = "../rtl/fpu_comparator.sv", name = "fpu_comparator")]
+#[verilog(src = "../rtl/fpu/fpu_comparator.sv", name = "fpu_comparator")]
 pub struct FpuComparator;
 
-#[verilog(src = "../rtl/fpu_int_to_float.sv", name = "fpu_int_to_float")]
+#[verilog(src = "../rtl/fpu/fpu_int_to_float.sv", name = "fpu_int_to_float")]
 pub struct FpuIntToFloat;
 
-#[verilog(src = "../rtl/fpu_float_to_int.sv", name = "fpu_float_to_int")]
+#[verilog(src = "../rtl/fpu/fpu_float_to_int.sv", name = "fpu_float_to_int")]
 pub struct FpuFloatToInt;
 
-#[verilog(src = "../rtl/fpu_sqrt.sv", name = "fpu_sqrt")]
+#[verilog(src = "../rtl/fpu/fpu_sqrt.sv", name = "fpu_sqrt")]
 pub struct FpuSqrt;
 
 // Define FF synchronizer default wrapper module
 #[verilog(
-    src = "../rtl/ff_sync_default_wrapper.sv",
+    src = "../rtl/wrappers/ff_sync_default_wrapper.sv",
     name = "ff_sync_default_wrapper"
 )]
 pub struct FfSyncDefaultWrapper;
 
 // Define FF synchronizer parameterized wrapper module (2-stage, 4-bit)
 #[verilog(
-    src = "../rtl/ff_sync_param_wrapper.sv",
+    src = "../rtl/wrappers/ff_sync_param_wrapper.sv",
     name = "ff_sync_param_wrapper"
 )]
 pub struct FfSyncParamWrapper;
 
 // Define Async FIFO wrapper modules for CDC FIFO tests
 #[verilog(
-    src = "../rtl/async_fifo_test_wrapper.sv",
+    src = "../rtl/wrappers/async_fifo_test_wrapper.sv",
     name = "async_fifo_test_wrapper"
 )]
 pub struct AsyncFifoTestWrapper;
 
 #[verilog(
-    src = "../rtl/async_fifo_sync3_wrapper.sv",
+    src = "../rtl/wrappers/async_fifo_sync3_wrapper.sv",
     name = "async_fifo_sync3_wrapper"
 )]
 pub struct AsyncFifoSync3Wrapper;
 
-#[verilog(src = "../rtl/sram_test_wrapper.sv", name = "sram_test_wrapper")]
+#[verilog(src = "../rtl/wrappers/sram_test_wrapper.sv", name = "sram_test_wrapper")]
 pub struct SramTestWrapper;
 
 #[verilog(
-    src = "../rtl/sram_peripheral_test_wrapper.sv",
+    src = "../rtl/wrappers/sram_peripheral_test_wrapper.sv",
     name = "sram_peripheral_test_wrapper"
 )]
 pub struct SramPeripheralTestWrapper;
@@ -154,8 +154,24 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
 
     // Set up include paths for Verilator to find all RTL modules
-    // This includes the main RTL directory and subdirectories (e.g., peripherals/)
-    let include_paths = [rtl_path];
+    // This includes the main RTL directory and all subdirectories
+    let cpu_path = format!("{}/cpu", rtl_path);
+    let fpu_path = format!("{}/fpu", rtl_path);
+    let memory_path = format!("{}/memory", rtl_path);
+    let primitives_path = format!("{}/primitives", rtl_path);
+    let io_path = format!("{}/io", rtl_path);
+    let wrappers_path = format!("{}/wrappers", rtl_path);
+    let peripherals_path = format!("{}/peripherals", rtl_path);
+    let include_paths = [
+        rtl_path,
+        cpu_path.as_str(),
+        fpu_path.as_str(),
+        memory_path.as_str(),
+        primitives_path.as_str(),
+        io_path.as_str(),
+        wrappers_path.as_str(),
+        peripherals_path.as_str(),
+    ];
 
     VerilatorRuntime::new(
         "target/verilator".into(),
@@ -174,65 +190,65 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "top.sv",                                   // Top-level wrapper with RTL peripherals
-        "reset_controller.sv",                      // Power-on reset controller
-        "bus.sv",                                   // System bus for address decoding
-        "cpu.sv",                                   // CPU core
-        "sync_fifo.sv",                             // Generic synchronous FIFO
-        "host_bus_interface.sv", // Host bus interface for serialized transactions
+        "primitives/reset_controller.sv",           // Power-on reset controller
+        "memory/bus.sv",                            // System bus for address decoding
+        "cpu/cpu.sv",                               // CPU core
+        "primitives/sync_fifo.sv",                  // Generic synchronous FIFO
+        "io/host_bus_interface.sv",                 // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
-        "peripherals/clock_peripheral.sv", // Clock peripheral
-        "peripherals/sram_peripheral.sv", // SRAM peripheral
-        "sram.sv",               // SRAM module used by SRAM peripheral
-        "peripherals/system_controller.sv", // System controller peripheral
-        "fetch_buffer.sv",       // RV32C fetch buffer
-        "decompress.sv",         // RV32C decompressor
-        "alu.sv",
-        "div_unit.sv",
-        "mul_unit.sv",
-        "regfile.sv",
-        "decoder.sv",
-        "branch_unit.sv",
-        "csr_file.sv",
-        "mem_interface.sv",
-        "writeback_mux.sv",
-        "fp_regfile.sv", // RV32F FP register file
-        "fpu.sv",        // RV32F floating point unit
+        "peripherals/clock_peripheral.sv",          // Clock peripheral
+        "peripherals/sram_peripheral.sv",           // SRAM peripheral
+        "memory/sram.sv",                           // SRAM module used by SRAM peripheral
+        "peripherals/system_controller.sv",         // System controller peripheral
+        "cpu/fetch_buffer.sv",                      // RV32C fetch buffer
+        "cpu/decompress.sv",                        // RV32C decompressor
+        "cpu/alu.sv",
+        "cpu/div_unit.sv",
+        "cpu/mul_unit.sv",
+        "cpu/regfile.sv",
+        "cpu/decoder.sv",
+        "cpu/branch_unit.sv",
+        "cpu/csr_file.sv",
+        "cpu/mem_interface.sv",
+        "cpu/writeback_mux.sv",
+        "fpu/fp_regfile.sv", // RV32F FP register file
+        "fpu/fpu.sv",        // RV32F floating point unit
     ])
 }
 
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["alu.sv", "div_unit.sv", "mul_unit.sv"])
+    create_runtime(&["cpu/alu.sv", "cpu/div_unit.sv", "cpu/mul_unit.sv"])
 }
 
 // Helper function to create a runtime for the MulUnit
 pub fn create_mul_unit_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["mul_unit.sv"])
+    create_runtime(&["cpu/mul_unit.sv"])
 }
 
 // Helper function to create a runtime for the RegFile
 pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["regfile.sv"])
+    create_runtime(&["cpu/regfile.sv"])
 }
 
 // Helper function to create a runtime for the Decompressor
 pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["decompress.sv"])
+    create_runtime(&["cpu/decompress.sv"])
 }
 
 // Helper function to create a runtime for the FP RegFile
 pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fp_regfile.sv"])
+    create_runtime(&["fpu/fp_regfile.sv"])
 }
 
 // Helper function to create a runtime for the UART core
 pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["uart.sv"])
+    create_runtime(&["io/uart.sv"])
 }
 
 // Helper function to create a runtime for the UART core at 1M baud
 pub fn create_uart_1m_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["uart.sv", "uart_1m_baud_wrapper.sv"])
+    create_runtime(&["io/uart.sv", "wrappers/uart_1m_baud_wrapper.sv"])
 }
 
 // Helper function to create a runtime for the Clock Peripheral
@@ -247,95 +263,95 @@ pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn st
 
 // Helper function to create a runtime for the Host Bus Interface
 pub fn create_host_bus_interface_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["host_bus_interface.sv", "host_rx_buffer.sv"])
+    create_runtime(&["io/host_bus_interface.sv", "io/host_rx_buffer.sv"])
 }
 
 // Helper function to create a runtime for the Host RX Buffer (standalone testing)
 pub fn create_host_rx_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["host_rx_buffer.sv"])
+    create_runtime(&["io/host_rx_buffer.sv"])
 }
 
 // Helper function to create a runtime for the Bus Arbiter
 pub fn create_bus_arbiter_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["bus_arbiter.sv"])
+    create_runtime(&["memory/bus_arbiter.sv"])
 }
 
 // Helper function to create a runtime for the FPU
 pub fn create_fpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "fpu.sv",
-        "div_unit.sv",
-        "fpu_classifier.sv",
-        "fpu_comparator.sv",
-        "fpu_int_to_float.sv",
-        "fpu_float_to_int.sv",
-        "fpu_sqrt.sv",
-        "fpu_div_setup.sv",
-        "fpu_div_assemble.sv",
-        "fpu_fma.sv",
+        "fpu/fpu.sv",
+        "cpu/div_unit.sv",
+        "fpu/fpu_classifier.sv",
+        "fpu/fpu_comparator.sv",
+        "fpu/fpu_int_to_float.sv",
+        "fpu/fpu_float_to_int.sv",
+        "fpu/fpu_sqrt.sv",
+        "fpu/fpu_div_setup.sv",
+        "fpu/fpu_div_assemble.sv",
+        "fpu/fpu_fma.sv",
     ]) // FPU now uses modular design with separate submodules
 }
 
 // Helper functions to create runtimes for FPU submodules
 pub fn create_fpu_classifier_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_classifier.sv"])
+    create_runtime(&["fpu/fpu_classifier.sv"])
 }
 
 pub fn create_fpu_comparator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_comparator.sv"])
+    create_runtime(&["fpu/fpu_comparator.sv"])
 }
 
 pub fn create_fpu_int_to_float_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_int_to_float.sv"])
+    create_runtime(&["fpu/fpu_int_to_float.sv"])
 }
 
 pub fn create_fpu_float_to_int_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_float_to_int.sv"])
+    create_runtime(&["fpu/fpu_float_to_int.sv"])
 }
 
 pub fn create_fpu_sqrt_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["fpu_sqrt.sv"])
+    create_runtime(&["fpu/fpu_sqrt.sv"])
 }
 
 // Helper function to create a runtime for the FF synchronizer
 pub fn create_ff_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["ff_sync.sv", "ff_sync_default_wrapper.sv"])
+    create_runtime(&["primitives/ff_sync.sv", "wrappers/ff_sync_default_wrapper.sv"])
 }
 
 // Helper function to create a runtime for parameterized FF synchronizer wrapper
 pub fn create_ff_sync_param_wrapper_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
 {
-    create_runtime(&["ff_sync.sv", "ff_sync_param_wrapper.sv"])
+    create_runtime(&["primitives/ff_sync.sv", "wrappers/ff_sync_param_wrapper.sv"])
 }
 
 // Helper function to create a runtime for async FIFO wrapper (DEPTH=4, SYNC_STAGES=2)
 pub fn create_async_fifo_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "ff_sync.sv",
-        "sync_dpram.sv",
-        "async_fifo.sv",
-        "async_fifo_test_wrapper.sv",
+        "primitives/ff_sync.sv",
+        "memory/sync_dpram.sv",
+        "primitives/async_fifo.sv",
+        "wrappers/async_fifo_test_wrapper.sv",
     ])
 }
 
 // Helper function to create a runtime for async FIFO wrapper with SYNC_STAGES=3
 pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "ff_sync.sv",
-        "sync_dpram.sv",
-        "async_fifo.sv",
-        "async_fifo_sync3_wrapper.sv",
+        "primitives/ff_sync.sv",
+        "memory/sync_dpram.sv",
+        "primitives/async_fifo.sv",
+        "wrappers/async_fifo_sync3_wrapper.sv",
     ])
 }
 
 pub fn create_sram_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["sram.sv", "sram_test_wrapper.sv"])
+    create_runtime(&["memory/sram.sv", "wrappers/sram_test_wrapper.sv"])
 }
 
 pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "sram.sv",
+        "memory/sram.sv",
         "peripherals/sram_peripheral.sv",
-        "sram_peripheral_test_wrapper.sv",
+        "wrappers/sram_peripheral_test_wrapper.sv",
     ])
 }

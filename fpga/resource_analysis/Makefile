@@ -19,40 +19,40 @@ PCF = $(FPGA_DIR)/led_demo/alchitry_cu.pcf
 
 # Module-specific source files
 # Base sources needed by most tests
-BASE_SOURCES = $(RTL_DIR)/div_unit.sv
+BASE_SOURCES = $(RTL_DIR)/cpu/div_unit.sv
 
 # FPU base sources (common dependencies)
 FPU_BASE_SOURCES = \
-	$(RTL_DIR)/fpu_classifier.sv \
-	$(RTL_DIR)/fpu_comparator.sv \
-	$(RTL_DIR)/fpu_sqrt.sv \
-	$(RTL_DIR)/fpu_int_to_float.sv \
-	$(RTL_DIR)/fpu_float_to_int.sv \
-	$(RTL_DIR)/fpu_div_setup.sv \
-	$(RTL_DIR)/fpu_div_assemble.sv \
-	$(RTL_DIR)/fpu_fma.sv
+	$(RTL_DIR)/fpu/fpu_classifier.sv \
+	$(RTL_DIR)/fpu/fpu_comparator.sv \
+	$(RTL_DIR)/fpu/fpu_sqrt.sv \
+	$(RTL_DIR)/fpu/fpu_int_to_float.sv \
+	$(RTL_DIR)/fpu/fpu_float_to_int.sv \
+	$(RTL_DIR)/fpu/fpu_div_setup.sv \
+	$(RTL_DIR)/fpu/fpu_div_assemble.sv \
+	$(RTL_DIR)/fpu/fpu_fma.sv
 
 # Module source definitions
-SOURCES_alu = $(RTL_DIR)/alu.sv $(RTL_DIR)/div_unit.sv
-SOURCES_branch_unit = $(RTL_DIR)/branch_unit.sv
-SOURCES_csr_file = $(RTL_DIR)/csr_file.sv
-SOURCES_decoder = $(RTL_DIR)/decoder.sv
-SOURCES_decompress = $(RTL_DIR)/decompress.sv
-SOURCES_div_unit = $(RTL_DIR)/div_unit.sv
-SOURCES_fetch_buffer = $(RTL_DIR)/fetch_buffer.sv
-SOURCES_fp_regfile = $(RTL_DIR)/fp_regfile.sv
-SOURCES_fpu = $(RTL_DIR)/fpu.sv $(FPU_BASE_SOURCES) $(RTL_DIR)/div_unit.sv
-SOURCES_fpu_classifier = $(RTL_DIR)/fpu_classifier.sv
-SOURCES_fpu_comparator = $(RTL_DIR)/fpu_comparator.sv
-SOURCES_fpu_div_assemble = $(RTL_DIR)/fpu_div_assemble.sv
-SOURCES_fpu_div_setup = $(RTL_DIR)/fpu_div_setup.sv
-SOURCES_fpu_float_to_int = $(RTL_DIR)/fpu_float_to_int.sv
-SOURCES_fpu_fma = $(RTL_DIR)/fpu_fma.sv
-SOURCES_fpu_int_to_float = $(RTL_DIR)/fpu_int_to_float.sv
-SOURCES_fpu_sqrt = $(RTL_DIR)/fpu_sqrt.sv
-SOURCES_mem_interface = $(RTL_DIR)/mem_interface.sv
-SOURCES_regfile = $(RTL_DIR)/regfile.sv
-SOURCES_writeback_mux = $(RTL_DIR)/writeback_mux.sv
+SOURCES_alu = $(RTL_DIR)/cpu/alu.sv $(RTL_DIR)/cpu/div_unit.sv
+SOURCES_branch_unit = $(RTL_DIR)/cpu/branch_unit.sv
+SOURCES_csr_file = $(RTL_DIR)/cpu/csr_file.sv
+SOURCES_decoder = $(RTL_DIR)/cpu/decoder.sv
+SOURCES_decompress = $(RTL_DIR)/cpu/decompress.sv
+SOURCES_div_unit = $(RTL_DIR)/cpu/div_unit.sv
+SOURCES_fetch_buffer = $(RTL_DIR)/cpu/fetch_buffer.sv
+SOURCES_fp_regfile = $(RTL_DIR)/fpu/fp_regfile.sv
+SOURCES_fpu = $(RTL_DIR)/fpu/fpu.sv $(FPU_BASE_SOURCES) $(RTL_DIR)/cpu/div_unit.sv
+SOURCES_fpu_classifier = $(RTL_DIR)/fpu/fpu_classifier.sv
+SOURCES_fpu_comparator = $(RTL_DIR)/fpu/fpu_comparator.sv
+SOURCES_fpu_div_assemble = $(RTL_DIR)/fpu/fpu_div_assemble.sv
+SOURCES_fpu_div_setup = $(RTL_DIR)/fpu/fpu_div_setup.sv
+SOURCES_fpu_float_to_int = $(RTL_DIR)/fpu/fpu_float_to_int.sv
+SOURCES_fpu_fma = $(RTL_DIR)/fpu/fpu_fma.sv
+SOURCES_fpu_int_to_float = $(RTL_DIR)/fpu/fpu_int_to_float.sv
+SOURCES_fpu_sqrt = $(RTL_DIR)/fpu/fpu_sqrt.sv
+SOURCES_mem_interface = $(RTL_DIR)/cpu/mem_interface.sv
+SOURCES_regfile = $(RTL_DIR)/cpu/regfile.sv
+SOURCES_writeback_mux = $(RTL_DIR)/cpu/writeback_mux.sv
 
 # Define macro names for each module
 DEFINE_alu = SYNTH_ALU
@@ -160,27 +160,27 @@ synth-full-cpu: $(BUILD_DIR)
 	@echo "Synthesizing FULL CPU (baseline)"
 	@echo "============================================================"
 	$(YOSYS) -p "read_verilog -sv \
-		$(RTL_DIR)/alu.sv \
-		$(RTL_DIR)/branch_unit.sv \
-		$(RTL_DIR)/csr_file.sv \
-		$(RTL_DIR)/decoder.sv \
-		$(RTL_DIR)/decompress.sv \
-		$(RTL_DIR)/div_unit.sv \
-		$(RTL_DIR)/fetch_buffer.sv \
-		$(RTL_DIR)/fp_regfile.sv \
-		$(RTL_DIR)/fpu.sv \
-		$(RTL_DIR)/fpu_classifier.sv \
-		$(RTL_DIR)/fpu_comparator.sv \
-		$(RTL_DIR)/fpu_div_assemble.sv \
-		$(RTL_DIR)/fpu_div_setup.sv \
-		$(RTL_DIR)/fpu_float_to_int.sv \
-		$(RTL_DIR)/fpu_fma.sv \
-		$(RTL_DIR)/fpu_int_to_float.sv \
-		$(RTL_DIR)/fpu_sqrt.sv \
-		$(RTL_DIR)/mem_interface.sv \
-		$(RTL_DIR)/regfile.sv \
-		$(RTL_DIR)/writeback_mux.sv \
-		$(RTL_DIR)/cpu.sv \
+		$(RTL_DIR)/cpu/alu.sv \
+		$(RTL_DIR)/cpu/branch_unit.sv \
+		$(RTL_DIR)/cpu/csr_file.sv \
+		$(RTL_DIR)/cpu/decoder.sv \
+		$(RTL_DIR)/cpu/decompress.sv \
+		$(RTL_DIR)/cpu/div_unit.sv \
+		$(RTL_DIR)/cpu/fetch_buffer.sv \
+		$(RTL_DIR)/fpu/fp_regfile.sv \
+		$(RTL_DIR)/fpu/fpu.sv \
+		$(RTL_DIR)/fpu/fpu_classifier.sv \
+		$(RTL_DIR)/fpu/fpu_comparator.sv \
+		$(RTL_DIR)/fpu/fpu_div_assemble.sv \
+		$(RTL_DIR)/fpu/fpu_div_setup.sv \
+		$(RTL_DIR)/fpu/fpu_float_to_int.sv \
+		$(RTL_DIR)/fpu/fpu_fma.sv \
+		$(RTL_DIR)/fpu/fpu_int_to_float.sv \
+		$(RTL_DIR)/fpu/fpu_sqrt.sv \
+		$(RTL_DIR)/cpu/mem_interface.sv \
+		$(RTL_DIR)/cpu/regfile.sv \
+		$(RTL_DIR)/cpu/writeback_mux.sv \
+		$(RTL_DIR)/cpu/cpu.sv \
 		$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
 		$(RTL_DIR)/top.sv \
 		$(FPGA_DIR)/bram_imem.sv \
