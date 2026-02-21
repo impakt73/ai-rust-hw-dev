@@ -48,6 +48,15 @@ What files do you need to modify?
 
 ## Critical Rules for ALL Agents
 
+### Session Start Behavior
+
+**Do NOT run tests or lints at the start of a session when the branch has no existing changes compared to the target branch (i.e. a brand new PR).**
+
+- CI checks guarantee that all tests and lints pass on the target branch before a new agent session begins.
+- When starting fresh on a branch with no prior changes, the codebase is already in a known-good state — running tests/lints before making any changes is redundant and wastes time.
+- **Only run tests and lints AFTER making code changes** to verify that your specific changes are correct.
+- If a session resumes mid-PR where the branch already has existing changes, running tests/lints to understand the current state may be appropriate.
+
 ### Debugging Methodology
 
 **For hardware-related work (FPGA Architect, HW-SW Integration):**

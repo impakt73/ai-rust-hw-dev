@@ -152,6 +152,8 @@ to check alu_a and alu_b..."*
 
 ### Integration Verification Workflow
 
+**Do NOT run tests or lints at the start of a session when the branch has no existing changes (i.e. a brand new PR).** CI ensures the target branch is always in a clean, passing state; running checks before making any changes is redundant. Only run tests and lints after making code changes. If the branch already has prior changes, running tests to understand the current state may be appropriate.
+
 When implementing cross-layer changes:
 
 1. **RTL Modification:**
