@@ -9,7 +9,7 @@ use host_bus_handler::{AccessSize, BusRequest};
 use std::path::Path;
 
 /// Default baud rate for device connections
-const DEFAULT_BAUD_RATE: u32 = 115200;
+const DEFAULT_BAUD_RATE: u32 = 12_000_000;
 
 /// Access size argument for commands
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -150,7 +150,7 @@ pub enum ConnectRuntime {
     Fpga {
         /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
         device: String,
-        /// Baud rate (default: 115200)
+        /// Baud rate (default: 12000000)
         #[arg(default_value_t = DEFAULT_BAUD_RATE)]
         baud: u32,
     },
@@ -548,7 +548,7 @@ mod tests {
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Connect {
-                runtime: ConnectRuntime::Fpga { ref device, baud: 115200 }
+                runtime: ConnectRuntime::Fpga { ref device, baud: 12_000_000 }
             })) if device == "/dev/ttyUSB0"
         ));
 

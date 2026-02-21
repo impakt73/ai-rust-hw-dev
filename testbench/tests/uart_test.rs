@@ -1,8 +1,8 @@
 use riscv_core::{create_uart_runtime, Uart};
 
-// UART timing (based on 50MHz clock, 115200 baud)
-// CLKS_PER_BIT = 50_000_000 / 115200 ≈ 434
-const CLKS_PER_BIT: u32 = 434;
+// UART timing (based on 200MHz clock, 12M baud)
+// CLKS_PER_BIT = 200_000_000 / 12_000_000 = 16
+const CLKS_PER_BIT: u32 = 16;
 
 // Clock cycle macro for UART tests
 macro_rules! clock_cycle {

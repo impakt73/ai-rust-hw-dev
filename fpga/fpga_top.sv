@@ -41,20 +41,20 @@ module fpga_top #(
 );
 
     // ============================================================
-    // PLL Configuration - Generate 25 MHz from 100 MHz input
+    // PLL Configuration - Generate 200 MHz from 100 MHz input
     // ============================================================
-    // Using iCE40 PLL to divide 100 MHz input to 25 MHz for timing closure
-    // PLL parameters calculated for: 100 MHz input -> 25 MHz output
-    // DIVR = 0, DIVF = 7, DIVQ = 5 gives: 100 * (7+1) / (2^5) = 100 * 8 / 32 = 25 MHz
+    // Using iCE40 PLL to multiply 100 MHz input to 200 MHz for 12M baud support
+    // PLL parameters calculated for: 100 MHz input -> 200 MHz output
+    // DIVR = 0, DIVF = 7, DIVQ = 2 gives: 100 * (7+1) / (2^2) = 100 * 8 / 4 = 200 MHz
     
-    logic pll_clk_global; // PLL output on global clock network (25 MHz)
+    logic pll_clk_global; // PLL output on global clock network (200 MHz)
     logic pll_locked;     // PLL lock indicator
     
     SB_PLL40_CORE #(
         .FEEDBACK_PATH("SIMPLE"),
         .DIVR(4'b0000),        // DIVR = 0
         .DIVF(7'b0000111),     // DIVF = 7
-        .DIVQ(3'b101),         // DIVQ = 5 (divide by 32)
+        .DIVQ(3'b010),         // DIVQ = 2 (divide by 4)
         .FILTER_RANGE(3'b001)  // Filter range for 100 MHz input
     ) pll_inst (
         .REFERENCECLK(clk),
@@ -186,8 +186,8 @@ module fpga_top #(
     // This is much simpler than the previous FSM-based approach using uart_peripheral
     
     uart #(
-        .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
-        .BAUD_RATE(115200)
+        .CLK_FREQ_HZ(200_000_000),  // 200 MHz (PLL output)
+        .BAUD_RATE(12_000_000)
     ) host_uart_inst (
         .clk(sys_clk),
         .rst_n(rst_n),
