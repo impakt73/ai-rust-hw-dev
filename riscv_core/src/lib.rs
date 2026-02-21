@@ -52,7 +52,10 @@ pub struct LedControllerPeripheral;
 pub struct Uart;
 
 // Define UART wrapper module configured for 1M baud
-#[verilog(src = "../rtl/wrappers/uart_1m_baud_wrapper.sv", name = "uart_1m_baud_wrapper")]
+#[verilog(
+    src = "../rtl/wrappers/uart_1m_baud_wrapper.sv",
+    name = "uart_1m_baud_wrapper"
+)]
 pub struct Uart1MBaud;
 
 // Define Clock Peripheral module
@@ -124,7 +127,10 @@ pub struct AsyncFifoTestWrapper;
 )]
 pub struct AsyncFifoSync3Wrapper;
 
-#[verilog(src = "../rtl/wrappers/sram_test_wrapper.sv", name = "sram_test_wrapper")]
+#[verilog(
+    src = "../rtl/wrappers/sram_test_wrapper.sv",
+    name = "sram_test_wrapper"
+)]
 pub struct SramTestWrapper;
 
 #[verilog(
@@ -194,14 +200,14 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "memory/bus.sv",                            // System bus for address decoding
         "cpu/cpu.sv",                               // CPU core
         "primitives/sync_fifo.sv",                  // Generic synchronous FIFO
-        "io/host_bus_interface.sv",                 // Host bus interface for serialized transactions
+        "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
-        "peripherals/clock_peripheral.sv",          // Clock peripheral
-        "peripherals/sram_peripheral.sv",           // SRAM peripheral
-        "memory/sram.sv",                           // SRAM module used by SRAM peripheral
-        "peripherals/system_controller.sv",         // System controller peripheral
-        "cpu/fetch_buffer.sv",                      // RV32C fetch buffer
-        "cpu/decompress.sv",                        // RV32C decompressor
+        "peripherals/clock_peripheral.sv", // Clock peripheral
+        "peripherals/sram_peripheral.sv", // SRAM peripheral
+        "memory/sram.sv",           // SRAM module used by SRAM peripheral
+        "peripherals/system_controller.sv", // System controller peripheral
+        "cpu/fetch_buffer.sv",      // RV32C fetch buffer
+        "cpu/decompress.sv",        // RV32C decompressor
         "cpu/alu.sv",
         "cpu/div_unit.sv",
         "cpu/mul_unit.sv",
@@ -315,7 +321,10 @@ pub fn create_fpu_sqrt_runtime() -> Result<VerilatorRuntime, Box<dyn std::error:
 
 // Helper function to create a runtime for the FF synchronizer
 pub fn create_ff_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["primitives/ff_sync.sv", "wrappers/ff_sync_default_wrapper.sv"])
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "wrappers/ff_sync_default_wrapper.sv",
+    ])
 }
 
 // Helper function to create a runtime for parameterized FF synchronizer wrapper
