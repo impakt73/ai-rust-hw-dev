@@ -6,8 +6,11 @@
 //   - Configurable baud rate via CLK_FREQ_HZ and BAUD_RATE parameters
 //   - No internal FIFOs - data held in shift registers
 //   - Ready/valid handshake for flow control
-//   - 16x oversampling on RX for robust bit detection
-//   - 2-FF input synchronizer prevents metastability
+//   - Per-bit counter on RX for accurate timing at all supported baud rates
+//   - 3-sample majority voting on RX for glitch filtering
+//   - Falling-edge detection for start bit (rejects held-low line)
+//   - Full stop bit timing before returning to idle
+//   - 3-FF input synchronizer prevents metastability
 //   - Framing error detection on RX (sticky, cleared via rx_error_clr)
 //   - RX overrun detection: drops incoming data if output not yet consumed
 
@@ -45,11 +48,14 @@ module uart #(
     // Calculate clock divisor at compile time
     localparam int CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
     
-    // RX oversampling (16x for robust start bit detection)
-    localparam int CLKS_PER_SAMPLE = CLKS_PER_BIT / 16;
-    
-    // Width for RX baud counter - handle edge case where CLKS_PER_SAMPLE == 1
-    localparam int RX_CNT_WIDTH = (CLKS_PER_SAMPLE > 1) ? $clog2(CLKS_PER_SAMPLE) : 1;
+    // RX sampling positions within each bit period
+    // Uses per-bit counter to avoid integer division truncation error
+    // that causes timing drift at high baud rates (e.g. 1M baud)
+    localparam int RX_VOTE_0_POS = (CLKS_PER_BIT * 6) / 16;   // First majority vote sample
+    localparam int RX_VOTE_1_POS = (CLKS_PER_BIT * 7) / 16;   // Second majority vote sample
+    localparam int RX_MID_POS    = (CLKS_PER_BIT * 8) / 16;   // Mid-bit: third vote sample + action
+    localparam int RX_BIT_END_POS = CLKS_PER_BIT - 1;         // End of bit period
+    localparam int RX_BIT_CNT_WIDTH = $clog2(CLKS_PER_BIT);
     
     // Parameter validation (simulation only)
     initial begin
@@ -146,10 +152,10 @@ module uart #(
     // RX Logic
     // ============================================================
     
-    // RX input synchronizer (2-FF for metastability)
+    // RX input synchronizer (3-FF for metastability)
     logic rx_sync_1;
     ff_sync #(
-        .STAGES(2),
+        .STAGES(3),
         .WIDTH(1),
         .RESET_VALUE(1'b1)
     ) rx_sync_inst (
@@ -158,6 +164,27 @@ module uart #(
         .din(rx_in),
         .dout(rx_sync_1)
     );
+    
+    // Previous value of synchronized RX for falling-edge detection
+    // Prevents false start bit detection when line is held low
+    logic rx_sync_prev;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            rx_sync_prev <= 1'b1;  // Idle high
+        else
+            rx_sync_prev <= rx_sync_1;
+    end
+    
+    // Majority voting registers for glitch filtering
+    // Samples captured at vote positions within each bit period;
+    // the mid-bit position uses the live rx_sync_1 value for 3-sample vote
+    logic [1:0] rx_vote_reg;
+    logic rx_vote_result;
+    
+    // Majority vote: 2-of-3 using two stored samples and current input
+    assign rx_vote_result = (rx_vote_reg[0] & rx_vote_reg[1]) |
+                            (rx_vote_reg[1] & rx_sync_1) |
+                            (rx_vote_reg[0] & rx_sync_1);
     
     // RX State Machine
     typedef enum logic [1:0] {
@@ -170,16 +197,15 @@ module uart #(
     rx_state_t rx_state;
     logic [7:0] rx_shift_reg;
     logic [2:0] rx_bit_index;
-    logic [3:0] rx_sample_count;  // 0-15 for 16x oversampling
-    logic [RX_CNT_WIDTH-1:0] rx_baud_counter;
+    logic [RX_BIT_CNT_WIDTH-1:0] rx_bit_counter;  // Counts 0 to CLKS_PER_BIT-1 per bit
     
     // Combinational signal to detect when a new error is being set this cycle
     // Used to ensure new errors take precedence over rx_error_clr clearing
     logic rx_error_set;
     always_comb begin
         rx_error_set = 1'b0;
-        if (rx_state == RX_STOP_BIT && rx_baud_counter == '0 && rx_sample_count == 4'd7) begin
-            if (rx_sync_1 == 1'b1) begin
+        if (rx_state == RX_STOP_BIT && rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+            if (rx_vote_result == 1'b1) begin
                 // Valid stop bit - check for overrun
                 if (rx_valid) begin
                     rx_error_set = 1'b1;  // Overrun error
@@ -197,9 +223,9 @@ module uart #(
             rx_valid <= 1'b0;
             rx_shift_reg <= 8'h00;
             rx_bit_index <= 3'b0;
-            rx_sample_count <= 4'b0;
-            rx_baud_counter <= '0;
+            rx_bit_counter <= '0;
             rx_error <= 1'b0;
+            rx_vote_reg <= 2'b0;
         end else begin
             // Handle handshake: clear rx_valid when consumer asserts rx_ready
             if (rx_valid && rx_ready) begin
@@ -208,88 +234,89 @@ module uart #(
             
             case (rx_state)
                 RX_IDLE: begin
-                    rx_sample_count <= 4'd0;  // Reset sample count in idle
-                    if (rx_sync_1 == 1'b0) begin  // Falling edge detected (start bit)
+                    rx_bit_counter <= '0;
+                    // True falling edge: was high, now low
+                    if (rx_sync_prev && !rx_sync_1) begin
                         rx_state <= RX_START_BIT;
-                        rx_sample_count <= 4'd0;
-                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
+                        rx_bit_counter <= '0;
                     end
                 end
                 
                 RX_START_BIT: begin
-                    if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample at middle of start bit
-                            if (rx_sync_1 == 1'b0) begin
-                                // Valid start bit - continue to end of start bit period
-                            end else begin
-                                // False start - return to idle
-                                rx_state <= RX_IDLE;
-                            end
-                            rx_sample_count <= rx_sample_count + 1'b1;
-                        end else if (rx_sample_count == 4'd15) begin
-                            // End of start bit period - now transition to data bits
-                            rx_state <= RX_DATA_BITS;
-                            rx_sample_count <= 4'd0;
-                            rx_bit_index <= 3'd0;
-                        end else begin
-                            rx_sample_count <= rx_sample_count + 1'b1;
+                    // Capture samples for majority voting
+                    if (rx_bit_counter == RX_VOTE_0_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[0] <= rx_sync_1;
+                    if (rx_bit_counter == RX_VOTE_1_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[1] <= rx_sync_1;
+                    
+                    if (rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // Validate start bit with majority vote (expect low)
+                        if (rx_vote_result) begin
+                            // False start (glitch) - return to idle
+                            rx_state <= RX_IDLE;
                         end
+                    end
+                    
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // End of start bit period - transition to data bits
+                        rx_state <= RX_DATA_BITS;
+                        rx_bit_counter <= '0;
+                        rx_bit_index <= 3'd0;
                     end else begin
-                        rx_baud_counter <= rx_baud_counter - 1'b1;
+                        rx_bit_counter <= rx_bit_counter + 1'b1;
                     end
                 end
                 
                 RX_DATA_BITS: begin
-                    if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample at middle of data bit
-                            rx_shift_reg <= {rx_sync_1, rx_shift_reg[7:1]};  // LSB first
-                        end
-                        if (rx_sample_count == 4'd15) begin
-                            // End of bit period
-                            rx_sample_count <= 4'd0;
-                            if (rx_bit_index == 3'd7) begin
-                                rx_state <= RX_STOP_BIT;
-                            end else begin
-                                rx_bit_index <= rx_bit_index + 1'b1;
-                            end
+                    // Capture samples for majority voting
+                    if (rx_bit_counter == RX_VOTE_0_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[0] <= rx_sync_1;
+                    if (rx_bit_counter == RX_VOTE_1_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[1] <= rx_sync_1;
+                    
+                    if (rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // Sample data bit using majority vote (glitch filtered)
+                        rx_shift_reg <= {rx_vote_result, rx_shift_reg[7:1]};  // LSB first
+                    end
+                    
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // End of bit period
+                        rx_bit_counter <= '0;
+                        if (rx_bit_index == 3'd7) begin
+                            rx_state <= RX_STOP_BIT;
                         end else begin
-                            rx_sample_count <= rx_sample_count + 1'b1;
+                            rx_bit_index <= rx_bit_index + 1'b1;
                         end
                     end else begin
-                        rx_baud_counter <= rx_baud_counter - 1'b1;
+                        rx_bit_counter <= rx_bit_counter + 1'b1;
                     end
                 end
                 
                 RX_STOP_BIT: begin
-                    if (rx_baud_counter == '0) begin
-                        rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample stop bit at middle
-                            if (rx_sync_1 == 1'b1) begin
-                                // Valid stop bit - check for overrun
-                                if (rx_valid) begin
-                                    // Output register still has valid data, drop incoming data
-                                    // and set error flag (overrun)
-                                    rx_error <= 1'b1;
-                                end else begin
-                                    // Normal case: latch data and set valid
-                                    rx_data <= rx_shift_reg;
-                                    rx_valid <= 1'b1;
-                                end
-                            end else begin
-                                // Framing error - set sticky error flag
+                    // Capture samples for majority voting
+                    if (rx_bit_counter == RX_VOTE_0_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[0] <= rx_sync_1;
+                    if (rx_bit_counter == RX_VOTE_1_POS[RX_BIT_CNT_WIDTH-1:0]) rx_vote_reg[1] <= rx_sync_1;
+                    
+                    if (rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // Validate stop bit with majority vote (expect high)
+                        if (rx_vote_result == 1'b1) begin
+                            // Valid stop bit - check for overrun
+                            if (rx_valid) begin
+                                // Output register still has valid data, drop incoming data
+                                // and set error flag (overrun)
                                 rx_error <= 1'b1;
+                            end else begin
+                                // Normal case: latch data and set valid
+                                rx_data <= rx_shift_reg;
+                                rx_valid <= 1'b1;
                             end
-                            rx_state <= RX_IDLE;
                         end else begin
-                            rx_sample_count <= rx_sample_count + 1'b1;
+                            // Framing error - set sticky error flag
+                            rx_error <= 1'b1;
                         end
+                    end
+                    
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
+                        // Full stop bit complete - return to idle
+                        rx_state <= RX_IDLE;
                     end else begin
-                        rx_baud_counter <= rx_baud_counter - 1'b1;
+                        rx_bit_counter <= rx_bit_counter + 1'b1;
                     end
                 end
                 

@@ -129,7 +129,7 @@ fn test_device_registration_success() {
 
     // Verify device is registered
     let devices: Vec<_> = bus.registered_devices().collect();
-    assert_eq!(devices.len(), 4); // DRAM, FIFO, SimControl, TestDevice
+    assert_eq!(devices.len(), 3); // DRAM, SimControl, TestDevice
 
     // Find our test device
     let test_device = devices.iter().find(|(_, _, name)| *name == "TestDevice");
@@ -173,21 +173,13 @@ fn test_device_registration_overlap_error() {
 }
 
 #[test]
-fn test_device_registration_fifo_range_protected() {
+fn test_device_registration_fifo_range_available() {
     let mut bus = SystemBus::new();
 
-    // Try to register device in FIFO range (FIFO_BASE - FIFO_BASE+8)
+    // FIFO is no longer an internal device; registering at FIFO_BASE should succeed.
     let dev = Box::new(MockDevice::new(8, "TestDevice"));
     let result = bus.register_device(FIFO_BASE, dev);
-
-    assert!(matches!(
-        result,
-        Err(RegistrationError::AddressOverlap { .. })
-    ));
-
-    if let Err(RegistrationError::AddressOverlap { existing_name, .. }) = result {
-        assert_eq!(existing_name, "FIFO");
-    }
+    assert!(result.is_ok());
 }
 
 #[test]

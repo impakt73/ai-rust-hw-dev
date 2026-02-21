@@ -51,6 +51,10 @@ pub struct LedControllerPeripheral;
 #[verilog(src = "../rtl/uart.sv", name = "uart")]
 pub struct Uart;
 
+// Define UART wrapper module configured for 1M baud
+#[verilog(src = "../rtl/uart_1m_baud_wrapper.sv", name = "uart_1m_baud_wrapper")]
+pub struct Uart1MBaud;
+
 // Define Clock Peripheral module
 #[verilog(
     src = "../rtl/peripherals/clock_peripheral.sv",
@@ -122,6 +126,12 @@ pub struct AsyncFifoSync3Wrapper;
 
 #[verilog(src = "../rtl/sram_test_wrapper.sv", name = "sram_test_wrapper")]
 pub struct SramTestWrapper;
+
+#[verilog(
+    src = "../rtl/sram_peripheral_test_wrapper.sv",
+    name = "sram_peripheral_test_wrapper"
+)]
+pub struct SramPeripheralTestWrapper;
 
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
@@ -220,6 +230,11 @@ pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Err
     create_runtime(&["uart.sv"])
 }
 
+// Helper function to create a runtime for the UART core at 1M baud
+pub fn create_uart_1m_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["uart.sv", "uart_1m_baud_wrapper.sv"])
+}
+
 // Helper function to create a runtime for the Clock Peripheral
 pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["peripherals/clock_peripheral.sv"])
@@ -315,4 +330,12 @@ pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 pub fn create_sram_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["sram.sv", "sram_test_wrapper.sv"])
+}
+
+pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "sram.sv",
+        "peripherals/sram_peripheral.sv",
+        "sram_peripheral_test_wrapper.sv",
+    ])
 }

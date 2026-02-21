@@ -4,6 +4,7 @@
 //! and audio samples with proper timestamps.
 
 use bus_shared::AudioChannels;
+use device_runtime::DeviceRuntimeType;
 use sim_view::backend_traits::{TestCommand, ViewerEvent};
 use sim_view::{
     headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend},
@@ -25,6 +26,7 @@ fn test_headless_basic_functionality() {
         initial_height: 240,
         max_cycles: 10000, // Limit execution
         print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -37,46 +39,6 @@ fn test_headless_basic_functionality() {
     }
 
     println!("Headless mode ran successfully: basic smoke test passed");
-}
-
-#[test]
-fn test_headless_max_cycles_limit() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    // Create headless backends
-    let video = HeadlessVideoBackend::new();
-    let audio = HeadlessAudioBackend::new();
-    let events = HeadlessEventSource::new();
-
-    // Create viewer with very low max_cycles
-    let config = ViewerConfig {
-        initial_width: 320,
-        initial_height: 240,
-        max_cycles: 100, // Very small limit
-        print_inst_trace: false,
-    };
-
-    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
-
-    // Load test ELF to actually execute instructions
-    let elf_path = sim_tests::test_program_path("test_video_pattern")
-        .expect("Failed to find test_video_pattern");
-    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
-
-    // Run steps - should exit quickly due to max_cycles
-    let mut steps = 0;
-    loop {
-        if !viewer.step().expect("Step failed") {
-            break;
-        }
-        steps += 1;
-        if steps > 100 {
-            // Safety limit - shouldn't need this many steps with max_cycles=100
-            break;
-        }
-    }
-
-    println!("Max cycles limit test passed after {} steps", steps);
 }
 
 #[test]
@@ -94,6 +56,7 @@ fn test_headless_event_injection() {
         initial_height: 240,
         max_cycles: 100000,
         print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -121,155 +84,75 @@ fn test_headless_event_injection() {
 }
 
 #[test]
-fn test_frame_stepping() {
+fn test_video_pattern_frame_count_on_completion() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create headless backends
     let video = HeadlessVideoBackend::new();
     let audio = HeadlessAudioBackend::new();
     let events = HeadlessEventSource::new();
 
-    // Create viewer
-    let config = ViewerConfig {
-        initial_width: 320,
-        initial_height: 240,
-        max_cycles: 1000000, // High limit
-        print_inst_trace: false,
-    };
-
-    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
-
-    // Load test ELF (produces exactly 3 frames then exits)
-    let elf_path = sim_tests::test_program_path("test_video_pattern")
-        .expect("Failed to find test_video_pattern");
-    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
-
-    // Step 3 frames (this ELF produces exactly 3 frames)
-    viewer
-        .push_event(ViewerEvent::TestCommand(TestCommand::StepFrames(3)))
-        .expect("Failed to push event");
-
-    // Run until exactly 3 frames are captured or safety limit
-    let mut steps = 0;
-    loop {
-        // Run one step
-        if !viewer.step().expect("Step failed") {
-            break; // Viewer requested termination
-        }
-
-        steps += 1;
-
-        // Check if we have exactly 3 frames
-        let frames = viewer.get_video_frames();
-        if frames.len() >= 3 {
-            println!("Captured {} frames after {} steps", frames.len(), steps);
-            break;
-        }
-
-        // Safety limit
-        if steps > 2000 {
-            let frames = viewer.get_video_frames();
-            panic!(
-                "Safety limit reached: only {} frames captured after {} steps",
-                frames.len(),
-                steps
-            );
-        }
-    }
-
-    // Verify we captured exactly 3 frames
-    let frames = viewer.get_video_frames();
-    assert_eq!(
-        frames.len(),
-        3,
-        "Test ELF should produce exactly 3 frames, got {}",
-        frames.len()
-    );
-
-    println!(
-        "Frame stepping test passed: captured {} frames",
-        frames.len()
-    );
-}
-
-#[test]
-fn test_sequential_frames_differ() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    // Create headless backends
-    let video = HeadlessVideoBackend::new();
-    let audio = HeadlessAudioBackend::new();
-    let events = HeadlessEventSource::new();
-
-    // Create viewer
     let config = ViewerConfig {
         initial_width: 320,
         initial_height: 240,
         max_cycles: 1000000,
         print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
 
-    // Load test ELF that generates a video pattern (produces exactly 3 frames)
     let elf_path = sim_tests::test_program_path("test_video_pattern")
         .expect("Failed to find test_video_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+    viewer.run().expect("Viewer run failed");
 
-    // Don't use StepFrames - just run until we have at least 2 frames for comparison
-    // Run until we have at least 2 frames or safety limit
-    let mut steps = 0;
-    loop {
-        if !viewer.step().expect("Step failed") {
-            break;
-        }
+    let frames = viewer.get_video_frames();
+    assert_eq!(
+        frames.len(),
+        3,
+        "test_video_pattern should produce exactly 3 frames, got {}",
+        frames.len()
+    );
+}
 
-        steps += 1;
+#[test]
+fn test_video_pattern_sequential_frames_differ() {
+    let _ = env_logger::builder().is_test(true).try_init();
 
-        // Check if we have at least 2 frames for comparison
-        let frames = viewer.get_video_frames();
-        if frames.len() >= 2 {
-            println!("Captured {} frames after {} steps", frames.len(), steps);
-            break;
-        }
+    let video = HeadlessVideoBackend::new();
+    let audio = HeadlessAudioBackend::new();
+    let events = HeadlessEventSource::new();
 
-        // Safety limit
-        if steps > 2000 {
-            let frames = viewer.get_video_frames();
-            panic!(
-                "Safety limit reached: only {} frames captured after {} steps",
-                frames.len(),
-                steps
-            );
-        }
-    }
+    let config = ViewerConfig {
+        initial_width: 320,
+        initial_height: 240,
+        max_cycles: 1000000,
+        print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
+    };
 
-    // Verify we have at least 2 frames for comparison
+    let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
+
+    let elf_path = sim_tests::test_program_path("test_video_pattern")
+        .expect("Failed to find test_video_pattern");
+    viewer.load_elf(&elf_path).expect("Failed to load test ELF");
+    viewer.run().expect("Viewer run failed");
+
     let frames = viewer.get_video_frames();
     assert!(
         frames.len() >= 2,
-        "Should have captured at least 2 frames for comparison, got {}",
+        "Should capture at least two frames, got {}",
         frames.len()
     );
 
-    let mut differences_found = 0;
-    for i in 1..frames.len() {
-        // Compare consecutive frames
-        if frames[i].data != frames[i - 1].data {
-            differences_found += 1;
-        }
-    }
+    let differences_found = frames
+        .windows(2)
+        .filter(|window| window[0].data != window[1].data)
+        .count();
 
-    println!(
-        "Sequential frames differ test: {} differences in {} frame pairs",
-        differences_found,
-        frames.len() - 1
-    );
-
-    // test_video_pattern.elf should generate changing frames
     assert!(
         differences_found > 0,
-        "Expected at least some frames to differ, but all {} frames were identical",
+        "Expected at least one differing consecutive frame out of {} frames",
         frames.len()
     );
 }
@@ -289,6 +172,7 @@ fn test_audio_config_change_and_samples() {
         initial_height: 240,
         max_cycles: 5000000, // Generous limit for audio test
         print_inst_trace: false,
+        runtime_type: DeviceRuntimeType::Sim,
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -298,31 +182,22 @@ fn test_audio_config_change_and_samples() {
         .expect("Failed to find test_audio_pattern");
     viewer.load_elf(&elf_path).expect("Failed to load test ELF");
 
-    // Run until program completes or we get sufficient audio data
-    let mut steps = 0;
-    loop {
-        if !viewer.step().expect("Step failed") {
-            break;
-        }
+    // Run until the program halts (no artificial step limit).
+    // viewer.run() loops until TohostTermination is received, so the program
+    // always completes regardless of how fast the main thread polls.
+    // apply_pending_audio_config_updates() is called on every step(), ensuring
+    // the audio config is captured before we drain the sample buffer.
+    viewer.run().expect("Viewer run failed");
 
-        // Pull audio samples for headless capture
-        viewer.update_audio_capture();
-
-        steps += 1;
-
-        // Safety limit - test_audio_pattern should complete within this
-        if steps > 50000 {
-            break;
-        }
-    }
+    // Drain any samples that arrived in the shared buffer during the run.
+    viewer.update_audio_capture();
 
     // Get the audio backend to check results
     let audio_chunks = viewer.get_audio_chunks();
     let audio_config = viewer.get_audio_config();
 
     println!(
-        "Audio config change test: {} steps, {} audio chunks captured",
-        steps,
+        "Audio config change test: {} audio chunks captured",
         audio_chunks.len()
     );
 

@@ -418,3 +418,84 @@ fn test_quadrant_2_reserved() {
     let insn_16: u16 = 0b0010_0000_0000_0010; // funct3=001 is reserved in quadrant 2
     test_decompress(insn_16, 0, true, false);
 }
+
+// ============================================================
+// RV32FC Compressed Floating-Point Instructions
+// ============================================================
+
+#[test]
+fn test_c_flw_basic() {
+    // C.FLW f10, 8(x9)   [f10 is compressed reg 10-8=2, x9 is compressed reg 9-8=1]
+    let insn_16: u16 = c_flw(10, 9, 8);
+    let expected = flw(10, 9, 8);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_flw_max_offset() {
+    // C.FLW f8, 124(x8)
+    let insn_16: u16 = c_flw(8, 8, 124);
+    let expected = flw(8, 8, 124);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_fsw_basic() {
+    // C.FSW f10, 8(x9)
+    let insn_16: u16 = c_fsw(9, 10, 8);
+    let expected = fsw(9, 10, 8);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_fsw_max_offset() {
+    // C.FSW f15, 124(x8)
+    let insn_16: u16 = c_fsw(8, 15, 124);
+    let expected = fsw(8, 15, 124);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_flwsp_basic() {
+    // C.FLWSP f14, 8(x2)
+    let insn_16: u16 = c_flwsp(14, 8);
+    let expected = flw(14, 2, 8);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_flwsp_known_encoding() {
+    // Verify against actual binary seen from the Rust compiler
+    // flw fa5, 12(sp) = 0x67b2
+    let insn_16: u16 = c_flwsp(15, 12);
+    assert_eq!(insn_16, 0x67b2, "Encoding mismatch for flw fa5, 12(sp)");
+    let expected = flw(15, 2, 12);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_flwsp_known_encoding2() {
+    // flw fa4, 8(sp) = 0x6722
+    let insn_16: u16 = c_flwsp(14, 8);
+    assert_eq!(insn_16, 0x6722, "Encoding mismatch for flw fa4, 8(sp)");
+    let expected = flw(14, 2, 8);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_fswsp_basic() {
+    // C.FSWSP f11, 8(x2)
+    let insn_16: u16 = c_fswsp(11, 8);
+    let expected = fsw(2, 11, 8);
+    test_decompress(insn_16, expected, true, true);
+}
+
+#[test]
+fn test_c_fswsp_known_encoding() {
+    // Verify against actual binary seen from the Rust compiler
+    // fsw fa5, 8(sp) = 0xe43e
+    let insn_16: u16 = c_fswsp(15, 8);
+    assert_eq!(insn_16, 0xe43e, "Encoding mismatch for fsw fa5, 8(sp)");
+    let expected = fsw(2, 15, 8);
+    test_decompress(insn_16, expected, true, true);
+}

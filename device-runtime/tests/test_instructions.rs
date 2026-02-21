@@ -994,6 +994,7 @@ fn test_sram_peripheral_boundary_word_access() {
     let mut instructions = vec![
         lui(1, SRAM_BASE_ADDR),
         addi(2, 0, 0x7FF),
+        addi(2, 2, 0x400),
         slli(2, 2, 2),
         add(3, 1, 2),
         addi(4, 0, 0x55),
@@ -1018,8 +1019,70 @@ fn test_sram_peripheral_boundary_word_access() {
         0x0000_0055
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR + 0x1FFC, SHORT_TIMEOUT),
+        read_word_with_timeout(runtime.as_mut(), SRAM_BASE_ADDR + 0x2FFC, SHORT_TIMEOUT),
         0x0000_0055
+    );
+}
+
+#[test]
+fn test_sram_peripheral_unaligned_load_store_cross_boundary() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, SRAM_BASE_ADDR),
+        lui(2, 0x1122_3000),
+        ori(2, 2, 0x344),
+        sw(1, 2, 0),
+        lui(2, 0x5566_7000),
+        ori(2, 2, 0x788),
+        sw(1, 2, 4),
+        lui(2, 0x1234_5000),
+        ori(2, 2, 0x678),
+        sw(1, 2, 1),
+        addi(2, 0, 0x234),
+        sh(1, 2, 3),
+        lw(3, 1, 0),
+        lw(4, 1, 4),
+        lw(5, 1, 1),
+        lh(6, 1, 3),
+        lhu(7, 1, 3),
+        lui(9, DRAM_BASE),
+        sw(9, 3, 0),
+        sw(9, 4, 4),
+        sw(9, 5, 8),
+        sw(9, 6, 12),
+        sw(9, 7, 16),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0x3456_7844
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        0x5566_7702
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        0x0234_5678
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 12, SHORT_TIMEOUT),
+        0x0000_0234
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 16, SHORT_TIMEOUT),
+        0x0000_0234
     );
 }
 

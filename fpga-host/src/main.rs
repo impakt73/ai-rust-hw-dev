@@ -8,7 +8,7 @@ mod app;
 mod shell;
 mod ui;
 
-use app::App;
+use app::{create_fifo_device, App};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
@@ -99,10 +99,12 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
             },
             RuntimeArgs::Sim => DeviceRuntimeType::Sim,
         };
-        match create_device_runtime(runtime_type, None) {
+        let (fifo_reg, fifo_rx) = create_fifo_device();
+        match create_device_runtime(runtime_type, Some(vec![fifo_reg])) {
             Ok(runtime) => {
                 let description = runtime.to_string();
                 app.add_log(log::Level::Info, format!("Connected to {}", description));
+                app.fifo_line_rx = Some(fifo_rx);
                 app.device_runtime = Some(runtime);
             }
             Err(e) => {
@@ -206,12 +208,16 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
             if let Some(runtime) = app.device_runtime.take() {
                 let device = runtime.to_string();
                 drop(runtime);
+                app.fifo_line_rx = None;
                 app.add_log(
                     log::Level::Warn,
                     format!("Disconnected from {} due to device error", device),
                 );
             }
         }
+
+        // Drain any lines printed by the CPU program via the FIFO
+        app.poll_fifo();
 
         // Check exit condition
         if app.should_quit {

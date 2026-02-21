@@ -44,7 +44,7 @@ pub const fn led_out_addr() -> u32 {
 
 /// SRAM Peripheral (RTL)
 pub const SRAM_BASE: u32 = 0x5200_0000;
-pub const SRAM_SIZE: u32 = 0x0000_2000; // 8KB
+pub const SRAM_SIZE: u32 = 0x0000_3000; // 12KB
 
 /// Clock Peripheral (RTL)
 pub const CLOCK_BASE: u32 = 0x5100_0000;

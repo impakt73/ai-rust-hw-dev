@@ -10,9 +10,8 @@ use bus_shared::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// Restricted view of the Simulator for use in callbacks
 ///
-/// Provides controlled access to FIFO and memory operations without exposing
-/// the full Simulator internals. This allows callbacks to interact with memory,
-/// FIFO, and other simulator components while maintaining encapsulation.
+/// Provides controlled access to memory and bus operations without exposing
+/// the full Simulator internals.
 pub struct SimulatorView<'a> {
     bus: &'a mut bus_shared::SystemBus,
     cpu: &'a Top<'static>,
@@ -33,94 +32,6 @@ impl<'a> SimulatorView<'a> {
             cpu,
             host_bus_handler,
             direct_response,
-        }
-    }
-
-    /// Read a word from the FIFO TX queue (CPU → Host)
-    ///
-    /// Returns `Some(word)` if data is available, `None` if the queue is empty.
-    pub fn fifo_read_tx(&mut self) -> Option<u32> {
-        self.bus.fifo.tx.pop_front()
-    }
-
-    /// Write a word to the FIFO RX queue (Host → CPU)
-    ///
-    /// This allows the host to send data to the simulated CPU.
-    pub fn fifo_write_rx(&mut self, word: u32) {
-        self.bus.fifo.rx.push_back(word);
-    }
-
-    /// Check if the FIFO TX queue (CPU → Host) is empty
-    pub fn fifo_tx_is_empty(&self) -> bool {
-        self.bus.fifo.tx.is_empty()
-    }
-
-    /// Check if the FIFO RX queue (Host → CPU) is empty
-    pub fn fifo_rx_is_empty(&self) -> bool {
-        self.bus.fifo.rx.is_empty()
-    }
-
-    /// Get the number of words in the FIFO TX queue (CPU → Host)
-    pub fn fifo_tx_len(&self) -> usize {
-        self.bus.fifo.tx.len()
-    }
-
-    /// Get the number of words in the FIFO RX queue (Host → CPU)
-    pub fn fifo_rx_len(&self) -> usize {
-        self.bus.fifo.rx.len()
-    }
-
-    /// Send a packet to the FIFO RX queue using the packet_transport module
-    ///
-    /// This is a convenience wrapper around packet_transport send functions.
-    /// It serializes the packet and writes it to the RX queue.
-    pub fn send_packet_to_rx<T: serde::Serialize>(&mut self, packet: &T) -> Result<(), String> {
-        use postcard::to_allocvec;
-
-        let bytes: Vec<u8> =
-            to_allocvec(packet).map_err(|e| format!("Serialization failed: {:?}", e))?;
-
-        let mut i = 0;
-        while i < bytes.len() {
-            let mut word: u32 = 0;
-            for j in 0..4 {
-                if i + j < bytes.len() {
-                    word |= (bytes[i + j] as u32) << (j * 8);
-                }
-            }
-            self.bus.fifo.rx.push_back(word);
-            i += 4;
-        }
-
-        Ok(())
-    }
-
-    /// Write a string to the FIFO RX queue
-    /// Chunks the string into u32 words with zero-padding and adds a null terminator
-    pub fn fifo_write_rx_string(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        let mut i = 0;
-
-        // Write all complete words
-        while i < bytes.len() {
-            let mut word: u32 = 0;
-
-            // Pack up to 4 bytes into a u32 word (little-endian)
-            for j in 0..4 {
-                if i + j < bytes.len() {
-                    word |= (bytes[i + j] as u32) << (j * 8);
-                }
-                // Remaining bytes are implicitly 0 (zero-padding)
-            }
-
-            self.fifo_write_rx(word);
-            i += 4;
-        }
-
-        // Add a null terminator word if the string ends on a word boundary
-        // This ensures the reading side can detect the end of the string
-        if bytes.len().is_multiple_of(4) {
-            self.fifo_write_rx(0);
         }
     }
 
@@ -198,11 +109,9 @@ impl<'a> SimulatorView<'a> {
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::*;
-    /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region is typically used in run_elf's termination_callback
-    /// run_elf(
-    ///     Path::new("test.elf"),
+    /// // dump_memory_region is typically used in run_program's termination_callback
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -210,7 +119,7 @@ impl<'a> SimulatorView<'a> {
     ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
-    ///     None::<fn(&mut SimulatorView)>, // setup_callback
+    ///     |sim| { sim.write_memory_region(0x8000_0000, &[]); Ok(0x8000_0000) },
     ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
     ///         let bytes: Vec<u8> = sim.dump_memory_region(0x8000_0000, 1024).collect();
     ///         // Process bytes...
@@ -271,11 +180,9 @@ impl<'a> SimulatorView<'a> {
     /// # Examples
     /// ```no_run
     /// # use cpu_sim::*;
-    /// # use std::path::Path;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region_as_image is typically used in run_elf's termination_callback
-    /// run_elf(
-    ///     Path::new("graphics.elf"),
+    /// // dump_memory_region_as_image is typically used in run_program's termination_callback
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -283,7 +190,7 @@ impl<'a> SimulatorView<'a> {
     ///     None::<fn(&InstructionTrace)>, // trace_callback
     ///     None, // vcd_path
     ///     0, // mem_latency_cycles
-    ///     None::<fn(&mut SimulatorView)>, // setup_callback
+    ///     |sim| { sim.write_memory_region(0x8000_0000, &[]); Ok(0x8000_0000) },
     ///     Some(|sim: &SimulatorView, _result: &SimulationResult| {
     ///         sim.dump_memory_region_as_image(0x8000_0000, 640, 480, "output.png")
     ///             .expect("Failed to dump image");

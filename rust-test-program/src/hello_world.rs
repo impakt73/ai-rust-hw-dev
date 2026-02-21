@@ -20,15 +20,15 @@ fn panic(info: &PanicInfo) -> ! {
 #[entry]
 fn main() -> ! {
     // Echo functionality: Read from RX FIFO and write to TX FIFO
-    // Continue until we receive a null terminator word (0x00000000) or the FIFO is empty
-    while let Ok(word) = common::fifo_read_word() {
+    // Continue until we receive a null terminator byte (0x00) or the FIFO is empty
+    while let Ok(byte) = common::fifo_read_byte() {
         // If we read a null terminator, we're done
-        if word == 0 {
+        if byte == 0 {
             break;
         }
 
-        // Echo non-zero words - TX should always be ready in simulation
-        common::fifo_write_word(word).expect("FIFO write failed");
+        // Echo non-zero bytes - TX should always be ready in simulation
+        common::fifo_write_byte(byte).expect("FIFO write failed");
     }
 
     // Exit with success

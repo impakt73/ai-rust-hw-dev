@@ -27,11 +27,16 @@ fn main() -> ! {
     ];
 
     // Write the vec length
-    common::fifo_write_word(v.len() as u32).expect("Failed to write to FIFO");
+    let len_bytes = u32::try_from(v.len())
+        .expect("length must fit in u32")
+        .to_le_bytes();
+    for byte in len_bytes {
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
+    }
 
     // Write each byte
     for &byte in v.iter() {
-        common::fifo_write_word(byte as u32).expect("Failed to write to FIFO");
+        common::fifo_write_byte(byte).expect("Failed to write to FIFO");
     }
 
     common::write_tohost(common::SUCCESS_CODE);
