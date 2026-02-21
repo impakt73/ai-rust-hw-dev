@@ -197,7 +197,7 @@ module fpga_top #(
     assign host_tx_ready = !tx_fifo_full;
     assign uart_tx_valid = !tx_fifo_empty;
     assign uart_tx_data  = tx_fifo_rdata;
-    assign tx_fifo_rd_en = uart_tx_ready && !tx_fifo_empty;
+    assign tx_fifo_rd_en = uart_tx_valid && uart_tx_ready;
     
     sync_fifo #(
         .WIDTH(8),
@@ -225,7 +225,7 @@ module fpga_top #(
     assign uart_rx_ready = !rx_fifo_full;
     assign host_rx_valid = !rx_fifo_empty;
     assign host_rx_data  = rx_fifo_rdata;
-    assign rx_fifo_rd_en = host_rx_ready && !rx_fifo_empty;
+    assign rx_fifo_rd_en = host_rx_valid && host_rx_ready;
     
     sync_fifo #(
         .WIDTH(8),
