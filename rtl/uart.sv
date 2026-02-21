@@ -18,7 +18,7 @@ module uart #(
     // System clock frequency in Hz (required for baud rate calculation)
     parameter int CLK_FREQ_HZ = 50_000_000,
     // Target baud rate in bits per second
-    parameter int BAUD_RATE = 115200
+    parameter int BAUD_RATE = 1_000_000
 ) (
     // Clock and reset
     input  logic       clk,
