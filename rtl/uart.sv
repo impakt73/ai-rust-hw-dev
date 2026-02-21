@@ -7,7 +7,10 @@
 //   - No internal FIFOs - data held in shift registers
 //   - Ready/valid handshake for flow control
 //   - 16x oversampling on RX for robust bit detection
-//   - 2-FF input synchronizer prevents metastability
+//   - 3-sample majority voting on RX for glitch filtering
+//   - Falling-edge detection for start bit (rejects held-low line)
+//   - Full stop bit timing before returning to idle
+//   - 3-FF input synchronizer prevents metastability
 //   - Framing error detection on RX (sticky, cleared via rx_error_clr)
 //   - RX overrun detection: drops incoming data if output not yet consumed
 
@@ -146,10 +149,10 @@ module uart #(
     // RX Logic
     // ============================================================
     
-    // RX input synchronizer (2-FF for metastability)
+    // RX input synchronizer (3-FF for metastability)
     logic rx_sync_1;
     ff_sync #(
-        .STAGES(2),
+        .STAGES(3),
         .WIDTH(1),
         .RESET_VALUE(1'b1)
     ) rx_sync_inst (
@@ -158,6 +161,27 @@ module uart #(
         .din(rx_in),
         .dout(rx_sync_1)
     );
+    
+    // Previous value of synchronized RX for falling-edge detection
+    // Prevents false start bit detection when line is held low
+    logic rx_sync_prev;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            rx_sync_prev <= 1'b1;  // Idle high
+        else
+            rx_sync_prev <= rx_sync_1;
+    end
+    
+    // Majority voting registers for glitch filtering
+    // Samples captured at positions 6 and 7 of 16x oversampling;
+    // position 8 uses the live rx_sync_1 value for 3-sample vote
+    logic [1:0] rx_vote_reg;
+    logic rx_vote_result;
+    
+    // Majority vote: 2-of-3 using two stored samples and current input
+    assign rx_vote_result = (rx_vote_reg[0] & rx_vote_reg[1]) |
+                            (rx_vote_reg[1] & rx_sync_1) |
+                            (rx_vote_reg[0] & rx_sync_1);
     
     // RX State Machine
     typedef enum logic [1:0] {
@@ -178,8 +202,8 @@ module uart #(
     logic rx_error_set;
     always_comb begin
         rx_error_set = 1'b0;
-        if (rx_state == RX_STOP_BIT && rx_baud_counter == '0 && rx_sample_count == 4'd7) begin
-            if (rx_sync_1 == 1'b1) begin
+        if (rx_state == RX_STOP_BIT && rx_baud_counter == '0 && rx_sample_count == 4'd8) begin
+            if (rx_vote_result == 1'b1) begin
                 // Valid stop bit - check for overrun
                 if (rx_valid) begin
                     rx_error_set = 1'b1;  // Overrun error
@@ -200,6 +224,7 @@ module uart #(
             rx_sample_count <= 4'b0;
             rx_baud_counter <= '0;
             rx_error <= 1'b0;
+            rx_vote_reg <= 2'b0;
         end else begin
             // Handle handshake: clear rx_valid when consumer asserts rx_ready
             if (rx_valid && rx_ready) begin
@@ -209,7 +234,8 @@ module uart #(
             case (rx_state)
                 RX_IDLE: begin
                     rx_sample_count <= 4'd0;  // Reset sample count in idle
-                    if (rx_sync_1 == 1'b0) begin  // Falling edge detected (start bit)
+                    // True falling edge: was high, now low
+                    if (rx_sync_prev && !rx_sync_1) begin
                         rx_state <= RX_START_BIT;
                         rx_sample_count <= 4'd0;
                         rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
@@ -219,12 +245,16 @@ module uart #(
                 RX_START_BIT: begin
                     if (rx_baud_counter == '0) begin
                         rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample at middle of start bit
-                            if (rx_sync_1 == 1'b0) begin
+                        // Capture samples for majority voting
+                        if (rx_sample_count == 4'd6) rx_vote_reg[0] <= rx_sync_1;
+                        if (rx_sample_count == 4'd7) rx_vote_reg[1] <= rx_sync_1;
+                        
+                        if (rx_sample_count == 4'd8) begin
+                            // Validate start bit with majority vote (expect low)
+                            if (rx_vote_result == 1'b0) begin
                                 // Valid start bit - continue to end of start bit period
                             end else begin
-                                // False start - return to idle
+                                // False start (glitch) - return to idle
                                 rx_state <= RX_IDLE;
                             end
                             rx_sample_count <= rx_sample_count + 1'b1;
@@ -244,9 +274,13 @@ module uart #(
                 RX_DATA_BITS: begin
                     if (rx_baud_counter == '0) begin
                         rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample at middle of data bit
-                            rx_shift_reg <= {rx_sync_1, rx_shift_reg[7:1]};  // LSB first
+                        // Capture samples for majority voting
+                        if (rx_sample_count == 4'd6) rx_vote_reg[0] <= rx_sync_1;
+                        if (rx_sample_count == 4'd7) rx_vote_reg[1] <= rx_sync_1;
+                        
+                        if (rx_sample_count == 4'd8) begin
+                            // Sample data bit using majority vote (glitch filtered)
+                            rx_shift_reg <= {rx_vote_result, rx_shift_reg[7:1]};  // LSB first
                         end
                         if (rx_sample_count == 4'd15) begin
                             // End of bit period
@@ -267,9 +301,13 @@ module uart #(
                 RX_STOP_BIT: begin
                     if (rx_baud_counter == '0) begin
                         rx_baud_counter <= CLKS_PER_SAMPLE[RX_CNT_WIDTH-1:0] - 1'b1;
-                        if (rx_sample_count == 4'd7) begin
-                            // Sample stop bit at middle
-                            if (rx_sync_1 == 1'b1) begin
+                        // Capture samples for majority voting
+                        if (rx_sample_count == 4'd6) rx_vote_reg[0] <= rx_sync_1;
+                        if (rx_sample_count == 4'd7) rx_vote_reg[1] <= rx_sync_1;
+                        
+                        if (rx_sample_count == 4'd8) begin
+                            // Validate stop bit with majority vote (expect high)
+                            if (rx_vote_result == 1'b1) begin
                                 // Valid stop bit - check for overrun
                                 if (rx_valid) begin
                                     // Output register still has valid data, drop incoming data
@@ -284,6 +322,9 @@ module uart #(
                                 // Framing error - set sticky error flag
                                 rx_error <= 1'b1;
                             end
+                            rx_sample_count <= rx_sample_count + 1'b1;
+                        end else if (rx_sample_count == 4'd15) begin
+                            // Full stop bit complete - return to idle
                             rx_state <= RX_IDLE;
                         end else begin
                             rx_sample_count <= rx_sample_count + 1'b1;
