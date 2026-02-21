@@ -14,28 +14,28 @@ BUILD_DIR = build
 
 # Source files (includes M extension support for multiply/divide)
 RTL_SOURCES = \
-	$(RTL_DIR)/alu.sv \
-	$(RTL_DIR)/branch_unit.sv \
-	$(RTL_DIR)/bus.sv \
-	$(RTL_DIR)/bus_arbiter.sv \
-	$(RTL_DIR)/csr_file.sv \
-	$(RTL_DIR)/decoder.sv \
-	$(RTL_DIR)/decompress.sv \
-	$(RTL_DIR)/div_unit.sv \
-	$(RTL_DIR)/ff_sync.sv \
-	$(RTL_DIR)/fetch_buffer.sv \
-	$(RTL_DIR)/host_bus_interface.sv \
-	$(RTL_DIR)/host_rx_buffer.sv \
-	$(RTL_DIR)/mem_interface.sv \
-	$(RTL_DIR)/mul_unit.sv \
-	$(RTL_DIR)/sync_dpram.sv \
-	$(RTL_DIR)/regfile.sv \
-	$(RTL_DIR)/sync_fifo.sv \
-	$(RTL_DIR)/reset_controller.sv \
-	$(RTL_DIR)/uart.sv \
-	$(RTL_DIR)/sram.sv \
-	$(RTL_DIR)/writeback_mux.sv \
-	$(RTL_DIR)/cpu.sv \
+	$(RTL_DIR)/cpu/alu.sv \
+	$(RTL_DIR)/cpu/branch_unit.sv \
+	$(RTL_DIR)/memory/bus.sv \
+	$(RTL_DIR)/memory/bus_arbiter.sv \
+	$(RTL_DIR)/cpu/csr_file.sv \
+	$(RTL_DIR)/cpu/decoder.sv \
+	$(RTL_DIR)/cpu/decompress.sv \
+	$(RTL_DIR)/cpu/div_unit.sv \
+	$(RTL_DIR)/primitives/ff_sync.sv \
+	$(RTL_DIR)/cpu/fetch_buffer.sv \
+	$(RTL_DIR)/io/host_bus_interface.sv \
+	$(RTL_DIR)/io/host_rx_buffer.sv \
+	$(RTL_DIR)/cpu/mem_interface.sv \
+	$(RTL_DIR)/cpu/mul_unit.sv \
+	$(RTL_DIR)/memory/sync_dpram.sv \
+	$(RTL_DIR)/cpu/regfile.sv \
+	$(RTL_DIR)/primitives/sync_fifo.sv \
+	$(RTL_DIR)/primitives/reset_controller.sv \
+	$(RTL_DIR)/io/uart.sv \
+	$(RTL_DIR)/memory/sram.sv \
+	$(RTL_DIR)/cpu/writeback_mux.sv \
+	$(RTL_DIR)/cpu/cpu.sv \
 	$(RTL_DIR)/peripherals/clock_peripheral.sv \
 	$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
 	$(RTL_DIR)/peripherals/sram_peripheral.sv \
