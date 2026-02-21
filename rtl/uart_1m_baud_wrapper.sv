@@ -13,7 +13,7 @@ module uart_1m_baud_wrapper (
     input  logic       rx_in
 );
     uart #(
-        .CLK_FREQ_HZ(50_000_000),
+        .CLK_FREQ_HZ(25_000_000),
         .BAUD_RATE(1_000_000)
     ) uart_1m_inst (
         .clk(clk),
