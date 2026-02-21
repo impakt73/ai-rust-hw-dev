@@ -59,7 +59,9 @@ jobs:
       id: fpga-cache
       uses: actions/cache@v4
       with:
-        path: fpga/build
+        path: |
+          fpga/build/riscv_fpga.bin
+          fpga/build/riscv_fpga_timing.rpt
         key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'fpga/**/*.sv', 'fpga/**/*.pcf', 'fpga/Makefile') }}
     
     - name: Check formatting
@@ -95,6 +97,4 @@ jobs:
       if: steps.fpga-cache.outputs.cache-hit == 'true'
       run: |
         test -f fpga/build/riscv_fpga.bin || (echo "Missing fpga/build/riscv_fpga.bin" && exit 1)
-        test -f fpga/build/riscv_fpga.asc || (echo "Missing fpga/build/riscv_fpga.asc" && exit 1)
-        test -f fpga/build/riscv_fpga.json || (echo "Missing fpga/build/riscv_fpga.json" && exit 1)
         test -f fpga/build/riscv_fpga_timing.rpt || (echo "Missing fpga/build/riscv_fpga_timing.rpt" && exit 1)
