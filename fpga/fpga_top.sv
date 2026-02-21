@@ -114,6 +114,14 @@ module fpga_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     
+    // FIFO interface signals
+    logic [7:0] uart_tx_data;
+    logic       uart_tx_valid;
+    logic       uart_tx_ready;
+    logic [7:0] uart_rx_data;
+    logic       uart_rx_valid;
+    logic       uart_rx_ready;
+    
     // LED controller output
     logic [7:0]  led_out;
     
@@ -179,6 +187,62 @@ module fpga_top #(
     );
     
     // ============================================================
+    // TX FIFO (CPU → UART)
+    // ============================================================
+    logic       tx_fifo_wr_en, tx_fifo_rd_en;
+    logic [7:0] tx_fifo_rdata;
+    logic       tx_fifo_full, tx_fifo_empty;
+    
+    assign tx_fifo_wr_en = host_tx_valid && !tx_fifo_full;
+    assign host_tx_ready = !tx_fifo_full;
+    assign uart_tx_valid = !tx_fifo_empty;
+    assign uart_tx_data  = tx_fifo_rdata;
+    assign tx_fifo_rd_en = uart_tx_ready && !tx_fifo_empty;
+    
+    sync_fifo #(
+        .WIDTH(8),
+        .DEPTH(8)
+    ) tx_fifo_inst (
+        .clk(sys_clk),
+        .rst_n(rst_n),
+        .wr_en(tx_fifo_wr_en),
+        .wdata(host_tx_data),
+        .rd_en(tx_fifo_rd_en),
+        .rdata(tx_fifo_rdata),
+        .full(tx_fifo_full),
+        .empty(tx_fifo_empty),
+        .count()
+    );
+    
+    // ============================================================
+    // RX FIFO (UART → CPU)
+    // ============================================================
+    logic       rx_fifo_wr_en, rx_fifo_rd_en;
+    logic [7:0] rx_fifo_rdata;
+    logic       rx_fifo_full, rx_fifo_empty;
+    
+    assign rx_fifo_wr_en = uart_rx_valid && !rx_fifo_full;
+    assign uart_rx_ready = !rx_fifo_full;
+    assign host_rx_valid = !rx_fifo_empty;
+    assign host_rx_data  = rx_fifo_rdata;
+    assign rx_fifo_rd_en = host_rx_ready && !rx_fifo_empty;
+    
+    sync_fifo #(
+        .WIDTH(8),
+        .DEPTH(8)
+    ) rx_fifo_inst (
+        .clk(sys_clk),
+        .rst_n(rst_n),
+        .wr_en(rx_fifo_wr_en),
+        .wdata(uart_rx_data),
+        .rd_en(rx_fifo_rd_en),
+        .rdata(rx_fifo_rdata),
+        .full(rx_fifo_full),
+        .empty(rx_fifo_empty),
+        .count()
+    );
+    
+    // ============================================================
     // Host Communication UART
     // ============================================================
     // UART for host bus interface communication via USB serial
@@ -192,15 +256,15 @@ module fpga_top #(
         .clk(sys_clk),
         .rst_n(rst_n),
         
-        // TX interface - directly connected to host_tx signals
-        .tx_data(host_tx_data),
-        .tx_valid(host_tx_valid),
-        .tx_ready(host_tx_ready),
+        // TX interface - connected to TX FIFO
+        .tx_data(uart_tx_data),
+        .tx_valid(uart_tx_valid),
+        .tx_ready(uart_tx_ready),
         
-        // RX interface - directly connected to host_rx signals
-        .rx_data(host_rx_data),
-        .rx_valid(host_rx_valid),
-        .rx_ready(host_rx_ready),
+        // RX interface - connected to RX FIFO
+        .rx_data(uart_rx_data),
+        .rx_valid(uart_rx_valid),
+        .rx_ready(uart_rx_ready),
         .rx_error(),      // Optional: can be left unconnected
         .rx_error_clr(1'b0),  // Not used in host interface
         
