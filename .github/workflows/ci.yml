@@ -11,6 +11,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      FPGA_TOOL_CACHE_VERSION: v3
     
     steps:
     - uses: actions/checkout@v4
@@ -52,6 +54,15 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
+
+    - name: Cache FPGA synthesis artifacts
+      id: fpga-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          fpga/build/riscv_fpga.bin
+          fpga/build/riscv_fpga_timing.rpt
+        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'fpga/**/*.sv', 'fpga/**/*.pcf', 'fpga/Makefile') }}
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -77,6 +88,13 @@ jobs:
       working-directory: rust-test-program
       run: cargo build --release --verbose
     
-    - name: Verify FPGA synthesis
+    - name: Verify FPGA synthesis (cache miss)
+      if: steps.fpga-cache.outputs.cache-hit != 'true'
       working-directory: fpga
       run: make
+
+    - name: Verify cached FPGA synthesis artifacts (cache hit)
+      if: steps.fpga-cache.outputs.cache-hit == 'true'
+      run: |
+        test -f fpga/build/riscv_fpga.bin || (echo "Missing fpga/build/riscv_fpga.bin" && exit 1)
+        test -f fpga/build/riscv_fpga_timing.rpt || (echo "Missing fpga/build/riscv_fpga_timing.rpt" && exit 1)
