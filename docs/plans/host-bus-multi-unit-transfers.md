@@ -43,29 +43,29 @@ This plan is written for direct execution by an AI coding agent and is intention
 
 ## 4. Protocol Extension
 
-## 4.1 Design constraints
+### 4.1 Design constraints
 
 1. Keep existing packet type values (`0000`, `0001`, `0010`, `0011`).
 2. Keep little-endian payload ordering.
 3. Make legacy packets still valid and decodable.
 4. Keep deterministic framing (receiver always knows exact payload length after header parsing).
 
-## 4.2 Extended request/response framing
+### 4.2 Extended request/response framing
 
 Use **2-byte header** for burst-capable packets (types `0010` and `0011`), with compatibility fallback for legacy single transfers.
 
-### Byte 0 (base header, retained)
+#### Byte 0 (base header, retained)
 
 - `[7:4]` packet_type
 - `[3:2]` size (00 byte, 01 half, 10 word)
 - `[1]` burst_mode (0=legacy single-transfer framing, 1=extended framing)
 - `[0]` we
 
-### Byte 1 (extended control, only when burst_mode=1)
+#### Byte 1 (extended control, only when burst_mode=1)
 
 - `[7:0]` transfer_count_minus_1 (0 => 1 transfer, 4 => 5 transfers)
 
-### Byte 2 (extended flags, only when burst_mode=1)
+#### Byte 2 (extended flags, only when burst_mode=1)
 
 - `[0]` addr_inc (1=increment target address by transfer width each unit, 0=hold address constant)
 - `[1]` host_buf_inc (1=increment host-side buffer index, 0=reuse same source/destination element)
@@ -73,7 +73,7 @@ Use **2-byte header** for burst-capable packets (types `0010` and `0011`), with 
 
 > Why two increment flags: for FIFO-like operation you often hold one side constant but increment the other. `addr_inc` controls target bus address stepping; `host_buf_inc` controls host memory buffer stepping in runtime helpers.
 
-### Payload
+#### Payload
 
 - Request (`type 0010`):
   - address (4 bytes)
@@ -81,7 +81,7 @@ Use **2-byte header** for burst-capable packets (types `0010` and `0011`), with 
 - Response (`type 0011`):
   - read data payload for reads: `transfer_count * unit_bytes`
 
-### Backward compatibility
+#### Backward compatibility
 
 1. If `burst_mode=0`, parse exactly as current protocol (single transfer).
 2. Emit legacy framing by default for count=1 + default increments to reduce risk.
@@ -91,7 +91,7 @@ Use **2-byte header** for burst-capable packets (types `0010` and `0011`), with 
 
 ## 5. Data Model & API Changes (Rust)
 
-## 5.1 `host-bus-handler` request model
+### 5.1 `host-bus-handler` request model
 
 Replace single-unit assumptions with explicit transfer descriptor:
 
@@ -115,7 +115,7 @@ Implementation notes:
 2. Enforce payload length = `transfer_count * size.byte_count()` for writes unless `host_buf_inc=false` (then allow one unit and replicate on transmit).
 3. Keep single outstanding request rule unchanged.
 
-## 5.2 Runtime bulk API
+### 5.2 Runtime bulk API
 
 Add high-level APIs in `device-runtime`:
 
@@ -138,13 +138,13 @@ Chunking rules:
 
 ## 6. RTL Implementation Plan
 
-## 6.1 Files to modify
+### 6.1 Files to modify
 
 1. `rtl/host_bus_interface.sv`
 2. `rtl/host_rx_buffer.sv`
 3. (if needed) supporting wrapper/definitions referenced by those modules
 
-## 6.2 RX path (`host_rx_buffer`) updates
+### 6.2 RX path (`host_rx_buffer`) updates
 
 1. Extend header parser to detect `burst_mode` and capture `transfer_count` + flags.
 2. Expand internal request buffer metadata:
@@ -155,7 +155,7 @@ Chunking rules:
 4. For read requests, complete packet after addr + extended header parse.
 5. Preserve existing behavior for legacy packets.
 
-## 6.3 Main host bus interface state machine
+### 6.3 Main host bus interface state machine
 
 1. Bus-master execution loop for host-initiated request:
    - Iterate `i in [0..transfer_count)`
@@ -169,7 +169,7 @@ Chunking rules:
 4. Error/timeout strategy:
    - If any unit fails/timeout, terminate burst and emit error response (if protocol has no explicit status today, add status bit in extended flags or reserve a packet subtype)
 
-## 6.4 Throughput/latency behavior
+### 6.4 Throughput/latency behavior
 
 1. Keep current single outstanding transaction externally.
 2. Internally allow one request to consume many bus cycles while remaining atomic from host protocol perspective.
@@ -178,7 +178,7 @@ Chunking rules:
 
 ## 7. Host Software Integration (Sim + FPGA)
 
-## 7.1 `host-bus-handler` encode/decode state machines
+### 7.1 `host-bus-handler` encode/decode state machines
 
 1. TX state machine:
    - emit extended header bytes when `transfer_count>1` or non-default increment flags
@@ -188,13 +188,13 @@ Chunking rules:
    - collect `N` units for read responses
 3. Keep `can_accept_rx` and buffering rules compatible with existing deadlock prevention.
 
-## 7.2 Device runtime usage
+### 7.2 Device runtime usage
 
 1. Switch `read_memory_region`/`write_memory_region` internals to multi-unit API for aligned spans.
 2. Keep fallback to legacy one-unit requests for unaligned tail fragments if needed.
 3. Ensure timeout events include enough context (base addr + unit index) for diagnostics.
 
-## 7.3 CLI and tooling (optional but recommended)
+### 7.3 CLI and tooling (optional but recommended)
 
 1. Add optional command arguments in `fpga-host` shell for burst count and increment flags.
 2. Keep default command UX unchanged.
@@ -203,14 +203,14 @@ Chunking rules:
 
 ## 8. Compatibility & Rollout Strategy
 
-## 8.1 Capability negotiation
+### 8.1 Capability negotiation
 
 Introduce a lightweight protocol capability check at runtime startup (or explicit config):
 
 1. `legacy` mode: force old framing (count=1 only)
 2. `burst_v1` mode: enable extended framing/features
 
-## 8.2 Staged rollout
+### 8.2 Staged rollout
 
 1. Phase A: parser support + legacy parity tests.
 2. Phase B: write bursts (`we=1`) end-to-end.
@@ -221,7 +221,7 @@ Introduce a lightweight protocol capability check at runtime startup (or explici
 
 ## 9. Testing Plan
 
-## 9.1 Unit tests (`host-bus-handler`)
+### 9.1 Unit tests (`host-bus-handler`)
 
 1. Header encode/decode for legacy and extended forms.
 2. Read burst with `transfer_count=5` returns 5 words in order.
@@ -230,7 +230,7 @@ Introduce a lightweight protocol capability check at runtime startup (or explici
 5. `host_buf_inc=false` validates repeated host element behavior.
 6. Rejection tests: invalid size code, zero transfer count, payload length mismatch.
 
-## 9.2 RTL tests (`testbench/tests/host_bus_interface_test.rs`)
+### 9.2 RTL tests (`testbench/tests/host_bus_interface_test.rs`)
 
 Add focused tests mirroring protocol behavior:
 
@@ -240,13 +240,13 @@ Add focused tests mirroring protocol behavior:
 4. FIFO read test: `addr_inc=false` verifies repeated reads from one address.
 5. Legacy single-transfer tests remain passing unchanged.
 
-## 9.3 Runtime integration tests (`device-runtime/tests`)
+### 9.3 Runtime integration tests (`device-runtime/tests`)
 
 1. Bulk contiguous transfer speed-path correctness versus existing per-word baseline.
 2. FIFO-like transfer against RTL peripheral register window.
 3. Regression tests for existing `read_memory_region` / `write_memory_region` behavior.
 
-## 9.4 Validation commands
+### 9.4 Validation commands
 
 1. `cargo test -p host-bus-handler`
 2. `cargo test --test host_bus_interface_test`
