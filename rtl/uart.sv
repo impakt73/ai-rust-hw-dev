@@ -10,7 +10,7 @@
 //   - 3-sample majority voting on RX for glitch filtering
 //   - Falling-edge detection for start bit (rejects held-low line)
 //   - Full stop bit timing before returning to idle
-//   - 2-FF input synchronizer prevents metastability
+//   - 3-FF input synchronizer prevents metastability
 //   - Framing error detection on RX (sticky, cleared via rx_error_clr)
 //   - RX overrun detection: drops incoming data if output not yet consumed
 
@@ -149,10 +149,10 @@ module uart #(
     // RX Logic
     // ============================================================
     
-    // RX input synchronizer (2-FF for metastability)
+    // RX input synchronizer (3-FF for metastability)
     logic rx_sync_1;
     ff_sync #(
-        .STAGES(2),
+        .STAGES(3),
         .WIDTH(1),
         .RESET_VALUE(1'b1)
     ) rx_sync_inst (
