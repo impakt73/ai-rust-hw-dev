@@ -52,17 +52,17 @@ $(BUILD_DIR):
 # Synthesis with Yosys
 $(JSON): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
-			     chparam -set VALIDATION_MODE $(VALIDATION_MODE) $(TOP_MODULE); \
-			     synth_ice40 -top $(TOP_MODULE) -json $(JSON)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
+		chparam -set VALIDATION_MODE $(VALIDATION_MODE) $(TOP_MODULE); \
+		synth_ice40 -top $(TOP_MODULE) -json $(JSON)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 
 # Place and Route with nextpnr
 $(ASC): $(JSON) $(PCF)
 	bash -e -o pipefail -c '$(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-	           --json $(JSON) \
-	           --pcf $(PCF) \
-	           --asc $(ASC) \
-	           --freq 25 \
-	           2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+		--json $(JSON) \
+		--pcf $(PCF) \
+		--asc $(ASC) \
+		--freq 25 \
+		2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(ASC)
