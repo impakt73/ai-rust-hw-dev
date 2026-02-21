@@ -29,8 +29,6 @@ fn main() {
     }
 
     // Build rust-test-program using cargo
-    println!("cargo:warning=Building rust-test-program in release mode...");
-
     let output = Command::new("cargo")
         .arg("build")
         .arg("--release")
@@ -89,7 +87,6 @@ fn main() {
                     e
                 )
             });
-            println!("cargo:warning=Copied {} -> {}", binary_name, dst.display());
         } else {
             panic!(
                 "Expected test binary not found at path: {}. \
