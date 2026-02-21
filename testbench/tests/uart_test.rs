@@ -716,3 +716,450 @@ fn test_uart_rx_overrun() {
         "Original byte should be preserved (second dropped)"
     );
 }
+
+// ============================================================
+// Tests for high-baud-rate reliability improvements
+// ============================================================
+
+// Derived timing constants for glitch injection
+const CLKS_PER_SAMPLE: u32 = CLKS_PER_BIT / 16;
+
+/// Helper: receive a byte with a single-sample-period glitch on a specific data bit.
+/// The glitch inverts rx_in for CLKS_PER_SAMPLE cycles near the midpoint of the bit,
+/// affecting at most 1 of the 3 majority voting samples.
+fn receive_byte_with_data_glitch(dut: &mut Uart, data: u8, glitch_bit: u8) {
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(dut, CLKS_PER_BIT);
+
+    // Data bits (LSB first)
+    for i in 0..8u8 {
+        let correct_val: u8 = if (data >> i) & 1 == 1 { 1 } else { 0 };
+        dut.rx_in = correct_val;
+
+        if i == glitch_bit {
+            // Drive correct value until glitch window
+            let glitch_start = CLKS_PER_BIT / 2 - CLKS_PER_SAMPLE / 2;
+            let glitch_duration = CLKS_PER_SAMPLE;
+            let remaining = CLKS_PER_BIT - glitch_start - glitch_duration;
+
+            wait_cycles(dut, glitch_start);
+            // Inject glitch: invert the value for one sample period
+            dut.rx_in = 1 - correct_val;
+            wait_cycles(dut, glitch_duration);
+            // Restore correct value
+            dut.rx_in = correct_val;
+            wait_cycles(dut, remaining);
+        } else {
+            wait_cycles(dut, CLKS_PER_BIT);
+        }
+    }
+
+    // Stop bit (high)
+    dut.rx_in = 1;
+    wait_cycles(dut, CLKS_PER_BIT);
+}
+
+#[test]
+fn test_uart_rx_majority_vote_data_glitch() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Test glitch rejection on multiple data bits with different byte patterns
+    let test_cases: &[(u8, u8)] = &[
+        (0xA5, 3), // Glitch on bit 3 (value 0, glitch to 1)
+        (0x55, 0), // Glitch on bit 0 (value 1, glitch to 0)
+        (0xFF, 5), // Glitch on bit 5 (value 1, glitch to 0)
+        (0x00, 7), // Glitch on bit 7 (value 0, glitch to 1)
+    ];
+
+    for &(test_byte, glitch_bit) in test_cases {
+        // Receive byte with glitch
+        receive_byte_with_data_glitch(&mut dut, test_byte, glitch_bit);
+        wait_cycles(&mut dut, 10);
+
+        // Majority voting should filter the glitch
+        assert_eq!(
+            dut.rx_valid, 1,
+            "RX valid should be high for byte 0x{:02X} with glitch on bit {}",
+            test_byte, glitch_bit
+        );
+        assert_eq!(
+            dut.rx_data, test_byte,
+            "RX data should match 0x{:02X} despite glitch on bit {}",
+            test_byte, glitch_bit
+        );
+        assert_eq!(
+            dut.rx_error, 0,
+            "No error expected for byte 0x{:02X} with glitch on bit {}",
+            test_byte, glitch_bit
+        );
+
+        // Acknowledge and prepare for next byte
+        dut.rx_ready = 1;
+        dut.eval();
+        clock_cycle!(dut);
+        dut.rx_ready = 0;
+        dut.eval();
+        clock_cycle!(dut);
+    }
+}
+
+#[test]
+fn test_uart_rx_majority_vote_start_bit_glitch() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    let test_byte = 0x42;
+
+    // Start bit (low) with a brief high glitch near the midpoint
+    dut.rx_in = 0;
+    let glitch_start = CLKS_PER_BIT / 2 - CLKS_PER_SAMPLE / 2;
+    let glitch_duration = CLKS_PER_SAMPLE;
+    let remaining = CLKS_PER_BIT - glitch_start - glitch_duration;
+
+    wait_cycles(&mut dut, glitch_start);
+    dut.rx_in = 1; // Glitch high during start bit
+    wait_cycles(&mut dut, glitch_duration);
+    dut.rx_in = 0; // Restore low
+    wait_cycles(&mut dut, remaining);
+
+    // Data bits (normal, no glitches)
+    for i in 0..8 {
+        dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Stop bit (high)
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    wait_cycles(&mut dut, 10);
+
+    // Majority voting should have validated the start bit despite the glitch
+    assert_eq!(
+        dut.rx_valid, 1,
+        "RX valid should be high - start bit glitch should be filtered"
+    );
+    assert_eq!(
+        dut.rx_data, test_byte,
+        "RX data should be correct despite start bit glitch"
+    );
+    assert_eq!(
+        dut.rx_error, 0,
+        "No error expected - start bit glitch was filtered"
+    );
+}
+
+#[test]
+fn test_uart_rx_majority_vote_stop_bit_glitch() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    let test_byte = 0x7E;
+
+    // Start bit (low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Data bits (normal)
+    for i in 0..8 {
+        dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Stop bit (high) with a brief low glitch near the midpoint
+    dut.rx_in = 1;
+    let glitch_start = CLKS_PER_BIT / 2 - CLKS_PER_SAMPLE / 2;
+    let glitch_duration = CLKS_PER_SAMPLE;
+    let remaining = CLKS_PER_BIT - glitch_start - glitch_duration;
+
+    wait_cycles(&mut dut, glitch_start);
+    dut.rx_in = 0; // Glitch low during stop bit
+    wait_cycles(&mut dut, glitch_duration);
+    dut.rx_in = 1; // Restore high
+    wait_cycles(&mut dut, remaining);
+
+    wait_cycles(&mut dut, 10);
+
+    // Majority voting should have validated the stop bit despite the glitch
+    assert_eq!(
+        dut.rx_valid, 1,
+        "RX valid should be high - stop bit glitch should be filtered"
+    );
+    assert_eq!(
+        dut.rx_data, test_byte,
+        "RX data should be correct despite stop bit glitch"
+    );
+    assert_eq!(
+        dut.rx_error, 0,
+        "No framing error expected - stop bit glitch was filtered"
+    );
+}
+
+#[test]
+fn test_uart_rx_falling_edge_detection() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Create a framing error that leaves the line low
+    // Start bit
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Send 8 data bits (0x00)
+    for _ in 0..8 {
+        dut.rx_in = 0;
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Bad stop bit (keep low) - causes framing error
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Give time for processing
+    wait_cycles(&mut dut, 10);
+    assert_eq!(dut.rx_error, 1, "Should have framing error");
+
+    // Clear error
+    dut.rx_error_clr = 1;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rx_error_clr = 0;
+    dut.eval();
+
+    // Line is still low - with falling-edge detection, this should NOT
+    // trigger a new start bit detection (no falling edge while line is held low)
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT * 2);
+
+    // No new byte should be received
+    assert_eq!(
+        dut.rx_valid, 0,
+        "No byte should be received while line is held low (no falling edge)"
+    );
+    assert_eq!(
+        dut.rx_error, 0,
+        "No new error should be generated without falling edge"
+    );
+
+    // Now bring line high and then back low - this creates a true falling edge
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, 10); // Brief idle period
+
+    // Now send a valid byte - falling edge should be detected
+    let test_byte = 0x55;
+    receive_byte(&mut dut, test_byte);
+    wait_cycles(&mut dut, 10);
+
+    assert_eq!(
+        dut.rx_valid, 1,
+        "RX valid should be high after proper falling edge"
+    );
+    assert_eq!(
+        dut.rx_data, test_byte,
+        "Data should be correct after proper falling edge"
+    );
+}
+
+#[test]
+fn test_uart_rx_full_stop_bit_timing() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Send two bytes back-to-back with minimal gap between them.
+    // The full stop bit wait ensures the receiver completes the stop bit
+    // before looking for the next start bit.
+    let byte1 = 0xAA;
+    let byte2 = 0x55;
+
+    // First byte
+    receive_byte(&mut dut, byte1);
+    wait_cycles(&mut dut, 10);
+
+    assert_eq!(dut.rx_valid, 1, "First byte should be received");
+    assert_eq!(dut.rx_data, byte1, "First byte data should match");
+    assert_eq!(dut.rx_error, 0, "No error on first byte");
+
+    // Acknowledge first byte
+    dut.rx_ready = 1;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rx_ready = 0;
+    dut.eval();
+
+    // Minimal idle gap before second byte
+    wait_cycles(&mut dut, 5);
+
+    // Second byte immediately
+    receive_byte(&mut dut, byte2);
+    wait_cycles(&mut dut, 10);
+
+    assert_eq!(dut.rx_valid, 1, "Second byte should be received");
+    assert_eq!(dut.rx_data, byte2, "Second byte data should match");
+    assert_eq!(dut.rx_error, 0, "No error on second byte");
+}
+
+#[test]
+fn test_uart_rx_consecutive_bytes_no_gap() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Send multiple bytes with only 1 stop bit period between them
+    // Tests that full stop bit timing correctly handles tight byte spacing
+    let test_bytes: &[u8] = &[0x00, 0xFF, 0xA5, 0x5A, 0x01, 0x80];
+
+    for &test_byte in test_bytes {
+        // Start bit
+        dut.rx_in = 0;
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+
+        // Data bits (LSB first)
+        for i in 0..8 {
+            dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+            wait_cycles(&mut dut, CLKS_PER_BIT);
+        }
+
+        // Stop bit - only 1 bit period (no extra idle gap)
+        dut.rx_in = 1;
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+
+        // Give a few extra cycles for the FSM to process
+        wait_cycles(&mut dut, 10);
+
+        // Verify reception
+        assert_eq!(
+            dut.rx_valid, 1,
+            "RX valid should be high for byte 0x{:02X}",
+            test_byte
+        );
+        assert_eq!(
+            dut.rx_data, test_byte,
+            "Data mismatch for byte 0x{:02X}",
+            test_byte
+        );
+        assert_eq!(
+            dut.rx_error, 0,
+            "No error expected for byte 0x{:02X}",
+            test_byte
+        );
+
+        // Acknowledge
+        dut.rx_ready = 1;
+        dut.eval();
+        clock_cycle!(dut);
+        dut.rx_ready = 0;
+        dut.eval();
+        clock_cycle!(dut);
+    }
+}
+
+#[test]
+fn test_uart_rx_glitch_does_not_trigger_false_start() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Send a brief low pulse that's too short to be a valid start bit.
+    // The pulse is long enough to pass the synchronizer (>2 cycles) but
+    // short enough that the majority vote at sample 8 sees it as high.
+    // With 16x oversampling, sample 8 is at about half the bit period.
+    // A pulse of only CLKS_PER_BIT/4 cycles (quarter of a bit) should not
+    // produce a valid start bit via majority voting.
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT / 4);
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, CLKS_PER_BIT * 2);
+
+    // No byte should be received - the short pulse should be rejected
+    assert_eq!(
+        dut.rx_valid, 0,
+        "Short pulse should not trigger start bit detection"
+    );
+    assert_eq!(dut.rx_error, 0, "No error from rejected short pulse");
+}
+
+#[test]
+fn test_uart_loopback_with_tight_spacing() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Loopback test with multiple bytes sent as fast as possible
+    // Verifies that full stop bit timing + falling-edge detection work
+    // correctly under continuous TX/RX operation
+    let test_bytes = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+
+    for &test_byte in &test_bytes {
+        // Wait for TX ready
+        while dut.tx_ready == 0 {
+            dut.rx_in = dut.tx_out;
+            clock_cycle!(dut);
+        }
+
+        // Start transmission
+        dut.tx_data = test_byte;
+        dut.tx_valid = 1;
+        dut.eval();
+        clock_cycle!(dut);
+        dut.tx_valid = 0;
+        dut.eval();
+
+        // Loopback until received
+        let mut timeout = CLKS_PER_BIT * 15;
+        while dut.rx_valid == 0 && timeout > 0 {
+            dut.rx_in = dut.tx_out;
+            clock_cycle!(dut);
+            timeout -= 1;
+        }
+
+        assert!(timeout > 0, "Timeout for byte 0x{:02X}", test_byte);
+        assert_eq!(dut.rx_valid, 1, "RX valid for 0x{:02X}", test_byte);
+        assert_eq!(
+            dut.rx_data, test_byte,
+            "Loopback mismatch for 0x{:02X}",
+            test_byte
+        );
+        assert_eq!(dut.rx_error, 0, "No error for 0x{:02X}", test_byte);
+
+        // Acknowledge
+        dut.rx_ready = 1;
+        dut.eval();
+        dut.rx_in = dut.tx_out;
+        clock_cycle!(dut);
+        dut.rx_ready = 0;
+        dut.eval();
+        dut.rx_in = dut.tx_out;
+        clock_cycle!(dut);
+    }
+}
