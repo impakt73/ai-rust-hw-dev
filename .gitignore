@@ -39,6 +39,10 @@ fpga/led_demo/build/
 # Resource analysis build artifacts
 fpga/resource_analysis/build/
 
+# UART validation build artifacts
+fpga/uart_validation/build/
+fpga/uart_validation/host-validator/target/
+
 # Test program artifacts (legacy - test_programs/ folder removed)
 test_program.elf
 create_test_elf.py
