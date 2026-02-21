@@ -54,6 +54,7 @@ module uart #(
     localparam int RX_VOTE_0_POS = (CLKS_PER_BIT * 6) / 16;   // First majority vote sample
     localparam int RX_VOTE_1_POS = (CLKS_PER_BIT * 7) / 16;   // Second majority vote sample
     localparam int RX_MID_POS    = (CLKS_PER_BIT * 8) / 16;   // Mid-bit: third vote sample + action
+    localparam int RX_BIT_END_POS = CLKS_PER_BIT - 1;         // End of bit period
     localparam int RX_BIT_CNT_WIDTH = $clog2(CLKS_PER_BIT);
     
     // Parameter validation (simulation only)
@@ -248,13 +249,13 @@ module uart #(
                     
                     if (rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
                         // Validate start bit with majority vote (expect low)
-                        if (rx_vote_result != 1'b0) begin
+                        if (rx_vote_result) begin
                             // False start (glitch) - return to idle
                             rx_state <= RX_IDLE;
                         end
                     end
                     
-                    if (rx_bit_counter == CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1) begin
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
                         // End of start bit period - transition to data bits
                         rx_state <= RX_DATA_BITS;
                         rx_bit_counter <= '0;
@@ -274,7 +275,7 @@ module uart #(
                         rx_shift_reg <= {rx_vote_result, rx_shift_reg[7:1]};  // LSB first
                     end
                     
-                    if (rx_bit_counter == CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1) begin
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
                         // End of bit period
                         rx_bit_counter <= '0;
                         if (rx_bit_index == 3'd7) begin
@@ -311,7 +312,7 @@ module uart #(
                         end
                     end
                     
-                    if (rx_bit_counter == CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1) begin
+                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
                         // Full stop bit complete - return to idle
                         rx_state <= RX_IDLE;
                     end else begin
