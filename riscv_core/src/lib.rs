@@ -51,6 +51,10 @@ pub struct LedControllerPeripheral;
 #[verilog(src = "../rtl/uart.sv", name = "uart")]
 pub struct Uart;
 
+// Define UART wrapper module configured for 1M baud
+#[verilog(src = "../rtl/uart_1m_baud_wrapper.sv", name = "uart_1m_baud_wrapper")]
+pub struct Uart1MBaud;
+
 // Define Clock Peripheral module
 #[verilog(
     src = "../rtl/peripherals/clock_peripheral.sv",
@@ -224,6 +228,11 @@ pub fn create_fp_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
 // Helper function to create a runtime for the UART core
 pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["uart.sv"])
+}
+
+// Helper function to create a runtime for the UART core at 1M baud
+pub fn create_uart_1m_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["uart.sv", "uart_1m_baud_wrapper.sv"])
 }
 
 // Helper function to create a runtime for the Clock Peripheral

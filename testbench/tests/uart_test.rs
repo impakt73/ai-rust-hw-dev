@@ -1,8 +1,11 @@
-use riscv_core::{create_uart_runtime, Uart};
+use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
 
-// UART timing (based on 50MHz clock, 115200 baud)
+// UART timing for 115200 baud (based on 50MHz clock)
 // CLKS_PER_BIT = 50_000_000 / 115200 ≈ 434
 const CLKS_PER_BIT: u32 = 434;
+// UART timing for 1M baud in uart_1m_baud_wrapper.sv (based on 25MHz clock)
+const CLKS_PER_BIT_1M: u32 = 25;
+const UART_BYTE_TIMEOUT_BITS: u32 = 15;
 
 // Clock cycle macro for UART tests
 macro_rules! clock_cycle {
@@ -1161,5 +1164,76 @@ fn test_uart_loopback_with_tight_spacing() {
         dut.eval();
         dut.rx_in = dut.tx_out;
         clock_cycle!(dut);
+    }
+}
+
+#[test]
+fn test_uart_bidirectional_end_to_end_at_1m_baud() {
+    let runtime = create_uart_1m_runtime().expect("Failed to create 1M UART runtime");
+    let mut uart_a = runtime
+        .create_model_simple::<Uart1MBaud>()
+        .expect("Failed to create UART A model");
+    let mut uart_b = runtime
+        .create_model_simple::<Uart1MBaud>()
+        .expect("Failed to create UART B model");
+
+    let reset_uart_1m = |dut: &mut Uart1MBaud| {
+        dut.rst_n = 0;
+        dut.tx_valid = 0;
+        dut.rx_ready = 0;
+        dut.rx_error_clr = 0;
+        dut.rx_in = 1;
+        clock_cycle!(dut);
+        dut.rst_n = 1;
+        clock_cycle!(dut);
+    };
+
+    reset_uart_1m(&mut uart_a);
+    reset_uart_1m(&mut uart_b);
+
+    let step_link = |a: &mut Uart1MBaud, b: &mut Uart1MBaud| {
+        a.rx_in = b.tx_out;
+        b.rx_in = a.tx_out;
+        clock_cycle!(a);
+        clock_cycle!(b);
+    };
+
+    let transfer_byte = |src: &mut Uart1MBaud, dst: &mut Uart1MBaud, data: u8| {
+        while src.tx_ready == 0 {
+            step_link(src, dst);
+        }
+
+        src.tx_data = data;
+        src.tx_valid = 1;
+        src.eval();
+        step_link(src, dst);
+        src.tx_valid = 0;
+        src.eval();
+
+        let mut timeout = CLKS_PER_BIT_1M * UART_BYTE_TIMEOUT_BITS;
+        while dst.rx_valid == 0 && timeout > 0 {
+            step_link(src, dst);
+            timeout -= 1;
+        }
+
+        assert!(timeout > 0, "Timeout waiting for byte 0x{:02X}", data);
+        assert_eq!(dst.rx_valid, 1, "RX valid should assert for 0x{:02X}", data);
+        assert_eq!(dst.rx_data, data, "RX data corrupted for 0x{:02X}", data);
+        assert_eq!(dst.rx_error, 0, "RX error asserted for 0x{:02X}", data);
+
+        dst.rx_ready = 1;
+        dst.eval();
+        step_link(src, dst);
+        dst.rx_ready = 0;
+        dst.eval();
+        step_link(src, dst);
+    };
+
+    let a_to_b = [0x00, 0x55, 0xA5, 0xFF, 0x3C];
+    let b_to_a = [0x12, 0x34, 0x78, 0x9A, 0xE1];
+
+    for (&tx_a, &tx_b) in a_to_b.iter().zip(b_to_a.iter()) {
+        transfer_byte(&mut uart_a, &mut uart_b, tx_a);
+        transfer_byte(&mut uart_b, &mut uart_a, tx_b);
     }
 }
