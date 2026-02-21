@@ -114,6 +114,10 @@ fn test_simple_test_elf() {
 #[test]
 fn test_fp_math_elf() {
     let mut runtime = create_test_runtime_with_fifo();
+    if !runtime.supports_riscv_f_extension() {
+        eprintln!("Skipping test_fp_math_elf: runtime does not support RISC-V F extension");
+        return;
+    }
     assert_eq!(
         run_elf_until_halt(runtime.as_mut(), "test_fp_math", LONG_TIMEOUT),
         Some(0x2a)

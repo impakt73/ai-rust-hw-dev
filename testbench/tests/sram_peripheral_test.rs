@@ -161,3 +161,22 @@ fn test_sram_peripheral_unaligned_halfword_store_and_load() {
     assert_eq!(intra_word_wait, 1);
     assert_eq!(intra_word_halfword, 0x0000_2233);
 }
+
+#[test]
+fn test_sram_peripheral_access_beyond_8kb() {
+    let runtime =
+        create_sram_peripheral_runtime().expect("Failed to create SRAM peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<SramPeripheralTestWrapper>()
+        .expect("Failed to create SRAM peripheral model");
+    reset(&mut dut);
+
+    write_access(&mut dut, 0x0000_0000, 0x1111_2222, SIZE_WORD);
+    write_access(&mut dut, 0x0000_2000, 0x3333_4444, SIZE_WORD);
+
+    let (base_word, _) = read_access(&mut dut, 0x0000_0000, SIZE_WORD);
+    let (beyond_8kb_word, _) = read_access(&mut dut, 0x0000_2000, SIZE_WORD);
+
+    assert_eq!(base_word, 0x1111_2222);
+    assert_eq!(beyond_8kb_word, 0x3333_4444);
+}

@@ -1,12 +1,12 @@
 // SRAM Peripheral
-// 8KB memory-mapped SRAM peripheral with subword write masking
+// 12KB memory-mapped SRAM peripheral with subword write masking
 // Memory-mapped at 0x52000000 in RTL peripheral address space
 //
-// Size: 8KB (0x2000 bytes, 2048 words)
-// Address Range: 0x52000000 - 0x52001FFF
+// Size: 12KB (0x3000 bytes, 3072 words)
+// Address Range: 0x52000000 - 0x52002FFF
 //
 // Features:
-// - 8KB total memory (2048 x 32-bit words)
+// - 12KB total memory (3072 x 32-bit words)
 // - Subword write masking based on bus size and address alignment
 // - Registered read output (1-cycle latency)
 
@@ -28,9 +28,10 @@ module sram_peripheral (
     // ============================================================
     // SRAM Configuration
     // ============================================================
-    // 8KB = 8192 bytes = 2048 words (32-bit)
-    // Address width: 11 bits for word addressing (2^11 = 2048)
-    localparam ADDR_WIDTH = 11;
+    // 12KB = 12288 bytes = 3072 words (32-bit)
+    // Address width: 12 bits for word addressing (2^12 = 4096)
+    localparam ADDR_WIDTH = 12;
+    localparam DEPTH_WORDS = 3072;
     
     // ============================================================
     // Internal Signals
@@ -170,7 +171,8 @@ module sram_peripheral (
     logic [31:0] sram_rdata;
     
     sram #(
-        .ADDR_WIDTH(ADDR_WIDTH)
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DEPTH(DEPTH_WORDS)
     ) sram_inst (
         .clk(clk),
         .we(sram_we),
