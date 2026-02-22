@@ -1,6 +1,7 @@
 // System Bus Module
 // Routes memory requests from the CPU to peripheral slaves based on address.
-// All address mapping logic is contained within this module.
+// Decodes only RTL peripheral addresses. Top-level host_bus_mux handles
+// external-vs-RTL range split before requests reach this module.
 //
 // Address Map:
 // - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
@@ -14,7 +15,10 @@
 // - Writes are dropped
 // - Ready is asserted immediately
 
-module bus (
+module bus #(
+    parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
+    parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
+) (
     // Clock and reset (unused in current combinational implementation)
     /* verilator lint_off UNUSED */
     input  logic        clk,
@@ -78,10 +82,6 @@ module bus (
     localparam SRAM_LIMIT = 32'h52003000;  // SRAM_BASE + 12KB
     localparam SYSCTRL_BASE  = 32'h53000000;
     localparam SYSCTRL_LIMIT = 32'h53000010; // SYSCTRL_BASE + 16 bytes
-    // RTL peripheral range (for detecting unmapped RTL addresses)
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-
     // ============================================================
     // Address Decoder
     // ============================================================

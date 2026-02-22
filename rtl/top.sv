@@ -180,29 +180,44 @@ module top #(
     logic        host_master_req;
     logic        host_master_ready;
     
-    // ============================================================
-    // CPU Address-Based Routing (RTL peripherals vs external memory)
-    // ============================================================
-    logic sel_cpu_rtl_periph;
+    // Shared RTL peripheral range configuration for host_bus_mux and bus
     localparam RTL_PERIPH_BASE  = 32'h50000000;
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
     
-    assign sel_cpu_rtl_periph = (cpu_mem_addr >= RTL_PERIPH_BASE) && (cpu_mem_addr < RTL_PERIPH_LIMIT);
-    
-    assign cpu_to_arb_addr  = cpu_mem_addr;
-    assign cpu_to_arb_wdata = cpu_mem_wdata;
-    assign cpu_to_arb_we    = cpu_mem_we;
-    assign cpu_to_arb_size  = cpu_mem_size;
-    assign cpu_to_arb_req   = cpu_mem_req && sel_cpu_rtl_periph;
-    
-    assign cpu_to_ext_addr  = cpu_mem_addr;
-    assign cpu_to_ext_wdata = cpu_mem_wdata;
-    assign cpu_to_ext_we    = cpu_mem_we;
-    assign cpu_to_ext_size  = cpu_mem_size;
-    assign cpu_to_ext_req   = cpu_mem_req && !sel_cpu_rtl_periph;
-    
-    assign cpu_mem_rdata = sel_cpu_rtl_periph ? cpu_to_arb_rdata : cpu_to_ext_rdata;
-    assign cpu_mem_ready = sel_cpu_rtl_periph ? cpu_to_arb_ready : cpu_to_ext_ready;
+    // ============================================================
+    // CPU Host-Bus Multiplexer
+    // ============================================================
+    host_bus_mux #(
+        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
+        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
+    ) cpu_host_bus_mux (
+        // CPU-side interface
+        .cpu_addr(cpu_mem_addr),
+        .cpu_wdata(cpu_mem_wdata),
+        .cpu_rdata(cpu_mem_rdata),
+        .cpu_we(cpu_mem_we),
+        .cpu_size(cpu_mem_size),
+        .cpu_req(cpu_mem_req),
+        .cpu_ready(cpu_mem_ready),
+        
+        // System bus path (RTL peripherals)
+        .sys_addr(cpu_to_arb_addr),
+        .sys_wdata(cpu_to_arb_wdata),
+        .sys_rdata(cpu_to_arb_rdata),
+        .sys_we(cpu_to_arb_we),
+        .sys_size(cpu_to_arb_size),
+        .sys_req(cpu_to_arb_req),
+        .sys_ready(cpu_to_arb_ready),
+        
+        // Host bus path (external memory / Rust peripherals)
+        .host_addr(cpu_to_ext_addr),
+        .host_wdata(cpu_to_ext_wdata),
+        .host_rdata(cpu_to_ext_rdata),
+        .host_we(cpu_to_ext_we),
+        .host_size(cpu_to_ext_size),
+        .host_req(cpu_to_ext_req),
+        .host_ready(cpu_to_ext_ready)
+    );
     
     // ============================================================
     // Bus Arbiter Instantiation
@@ -245,7 +260,10 @@ module top #(
     // Bus Module Instantiation
     // ============================================================
     // Routes requests from arbiter to the appropriate peripheral based on address
-    bus system_bus (
+    bus #(
+        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
+        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
+    ) system_bus (
         .clk(clk),
         .rst_n(rst_n_internal),
         
@@ -299,13 +317,13 @@ module top #(
     // Host Bus Interface Instantiation
     // ============================================================
     // Serializes external memory transactions to byte stream for host communication
-    // - Slave interface: Receives CPU-initiated external memory requests from bus.sv
+    // - Slave interface: Receives CPU-initiated external memory requests from host_bus_mux
     // - Master interface: Sends Host-initiated requests to arbiter (currently unused)
     host_bus_interface host_bus_if (
         .clk(clk),
         .rst_n(rst_n_internal),
         
-        // Bus Slave Interface (from System Bus - CPU→Host path)
+        // Bus Slave Interface (from host_bus_mux CPU external path)
         .addr(cpu_to_ext_addr),
         .wdata(cpu_to_ext_wdata),
         .rdata(cpu_to_ext_rdata),
