@@ -1138,3 +1138,216 @@ fn test_cpu_request_priority_over_host_request() {
         "CPU request TX should have priority over buffered host request"
     );
 }
+
+// ============================================================
+// UART-like Timing Tests
+// These tests model the exact behavior of the UART at high baud rates:
+// - tx_ready is already HIGH when the FSM enters a TX state (UART idle)
+// - tx_ready stays HIGH for exactly 1 cycle (UART latches and starts transmitting)
+// ============================================================
+
+/// Helper: receive TX byte with tx_ready pre-asserted (models UART already idle)
+/// Returns the byte on the first cycle where tx_valid is also high.
+fn receive_tx_byte_preasserted(dut: &mut HostBusInterface, max_cycles: u32) -> Option<u8> {
+    // tx_ready is already HIGH (UART TX is idle)
+    dut.tx_ready = 1;
+    dut.eval();
+    for _ in 0..max_cycles {
+        if dut.tx_valid != 0 {
+            // Both tx_valid and tx_ready are high — handshake occurs this cycle
+            let byte = dut.tx_data;
+            clock_cycle!(dut);
+            // After the posedge, the UART would start transmitting (tx_ready goes LOW)
+            dut.tx_ready = 0;
+            dut.eval();
+            return Some(byte);
+        }
+        clock_cycle!(dut);
+        // Keep tx_ready high for each cycle (UART still idle)
+        dut.tx_ready = 1;
+        dut.eval();
+    }
+    dut.tx_ready = 0;
+    dut.eval();
+    None
+}
+
+#[test]
+fn test_host_write_with_tx_ready_preasserted() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send host-initiated word write request
+    let header = 0x29; // type=0010, size=10, we=1
+    assert!(send_rx_byte(&mut dut, header, 100), "header");
+    // Address bytes: 0x53000004 (system controller reset register)
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x53, 100), "addr[31:24]");
+    // Data bytes: 0x00000002 (CPU reset)
+    assert!(send_rx_byte(&mut dut, 0x02, 100), "data[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[31:24]");
+
+    // Wait for host_bus_req and provide bus response (with 1-cycle arbiter delay)
+    let mut bus_responded = false;
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            // Model arbiter: 1 cycle delay before ready
+            clock_cycle!(dut);
+            dut.host_bus_ready = 1;
+            clock_cycle!(dut);
+            dut.host_bus_ready = 0;
+            bus_responded = true;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+    assert!(bus_responded, "Bus should respond to host request");
+
+    // Receive the write response with tx_ready pre-asserted (UART idle)
+    let resp = receive_tx_byte_preasserted(&mut dut, 100);
+    assert!(resp.is_some(), "Should receive write response header");
+    assert_eq!(resp.unwrap(), 0x39, "Response header should be 0x39");
+}
+
+#[test]
+fn test_host_write_with_immediate_bus_ready() {
+    // Test scenario: host_bus_ready is already HIGH when host_bus_req goes HIGH.
+    // This models: arbiter already in HOST_GRANT + single-cycle peripheral.
+    // The bus handshake completes on the SAME cycle req_valid goes high.
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Pre-assert host_bus_ready (peripheral always ready)
+    dut.host_bus_ready = 1;
+
+    // Send host-initiated word write request
+    let header = 0x29; // type=0010, size=10, we=1
+    assert!(send_rx_byte(&mut dut, header, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x53, 100), "addr[31:24]");
+    assert!(send_rx_byte(&mut dut, 0x02, 100), "data[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "data[31:24]");
+
+    // host_bus_ready was already high, so bus handshake may complete immediately
+    // Just run a few cycles for the response to be generated
+    for _ in 0..10 {
+        clock_cycle!(dut);
+    }
+    dut.host_bus_ready = 0;
+
+    // Receive write ack response
+    let resp = receive_tx_byte(&mut dut, 100);
+    assert!(resp.is_some(), "Should receive write response header");
+    assert_eq!(resp.unwrap(), 0x39, "Response header should be 0x39");
+}
+
+#[test]
+fn test_host_read_with_tx_ready_preasserted() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Send host-initiated word read request to address 0x50000000
+    let header = 0x28; // type=0010, size=10, we=0
+    assert!(send_rx_byte(&mut dut, header, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Wait for host_bus_req and provide bus response (with 1-cycle arbiter delay)
+    let mut bus_responded = false;
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            // Model arbiter: 1 cycle delay
+            clock_cycle!(dut);
+            dut.host_bus_ready = 1;
+            dut.host_bus_rdata = 0xDEADBEEF;
+            clock_cycle!(dut);
+            dut.host_bus_ready = 0;
+            bus_responded = true;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+    assert!(bus_responded, "Bus should respond to host request");
+
+    // Receive the read response with tx_ready pre-asserted
+    let mut response = Vec::new();
+    for _ in 0..5 {
+        match receive_tx_byte_preasserted(&mut dut, 100) {
+            Some(byte) => response.push(byte),
+            None => break,
+        }
+    }
+
+    assert_eq!(response.len(), 5, "Should receive 5 response bytes (header + 4 data)");
+    assert_eq!(response[0], 0x38, "Response header: type=0011, size=10, we=0");
+    assert_eq!(response[1], 0xEF, "RData[7:0]");
+    assert_eq!(response[2], 0xBE, "RData[15:8]");
+    assert_eq!(response[3], 0xAD, "RData[23:16]");
+    assert_eq!(response[4], 0xDE, "RData[31:24]");
+}
+
+#[test]
+fn test_host_read_max_speed() {
+    // Most extreme scenario: host_bus_ready always HIGH + tx_ready pre-asserted.
+    // Models: arbiter always grants immediately + single-cycle peripheral + UART idle.
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Pre-assert bus ready (peripheral always ready)
+    dut.host_bus_ready = 1;
+    dut.host_bus_rdata = 0x12345678;
+
+    // Send host-initiated word read request
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+
+    // Let bus handshake happen
+    for _ in 0..10 {
+        clock_cycle!(dut);
+    }
+
+    // Receive response with tx_ready pre-asserted
+    let mut response = Vec::new();
+    for _ in 0..5 {
+        match receive_tx_byte_preasserted(&mut dut, 100) {
+            Some(byte) => response.push(byte),
+            None => break,
+        }
+    }
+
+    assert_eq!(response.len(), 5, "Should receive 5 bytes");
+    assert_eq!(response[0], 0x38, "Response header");
+    assert_eq!(response[1], 0x78, "RData[7:0]");
+    assert_eq!(response[2], 0x56, "RData[15:8]");
+    assert_eq!(response[3], 0x34, "RData[23:16]");
+    assert_eq!(response[4], 0x12, "RData[31:24]");
+}
