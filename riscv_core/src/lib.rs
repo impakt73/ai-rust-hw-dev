@@ -200,14 +200,15 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "memory/bus.sv",                               // System bus for address decoding
         "cpu/cpu.sv",                                  // CPU core
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
+        "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
-        "memory/sram.sv",           // SRAM module used by SRAM peripheral
+        "memory/sram.sv",     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
-        "cpu/fetch_buffer.sv",      // RV32C fetch buffer
-        "cpu/decompress.sv",        // RV32C decompressor
+        "cpu/fetch_buffer.sv", // RV32C fetch buffer
+        "cpu/decompress.sv",  // RV32C decompressor
         "cpu/alu.sv",
         "cpu/div_unit.sv",
         "cpu/mul_unit.sv",

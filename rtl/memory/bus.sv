@@ -1,20 +1,24 @@
 // System Bus Module
 // Routes memory requests from the CPU to peripheral slaves based on address.
-// All address mapping logic is contained within this module.
+// Decodes only RTL peripheral addresses. Top-level host_bus_mux handles
+// external-vs-RTL range split before requests reach this module.
 //
 // Address Map:
 // - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
 // - Clock Peripheral:    0x51000000 - 0x5100000F (16 bytes)
 // - SRAM Peripheral:     0x52000000 - 0x52002FFF (12KB)
 // - System Controller:   0x53000000 - 0x5300000F (16 bytes)
-// - External Memory:     Everything else (DRAM + Rust peripherals)
+// External memory (DRAM + Rust peripherals) is routed outside this module.
 //
 // Unmapped addresses (within RTL peripheral range but not LED/CLOCK/SRAM/SYSCTRL):
 // - Reads return 0
 // - Writes are dropped
 // - Ready is asserted immediately
 
-module bus (
+module bus #(
+    parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
+    parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
+) (
     // Clock and reset (unused in current combinational implementation)
     /* verilator lint_off UNUSED */
     input  logic        clk,
@@ -64,16 +68,7 @@ module bus (
     output logic        sysctrl_we,
     output logic [1:0]  sysctrl_size,
     output logic        sysctrl_req,
-    input  logic        sysctrl_ready,
-    
-    // External Memory interface (DRAM + Rust peripherals)
-    output logic [31:0] ext_mem_addr,
-    output logic [31:0] ext_mem_wdata,
-    input  logic [31:0] ext_mem_rdata,
-    output logic        ext_mem_we,
-    output logic [1:0]  ext_mem_size,
-    output logic        ext_mem_req,
-    input  logic        ext_mem_ready
+    input  logic        sysctrl_ready
 );
 
     // ============================================================
@@ -87,10 +82,6 @@ module bus (
     localparam SRAM_LIMIT = 32'h52003000;  // SRAM_BASE + 12KB
     localparam SYSCTRL_BASE  = 32'h53000000;
     localparam SYSCTRL_LIMIT = 32'h53000010; // SYSCTRL_BASE + 16 bytes
-    // RTL peripheral range (for detecting unmapped RTL addresses)
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-
     // ============================================================
     // Address Decoder
     // ============================================================
@@ -98,14 +89,12 @@ module bus (
     logic sel_clock;
     logic sel_sram;
     logic sel_sysctrl;
-    logic sel_ext_mem;
     
     always_comb begin
         sel_led      = 1'b0;
         sel_clock    = 1'b0;
         sel_sram     = 1'b0;
         sel_sysctrl  = 1'b0;
-        sel_ext_mem  = 1'b0;
         
         // Check if address is in LED range
         if (master_addr >= LED_BASE && master_addr < LED_LIMIT) begin
@@ -127,11 +116,7 @@ module bus (
         // (unmapped: no select asserted, uses default response)
         else if (master_addr >= RTL_PERIPH_BASE && master_addr < RTL_PERIPH_LIMIT) begin
             // Unmapped RTL peripheral address - no slave selected
-            // Response mux defaults to ready=1, rdata=0
-        end
-        // Otherwise route to external memory (DRAM + Rust peripherals)
-        else begin
-            sel_ext_mem = 1'b1;
+            // Response mux returns rdata=0 and ready=1 for this case
         end
     end
     
@@ -155,10 +140,6 @@ module bus (
     assign sysctrl_wdata = master_wdata;
     assign sysctrl_size  = master_size;
     
-    assign ext_mem_addr  = master_addr;
-    assign ext_mem_wdata = master_wdata;
-    assign ext_mem_size  = master_size;
-    
     // Request and write enable are only asserted for the selected slave
     // Unmapped addresses: writes are dropped (no req/we asserted)
     assign led_req      = master_req && sel_led;
@@ -172,9 +153,6 @@ module bus (
     
     assign sysctrl_req  = master_req && sel_sysctrl;
     assign sysctrl_we   = master_we  && sel_sysctrl;
-    
-    assign ext_mem_req  = master_req && sel_ext_mem;
-    assign ext_mem_we   = master_we  && sel_ext_mem;
     
     // ============================================================
     // Response Multiplexer
@@ -196,9 +174,6 @@ module bus (
         end else if (sel_sysctrl) begin
             master_rdata = sysctrl_rdata;
             master_ready = sysctrl_ready;
-        end else if (sel_ext_mem) begin
-            master_rdata = ext_mem_rdata;
-            master_ready = ext_mem_ready;
         end
         // Unmapped addresses: default values apply (return 0, ready = 1)
     end
