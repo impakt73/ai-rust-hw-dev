@@ -76,9 +76,13 @@ pub struct SystemController;
 #[verilog(src = "../rtl/io/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
 
-// Define Host RX Buffer module (bidirectional packet buffering)
-#[verilog(src = "../rtl/io/host_rx_buffer.sv", name = "host_rx_buffer")]
-pub struct HostRxBuffer;
+// Define Host Bus RX module (packet reception and parsing)
+#[verilog(src = "../rtl/io/host_bus_rx.sv", name = "host_bus_rx")]
+pub struct HostBusRx;
+
+// Define Host Bus TX module (packet serialization and transmission)
+#[verilog(src = "../rtl/io/host_bus_tx.sv", name = "host_bus_tx")]
+pub struct HostBusTx;
 
 // Define Bus Arbiter module
 #[verilog(src = "../rtl/memory/bus_arbiter.sv", name = "bus_arbiter")]
@@ -270,12 +274,23 @@ pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn st
 
 // Helper function to create a runtime for the Host Bus Interface
 pub fn create_host_bus_interface_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["io/host_bus_interface.sv", "io/host_rx_buffer.sv"])
+    create_runtime(&["io/host_bus_interface.sv", "io/host_bus_rx.sv", "io/host_bus_tx.sv"])
 }
 
-// Helper function to create a runtime for the Host RX Buffer (standalone testing)
+// Helper function to create a runtime for the Host Bus RX module (standalone testing)
+pub fn create_host_bus_rx_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["io/host_bus_rx.sv"])
+}
+
+// Helper function to create a runtime for the Host Bus TX module (standalone testing)
+pub fn create_host_bus_tx_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["io/host_bus_tx.sv"])
+}
+
+// Helper function to create a runtime for the Host RX Buffer (deprecated - use host_bus_rx_runtime)
+#[deprecated(note = "Use create_host_bus_rx_runtime instead")]
 pub fn create_host_rx_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["io/host_rx_buffer.sv"])
+    create_host_bus_rx_runtime()
 }
 
 // Helper function to create a runtime for the Bus Arbiter
