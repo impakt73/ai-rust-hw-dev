@@ -39,7 +39,7 @@ A **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in SystemVer
     - CSR (Control and Status Register) access instructions
 - ✅ **Multi-cycle Non-pipelined Architecture**: FSM-based design with 12 states for efficient resource sharing
 - ✅ **Variable-latency Memory Support**: Ready/valid handshaking for realistic memory operations
-- ✅ **Verilator-based Verification**: 260+ comprehensive tests using Rust + marlin framework
+- ✅ **Verilator-based Verification**: 264+ comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping and configurable memory latency
 - ✅ **FPGA Synthesis Support**: Synthesizable to iCE40-HX8K using open-source tools (Yosys + nextpnr)
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
@@ -82,7 +82,7 @@ make
 sudo make program
 ```
 
-See **[docs/fpga-synthesis.md](docs/fpga-synthesis.md)** for detailed instructions.
+See **[fpga/README.md](fpga/README.md)** for detailed instructions.
 
 ## Architecture
 
@@ -97,25 +97,28 @@ This design enables higher clock frequencies and more realistic hardware impleme
 
 ## Project Structure
 
-- **`rtl/`** - SystemVerilog RTL implementation (ALU, register file, decoder, CSR file, top module)
+- **`rtl/`** - SystemVerilog RTL implementation organized into subdirectories (`cpu/`, `fpu/`, `io/`, `memory/`, `peripherals/`, `primitives/`, `wrappers/`)
 - **`fpga/`** - FPGA synthesis files for iCE40-HX8K (Yosys + nextpnr workflow)
 - **`testbench/`** - Rust-based verification tests (testbench package, integration tests)
 - **`cpu-sim/`** - Command-line CPU simulator for running ELF executables with VCD waveform dumping
 - **`riscv_core/`** - Shared Verilator bindings and utilities
-- **`riscv_protocol/`** - Debug packet protocol definitions
-- **`riscv_macros/`** - Formatted print macros for bare-metal RISC-V programs
+- **`riscv_shared/`** - Shared constants, memory map definitions, and peripheral register layouts
+- **`bus-shared/`** - Shared bus/system-bus implementation for Rust peripherals
 - **`sim-tests/`** - Helper crate that builds test programs from `rust-test-program/` automatically
+- **`sim-view/`** - Real-time video/audio viewer for programs running on the simulated CPU
+- **`device-runtime/`** - Unified runtime abstraction for simulator and FPGA backends
+- **`fpga-host/`** - Host-side FPGA communication utilities
+- **`host-bus-handler/`** - Host bus protocol handler
+- **`vcd-mcp/`** - VCD waveform MCP server for signal-level debugging
 - **`rust-test-program/`** - Bare-metal Rust test programs (separate workspace, automatically built when tests run)
 
 ## Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
-- **[docs/fpga-synthesis.md](docs/fpga-synthesis.md)** - FPGA synthesis guide for iCE40-HX8K using open-source tools
-- **[fpga/README.md](fpga/README.md)** - Quick start guide for FPGA synthesis
+- **[fpga/README.md](fpga/README.md)** - FPGA synthesis guide for iCE40-HX8K using open-source tools
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
+- **[sim-view/README.md](sim-view/README.md)** - Real-time video and audio viewer for simulated programs
 - **[rust-test-program/README.md](rust-test-program/README.md)** - Information about test programs (automatically built when tests run)
-- **[riscv_macros/README.md](riscv_macros/README.md)** - Formatted print macros for bare-metal programs
-- **[docs/multi-cycle-implementation/](docs/multi-cycle-implementation/)** - Historical: Multi-cycle architecture implementation plan (completed)
 
 ## License
 

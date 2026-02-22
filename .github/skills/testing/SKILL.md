@@ -17,27 +17,29 @@ description: Guide for writing, running, and debugging tests in the RISC-V verif
 
 The project has 264 comprehensive tests across all packages:
 
-### testbench package (95 integration tests):
-- **ALU tests (16 tests):** Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
-- **Register file tests (6 tests):** Validate register behavior (including x0 immutability)
-- **FP register file tests (7 tests):** Validate floating-point register file with 3 read ports
-- **FPU tests (25 tests):** Validate all 26 FP operations (arithmetic, comparisons, conversions, etc.)
-- **Decompressor tests (41 tests):** Validate all 27 RV32C compressed instructions
+### testbench package (integration tests):
+- **ALU tests:** Validate arithmetic/logic operations + M extension (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU)
+- **Register file tests:** Validate register behavior (including x0 immutability)
+- **FP register file tests:** Validate floating-point register file with 3 read ports
+- **FPU tests:** Validate all 26 FP operations (arithmetic, comparisons, conversions, etc.)
+- **Decompressor tests:** Validate all 27 RV32C compressed instructions
+- **Peripheral tests:** SRAM, LED controller, clock peripheral, system controller, UART
+- **Bus tests:** bus arbiter, FIFO, async FIFO, ff_sync, host bus interface, host RX buffer
 
-### Other packages (169 tests):
-- **cpu-sim: 108 integration tests including:**
+### Other packages:
+- **cpu-sim: integration tests including:**
   - ELF loading and execution
   - FIFO communication and packet protocol
   - VCD waveform dumping validation
   - Instruction trace callbacks with comprehensive validation
   - Programmatic instruction sequence testing with trace verification
-  - FP integration tests (16 tests): Validate all 26 FP instructions in CPU context
+  - FP integration tests: Validate all 26 FP instructions in CPU context
   - Combined trace + VCD testing
   - Variable memory latency testing
-  - RV32C compressed instruction tests (9 tests): Basic instructions and critical transition scenarios (C→C, C→U, U→C, U→U, mixed)
+  - RV32C compressed instruction tests: Basic instructions and critical transition scenarios (C→C, C→U, U→C, U→U, mixed)
 - **riscv_core: 33 utility and tracing tests**
-- **riscv_protocol: 6 packet serialization/deserialization tests**
-- **riscv_macros: 13 macro functionality tests**
+- **device-runtime: integration tests covering ELF execution, reset, RTL peripherals, DMA, packet protocol, video/audio, RV32C/F**
+- **host-bus-handler and bus-shared: bus protocol and system bus tests**
 
 ## New Validation Tests
 
@@ -154,7 +156,7 @@ Use the task tool with agent_type="rust-verification-architect" for test harness
 
 ## After Modifying RTL
 
-1. **Lint the RTL:** `verilator --lint-only rtl/modified_file.sv`
+1. **Lint the RTL:** `find rtl -name '*.sv' -exec verilator --lint-only {} +`
 2. **Clean build:** `cargo clean` (Verilator cache may be stale)
 3. **Run tests:** `cargo test`
 4. **Verify all tests pass:** Look for `test result: ok` with all tests passed

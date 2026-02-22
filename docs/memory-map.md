@@ -17,7 +17,8 @@ Address Range            | Device              | Type | Description
 0x40005000 - 0x4FFFFFFF  | Reserved (Rust)     | Rust | Reserved for future Rust peripherals
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
 0x51000000 - 0x5100000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
-0x52000000 - 0x52FFFFFF  | Reserved (RTL)      | RTL  | Unmapped RTL peripheral space
+0x52000000 - 0x52002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
+0x52003000 - 0x52FFFFFF  | Reserved (RTL)      | RTL  | Reserved for future RTL peripherals
 0x53000000 - 0x5300000F  | System Controller   | RTL  | CPU boot and reset control
 0x53000010 - 0x5FFFFFFF  | Reserved (RTL)      | RTL  | Reserved for future RTL peripherals
 0x80000000 - 0xFFFFFFFF  | DRAM                | Both | System memory (2 GiB)
@@ -127,6 +128,15 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 - **Latency:** Single-cycle (ready = 1'b1)
 - **Note:** Clock frequency is configurable via `CLK_FREQ_HZ` parameter
 - **Constants:** `CLOCK_BASE`, `CLOCK_SIZE`, `CLOCK_ELAPSED_US_OFFSET`, `CLOCK_ELAPSED_MS_OFFSET`, `CLOCK_ELAPSED_S_OFFSET`
+
+### SRAM Peripheral (0x52000000)
+
+12KB of general-purpose on-chip SRAM. Used by `rust-test-program` for the text, rodata, data, bss, and stack sections.
+
+- **Size:** 12KB (0x52000000 – 0x52002FFF)
+- **Access sizes:** Byte, halfword, word
+- **Latency:** Writes: single-cycle (ready asserted immediately); Reads: 1-cycle latency (ready asserted in the cycle after request)
+- **Constants:** `SRAM_BASE`, `SRAM_SIZE`
 
 ### System Controller (0x53000000)
 
