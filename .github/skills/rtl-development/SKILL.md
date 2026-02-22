@@ -158,8 +158,8 @@ The multi-cycle design adds handshaking signals:
 
 ### Linting
 ```bash
-# Lint SystemVerilog files before committing
-verilator --lint-only rtl/*.sv
+# Lint SystemVerilog files before committing (RTL files are in subdirectories)
+find rtl -name '*.sv' -exec verilator --lint-only {} +
 ```
 
 All SystemVerilog code should pass Verilator linting before being committed.

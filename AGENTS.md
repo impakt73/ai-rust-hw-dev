@@ -106,7 +106,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 - **RTL:** SystemVerilog (in `rtl/` directory)
 - **Verification:** Rust with marlin + Verilator (in `testbench/` directory)
-- **Build System:** Cargo workspace with 6 members: cpu-sim, riscv_core, testbench, riscv_protocol, riscv_macros, vcd-mcp
+- **Build System:** Cargo workspace with 11 members: cpu-sim, riscv_core, testbench, vcd-mcp, sim-view, riscv_shared, sim-tests, fpga-host, host-bus-handler, device-runtime, bus-shared
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
 
 ### Project Structure
@@ -116,13 +116,25 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ├── Cargo.toml              # Workspace root
 ├── rtl/                    # SystemVerilog RTL modules
 │   ├── top.sv             # Top-level module (CPU with RTL peripherals)
-│   ├── cpu.sv             # CPU core (multi-cycle FSM control)
-│   ├── alu.sv, decoder.sv, regfile.sv, etc.
+│   ├── cpu/               # CPU core modules (cpu.sv, alu.sv, decoder.sv, etc.)
+│   ├── fpu/               # Floating-point unit modules
+│   ├── io/                # I/O modules (uart.sv, host_bus_interface.sv, etc.)
+│   ├── memory/            # Memory modules (bus.sv, sram.sv, etc.)
+│   ├── peripherals/       # RTL peripherals (LED, clock, SRAM, system controller)
+│   ├── primitives/        # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
+│   └── wrappers/          # Test wrapper modules
 ├── testbench/              # Rust verification (integration tests)
 │   └── tests/             # Integration test files
 ├── cpu-sim/               # CPU simulator
 ├── riscv_core/            # Shared Verilator bindings
+├── riscv_shared/          # Shared constants and peripheral register definitions
+├── bus-shared/            # Shared bus/SystemBus implementation
 ├── sim-tests/             # Helper crate to build test programs from rust-test-program/
+├── sim-view/              # Real-time video/audio viewer for simulated programs
+├── device-runtime/        # Unified runtime abstraction for simulator and FPGA backends
+├── fpga-host/             # Host-side FPGA communication utilities
+├── host-bus-handler/      # Host bus protocol handler
+├── vcd-mcp/               # VCD waveform MCP server
 └── rust-test-program/     # Bare-metal Rust test programs (auto-built when tests run)
 ```
 
@@ -135,7 +147,7 @@ cargo build                            # Build only
 cargo fmt                              # Format Rust code (mandatory before commit)
 cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings (run FIRST!)
 cargo clippy -- -D warnings            # Lint Rust code (mandatory before commit)
-verilator --lint-only rtl/*.sv         # Lint SystemVerilog
+find rtl -name '*.sv' -exec verilator --lint-only {} +  # Lint SystemVerilog
 cargo clean                            # Clear Verilator cache (after RTL changes)
 ```
 
@@ -158,7 +170,7 @@ Before marking PR ready for review:
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
-5. ✅ SystemVerilog linted (if modified): `verilator --lint-only rtl/*.sv`
+5. ✅ SystemVerilog linted (if modified): `find rtl -name '*.sv' -exec verilator --lint-only {} +`
 6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd fpga && make)`
 
 **rust-test-program Workspace:**
@@ -190,7 +202,8 @@ Address Range          | Device           | Type | Description
 0x40004000-0x40004013 | DMA              | Rust | DMA controller
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x51000000-0x5100000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
-0x52000000-0x52FFFFFF | Reserved         | RTL  | Unmapped RTL peripheral space
+0x52000000-0x52002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
+0x52003000-0x52FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
 0x53000000-0x5300000F | System Controller| RTL  | CPU boot and reset control
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
@@ -277,5 +290,5 @@ cargo test
 
 ---
 
-**Last Updated:** 2026-01-23  
+**Last Updated:** 2026-02-22  
 **Maintained by:** GitHub Copilot Custom Agents

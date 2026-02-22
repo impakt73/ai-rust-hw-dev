@@ -8,8 +8,8 @@ description: Guide for CI/CD pipeline, PR readiness checklist, and troubleshooti
 ## CI Pipeline Overview
 
 GitHub Actions automatically runs on:
-- Every push to branches matching `copilot/**` pattern
-- Every pull request targeting `main` branch
+- Every push to the `main` branch
+- Every pull request targeting the `main` branch
 
 ### CI Workflow Steps
 
@@ -37,7 +37,7 @@ Before marking a PR as ready for review, complete all of the following:
 ```bash
 cargo test --verbose
 ```
-All tests must pass (~260+ tests across all packages).
+All tests must pass (~264+ tests across all packages).
 
 #### 2. Verify Code Formatting
 ```bash
@@ -88,7 +88,7 @@ cd ..
 
 #### 5. Lint SystemVerilog Files (if RTL was modified)
 ```bash
-verilator --lint-only rtl/*.sv
+find rtl -name '*.sv' -exec verilator --lint-only {} +
 ```
 No lint errors should be reported.
 
@@ -212,7 +212,7 @@ git push
 2. Format code: `cargo fmt`
 3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
-5. Lint RTL (if modified): `verilator --lint-only rtl/*.sv`
+5. Lint RTL (if modified): `find rtl -name '*.sv' -exec verilator --lint-only {} +`
 6. Verify FPGA synthesis (if SystemVerilog modified): `(cd fpga && make)`
 7. If you modified `rust-test-program/`:
    ```bash

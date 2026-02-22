@@ -6,23 +6,24 @@ This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu
 
 The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
 
-- **Extensions disabled**: M (multiply/divide) and F (floating-point) extensions disabled
-- **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
+- **Extensions**: M (multiply/divide) enabled (shift-add multiplier); F (floating-point) disabled
+- **ISA supported**: RV32I base instruction set + M (multiply) + C (compressed) + A (atomic) + Zicsr
 - **Resource usage**: ~74% logic cells (5,698/7,680), 50% BRAM (16/32)
 - **Clock frequency**: 25 MHz (via PLL), design achieves 30.56 MHz max
-- **Test program**: LED rotation pattern (0xAA ↔ 0x55) that rotates every 1 second
-- **Address mapping**: Proper CPU address (0x80000000+) to BRAM offset translation
+- **Communication**: CPU communicates with host over USB serial (UART) using the host bus protocol
+- **External memory**: DRAM accesses are forwarded to the host computer over UART
 
 ## What's Included
 
 The FPGA implementation includes:
 
-- ✅ **RISC-V RV32IAC CPU**: Base integer + Atomic + Compressed instruction sets (M/F extensions disabled)
-- ✅ **4 KB Instruction Memory**: On-chip block RAM (BRAM)
-- ✅ **4 KB Data Memory**: On-chip block RAM (BRAM)
+- ✅ **RISC-V RV32IMAC CPU**: Base integer + Multiply + Atomic + Compressed instruction sets (F extension disabled)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
+- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x51000000
+- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x52000000
+- ✅ **System Controller**: CPU boot and reset control mapped at 0x53000000
+- ✅ **UART Host Interface**: USB serial communication for host-initiated and CPU-initiated bus requests
 - ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
-- ✅ **Test Program**: LED rotation pattern program pre-loaded in instruction memory
 
 ## Quick Start
 
@@ -93,9 +94,8 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Files
 
-- **`fpga_top.sv`**: Top-level FPGA wrapper module
-- **`bram_imem.sv`**: Block RAM instruction memory (4 KB)
-- **`bram_dmem.sv`**: Block RAM data memory (4 KB)
+- **`fpga_top.sv`**: Top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
+- **`stub_fpu.sv`**: Stub floating-point unit (F extension disabled for iCE40 resource constraints)
 - **`ice40hx8k.pcf`**: Pin constraint file for Alchitry Cu v1 board
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
@@ -137,7 +137,11 @@ Reference: [Alchitry Cu PCF](https://github.com/r1cebank/alchitry-cu-utils/blob/
 
 ## Default Test Program
 
-The instruction memory includes an LED rotation program that displays an alternating pattern on the 8 LEDs, matching the behavior of `led_demo/led_pattern_top.sv`:
+The `led_demo/` subdirectory contains a standalone LED rotation demo (`led_demo/led_pattern_top.sv`) that displays an alternating pattern on the 8 LEDs.
+
+The main FPGA design (`fpga_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
+
+**Example LED pattern (pseudo-assembly):**
 
 ```assembly
 # Initialize
@@ -167,8 +171,6 @@ jal  x0, main_loop     # Repeat
 - Pattern alternates: 0xAA (10101010) ↔ 0x55 (01010101)
 - Updates every 1 second (25M cycles at 25 MHz)
 
-To change the program, edit the `initial` block in `bram_imem.sv`.
-
 ## Troubleshooting
 
 ### "Timing not met" error
@@ -177,14 +179,14 @@ The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ens
 
 1. **PLL parameters**: Edit `fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
 2. **Makefile**: Change `--freq 25` to match your target frequency
-3. **Test program**: Update delay loop count in `bram_imem.sv`
+3. **Test program**: Update delay loop count in your program to match the new cycle count
 
 ### "Insufficient resources" error
 
 The design uses ~74% of HX8K logic resources. If synthesis fails:
 
-1. **Already optimized**: M and F extensions are disabled by default
-2. **Reduce memory**: Change BRAM sizes in `bram_imem.sv` and `bram_dmem.sv`
+1. **Already optimized**: M extension uses shift-add multiplier, F extension is disabled by default
+2. **Reduce BRAM usage**: Minimize the on-chip SRAM allocation if possible
 
 ### "make program" fails
 
@@ -204,53 +206,33 @@ sudo usermod -a -G dialout $USER
 Common issues:
 
 1. **Clock/Reset**: Verify reset button (P8) is not stuck
-2. **Memory init**: Check instruction memory is correctly initialized
+2. **UART connection**: Ensure the host UART interface is connected and the host software is running
 3. **Timing violations**: Run `make timing` to check for timing errors
 4. **Pin mismatch**: Verify PCF matches your board
 
 ## Customization
 
-### Changing Test Program
+### Running a Custom Program
 
-Edit `bram_imem.sv` and modify the `initial` block:
+The FPGA design loads programs at runtime via the host UART interface. To run your own program:
 
-```systemverilog
-initial begin
-    // Your custom program here
-    mem[0] = 32'h50000137;  // lui x15, 0x50000
-    mem[1] = 32'h0AA00713;  // addi x14, x0, 0xAA
-    mem[2] = 32'h00E7A023;  // sw x14, 0(x15)
-    // ... more instructions
-end
-```
-
-### Using External Memory File
-
-Instead of hardcoding, use `$readmemh()`:
-
-```systemverilog
-initial begin
-    $readmemh("program.hex", mem);
-end
-```
-
-Then provide `program.hex` during synthesis.
+1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x52000000, DRAM forwarded to host)
+2. Use `sim-view --runtime fpga --fpga-device /dev/ttyUSB0` to load and run the ELF
+3. Or use the `fpga-host` crate directly for programmatic control
 
 ### Changing Clock Frequency
 
-To use a PLL for higher/lower frequencies:
+To modify the system clock frequency:
 
-1. Instantiate iCE40 PLL primitive in `fpga_top.sv`
-2. Configure for desired frequency
-3. Update `Makefile` `--freq` parameter
-4. Re-run synthesis and check timing
+1. Update PLL parameters in `fpga_top.sv` (DIVR, DIVF, DIVQ)
+2. Change `--freq` in `Makefile` to match your target frequency
+3. Re-run synthesis and check timing
 
 ## Next Steps
 
-- **Add UART**: For printf-style debugging over serial
-- **External SRAM**: For larger programs (>4KB)
 - **Optimize Timing**: Add pipeline stages to run at higher clock speeds
-- **CI Integration**: Automate synthesis checks in GitHub Actions
+- **Enable F Extension**: Implement FPGA-friendly floating-point or increase target device capacity
+- **IO Shield Integration**: Leverage DIP switches, buttons, and segment display for richer demos
 
 ## References
 
