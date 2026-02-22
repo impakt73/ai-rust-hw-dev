@@ -205,10 +205,10 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
-        "memory/sram.sv",           // SRAM module used by SRAM peripheral
+        "memory/sram.sv",     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
-        "cpu/fetch_buffer.sv",      // RV32C fetch buffer
-        "cpu/decompress.sv",        // RV32C decompressor
+        "cpu/fetch_buffer.sv", // RV32C fetch buffer
+        "cpu/decompress.sv",  // RV32C decompressor
         "cpu/alu.sv",
         "cpu/div_unit.sv",
         "cpu/mul_unit.sv",
