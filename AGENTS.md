@@ -71,11 +71,10 @@ What files do you need to modify?
 
 ### Code Quality (Mandatory for Rust)
 
-**All Rust code changes MUST:**
-- ✅ Run `cargo fmt` before committing
-- ✅ Run `cargo clippy --fix --allow-dirty` to auto-fix warnings (do this FIRST!)
-- ✅ Rerun `cargo clippy -- -D warnings` to check remaining warnings
-- ✅ Address all clippy warnings (zero tolerance)
+**After making ANY Rust code changes, agents MUST run:**
+- ✅ `cargo fmt` before committing
+- ✅ `cargo clippy --fix --allow-dirty` to auto-fix warnings (do this FIRST!)
+- ✅ `cargo clippy -- -D warnings` to check remaining warnings and address all (zero tolerance)
 
 **Key Principle:** Use `cargo clippy --fix --allow-dirty` **BEFORE** manually addressing warnings to save time and avoid fixing issues that can be automatically resolved. The `--allow-dirty` flag is required to fix warnings when you have uncommitted changes. Always rerun clippy after auto-fix to detect any new warnings introduced by the fixes.
 
