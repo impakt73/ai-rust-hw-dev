@@ -50,21 +50,20 @@ module host_bus_rx (
     // ============================================================
     typedef enum logic [4:0] {
         STATE_IDLE          = 5'd0,
-        STATE_CLASSIFY      = 5'd1,
-        STATE_RESP_DATA_0   = 5'd2,
-        STATE_RESP_DATA_1   = 5'd3,
-        STATE_RESP_DATA_2   = 5'd4,
-        STATE_RESP_DATA_3   = 5'd5,
-        STATE_RESP_COMPLETE = 5'd6,
-        STATE_REQ_ADDR_0    = 5'd7,
-        STATE_REQ_ADDR_1    = 5'd8,
-        STATE_REQ_ADDR_2    = 5'd9,
-        STATE_REQ_ADDR_3    = 5'd10,
-        STATE_REQ_WDATA_0   = 5'd11,
-        STATE_REQ_WDATA_1   = 5'd12,
-        STATE_REQ_WDATA_2   = 5'd13,
-        STATE_REQ_WDATA_3   = 5'd14,
-        STATE_REQ_COMPLETE  = 5'd15
+        STATE_RESP_DATA_0   = 5'd1,
+        STATE_RESP_DATA_1   = 5'd2,
+        STATE_RESP_DATA_2   = 5'd3,
+        STATE_RESP_DATA_3   = 5'd4,
+        STATE_RESP_COMPLETE = 5'd5,
+        STATE_REQ_ADDR_0    = 5'd6,
+        STATE_REQ_ADDR_1    = 5'd7,
+        STATE_REQ_ADDR_2    = 5'd8,
+        STATE_REQ_ADDR_3    = 5'd9,
+        STATE_REQ_WDATA_0   = 5'd10,
+        STATE_REQ_WDATA_1   = 5'd11,
+        STATE_REQ_WDATA_2   = 5'd12,
+        STATE_REQ_WDATA_3   = 5'd13,
+        STATE_REQ_COMPLETE  = 5'd14
     } state_t;
     
     state_t state, next_state;
@@ -157,27 +156,6 @@ module host_bus_rx (
                         next_state = STATE_REQ_ADDR_0;
                     end
                     // else: Unknown packet type - stay in IDLE (drop packet)
-                end
-            end
-            
-            STATE_CLASSIFY: begin
-                // This state is now unused but kept for compatibility
-                // Classify based on packet type in header
-                if (temp_packet_type == 4'b0001) begin
-                    // Response packet
-                    if (temp_we) begin
-                        // Write response - header only, no data
-                        next_state = STATE_RESP_COMPLETE;
-                    end else begin
-                        // Read response - receive data bytes
-                        next_state = STATE_RESP_DATA_0;
-                    end
-                end else if (temp_packet_type == 4'b0010) begin
-                    // Request packet - proceed to address reception
-                    next_state = STATE_REQ_ADDR_0;
-                end else begin
-                    // Unknown packet type - drop and return to IDLE
-                    next_state = STATE_IDLE;
                 end
             end
             
@@ -329,6 +307,12 @@ module host_bus_rx (
                 temp_we          <= header_we;
                 temp_size        <= header_size;
                 byte_count       <= 3'd0;
+`ifndef SYNTHESIS
+                if (header_packet_type == 4'b0001 || header_packet_type == 4'b0010) begin
+                    assert (header_size != 2'b11)
+                    else $error("host_bus_rx: invalid header size encoding 2'b11");
+                end
+`endif
                 
                 // For write responses, set metadata immediately (transition to RESP_COMPLETE)
                 if (header_packet_type == 4'b0001 && header_we) begin
@@ -336,14 +320,6 @@ module host_bus_rx (
                     resp_buf_size  <= header_size;
                     resp_buf_rdata <= 32'h0;  // No data for write responses
                 end
-            end
-            
-            // Handle write response (no data) - set metadata when transitioning to RESP_COMPLETE from CLASSIFY
-            // (This handles the deprecated CLASSIFY state path if ever used)
-            if (state == STATE_CLASSIFY && next_state == STATE_RESP_COMPLETE) begin
-                resp_buf_we    <= temp_we;
-                resp_buf_size  <= temp_size;
-                resp_buf_rdata <= 32'h0;  // No data for write responses
             end
             
             // Response data accumulation (little-endian)

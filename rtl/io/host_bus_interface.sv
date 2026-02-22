@@ -71,10 +71,9 @@ module host_bus_interface (
     // RX Module Instance
     // ============================================================
     logic        rx_resp_valid;
-    /* verilator lint_off UNUSEDSIGNAL */
-    logic        rx_resp_we;      // Not used - for protocol compliance only
-    logic [1:0]  rx_resp_size;    // Not used - for protocol compliance only
-    /* verilator lint_on UNUSEDSIGNAL */
+    // Metadata from RX response packets; consumed by simulation assertions below.
+    logic        rx_resp_we;
+    logic [1:0]  rx_resp_size;
     logic [31:0] rx_resp_rdata;
     logic        rx_resp_consumed;
     
@@ -161,6 +160,20 @@ module host_bus_interface (
     
     // CPU read data comes from RX module response buffer
     assign rdata = rx_resp_rdata;
+
+    // Consume resp_we/resp_size metadata for protocol sanity checks
+`ifndef SYNTHESIS
+    always_ff @(posedge clk) begin
+        if (rx_resp_valid) begin
+            assert (rx_resp_size != 2'b11)
+            else $error("host_bus_interface: protocol violation, response size 2'b11 is reserved");
+            if (rx_resp_we) begin
+                assert (rx_resp_rdata == 32'h0)
+                else $error("host_bus_interface: protocol violation, write response must have zero rdata");
+            end
+        end
+    end
+`endif
     
     // ============================================================
     // Bus Master Interface Routing

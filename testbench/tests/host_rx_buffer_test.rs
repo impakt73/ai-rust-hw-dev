@@ -390,8 +390,7 @@ fn test_consume_request() {
 }
 
 #[test]
-#[ignore = "Test requires dual-buffer behavior (response + request simultaneously). New design buffers only one packet type at a time per architectural simplification."]
-fn test_both_buffers_can_be_filled() {
+fn test_single_buffer_backpressure() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostBusRx>()
@@ -403,23 +402,19 @@ fn test_both_buffers_can_be_filled() {
     assert!(send_rx_byte(&mut dut, 0x19, 100), "response header");
     assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
 
-    // Fill request buffer with read request
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "request header");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-
-    // Both buffers full - rx_ready should be LOW
+    // Cannot fill request buffer while response is pending (single-buffer architecture)
+    assert!(
+        !send_rx_byte(&mut dut, 0x28, 100),
+        "request header must stall"
+    );
+    assert_eq!(dut.req_valid, 0, "req_valid should remain LOW");
     assert_eq!(
         dut.rx_ready, 0,
-        "rx_ready should be LOW when both buffers are full"
+        "rx_ready should be LOW while response is pending"
     );
 }
 
 #[test]
-#[ignore = "Test requires dual-buffer behavior (response + request simultaneously). New design buffers only one packet type at a time per architectural simplification."]
 fn test_backpressure_recovery() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
@@ -432,15 +427,11 @@ fn test_backpressure_recovery() {
     assert!(send_rx_byte(&mut dut, 0x19, 100), "response header");
     assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
 
-    // Fill request buffer
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "request header");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-
-    // Both buffers full - rx_ready should be LOW
+    // New header must stall while response is pending
+    assert!(
+        !send_rx_byte(&mut dut, 0x28, 100),
+        "request header must stall"
+    );
     assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW");
 
     // Consume response buffer
@@ -448,11 +439,17 @@ fn test_backpressure_recovery() {
     clock_cycle!(dut);
     dut.resp_consumed = 0;
 
-    // rx_ready should recover
+    // rx_ready should recover, and request reception should now work
     assert_eq!(
         dut.rx_ready, 1,
         "rx_ready should be HIGH after consuming response"
     );
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "request header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
 }
 
 #[test]
