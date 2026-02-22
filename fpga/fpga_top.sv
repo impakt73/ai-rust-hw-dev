@@ -114,14 +114,6 @@ module fpga_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     
-    // UART-side signals (after FIFO buffering)
-    logic [7:0] uart_tx_data;
-    logic       uart_tx_valid;
-    logic       uart_tx_ready;
-    logic [7:0] uart_rx_data;
-    logic       uart_rx_valid;
-    logic       uart_rx_ready;
-    
     // LED controller output
     logic [7:0]  led_out;
     
@@ -190,12 +182,8 @@ module fpga_top #(
     // Host Communication UART
     // ============================================================
     // UART for host bus interface communication via USB serial
-    // TX and RX FIFOs decouple UART timing from the host bus interface,
-    // breaking long combinational paths across the module hierarchy.
-    // This is critical for reliable operation at high baud rates (e.g. 1M baud)
-    // where the larger design's routing can push cross-module paths past
-    // timing budgets. The FIFOs register all signals at their boundaries,
-    // matching the proven uart_validation mode 2 architecture.
+    // Direct connection using uart.sv module with ready/valid interface
+    // This is much simpler than the previous FSM-based approach using uart_peripheral
     
     uart #(
         .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
@@ -204,85 +192,21 @@ module fpga_top #(
         .clk(sys_clk),
         .rst_n(rst_n),
         
-        // TX interface - connected via TX FIFO
-        .tx_data(uart_tx_data),
-        .tx_valid(uart_tx_valid),
-        .tx_ready(uart_tx_ready),
+        // TX interface - directly connected to host_tx signals
+        .tx_data(host_tx_data),
+        .tx_valid(host_tx_valid),
+        .tx_ready(host_tx_ready),
         
-        // RX interface - connected via RX FIFO
-        .rx_data(uart_rx_data),
-        .rx_valid(uart_rx_valid),
-        .rx_ready(uart_rx_ready),
+        // RX interface - directly connected to host_rx signals
+        .rx_data(host_rx_data),
+        .rx_valid(host_rx_valid),
+        .rx_ready(host_rx_ready),
         .rx_error(),      // Optional: can be left unconnected
         .rx_error_clr(1'b0),  // Not used in host interface
         
         // Serial pins - connected to USB serial
         .tx_out(usb_tx),
         .rx_in(usb_rx)
-    );
-    
-    // ============================================================
-    // RX FIFO: UART RX → Host Bus Interface
-    // ============================================================
-    // Buffers received bytes from UART before delivery to host bus interface.
-    // Breaks the combinational path from host_rx_buffer.rx_ready (inside top)
-    // back to the UART module.
-    logic [7:0] rx_fifo_rdata;
-    logic       rx_fifo_full;
-    logic       rx_fifo_empty;
-    
-    // Write side: UART RX → FIFO (accept bytes when FIFO has space)
-    assign uart_rx_ready = !rx_fifo_full;
-    
-    // Read side: FIFO → host bus interface (present bytes when FIFO non-empty)
-    assign host_rx_data  = rx_fifo_rdata;
-    assign host_rx_valid = !rx_fifo_empty;
-    
-    sync_fifo #(
-        .WIDTH(8),
-        .DEPTH(8)
-    ) rx_fifo_inst (
-        .clk(sys_clk),
-        .rst_n(rst_n),
-        .wr_en(uart_rx_valid && !rx_fifo_full),
-        .wdata(uart_rx_data),
-        .rd_en(host_rx_ready && !rx_fifo_empty),
-        .rdata(rx_fifo_rdata),
-        .full(rx_fifo_full),
-        .empty(rx_fifo_empty),
-        .count()
-    );
-    
-    // ============================================================
-    // TX FIFO: Host Bus Interface → UART TX
-    // ============================================================
-    // Buffers bytes from host bus interface before delivery to UART TX.
-    // Breaks the combinational path from host_bus_interface.tx_data/tx_valid
-    // (inside top) to the UART module.
-    logic [7:0] tx_fifo_rdata;
-    logic       tx_fifo_full;
-    logic       tx_fifo_empty;
-    
-    // Write side: host bus interface → FIFO (accept bytes when FIFO has space)
-    assign host_tx_ready = !tx_fifo_full;
-    
-    // Read side: FIFO → UART TX (present bytes when FIFO non-empty)
-    assign uart_tx_data  = tx_fifo_rdata;
-    assign uart_tx_valid = !tx_fifo_empty;
-    
-    sync_fifo #(
-        .WIDTH(8),
-        .DEPTH(8)
-    ) tx_fifo_inst (
-        .clk(sys_clk),
-        .rst_n(rst_n),
-        .wr_en(host_tx_valid && !tx_fifo_full),
-        .wdata(host_tx_data),
-        .rd_en(uart_tx_ready && !tx_fifo_empty),
-        .rdata(tx_fifo_rdata),
-        .full(tx_fifo_full),
-        .empty(tx_fifo_empty),
-        .count()
     );
     
     // ============================================================
