@@ -1,7 +1,7 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
-// Uses the bus module to route requests between CPU and peripherals
-// External memory requests are serialized via host_bus_interface for host communication
+// Uses the bus module to route RTL peripheral requests
+// External memory requests are routed directly from CPU to host_bus_interface
 //
 // UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
 // fetch and data access. The CPU's multi-cycle FSM ensures only one type of
@@ -137,6 +137,28 @@ module top #(
     logic        cpu_halted_internal;
     
     // ============================================================
+    // CPU→Arbiter Signals (RTL peripheral accesses only)
+    // ============================================================
+    logic [31:0] cpu_to_arb_addr;
+    logic [31:0] cpu_to_arb_wdata;
+    logic [31:0] cpu_to_arb_rdata;
+    logic        cpu_to_arb_we;
+    logic [1:0]  cpu_to_arb_size;
+    logic        cpu_to_arb_req;
+    logic        cpu_to_arb_ready;
+    
+    // ============================================================
+    // CPU→External Interface Signals (non-RTL peripheral accesses)
+    // ============================================================
+    logic [31:0] cpu_to_ext_addr;
+    logic [31:0] cpu_to_ext_wdata;
+    logic [31:0] cpu_to_ext_rdata;
+    logic        cpu_to_ext_we;
+    logic [1:0]  cpu_to_ext_size;
+    logic        cpu_to_ext_req;
+    logic        cpu_to_ext_ready;
+    
+    // ============================================================
     // Arbiter Output Signals (Arbiter → Bus)
     // ============================================================
     logic [31:0] arb_bus_addr;
@@ -159,15 +181,28 @@ module top #(
     logic        host_master_ready;
     
     // ============================================================
-    // External Memory Interface Signals (Arbiter → Bus)
+    // CPU Address-Based Routing (RTL peripherals vs external memory)
     // ============================================================
-    logic [31:0] ext_mem_addr;
-    logic [31:0] ext_mem_wdata;
-    logic [31:0] ext_mem_rdata;
-    logic        ext_mem_we;
-    logic [1:0]  ext_mem_size;
-    logic        ext_mem_req;
-    logic        ext_mem_ready;
+    logic sel_cpu_rtl_periph;
+    localparam RTL_PERIPH_BASE  = 32'h50000000;
+    localparam RTL_PERIPH_LIMIT = 32'h60000000;
+    
+    assign sel_cpu_rtl_periph = (cpu_mem_addr >= RTL_PERIPH_BASE) && (cpu_mem_addr < RTL_PERIPH_LIMIT);
+    
+    assign cpu_to_arb_addr  = cpu_mem_addr;
+    assign cpu_to_arb_wdata = cpu_mem_wdata;
+    assign cpu_to_arb_we    = cpu_mem_we;
+    assign cpu_to_arb_size  = cpu_mem_size;
+    assign cpu_to_arb_req   = cpu_mem_req && sel_cpu_rtl_periph;
+    
+    assign cpu_to_ext_addr  = cpu_mem_addr;
+    assign cpu_to_ext_wdata = cpu_mem_wdata;
+    assign cpu_to_ext_we    = cpu_mem_we;
+    assign cpu_to_ext_size  = cpu_mem_size;
+    assign cpu_to_ext_req   = cpu_mem_req && !sel_cpu_rtl_periph;
+    
+    assign cpu_mem_rdata = sel_cpu_rtl_periph ? cpu_to_arb_rdata : cpu_to_ext_rdata;
+    assign cpu_mem_ready = sel_cpu_rtl_periph ? cpu_to_arb_ready : cpu_to_ext_ready;
     
     // ============================================================
     // Bus Arbiter Instantiation
@@ -179,13 +214,13 @@ module top #(
         .rst_n(rst_n_internal),
         
         // CPU Master Interface
-        .cpu_addr(cpu_mem_addr),
-        .cpu_wdata(cpu_mem_wdata),
-        .cpu_rdata(cpu_mem_rdata),
-        .cpu_we(cpu_mem_we),
-        .cpu_size(cpu_mem_size),
-        .cpu_req(cpu_mem_req),
-        .cpu_ready(cpu_mem_ready),
+        .cpu_addr(cpu_to_arb_addr),
+        .cpu_wdata(cpu_to_arb_wdata),
+        .cpu_rdata(cpu_to_arb_rdata),
+        .cpu_we(cpu_to_arb_we),
+        .cpu_size(cpu_to_arb_size),
+        .cpu_req(cpu_to_arb_req),
+        .cpu_ready(cpu_to_arb_ready),
         
         // Host Master Interface (from host_bus_interface)
         .host_addr(host_master_addr),
@@ -257,16 +292,7 @@ module top #(
         .sysctrl_we(sysctrl_we),
         .sysctrl_size(sysctrl_size),
         .sysctrl_req(sysctrl_req),
-        .sysctrl_ready(sysctrl_ready),
-        
-        // External Memory interface (routed to host_bus_interface)
-        .ext_mem_addr(ext_mem_addr),
-        .ext_mem_wdata(ext_mem_wdata),
-        .ext_mem_rdata(ext_mem_rdata),
-        .ext_mem_we(ext_mem_we),
-        .ext_mem_size(ext_mem_size),
-        .ext_mem_req(ext_mem_req),
-        .ext_mem_ready(ext_mem_ready)
+        .sysctrl_ready(sysctrl_ready)
     );
     
     // ============================================================
@@ -280,13 +306,13 @@ module top #(
         .rst_n(rst_n_internal),
         
         // Bus Slave Interface (from System Bus - CPU→Host path)
-        .addr(ext_mem_addr),
-        .wdata(ext_mem_wdata),
-        .rdata(ext_mem_rdata),
-        .we(ext_mem_we),
-        .size(ext_mem_size),
-        .req(ext_mem_req),
-        .ready(ext_mem_ready),
+        .addr(cpu_to_ext_addr),
+        .wdata(cpu_to_ext_wdata),
+        .rdata(cpu_to_ext_rdata),
+        .we(cpu_to_ext_we),
+        .size(cpu_to_ext_size),
+        .req(cpu_to_ext_req),
+        .ready(cpu_to_ext_ready),
         
         // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
         .host_bus_addr(host_master_addr),
