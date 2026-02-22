@@ -135,7 +135,7 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 
 - **Size:** 12KB (0x52000000 – 0x52002FFF)
 - **Access sizes:** Byte, halfword, word
-- **Latency:** Single-cycle (ready = 1'b1)
+- **Latency:** Writes: single-cycle (ready asserted immediately); Reads: 1-cycle latency (ready asserted in the cycle after request)
 - **Constants:** `SRAM_BASE`, `SRAM_SIZE`
 
 ### System Controller (0x53000000)
