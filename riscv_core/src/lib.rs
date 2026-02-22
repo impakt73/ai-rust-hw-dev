@@ -67,7 +67,7 @@ pub struct ClockPeripheral;
 
 // Define System Controller module
 #[verilog(
-    src = "../rtl/peripherals/system_controller.sv",
+    src = "../rtl/peripherals/system_controller_peripheral.sv",
     name = "system_controller"
 )]
 pub struct SystemController;
@@ -195,17 +195,17 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top.sv",                                   // Top-level wrapper with RTL peripherals
-        "primitives/reset_controller.sv",           // Power-on reset controller
-        "memory/bus.sv",                            // System bus for address decoding
-        "cpu/cpu.sv",                               // CPU core
-        "primitives/sync_fifo.sv",                  // Generic synchronous FIFO
+        "top.sv",                                      // Top-level wrapper with RTL peripherals
+        "primitives/reset_controller.sv",              // Power-on reset controller
+        "memory/bus.sv",                               // System bus for address decoding
+        "cpu/cpu.sv",                                  // CPU core
+        "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
         "memory/sram.sv",           // SRAM module used by SRAM peripheral
-        "peripherals/system_controller.sv", // System controller peripheral
+        "peripherals/system_controller_peripheral.sv", // System controller peripheral
         "cpu/fetch_buffer.sv",      // RV32C fetch buffer
         "cpu/decompress.sv",        // RV32C decompressor
         "cpu/alu.sv",
@@ -264,7 +264,7 @@ pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
 
 // Helper function to create a runtime for the System Controller
 pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["peripherals/system_controller.sv"])
+    create_runtime(&["peripherals/system_controller_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the Host Bus Interface
