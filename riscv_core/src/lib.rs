@@ -195,11 +195,11 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top.sv",                                   // Top-level wrapper with RTL peripherals
-        "primitives/reset_controller.sv",           // Power-on reset controller
-        "memory/bus.sv",                            // System bus for address decoding
-        "cpu/cpu.sv",                               // CPU core
-        "primitives/sync_fifo.sv",                  // Generic synchronous FIFO
+        "top.sv",                                      // Top-level wrapper with RTL peripherals
+        "primitives/reset_controller.sv",              // Power-on reset controller
+        "memory/bus.sv",                               // System bus for address decoding
+        "cpu/cpu.sv",                                  // CPU core
+        "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
