@@ -10,7 +10,7 @@
 //   - 4-bit tick counter per bit period for TX and RX timing
 //   - 3-sample majority voting on RX for glitch filtering
 //   - Falling-edge detection for start bit (rejects held-low line)
-//   - Full stop bit timing before returning to idle
+//   - Returns to idle after stop bit validation at midpoint
 //   - 3-FF input synchronizer prevents metastability
 //   - Framing error detection on RX (sticky, cleared via rx_error_clr)
 //   - RX overrun detection: drops incoming data if output not yet consumed
