@@ -1,8 +1,8 @@
 use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
 
-// UART timing for 115200 baud (based on 50MHz clock)
-// CLKS_PER_BIT = 50_000_000 / 115200 ≈ 434
-const CLKS_PER_BIT: u32 = 434;
+// UART timing for 1M baud (based on 50MHz clock)
+// CLKS_PER_BIT = 50_000_000 / 1_000_000 = 50
+const CLKS_PER_BIT: u32 = 50;
 // UART timing for 1M baud in uart_1m_baud_wrapper.sv (based on 25MHz clock)
 const CLKS_PER_BIT_1M: u32 = 25;
 const UART_BYTE_TIMEOUT_BITS: u32 = 15;
