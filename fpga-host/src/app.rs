@@ -182,15 +182,10 @@ impl App {
                 }
             }
             Err(e) => {
-                let level = if Self::is_help_text_message(&e) {
-                    log::Level::Info
-                } else {
-                    log::Level::Error
-                };
                 // Split error text across multiple lines in case clap provides
                 // multi-line error messages
                 for line in e.lines() {
-                    self.add_log(level, line.to_string());
+                    self.add_log(log::Level::Error, line.to_string());
                 }
             }
         }
@@ -488,12 +483,6 @@ impl App {
         if let Some(path) = Self::history_file_path() {
             self.load_history_from_path(&path);
         }
-    }
-
-    fn is_help_text_message(message: &str) -> bool {
-        let trimmed = message.trim_start();
-        !trimmed.starts_with("error:")
-            && (trimmed.starts_with("Usage:") || trimmed.contains("\nUsage:"))
     }
 }
 
