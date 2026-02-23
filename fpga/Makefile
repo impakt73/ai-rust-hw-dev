@@ -33,6 +33,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/regfile.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \
 	$(RTL_DIR)/primitives/reset_controller.sv \
+	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/io/uart.sv \
 	$(RTL_DIR)/memory/sram.sv \
 	$(RTL_DIR)/cpu/writeback_mux.sv \

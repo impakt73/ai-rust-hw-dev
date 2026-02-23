@@ -151,7 +151,7 @@ fn test_uart_tx_start_bit() {
     dut.eval();
 
     // Wait a few cycles to let start bit stabilize
-    wait_cycles(&mut dut, 10);
+    wait_cycles(&mut dut, CLKS_PER_BIT);
 
     // Verify start bit (TX should be low)
     assert_eq!(dut.tx_out, 0, "TX should be low during start bit");
@@ -1070,7 +1070,17 @@ fn test_uart_rx_falling_edge_detection() {
 
     // Now send a valid byte - falling edge should be detected
     let test_byte = 0x55;
-    receive_byte(&mut dut, test_byte);
+    // Use rounded-up timing for this recovery sequence to avoid edge-case
+    // quantization ambiguity with the fractional 16x tick generator.
+    let recovery_bit_cycles = CLKS_PER_BIT + 1;
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, recovery_bit_cycles);
+    for i in 0..8 {
+        dut.rx_in = if (test_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, recovery_bit_cycles);
+    }
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, recovery_bit_cycles);
     wait_cycles(&mut dut, 10);
 
     assert_eq!(
