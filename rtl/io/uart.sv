@@ -47,10 +47,12 @@ module uart #(
     
     // Calculate clock divisor at compile time
     localparam int CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
+    localparam logic [$clog2(CLKS_PER_BIT)-1:0] CLKS_PER_BIT_MINUS_1 =
+        $clog2(CLKS_PER_BIT)'(CLKS_PER_BIT - 1);
     
     // RX sampling positions within each bit period
-    // Uses per-bit counter to avoid integer division truncation error
-    // that causes timing drift at high baud rates (e.g. 1M baud)
+    // Note: CLKS_PER_BIT uses integer division (CLK_FREQ_HZ / BAUD_RATE),
+    // so baud-rate quantization error is expected for non-integer divisors
     localparam int RX_VOTE_0_POS = (CLKS_PER_BIT * 6) / 16;   // First majority vote sample
     localparam int RX_VOTE_1_POS = (CLKS_PER_BIT * 7) / 16;   // Second majority vote sample
     localparam int RX_MID_POS    = (CLKS_PER_BIT * 8) / 16;   // Mid-bit: third vote sample + action
@@ -86,8 +88,8 @@ module uart #(
     
     assign tx_baud_tick = (tx_baud_counter == '0);
     
-    // TX ready when idle
-    assign tx_ready = (tx_state == TX_IDLE);
+    // TX ready when idle, or on the final stop-bit tick for back-to-back frames
+    assign tx_ready = (tx_state == TX_IDLE) || (tx_state == TX_STOP_BIT && tx_baud_tick);
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -104,14 +106,14 @@ module uart #(
                         // Latch data from input
                         tx_shift_reg <= tx_data;
                         tx_state <= TX_START_BIT;
-                        tx_baud_counter <= CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1;
+                        tx_baud_counter <= CLKS_PER_BIT_MINUS_1;
                     end
                 end
                 
                 TX_START_BIT: begin
                     tx_out <= 1'b0;  // Start bit is low
                     if (tx_baud_tick) begin
-                        tx_baud_counter <= CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1;
+                        tx_baud_counter <= CLKS_PER_BIT_MINUS_1;
                         tx_state <= TX_DATA_BITS;
                         tx_bit_index <= 3'b0;
                     end else begin
@@ -128,7 +130,7 @@ module uart #(
                         end else begin
                             tx_bit_index <= tx_bit_index + 1'b1;
                         end
-                        tx_baud_counter <= CLKS_PER_BIT[$clog2(CLKS_PER_BIT)-1:0] - 1'b1;
+                        tx_baud_counter <= CLKS_PER_BIT_MINUS_1;
                     end else begin
                         tx_baud_counter <= tx_baud_counter - 1'b1;
                     end
@@ -137,7 +139,13 @@ module uart #(
                 TX_STOP_BIT: begin
                     tx_out <= 1'b1;  // Stop bit is high
                     if (tx_baud_tick) begin
-                        tx_state <= TX_IDLE;
+                        if (tx_valid) begin
+                            tx_shift_reg <= tx_data;
+                            tx_state <= TX_START_BIT;
+                            tx_baud_counter <= CLKS_PER_BIT_MINUS_1;
+                        end else begin
+                            tx_state <= TX_IDLE;
+                        end
                     end else begin
                         tx_baud_counter <= tx_baud_counter - 1'b1;
                     end
@@ -207,7 +215,7 @@ module uart #(
         if (rx_state == RX_STOP_BIT && rx_bit_counter == RX_MID_POS[RX_BIT_CNT_WIDTH-1:0]) begin
             if (rx_vote_result == 1'b1) begin
                 // Valid stop bit - check for overrun
-                if (rx_valid) begin
+                if (rx_valid && !rx_ready) begin
                     rx_error_set = 1'b1;  // Overrun error
                 end
             end else begin
@@ -297,7 +305,7 @@ module uart #(
                         // Validate stop bit with majority vote (expect high)
                         if (rx_vote_result == 1'b1) begin
                             // Valid stop bit - check for overrun
-                            if (rx_valid) begin
+                            if (rx_valid && !rx_ready) begin
                                 // Output register still has valid data, drop incoming data
                                 // and set error flag (overrun)
                                 rx_error <= 1'b1;
@@ -310,11 +318,8 @@ module uart #(
                             // Framing error - set sticky error flag
                             rx_error <= 1'b1;
                         end
-                    end
-                    
-                    if (rx_bit_counter == RX_BIT_END_POS[RX_BIT_CNT_WIDTH-1:0]) begin
-                        // Full stop bit complete - return to idle
                         rx_state <= RX_IDLE;
+                        rx_bit_counter <= '0;
                     end else begin
                         rx_bit_counter <= rx_bit_counter + 1'b1;
                     end
