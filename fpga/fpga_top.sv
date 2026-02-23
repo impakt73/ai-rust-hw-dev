@@ -187,7 +187,7 @@ module fpga_top #(
     
     uart #(
         .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
-        .BAUD_RATE(115200)
+        .BAUD_RATE(1_000_000)
     ) host_uart_inst (
         .clk(sys_clk),
         .rst_n(rst_n),

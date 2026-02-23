@@ -7,7 +7,7 @@
 module uart_validation_top #(
     parameter int VALIDATION_MODE = 2,
     parameter int CLK_FREQ_HZ = 25_000_000,
-    parameter int BAUD_RATE = 115200,
+    parameter int BAUD_RATE = 1_000_000,
     parameter int FIFO_DEPTH = 8
 ) (
     // Clock input (100 MHz on-board oscillator)

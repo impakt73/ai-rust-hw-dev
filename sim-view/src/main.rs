@@ -56,7 +56,7 @@ struct Args {
     fpga_device: Option<PathBuf>,
 
     /// FPGA serial baud rate
-    #[arg(long, default_value_t = 115200)]
+    #[arg(long, default_value_t = 1_000_000)]
     fpga_baud: u32,
 
     /// Startup reset mode for FPGA runtime

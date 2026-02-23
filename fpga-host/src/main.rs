@@ -44,7 +44,7 @@ enum RuntimeArgs {
         device: PathBuf,
 
         /// Baud rate for device communication
-        #[arg(short, long, default_value_t = 115200)]
+        #[arg(short, long, default_value_t = 1_000_000)]
         baud: u32,
     },
     /// Use the software simulator
