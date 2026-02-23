@@ -98,12 +98,26 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled("[DISCONNECTED] > ", Style::default().fg(Color::Red))
     };
 
-    let input_line = Line::from(vec![
-        prompt,
-        Span::raw(&app.input_buffer),
+    let cursor = app.cursor_position.min(app.input_buffer.len());
+    let (before, after) = app.input_buffer.split_at(cursor);
+    let mut spans = vec![prompt, Span::raw(before)];
+    if let Some(ch) = after.chars().next() {
+        spans.push(Span::styled(
+            ch.to_string(),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(&after[ch.len_utf8()..]));
+    } else {
         // Use a non-blinking underscore cursor for better accessibility
-        Span::styled("_", Style::default().add_modifier(Modifier::DIM)),
-    ]);
+        spans.push(Span::styled(
+            "_",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+    }
+    let input_line = Line::from(spans);
 
     let input_paragraph = Paragraph::new(input_line).block(Block::default().borders(Borders::ALL));
 

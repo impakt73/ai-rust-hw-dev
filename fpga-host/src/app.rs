@@ -9,6 +9,9 @@ use device_runtime::{
 };
 use host_bus_handler::AccessSize;
 use std::collections::VecDeque;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +26,7 @@ const MAX_LOG_LINES: usize = 1000;
 
 /// Maximum number of command history entries to retain
 const MAX_HISTORY_ENTRIES: usize = 500;
+const HISTORY_FILE_NAME: &str = ".fpga-host-history";
 
 /// A log line entry for display
 #[derive(Debug, Clone)]
@@ -42,6 +46,8 @@ pub struct App {
     /// Command history for up/down navigation
     /// VecDeque for efficient pop_front when capping at MAX_HISTORY_ENTRIES
     pub command_history: VecDeque<String>,
+    /// Cursor position within input_buffer (byte offset)
+    pub cursor_position: usize,
     /// Current position in command history (None = not navigating)
     pub history_index: Option<usize>,
     /// Log message buffer for display (ring buffer)
@@ -63,10 +69,11 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub fn new() -> Self {
-        Self {
+        let mut app = Self {
             device_runtime: None,
             input_buffer: String::new(),
             command_history: VecDeque::with_capacity(MAX_HISTORY_ENTRIES),
+            cursor_position: 0,
             history_index: None,
             log_messages: VecDeque::with_capacity(MAX_LOG_LINES),
             should_quit: false,
@@ -75,7 +82,9 @@ impl App {
             verbose: false,
             last_entry_point: None,
             fifo_line_rx: None,
-        }
+        };
+        app.load_command_history();
+        app
     }
 
     /// Set verbose mode
@@ -101,7 +110,14 @@ impl App {
             }
             // Backspace deletes character
             KeyCode::Backspace => {
-                self.input_buffer.pop();
+                self.backspace();
+            }
+            // Left/Right move cursor within input
+            KeyCode::Left => {
+                self.move_cursor_left();
+            }
+            KeyCode::Right => {
+                self.move_cursor_right();
             }
             // Up/Down for command history
             KeyCode::Up => {
@@ -123,7 +139,8 @@ impl App {
             }
             // Regular character input
             KeyCode::Char(c) => {
-                self.input_buffer.push(c);
+                self.input_buffer.insert(self.cursor_position, c);
+                self.cursor_position += c.len_utf8();
             }
             _ => {}
         }
@@ -141,8 +158,10 @@ impl App {
             self.command_history.pop_front();
         }
         self.command_history.push_back(input.clone());
+        self.save_command_history();
         self.history_index = None;
         self.input_buffer.clear();
+        self.cursor_position = 0;
 
         // Parse and execute command
         match crate::shell::ShellCommand::parse(&input) {
@@ -163,10 +182,15 @@ impl App {
                 }
             }
             Err(e) => {
+                let level = if Self::is_help_text_message(&e) {
+                    log::Level::Info
+                } else {
+                    log::Level::Error
+                };
                 // Split error text across multiple lines in case clap provides
                 // multi-line error messages
                 for line in e.lines() {
-                    self.add_log(log::Level::Error, line.to_string());
+                    self.add_log(level, line.to_string());
                 }
             }
         }
@@ -331,6 +355,7 @@ impl App {
         if let Some(idx) = new_index {
             self.history_index = Some(idx);
             self.input_buffer = self.command_history[idx].clone();
+            self.cursor_position = self.input_buffer.len();
         }
     }
 
@@ -344,11 +369,13 @@ impl App {
             Some(idx) if idx < self.command_history.len() - 1 => {
                 self.history_index = Some(idx + 1);
                 self.input_buffer = self.command_history[idx + 1].clone();
+                self.cursor_position = self.input_buffer.len();
             }
             Some(_) => {
                 // At the end of history, clear input
                 self.history_index = None;
                 self.input_buffer.clear();
+                self.cursor_position = 0;
             }
             None => {
                 // Not in history mode
@@ -368,6 +395,105 @@ impl App {
     /// Scroll log view down
     fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    fn move_cursor_left(&mut self) {
+        if self.cursor_position == 0 {
+            return;
+        }
+        let prev = self.input_buffer[..self.cursor_position]
+            .char_indices()
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        self.cursor_position = prev;
+    }
+
+    fn move_cursor_right(&mut self) {
+        if self.cursor_position >= self.input_buffer.len() {
+            return;
+        }
+        if let Some(ch) = self.input_buffer[self.cursor_position..].chars().next() {
+            self.cursor_position += ch.len_utf8();
+        }
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor_position == 0 {
+            return;
+        }
+        let prev = self.input_buffer[..self.cursor_position]
+            .char_indices()
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        self.input_buffer.drain(prev..self.cursor_position);
+        self.cursor_position = prev;
+    }
+
+    fn history_file_path() -> Option<PathBuf> {
+        let home = env::var_os("HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+            .or_else(|| {
+                let drive = env::var_os("HOMEDRIVE")?;
+                let path = env::var_os("HOMEPATH")?;
+                Some(PathBuf::from(drive).join(path))
+            });
+        home.map(|path| path.join(HISTORY_FILE_NAME))
+    }
+
+    fn save_history_to_path(&self, path: &Path) -> std::io::Result<()> {
+        let content = self
+            .command_history
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(path, content)
+    }
+
+    fn load_history_from_path(&mut self, path: &Path) {
+        let Ok(content) = fs::read_to_string(path) else {
+            return;
+        };
+        self.command_history.clear();
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            self.command_history.push_back(line.to_string());
+            if self.command_history.len() > MAX_HISTORY_ENTRIES {
+                self.command_history.pop_front();
+            }
+        }
+    }
+
+    fn save_command_history(&mut self) {
+        if let Some(path) = Self::history_file_path() {
+            if let Err(e) = self.save_history_to_path(&path) {
+                self.add_log(
+                    log::Level::Warn,
+                    format!(
+                        "Failed to save command history to {}: {}",
+                        path.display(),
+                        e
+                    ),
+                );
+            }
+        }
+    }
+
+    fn load_command_history(&mut self) {
+        if let Some(path) = Self::history_file_path() {
+            self.load_history_from_path(&path);
+        }
+    }
+
+    fn is_help_text_message(message: &str) -> bool {
+        let trimmed = message.trim_start();
+        !trimmed.starts_with("error:")
+            && (trimmed.starts_with("Usage:") || trimmed.contains("\nUsage:"))
     }
 }
 
@@ -411,4 +537,92 @@ pub fn create_fifo_device() -> (BusDeviceRegistration, mpsc::Receiver<String>) {
         device: Box::new(fifo),
     };
     (registration, rx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEventKind, KeyEventState};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
+
+    #[test]
+    fn test_left_right_cursor_editing() {
+        let mut app = App::new();
+        app.handle_key_event(key(KeyCode::Char('a')));
+        app.handle_key_event(key(KeyCode::Char('b')));
+        app.handle_key_event(key(KeyCode::Char('c')));
+        app.handle_key_event(key(KeyCode::Left));
+        app.handle_key_event(key(KeyCode::Left));
+        app.handle_key_event(key(KeyCode::Char('X')));
+
+        assert_eq!(app.input_buffer, "aXbc");
+        assert_eq!(app.cursor_position, 2);
+    }
+
+    #[test]
+    fn test_backspace_removes_character_before_cursor() {
+        let mut app = App::new();
+        app.handle_key_event(key(KeyCode::Char('a')));
+        app.handle_key_event(key(KeyCode::Char('b')));
+        app.handle_key_event(key(KeyCode::Char('c')));
+        app.handle_key_event(key(KeyCode::Left));
+        app.handle_key_event(key(KeyCode::Backspace));
+
+        assert_eq!(app.input_buffer, "ac");
+        assert_eq!(app.cursor_position, 1);
+    }
+
+    #[test]
+    fn test_submit_help_logs_info_level() {
+        let mut app = App::new();
+        app.input_buffer = "help".to_string();
+        app.cursor_position = app.input_buffer.len();
+        app.submit_command();
+
+        assert!(app
+            .log_messages
+            .iter()
+            .any(|line| line.level == log::Level::Info && line.message.contains("Usage:")));
+    }
+
+    #[test]
+    fn test_history_persists_via_file_roundtrip() {
+        let mut app = App::new();
+        app.command_history.clear();
+        app.command_history.push_back("status".to_string());
+        app.command_history.push_back("connect sim".to_string());
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = env::temp_dir().join(format!(
+            "fpga-host-history-test-{}-{}.txt",
+            std::process::id(),
+            unique
+        ));
+
+        app.save_history_to_path(&path)
+            .expect("history test should be able to save temporary history file");
+
+        let mut loaded = App::new();
+        loaded.command_history.clear();
+        loaded.load_history_from_path(&path);
+
+        assert_eq!(
+            loaded.command_history.iter().cloned().collect::<Vec<_>>(),
+            vec!["status".to_string(), "connect sim".to_string()]
+        );
+
+        fs::remove_file(path).expect("history test should clean up temporary history file");
+    }
 }
