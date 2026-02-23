@@ -283,6 +283,59 @@ fn test_uart_tx_ready_signal() {
 }
 
 #[test]
+fn test_uart_tx_back_to_back_no_idle_gap() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    // Ensure TX starts idle (line high for UART)
+    assert_eq!(dut.tx_out, 1, "TX line should be idle high after reset");
+
+    let first_byte: u8 = 0x55;
+    let second_byte: u8 = 0xA3;
+
+    // Handshake first byte into TX
+    dut.tx_data = first_byte;
+    dut.tx_valid = 1;
+    clock_cycle!(dut);
+    dut.tx_valid = 0;
+    dut.eval();
+
+    // Advance through start bit + 8 data bits
+    wait_cycles(&mut dut, CLKS_PER_BIT * 9);
+
+    // Traverse all but the last cycle of the stop bit
+    wait_cycles(&mut dut, CLKS_PER_BIT - 1);
+
+    // On the final stop-bit tick, TX should be high and ready for next byte
+    assert_eq!(
+        dut.tx_out, 1,
+        "TX line should be high during the stop bit of the first frame"
+    );
+    assert_eq!(
+        dut.tx_ready, 1,
+        "TX should assert tx_ready on the final stop-bit tick for back-to-back transfer"
+    );
+
+    // Present the second byte exactly on the final stop-bit tick
+    dut.tx_data = second_byte;
+    dut.tx_valid = 1;
+    clock_cycle!(dut);
+    dut.tx_valid = 0;
+    dut.eval();
+
+    // Next cycle should be second start bit (low) with no extra idle cycle
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.tx_out, 0,
+        "TX line should transition directly from first stop bit to second start bit"
+    );
+}
+
+#[test]
 fn test_uart_baud_timing() {
     let runtime = create_uart_runtime().expect("Failed to create UART runtime");
     let mut dut = runtime
@@ -720,6 +773,55 @@ fn test_uart_rx_overrun() {
     );
 }
 
+#[test]
+fn test_uart_rx_overrun_allows_simultaneous_read_and_new_byte() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    let first_byte = 0x42;
+    let second_byte = 0x7E;
+    let rx_mid = (CLKS_PER_BIT * 8) / 16;
+
+    // Receive first byte and keep it pending in output register
+    receive_byte(&mut dut, first_byte);
+    wait_cycles(&mut dut, 10);
+    assert_eq!(dut.rx_valid, 1, "RX valid should hold first byte");
+    assert_eq!(dut.rx_data, first_byte, "First byte should be present");
+
+    // Begin second byte while first is still pending
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+    for i in 0..8 {
+        dut.rx_in = if (second_byte >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Stop bit: assert rx_ready around RX midpoint so read and write happen together
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, rx_mid.saturating_sub(2));
+    dut.rx_ready = 1;
+    dut.eval();
+    wait_cycles(&mut dut, 4);
+    dut.rx_ready = 0;
+    dut.eval();
+    wait_cycles(&mut dut, CLKS_PER_BIT - rx_mid + 2);
+    wait_cycles(&mut dut, 10);
+
+    assert_eq!(
+        dut.rx_error, 0,
+        "No overrun error expected when rx_ready is asserted during second-byte completion"
+    );
+    assert_eq!(dut.rx_valid, 1, "Second byte should be valid");
+    assert_eq!(
+        dut.rx_data, second_byte,
+        "Second byte should replace first byte on simultaneous read/write"
+    );
+}
+
 // ============================================================
 // Tests for high-baud-rate reliability improvements
 // ============================================================
@@ -1021,6 +1123,56 @@ fn test_uart_rx_full_stop_bit_timing() {
     assert_eq!(dut.rx_valid, 1, "Second byte should be received");
     assert_eq!(dut.rx_data, byte2, "Second byte data should match");
     assert_eq!(dut.rx_error, 0, "No error on second byte");
+}
+
+#[test]
+fn test_uart_rx_accepts_early_next_start_after_stop_midpoint() {
+    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let mut dut = runtime
+        .create_model_simple::<Uart>()
+        .expect("Failed to create UART model");
+
+    reset_uart(&mut dut);
+
+    let byte1 = 0xA6;
+    let byte2 = 0x39;
+    let rx_mid = (CLKS_PER_BIT * 8) / 16;
+
+    // First byte: start + data bits
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+    for i in 0..8 {
+        dut.rx_in = if (byte1 >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+
+    // Hold stop high only until just after midpoint, then start next byte early
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, rx_mid + 2);
+    dut.rx_in = 0;
+    wait_cycles(&mut dut, CLKS_PER_BIT);
+
+    // Acknowledge first byte during second-byte data phase
+    dut.rx_ready = 1;
+    dut.eval();
+    clock_cycle!(dut);
+    dut.rx_ready = 0;
+    dut.eval();
+
+    // Second byte: data bits + normal stop bit
+    for i in 0..8 {
+        dut.rx_in = if (byte2 >> i) & 1 == 1 { 1 } else { 0 };
+        wait_cycles(&mut dut, CLKS_PER_BIT);
+    }
+    dut.rx_in = 1;
+    wait_cycles(&mut dut, CLKS_PER_BIT + 10);
+
+    assert_eq!(dut.rx_error, 0, "No framing/overrun error expected");
+    assert_eq!(dut.rx_valid, 1, "Second byte should be received");
+    assert_eq!(
+        dut.rx_data, byte2,
+        "Receiver should detect early next start bit and capture second byte"
+    );
 }
 
 #[test]
