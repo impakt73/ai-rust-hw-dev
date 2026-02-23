@@ -147,7 +147,7 @@ pub struct PhaseAccumulatorWrapper;
 
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
-    if std::path::Path::new("rtl/top.sv").exists() {
+    if std::path::Path::new("rtl").exists() {
         "rtl"
     } else {
         "../rtl"
