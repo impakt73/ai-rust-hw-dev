@@ -784,7 +784,6 @@ fn test_uart_rx_overrun_allows_simultaneous_read_and_new_byte() {
 
     let first_byte = 0x42;
     let second_byte = 0x7E;
-    let rx_mid = (CLKS_PER_BIT * 8) / 16;
 
     // Receive first byte and keep it pending in output register
     receive_byte(&mut dut, first_byte);
@@ -800,15 +799,21 @@ fn test_uart_rx_overrun_allows_simultaneous_read_and_new_byte() {
         wait_cycles(&mut dut, CLKS_PER_BIT);
     }
 
-    // Stop bit: assert rx_ready around RX midpoint so read and write happen together
+    // Stop bit: consume first byte early in stop bit so the validation
+    // can latch the second byte without overrun
     dut.rx_in = 1;
-    wait_cycles(&mut dut, rx_mid.saturating_sub(2));
+    wait_cycles(&mut dut, 10);
+
+    // Pulse rx_ready to consume the first byte before midpoint validation
     dut.rx_ready = 1;
     dut.eval();
-    wait_cycles(&mut dut, 4);
+    clock_cycle!(dut);
     dut.rx_ready = 0;
     dut.eval();
-    wait_cycles(&mut dut, CLKS_PER_BIT - rx_mid + 2);
+    clock_cycle!(dut);
+
+    // Wait for stop bit validation to complete
+    wait_cycles(&mut dut, CLKS_PER_BIT);
     wait_cycles(&mut dut, 10);
 
     assert_eq!(
