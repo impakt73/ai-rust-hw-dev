@@ -13,8 +13,8 @@
 
 module phase_accumulator #(
     parameter int unsigned PHASE_WIDTH = 32,
-    parameter longint unsigned CLK_FREQ_HZ = 100_000_000,
-    parameter longint unsigned TICK_FREQ_HZ = 115_200
+    parameter int unsigned CLK_FREQ_HZ = 100_000_000,
+    parameter int unsigned TICK_FREQ_HZ = 115_200
 ) (
     input  logic clk,
     input  logic rst_n,
@@ -23,7 +23,7 @@ module phase_accumulator #(
 
     localparam longint unsigned PHASE_MODULUS = 64'd1 << PHASE_WIDTH;
     localparam longint unsigned PHASE_INCREMENT =
-        ((TICK_FREQ_HZ * PHASE_MODULUS) + (CLK_FREQ_HZ / 2)) / CLK_FREQ_HZ;
+        ((64'(TICK_FREQ_HZ) * PHASE_MODULUS) + (64'(CLK_FREQ_HZ) / 2)) / 64'(CLK_FREQ_HZ);
 
     logic [PHASE_WIDTH-1:0] phase_acc;
     logic [PHASE_WIDTH:0] phase_sum;

@@ -63,8 +63,8 @@ module uart #(
     
     phase_accumulator #(
         .PHASE_WIDTH(32),
-        .CLK_FREQ_HZ(longint'(CLK_FREQ_HZ)),
-        .TICK_FREQ_HZ(longint'(BAUD_RATE) * 16)
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
+        .TICK_FREQ_HZ(BAUD_RATE * 16)
     ) baud_tick_gen (
         .clk(clk),
         .rst_n(rst_n),
