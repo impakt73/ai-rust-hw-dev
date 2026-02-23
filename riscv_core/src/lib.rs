@@ -139,9 +139,15 @@ pub struct SramTestWrapper;
 )]
 pub struct SramPeripheralTestWrapper;
 
+#[verilog(
+    src = "../rtl/wrappers/phase_accumulator_wrapper.sv",
+    name = "phase_accumulator_wrapper"
+)]
+pub struct PhaseAccumulatorWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
-    if std::path::Path::new("rtl").exists() {
+    if std::path::Path::new("rtl/top.sv").exists() {
         "rtl"
     } else {
         "../rtl"
@@ -363,5 +369,12 @@ pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std:
         "memory/sram.sv",
         "peripherals/sram_peripheral.sv",
         "wrappers/sram_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_phase_accumulator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/phase_accumulator.sv",
+        "wrappers/phase_accumulator_wrapper.sv",
     ])
 }
