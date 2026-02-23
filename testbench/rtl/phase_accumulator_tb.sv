@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 
 module phase_accumulator_tb;
+    // Small integer frequencies chosen to keep the test short and deterministic.
     localparam int unsigned PHASE_WIDTH = 16;
     localparam longint unsigned CLK_FREQ_HZ = 100;
     localparam longint unsigned TICK_FREQ_HZ = 33;
