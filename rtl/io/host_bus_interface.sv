@@ -113,6 +113,7 @@ module host_bus_interface (
     // TX Module Instance
     // ============================================================
     logic        tx_cpu_req_ready;
+    logic        tx_cpu_req_valid;
     logic        tx_host_resp_valid;
     logic        tx_host_resp_ready;
     logic [31:0] tx_host_resp_rdata;
@@ -133,7 +134,7 @@ module host_bus_interface (
         .cpu_req_wdata(wdata),
         .cpu_req_we(we),
         .cpu_req_size(size),
-        .cpu_req_valid(req),
+        .cpu_req_valid(tx_cpu_req_valid),
         .cpu_req_ready(tx_cpu_req_ready),
         
         // Host response input (type 0011)
@@ -147,6 +148,22 @@ module host_bus_interface (
     // ============================================================
     // CPU Slave Interface Routing
     // ============================================================
+    logic cpu_req_inflight;
+    logic cpu_req_last_valid;
+    logic [31:0] cpu_req_last_addr;
+    logic [31:0] cpu_req_last_wdata;
+    logic        cpu_req_last_we;
+    logic [1:0]  cpu_req_last_size;
+    logic        cpu_req_changed;
+    logic cpu_ready_pulse;
+
+    assign cpu_req_changed = !cpu_req_last_valid ||
+                             (addr  != cpu_req_last_addr)  ||
+                             (we && (wdata != cpu_req_last_wdata)) ||
+                             (we   != cpu_req_last_we)     ||
+                             (size != cpu_req_last_size);
+    assign tx_cpu_req_valid = req && !cpu_req_inflight && cpu_req_changed;
+
     // Ready signal: Transaction completes when response is received
     // For CPU-initiated transactions:
     //   1. CPU asserts req
@@ -156,7 +173,7 @@ module host_bus_interface (
     //   5. CPU deasserts req
     //   6. Orchestrator pulses rx_resp_consumed
     
-    assign ready = rx_resp_valid;
+    assign ready = cpu_ready_pulse;
     
     // CPU read data comes from RX module response buffer
     assign rdata = rx_resp_rdata;
@@ -173,6 +190,7 @@ module host_bus_interface (
             end
         end
     end
+
 `endif
     
     // ============================================================
@@ -194,10 +212,35 @@ module host_bus_interface (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rx_resp_consumed <= 1'b0;
+            cpu_req_inflight <= 1'b0;
+            cpu_req_last_valid <= 1'b0;
+            cpu_req_last_addr  <= 32'h0;
+            cpu_req_last_wdata <= 32'h0;
+            cpu_req_last_we    <= 1'b0;
+            cpu_req_last_size  <= 2'b00;
+            cpu_ready_pulse <= 1'b0;
         end else begin
-            // Consume RX response when ready is asserted and CPU req is still high
-            // This creates a single-cycle pulse
-            rx_resp_consumed <= ready && req;
+            cpu_ready_pulse <= 1'b0;
+            rx_resp_consumed <= 1'b0;
+
+            if (tx_cpu_req_valid && tx_cpu_req_ready) begin
+                cpu_req_inflight <= 1'b1;
+                cpu_req_last_valid <= 1'b1;
+                cpu_req_last_addr  <= addr;
+                cpu_req_last_wdata <= wdata;
+                cpu_req_last_we    <= we;
+                cpu_req_last_size  <= size;
+            end
+
+            if (rx_resp_valid && cpu_req_inflight) begin
+                cpu_req_inflight <= 1'b0;
+                cpu_ready_pulse <= 1'b1;
+                rx_resp_consumed <= 1'b1;
+            end
+
+            if (!req) begin
+                cpu_req_last_valid <= 1'b0;
+            end
         end
     end
     

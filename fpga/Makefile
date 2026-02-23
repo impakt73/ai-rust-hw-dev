@@ -66,6 +66,8 @@ NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
 ICEPROG = iceprog
 ICETIME = icetime
+# Fixed seed for reproducible timing closure in CI (seed 3 passes 25 MHz target)
+NEXTPNR_SEED ?= 3
 
 # Default target
 .PHONY: all
@@ -86,6 +88,7 @@ $(ASC): $(JSON) $(PCF)
 	           --pcf $(PCF) \
 	           --asc $(ASC) \
 	           --freq 25 \
+	           --seed $(NEXTPNR_SEED) \
 	           2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
