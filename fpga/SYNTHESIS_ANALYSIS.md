@@ -120,7 +120,7 @@ Two UART instances:
 
 Each includes:
 - TX/RX state machines
-- Baud rate generators (25 MHz / 115200 baud)
+- Baud rate generators (25 MHz / 1000000 baud)
 - 8-entry FIFOs (sync_fifo.sv)
 
 ---

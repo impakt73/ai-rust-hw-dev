@@ -39,7 +39,7 @@ A minimal Rust validator is included in `host-validator/`.
 
 ```bash
 cd fpga/uart_validation/host-validator
-cargo run -- /dev/ttyUSB0 115200
+cargo run -- /dev/ttyUSB0 1000000
 ```
 
 The tool sends fixed test patterns and verifies each received byte matches what was transmitted.
