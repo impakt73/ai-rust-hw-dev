@@ -218,7 +218,7 @@ module uart #(
     logic [7:0] rx_shift_reg;
     logic [2:0] rx_bit_index;
     logic [3:0] rx_subtick_counter;  // Counts 0 to 15 sub-ticks per bit
-    logic rx_pending_start;          // Captures next-start edge that occurs before RX_IDLE
+    logic rx_pending_start;          // Captures next-start edge that occurs before returning to RX_IDLE
     logic rx_start_edge_armed;       // Require an observed idle-high level before falling-edge start detect
     
     // Combinational signal to detect when a new error is being set this cycle
@@ -259,9 +259,6 @@ module uart #(
             case (rx_state)
                 RX_IDLE: begin
                     rx_subtick_counter <= 4'b0;
-                    if (rx_sync_1) begin
-                        rx_start_edge_armed <= 1'b1;
-                    end
                     if (rx_pending_start) begin
                         rx_state <= RX_START_BIT;
                         rx_pending_start <= 1'b0;
@@ -271,6 +268,8 @@ module uart #(
                         rx_state <= RX_START_BIT;
                         rx_subtick_counter <= 4'b0;
                         rx_start_edge_armed <= 1'b0;
+                    end else if (rx_sync_1) begin
+                        rx_start_edge_armed <= 1'b1;
                     end
                 end
                 
@@ -346,6 +345,7 @@ module uart #(
                                 // If the line has already fallen after stop-bit majority validation,
                                 // remember it and start the next frame in RX_IDLE.
                                 rx_pending_start <= !rx_sync_1;
+                                rx_start_edge_armed <= 1'b0;
                             end else begin
                                 // Framing error - set sticky error flag
                                 rx_error <= 1'b1;

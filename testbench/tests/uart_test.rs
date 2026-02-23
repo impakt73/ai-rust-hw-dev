@@ -1070,8 +1070,9 @@ fn test_uart_rx_falling_edge_detection() {
 
     // Now send a valid byte - falling edge should be detected
     let test_byte = 0x55;
-    // Use rounded-up timing for this recovery sequence to avoid edge-case
-    // quantization ambiguity with the fractional 16x tick generator.
+    // Use rounded-up timing for this recovery sequence because the UART now
+    // advances on a fractional 16x phase-accumulator tick (50 MHz / 1.8432 MHz),
+    // so this path can land near a quantization boundary with exact 434-cycle bits.
     let recovery_bit_cycles = CLKS_PER_BIT + 1;
     dut.rx_in = 0;
     wait_cycles(&mut dut, recovery_bit_cycles);
