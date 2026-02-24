@@ -145,6 +145,18 @@ pub struct SramPeripheralTestWrapper;
 )]
 pub struct PhaseAccumulatorWrapper;
 
+#[verilog(
+    src = "../rtl/wrappers/skid_buffer_test_wrapper.sv",
+    name = "skid_buffer_test_wrapper"
+)]
+pub struct SkidBufferTestWrapper;
+
+#[verilog(
+    src = "../rtl/wrappers/skid_buffer_bypass_test_wrapper.sv",
+    name = "skid_buffer_bypass_test_wrapper"
+)]
+pub struct SkidBufferBypassTestWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -376,5 +388,19 @@ pub fn create_phase_accumulator_runtime() -> Result<VerilatorRuntime, Box<dyn st
     create_runtime(&[
         "primitives/phase_accumulator.sv",
         "wrappers/phase_accumulator_wrapper.sv",
+    ])
+}
+
+pub fn create_skid_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/skid_buffer.sv",
+        "wrappers/skid_buffer_test_wrapper.sv",
+    ])
+}
+
+pub fn create_skid_buffer_bypass_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/skid_buffer.sv",
+        "wrappers/skid_buffer_bypass_test_wrapper.sv",
     ])
 }
