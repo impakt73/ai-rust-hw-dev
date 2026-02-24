@@ -1,5 +1,18 @@
-// Full skid buffer (2-entry) with registered output-side and input-side handshake signals.
+// Full skid buffer (2-entry)
 // Breaks combinational paths by registering out_valid/out_data and in_ready.
+//
+// Parameters:
+//   WIDTH - Data width in bits (default: 8, must be > 0)
+//
+// Interface:
+//   clk       - System clock
+//   rst_n     - Asynchronous active-low reset
+//   in_valid  - Input valid from upstream producer
+//   in_data   - Input payload from upstream producer
+//   in_ready  - Input ready back to upstream producer
+//   out_valid - Output valid to downstream consumer
+//   out_data  - Output payload to downstream consumer
+//   out_ready - Output ready from downstream consumer
 module skid_buffer #(
     parameter int WIDTH = 8
 ) (
@@ -32,6 +45,13 @@ module skid_buffer #(
 
     logic             out_pop_current;
     logic             in_push_current;
+
+    // Parameter validation (simulation only)
+    initial begin
+        if (WIDTH <= 0) begin
+            $fatal(1, "skid_buffer: WIDTH must be > 0, got %0d", WIDTH);
+        end
+    end
 
     always_comb begin
         out_data_next   = out_data_current;
