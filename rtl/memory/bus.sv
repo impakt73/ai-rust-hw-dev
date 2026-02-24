@@ -19,11 +19,9 @@ module bus #(
     parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
     parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
 ) (
-    // Clock and reset (unused in current combinational implementation)
-    /* verilator lint_off UNUSED */
+    // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
-    /* verilator lint_on UNUSED */
     
     // Master interface (from CPU)
     input  logic [31:0] master_addr,
@@ -89,6 +87,10 @@ module bus #(
     logic sel_clock;
     logic sel_sram;
     logic sel_sysctrl;
+    logic [31:0] master_rdata_comb;
+    logic        master_ready_comb;
+    logic [31:0] skid_out_data;
+    logic        skid_out_valid;
     
     always_comb begin
         sel_led      = 1'b0;
@@ -159,23 +161,39 @@ module bus #(
     // ============================================================
     always_comb begin
         // Default: unmapped address - return zero and assert ready
-        master_rdata = 32'h0;
-        master_ready = 1'b1;
+        master_rdata_comb = 32'h0;
+        master_ready_comb = 1'b1;
         
         if (sel_led) begin
-            master_rdata = led_rdata;
-            master_ready = led_ready;
+            master_rdata_comb = led_rdata;
+            master_ready_comb = led_ready;
         end else if (sel_clock) begin
-            master_rdata = clock_rdata;
-            master_ready = clock_ready;
+            master_rdata_comb = clock_rdata;
+            master_ready_comb = clock_ready;
         end else if (sel_sram) begin
-            master_rdata = sram_rdata;
-            master_ready = sram_ready;
+            master_rdata_comb = sram_rdata;
+            master_ready_comb = sram_ready;
         end else if (sel_sysctrl) begin
-            master_rdata = sysctrl_rdata;
-            master_ready = sysctrl_ready;
+            master_rdata_comb = sysctrl_rdata;
+            master_ready_comb = sysctrl_ready;
         end
         // Unmapped addresses: default values apply (return 0, ready = 1)
     end
+
+    skid_buffer #(
+        .WIDTH(32)
+    ) u_response_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n),
+        .in_valid(master_req && !master_we),
+        .in_data(master_rdata_comb),
+        .in_ready(),
+        .out_valid(skid_out_valid),
+        .out_data(skid_out_data),
+        .out_ready(1'b1)
+    );
+
+    assign master_ready = master_ready_comb;
+    assign master_rdata = master_ready_comb ? master_rdata_comb : (skid_out_valid ? skid_out_data : 32'h0);
 
 endmodule

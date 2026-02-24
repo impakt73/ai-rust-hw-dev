@@ -210,6 +210,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "top.sv",                                      // Top-level wrapper with RTL peripherals
         "primitives/reset_controller.sv",              // Power-on reset controller
         "memory/bus.sv",                               // System bus for address decoding
+        "primitives/skid_buffer.sv",                   // Response path output skid buffer
         "cpu/cpu.sv",                                  // CPU core
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface

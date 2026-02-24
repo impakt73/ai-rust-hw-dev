@@ -24,6 +24,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/div_unit.sv \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
+	$(RTL_DIR)/primitives/skid_buffer.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/io/host_bus_interface.sv \
