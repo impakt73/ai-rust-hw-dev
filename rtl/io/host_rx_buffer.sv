@@ -2,7 +2,7 @@
 // Buffers one incoming host packet at a time using a unified packet interface
 //
 // Features:
-//   - Single unified packet buffer (packet type indicates which fields are valid)
+//   - Single unified packet buffer (`packet_req` indicates request vs response)
 //   - Parses extended header format for packet decode
 //   - Implements backpressure via rx_ready when unified buffer is full
 //   - Little-endian data format for x86/ARM compatibility
@@ -27,7 +27,7 @@ module host_rx_buffer (
     
     // Unified Buffered Packet Interface
     output logic        packet_valid,      // Complete packet available
-    output logic [3:0]  packet_type,       // 0001=response, 0010=request
+    output logic        packet_req,        // 1=request packet, 0=response packet
     output logic        packet_we,         // Access write-enable
     output logic [1:0]  packet_size,       // Access size
     output logic [31:0] packet_addr,       // Valid for request packets
@@ -60,15 +60,11 @@ module host_rx_buffer (
     // Storage Registers
     // ============================================================
     logic        packet_valid_reg;
-    logic [3:0]  packet_type_reg;
+    logic        packet_req_reg;
     logic        packet_we_reg;
     logic [1:0]  packet_size_reg;
     logic [31:0] packet_addr_reg;
     logic [31:0] packet_data_reg;
-    
-    // Temporary header fields (used during parsing)
-    logic        temp_we;
-    logic [1:0]  temp_size;
     
     // Combinational signals for header parsing
     logic [3:0]  header_packet_type;
@@ -86,7 +82,7 @@ module host_rx_buffer (
     // Output Assignments
     // ============================================================
     assign packet_valid = packet_valid_reg;
-    assign packet_type  = packet_type_reg;
+    assign packet_req   = packet_req_reg;
     assign packet_we    = packet_we_reg;
     assign packet_size  = packet_size_reg;
     assign packet_addr  = packet_addr_reg;
@@ -150,10 +146,10 @@ module host_rx_buffer (
                 end
             end
             
-            // Response data receive states - use temp_size which was captured from header
+            // Response data receive states
             STATE_RESP_RDATA_0: begin
                 if (rx_valid && rx_ready) begin
-                    if (temp_size == 2'b00) begin
+                    if (packet_size_reg == 2'b00) begin
                         next_state = STATE_IDLE;  // Byte: done
                     end else begin
                         next_state = STATE_RESP_RDATA_1;
@@ -163,7 +159,7 @@ module host_rx_buffer (
             
             STATE_RESP_RDATA_1: begin
                 if (rx_valid && rx_ready) begin
-                    if (temp_size == 2'b01) begin
+                    if (packet_size_reg == 2'b01) begin
                         next_state = STATE_IDLE;  // Halfword: done
                     end else begin
                         next_state = STATE_RESP_RDATA_2;
@@ -198,7 +194,7 @@ module host_rx_buffer (
             
             STATE_REQ_ADDR_3: begin
                 if (rx_valid && rx_ready) begin
-                    if (temp_we) begin
+                    if (packet_we_reg) begin
                         // Write request - receive write data
                         next_state = STATE_REQ_WDATA_0;
                     end else begin
@@ -211,7 +207,7 @@ module host_rx_buffer (
             // Request write data receive states
             STATE_REQ_WDATA_0: begin
                 if (rx_valid && rx_ready) begin
-                    if (temp_size == 2'b00) begin
+                    if (packet_size_reg == 2'b00) begin
                         next_state = STATE_IDLE;  // Byte: done
                     end else begin
                         next_state = STATE_REQ_WDATA_1;
@@ -221,7 +217,7 @@ module host_rx_buffer (
             
             STATE_REQ_WDATA_1: begin
                 if (rx_valid && rx_ready) begin
-                    if (temp_size == 2'b01) begin
+                    if (packet_size_reg == 2'b01) begin
                         next_state = STATE_IDLE;  // Halfword: done
                     end else begin
                         next_state = STATE_REQ_WDATA_2;
@@ -251,14 +247,11 @@ module host_rx_buffer (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             packet_valid_reg <= 1'b0;
-            packet_type_reg  <= 4'h0;
+            packet_req_reg   <= 1'b0;
             packet_we_reg    <= 1'b0;
             packet_size_reg  <= 2'b00;
             packet_addr_reg  <= 32'h0;
             packet_data_reg  <= 32'h0;
-            
-            temp_we        <= 1'b0;
-            temp_size      <= 2'b00;
         end else begin
             if (packet_ready) begin
                 packet_valid_reg <= 1'b0;
@@ -270,24 +263,21 @@ module host_rx_buffer (
                     STATE_IDLE: begin
                         case (header_packet_type)
                             4'b0001: begin  // Host response to CPU request
-                                packet_type_reg  <= 4'b0001;
+                                packet_req_reg   <= 1'b0;
                                 packet_we_reg    <= header_we;
                                 packet_size_reg  <= header_size;
                                 packet_addr_reg  <= 32'h0;
                                 packet_data_reg  <= 32'h0;
-                                temp_size        <= header_size;
                                 if (header_we) begin
                                     packet_valid_reg <= 1'b1;
                                 end
                             end
                             4'b0010: begin  // Host-initiated request
-                                packet_type_reg  <= 4'b0010;
+                                packet_req_reg   <= 1'b1;
                                 packet_we_reg    <= header_we;
                                 packet_size_reg  <= header_size;
                                 packet_addr_reg  <= 32'h0;
                                 packet_data_reg  <= 32'h0;
-                                temp_we          <= header_we;
-                                temp_size        <= header_size;
                             end
                             default: ; // Ignore unknown packet types
                         endcase
@@ -296,14 +286,14 @@ module host_rx_buffer (
                     // Response data capture (little-endian)
                     STATE_RESP_RDATA_0: begin
                         packet_data_reg[7:0] <= rx_data;
-                        if (temp_size == 2'b00) begin
+                        if (packet_size_reg == 2'b00) begin
                             packet_valid_reg <= 1'b1;
                         end
                     end
                     
                     STATE_RESP_RDATA_1: begin
                         packet_data_reg[15:8] <= rx_data;
-                        if (temp_size == 2'b01) begin
+                        if (packet_size_reg == 2'b01) begin
                             packet_valid_reg <= 1'b1;
                         end
                     end
@@ -323,7 +313,7 @@ module host_rx_buffer (
                     STATE_REQ_ADDR_2: packet_addr_reg[23:16] <= rx_data;
                     STATE_REQ_ADDR_3: begin
                         packet_addr_reg[31:24] <= rx_data;
-                        if (!temp_we) begin
+                        if (!packet_we_reg) begin
                             packet_valid_reg <= 1'b1;
                         end
                     end
@@ -331,14 +321,14 @@ module host_rx_buffer (
                     // Request write data capture (little-endian)
                     STATE_REQ_WDATA_0: begin
                         packet_data_reg[7:0] <= rx_data;
-                        if (temp_size == 2'b00) begin
+                        if (packet_size_reg == 2'b00) begin
                             packet_valid_reg <= 1'b1;
                         end
                     end
                     
                     STATE_REQ_WDATA_1: begin
                         packet_data_reg[15:8] <= rx_data;
-                        if (temp_size == 2'b01) begin
+                        if (packet_size_reg == 2'b01) begin
                             packet_valid_reg <= 1'b1;
                         end
                     end

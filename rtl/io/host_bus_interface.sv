@@ -64,7 +64,7 @@ module host_bus_interface (
     // RX Buffer Instance
     // ============================================================
     logic        buf_pkt_valid;
-    logic [3:0]  buf_pkt_type;
+    logic        buf_pkt_req;
     logic        buf_pkt_we;
     logic [1:0]  buf_pkt_size;
     logic [31:0] buf_pkt_addr;
@@ -87,7 +87,7 @@ module host_bus_interface (
         
         // Unified buffered packet interface
         .packet_valid(buf_pkt_valid),
-        .packet_type(buf_pkt_type),
+        .packet_req(buf_pkt_req),
         .packet_we(buf_pkt_we),
         .packet_size(buf_pkt_size),
         .packet_addr(buf_pkt_addr),
@@ -95,8 +95,8 @@ module host_bus_interface (
         .packet_ready(buf_pkt_ready)
     );
     
-    assign buf_resp_valid = buf_pkt_valid && (buf_pkt_type == 4'b0001);
-    assign buf_req_valid  = buf_pkt_valid && (buf_pkt_type == 4'b0010);
+    assign buf_resp_valid = buf_pkt_valid && !buf_pkt_req;
+    assign buf_req_valid  = buf_pkt_valid && buf_pkt_req;
     
     // ============================================================
     // State Machine
