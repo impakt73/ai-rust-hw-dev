@@ -27,7 +27,7 @@ module ff_sync #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < STAGES; i++) begin
-                sync_regs[i] <= RESET_VALUE;
+                sync_regs[i] <= WIDTH'(RESET_VALUE);
             end
         end else begin
             sync_regs[0] <= din;
