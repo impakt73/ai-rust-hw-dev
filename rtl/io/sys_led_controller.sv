@@ -32,7 +32,7 @@ module sys_led_controller #(
 
     square_wave_generator #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .WAVE_FREQ_MILLIHERTZ(500)
+        .WAVE_FREQ_MILLIHERTZ(1000)
     ) boot_blink_generator (
         .clk(clk),
         .rst_n(rst_n),
@@ -44,8 +44,7 @@ module sys_led_controller #(
             sys_led <= 8'hFF;
         end else begin
             sys_led <= 8'h00;
-            sys_led[0] <= cpu_booting ? boot_blink_wave : 1'b0;
-            sys_led[7] <= cpu_halted;
+            sys_led[0] <= cpu_booting ? boot_blink_wave : cpu_halted;
         end
     end
 
