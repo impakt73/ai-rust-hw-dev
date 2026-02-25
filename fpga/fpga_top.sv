@@ -142,7 +142,8 @@ module fpga_top #(
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .CLK_FREQ_HZ(25_000_000)        // 25 MHz (PLL output) - used by Clock Peripheral
+        .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by Clock Peripheral
+        .RESET_CYCLES(25_000_000)       // Hold reset for ~1 second after PLL lock
     ) cpu_inst (
         .clk(sys_clk),
         .rst_n(pll_locked_sync2),
