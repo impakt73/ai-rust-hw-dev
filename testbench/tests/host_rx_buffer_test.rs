@@ -1,21 +1,8 @@
 // Host RX Buffer Tests
-// Comprehensive testing of the host_rx_buffer RTL module
-//
-// The host_rx_buffer module handles:
-//   - Response packets (type 0001) for CPU-initiated requests
-//   - Request packets (type 0010) for host-initiated requests
-//
-// Extended Header Format:
-//   Bits [7:4]: Packet type
-//     0001 = Host response to CPU request (Host → FPGA RX)
-//     0010 = Host-initiated request (Host → FPGA RX)
-//   Bits [3:2]: size (00=byte, 01=half, 10=word, 11=reserved)
-//   Bit  [1]:   Reserved (0)
-//   Bit  [0]:   we (1=write, 0=read)
+// Validates unified packet buffering for response/request packet types.
 
 use riscv_core::{create_host_rx_buffer_runtime, HostRxBuffer};
 
-// Clock cycle macro
 macro_rules! clock_cycle {
     ($dut:expr) => {
         $dut.clk = 0;
@@ -27,46 +14,34 @@ macro_rules! clock_cycle {
     };
 }
 
-/// Apply reset to the module
 fn reset_module(dut: &mut HostRxBuffer) {
     dut.rst_n = 0;
     dut.rx_valid = 0;
     dut.rx_data = 0;
-    dut.resp_consumed = 0;
-    dut.req_consumed = 0;
+    dut.packet_ready = 0;
     clock_cycle!(dut);
     dut.rst_n = 1;
     clock_cycle!(dut);
 }
 
-/// Helper to send a byte to RX interface
-/// Returns true if handshake completed within max_cycles, false otherwise.
 fn send_rx_byte(dut: &mut HostRxBuffer, byte: u8, max_cycles: u32) -> bool {
     dut.rx_data = byte;
     dut.rx_valid = 1;
     dut.eval();
 
-    // Wait for rx_ready to be asserted (handshake condition)
     for _ in 0..max_cycles {
         if dut.rx_ready != 0 {
-            // Handshake complete: advance clock to latch the data, then deassert rx_valid
             clock_cycle!(dut);
             dut.rx_valid = 0;
             dut.eval();
             return true;
         }
-        // rx_ready not yet asserted, advance clock and try again
         clock_cycle!(dut);
     }
-    // Timeout: deassert rx_valid and return failure
     dut.rx_valid = 0;
     dut.eval();
     false
 }
-
-// ============================================================
-// Reset State Tests
-// ============================================================
 
 #[test]
 fn test_reset_state() {
@@ -77,24 +52,19 @@ fn test_reset_state() {
 
     reset_module(&mut dut);
 
-    // Verify outputs are in expected initial state
-    assert_eq!(dut.resp_valid, 0, "resp_valid should be LOW after reset");
-    assert_eq!(dut.req_valid, 0, "req_valid should be LOW after reset");
     assert_eq!(
-        dut.rx_ready, 1,
-        "rx_ready should be HIGH after reset (both buffers empty)"
+        dut.packet_valid, 0,
+        "packet_valid should be LOW after reset"
     );
-    assert_eq!(dut.resp_rdata, 0, "resp_rdata should be 0 after reset");
-    assert_eq!(dut.req_addr, 0, "req_addr should be 0 after reset");
-    assert_eq!(dut.req_wdata, 0, "req_wdata should be 0 after reset");
+    assert_eq!(dut.packet_req, 0, "packet_req should reset to 0");
+    assert_eq!(dut.packet_size, 0, "packet_size should reset to 0");
+    assert_eq!(dut.packet_addr, 0, "packet_addr should reset to 0");
+    assert_eq!(dut.packet_data, 0, "packet_data should reset to 0");
+    assert_eq!(dut.rx_ready, 1, "rx_ready should be HIGH after reset");
 }
 
-// ============================================================
-// Response Packet Tests (Type 0001)
-// ============================================================
-
 #[test]
-fn test_receive_write_response() {
+fn test_receive_response_word_read_packet() {
     let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostRxBuffer>()
@@ -102,103 +72,8 @@ fn test_receive_write_response() {
 
     reset_module(&mut dut);
 
-    // Send write response header: type=0001, size=10 (word), we=1
-    // Header: 0001 10 0 1 = 0x19
-    assert!(
-        send_rx_byte(&mut dut, 0x19, 100),
-        "Failed to send write response header"
-    );
-
-    // Write response has no data - should be valid immediately
-    assert_eq!(
-        dut.resp_valid, 1,
-        "resp_valid should be HIGH after write response"
-    );
-    assert_eq!(dut.resp_we, 1, "resp_we should be 1 for write response");
-    assert_eq!(dut.resp_size, 0b10, "resp_size should be word (10)");
-}
-
-#[test]
-fn test_receive_response_byte_read() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Send byte read response header: type=0001, size=00 (byte), we=0
-    // Header: 0001 00 0 0 = 0x10
-    assert!(
-        send_rx_byte(&mut dut, 0x10, 100),
-        "Failed to send read response header"
-    );
-
-    // Not yet valid - need to receive data byte
-    assert_eq!(
-        dut.resp_valid, 0,
-        "resp_valid should be LOW before data byte"
-    );
-
-    // Send data byte
-    assert!(
-        send_rx_byte(&mut dut, 0x42, 100),
-        "Failed to send data byte"
-    );
-
-    // Now response should be valid
-    assert_eq!(
-        dut.resp_valid, 1,
-        "resp_valid should be HIGH after data byte"
-    );
-    assert_eq!(dut.resp_we, 0, "resp_we should be 0 for read response");
-    assert_eq!(dut.resp_size, 0b00, "resp_size should be byte (00)");
-    assert_eq!(dut.resp_rdata, 0x00000042, "resp_rdata should be 0x42");
-}
-
-#[test]
-fn test_receive_response_halfword_read() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Send halfword read response header: type=0001, size=01 (halfword), we=0
-    // Header: 0001 01 0 0 = 0x14
-    assert!(send_rx_byte(&mut dut, 0x14, 100), "Failed to send header");
-
-    // Send 2 data bytes (little-endian: LSB first)
-    assert!(
-        send_rx_byte(&mut dut, 0xCD, 100),
-        "Failed to send data[7:0]"
-    );
-    assert!(
-        send_rx_byte(&mut dut, 0xAB, 100),
-        "Failed to send data[15:8]"
-    );
-
-    // Response should be valid
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
-    assert_eq!(dut.resp_size, 0b01, "resp_size should be halfword (01)");
-    assert_eq!(dut.resp_rdata, 0x0000ABCD, "resp_rdata should be 0xABCD");
-}
-
-#[test]
-fn test_receive_response_word_read() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Send word read response header: type=0001, size=10 (word), we=0
-    // Header: 0001 10 0 0 = 0x18
+    // type=0001, size=10 (word), we=0
     assert!(send_rx_byte(&mut dut, 0x18, 100), "Failed to send header");
-
-    // Send 4 data bytes (little-endian: LSB first)
     assert!(
         send_rx_byte(&mut dut, 0xBE, 100),
         "Failed to send data[7:0]"
@@ -216,21 +91,22 @@ fn test_receive_response_word_read() {
         "Failed to send data[31:24]"
     );
 
-    // Response should be valid
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
-    assert_eq!(dut.resp_size, 0b10, "resp_size should be word (10)");
+    assert_eq!(dut.packet_valid, 1, "packet_valid should be HIGH");
+    assert_eq!(dut.packet_req, 0, "packet_req should be 0 for response");
+    assert_eq!(dut.packet_we, 0, "packet_we should be 0 for read response");
+    assert_eq!(dut.packet_size, 0b10, "packet_size should be word");
     assert_eq!(
-        dut.resp_rdata, 0xCAFEBABE,
-        "resp_rdata should be 0xCAFEBABE"
+        dut.packet_addr, 0,
+        "packet_addr should be unused for response"
+    );
+    assert_eq!(
+        dut.packet_data, 0xCAFEBABE,
+        "packet_data should contain rdata"
     );
 }
 
-// ============================================================
-// Request Packet Tests (Type 0010)
-// ============================================================
-
 #[test]
-fn test_receive_request_read() {
+fn test_receive_request_write_word_packet() {
     let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostRxBuffer>()
@@ -238,110 +114,32 @@ fn test_receive_request_read() {
 
     reset_module(&mut dut);
 
-    // Send read request header: type=0010, size=10 (word), we=0
-    // Header: 0010 10 0 0 = 0x28
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "Failed to send header");
-
-    // Request not yet valid - need address bytes
-    assert_eq!(dut.req_valid, 0, "req_valid should be LOW before address");
-
-    // Send 4 address bytes (little-endian: 0x50000000)
-    assert!(
-        send_rx_byte(&mut dut, 0x00, 100),
-        "Failed to send addr[7:0]"
-    );
-    assert!(
-        send_rx_byte(&mut dut, 0x00, 100),
-        "Failed to send addr[15:8]"
-    );
-    assert!(
-        send_rx_byte(&mut dut, 0x00, 100),
-        "Failed to send addr[23:16]"
-    );
-    assert!(
-        send_rx_byte(&mut dut, 0x50, 100),
-        "Failed to send addr[31:24]"
-    );
-
-    // Read request complete - no data bytes needed
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-    assert_eq!(dut.req_we, 0, "req_we should be 0 for read request");
-    assert_eq!(dut.req_size, 0b10, "req_size should be word (10)");
-    assert_eq!(dut.req_addr, 0x50000000, "req_addr should be 0x50000000");
-}
-
-#[test]
-fn test_receive_request_write_byte() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Send byte write request header: type=0010, size=00 (byte), we=1
-    // Header: 0010 00 0 1 = 0x21
-    assert!(send_rx_byte(&mut dut, 0x21, 100), "Failed to send header");
-
-    // Send 4 address bytes (0x50000000)
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-
-    // Request not yet valid - need 1 data byte
-    assert_eq!(dut.req_valid, 0, "req_valid should be LOW before data");
-
-    // Send 1 data byte
-    assert!(send_rx_byte(&mut dut, 0xAB, 100), "wdata[7:0]");
-
-    // Request complete
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-    assert_eq!(dut.req_we, 1, "req_we should be 1 for write request");
-    assert_eq!(dut.req_size, 0b00, "req_size should be byte (00)");
-    assert_eq!(dut.req_addr, 0x50000000, "req_addr mismatch");
-    assert_eq!(dut.req_wdata, 0x000000AB, "req_wdata mismatch");
-}
-
-#[test]
-fn test_receive_request_write_word() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Send word write request header: type=0010, size=10 (word), we=1
-    // Header: 0010 10 0 1 = 0x29
+    // type=0010, size=10 (word), we=1
     assert!(send_rx_byte(&mut dut, 0x29, 100), "Failed to send header");
-
-    // Send 4 address bytes (0x50000000)
+    // address 0x50000000, little-endian
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
     assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
     assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
+    // data 0xDEADBEEF, little-endian
+    assert!(send_rx_byte(&mut dut, 0xEF, 100), "data[7:0]");
+    assert!(send_rx_byte(&mut dut, 0xBE, 100), "data[15:8]");
+    assert!(send_rx_byte(&mut dut, 0xAD, 100), "data[23:16]");
+    assert!(send_rx_byte(&mut dut, 0xDE, 100), "data[31:24]");
 
-    // Send 4 data bytes (0xDEADBEEF little-endian)
-    assert!(send_rx_byte(&mut dut, 0xEF, 100), "wdata[7:0]");
-    assert!(send_rx_byte(&mut dut, 0xBE, 100), "wdata[15:8]");
-    assert!(send_rx_byte(&mut dut, 0xAD, 100), "wdata[23:16]");
-    assert!(send_rx_byte(&mut dut, 0xDE, 100), "wdata[31:24]");
-
-    // Request complete
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-    assert_eq!(dut.req_we, 1, "req_we should be 1");
-    assert_eq!(dut.req_size, 0b10, "req_size should be word (10)");
-    assert_eq!(dut.req_addr, 0x50000000, "req_addr mismatch");
-    assert_eq!(dut.req_wdata, 0xDEADBEEF, "req_wdata mismatch");
+    assert_eq!(dut.packet_valid, 1, "packet_valid should be HIGH");
+    assert_eq!(dut.packet_req, 1, "packet_req should be 1 for request");
+    assert_eq!(dut.packet_we, 1, "packet_we should be 1 for write request");
+    assert_eq!(dut.packet_size, 0b10, "packet_size should be word");
+    assert_eq!(dut.packet_addr, 0x50000000, "packet_addr mismatch");
+    assert_eq!(
+        dut.packet_data, 0xDEADBEEF,
+        "packet_data should contain wdata"
+    );
 }
 
-// ============================================================
-// Buffer Management Tests
-// ============================================================
-
 #[test]
-fn test_consume_response() {
+fn test_packet_ready_clears_valid() {
     let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostRxBuffer>()
@@ -349,21 +147,23 @@ fn test_consume_response() {
 
     reset_module(&mut dut);
 
-    // Fill response buffer with write response
+    // type=0001, size=10, we=1 (header-only packet)
     assert!(send_rx_byte(&mut dut, 0x19, 100), "Failed to send header");
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
+    assert_eq!(dut.packet_valid, 1, "packet_valid should be HIGH");
 
-    // Consume the response
-    dut.resp_consumed = 1;
+    dut.packet_ready = 1;
     clock_cycle!(dut);
-    dut.resp_consumed = 0;
+    dut.packet_ready = 0;
+    dut.eval();
 
-    // Response should now be invalid
-    assert_eq!(dut.resp_valid, 0, "resp_valid should be LOW after consume");
+    assert_eq!(
+        dut.packet_valid, 0,
+        "packet_valid should clear after packet_ready"
+    );
 }
 
 #[test]
-fn test_consume_request() {
+fn test_backpressure_with_single_packet_storage() {
     let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostRxBuffer>()
@@ -371,90 +171,32 @@ fn test_consume_request() {
 
     reset_module(&mut dut);
 
-    // Fill request buffer with read request
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "header"); // type=0010, size=10, we=0
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-
-    // Consume the request
-    dut.req_consumed = 1;
-    clock_cycle!(dut);
-    dut.req_consumed = 0;
-
-    // Request should now be invalid
-    assert_eq!(dut.req_valid, 0, "req_valid should be LOW after consume");
-}
-
-#[test]
-fn test_both_buffers_can_be_filled() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Fill response buffer with write response
-    assert!(send_rx_byte(&mut dut, 0x19, 100), "response header");
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
-
-    // Fill request buffer with read request
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "request header");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-
-    // Both buffers full - rx_ready should be LOW
+    // Fill the unified buffer with a complete packet.
+    assert!(send_rx_byte(&mut dut, 0x19, 100), "Failed to send header");
+    assert_eq!(dut.packet_valid, 1, "packet_valid should be HIGH");
     assert_eq!(
         dut.rx_ready, 0,
-        "rx_ready should be LOW when both buffers are full"
+        "rx_ready should be LOW when buffer is full"
     );
-}
 
-#[test]
-fn test_backpressure_recovery() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
-        .expect("Failed to create model");
-
-    reset_module(&mut dut);
-
-    // Fill response buffer
-    assert!(send_rx_byte(&mut dut, 0x19, 100), "response header");
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
-
-    // Fill request buffer
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "request header");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
-
-    // Both buffers full - rx_ready should be LOW
-    assert_eq!(dut.rx_ready, 0, "rx_ready should be LOW");
-
-    // Consume response buffer
-    dut.resp_consumed = 1;
+    // Consume packet and verify flow-control recovery.
+    dut.packet_ready = 1;
     clock_cycle!(dut);
-    dut.resp_consumed = 0;
+    dut.packet_ready = 0;
+    dut.eval();
 
-    // rx_ready should recover
+    assert_eq!(
+        dut.packet_valid, 0,
+        "packet_valid should be LOW after ready"
+    );
     assert_eq!(
         dut.rx_ready, 1,
-        "rx_ready should be HIGH after consuming response"
+        "rx_ready should recover after packet is consumed"
     );
 }
 
 #[test]
-fn test_interleaved_packets() {
+fn test_response_byte_and_halfword_reads() {
     let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostRxBuffer>()
@@ -462,31 +204,108 @@ fn test_interleaved_packets() {
 
     reset_module(&mut dut);
 
-    // Send first response
-    assert!(send_rx_byte(&mut dut, 0x19, 100), "response 1 header");
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH");
+    // Byte response: type=0001, size=00, we=0
+    assert!(send_rx_byte(&mut dut, 0x10, 100), "header byte response");
+    assert!(send_rx_byte(&mut dut, 0x42, 100), "data[7:0] byte response");
+    assert_eq!(dut.packet_valid, 1, "byte response should be valid");
+    assert_eq!(dut.packet_req, 0, "byte response should not be request");
+    assert_eq!(dut.packet_size, 0b00, "byte response size mismatch");
+    assert_eq!(dut.packet_data, 0x0000_0042, "byte response data mismatch");
 
-    // Consume it
-    dut.resp_consumed = 1;
+    dut.packet_ready = 1;
     clock_cycle!(dut);
-    dut.resp_consumed = 0;
-    assert_eq!(dut.resp_valid, 0, "resp_valid should be LOW");
+    dut.packet_ready = 0;
+    dut.eval();
 
-    // Send first request
-    assert!(send_rx_byte(&mut dut, 0x28, 100), "request 1 header");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[7:0]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[15:8]");
-    assert!(send_rx_byte(&mut dut, 0x00, 100), "addr[23:16]");
-    assert!(send_rx_byte(&mut dut, 0x50, 100), "addr[31:24]");
-    assert_eq!(dut.req_valid, 1, "req_valid should be HIGH");
+    // Halfword response: type=0001, size=01, we=0
+    assert!(send_rx_byte(&mut dut, 0x14, 100), "header half response");
+    assert!(send_rx_byte(&mut dut, 0xCD, 100), "data[7:0] half response");
+    assert!(
+        send_rx_byte(&mut dut, 0xAB, 100),
+        "data[15:8] half response"
+    );
+    assert_eq!(dut.packet_valid, 1, "halfword response should be valid");
+    assert_eq!(dut.packet_size, 0b01, "halfword response size mismatch");
+    assert_eq!(
+        dut.packet_data, 0x0000_ABCD,
+        "halfword response data mismatch"
+    );
+}
 
-    // Consume it
-    dut.req_consumed = 1;
+#[test]
+fn test_write_response_header_only_semantics() {
+    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostRxBuffer>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // type=0001, size=10, we=1 (no payload bytes)
+    assert!(send_rx_byte(&mut dut, 0x19, 100), "write response header");
+    assert_eq!(
+        dut.packet_valid, 1,
+        "write response should complete on header"
+    );
+    assert_eq!(dut.packet_req, 0, "write response should not be request");
+    assert_eq!(dut.packet_we, 1, "write response should preserve we");
+    assert_eq!(dut.packet_size, 0b10, "write response size mismatch");
+    assert_eq!(
+        dut.packet_data, 0,
+        "write response should have empty data payload"
+    );
+}
+
+#[test]
+fn test_request_read_and_subword_write() {
+    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostRxBuffer>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Request read: type=0010, size=10, we=0
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "read request header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "read addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "read addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "read addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "read addr[31:24]");
+    assert_eq!(
+        dut.packet_valid, 1,
+        "read request should be valid after address"
+    );
+    assert_eq!(dut.packet_req, 1, "read request should set packet_req");
+    assert_eq!(dut.packet_we, 0, "read request should clear we");
+    assert_eq!(
+        dut.packet_addr, 0x5000_0000,
+        "read request address mismatch"
+    );
+
+    dut.packet_ready = 1;
     clock_cycle!(dut);
-    dut.req_consumed = 0;
-    assert_eq!(dut.req_valid, 0, "req_valid should be LOW");
+    dut.packet_ready = 0;
+    dut.eval();
 
-    // Send second response
-    assert!(send_rx_byte(&mut dut, 0x19, 100), "response 2 header");
-    assert_eq!(dut.resp_valid, 1, "resp_valid should be HIGH again");
+    // Request write byte: type=0010, size=00, we=1
+    assert!(send_rx_byte(&mut dut, 0x21, 100), "byte write header");
+    assert!(send_rx_byte(&mut dut, 0x04, 100), "byte addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x03, 100), "byte addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x02, 100), "byte addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x01, 100), "byte addr[31:24]");
+    assert!(send_rx_byte(&mut dut, 0xA5, 100), "byte write data");
+    assert_eq!(dut.packet_valid, 1, "byte write request should be valid");
+    assert_eq!(
+        dut.packet_req, 1,
+        "byte write request should set packet_req"
+    );
+    assert_eq!(dut.packet_size, 0b00, "byte write request size mismatch");
+    assert_eq!(
+        dut.packet_addr, 0x0102_0304,
+        "byte write request address mismatch"
+    );
+    assert_eq!(
+        dut.packet_data, 0x0000_00A5,
+        "byte write request data mismatch"
+    );
 }
