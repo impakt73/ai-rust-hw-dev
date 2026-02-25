@@ -1157,6 +1157,11 @@ fn test_host_response_priority_over_cpu_request() {
     clock_cycle!(dut);
     dut.req = 0;
 
+    // Transmit one byte of CPU request A so the host response is not injected
+    // before any request traffic has been observed.
+    receive_tx_byte(&mut dut, 100)
+        .expect("Failed to transmit first byte of CPU request A before host response");
+
     // Provide CPU response for request A (type=0001, size=10, we=1) to clear cpu_wait_resp.
     assert!(send_rx_byte(&mut dut, 0x19, 100), "cpu response header");
     clock_cycle!(dut);
@@ -1178,8 +1183,10 @@ fn test_host_response_priority_over_cpu_request() {
     assert!(send_rx_byte(&mut dut, 0x50, 100), "host req addr[31:24]");
 
     // Complete host bus transaction to make host response pending.
+    let mut host_bus_req_seen = false;
     for _ in 0..100 {
         if dut.host_bus_req != 0 {
+            host_bus_req_seen = true;
             dut.host_bus_rdata = 0xCAFEBABE;
             dut.host_bus_ready = 1;
             clock_cycle!(dut);
@@ -1188,9 +1195,13 @@ fn test_host_response_priority_over_cpu_request() {
         }
         clock_cycle!(dut);
     }
+    assert!(
+        host_bus_req_seen,
+        "host_bus_req should assert before attempting to send host response"
+    );
 
-    // Drain request A packet (9 bytes), then next packet should be host response.
-    for _ in 0..9 {
+    // Drain remaining bytes of request A packet (8 bytes), then next packet should be host response.
+    for _ in 0..8 {
         receive_tx_byte(&mut dut, 100).expect("Failed to drain CPU request A byte");
     }
     let first_tx_byte =
