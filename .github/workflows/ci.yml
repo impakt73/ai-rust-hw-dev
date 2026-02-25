@@ -26,6 +26,9 @@ jobs:
     
     - name: Verify Verilator installation
       run: verilator --version
+
+    - name: Run RTL lint
+      run: find rtl -name '*.sv' -exec verilator --lint-only -Wno-MULTITOP {} +
     
     - name: Verify FPGA tools installation
       run: |
