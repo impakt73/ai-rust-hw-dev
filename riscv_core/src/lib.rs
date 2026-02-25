@@ -81,8 +81,8 @@ pub struct SysLedController;
 pub struct HostBusInterface;
 
 // Define Host RX Buffer module (bidirectional packet buffering)
-#[verilog(src = "../rtl/io/host_rx_buffer.sv", name = "host_rx_buffer")]
-pub struct HostRxBuffer;
+#[verilog(src = "../rtl/io/host_bus_rx.sv", name = "host_bus_rx")]
+pub struct HostBusRx;
 
 // Define Bus Arbiter module
 #[verilog(src = "../rtl/memory/bus_arbiter.sv", name = "bus_arbiter")]
@@ -309,12 +309,12 @@ pub fn create_sys_led_controller_runtime() -> Result<VerilatorRuntime, Box<dyn s
 
 // Helper function to create a runtime for the Host Bus Interface
 pub fn create_host_bus_interface_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["io/host_bus_interface.sv", "io/host_rx_buffer.sv"])
+    create_runtime(&["io/host_bus_interface.sv", "io/host_bus_rx.sv"])
 }
 
 // Helper function to create a runtime for the Host RX Buffer (standalone testing)
-pub fn create_host_rx_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["io/host_rx_buffer.sv"])
+pub fn create_host_bus_rx_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["io/host_bus_rx.sv"])
 }
 
 // Helper function to create a runtime for the Bus Arbiter

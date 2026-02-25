@@ -283,7 +283,7 @@ fn test_write_transaction_complete() {
 
     // Send response packet with extended header (packet type 0001)
     // Header: {packet_type=0001, size=10, 1'b0, we=1} = 0x19
-    // With the new buffered architecture, responses go through host_rx_buffer
+    // With the new buffered architecture, responses go through host_bus_rx
     assert!(
         send_rx_byte(&mut dut, 0x19, 100),
         "Failed to send write response header"
@@ -633,7 +633,7 @@ fn test_rx_delayed_valid() {
 
 #[test]
 fn test_rx_ready_buffered_architecture() {
-    // With the new buffered RX architecture, rx_ready is driven by the host_rx_buffer module.
+    // With the new buffered RX architecture, rx_ready is driven by the host_bus_rx module.
     // It is HIGH when at least one buffer is free (response or request buffer).
     // It is LOW only when BOTH buffers are full.
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");

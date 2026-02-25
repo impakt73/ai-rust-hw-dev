@@ -1,7 +1,7 @@
 // Host RX Buffer Tests
 // Validates unified packet buffering for response/request packet types.
 
-use riscv_core::{create_host_rx_buffer_runtime, HostRxBuffer};
+use riscv_core::{create_host_bus_rx_runtime, HostBusRx};
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -14,7 +14,7 @@ macro_rules! clock_cycle {
     };
 }
 
-fn reset_module(dut: &mut HostRxBuffer) {
+fn reset_module(dut: &mut HostBusRx) {
     dut.rst_n = 0;
     dut.rx_valid = 0;
     dut.rx_data = 0;
@@ -24,7 +24,7 @@ fn reset_module(dut: &mut HostRxBuffer) {
     clock_cycle!(dut);
 }
 
-fn send_rx_byte(dut: &mut HostRxBuffer, byte: u8, max_cycles: u32) -> bool {
+fn send_rx_byte(dut: &mut HostBusRx, byte: u8, max_cycles: u32) -> bool {
     dut.rx_data = byte;
     dut.rx_valid = 1;
     dut.eval();
@@ -45,9 +45,9 @@ fn send_rx_byte(dut: &mut HostRxBuffer, byte: u8, max_cycles: u32) -> bool {
 
 #[test]
 fn test_reset_state() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -65,9 +65,9 @@ fn test_reset_state() {
 
 #[test]
 fn test_receive_response_word_read_packet() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -107,9 +107,9 @@ fn test_receive_response_word_read_packet() {
 
 #[test]
 fn test_receive_request_write_word_packet() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -140,9 +140,9 @@ fn test_receive_request_write_word_packet() {
 
 #[test]
 fn test_packet_ready_clears_valid() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -164,9 +164,9 @@ fn test_packet_ready_clears_valid() {
 
 #[test]
 fn test_backpressure_with_single_packet_storage() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -197,9 +197,9 @@ fn test_backpressure_with_single_packet_storage() {
 
 #[test]
 fn test_response_byte_and_halfword_reads() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -234,9 +234,9 @@ fn test_response_byte_and_halfword_reads() {
 
 #[test]
 fn test_write_response_header_only_semantics() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);
@@ -258,9 +258,9 @@ fn test_write_response_header_only_semantics() {
 
 #[test]
 fn test_request_read_and_subword_write() {
-    let runtime = create_host_rx_buffer_runtime().expect("Failed to create runtime");
+    let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
     let mut dut = runtime
-        .create_model_simple::<HostRxBuffer>()
+        .create_model_simple::<HostBusRx>()
         .expect("Failed to create model");
 
     reset_module(&mut dut);

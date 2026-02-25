@@ -76,7 +76,7 @@ module host_bus_interface (
     logic        buf_resp_ready;
     logic        buf_req_ready;
     
-    host_rx_buffer rx_buf (
+    host_bus_rx rx_buf (
         .clk(clk),
         .rst_n(rst_n),
         
@@ -116,7 +116,7 @@ module host_bus_interface (
         STATE_TX_WDATA_2  = 5'd9,   // WData[23:16] (word writes only)
         STATE_TX_WDATA_3  = 5'd10,  // WData[31:24] (word writes only)
         
-        // RX States for CPU-initiated response (buffered via host_rx_buffer)
+        // RX States for CPU-initiated response (buffered via host_bus_rx)
         STATE_CPU_RESP_WAIT = 5'd11,  // Waiting for buffered response
         
         // Complete state for CPU-initiated transactions
