@@ -21,6 +21,13 @@ module sys_led_controller #(
     output logic [7:0] sys_led
 );
 
+    // Parameter validation (simulation only)
+    initial begin
+        if (CLK_FREQ_HZ == 0) begin
+            $fatal(1, "sys_led_controller: CLK_FREQ_HZ must be > 0");
+        end
+    end
+
     logic boot_blink_wave;
 
     square_wave_generator #(
