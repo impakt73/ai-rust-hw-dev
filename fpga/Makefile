@@ -29,6 +29,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/io/host_bus_interface.sv \
 	$(RTL_DIR)/io/host_bus_rx.sv \
+	$(RTL_DIR)/io/host_bus_tx.sv \
 	$(RTL_DIR)/io/sys_led_controller.sv \
 	$(RTL_DIR)/cpu/mem_interface.sv \
 	$(RTL_DIR)/cpu/mul_unit.sv \
