@@ -63,18 +63,18 @@ module host_bus_interface (
     // ============================================================
     // RX Buffer Instance
     // ============================================================
-    logic        buf_resp_valid;
-    logic        buf_resp_we;
-    logic [1:0]  buf_resp_size;
-    logic [31:0] buf_resp_rdata;
-    logic        buf_resp_consumed;
+    logic        buf_pkt_valid;
+    logic [3:0]  buf_pkt_type;
+    logic        buf_pkt_we;
+    logic [1:0]  buf_pkt_size;
+    logic [31:0] buf_pkt_addr;
+    logic [31:0] buf_pkt_data;
+    logic        buf_pkt_ready;
     
+    logic        buf_resp_valid;
     logic        buf_req_valid;
-    logic        buf_req_we;
-    logic [1:0]  buf_req_size;
-    logic [31:0] buf_req_addr;
-    logic [31:0] buf_req_wdata;
-    logic        buf_req_consumed;
+    logic        buf_resp_ready;
+    logic        buf_req_ready;
     
     host_rx_buffer rx_buf (
         .clk(clk),
@@ -85,21 +85,18 @@ module host_bus_interface (
         .rx_valid(rx_valid),
         .rx_ready(rx_ready),
         
-        // Response outputs (for CPU-initiated requests)
-        .resp_valid(buf_resp_valid),
-        .resp_we(buf_resp_we),
-        .resp_size(buf_resp_size),
-        .resp_rdata(buf_resp_rdata),
-        .resp_consumed(buf_resp_consumed),
-        
-        // Request outputs (for Host-initiated requests)
-        .req_valid(buf_req_valid),
-        .req_we(buf_req_we),
-        .req_size(buf_req_size),
-        .req_addr(buf_req_addr),
-        .req_wdata(buf_req_wdata),
-        .req_consumed(buf_req_consumed)
+        // Unified buffered packet interface
+        .packet_valid(buf_pkt_valid),
+        .packet_type(buf_pkt_type),
+        .packet_we(buf_pkt_we),
+        .packet_size(buf_pkt_size),
+        .packet_addr(buf_pkt_addr),
+        .packet_data(buf_pkt_data),
+        .packet_ready(buf_pkt_ready)
     );
+    
+    assign buf_resp_valid = buf_pkt_valid && (buf_pkt_type == 4'b0001);
+    assign buf_req_valid  = buf_pkt_valid && (buf_pkt_type == 4'b0010);
     
     // ============================================================
     // State Machine
@@ -384,8 +381,8 @@ module host_bus_interface (
                 // 1. We don't already have a pending response (host_resp_valid = 0)
                 // 2. We're not currently transmitting a response (in_host_tx_phase = 0)
                 // This happens in parallel with the FSM, outside of state machine control
-                host_cap_we     <= buf_req_we;
-                host_cap_size   <= buf_req_size;
+                host_cap_we     <= buf_pkt_we;
+                host_cap_size   <= buf_pkt_size;
                 host_resp_rdata <= host_bus_rdata;
                 host_resp_valid <= 1'b1;
             end
@@ -393,14 +390,16 @@ module host_bus_interface (
     end
 
     // ============================================================
-    // Buffer Control Signals
+    // Buffer Ready Signals
     // ============================================================
-    // Consume buffered response when CPU transaction completes
-    assign buf_resp_consumed = (state == STATE_COMPLETE);
+    // Accept buffered response when CPU transaction completes
+    assign buf_resp_ready = (state == STATE_COMPLETE);
     
-    // Consume buffered request when bus master handshake completes
+    // Accept buffered request when bus master handshake completes
     // and we don't already have a pending response and not in TX phase
-    assign buf_req_consumed = bus_master_handshake_complete && !host_resp_valid && !in_host_tx_phase;
+    assign buf_req_ready = bus_master_handshake_complete && !host_resp_valid && !in_host_tx_phase;
+    
+    assign buf_pkt_ready = (buf_resp_ready && buf_resp_valid) || (buf_req_ready && buf_req_valid);
     
     // ============================================================
     // TX Data Multiplexer (Little-Endian: LSB first)
@@ -449,7 +448,7 @@ module host_bus_interface (
     // ============================================================
     // Bus Read Data (from buffered response)
     // ============================================================
-    assign rdata = buf_resp_rdata;
+    assign rdata = buf_pkt_data;
     
     // ============================================================
     // Bus Master Interface (Host→CPU path)
@@ -457,10 +456,10 @@ module host_bus_interface (
     // Request is asserted whenever a buffered request is available
     // and we don't already have a pending response to transmit
     // ============================================================
-    assign host_bus_addr  = buf_req_addr;
-    assign host_bus_wdata = buf_req_wdata;
-    assign host_bus_we    = buf_req_we;
-    assign host_bus_size  = buf_req_size;
+    assign host_bus_addr  = buf_pkt_addr;
+    assign host_bus_wdata = buf_pkt_data;
+    assign host_bus_we    = buf_pkt_we;
+    assign host_bus_size  = buf_pkt_size;
     assign host_bus_req   = buf_req_valid && !host_resp_valid;
 
 endmodule
