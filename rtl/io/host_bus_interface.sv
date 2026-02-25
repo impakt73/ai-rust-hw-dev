@@ -109,7 +109,7 @@ module host_bus_interface (
 
     // ============================================================
     // TX Buffer Input Arbitration
-    // Priority: CPU requests > host responses
+    // Priority: host responses > CPU requests
     // ============================================================
     always_comb begin
         tx_pkt_valid = 1'b0;
@@ -119,20 +119,20 @@ module host_bus_interface (
         tx_pkt_addr  = 32'h0;
         tx_pkt_data  = 32'h0;
 
-        if (cpu_req_pending) begin
-            tx_pkt_valid = 1'b1;
-            tx_pkt_req   = 1'b1;
-            tx_pkt_we    = cpu_cap_we;
-            tx_pkt_size  = cpu_cap_size;
-            tx_pkt_addr  = cpu_cap_addr;
-            tx_pkt_data  = cpu_cap_wdata;
-        end else if (host_resp_pending && !cpu_wait_resp) begin
+        if (host_resp_pending) begin
             tx_pkt_valid = 1'b1;
             tx_pkt_req   = 1'b0;
             tx_pkt_we    = host_resp_we;
             tx_pkt_size  = host_resp_size;
             tx_pkt_addr  = 32'h0;
             tx_pkt_data  = host_resp_rdata;
+        end else if (cpu_req_pending) begin
+            tx_pkt_valid = 1'b1;
+            tx_pkt_req   = 1'b1;
+            tx_pkt_we    = cpu_cap_we;
+            tx_pkt_size  = cpu_cap_size;
+            tx_pkt_addr  = cpu_cap_addr;
+            tx_pkt_data  = cpu_cap_wdata;
         end
     end
 

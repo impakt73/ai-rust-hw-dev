@@ -1138,3 +1138,65 @@ fn test_cpu_request_priority_over_host_request() {
         "CPU request TX should have priority over buffered host request"
     );
 }
+
+#[test]
+fn test_host_response_priority_over_cpu_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Queue CPU request A so TX stays busy while tx_ready is held low.
+    dut.addr = 0x80000000;
+    dut.wdata = 0xAAAAAAAA;
+    dut.we = 1;
+    dut.size = 0b10;
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+
+    // Provide CPU response for request A (type=0001, size=10, we=1) to clear cpu_wait_resp.
+    assert!(send_rx_byte(&mut dut, 0x19, 100), "cpu response header");
+    clock_cycle!(dut);
+
+    // Queue CPU request B (will remain pending while TX is still busy with request A).
+    dut.addr = 0x80000004;
+    dut.wdata = 0x12345678;
+    dut.we = 1;
+    dut.size = 0b10;
+    dut.req = 1;
+    clock_cycle!(dut);
+    dut.req = 0;
+
+    // Queue host-initiated read request (type=0010, size=10, we=0).
+    assert!(send_rx_byte(&mut dut, 0x28, 100), "host req header");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "host req addr[7:0]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "host req addr[15:8]");
+    assert!(send_rx_byte(&mut dut, 0x00, 100), "host req addr[23:16]");
+    assert!(send_rx_byte(&mut dut, 0x50, 100), "host req addr[31:24]");
+
+    // Complete host bus transaction to make host response pending.
+    for _ in 0..100 {
+        if dut.host_bus_req != 0 {
+            dut.host_bus_rdata = 0xCAFEBABE;
+            dut.host_bus_ready = 1;
+            clock_cycle!(dut);
+            dut.host_bus_ready = 0;
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    // Drain request A packet (9 bytes), then next packet should be host response.
+    for _ in 0..9 {
+        receive_tx_byte(&mut dut, 100).expect("Failed to drain CPU request A byte");
+    }
+    let first_tx_byte =
+        receive_tx_byte(&mut dut, 100).expect("Failed to receive first post-drain TX byte");
+    assert_eq!(
+        first_tx_byte, 0x38,
+        "Host response should be prioritized over CPU request"
+    );
+}
