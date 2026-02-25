@@ -72,6 +72,10 @@ pub struct ClockPeripheral;
 )]
 pub struct SystemController;
 
+// Define System LED Controller module
+#[verilog(src = "../rtl/io/sys_led_controller.sv", name = "sys_led_controller")]
+pub struct SysLedController;
+
 // Define Host Bus Interface module
 #[verilog(src = "../rtl/io/host_bus_interface.sv", name = "host_bus_interface")]
 pub struct HostBusInterface;
@@ -157,6 +161,12 @@ pub struct SkidBufferWrapper;
 )]
 pub struct SquareWaveGeneratorWrapper;
 
+#[verilog(
+    src = "../rtl/wrappers/sys_led_controller_wrapper.sv",
+    name = "sys_led_controller_wrapper"
+)]
+pub struct SysLedControllerWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -218,8 +228,10 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "memory/bus.sv",                               // System bus for address decoding
         "cpu/cpu.sv",                                  // CPU core
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
+        "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
+        "io/sys_led_controller.sv", // System LED controller
         "peripherals/led_controller_peripheral.sv", // LED controller peripheral
         "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
@@ -284,6 +296,15 @@ pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
 // Helper function to create a runtime for the System Controller
 pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["peripherals/system_controller_peripheral.sv"])
+}
+
+// Helper function to create a runtime for the System LED Controller
+pub fn create_sys_led_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/square_wave_generator.sv",
+        "io/sys_led_controller.sv",
+        "wrappers/sys_led_controller_wrapper.sv",
+    ])
 }
 
 // Helper function to create a runtime for the Host Bus Interface
