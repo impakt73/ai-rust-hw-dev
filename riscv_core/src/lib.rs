@@ -151,6 +151,12 @@ pub struct PhaseAccumulatorWrapper;
 )]
 pub struct SkidBufferWrapper;
 
+#[verilog(
+    src = "../rtl/wrappers/square_wave_generator_wrapper.sv",
+    name = "square_wave_generator_wrapper"
+)]
+pub struct SquareWaveGeneratorWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl").exists() {
@@ -389,5 +395,13 @@ pub fn create_skid_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::err
     create_runtime(&[
         "primitives/skid_buffer.sv",
         "wrappers/skid_buffer_wrapper.sv",
+    ])
+}
+
+pub fn create_square_wave_generator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "primitives/square_wave_generator.sv",
+        "wrappers/square_wave_generator_wrapper.sv",
     ])
 }
