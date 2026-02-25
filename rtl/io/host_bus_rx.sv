@@ -15,7 +15,7 @@
 // Buffer Capacity:
 //   Exactly one complete packet (response OR request)
 
-module host_rx_buffer (
+module host_bus_rx (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,

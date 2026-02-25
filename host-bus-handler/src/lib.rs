@@ -213,7 +213,7 @@ pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     }
 }
 
-/// RX state machine states (mirroring host_rx_buffer.sv)
+/// RX state machine states (mirroring host_bus_rx.sv)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RxState {
     /// Idle - waiting for header byte
@@ -277,7 +277,7 @@ struct IncomingResponse {
 ///
 /// This structure abstracts the host-side logic for communicating with an FPGA
 /// using the host bus request protocol. It mirrors the behavior of the RTL
-/// `host_bus_interface` and `host_rx_buffer` modules.
+/// `host_bus_interface` and `host_bus_rx` modules.
 ///
 /// The interface is split into three groups of functions:
 /// 1. **Low-level byte interface**: `transfer_rx_byte()`, `transfer_tx_byte()` for
