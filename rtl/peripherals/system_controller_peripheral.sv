@@ -1,5 +1,5 @@
 // System Controller Peripheral
-// Controls CPU boot process, system reset, CPU reset, and system LEDs
+// Controls CPU boot process, system reset, and CPU reset
 // Provides CPU status monitoring via memory-mapped registers
 
 module system_controller (
@@ -22,7 +22,6 @@ module system_controller (
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
     output logic        req_cpu_halt,  // Pulse to request CPU halt
-    output logic [7:0]  sys_led,       // LED output for external LEDs
     
     // CPU status inputs
     input  logic        cpu_halted,    // From CPU halted signal
@@ -117,25 +116,6 @@ module system_controller (
     end
     
     assign cpu_boot_addr = boot_addr_reg;
-    
-    // ========================================================================
-    // System LED Control Logic - Registered for clean external timing
-    // ========================================================================
-    logic [7:0] sys_led_reg;
-    
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            sys_led_reg <= 8'h00;
-        end else if (cpu_halted) begin
-            sys_led_reg <= 8'hFF;       // All LEDs on when halted
-        end else if (cpu_booting) begin
-            sys_led_reg <= 8'h01;       // Bit 0 on when booting
-        end else begin
-            sys_led_reg <= 8'h00;       // All LEDs off otherwise
-        end
-    end
-    
-    assign sys_led = sys_led_reg;
     
     // ========================================================================
     // Read Logic - Combinational
