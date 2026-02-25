@@ -6,7 +6,7 @@ module square_wave_generator_wrapper (
 
     square_wave_generator #(
         .CLK_FREQ_HZ(100),
-        .WAVE_FREQ_MHZ(25_000)
+        .WAVE_FREQ_MILLIHERTZ(25_000)
     ) u_square_wave_generator (
         .clk(clk),
         .rst_n(rst_n),
