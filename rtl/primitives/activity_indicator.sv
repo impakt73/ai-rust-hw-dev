@@ -8,7 +8,7 @@
 // Interface:
 //   clk       - System clock
 //   rst_n     - Asynchronous active-low reset
-//   activity  - Rising edge triggers one indicator cycle when idle
+//   activity  - High level triggers one indicator cycle when idle
 //   indicator - Registered indicator output
 
 module activity_indicator #(
@@ -27,7 +27,6 @@ module activity_indicator #(
     localparam logic [COUNTER_WIDTH-1:0] HALF_PERIOD_COUNT_MAX = COUNTER_WIDTH'(HALF_PERIOD_CYCLES - 1);
 
     logic [COUNTER_WIDTH-1:0] counter;
-    logic activity_d;
     logic pulse_active;
     logic high_half;
 
@@ -50,18 +49,15 @@ module activity_indicator #(
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             counter <= '0;
-            activity_d <= 1'b0;
             pulse_active <= 1'b0;
             high_half <= 1'b0;
             indicator <= 1'b0;
         end else begin
-            activity_d <= activity;
-
             if (!pulse_active) begin
                 counter <= '0;
                 high_half <= 1'b0;
                 indicator <= 1'b0;
-                if (activity && !activity_d) begin
+                if (activity) begin
                     pulse_active <= 1'b1;
                     high_half <= 1'b1;
                     indicator <= 1'b1;
