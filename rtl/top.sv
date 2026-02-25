@@ -36,7 +36,7 @@ module top #(
     // LED peripheral outputs
     output logic [7:0]  led_out,
     
-    // System LED output (directly from system controller)
+    // System LED output
     output logic [7:0]  sys_led_out,
     
     // System control signals (passed through from CPU)
@@ -479,11 +479,23 @@ module top #(
         .cpu_boot_addr(sysctrl_cpu_boot_addr),
         .cpu_boot(sysctrl_cpu_boot),
         .req_cpu_halt(sysctrl_req_cpu_halt),
-        .sys_led(sys_led_out),
         
         // CPU status inputs
         .cpu_halted(cpu_halted_internal),
         .cpu_booting(cpu_is_booting)
+    );
+
+    // ============================================================
+    // System LED Controller Instantiation
+    // ============================================================
+    sys_led_controller #(
+        .CLK_FREQ_HZ(CLK_FREQ_HZ)
+    ) sys_led_ctrl (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .cpu_booting(cpu_is_booting),
+        .cpu_halted(cpu_halted_internal),
+        .sys_led(sys_led_out)
     );
 
 endmodule
