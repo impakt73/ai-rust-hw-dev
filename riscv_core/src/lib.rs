@@ -309,7 +309,11 @@ pub fn create_sys_led_controller_runtime() -> Result<VerilatorRuntime, Box<dyn s
 
 // Helper function to create a runtime for the Host Bus Interface
 pub fn create_host_bus_interface_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["io/host_bus_interface.sv", "io/host_bus_rx.sv"])
+    create_runtime(&[
+        "io/host_bus_interface.sv",
+        "io/host_bus_rx.sv",
+        "io/host_bus_tx.sv",
+    ])
 }
 
 // Helper function to create a runtime for the Host RX Buffer (standalone testing)
