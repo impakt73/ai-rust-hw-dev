@@ -220,7 +220,7 @@ Response header starts with:
 - Replace fixed 1-address + optional 1-word payload parser with burst parser:
   - Parse 8-byte metadata prefix first.
   - Compute expected payload length from `size`, `we`, and `burst_len`.
-  - Stream payload beats into an internal beat buffer/FIFO interface toward `host_bus_interface`.
+  - For write bursts, stream each payload beat directly to `host_bus_interface` using ready/valid backpressure (no intermediate payload storage in `host_bus_rx`).
 - Add metadata outputs:
   - `packet_src_fixed`, `packet_dst_fixed`
   - `packet_burst_len` (u16 effective beat count in range `1..65536`, i.e. decoded from `burst_len_m1 + 1`)
@@ -243,10 +243,10 @@ Proposed high-level states:
 2. `S_LOAD_REQ` - latch packet metadata (`we/size/len/base/flags`).
 3. `S_ISSUE_BEAT` - drive one bus master transfer.
 4. `S_WAIT_BEAT_READY` - wait `host_bus_ready`.
-5. `S_CAPTURE_READ_BEAT` - store `host_bus_rdata` beat for response payload.
-6. `S_NEXT_BEAT` - increment beat counter and conditionally increment active bus address.
-7. `S_ENQUEUE_RESP` - push response metadata+payload into TX path.
-8. `S_TX_DRAIN` - wait until TX accepts full response packet.
+5. `S_PUSH_TX_BEAT` - for read bursts, present returned `host_bus_rdata` beat directly to TX interface.
+6. `S_WAIT_TX_BEAT` - wait for TX beat handshake before advancing read loop.
+7. `S_NEXT_BEAT` - increment beat counter and conditionally increment active bus address.
+8. `S_ENQUEUE_RESP` - emit response header/trailer metadata once burst loop finishes.
 
 Address update logic per beat:
 - `addr_next = base_addr` when fixed flag active for that direction.
@@ -257,11 +257,18 @@ Direction handling:
 - CPU-initiated side remains supported (TX request / RX response path still operational).
 - For CPU-originated requests (single-beat system bus transactions), protocol fields are encoded with `burst_len=1`, fixed flags cleared.
 
+Per-beat sequencing requirements:
+- **Read burst beat**: issue bus read -> wait `host_bus_ready` -> drive TX data beat with `host_bus_rdata` -> wait TX handshake -> advance beat.
+- **Write burst beat**: accept one RX payload beat -> issue bus write with that beat -> wait `host_bus_ready` -> advance beat.
+- RX backpressure must stall additional write payload ingestion while a prior beat is in-flight.
+- TX backpressure must stall read-loop advancement until the current read beat is transmitted.
+
 ### 4.4 Internal Buffering Strategy
 - Keep at most one active burst in `host_bus_interface` control path initially (matches current single-outstanding model).
-- Use beat counter and small metadata registers.
-- Preferred mode: stream read beats directly into TX path with a **minimum 1-beat skid buffer**.
-- If full-rate streaming is not achievable under backpressure, add bounded staging RAM/FIFO sized for **at least 16 word beats (64 bytes)** as a timing/backpressure safety margin while still keeping one active burst.
+- Use beat counter and metadata registers only; do not introduce intermediate read/write payload storage in `host_bus_interface`.
+- Read payload path is fully streamed from bus-master completion to TX beat handshakes.
+- Write payload path is fully streamed from RX payload beat handshakes to bus-master write handshakes.
+- Existing ready/valid backpressure in RX/TX interfaces is the only throttling mechanism for burst beat progression.
 
 ### 4.5 Affected RTL Files
 - `rtl/io/host_bus_interface.sv`
@@ -365,8 +372,8 @@ Runtime transport glue:
 
 ## 8. Risks / Mitigations
 
-1. **Risk: Large burst payload buffering pressure in RTL**
-   - Mitigation: stream per beat where possible; limit in-flight bursts to one; use bounded payload staging.
+1. **Risk: Throughput reduction under RX/TX backpressure when using fully streamed beats**
+   - Mitigation: keep beat sequencing strictly handshake-gated (no data drops), and retain single-outstanding burst control for deterministic flow.
 
 2. **Risk: Protocol parser desynchronization on malformed streams**
    - Mitigation: strict length accounting + explicit drop-to-idle resync behavior.
