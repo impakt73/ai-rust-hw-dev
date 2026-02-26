@@ -63,7 +63,7 @@ module sys_led_controller #(
 
     activity_indicator #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .INDICATOR_FREQ_MILLIHERTZ(250)
+        .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) instr_complete_activity (
         .clk(clk),
         .rst_n(rst_n),
@@ -73,7 +73,7 @@ module sys_led_controller #(
 
     activity_indicator #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .INDICATOR_FREQ_MILLIHERTZ(250)
+        .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) sys_bus_activity (
         .clk(clk),
         .rst_n(rst_n),
@@ -83,7 +83,7 @@ module sys_led_controller #(
 
     activity_indicator #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .INDICATOR_FREQ_MILLIHERTZ(250)
+        .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) host_bus_rx_activity (
         .clk(clk),
         .rst_n(rst_n),
@@ -93,7 +93,7 @@ module sys_led_controller #(
 
     activity_indicator #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .INDICATOR_FREQ_MILLIHERTZ(250)
+        .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) host_bus_tx_activity (
         .clk(clk),
         .rst_n(rst_n),
