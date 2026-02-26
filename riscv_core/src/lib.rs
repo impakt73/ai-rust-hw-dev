@@ -235,6 +235,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "cpu/cpu.sv",                                  // CPU core
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
+        "primitives/activity_indicator.sv",            // System LED activity indicators
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller
@@ -307,6 +308,7 @@ pub fn create_system_controller_runtime() -> Result<VerilatorRuntime, Box<dyn st
 // Helper function to create a runtime for the System LED Controller
 pub fn create_sys_led_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
+        "primitives/activity_indicator.sv",
         "primitives/square_wave_generator.sv",
         "io/sys_led_controller.sv",
         "wrappers/sys_led_controller_wrapper.sv",

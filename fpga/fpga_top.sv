@@ -113,6 +113,7 @@ module fpga_top #(
     logic [7:0] host_rx_data;
     logic       host_rx_valid;
     logic       host_rx_ready;
+    logic       com_err;
     
     // LED controller output
     logic [7:0]  led_out;
@@ -156,6 +157,7 @@ module fpga_top #(
         .host_rx_data(host_rx_data),
         .host_rx_valid(host_rx_valid),
         .host_rx_ready(host_rx_ready),
+        .com_err(com_err),
         
         // LED peripheral
         .led_out(led_out),
@@ -202,7 +204,7 @@ module fpga_top #(
         .rx_data(host_rx_data),
         .rx_valid(host_rx_valid),
         .rx_ready(host_rx_ready),
-        .rx_error(),      // Optional: can be left unconnected
+        .rx_error(com_err),
         .rx_error_clr(1'b0),  // Not used in host interface
         
         // Serial pins - connected to USB serial

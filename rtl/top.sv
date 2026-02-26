@@ -32,6 +32,7 @@ module top #(
     input  logic [7:0]  host_rx_data,
     input  logic        host_rx_valid,
     output logic        host_rx_ready,
+    input  logic        com_err,
     
     // LED peripheral outputs
     output logic [7:0]  led_out,
@@ -495,6 +496,11 @@ module top #(
         .rst_n(rst_n_internal),
         .cpu_booting(cpu_is_booting),
         .cpu_halted(cpu_halted_internal),
+        .instr_complete(instr_complete),
+        .sys_bus_handshake(arb_bus_req & arb_bus_ready),
+        .host_bus_rx_handshake(host_rx_valid & host_rx_ready),
+        .host_bus_tx_handshake(host_tx_valid & host_tx_ready),
+        .com_err(com_err),
         .sys_led(sys_led_out)
     );
 
