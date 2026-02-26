@@ -175,23 +175,23 @@ Response (example data `[0xA1A2A3A4, 0xB1B2B3B4]`):
 
 ### 3.3 FIFO-Style Non-Incrementing Write (`dst_fixed=1`)
 
-Write 4 words to a **hypothetical fixed-address FIFO data register** in RTL peripheral space (`0x50000020` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
+Write 4 words to a **hypothetical fixed-address FIFO data register** in reserved RTL peripheral space (`0x52003000` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 ```
 [0] 0x29  CTRL0: type=0010, size=word, src_fixed=0, dst_fixed=1
 [1] 0x01  we=1
 [2] 0x03
 [3] 0x00
-[4] 0x20
-[5] 0x00
+[4] 0x00
+[5] 0x30
 [6] 0x00
-[7] 0x50
+[7] 0x52
 [8..23] payload bytes for 4 words
 ```
 
 ### 3.4 FIFO-Style Non-Incrementing Read (`src_fixed=1`)
 
-Read 8 words from a **hypothetical fixed-address FIFO read register** in RTL peripheral space (`0x50000024` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
+Read 8 words from a **hypothetical fixed-address FIFO read register** in reserved RTL peripheral space (`0x52003004` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 Request:
 ```
@@ -199,10 +199,10 @@ Request:
 [1] 0x00  we=0
 [2] 0x07  burst_len_m1 (8 beats)
 [3] 0x00
-[4] 0x24
-[5] 0x00
+[4] 0x04
+[5] 0x30
 [6] 0x00
-[7] 0x50
+[7] 0x52
 ```
 
 Response header starts with:
@@ -223,7 +223,7 @@ Response header starts with:
   - Stream payload beats into an internal beat buffer/FIFO interface toward `host_bus_interface`.
 - Add metadata outputs:
   - `packet_src_fixed`, `packet_dst_fixed`
-  - `packet_burst_len` (u16, decoded as beats)
+  - `packet_burst_len` (u16 effective beat count in range `1..65536`, i.e. decoded from `burst_len_m1 + 1`)
   - `packet_base_addr`
 - Add explicit error/flush path for malformed packets.
 
