@@ -1,15 +1,28 @@
 // System LED Controller
-// Generates registered system LED status from CPU boot/halt signals.
+// Generates registered system LED status from CPU state, activity handshakes, and com_err.
 //
 // Parameters:
 //   CLK_FREQ_HZ - Input clock frequency in Hz
 //
 // Interface:
-//   clk        - System clock
-//   rst_n      - Asynchronous active-low reset
-//   cpu_booting - High while CPU is in boot state
-//   cpu_halted  - High while CPU is halted
-//   sys_led     - Registered LED output
+//   clk                 - System clock
+//   rst_n               - Asynchronous active-low reset
+//   cpu_booting         - High while CPU is in boot state
+//   cpu_halted          - High while CPU is halted
+//   instr_complete      - CPU instruction completion pulse
+//   sys_bus_handshake   - System bus handshake pulse
+//   host_bus_rx_handshake - Host RX handshake pulse
+//   host_bus_tx_handshake - Host TX handshake pulse
+//   com_err             - Communication error status input
+//   sys_led             - Registered LED output
+//
+// LED mapping:
+//   sys_led[0] - Boot blink (while cpu_booting) or halted state
+//   sys_led[1] - instr_complete activity indicator
+//   sys_led[2] - sys_bus_handshake activity indicator
+//   sys_led[3] - host_bus_rx_handshake activity indicator
+//   sys_led[4] - host_bus_tx_handshake activity indicator
+//   sys_led[7] - com_err passthrough
 
 module sys_led_controller #(
     parameter int unsigned CLK_FREQ_HZ = 50_000_000
