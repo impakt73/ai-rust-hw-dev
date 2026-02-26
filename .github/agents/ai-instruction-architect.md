@@ -36,6 +36,16 @@ When you are asked to create an instruction file or agent definition:
 5.  **Project-Specific Code Quality:** For this RISC-V hardware verification project, when creating agents that work with Rust code, **ALWAYS** include mandatory requirements to run `cargo fmt` and `cargo clippy -- -D warnings` before committing any Rust code changes.
 6.  **No Baseline Testing at Session Start:** Every agent definition for this project **MUST** instruct the agent not to run tests or lints at the beginning of a session when the branch has no existing changes compared to the target branch (i.e. a brand new PR). CI guarantees the target branch is always in a clean, passing state; running checks before any changes are made is redundant and wastes time.
 
+## 4a. Forbidden Patterns
+> ❌ **Do NOT create implementation plans.**
+>
+> Implementation plans (e.g., files under `docs/plans/`) require deep, domain-specific expertise to produce high-quality, actionable content. Using the AI Instruction Architect for this purpose results in vague, incorrect, or low-quality plans.
+>
+> **Route implementation plan requests to the correct domain agent instead:**
+> - **RTL/hardware-only plans** → FPGA Architect
+> - **Rust/testing-only plans** → Rust Verification Architect
+> - **Cross-layer (RTL + Rust) plans** → HW-SW Integration Architect
+
 ## 5. Response Template
 When asked to generate an agent or instruction file, use this structure:
 
