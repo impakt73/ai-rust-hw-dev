@@ -12,7 +12,7 @@ module sys_led_controller_wrapper (
 );
 
     sys_led_controller #(
-        .CLK_FREQ_HZ(4)
+        .CLK_FREQ_HZ(16)
     ) u_sys_led_controller (
         .clk(clk),
         .rst_n(rst_n),
