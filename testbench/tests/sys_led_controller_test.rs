@@ -43,7 +43,10 @@ fn test_sys_led_halted_sets_bit0() {
     dut.cpu_halted = 1;
     clock_cycle(&mut dut);
 
-    assert_eq!(dut.sys_led, 0x01, "Only bit 0 must be set when CPU is halted");
+    assert_eq!(
+        dut.sys_led, 0x01,
+        "Only bit 0 must be set when CPU is halted"
+    );
 }
 
 #[test]
