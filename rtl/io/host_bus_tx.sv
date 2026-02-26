@@ -58,7 +58,6 @@ module host_bus_tx (
     logic [16:0] beats_remaining_reg;
 
     logic [31:0] beat_data_reg;
-    logic        beat_last_reg;
 
     logic        tx_handshake;
     logic [7:0]  tx_byte;
@@ -68,7 +67,8 @@ module host_bus_tx (
     // Packet beat acceptance:
     // - IDLE: accept first beat/metadata (packet_start must be 1)
     // - WAIT_BEAT: accept subsequent payload beats
-    assign packet_ready = (state == STATE_IDLE) || (state == STATE_WAIT_BEAT);
+    assign packet_ready = (state == STATE_IDLE      && packet_start) ||
+                          (state == STATE_WAIT_BEAT && !packet_start);
 
     assign tx_valid = (state != STATE_IDLE) && (state != STATE_WAIT_BEAT);
 
@@ -166,7 +166,6 @@ module host_bus_tx (
             beat_bytes_reg      <= 3'd1;
             beats_remaining_reg <= 17'd0;
             beat_data_reg       <= 32'h0000_0000;
-            beat_last_reg       <= 1'b0;
         end else begin
             state <= next_state;
 
@@ -189,12 +188,10 @@ module host_bus_tx (
 
                 beats_remaining_reg <= {1'b0, packet_burst_len_m1} + 17'd1;
                 beat_data_reg       <= packet_data;
-                beat_last_reg       <= packet_last;
             end
 
             if (state == STATE_WAIT_BEAT && packet_valid && packet_ready && !packet_start) begin
                 beat_data_reg <= packet_data;
-                beat_last_reg <= packet_last;
             end
 
             // Beat counters decrement after fully transmitting one beat.
@@ -221,6 +218,24 @@ module host_bus_tx (
 
         end
     end
+
+`ifdef ASSERT_ON
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // no-op
+        end else begin
+            if (state == STATE_IDLE && packet_valid && packet_ready && packet_start &&
+                ((packet_req && packet_we) || (!packet_req && !packet_we))) begin
+                assert (packet_last == (packet_burst_len_m1 == 16'h0000))
+                    else $error("host_bus_tx: packet_last does not match burst_len on first beat");
+            end
+            if (state == STATE_WAIT_BEAT && packet_valid && packet_ready && !packet_start) begin
+                assert (packet_last == (beats_remaining_reg == 17'd1))
+                    else $error("host_bus_tx: packet_last does not match beats_remaining_reg");
+            end
+        end
+    end
+`endif
 
     always_comb begin
         tx_byte = 8'h00;

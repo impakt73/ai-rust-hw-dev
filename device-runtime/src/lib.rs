@@ -175,6 +175,7 @@ pub enum BusEvent {
         addr: u32,
         data: u32,
         size: AccessSize,
+        burst_data: Vec<u8>,
     },
     /// A host-initiated write acknowledgment received
     HostWriteResponse {
@@ -418,55 +419,49 @@ pub trait DeviceRuntime: std::fmt::Display {
             let remaining = data.len() - offset;
             let (size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
                 let word_count = (remaining / 4).min(MAX_BURST_BEATS as usize);
-                // Burst-sized chunking entry point. This keeps chunk boundaries and
-                // max-beat accounting explicit. Runtime backends currently execute
-                // these chunk beats as individual host requests.
-                for word_idx in 0..word_count {
-                    let word_off = offset + (word_idx * 4);
-                    let word_addr = start_addr
-                        .checked_add(u32::try_from(word_off).expect("validated range"))
-                        .expect("validated range");
-                    let wdata = u32::from_le_bytes([
-                        data[word_off],
-                        data[word_off + 1],
-                        data[word_off + 2],
-                        data[word_off + 3],
-                    ]);
-                    self.send_host_request(BusRequest::write(word_addr, wdata, AccessSize::Word))?;
+                let chunk_len = word_count * 4;
+                let burst_data = data[offset..offset + chunk_len].to_vec();
+                self.send_host_request(BusRequest::burst_write(
+                    addr,
+                    AccessSize::Word,
+                    word_count as u32,
+                    false,
+                    false,
+                    burst_data,
+                ))?;
 
-                    loop {
-                        match self.poll()? {
-                            Some(BusEvent::HostWriteResponse {
-                                addr: resp_addr,
-                                size: resp_size,
-                                ..
-                            }) if resp_addr == word_addr
-                                && resp_size == AccessSize::Word
-                                && !self.has_pending_host_request() =>
-                            {
-                                break;
-                            }
-                            Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                                if resp_addr == word_addr =>
-                            {
-                                return Err(DeviceError::IoError(std::io::Error::new(
-                                    std::io::ErrorKind::TimedOut,
-                                    format!(
-                                        "Timed out writing {} at address 0x{word_addr:08x}",
-                                        access_size_name(AccessSize::Word)
-                                    ),
-                                )));
-                            }
-                            Some(event) => {
-                                if let Some(callback) = event_callback.as_mut() {
-                                    callback(event);
-                                }
-                            }
-                            None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                loop {
+                    match self.poll()? {
+                        Some(BusEvent::HostWriteResponse {
+                            addr: resp_addr,
+                            size: resp_size,
+                            ..
+                        }) if resp_addr == addr
+                            && resp_size == AccessSize::Word
+                            && !self.has_pending_host_request() =>
+                        {
+                            break;
                         }
+                        Some(BusEvent::HostRequestTimeout { addr: resp_addr })
+                            if resp_addr == addr =>
+                        {
+                            return Err(DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "Timed out writing word burst ({} beats) at address 0x{addr:08x}",
+                                    word_count
+                                ),
+                            )));
+                        }
+                        Some(event) => {
+                            if let Some(callback) = event_callback.as_mut() {
+                                callback(event);
+                            }
+                        }
+                        None => std::thread::sleep(std::time::Duration::from_millis(1)),
                     }
                 }
-                offset += word_count * 4;
+                offset += chunk_len;
                 continue;
             } else if remaining >= 2 && (addr & 0x1) == 0 {
                 (AccessSize::Halfword, 2usize)
@@ -556,48 +551,60 @@ pub trait DeviceRuntime: std::fmt::Display {
             let remaining = size - offset;
             let (request_size, step) = if remaining >= 4 && (addr & 0x3) == 0 {
                 let word_count = (remaining as usize / 4).min(MAX_BURST_BEATS as usize);
-                for word_idx in 0..word_count {
-                    let word_offset = offset + (word_idx as u32 * 4);
-                    let word_addr = start_addr
-                        .checked_add(word_offset)
-                        .expect("validated range");
-                    self.send_host_request(BusRequest::read(word_addr, AccessSize::Word))?;
+                self.send_host_request(BusRequest::burst_read(
+                    addr,
+                    AccessSize::Word,
+                    word_count as u32,
+                    false,
+                    false,
+                ))?;
 
-                    let read_data = loop {
-                        match self.poll()? {
-                            Some(BusEvent::HostReadResponse {
-                                addr: resp_addr,
-                                data: read_data,
-                                size: resp_size,
-                                ..
-                            }) if resp_addr == word_addr
-                                && resp_size == AccessSize::Word
-                                && !self.has_pending_host_request() =>
-                            {
-                                break read_data;
-                            }
-                            Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                                if resp_addr == word_addr =>
-                            {
-                                return Err(DeviceError::IoError(std::io::Error::new(
-                                    std::io::ErrorKind::TimedOut,
-                                    format!(
-                                        "Timed out reading {} at address 0x{word_addr:08x}",
-                                        access_size_name(AccessSize::Word)
-                                    ),
-                                )));
-                            }
-                            Some(event) => {
-                                if let Some(callback) = event_callback.as_mut() {
-                                    callback(event);
-                                }
-                            }
-                            None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                let burst_bytes = loop {
+                    match self.poll()? {
+                        Some(BusEvent::HostReadResponse {
+                            addr: resp_addr,
+                            size: resp_size,
+                            burst_data,
+                            ..
+                        }) if resp_addr == addr
+                            && resp_size == AccessSize::Word
+                            && !self.has_pending_host_request() =>
+                        {
+                            break burst_data;
                         }
-                    };
-                    data.extend_from_slice(&read_data.to_le_bytes());
+                        Some(BusEvent::HostRequestTimeout { addr: resp_addr })
+                            if resp_addr == addr =>
+                        {
+                            return Err(DeviceError::IoError(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "Timed out reading word burst ({} beats) at address 0x{addr:08x}",
+                                    word_count
+                                ),
+                            )));
+                        }
+                        Some(event) => {
+                            if let Some(callback) = event_callback.as_mut() {
+                                callback(event);
+                            }
+                        }
+                        None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                    }
+                };
+                let expected = word_count * 4;
+                if burst_bytes.len() != expected {
+                    return Err(DeviceError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "Read burst payload size mismatch at 0x{addr:08x} ({} beats): expected {} bytes, got {} bytes",
+                            word_count,
+                            expected,
+                            burst_bytes.len()
+                        ),
+                    )));
                 }
-                offset += (word_count as u32) * 4;
+                data.extend_from_slice(&burst_bytes);
+                offset += expected as u32;
                 continue;
             } else if remaining >= 2 && (addr & 0x1) == 0 {
                 (AccessSize::Halfword, 2u32)

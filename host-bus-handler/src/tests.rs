@@ -134,3 +134,38 @@ fn test_reject_invalid_burst_config() {
         Err(HandlerError::InvalidBurstConfig)
     ));
 }
+
+#[test]
+fn test_request_end_addr_uses_burst_span_for_incrementing_requests() {
+    let req = BusRequest::burst_read(0x5000_0000, AccessSize::Word, 4, false, false);
+    assert_eq!(request_end_addr(&req), Some(0x5000_000F));
+    assert_eq!(
+        classify_request_region(&req),
+        RequestAddressRegion::RtlPeripheral
+    );
+}
+
+#[test]
+fn test_request_end_addr_uses_single_beat_for_fixed_requests() {
+    let req = BusRequest::burst_read(0x5000_0000, AccessSize::Word, 4, true, false);
+    assert_eq!(request_end_addr(&req), Some(0x5000_0003));
+    assert_eq!(
+        classify_request_region(&req),
+        RequestAddressRegion::RtlPeripheral
+    );
+}
+
+#[test]
+fn test_classify_request_region_detects_burst_boundary_crossing() {
+    let req = BusRequest::burst_read(0x5FFF_FFFC, AccessSize::Word, 2, false, false);
+    assert_eq!(
+        classify_request_region(&req),
+        RequestAddressRegion::SpansRtlBoundary
+    );
+
+    let fixed_req = BusRequest::burst_read(0x5FFF_FFFC, AccessSize::Word, 2, true, false);
+    assert_eq!(
+        classify_request_region(&fixed_req),
+        RequestAddressRegion::RtlPeripheral
+    );
+}
