@@ -19,21 +19,21 @@ Eliminate the current serialized single-request/single-response bottleneck on th
 
 ## 2. New Packet Protocol (v2, non-backward-compatible)
 
-## 2.1 Design Principles
+### 2.1 Design Principles
 
 1. **Descriptor-first framing:** command always starts with a fixed-size descriptor, making decode simple in RTL and Rust.
 2. **Word-native transfers:** burst length is encoded in words to align with system bus datapath.
 3. **Address stride control:** source and destination increment controls are explicit and independent.
 4. **Direction-neutral semantics:** protocol models a transfer from `src` endpoint to `dst` endpoint.
 
-## 2.2 Packet Types
+### 2.2 Packet Types
 
 - `0x1` = `CMD_BURST` (Host → FPGA): submit burst descriptor + write payload (if needed)
 - `0x2` = `RSP_BURST_STATUS` (FPGA → Host): completion status and metadata
 - `0x3` = `RSP_BURST_READ_DATA` (FPGA → Host): stream of read data words for read-direction bursts
 - `0xF` = `RSP_ERROR` (FPGA → Host): malformed packet / unsupported descriptor / runtime error
 
-## 2.3 Fixed Descriptor Layout (`CMD_BURST`)
+### 2.3 Fixed Descriptor Layout (`CMD_BURST`)
 
 All multi-byte fields are little-endian.
 
@@ -41,7 +41,7 @@ All multi-byte fields are little-endian.
 |---|---|---:|---|
 | 0 | `opcode` | 7:0 | `0x1` for burst command |
 | 1 | `flags` | 7:0 | Bit0 `src_inc`, Bit1 `dst_inc`, Bit2 `is_write_to_bus`, Bit3 `reserved`, Bits7:4 reserved |
-| 2..3 | `word_count_minus1` | 15:0 | Encodes 1..65536 words (`actual = value + 1`) |
+| 2..3 | `word_count_minus1` | 15:0 | Encodes 1..65536 words (`actual = value + 1`; `0 => 1 word`, `65535 => 65536 words`) |
 | 4..7 | `src_addr` | 31:0 | Source address (meaning depends on endpoint role) |
 | 8..11 | `dst_addr` | 31:0 | Destination address (meaning depends on endpoint role) |
 
@@ -49,7 +49,7 @@ Payload immediately follows descriptor:
 - If `is_write_to_bus=1` (Host writes into bus space): host sends `word_count * 4` bytes after descriptor.
 - If `is_write_to_bus=0` (Host reads from bus space): no payload in command packet.
 
-## 2.4 Endpoint Semantics and Increment Controls
+### 2.4 Endpoint Semantics and Increment Controls
 
 - One endpoint is always **stream side** (serial RX/TX side), the other is **bus side** (`host_bus_*` master interface).
 - `src_inc=0` means reuse same source address each word.
@@ -63,22 +63,22 @@ Notes:
 - For stream endpoint, “address increment” is interpreted as stream index advance behavior in RTL loop bookkeeping.
 - Protocol keeps both increment flags explicit for symmetry and future-proofing.
 
-## 2.5 Completion and Error Response Formats
+### 2.5 Completion and Error Response Formats
 
 ### `RSP_BURST_STATUS` (`opcode=0x2`)
 
 | Byte(s) | Field | Description |
 |---|---|---|
 | 0 | `opcode` | `0x2` |
-| 1 | `status` | `0=OK`, `1=ERR_MALFORMED`, `2=ERR_BUSY`, `3=ERR_BUS`, `4=ERR_INTERNAL` |
-| 2..3 | `words_completed_minus1` | Number of words completed before finishing/error |
+| 1 | `status` | `0=OK`, `1=ERR_MALFORMED` (invalid packet format/flags), `2=ERR_BUSY` (command while active burst exists), `3=ERR_BUS` (bus transaction failed/timed out), `4=ERR_INTERNAL` (unexpected FSM/internal consistency fault) |
+| 2..3 | `words_completed_minus1` | Number of words completed minus 1 before finishing/error (`0` means 1 word completed) |
 
 ### `RSP_BURST_READ_DATA` (`opcode=0x3`)
 
 | Byte(s) | Field | Description |
 |---|---|---|
 | 0 | `opcode` | `0x3` |
-| 1..2 | `word_count_minus1` | Number of words in this data response |
+| 1..2 | `word_count_minus1` | Number of words in this data response, minus 1 (`0 => 1 word`) |
 | 3..N | `data` | `word_count * 4` bytes, little-endian words |
 
 For this implementation, emit one `RSP_BURST_READ_DATA` per command (entire burst). Future chunking can be added later if needed.
@@ -87,7 +87,7 @@ For this implementation, emit one `RSP_BURST_READ_DATA` per command (entire burs
 
 ## 3. RTL Implementation Plan
 
-## 3.1 Architectural Change
+### 3.1 Architectural Change
 
 Implement a burst execution FSM in `host_bus_interface.sv` that:
 1. accepts one `CMD_BURST`,
@@ -97,7 +97,7 @@ Implement a burst execution FSM in `host_bus_interface.sv` that:
 
 No changes to system bus RTL interfaces or transaction semantics.
 
-## 3.2 RTL Module Responsibilities
+### 3.2 RTL Module Responsibilities
 
 ### `host_bus_rx.sv`
 
@@ -107,7 +107,7 @@ No changes to system bus RTL interfaces or transaction semantics.
 - Output structured burst command fields:
   - `cmd_valid`, `cmd_ready`
   - `cmd_is_write_to_bus`, `cmd_src_inc`, `cmd_dst_inc`
-  - `cmd_word_count` (17-bit internal: 1..65536)
+  - `cmd_word_count` (17-bit internal **actual** word count: `1..65536`; 17 bits are intentional so value `65536` is representable after expanding 16-bit `word_count_minus1`)
   - `cmd_src_addr`, `cmd_dst_addr`
 - For host→bus writes, expose streaming payload word interface to `host_bus_interface`:
   - `payload_word_valid`, `payload_word_ready`, `payload_word_data`
@@ -142,17 +142,17 @@ No changes to system bus RTL interfaces or transaction semantics.
 - Loop behavior:
   - For write burst: read each word from RX payload stream, issue bus write, wait `host_bus_ready`, update addresses per inc flags.
   - For read burst: issue bus read, wait `host_bus_ready`, push `host_bus_rdata` to TX read-data stream, update addresses per inc flags.
-- Bus size hard-wired to word (`2'b10`) for burst path.
+- Bus size hard-wired to word (`2'b10`, existing host bus encoding for 32-bit/word access) for burst path.
 - Busy rule: while one command is active, reject/ERR_BUSY any new command.
 
-## 3.3 Address Increment Rules in FSM
+### 3.3 Address Increment Rules in FSM
 
 - `next_src_addr = src_inc ? src_addr + 4 : src_addr`
 - `next_dst_addr = dst_inc ? dst_addr + 4 : dst_addr`
 - On each completed word transfer, update both based on direction and descriptor flags.
 - For fixed-address FIFO interaction, one side remains constant across the burst.
 
-## 3.4 RTL Validation Tasks
+### 3.4 RTL Validation Tasks
 
 Update/add focused tests in `testbench/tests/host_bus_interface_test.rs` (and any RX/TX module tests) for:
 1. Burst write incrementing dst (`dst_inc=1`)
@@ -168,19 +168,19 @@ Update/add focused tests in `testbench/tests/host_bus_interface_test.rs` (and an
 
 ## 4. Rust Host-Side Implementation Plan
 
-## 4.1 `host-bus-handler` crate changes
+### 4.1 `host-bus-handler` crate changes
 
 Primary protocol rewrite location.
 
 - Replace existing packet type parsing/serialization with v2 burst protocol.
 - Add new API surface (minimal and explicit):
-  - `send_burst_write(addr, words: &[u32], dst_inc: bool)`
-  - `send_burst_read(addr, word_count_words: u32, src_inc: bool) -> Vec<u32>` (validated to `1..=65536`)
+  - `send_burst_write(addr, words: &[u32], dst_inc: bool)` (`words.len()` validated to `1..=65536`)
+  - `send_burst_read(addr, num_words: NonZeroU32, src_inc: bool) -> Result<Vec<u32>, HandlerError>` (`num_words.get() <= 65536` validated)
   - internal packet encode/decode helpers for new opcodes.
 - Keep low-level byte transfer API (`transfer_rx_byte`, `transfer_tx_byte`) but rewire FSMs to descriptor+stream model.
 - Preserve robust partial-byte/partial-packet handling under serial fragmentation.
 
-## 4.2 `device-runtime` changes (mostly isolated)
+### 4.2 `device-runtime` changes (mostly isolated)
 
 Main behavior change should be in low-level region APIs in `device-runtime/src/lib.rs`:
 
@@ -195,7 +195,7 @@ Main behavior change should be in low-level region APIs in `device-runtime/src/l
 
 Keep higher-level call sites unchanged (`load_program`, ELF loaders, tests), so integration impact stays localized.
 
-## 4.3 Runtime event model adjustments
+### 4.3 Runtime event model adjustments
 
 - Add/adjust bus events as needed to represent burst completion/errors without flooding per-word events.
 - Ensure timeout handling treats an entire burst command as one pending host request lifecycle.
@@ -223,13 +223,13 @@ Keep higher-level call sites unchanged (`load_program`, ELF loaders, tests), so 
 
 ## 6. Verification Strategy
 
-## 6.1 RTL checks
+### 6.1 RTL checks
 
-- `find rtl -name '*.sv' -exec verilator --lint-only -Wno-MULTITOP {} +`
+- `find rtl -name '*.sv' -exec verilator --lint-only {} +`
 - `(cd fpga && make)` (synthesis gate after RTL change)
 - Targeted host bus tests in `testbench/tests/host_bus_interface_test.rs`
 
-## 6.2 Rust checks
+### 6.2 Rust checks
 
 - `cargo fmt`
 - `cargo clippy --fix --allow-dirty`
