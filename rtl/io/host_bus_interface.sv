@@ -77,6 +77,8 @@ module host_bus_interface (
     logic [1:0]  cpu_cap_size;
     logic        cpu_req_pending;
     logic        cpu_wait_resp;
+    logic [31:0] cpu_resp_data;
+    logic        cpu_resp_seen;
 
     // ============================================================
     // Host transaction execution state
@@ -154,7 +156,7 @@ module host_bus_interface (
     // CPU slave interface
     // ============================================================
     assign ready = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req && rx_pkt_last;
-    assign rdata = rx_pkt_data;
+    assign rdata = cpu_resp_seen ? cpu_resp_data : rx_pkt_data;
 
     // ============================================================
     // RX packet consumption
@@ -270,6 +272,8 @@ module host_bus_interface (
             cpu_cap_size    <= 2'b00;
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
+            cpu_resp_data   <= 32'h0000_0000;
+            cpu_resp_seen   <= 1'b0;
 
             host_state           <= HOST_IDLE;
             host_req_we          <= 1'b0;
@@ -297,11 +301,20 @@ module host_bus_interface (
             if (cpu_req_pending && tx_pkt_valid && tx_pkt_ready && tx_pkt_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
+                cpu_resp_seen   <= 1'b0;
             end
 
             // CPU response consumed from RX
             if (ready) begin
                 cpu_wait_resp <= 1'b0;
+                cpu_resp_seen <= 1'b0;
+            end
+
+            // Latch first response beat for deterministic CPU read data if malformed
+            // multi-beat responses are observed.
+            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req && !cpu_resp_seen) begin
+                cpu_resp_data <= rx_pkt_data;
+                cpu_resp_seen <= 1'b1;
             end
 
             case (host_state)
@@ -383,5 +396,20 @@ module host_bus_interface (
             endcase
         end
     end
+
+`ifdef ASSERT_ON
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // no-op
+        end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin
+            assert (rx_pkt_start)
+                else $error("host_bus_interface: CPU response beat missing packet_start");
+            assert (rx_pkt_last)
+                else $error("host_bus_interface: CPU response must be single-beat (packet_last=1)");
+            assert (rx_pkt_burst_len_m1 == 16'h0000)
+                else $error("host_bus_interface: CPU response burst_len_m1 must be 0");
+        end
+    end
+`endif
 
 endmodule

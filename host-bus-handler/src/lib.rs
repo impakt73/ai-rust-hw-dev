@@ -443,6 +443,9 @@ impl HostBusHandler {
             if request.data.len() != expected {
                 return Err(HandlerError::InvalidBurstConfig);
             }
+        } else if !request.data.is_empty() {
+            // Read requests are metadata-only; payload bytes would corrupt stream framing.
+            return Err(HandlerError::InvalidBurstConfig);
         }
         if classify_request_region(&request) != RequestAddressRegion::RtlPeripheral {
             return Err(HandlerError::InvalidAddressRange);
@@ -493,6 +496,25 @@ impl HostBusHandler {
             response.burst_len = accepted.burst_len;
             response.src_fixed = accepted.src_fixed;
             response.dst_fixed = accepted.dst_fixed;
+        }
+
+        if response.we != accepted.we
+            || response.size != accepted.size
+            || response.addr != accepted.addr
+            || response.burst_len != accepted.burst_len
+            || response.src_fixed != accepted.src_fixed
+            || response.dst_fixed != accepted.dst_fixed
+        {
+            return Err(HandlerError::InvalidBurstConfig);
+        }
+
+        let expected_data_len = if accepted.we {
+            0
+        } else {
+            (accepted.size.byte_count() as usize) * (accepted.burst_len as usize)
+        };
+        if response.data.len() != expected_data_len {
+            return Err(HandlerError::InvalidBurstConfig);
         }
 
         self.pending_response = Some(response);

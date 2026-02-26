@@ -136,6 +136,17 @@ fn test_reject_invalid_burst_config() {
 }
 
 #[test]
+fn test_reject_read_request_with_payload_bytes() {
+    let mut handler = HostBusHandler::new();
+    let mut bad = BusRequest::burst_read(0x5000_0000, AccessSize::Word, 1, false, false);
+    bad.data = vec![0xAA, 0xBB, 0xCC, 0xDD];
+    assert!(matches!(
+        handler.send_request(bad),
+        Err(HandlerError::InvalidBurstConfig)
+    ));
+}
+
+#[test]
 fn test_request_end_addr_uses_burst_span_for_incrementing_requests() {
     let req = BusRequest::burst_read(0x5000_0000, AccessSize::Word, 4, false, false);
     assert_eq!(request_end_addr(&req), Some(0x5000_000F));
@@ -168,4 +179,25 @@ fn test_classify_request_region_detects_burst_boundary_crossing() {
         classify_request_region(&fixed_req),
         RequestAddressRegion::RtlPeripheral
     );
+}
+
+#[test]
+fn test_complete_request_rejects_mismatched_burst_read_payload() {
+    let mut handler = HostBusHandler::new();
+
+    let mut request = vec![0x08, 0x00, 0x01, 0x00];
+    request.extend_from_slice(&0x5000_1000u32.to_le_bytes());
+    feed_rx_bytes(&mut handler, &request);
+
+    let accepted = handler
+        .accept_request()
+        .expect("request should be available");
+    assert!(!accepted.we);
+    assert_eq!(accepted.burst_len, 2);
+
+    let bad_response = BusResponse::read_data(0x1122_3344, AccessSize::Word);
+    assert!(matches!(
+        handler.complete_request(bad_response),
+        Err(HandlerError::InvalidBurstConfig)
+    ));
 }
