@@ -150,6 +150,12 @@ pub struct SramPeripheralTestWrapper;
 pub struct PhaseAccumulatorWrapper;
 
 #[verilog(
+    src = "../rtl/wrappers/activity_indicator_wrapper.sv",
+    name = "activity_indicator_wrapper"
+)]
+pub struct ActivityIndicatorWrapper;
+
+#[verilog(
     src = "../rtl/wrappers/skid_buffer_wrapper.sv",
     name = "skid_buffer_wrapper"
 )]
@@ -413,6 +419,13 @@ pub fn create_phase_accumulator_runtime() -> Result<VerilatorRuntime, Box<dyn st
     create_runtime(&[
         "primitives/phase_accumulator.sv",
         "wrappers/phase_accumulator_wrapper.sv",
+    ])
+}
+
+pub fn create_activity_indicator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/activity_indicator.sv",
+        "wrappers/activity_indicator_wrapper.sv",
     ])
 }
 

@@ -30,7 +30,7 @@ fn test_sys_led_all_ones_during_reset() {
 }
 
 #[test]
-fn test_sys_led_halted_sets_bit7() {
+fn test_sys_led_halted_sets_bit0() {
     let runtime =
         create_sys_led_controller_runtime().expect("Failed to create sys_led_controller runtime");
     let mut dut = runtime
@@ -44,8 +44,8 @@ fn test_sys_led_halted_sets_bit7() {
     clock_cycle(&mut dut);
 
     assert_eq!(
-        dut.sys_led, 0x80,
-        "Only bit 7 must be set when CPU is halted"
+        dut.sys_led, 0x01,
+        "Only bit 0 must be set when CPU is halted"
     );
 }
 
