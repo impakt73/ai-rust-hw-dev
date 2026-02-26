@@ -1,5 +1,7 @@
 use riscv_core::{create_sys_led_controller_runtime, SysLedControllerWrapper};
 
+const ACTIVITY_BITS_MASK: u8 = 0x1E;
+
 fn clock_cycle(dut: &mut SysLedControllerWrapper) {
     dut.clk = 0;
     dut.eval();
@@ -111,7 +113,7 @@ fn test_sys_led_activity_indicators_and_com_err() {
     let mut saw_all_activity_bits_high = false;
     for _ in 0..20 {
         clock_cycle(&mut dut);
-        if (dut.sys_led & 0x1E) == 0x1E {
+        if (dut.sys_led & ACTIVITY_BITS_MASK) == ACTIVITY_BITS_MASK {
             saw_all_activity_bits_high = true;
             break;
         }
