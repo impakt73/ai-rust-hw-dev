@@ -242,12 +242,13 @@ Implement a transaction-loop FSM that iterates beats without changing system bus
 Proposed high-level states:
 1. `S_IDLE` - wait for decoded packet or CPU-side request.
 2. `S_LOAD_REQ` - latch packet metadata (`we/size/len/base/flags`).
-3. `S_ISSUE_BEAT` - drive one bus master transfer.
-4. `S_WAIT_BEAT_READY` - wait `host_bus_ready`.
-5. `S_PUSH_TX_BEAT` - for read bursts, assert TX beat valid with returned `host_bus_rdata`.
-6. `S_WAIT_TX_BEAT` - wait for TX beat handshake before advancing read loop (implementation may collapse 5/6 into one handshake state if timing allows).
-7. `S_NEXT_BEAT` - increment beat counter and conditionally increment active bus address.
-8. `S_ENQUEUE_RESP` - emit response header/trailer metadata once burst loop finishes.
+3. `S_ENQUEUE_RESP_HDR` - emit response header metadata before any read payload beat is sent.
+4. `S_ISSUE_BEAT` - drive one bus master transfer.
+5. `S_WAIT_BEAT_READY` - wait `host_bus_ready`.
+6. `S_PUSH_TX_BEAT` - for read bursts, assert TX beat valid with returned `host_bus_rdata`.
+7. `S_WAIT_TX_BEAT` - wait for TX beat handshake before advancing read loop (implementation may collapse 6/7 into one handshake state if timing allows).
+8. `S_NEXT_BEAT` - increment beat counter and conditionally increment active bus address.
+9. `S_ENQUEUE_RESP_END` - emit completion/trailer metadata after burst loop finishes (if needed by framing implementation).
 
 Address update logic per beat:
 - `addr_next = base_addr` when fixed flag active for that direction.
@@ -259,7 +260,7 @@ Direction handling:
 - For CPU-originated requests (single-beat system bus transactions), protocol fields are encoded with `burst_len=1`, fixed flags cleared.
 
 Per-beat sequencing requirements:
-- **Read burst beat**: issue bus read -> wait `host_bus_ready` -> assert TX beat valid with `host_bus_rdata` stable -> wait TX handshake (possibly same cycle) -> advance beat.
+- **Read burst response sequencing**: emit response header first -> for each beat issue bus read -> wait `host_bus_ready` -> assert TX beat valid with `host_bus_rdata` stable -> wait TX handshake (possibly same cycle) -> advance beat.
 - **Write burst beat**: accept one RX payload beat -> issue bus write with that beat -> wait `host_bus_ready` -> advance beat.
 - RX backpressure must stall additional write payload ingestion while a prior beat is in-flight.
 - TX backpressure must stall read-loop advancement until the current read beat is transmitted.
