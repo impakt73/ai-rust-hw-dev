@@ -175,7 +175,7 @@ Response (example data `[0xA1A2A3A4, 0xB1B2B3B4]`):
 
 ### 3.3 FIFO-Style Non-Incrementing Write (`dst_fixed=1`)
 
-Write 4 words to a **hypothetical fixed-address FIFO data register** in RTL peripheral space (`0x50000020` used for illustration only):
+Write 4 words to a **hypothetical fixed-address FIFO data register** in RTL peripheral space (`0x50000020` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 ```
 [0] 0x29  CTRL0: type=0010, size=word, src_fixed=0, dst_fixed=1
@@ -191,7 +191,7 @@ Write 4 words to a **hypothetical fixed-address FIFO data register** in RTL peri
 
 ### 3.4 FIFO-Style Non-Incrementing Read (`src_fixed=1`)
 
-Read 8 words from a **hypothetical fixed-address FIFO read register** in RTL peripheral space (`0x50000024` used for illustration only):
+Read 8 words from a **hypothetical fixed-address FIFO read register** in RTL peripheral space (`0x50000024` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 Request:
 ```
@@ -260,7 +260,8 @@ Direction handling:
 ### 4.4 Internal Buffering Strategy
 - Keep at most one active burst in `host_bus_interface` control path initially (matches current single-outstanding model).
 - Use beat counter and small metadata registers.
-- Read bursts require response payload staging (can be streaming into TX buffer if tx can accept per beat; otherwise small burst data FIFO/register RAM).
+- Preferred mode: stream read beats directly into TX path with a **minimum 1-beat skid buffer**.
+- If full-rate streaming is not achievable under backpressure, add bounded staging RAM/FIFO sized for **at least 16 word beats (64 bytes)** as a timing/backpressure safety margin while still keeping one active burst.
 
 ### 4.5 Affected RTL Files
 - `rtl/io/host_bus_interface.sv`
