@@ -109,11 +109,11 @@ module csr_file (
 
     assign csr_mem_addr = csr_addr_to_index(csr_addr);
     
-    // Performance counters (64-bit)
-    // Note: CYCLE increments every clock cycle
-    // INSTRET increments when instr_complete signal is asserted
-    logic [63:0] csr_cycle;
-    logic [63:0] csr_instret;
+    // Performance counters (32-bit simplification for this project)
+    // Note: CYCLE increments every clock cycle, INSTRET increments on instr_complete.
+    // High counter CSRs (CYCLEH/TIMEH/INSTRETH) intentionally read as 0.
+    logic [31:0] csr_cycle;
+    logic [31:0] csr_instret;
     
     // ============================================================
     // CSR Read Logic
@@ -126,16 +126,9 @@ module csr_file (
             CSR_FCSR:      csr_rdata = fcsr;
             
             // Machine-level CSRs
-            CSR_MSTATUS:   csr_rdata = csr_mem_rdata;
-            CSR_MISA:      csr_rdata = csr_mem_rdata;  // Writable for test compatibility
-            CSR_MEDELEG:   csr_rdata = csr_mem_rdata;
-            CSR_MIDELEG:   csr_rdata = csr_mem_rdata;
-            CSR_MIE:       csr_rdata = csr_mem_rdata;
-            CSR_MTVEC:     csr_rdata = csr_mem_rdata;
-            CSR_MSCRATCH:  csr_rdata = csr_mem_rdata;
-            CSR_MEPC:      csr_rdata = csr_mem_rdata;
-            CSR_MCAUSE:    csr_rdata = csr_mem_rdata;
-            CSR_MTVAL:     csr_rdata = csr_mem_rdata;
+            CSR_MSTATUS, CSR_MISA, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
+            CSR_MTVEC, CSR_MSCRATCH, CSR_MEPC, CSR_MCAUSE, CSR_MTVAL:
+                            csr_rdata = csr_mem_rdata;
             CSR_MIP:       csr_rdata = 32'h0;  // No interrupts pending (simplified)
             
             // Performance counters (lower 32 bits)
@@ -144,9 +137,9 @@ module csr_file (
             CSR_INSTRET:   csr_rdata = csr_instret[31:0];
             
             // Performance counters (upper 32 bits)
-            CSR_CYCLEH:    csr_rdata = csr_cycle[63:32];
-            CSR_TIMEH:     csr_rdata = csr_cycle[63:32];
-            CSR_INSTRETH:  csr_rdata = csr_instret[63:32];
+            CSR_CYCLEH:    csr_rdata = 32'h0;
+            CSR_TIMEH:     csr_rdata = 32'h0;
+            CSR_INSTRETH:  csr_rdata = 32'h0;
             
             // Machine information (read-only, hardcoded)
             CSR_MVENDORID: csr_rdata = 32'h0;           // Non-commercial
@@ -216,18 +209,18 @@ module csr_file (
     // CSR updates
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            csr_cycle    <= 64'h0;
-            csr_instret  <= 64'h0;
+            csr_cycle    <= 32'h0;
+            csr_instret  <= 32'h0;
             csr_init_pending <= 1'b1;
         end else begin
             csr_init_pending <= 1'b0;
 
             // Cycle counter always increments
-            csr_cycle <= csr_cycle + 64'd1;
+            csr_cycle <= csr_cycle + 32'd1;
             
             // Instruction retired counter increments when instruction completes
             if (instr_complete) begin
-                csr_instret <= csr_instret + 64'd1;
+                csr_instret <= csr_instret + 32'd1;
             end
             
             // Writable machine-level CSR writes are handled by BRAM write port.
