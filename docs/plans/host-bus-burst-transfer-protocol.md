@@ -31,7 +31,7 @@ Add native burst transfer support to the host bus packet protocol so host-initia
 
 ## 2. Protocol Specification (Burst-Native)
 
-## 2.1 Common Fields
+### 2.1 Common Fields
 
 All packet types move to a unified burst-capable framing format:
 
@@ -175,7 +175,7 @@ Response (example data `[0xA1A2A3A4, 0xB1B2B3B4]`):
 
 ### 3.3 FIFO-Style Non-Incrementing Write (`dst_fixed=1`)
 
-Write 4 words to fixed FIFO data register at `0x50000020`:
+Write 4 words to a **hypothetical fixed-address FIFO data register** in RTL peripheral space (`0x50000020` used for illustration only):
 
 ```
 [0] 0x29  CTRL0: type=0010, size=word, src_fixed=0, dst_fixed=1
@@ -191,7 +191,7 @@ Write 4 words to fixed FIFO data register at `0x50000020`:
 
 ### 3.4 FIFO-Style Non-Incrementing Read (`src_fixed=1`)
 
-Read 8 words from fixed FIFO read register at `0x50000024`:
+Read 8 words from a **hypothetical fixed-address FIFO read register** in RTL peripheral space (`0x50000024` used for illustration only):
 
 Request:
 ```
