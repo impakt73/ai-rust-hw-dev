@@ -3,7 +3,7 @@
 ## 1. Goal / Scope
 
 ### 1.1 Goal
-Add native burst transfer support to the host bus packet protocol so host-initiated memory reads/writes can transfer up to **64K words per request** (65,536 beats when `size=word`), while preserving current user-facing behavior of memory APIs.
+Add native burst transfer support to the host bus packet protocol so host-initiated memory reads/writes can transfer up to **64Ki words per request** (65,536 beats when `size=word`), while preserving current user-facing behavior of memory APIs.
 
 ### 1.2 In Scope
 - Host bus packet protocol rewrite to include burst-native fields.
@@ -175,7 +175,7 @@ Response (example data `[0xA1A2A3A4, 0xB1B2B3B4]`):
 
 ### 3.3 FIFO-Style Non-Incrementing Write (`dst_fixed=1`)
 
-Write 4 words to a **hypothetical fixed-address FIFO data register** in reserved RTL peripheral space (`0x52003000` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
+Write 4 words to a **hypothetical fixed-address FIFO data register** in reserved RTL peripheral space (`0x52FFF000` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 ```
 [0] 0x29  CTRL0: type=0010, size=word, src_fixed=0, dst_fixed=1
@@ -183,15 +183,15 @@ Write 4 words to a **hypothetical fixed-address FIFO data register** in reserved
 [2] 0x03
 [3] 0x00
 [4] 0x00
-[5] 0x30
-[6] 0x00
+[5] 0xF0
+[6] 0xFF
 [7] 0x52
 [8..23] payload bytes for 4 words
 ```
 
 ### 3.4 FIFO-Style Non-Incrementing Read (`src_fixed=1`)
 
-Read 8 words from a **hypothetical fixed-address FIFO read register** in reserved RTL peripheral space (`0x52003004` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
+Read 8 words from a **hypothetical fixed-address FIFO read register** in reserved RTL peripheral space (`0x52FFF004` used for illustration only; real deployments must use a documented mapped address or extend the memory map accordingly):
 
 Request:
 ```
@@ -200,8 +200,8 @@ Request:
 [2] 0x07  burst_len_m1 (8 beats)
 [3] 0x00
 [4] 0x04
-[5] 0x30
-[6] 0x00
+[5] 0xF0
+[6] 0xFF
 [7] 0x52
 ```
 
