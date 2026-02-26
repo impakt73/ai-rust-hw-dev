@@ -45,6 +45,7 @@ What files do you need to modify?
    - Creating/modifying agent definitions
    - Documentation updates
    - Prompt engineering
+   - ❌ **NOT for implementation plans** — Implementation plans require deep domain knowledge. Use the domain-specific agent instead: FPGA Architect (RTL plans), Rust Verification Architect (Rust/test plans), or HW-SW Integration Architect (cross-layer plans). Using the wrong agent produces low-quality plans.
 
 ## Critical Rules for ALL Agents
 
