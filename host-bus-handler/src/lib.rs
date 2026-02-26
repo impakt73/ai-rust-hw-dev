@@ -1,63 +1,17 @@
 //! Host Bus Handler
 //!
-//! This crate provides a Rust implementation that mirrors the hardware behavior
-//! of the `host_bus_interface` RTL module for host-side FPGA communication.
-//!
-//! # Protocol Overview
-//!
-//! The host bus interface uses a serialized packet protocol with four packet types:
-//!
-//! - **Type 0000** - CPU-initiated request (FPGA → Host TX)
-//! - **Type 0001** - Host response to CPU request (Host → FPGA RX)
-//! - **Type 0010** - Host-initiated request (Host → FPGA RX)
-//! - **Type 0011** - FPGA response to Host request (FPGA → Host TX)
-//!
-//! ## Extended Header Format (1 byte):
-//! - Bits [7:4]: Packet type
-//! - Bits [3:2]: Size (00=byte, 01=half, 10=word, 11=reserved)
-//! - Bit [1]: Reserved (0)
-//! - Bit [0]: Write enable (1=write, 0=read)
-//!
-//! # Usage
-//!
-//! ```rust
-//! use host_bus_handler::{HostBusHandler, BusRequest, BusResponse, AccessSize};
-//!
-//! let mut handler = HostBusHandler::new();
-//!
-//! // Send an outgoing request
-//! let request = BusRequest::read(0x50000000, AccessSize::Word);
-//! handler.send_request(request).expect("Should accept request");
-//!
-//! // Transfer bytes until response is ready
-//! while handler.receive_response().is_none() {
-//!     // Handle TX bytes (send request to FPGA)
-//!     while let Some(byte) = handler.transfer_tx_byte() {
-//!         // Send byte over serial/USB to FPGA
-//!     }
-//!     
-//!     // Handle RX bytes (receive response from FPGA)
-//!     // if let Some(byte) = get_byte_from_fpga() {
-//!     //     handler.transfer_rx_byte(byte);
-//!     // }
-//!     break; // Exit loop for doc test - in real code, poll for RX bytes
-//! }
-//! ```
+//! Burst-capable packet protocol handler mirroring host-bus RTL framing.
+
 use riscv_shared::bus::{RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
 
-/// Access size for bus operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessSize {
-    /// Byte access (1 byte)
     Byte = 0,
-    /// Halfword access (2 bytes)
     Halfword = 1,
-    /// Word access (4 bytes)
     Word = 2,
 }
 
 impl AccessSize {
-    /// Get the number of bytes for this access size
     pub fn byte_count(self) -> u8 {
         match self {
             AccessSize::Byte => 1,
@@ -66,17 +20,10 @@ impl AccessSize {
         }
     }
 
-    /// Convert to the protocol size encoding (0, 1, 2).
-    ///
-    /// Although this is equivalent to `self as u8` (because the enum
-    /// discriminants mirror the protocol encoding), we keep it as a
-    /// dedicated method so that call sites do not rely directly on the
-    /// discriminant values and the protocol mapping stays explicit here.
     pub fn to_size_code(self) -> u8 {
         self as u8
     }
 
-    /// Try to convert from a u8 value (0, 1, 2)
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(AccessSize::Byte),
@@ -87,117 +34,192 @@ impl AccessSize {
     }
 }
 
-/// Bus request representing a read or write operation
+/// Maximum legal burst length in beats (encoded as u16 `len_m1`, so 65536 beats max).
+pub const MAX_BURST_BEATS: u32 = 65_536;
+const CTRL1_RESERVED_MASK: u8 = 0xFE;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusRequest {
-    /// Target address
     pub addr: u32,
-    /// Write data (ignored for reads)
     pub wdata: u32,
-    /// Write enable (true = write, false = read)
     pub we: bool,
-    /// Access size
     pub size: AccessSize,
+    pub burst_len: u32,
+    pub src_fixed: bool,
+    pub dst_fixed: bool,
+    pub data: Vec<u8>,
 }
 
 impl BusRequest {
-    /// Create a read request
     pub fn read(addr: u32, size: AccessSize) -> Self {
-        BusRequest {
+        Self {
             addr,
             wdata: 0,
             we: false,
             size,
+            burst_len: 1,
+            src_fixed: false,
+            dst_fixed: false,
+            data: Vec::new(),
         }
     }
 
-    /// Create a write request
     pub fn write(addr: u32, data: u32, size: AccessSize) -> Self {
-        BusRequest {
+        let mut bytes = data.to_le_bytes().to_vec();
+        bytes.truncate(size.byte_count() as usize);
+        Self {
             addr,
             wdata: data,
             we: true,
             size,
+            burst_len: 1,
+            src_fixed: false,
+            dst_fixed: false,
+            data: bytes,
+        }
+    }
+
+    pub fn burst_read(
+        addr: u32,
+        size: AccessSize,
+        burst_len: u32,
+        src_fixed: bool,
+        dst_fixed: bool,
+    ) -> Self {
+        Self {
+            addr,
+            wdata: 0,
+            we: false,
+            size,
+            burst_len,
+            src_fixed,
+            dst_fixed,
+            data: Vec::new(),
+        }
+    }
+
+    pub fn burst_write(
+        addr: u32,
+        size: AccessSize,
+        burst_len: u32,
+        src_fixed: bool,
+        dst_fixed: bool,
+        data: Vec<u8>,
+    ) -> Self {
+        let mut first = [0u8; 4];
+        let beat = size.byte_count() as usize;
+        let first_slice = data.get(..beat).unwrap_or(&[]);
+        first[..first_slice.len()].copy_from_slice(first_slice);
+        Self {
+            addr,
+            wdata: u32::from_le_bytes(first),
+            we: true,
+            size,
+            burst_len,
+            src_fixed,
+            dst_fixed,
+            data,
         }
     }
 }
 
-/// Response to a bus request
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusResponse {
-    /// Read data (only valid for read requests)
     pub rdata: u32,
-    /// Access size (echoed from request)
     pub size: AccessSize,
-    /// Write enable (echoed from request)
     pub we: bool,
+    pub addr: u32,
+    pub burst_len: u32,
+    pub src_fixed: bool,
+    pub dst_fixed: bool,
+    pub data: Vec<u8>,
 }
 
 impl BusResponse {
-    /// Create a write acknowledgment response
     pub fn write_ack(size: AccessSize) -> Self {
-        BusResponse {
+        Self {
             rdata: 0,
             size,
             we: true,
+            addr: 0,
+            burst_len: 1,
+            src_fixed: false,
+            dst_fixed: false,
+            data: Vec::new(),
         }
     }
 
-    /// Create a read response with data
     pub fn read_data(data: u32, size: AccessSize) -> Self {
-        BusResponse {
+        let mut bytes = data.to_le_bytes().to_vec();
+        bytes.truncate(size.byte_count() as usize);
+        Self {
             rdata: data,
             size,
             we: false,
+            addr: 0,
+            burst_len: 1,
+            src_fixed: false,
+            dst_fixed: false,
+            data: bytes,
+        }
+    }
+
+    pub fn burst_read_data(
+        addr: u32,
+        size: AccessSize,
+        burst_len: u32,
+        src_fixed: bool,
+        dst_fixed: bool,
+        data: Vec<u8>,
+    ) -> Self {
+        let mut first = [0u8; 4];
+        let beat = size.byte_count() as usize;
+        let first_slice = data.get(..beat).unwrap_or(&[]);
+        first[..first_slice.len()].copy_from_slice(first_slice);
+        Self {
+            rdata: u32::from_le_bytes(first),
+            size,
+            we: false,
+            addr,
+            burst_len,
+            src_fixed,
+            dst_fixed,
+            data,
         }
     }
 }
 
-/// Error types for handler operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandlerError {
-    /// Handler cannot accept more data (buffers are full)
     BufferFull,
-    /// Already have an outstanding request pending response
     RequestPending,
-    /// No data available to transfer
     NoDataAvailable,
-    /// No request available to accept
     NoRequestAvailable,
-    /// No outstanding request to complete
     NoOutstandingRequest,
-    /// Request address range is invalid for host bus handling
     InvalidAddressRange,
+    InvalidBurstConfig,
 }
 
-/// Address-region classification for host-initiated requests
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestAddressRegion {
-    /// Entire request range is within RTL peripheral space
     RtlPeripheral,
-    /// Entire request range is outside RTL peripheral space
     NonRtl,
-    /// Request range crosses into/out of RTL peripheral space
     SpansRtlBoundary,
 }
 
-/// Compute the inclusive end address touched by a request.
-///
-/// If `request.addr + size - 1` overflows `u32`, this returns
-/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
-/// and will be rejected by [`HostBusHandler::send_request`].
 pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
-    let size_bytes = u32::from(request.size.byte_count());
-    size_bytes
-        .checked_sub(1)
-        .and_then(|last_byte_offset| request.addr.checked_add(last_byte_offset))
+    let stride = u32::from(request.size.byte_count());
+    let address_span_beats =
+        if (request.we && request.dst_fixed) || (!request.we && request.src_fixed) {
+            1
+        } else {
+            request.burst_len
+        };
+    let total_bytes = address_span_beats.checked_mul(stride)?;
+    let last_byte_offset = total_bytes.checked_sub(1)?;
+    request.addr.checked_add(last_byte_offset)
 }
 
-/// Classify which memory region a request touches.
-///
-/// If `request.addr + size - 1` overflows `u32`, this returns
-/// [`RequestAddressRegion::NonRtl`]. Such requests are invalid for RTL routing
-/// and will be rejected by [`HostBusHandler::send_request`].
 pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     let Some(end_addr) = request_end_addr(request) else {
         return RequestAddressRegion::NonRtl;
@@ -213,110 +235,49 @@ pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     }
 }
 
-/// RX state machine states (mirroring host_bus_rx.sv)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RxState {
-    /// Idle - waiting for header byte
     Idle,
-    /// Receiving response data bytes (for packet type 0001 read responses)
-    RespRdata { byte_idx: u8 },
-    /// Receiving request address bytes (for packet type 0000 CPU-initiated requests from FPGA)
-    ReqAddr { byte_idx: u8 },
-    /// Receiving request write data bytes (for packet type 0000 CPU-initiated writes from FPGA)
-    ReqWdata { byte_idx: u8 },
-    /// Receiving host response data bytes (for packet type 0011 read responses)
-    HostRespRdata { byte_idx: u8 },
+    Ctrl1,
+    Len0,
+    Len1,
+    Addr { byte_idx: u8 },
+    Payload { remaining: usize },
 }
 
-/// TX state machine states for outgoing packets
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TxState {
-    /// Idle - no data to transmit
-    Idle,
-    /// Sending response header (packet type 0001)
-    ResponseHeader,
-    /// Sending response data bytes
-    ResponseData { byte_idx: u8 },
-    /// Sending outgoing request header (packet type 0010)
-    RequestHeader,
-    /// Sending outgoing request address bytes
-    RequestAddr { byte_idx: u8 },
-    /// Sending outgoing request write data bytes
-    RequestWdata { byte_idx: u8 },
-}
-
-/// Internal state for a buffered incoming request
 #[derive(Debug, Clone, Default)]
 struct IncomingRequest {
-    /// Whether a complete request is buffered
     valid: bool,
-    /// Write enable
-    we: bool,
-    /// Access size (0, 1, 2)
-    size: u8,
-    /// Target address
-    addr: u32,
-    /// Write data (for writes)
-    wdata: u32,
+    request: Option<BusRequest>,
 }
 
-/// Internal state for a buffered response (to CPU-initiated request)
 #[derive(Debug, Clone, Default)]
 struct IncomingResponse {
-    /// Whether a complete response is buffered
     valid: bool,
-    /// Write enable (echoed from request)
-    we: bool,
-    /// Access size
-    size: u8,
-    /// Read data
-    rdata: u32,
+    response: Option<BusResponse>,
 }
 
-/// Host Bus Handler
-///
-/// This structure abstracts the host-side logic for communicating with an FPGA
-/// using the host bus request protocol. It mirrors the behavior of the RTL
-/// `host_bus_interface` and `host_bus_rx` modules.
-///
-/// The interface is split into three groups of functions:
-/// 1. **Low-level byte interface**: `transfer_rx_byte()`, `transfer_tx_byte()` for
-///    handling serialized bus request data
-/// 2. **Outgoing request interface**: `send_request()`, `receive_response()` for
-///    sending bus requests and receiving their responses
-/// 3. **Incoming request interface**: `accept_request()`, `complete_request()` for
-///    processing incoming bus requests and sending back responses
 #[derive(Debug)]
 pub struct HostBusHandler {
-    // RX state machine
     rx_state: RxState,
+    rx_packet_type: u8,
     rx_temp_we: bool,
     rx_temp_size: u8,
-
-    // Buffered incoming response (for our outgoing requests - packet type 0011)
-    outgoing_response: IncomingResponse,
-
-    // Buffered incoming request (from FPGA - packet type 0000)
-    incoming_request: IncomingRequest,
-
-    // Outstanding accepted request (waiting for completion via complete_request)
-    accepted_request: Option<(bool, u8)>, // (we, size)
-
-    // TX state machine
-    tx_state: TxState,
-
-    // Outgoing request we're transmitting (packet type 0010)
-    outgoing_request: Option<BusRequest>,
-
-    // Flag indicating we've started transmitting the outgoing request
-    outgoing_request_tx_started: bool,
-
-    // Pending response to send (packet type 0001)
-    pending_response: Option<BusResponse>,
-
-    // Temporary data accumulators
+    rx_temp_src_fixed: bool,
+    rx_temp_dst_fixed: bool,
+    rx_temp_burst_len: u32,
     rx_addr_accumulator: u32,
-    rx_data_accumulator: u32,
+    rx_payload: Vec<u8>,
+
+    outgoing_response: IncomingResponse,
+    incoming_request: IncomingRequest,
+    accepted_request: Option<BusRequest>,
+
+    tx_buffer: Vec<u8>,
+    tx_index: usize,
+    outgoing_request: Option<BusRequest>,
+    outgoing_request_tx_started: bool,
+    pending_response: Option<BusResponse>,
 }
 
 impl Default for HostBusHandler {
@@ -326,59 +287,39 @@ impl Default for HostBusHandler {
 }
 
 impl HostBusHandler {
-    /// Create a new HostBusHandler in the idle state
     pub fn new() -> Self {
         HostBusHandler {
             rx_state: RxState::Idle,
+            rx_packet_type: 0,
             rx_temp_we: false,
             rx_temp_size: 0,
+            rx_temp_src_fixed: false,
+            rx_temp_dst_fixed: false,
+            rx_temp_burst_len: 1,
+            rx_addr_accumulator: 0,
+            rx_payload: Vec::new(),
             outgoing_response: IncomingResponse::default(),
             incoming_request: IncomingRequest::default(),
             accepted_request: None,
-            tx_state: TxState::Idle,
+            tx_buffer: Vec::new(),
+            tx_index: 0,
             outgoing_request: None,
             outgoing_request_tx_started: false,
             pending_response: None,
-            rx_addr_accumulator: 0,
-            rx_data_accumulator: 0,
         }
     }
 
-    /// Reset the handler to initial state
     pub fn reset(&mut self) {
         *self = Self::new();
     }
 
-    // ========================================================================
-    // Low-level byte transfer interface (transfer_rx_byte, transfer_tx_byte)
-    // ========================================================================
-
-    /// Check if the handler can accept a new RX byte
-    ///
-    /// Returns true if at least one buffer is available or if we're in the middle
-    /// of receiving a packet.
     pub fn can_accept_rx(&self) -> bool {
-        // If actively receiving a packet, must accept
         if self.rx_state != RxState::Idle {
             return true;
         }
-
-        // In idle, can accept if at least one buffer is free
         !self.outgoing_response.valid || !self.incoming_request.valid
     }
 
-    /// Attempts to feed a new received byte into the handler.
-    ///
-    /// Fails if the handler cannot accept any more data because it has both
-    /// a host bus request and a host bus response internally buffered.
-    /// Steps the internal RX state machine if the data is accepted.
-    ///
-    /// # Arguments
-    /// * `byte` - The byte received from the FPGA TX interface
-    ///
-    /// # Returns
-    /// * `Ok(())` if the byte was accepted
-    /// * `Err(HandlerError::BufferFull)` if both internal buffers are full
     pub fn transfer_rx_byte(&mut self, byte: u8) -> Result<(), HandlerError> {
         if !self.can_accept_rx() {
             return Err(HandlerError::BufferFull);
@@ -386,169 +327,75 @@ impl HostBusHandler {
 
         match self.rx_state {
             RxState::Idle => {
-                // Parse header byte
                 let packet_type = (byte >> 4) & 0x0F;
-                let we = (byte & 0x01) != 0;
                 let size = (byte >> 2) & 0x03;
-
-                match packet_type {
-                    0x01 => {
-                        // Host response to our CPU-initiated request (we're acting as CPU)
-                        // This is a response to a request we sent
-                        if self.outgoing_response.valid {
-                            // Buffer is full, reject
-                            return Err(HandlerError::BufferFull);
-                        }
-
-                        self.rx_temp_we = we;
-                        self.rx_temp_size = size;
-                        self.rx_data_accumulator = 0;
-
-                        if we {
-                            // Write acknowledgment - complete immediately
-                            self.outgoing_response = IncomingResponse {
-                                valid: true,
-                                we: true,
-                                size,
-                                rdata: 0,
-                            };
-                            // Stay in idle
-                        } else {
-                            // Read response - need to receive data bytes
-                            self.rx_state = RxState::RespRdata { byte_idx: 0 };
-                        }
-                    }
-                    0x00 => {
-                        // CPU-initiated request from FPGA (we're acting as Host)
-                        // This is a request from the FPGA that we need to handle
-                        if self.incoming_request.valid {
-                            // Buffer is full, reject
-                            return Err(HandlerError::BufferFull);
-                        }
-
-                        self.rx_temp_we = we;
-                        self.rx_temp_size = size;
-                        self.rx_addr_accumulator = 0;
-                        self.rx_data_accumulator = 0;
-                        self.rx_state = RxState::ReqAddr { byte_idx: 0 };
-                    }
-                    0x03 => {
-                        // FPGA response to our host-initiated request
-                        // This is a response to a request we sent (packet type 0010)
-                        if self.outgoing_response.valid {
-                            return Err(HandlerError::BufferFull);
-                        }
-
-                        self.rx_temp_we = we;
-                        self.rx_temp_size = size;
-                        self.rx_data_accumulator = 0;
-
-                        if we {
-                            // Write response - complete immediately
-                            self.outgoing_response = IncomingResponse {
-                                valid: true,
-                                we: true,
-                                size,
-                                rdata: 0,
-                            };
-                        } else {
-                            // Read response - need to receive data bytes
-                            self.rx_state = RxState::HostRespRdata { byte_idx: 0 };
-                        }
-                    }
-                    _ => {
-                        // Unknown packet type, ignore (stay in idle)
-                    }
+                // Protocol only defines packet types 0..=3 and size encodings 0..=2.
+                if packet_type > 0x03 || size == 0x03 {
+                    return Ok(());
                 }
+                self.rx_packet_type = packet_type;
+                self.rx_temp_size = size;
+                self.rx_temp_src_fixed = ((byte >> 1) & 0x01) != 0;
+                self.rx_temp_dst_fixed = (byte & 0x01) != 0;
+                self.rx_state = RxState::Ctrl1;
             }
-
-            RxState::RespRdata { byte_idx } => {
-                // Receiving response data (little-endian)
-                self.rx_data_accumulator |= (byte as u32) << (byte_idx * 8);
-
-                let num_bytes = Self::bytes_for_size(self.rx_temp_size);
-                if byte_idx + 1 >= num_bytes {
-                    // Complete
-                    self.outgoing_response = IncomingResponse {
-                        valid: true,
-                        we: false,
-                        size: self.rx_temp_size,
-                        rdata: self.rx_data_accumulator,
-                    };
+            RxState::Ctrl1 => {
+                // Reserved bits [7:1] must be zero. Drop malformed frames and resync.
+                if (byte & CTRL1_RESERVED_MASK) != 0 {
                     self.rx_state = RxState::Idle;
-                } else {
-                    self.rx_state = RxState::RespRdata {
-                        byte_idx: byte_idx + 1,
-                    };
+                    return Ok(());
                 }
+                self.rx_temp_we = (byte & 0x01) != 0;
+                self.rx_state = RxState::Len0;
             }
-
-            RxState::HostRespRdata { byte_idx } => {
-                // Receiving host response data (little-endian)
-                self.rx_data_accumulator |= (byte as u32) << (byte_idx * 8);
-
-                let num_bytes = Self::bytes_for_size(self.rx_temp_size);
-                if byte_idx + 1 >= num_bytes {
-                    // Complete
-                    self.outgoing_response = IncomingResponse {
-                        valid: true,
-                        we: false,
-                        size: self.rx_temp_size,
-                        rdata: self.rx_data_accumulator,
-                    };
+            RxState::Len0 => {
+                self.rx_temp_burst_len = u32::from(byte);
+                self.rx_state = RxState::Len1;
+            }
+            RxState::Len1 => {
+                self.rx_temp_burst_len |= u32::from(byte) << 8;
+                self.rx_temp_burst_len = self.rx_temp_burst_len.saturating_add(1);
+                // `len_m1 + 1` should never be zero; if it is, treat as malformed/overflow.
+                if self.rx_temp_burst_len == 0 {
                     self.rx_state = RxState::Idle;
-                } else {
-                    self.rx_state = RxState::HostRespRdata {
-                        byte_idx: byte_idx + 1,
-                    };
+                    return Ok(());
                 }
+                self.rx_addr_accumulator = 0;
+                self.rx_state = RxState::Addr { byte_idx: 0 };
             }
-
-            RxState::ReqAddr { byte_idx } => {
-                // Receiving request address (little-endian)
-                self.rx_addr_accumulator |= (byte as u32) << (byte_idx * 8);
-
+            RxState::Addr { byte_idx } => {
+                self.rx_addr_accumulator |= u32::from(byte) << (byte_idx * 8);
                 if byte_idx == 3 {
-                    // Address complete
-                    if self.rx_temp_we {
-                        // Write request - continue receiving data
-                        self.rx_state = RxState::ReqWdata { byte_idx: 0 };
-                    } else {
-                        // Read request - complete
-                        self.incoming_request = IncomingRequest {
-                            valid: true,
-                            we: false,
-                            size: self.rx_temp_size,
-                            addr: self.rx_addr_accumulator,
-                            wdata: 0,
-                        };
+                    let payload_len = self.expected_payload_len(
+                        self.rx_packet_type,
+                        self.rx_temp_we,
+                        self.rx_temp_size,
+                        self.rx_temp_burst_len,
+                    );
+                    if payload_len == 0 {
+                        self.finalize_rx_packet()?;
                         self.rx_state = RxState::Idle;
+                    } else {
+                        self.rx_payload.clear();
+                        self.rx_payload.reserve(payload_len);
+                        self.rx_state = RxState::Payload {
+                            remaining: payload_len,
+                        };
                     }
                 } else {
-                    self.rx_state = RxState::ReqAddr {
+                    self.rx_state = RxState::Addr {
                         byte_idx: byte_idx + 1,
                     };
                 }
             }
-
-            RxState::ReqWdata { byte_idx } => {
-                // Receiving request write data (little-endian)
-                self.rx_data_accumulator |= (byte as u32) << (byte_idx * 8);
-
-                let num_bytes = Self::bytes_for_size(self.rx_temp_size);
-                if byte_idx + 1 >= num_bytes {
-                    // Complete
-                    self.incoming_request = IncomingRequest {
-                        valid: true,
-                        we: true,
-                        size: self.rx_temp_size,
-                        addr: self.rx_addr_accumulator,
-                        wdata: self.rx_data_accumulator,
-                    };
+            RxState::Payload { remaining } => {
+                self.rx_payload.push(byte);
+                if remaining == 1 {
+                    self.finalize_rx_packet()?;
                     self.rx_state = RxState::Idle;
                 } else {
-                    self.rx_state = RxState::ReqWdata {
-                        byte_idx: byte_idx + 1,
+                    self.rx_state = RxState::Payload {
+                        remaining: remaining - 1,
                     };
                 }
             }
@@ -557,285 +404,274 @@ impl HostBusHandler {
         Ok(())
     }
 
-    /// Attempts to pull a new transmitted byte out of the handler.
-    ///
-    /// Fails if there are no outgoing bytes ready to be transmitted.
-    /// Steps the internal TX state machine if data is returned successfully.
-    ///
-    /// # Returns
-    /// * `Some(byte)` if a byte is ready to transmit
-    /// * `None` if no data is ready
     pub fn transfer_tx_byte(&mut self) -> Option<u8> {
-        // Check if we need to start a new transmission
-        if self.tx_state == TxState::Idle {
-            // Priority 1: Send response to an accepted incoming request
-            if self.accepted_request.is_some() && self.pending_response.is_some() {
-                // Start sending response
-                self.tx_state = TxState::ResponseHeader;
-            }
-
-            // Priority 2: Send outgoing request (only if we haven't started transmitting it yet)
-            if self.tx_state == TxState::Idle
-                && self.outgoing_request.is_some()
-                && !self.outgoing_request_tx_started
-            {
-                self.tx_state = TxState::RequestHeader;
-                self.outgoing_request_tx_started = true;
-            }
+        if self.tx_index >= self.tx_buffer.len() {
+            self.tx_buffer.clear();
+            self.tx_index = 0;
+            self.start_tx_packet()?;
         }
 
-        match self.tx_state {
-            TxState::Idle => None,
+        let byte = *self.tx_buffer.get(self.tx_index)?;
+        self.tx_index += 1;
 
-            TxState::ResponseHeader => {
-                let response = self.pending_response.as_ref()?;
-                // Format: {packet_type=0001, size[1:0], 0, we}
-                let header = 0x10 | ((response.size as u8 & 0x03) << 2) | (response.we as u8);
-
-                if response.we {
-                    // Write ack - done after header
-                    self.pending_response = None;
-                    self.accepted_request = None;
-                    self.tx_state = TxState::Idle;
-                } else {
-                    // Read response - send data bytes next
-                    self.tx_state = TxState::ResponseData { byte_idx: 0 };
-                }
-
-                Some(header)
-            }
-
-            TxState::ResponseData { byte_idx } => {
-                let response = self.pending_response.as_ref()?;
-                let byte = ((response.rdata >> (byte_idx * 8)) & 0xFF) as u8;
-                let num_bytes = response.size.byte_count();
-
-                if byte_idx + 1 >= num_bytes {
-                    // Done
-                    self.pending_response = None;
-                    self.accepted_request = None;
-                    self.tx_state = TxState::Idle;
-                } else {
-                    self.tx_state = TxState::ResponseData {
-                        byte_idx: byte_idx + 1,
-                    };
-                }
-
-                Some(byte)
-            }
-
-            TxState::RequestHeader => {
-                let request = self.outgoing_request.as_ref()?;
-                // Format: {packet_type=0010, size[1:0], 0, we}
-                let header = 0x20 | ((request.size as u8 & 0x03) << 2) | (request.we as u8);
-
-                self.tx_state = TxState::RequestAddr { byte_idx: 0 };
-                Some(header)
-            }
-
-            TxState::RequestAddr { byte_idx } => {
-                let request = self.outgoing_request.as_ref()?;
-                let byte = ((request.addr >> (byte_idx * 8)) & 0xFF) as u8;
-
-                if byte_idx == 3 {
-                    // Address done
-                    if request.we {
-                        // Write request - send data bytes next
-                        self.tx_state = TxState::RequestWdata { byte_idx: 0 };
-                    } else {
-                        // Read request - done transmitting, wait for response
-                        // Keep outgoing_request to match response
-                        self.tx_state = TxState::Idle;
-                    }
-                } else {
-                    self.tx_state = TxState::RequestAddr {
-                        byte_idx: byte_idx + 1,
-                    };
-                }
-
-                Some(byte)
-            }
-
-            TxState::RequestWdata { byte_idx } => {
-                let request = self.outgoing_request.as_ref()?;
-                let byte = ((request.wdata >> (byte_idx * 8)) & 0xFF) as u8;
-                let num_bytes = request.size.byte_count();
-
-                if byte_idx + 1 >= num_bytes {
-                    // Done - wait for response
-                    self.tx_state = TxState::Idle;
-                } else {
-                    self.tx_state = TxState::RequestWdata {
-                        byte_idx: byte_idx + 1,
-                    };
-                }
-
-                Some(byte)
-            }
+        if self.tx_index >= self.tx_buffer.len() {
+            self.tx_buffer.clear();
+            self.tx_index = 0;
         }
+
+        Some(byte)
     }
 
-    /// Check if there are any bytes ready to transmit
     pub fn has_tx_data(&self) -> bool {
-        match self.tx_state {
-            TxState::Idle => {
-                // Check if we would start transmitting
-                (self.accepted_request.is_some() && self.pending_response.is_some())
-                    || (self.outgoing_request.is_some() && !self.outgoing_request_tx_started)
-            }
-            _ => true,
+        if self.tx_index < self.tx_buffer.len() {
+            return true;
         }
+
+        (self.accepted_request.is_some() && self.pending_response.is_some())
+            || (self.outgoing_request.is_some() && !self.outgoing_request_tx_started)
     }
 
-    // ========================================================================
-    // High-level outgoing request interface (send_request, receive_response)
-    // ========================================================================
-
-    /// Attempts to push a new BusRequest structure into the handler.
-    ///
-    /// If the handler already has an outstanding bus request, it rejects the new
-    /// request to follow the rule of only having one request outstanding at a time.
-    /// Otherwise, the handler stores the request and begins the transmission process.
-    ///
-    /// # Arguments
-    /// * `request` - The bus request to send
-    ///
-    /// # Returns
-    /// * `Ok(())` if the request was accepted
-    /// * `Err(HandlerError::RequestPending)` if there's already an outstanding request
-    /// * `Err(HandlerError::InvalidAddressRange)` if the request range is not fully
-    ///   within RTL peripheral space (`0x5000_0000..0x6000_0000`)
     pub fn send_request(&mut self, request: BusRequest) -> Result<(), HandlerError> {
         if self.outgoing_request.is_some() {
             return Err(HandlerError::RequestPending);
+        }
+        if request.burst_len == 0 || request.burst_len > MAX_BURST_BEATS {
+            return Err(HandlerError::InvalidBurstConfig);
+        }
+        if request.we {
+            let expected = (request.size.byte_count() as usize) * (request.burst_len as usize);
+            if request.data.len() != expected {
+                return Err(HandlerError::InvalidBurstConfig);
+            }
         }
         if classify_request_region(&request) != RequestAddressRegion::RtlPeripheral {
             return Err(HandlerError::InvalidAddressRange);
         }
 
         self.outgoing_request = Some(request);
-        // TX state will be started by transfer_tx_byte when called
         Ok(())
     }
 
-    /// Attempts to pull a new BusResponse structure out of the handler.
-    ///
-    /// If the handler has internally already received a response for a prior
-    /// request it sent, then it can be consumed via this function.
-    ///
-    /// # Returns
-    /// * `Some(response)` if a response is ready
-    /// * `None` if no response is available
     pub fn receive_response(&mut self) -> Option<BusResponse> {
         if !self.outgoing_response.valid {
             return None;
         }
 
-        // Only return response if we had sent a request
-        // (this filters out responses meant for incoming request handling)
         if self.outgoing_request.is_none() && self.accepted_request.is_none() {
             return None;
         }
 
-        // Clear the outgoing request since we're receiving its response
         self.outgoing_request = None;
         self.outgoing_request_tx_started = false;
-
-        let response = BusResponse {
-            rdata: self.outgoing_response.rdata,
-            size: AccessSize::from_u8(self.outgoing_response.size).unwrap_or(AccessSize::Byte),
-            we: self.outgoing_response.we,
-        };
         self.outgoing_response.valid = false;
-        Some(response)
+        self.outgoing_response.response.take()
     }
 
-    // ========================================================================
-    // High-level incoming request interface (accept_request, complete_request)
-    // ========================================================================
-
-    /// If the handler has received a complete request and now has it buffered
-    /// internally, this function allows the caller to consume it.
-    ///
-    /// It is then the caller's responsibility to act on the data in the request
-    /// and then call `complete_request()` with any associated response data so
-    /// the handler can transmit the response back to the other side.
-    ///
-    /// # Returns
-    /// * `Ok(request)` if a request is available
-    /// * `Err(HandlerError::NoRequestAvailable)` if no request is buffered
     pub fn accept_request(&mut self) -> Result<BusRequest, HandlerError> {
-        if !self.incoming_request.valid {
+        if !self.incoming_request.valid || self.accepted_request.is_some() {
             return Err(HandlerError::NoRequestAvailable);
         }
 
-        if self.accepted_request.is_some() {
-            // Already have an accepted request that hasn't been completed
-            return Err(HandlerError::NoRequestAvailable);
-        }
-
-        let request = BusRequest {
-            addr: self.incoming_request.addr,
-            wdata: self.incoming_request.wdata,
-            we: self.incoming_request.we,
-            size: AccessSize::from_u8(self.incoming_request.size).unwrap_or(AccessSize::Byte),
-        };
-
-        // Mark as accepted
-        self.accepted_request = Some((self.incoming_request.we, self.incoming_request.size));
+        let request = self
+            .incoming_request
+            .request
+            .clone()
+            .ok_or(HandlerError::NoRequestAvailable)?;
+        self.accepted_request = Some(request.clone());
         self.incoming_request.valid = false;
-
+        self.incoming_request.request = None;
         Ok(request)
     }
 
-    /// Complete an outstanding bus request that was acquired via a prior call
-    /// to `accept_request()`.
-    ///
-    /// It rejects the call if there isn't currently an outstanding request that
-    /// has been accepted but not completed yet.
-    ///
-    /// # Arguments
-    /// * `response` - The response to send back
-    ///
-    /// # Returns
-    /// * `Ok(())` if the response was accepted
-    /// * `Err(HandlerError::NoOutstandingRequest)` if no request is pending completion
-    pub fn complete_request(&mut self, response: BusResponse) -> Result<(), HandlerError> {
-        if self.accepted_request.is_none() {
+    pub fn complete_request(&mut self, mut response: BusResponse) -> Result<(), HandlerError> {
+        let Some(accepted) = self.accepted_request.as_ref() else {
             return Err(HandlerError::NoOutstandingRequest);
+        };
+
+        if response.addr == 0 {
+            response.addr = accepted.addr;
+            response.burst_len = accepted.burst_len;
+            response.src_fixed = accepted.src_fixed;
+            response.dst_fixed = accepted.dst_fixed;
         }
 
         self.pending_response = Some(response);
-        // TX state will be started by transfer_tx_byte when called
         Ok(())
     }
 
-    // ========================================================================
-    // Helper functions
-    // ========================================================================
-
-    /// Get the number of data bytes for a given size value
-    fn bytes_for_size(size: u8) -> u8 {
-        match size {
-            0 => 1, // byte
-            1 => 2, // halfword
-            _ => 4, // word
-        }
-    }
-
-    /// Check if the handler has an outstanding outgoing request
     pub fn has_pending_outgoing_request(&self) -> bool {
         self.outgoing_request.is_some()
     }
 
-    /// Check if the handler has a buffered incoming request ready to accept
     pub fn has_incoming_request(&self) -> bool {
         self.incoming_request.valid && self.accepted_request.is_none()
     }
 
-    /// Check if the handler is waiting for a response to complete
     pub fn is_waiting_for_completion(&self) -> bool {
         self.accepted_request.is_some() && self.pending_response.is_none()
+    }
+
+    fn start_tx_packet(&mut self) -> Option<()> {
+        if self.accepted_request.is_some() && self.pending_response.is_some() {
+            let response = self.pending_response.take()?;
+            self.tx_buffer = Self::encode_packet(
+                0x01,
+                response.size,
+                response.we,
+                response.src_fixed,
+                response.dst_fixed,
+                response.burst_len,
+                response.addr,
+                &response.data,
+            );
+            self.accepted_request = None;
+            return Some(());
+        }
+
+        if self.outgoing_request.is_some() && !self.outgoing_request_tx_started {
+            let request = self.outgoing_request.as_ref()?;
+            self.tx_buffer = Self::encode_packet(
+                0x02,
+                request.size,
+                request.we,
+                request.src_fixed,
+                request.dst_fixed,
+                request.burst_len,
+                request.addr,
+                &request.data,
+            );
+            self.outgoing_request_tx_started = true;
+            return Some(());
+        }
+
+        None
+    }
+
+    fn finalize_rx_packet(&mut self) -> Result<(), HandlerError> {
+        let size = AccessSize::from_u8(self.rx_temp_size).unwrap_or(AccessSize::Byte);
+        let request = BusRequest {
+            addr: self.rx_addr_accumulator,
+            wdata: Self::extract_first_word(&self.rx_payload),
+            we: self.rx_temp_we,
+            size,
+            burst_len: self.rx_temp_burst_len,
+            src_fixed: self.rx_temp_src_fixed,
+            dst_fixed: self.rx_temp_dst_fixed,
+            data: self.rx_payload.clone(),
+        };
+
+        match self.rx_packet_type {
+            0x00 | 0x02 => {
+                if self.incoming_request.valid {
+                    return Err(HandlerError::BufferFull);
+                }
+                self.incoming_request.valid = true;
+                self.incoming_request.request = Some(request);
+            }
+            0x01 | 0x03 => {
+                if self.outgoing_response.valid {
+                    return Err(HandlerError::BufferFull);
+                }
+
+                if self.rx_packet_type == 0x03 {
+                    if let Some(out_req) = self.outgoing_request.as_ref() {
+                        let metadata_matches = out_req.we == self.rx_temp_we
+                            && out_req.size == size
+                            && out_req.addr == self.rx_addr_accumulator
+                            && out_req.burst_len == self.rx_temp_burst_len
+                            && out_req.src_fixed == self.rx_temp_src_fixed
+                            && out_req.dst_fixed == self.rx_temp_dst_fixed;
+                        if !metadata_matches {
+                            // Drop mismatched response silently to keep stream parsing forward
+                            // progress without tearing down the host link.
+                            self.rx_payload.clear();
+                            return Ok(());
+                        }
+                    }
+                }
+
+                let response = if self.rx_temp_we {
+                    BusResponse {
+                        rdata: 0,
+                        size,
+                        we: true,
+                        addr: self.rx_addr_accumulator,
+                        burst_len: self.rx_temp_burst_len,
+                        src_fixed: self.rx_temp_src_fixed,
+                        dst_fixed: self.rx_temp_dst_fixed,
+                        data: Vec::new(),
+                    }
+                } else {
+                    BusResponse {
+                        rdata: Self::extract_first_word(&self.rx_payload),
+                        size,
+                        we: false,
+                        addr: self.rx_addr_accumulator,
+                        burst_len: self.rx_temp_burst_len,
+                        src_fixed: self.rx_temp_src_fixed,
+                        dst_fixed: self.rx_temp_dst_fixed,
+                        data: self.rx_payload.clone(),
+                    }
+                };
+
+                self.outgoing_response.valid = true;
+                self.outgoing_response.response = Some(response);
+            }
+            _ => {}
+        }
+
+        self.rx_payload.clear();
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_packet(
+        packet_type: u8,
+        size: AccessSize,
+        we: bool,
+        src_fixed: bool,
+        dst_fixed: bool,
+        burst_len: u32,
+        addr: u32,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        let ctrl0 = ((packet_type & 0x0F) << 4)
+            | ((size.to_size_code() & 0x03) << 2)
+            | ((src_fixed as u8) << 1)
+            | (dst_fixed as u8);
+        out.push(ctrl0);
+        out.push(we as u8);
+        let len_m1 = (burst_len.saturating_sub(1)) as u16;
+        out.extend_from_slice(&len_m1.to_le_bytes());
+        out.extend_from_slice(&addr.to_le_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn extract_first_word(payload: &[u8]) -> u32 {
+        let mut bytes = [0u8; 4];
+        let n = payload.len().min(4);
+        bytes[..n].copy_from_slice(&payload[..n]);
+        u32::from_le_bytes(bytes)
+    }
+
+    fn expected_payload_len(&self, packet_type: u8, we: bool, size: u8, burst_len: u32) -> usize {
+        let beat = usize::from(Self::bytes_for_size(size));
+        let beats = burst_len as usize;
+        match packet_type {
+            0x00 | 0x02 if we => beat * beats,
+            0x01 | 0x03 if !we => beat * beats,
+            _ => 0,
+        }
+    }
+
+    fn bytes_for_size(size: u8) -> u8 {
+        match size {
+            0 => 1,
+            1 => 2,
+            _ => 4,
+        }
     }
 }
 
