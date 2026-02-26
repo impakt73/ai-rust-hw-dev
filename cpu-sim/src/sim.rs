@@ -173,6 +173,9 @@ where
                 .create_model::<Top>(&config)
                 .map_err(|e| format!("Failed to create CPU model: {}", e))?;
 
+            // Keep communication error input deterministic in simulation unless explicitly modeled.
+            cpu.com_err = 0;
+
             // Open VCD file if path is provided
             let vcd = if let Some(vcd_file_path) = vcd_path {
                 let vcd = cpu.open_vcd(vcd_file_path);
@@ -383,6 +386,7 @@ where
         self.cpu.host_tx_ready = 1;
         self.cpu.host_rx_valid = 0;
         self.cpu.host_rx_data = 0;
+        self.cpu.com_err = 0;
         self.cpu.reset_request = 0;
 
         // Drive reset low

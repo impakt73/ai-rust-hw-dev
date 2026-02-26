@@ -1,6 +1,12 @@
 use riscv_core::{create_sys_led_controller_runtime, SysLedControllerWrapper};
 
 const ACTIVITY_BITS_MASK: u8 = 0x1E;
+const WRAPPER_CLK_FREQ_HZ: u32 = 4;
+const ACTIVITY_FREQ_MILLIHERTZ: u32 = 250;
+// Half-period cycles with millihertz scaling, rounded up for integer division.
+const ACTIVITY_HALF_PERIOD_CYCLES: u32 =
+    ((WRAPPER_CLK_FREQ_HZ * 1000) + ACTIVITY_FREQ_MILLIHERTZ) / (2 * ACTIVITY_FREQ_MILLIHERTZ);
+const ACTIVITY_OBSERVE_CYCLES: u32 = (ACTIVITY_HALF_PERIOD_CYCLES * 2) + 8;
 
 fn clock_cycle(dut: &mut SysLedControllerWrapper) {
     dut.clk = 0;
@@ -111,7 +117,7 @@ fn test_sys_led_activity_indicators_and_com_err() {
     dut.host_bus_tx_handshake = 0;
 
     let mut saw_all_activity_bits_high = false;
-    for _ in 0..20 {
+    for _ in 0..ACTIVITY_OBSERVE_CYCLES {
         clock_cycle(&mut dut);
         if (dut.sys_led & ACTIVITY_BITS_MASK) == ACTIVITY_BITS_MASK {
             saw_all_activity_bits_high = true;
