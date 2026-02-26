@@ -2,8 +2,8 @@
 // Implements RISC-V CSR register file and operations
 // Includes support for F extension FCSR/FRM/FFLAGS
 //
-// OPTIMIZED: Uses sparse register implementation instead of 4096-entry array
-// to reduce FPGA resource usage. Only commonly used CSRs are implemented.
+// OPTIMIZED: Uses BRAM-backed sparse CSR storage (via sync_dpram) instead of
+// discrete flip-flop registers for writable machine-level CSRs.
 
 module csr_file (
     input  logic        clk,
@@ -59,21 +59,55 @@ module csr_file (
     localparam CSR_MHARTID   = 12'hF14;  // Hardware thread ID
     
     // ============================================================
-    // Sparse CSR Register Storage
-    // Only implement the CSRs we actually use
+    // BRAM-backed CSR Storage (writable machine-level CSRs)
     // ============================================================
-    
-    // Machine-level writable CSRs
-    logic [31:0] csr_mstatus;
-    logic [31:0] csr_misa;      // Made writable for test compatibility
-    logic [31:0] csr_medeleg;   // Exception delegation
-    logic [31:0] csr_mideleg;   // Interrupt delegation
-    logic [31:0] csr_mie;
-    logic [31:0] csr_mtvec;
-    logic [31:0] csr_mscratch;
-    logic [31:0] csr_mepc;
-    logic [31:0] csr_mcause;
-    logic [31:0] csr_mtval;
+    localparam int CSR_MEM_ADDR_WIDTH = 8;  // 256 entries (matches sync_dpram BRAM-friendly config)
+
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MSTATUS  = 8'd0;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MISA     = 8'd1;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEDELEG  = 8'd2;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIDELEG  = 8'd3;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIE      = 8'd4;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVEC    = 8'd5;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MSCRATCH = 8'd6;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEPC     = 8'd7;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MCAUSE   = 8'd8;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVAL    = 8'd9;
+
+    logic [CSR_MEM_ADDR_WIDTH-1:0] csr_mem_addr;
+    logic [CSR_MEM_ADDR_WIDTH-1:0] csr_mem_waddr;
+    logic [31:0] csr_mem_rdata;
+    logic [31:0] csr_mem_wdata;
+    logic        csr_mem_we;
+    logic        csr_init_pending;
+
+    function automatic logic [CSR_MEM_ADDR_WIDTH-1:0] csr_addr_to_index(input logic [11:0] addr);
+        case (addr)
+            CSR_MSTATUS:   csr_addr_to_index = CSR_IDX_MSTATUS;
+            CSR_MISA:      csr_addr_to_index = CSR_IDX_MISA;
+            CSR_MEDELEG:   csr_addr_to_index = CSR_IDX_MEDELEG;
+            CSR_MIDELEG:   csr_addr_to_index = CSR_IDX_MIDELEG;
+            CSR_MIE:       csr_addr_to_index = CSR_IDX_MIE;
+            CSR_MTVEC:     csr_addr_to_index = CSR_IDX_MTVEC;
+            CSR_MSCRATCH:  csr_addr_to_index = CSR_IDX_MSCRATCH;
+            CSR_MEPC:      csr_addr_to_index = CSR_IDX_MEPC;
+            CSR_MCAUSE:    csr_addr_to_index = CSR_IDX_MCAUSE;
+            CSR_MTVAL:     csr_addr_to_index = CSR_IDX_MTVAL;
+            default:       csr_addr_to_index = {CSR_MEM_ADDR_WIDTH{1'b0}};
+        endcase
+    endfunction
+
+    function automatic logic is_writable_csr_addr(input logic [11:0] addr);
+        case (addr)
+            CSR_MSTATUS, CSR_MISA, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
+            CSR_MTVEC, CSR_MSCRATCH, CSR_MEPC, CSR_MCAUSE, CSR_MTVAL:
+                is_writable_csr_addr = 1'b1;
+            default:
+                is_writable_csr_addr = 1'b0;
+        endcase
+    endfunction
+
+    assign csr_mem_addr = csr_addr_to_index(csr_addr);
     
     // Performance counters (64-bit)
     // Note: CYCLE increments every clock cycle
@@ -92,16 +126,16 @@ module csr_file (
             CSR_FCSR:      csr_rdata = fcsr;
             
             // Machine-level CSRs
-            CSR_MSTATUS:   csr_rdata = csr_mstatus;
-            CSR_MISA:      csr_rdata = csr_misa;  // Writable for test compatibility
-            CSR_MEDELEG:   csr_rdata = csr_medeleg;
-            CSR_MIDELEG:   csr_rdata = csr_mideleg;
-            CSR_MIE:       csr_rdata = csr_mie;
-            CSR_MTVEC:     csr_rdata = csr_mtvec;
-            CSR_MSCRATCH:  csr_rdata = csr_mscratch;
-            CSR_MEPC:      csr_rdata = csr_mepc;
-            CSR_MCAUSE:    csr_rdata = csr_mcause;
-            CSR_MTVAL:     csr_rdata = csr_mtval;
+            CSR_MSTATUS:   csr_rdata = csr_mem_rdata;
+            CSR_MISA:      csr_rdata = csr_mem_rdata;  // Writable for test compatibility
+            CSR_MEDELEG:   csr_rdata = csr_mem_rdata;
+            CSR_MIDELEG:   csr_rdata = csr_mem_rdata;
+            CSR_MIE:       csr_rdata = csr_mem_rdata;
+            CSR_MTVEC:     csr_rdata = csr_mem_rdata;
+            CSR_MSCRATCH:  csr_rdata = csr_mem_rdata;
+            CSR_MEPC:      csr_rdata = csr_mem_rdata;
+            CSR_MCAUSE:    csr_rdata = csr_mem_rdata;
+            CSR_MTVAL:     csr_rdata = csr_mem_rdata;
             CSR_MIP:       csr_rdata = 32'h0;  // No interrupts pending (simplified)
             
             // Performance counters (lower 32 bits)
@@ -154,22 +188,40 @@ module csr_file (
         endcase
     end
     
-    // CSR register updates
+    always_comb begin
+        if (csr_init_pending) begin
+            csr_mem_we = 1'b1;
+            csr_mem_waddr = CSR_IDX_MISA;
+            csr_mem_wdata = 32'h40001125;  // RV32IMACF: MXL=01, I=8, M=12, A=0, C=2, F=5
+        end else begin
+            csr_mem_we = is_csr && csr_write_en && is_writable_csr_addr(csr_addr);
+            csr_mem_waddr = csr_mem_addr;
+            csr_mem_wdata = csr_wdata;
+        end
+    end
+
+    sync_dpram #(
+        .DATA_WIDTH(32),
+        .ADDR_WIDTH(CSR_MEM_ADDR_WIDTH)
+    ) u_csr_mem (
+        .wclk(clk),
+        .rclk(clk),
+        .we(csr_mem_we),
+        .waddr(csr_mem_waddr),
+        .wdata(csr_mem_wdata),
+        .raddr(csr_mem_addr),
+        .rdata(csr_mem_rdata)
+    );
+
+    // CSR updates
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            csr_mstatus  <= 32'h0;
-            csr_misa     <= 32'h40001125;  // RV32IMACF: MXL=01, I=8, M=12, A=0, C=2, F=5
-            csr_medeleg  <= 32'h0;
-            csr_mideleg  <= 32'h0;
-            csr_mie      <= 32'h0;
-            csr_mtvec    <= 32'h0;
-            csr_mscratch <= 32'h0;
-            csr_mepc     <= 32'h0;
-            csr_mcause   <= 32'h0;
-            csr_mtval    <= 32'h0;
             csr_cycle    <= 64'h0;
             csr_instret  <= 64'h0;
+            csr_init_pending <= 1'b1;
         end else begin
+            csr_init_pending <= 1'b0;
+
             // Cycle counter always increments
             csr_cycle <= csr_cycle + 64'd1;
             
@@ -178,25 +230,8 @@ module csr_file (
                 csr_instret <= csr_instret + 64'd1;
             end
             
-            // CSR writes
-            if (is_csr && csr_write_en) begin
-                case (csr_addr)
-                    // Note: FCSR/FRM/FFLAGS are handled in top.sv, not here
-                    CSR_MSTATUS:   csr_mstatus  <= csr_wdata;
-                    CSR_MISA:      csr_misa     <= csr_wdata;  // Writable for test compatibility
-                    CSR_MEDELEG:   csr_medeleg  <= csr_wdata;
-                    CSR_MIDELEG:   csr_mideleg  <= csr_wdata;
-                    CSR_MIE:       csr_mie      <= csr_wdata;
-                    CSR_MTVEC:     csr_mtvec    <= csr_wdata;
-                    CSR_MSCRATCH:  csr_mscratch <= csr_wdata;
-                    CSR_MEPC:      csr_mepc     <= csr_wdata;
-                    CSR_MCAUSE:    csr_mcause   <= csr_wdata;
-                    CSR_MTVAL:     csr_mtval    <= csr_wdata;
-                    // Read-only CSRs: CYCLE, TIME, INSTRET, MVENDORID, etc.
-                    // Writes to these are silently ignored
-                    default: ; // Ignore writes to unimplemented/read-only CSRs
-                endcase
-            end
+            // Writable machine-level CSR writes are handled by BRAM write port.
+            // FCSR/FRM/FFLAGS are handled in cpu.sv.
         end
     end
 
