@@ -301,14 +301,16 @@ fn execute_connect_sim(app: &mut App, trace: bool, vcd: Option<String>) -> Comma
 
     let (fifo_reg, fifo_rx) = create_fifo_device();
     match create_device_runtime(
-        DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
-            vcd_path: vcd,
-            instruction_trace_callback: if trace {
-                Some(SIM_TRACE_CALLBACK)
-            } else {
-                None
+        DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs {
+                vcd_path: vcd,
+                instruction_trace_callback: if trace {
+                    Some(SIM_TRACE_CALLBACK)
+                } else {
+                    None
+                },
             },
-        }),
+        },
         Some(vec![fifo_reg]),
     ) {
         Ok(runtime) => {

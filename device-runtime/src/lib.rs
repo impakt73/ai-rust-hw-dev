@@ -98,9 +98,10 @@ pub enum DeviceRuntimeType {
         startup_reset: StartupReset,
     },
     /// Software simulator
-    Sim,
-    /// Software simulator with backend-specific configuration
-    SimWithArgs(SimDeviceRuntimeArgs),
+    Sim {
+        /// Backend-specific simulator configuration
+        args: SimDeviceRuntimeArgs,
+    },
 }
 
 /// Instruction trace callback type for simulator backend.
@@ -159,12 +160,7 @@ pub fn create_device_runtime(
                 fpga::FpgaDeviceRuntime::connect(&device, baud, startup_reset, bus_devices)?;
             Ok(Box::new(runtime))
         }
-        DeviceRuntimeType::Sim => {
-            let runtime = sim::SimDeviceRuntime::new(bus_devices, SimDeviceRuntimeArgs::default())
-                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
-            Ok(Box::new(runtime))
-        }
-        DeviceRuntimeType::SimWithArgs(args) => {
+        DeviceRuntimeType::Sim { args } => {
             let runtime = sim::SimDeviceRuntime::new(bus_devices, args)
                 .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))

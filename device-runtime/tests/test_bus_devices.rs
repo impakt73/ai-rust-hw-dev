@@ -18,7 +18,9 @@ use common::{
     load_and_boot, wait_for_cpu_halt,
 };
 use common::{LONG_TIMEOUT, TEST_BOOT_PC};
-use device_runtime::{create_device_runtime, BusDeviceRegistration, DeviceRuntimeType};
+use device_runtime::{
+    create_device_runtime, BusDeviceRegistration, DeviceRuntimeType, SimDeviceRuntimeArgs,
+};
 use riscv_core::instruction::{addi, ebreak, lui, lw, sw};
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
@@ -145,7 +147,9 @@ fn test_custom_bus_device_registration_and_access() {
     };
 
     let mut runtime = create_device_runtime(
-        DeviceRuntimeType::Sim,
+        DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
         Some(vec![BusDeviceRegistration {
             base_addr: DUMMY_DEVICE_BASE,
             device: Box::new(bus_device),

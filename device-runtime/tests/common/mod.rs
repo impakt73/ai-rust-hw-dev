@@ -4,7 +4,7 @@
 
 use device_runtime::{
     create_device_runtime, BusDeviceRegistration, BusEvent, BusRequest, DeviceRuntime,
-    DeviceRuntimeType,
+    DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
 use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
@@ -64,7 +64,9 @@ pub fn create_test_runtime_with_registrations(
                 ),
             }
         }
-        _ => DeviceRuntimeType::Sim,
+        _ => DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     create_device_runtime(runtime_type, registrations).expect("Failed to create device runtime")

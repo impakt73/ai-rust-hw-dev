@@ -107,16 +107,16 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 baud,
                 startup_reset: device_runtime::StartupReset::None,
             },
-            RuntimeArgs::Sim { trace, vcd } => {
-                DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
+            RuntimeArgs::Sim { trace, vcd } => DeviceRuntimeType::Sim {
+                args: SimDeviceRuntimeArgs {
                     vcd_path: vcd.map(|path| path.to_string_lossy().to_string()),
                     instruction_trace_callback: if trace {
                         Some(SIM_TRACE_CALLBACK)
                     } else {
                         None
                     },
-                })
-            }
+                },
+            },
         };
         let (fifo_reg, fifo_rx) = create_fifo_device();
         match create_device_runtime(runtime_type, Some(vec![fifo_reg])) {
