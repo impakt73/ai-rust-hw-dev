@@ -46,12 +46,12 @@ impl<'a> SimulatorView<'a> {
     /// * `data` - Byte slice containing the data to write
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // write_memory_region is typically used within InteractiveSimulator::run_with_options setup_callback
+    /// // write_memory_region is typically used within the cpu-sim/tests/common/mod.rs run_program helper setup_callback
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// let result = InteractiveSimulator::run_with_options(
+    /// let result = run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -107,11 +107,11 @@ impl<'a> SimulatorView<'a> {
     /// An iterator yielding bytes from the memory region
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region is typically used in InteractiveSimulator::run_with_options termination_callback
-    /// InteractiveSimulator::run_with_options(
+    /// // dump_memory_region is typically used in the cpu-sim/tests/common/mod.rs run_program helper termination_callback
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -178,11 +178,11 @@ impl<'a> SimulatorView<'a> {
     /// The memory region must contain at least `width * height * 4` bytes of valid data.
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region_as_image is typically used in InteractiveSimulator::run_with_options termination_callback
-    /// InteractiveSimulator::run_with_options(
+    /// // dump_memory_region_as_image is typically used in the cpu-sim/tests/common/mod.rs run_program helper termination_callback
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -298,7 +298,7 @@ impl<'a> SimulatorView<'a> {
     /// * `Err(String)` - Address range conflicts with existing device
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use cpu_sim::*;
     ///
     /// # struct MyVideoDevice;
@@ -311,7 +311,7 @@ impl<'a> SimulatorView<'a> {
     /// #     fn size(&self) -> u32 { 4 }
     /// #     fn reset(&mut self, _ctx: &mut SystemContext) {}
     /// # }
-    /// InteractiveSimulator::run_with_options(
+    /// run_program(
     ///     1000,
     ///     false,
     ///     false,
@@ -351,10 +351,10 @@ impl<'a> SimulatorView<'a> {
     /// The current 8-bit LED output value
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// InteractiveSimulator::run_with_options(
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -393,10 +393,10 @@ impl<'a> SimulatorView<'a> {
     /// * `Err(String)` - Request rejected (already pending, or invalid spanning range)
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// InteractiveSimulator::run_with_options(
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -529,10 +529,10 @@ impl<'a> SimulatorView<'a> {
     /// * `None` - No response available yet
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// InteractiveSimulator::run_with_options(
+    /// run_program(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state

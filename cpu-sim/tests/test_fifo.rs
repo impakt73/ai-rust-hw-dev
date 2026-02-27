@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
-    init_test_logger, run_program,
+    init_test_logger, run_program, write_memory_region,
 };
 use cpu_sim::*;
 
@@ -23,15 +23,16 @@ fn test_fifo_hello_world() {
         None, // vcd_path
         0,    // mem_latency_cycles
         move |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
             cpu_sim::push_string_to_fifo_rx(&fifo_source, test_string);
             let fifo = Fifo::new_with_callback(fifo_source, callback);
-            sim.register_device(FIFO_BASE, Box::new(fifo))
+            sim.bus
+                .register_device(FIFO_BASE, Box::new(fifo))
                 .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("FIFO hello world simulation should succeed");
 

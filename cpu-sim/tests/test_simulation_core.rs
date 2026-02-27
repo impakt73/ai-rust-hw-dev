@@ -2,6 +2,7 @@ mod common;
 
 use common::{
     assert_tohost, create_loop_program, create_test_program, init_test_logger, run_program,
+    write_memory_region,
 };
 use cpu_sim::*;
 
@@ -21,10 +22,10 @@ fn test_comprehensive_elf() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -54,10 +55,10 @@ fn test_global_max_cycles_safety_margin() {
         None,
         0,
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Simple test should succeed");
 
@@ -79,10 +80,10 @@ fn test_global_max_cycles_safety_margin() {
         None,
         0,
         |sim| {
-            sim.write_memory_region(0x8000_0000, &loop_program);
+            write_memory_region(sim, 0x8000_0000, &loop_program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Loop program test should succeed");
 
@@ -111,10 +112,10 @@ fn test_global_max_cycles_safety_margin() {
         None,
         3, // 3-cycle latency
         |sim| {
-            sim.write_memory_region(0x8000_0000, &instructions);
+            write_memory_region(sim, 0x8000_0000, &instructions);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Latency test should succeed");
 

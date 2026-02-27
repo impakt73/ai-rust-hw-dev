@@ -3,8 +3,8 @@
 #![allow(dead_code)]
 
 use cpu_sim::{
-    FifoDataReceivedCallback, InstructionTrace, InteractiveSimulator, SimulationResult,
-    SimulatorView,
+    is_valid_dram_range, FifoDataReceivedCallback, InstructionTrace, SimulationResult, Simulator,
+    SimulatorView, DRAM_BASE, DRAM_END,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
@@ -18,6 +18,10 @@ pub fn init_test_logger() {
 }
 
 /// Test-only wrapper for running a program to completion with callbacks.
+///
+/// `setup_callback` receives a mutable `Simulator` to load memory (typically via
+/// `write_memory_region`) and register devices (`sim.bus.register_device`), then
+/// returns the program entry point.
 #[allow(clippy::too_many_arguments)]
 pub fn run_program<F, T, P, C>(
     max_cycles: u64,
@@ -33,20 +37,63 @@ pub fn run_program<F, T, P, C>(
 where
     F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
-    P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
-    C: FnOnce(&SimulatorView, &SimulationResult),
+    P: FnOnce(&mut Simulator<F, T>) -> Result<u32, String>,
+    C: FnOnce(&SimulationResult),
 {
-    InteractiveSimulator::run_with_options(
-        max_cycles,
+    let mut sim = Simulator::new(
         print_inst_trace,
         print_fsm_state,
         inst_complete_callback,
         trace_callback,
         vcd_path,
         mem_latency_cycles,
-        setup_callback,
-        termination_callback,
-    )
+        0, // verilator_optimization (default 0 for compatibility)
+    )?;
+
+    sim.reset().map_err(|e| format!("Reset failed: {}", e))?;
+
+    let entry_point = setup_callback(&mut sim)?;
+
+    log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
+
+    sim.boot(entry_point)
+        .map_err(|e| format!("Boot failed: {}", e))?;
+
+    let result = sim.run(max_cycles)?;
+
+    if let Some(callback) = termination_callback {
+        callback(&result);
+    }
+
+    Ok(result)
+}
+
+/// Write a region of memory from a byte slice for tests using `Simulator`.
+///
+/// Writes outside the valid DRAM range are rejected and logged.
+pub fn write_memory_region<F, T>(sim: &mut Simulator<F, T>, start_addr: u32, data: &[u8])
+where
+    F: FnMut(&mut SimulatorView),
+    T: FnMut(&InstructionTrace),
+{
+    if !data.is_empty() {
+        let size = data.len() as u32;
+        if !is_valid_dram_range(start_addr, size) {
+            log::warn!(
+                "write_memory_region: Address range 0x{:08x} - 0x{:08x} is outside valid DRAM range (0x{:08x} - 0x{:08x}), operation rejected",
+                start_addr,
+                start_addr.wrapping_add(size).wrapping_sub(1),
+                DRAM_BASE,
+                DRAM_END
+            );
+            return;
+        }
+    }
+
+    for (offset, &byte) in data.iter().enumerate() {
+        let addr = start_addr.wrapping_add(offset as u32);
+        sim.bus.memory.write_byte(addr, byte);
+    }
 }
 
 /// Assert that a simulation result has the expected tohost value.

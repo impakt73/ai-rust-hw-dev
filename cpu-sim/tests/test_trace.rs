@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
-    init_test_logger, run_program,
+    init_test_logger, run_program, write_memory_region,
 };
 use cpu_sim::*;
 use riscv_core::instruction::*;
@@ -20,7 +20,7 @@ fn run_program_with_options<T, F>(
 ) -> Result<SimulationResult, String>
 where
     T: FnMut(&riscv_core::trace::InstructionTrace),
-    F: FnOnce(&SimulatorView, &SimulationResult),
+    F: FnOnce(&SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
 
@@ -38,7 +38,7 @@ where
         vcd_path,
         0, // Zero latency for RTL verification tests
         |sim| {
-            sim.write_memory_region(START_ADDR, &program_bytes);
+            write_memory_region(sim, START_ADDR, &program_bytes);
             Ok(START_ADDR)
         },
         termination_callback,
@@ -59,10 +59,10 @@ fn test_instruction_trace() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with trace should succeed");
 
@@ -107,10 +107,10 @@ fn test_register_trace_audit() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Register trace audit simulation should succeed");
 
@@ -156,10 +156,10 @@ fn test_trace_callback() {
         None, // vcd_path
         0,    // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Trace test simulation should succeed");
 
@@ -374,10 +374,10 @@ fn test_vcd_generation() {
         Some(vcd_path_str),
         0, // mem_latency_cycles
         |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
+            write_memory_region(sim, 0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     )
     .expect("Simulation with VCD should succeed");
 
@@ -632,7 +632,7 @@ fn test_comprehensive_trace_validation() {
         Some(|trace: &riscv_core::trace::InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
-        Some(|_sim: &SimulatorView, result: &SimulationResult| {
+        Some(|result: &SimulationResult| {
             assert_eq!(
                 result.tohost_value,
                 Some(SUCCESS_CODE),
@@ -780,7 +780,7 @@ fn test_trace_with_branches() {
         Some(|trace: &riscv_core::trace::InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
-        Some(|_sim: &SimulatorView, result: &SimulationResult| {
+        Some(|result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
         }),
     )
@@ -871,7 +871,7 @@ fn test_trace_and_vcd_together() {
         false,
         Some(vcd_path_str),
         None::<fn(&riscv_core::trace::InstructionTrace)>,
-        Some(|_sim: &SimulatorView, result: &SimulationResult| {
+        Some(|result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
         }),
     )

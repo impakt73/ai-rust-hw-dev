@@ -1,6 +1,6 @@
 mod common;
 
-use common::{init_test_logger, run_program};
+use common::{init_test_logger, run_program, write_memory_region};
 use cpu_sim::*;
 
 #[test]
@@ -31,10 +31,10 @@ fn test_hung_detection_catches_infinite_loop() {
         None, // No VCD
         0,    // Zero latency
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes);
+            write_memory_region(sim, start_addr, &program_bytes);
             Ok(start_addr)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     );
 
     // Should get an error about PC stuck
@@ -99,15 +99,15 @@ fn test_hung_detection_catches_long_instruction() {
         None,
         mem_latency_cycles, // Set memory latency high enough to trigger long instruction detection
         |sim| {
-            sim.write_memory_region(start_addr, &program_bytes);
+            write_memory_region(sim, start_addr, &program_bytes);
 
             // Write data at data_addr (0x80000100)
             let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78];
-            sim.write_memory_region(data_addr, &data);
+            write_memory_region(sim, data_addr, &data);
 
             Ok(start_addr)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&cpu_sim::SimulationResult)>,
     );
 
     // Should get an error about instruction taking too long
