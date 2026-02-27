@@ -1,5 +1,6 @@
 use super::*;
 use crate::bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
+use riscv_shared::bus::FIFO_BASE;
 use std::collections::HashMap;
 
 /// Mock device for testing device registration

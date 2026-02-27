@@ -2,6 +2,7 @@ mod common;
 
 use common::init_test_logger;
 use cpu_sim::*;
+use riscv_shared::bus::DRAM_BASE;
 
 #[test]
 fn test_hung_detection_catches_infinite_loop() {

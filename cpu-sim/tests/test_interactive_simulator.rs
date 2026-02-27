@@ -1,8 +1,9 @@
 mod common;
 
-use bus_shared::{BusDevice, Video, VideoConfig, FIFO_BASE};
+use bus_shared::{BusDevice, Video, VideoConfig};
 use common::create_simple_exit_program;
 use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
+use riscv_shared::bus::FIFO_BASE;
 use riscv_shared::SUCCESS_CODE;
 
 fn step_instruction_via_cycle(

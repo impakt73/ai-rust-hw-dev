@@ -12,9 +12,11 @@ use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
     HostRequestRoute, PendingHostRequest, ResetKind,
 };
-use bus_shared::{is_valid_dram_range, SystemBus};
+use bus_shared::SystemBus;
 use host_bus_handler::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
-use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
+use riscv_shared::bus::{
+    is_valid_dram_range, sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM,
+};
 use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::sync::mpsc;

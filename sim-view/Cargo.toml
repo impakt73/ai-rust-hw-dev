@@ -16,6 +16,7 @@ path = "src/main.rs"
 bus-shared = { path = "../bus-shared" }
 device-runtime = { path = "../device-runtime" }
 riscv_core = { path = "../riscv_core" }
+riscv_shared = { path = "../riscv_shared" }
 
 # GUI and Audio
 softbuffer = "0.4"
