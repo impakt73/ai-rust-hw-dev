@@ -164,7 +164,9 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             app.log_bus_event(&event);
                             app.request_count += 1;
                         }
-                        BusEvent::HostReadResponse { addr, data, size } => {
+                        BusEvent::HostReadResponse {
+                            addr, data, size, ..
+                        } => {
                             // Host-initiated read response
                             app.log_host_read_response(*addr, *data, *size);
                         }

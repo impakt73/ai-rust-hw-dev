@@ -227,6 +227,7 @@ impl SimDeviceRuntime {
                                 addr: req_addr,
                                 data: response.rdata,
                                 size: response.size,
+                                burst_data: response.data,
                             }
                         };
                         let _ = event_tx.send(RuntimeEvent::Bus(event));

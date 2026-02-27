@@ -221,7 +221,9 @@ impl App {
                     width = (bytes_for_size(*size) * 2) as usize
                 )
             }
-            BusEvent::HostReadResponse { addr, data, size } => {
+            BusEvent::HostReadResponse {
+                addr, data, size, ..
+            } => {
                 let width = size.byte_count() as usize * 2;
                 format!(
                     "HOST READ {} @ 0x{:08x} => 0x{:0width$x}",

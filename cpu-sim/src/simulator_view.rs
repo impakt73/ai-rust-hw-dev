@@ -436,30 +436,77 @@ impl<'a> SimulatorView<'a> {
                 .send_request(request)
                 .map_err(|e| format!("Host request rejected: {:?}", e)),
             RequestAddressRegion::NonRtl => {
+                let beat_bytes = usize::from(request.size.byte_count());
+                let beats = request.burst_len.max(1);
                 let response = if request.we {
-                    match request.size {
-                        host_bus_handler::AccessSize::Byte => {
-                            self.bus.write_byte(request.addr, request.wdata as u8)
+                    for beat_idx in 0..beats {
+                        let addr = if request.dst_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let byte_offset = (beat_idx as usize) * beat_bytes;
+                        let mut beat_buf = [0u8; 4];
+                        if request.data.len() >= byte_offset + beat_bytes {
+                            beat_buf[..beat_bytes].copy_from_slice(
+                                &request.data[byte_offset..byte_offset + beat_bytes],
+                            );
+                        } else if beat_idx == 0 {
+                            beat_buf = request.wdata.to_le_bytes();
                         }
-                        host_bus_handler::AccessSize::Halfword => {
-                            self.bus.write_halfword(request.addr, request.wdata as u16)
-                        }
-                        host_bus_handler::AccessSize::Word => {
-                            self.bus.write_word(request.addr, request.wdata)
+                        let wdata = u32::from_le_bytes(beat_buf);
+
+                        match request.size {
+                            host_bus_handler::AccessSize::Byte => {
+                                self.bus.write_byte(addr, wdata as u8)
+                            }
+                            host_bus_handler::AccessSize::Halfword => {
+                                self.bus.write_halfword(addr, wdata as u16)
+                            }
+                            host_bus_handler::AccessSize::Word => self.bus.write_word(addr, wdata),
                         }
                     }
-                    BusResponse::write_ack(request.size)
+                    let mut response = BusResponse::write_ack(request.size);
+                    response.addr = request.addr;
+                    response.burst_len = request.burst_len;
+                    response.src_fixed = request.src_fixed;
+                    response.dst_fixed = request.dst_fixed;
+                    response
                 } else {
-                    let rdata = match request.size {
-                        host_bus_handler::AccessSize::Byte => {
-                            self.bus.read_byte(request.addr) as u32
-                        }
-                        host_bus_handler::AccessSize::Halfword => {
-                            self.bus.read_halfword(request.addr) as u32
-                        }
-                        host_bus_handler::AccessSize::Word => self.bus.read_word(request.addr),
-                    };
-                    BusResponse::read_data(rdata, request.size)
+                    let mut burst_data = Vec::with_capacity((beats as usize) * beat_bytes);
+                    for beat_idx in 0..beats {
+                        let addr = if request.src_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let rdata = match request.size {
+                            host_bus_handler::AccessSize::Byte => self.bus.read_byte(addr) as u32,
+                            host_bus_handler::AccessSize::Halfword => {
+                                self.bus.read_halfword(addr) as u32
+                            }
+                            host_bus_handler::AccessSize::Word => self.bus.read_word(addr),
+                        };
+                        burst_data.extend_from_slice(&rdata.to_le_bytes()[..beat_bytes]);
+                    }
+                    BusResponse::burst_read_data(
+                        request.addr,
+                        request.size,
+                        request.burst_len,
+                        request.src_fixed,
+                        request.dst_fixed,
+                        burst_data,
+                    )
                 };
                 *self.direct_response = Some(response);
                 Ok(())
