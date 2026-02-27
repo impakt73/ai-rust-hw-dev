@@ -2,14 +2,9 @@
 mod cpu_sim_common;
 
 use cpu_sim::*;
-use cpu_sim_common::create_test_program;
+use cpu_sim_common::{create_test_program, init_test_logger};
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
-
-/// Helper function to initialize test logger (idempotent)
-fn init_test_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
 
 /// Test that the simulator works with zero latency (default)
 #[test]
