@@ -1,69 +1,63 @@
 // Division Unit Module
-// Hardware-synthesizable division using Non-Restoring Algorithm
+// Hardware-synthesizable division with WIDTH+1 remainder datapath
 // Parameterizable width for signed and unsigned division and remainder
 
 module div_unit #(
     parameter int WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
-    
+    input  logic             clk,
+    input  logic             rst_n,
+
     // Control interface
-    input  logic        start,        // Start division (pulse)
-    input  logic        is_signed,    // 1=signed (DIV/REM), 0=unsigned (DIVU/REMU)
-    input  logic        rem_sel,      // 1=remainder, 0=quotient
-    
+    input  logic             start,      // Start division (pulse)
+    input  logic             is_signed,  // 1=signed (DIV/REM), 0=unsigned (DIVU/REMU)
+    input  logic             rem_sel,    // 1=remainder, 0=quotient
+
     // Data interface
-    input  logic [WIDTH-1:0] dividend,     // Dividend (A)
-    input  logic [WIDTH-1:0] divisor,      // Divisor (B)
-    output logic [WIDTH-1:0] result,       // Quotient or Remainder
-    output logic             ready         // Result valid
+    input  logic [WIDTH-1:0] dividend,   // Dividend (A)
+    input  logic [WIDTH-1:0] divisor,    // Divisor (B)
+    output logic [WIDTH-1:0] result,     // Quotient or Remainder
+    output logic             ready       // Result valid
 );
 
     // ============================================================
     // State Machine Definition
     // ============================================================
-    typedef enum logic [2:0] {
-        DIV_IDLE     = 3'b000,  // Waiting for start
-        DIV_INIT     = 3'b001,  // Initialize registers
-        DIV_ITER     = 3'b010,  // Perform WIDTH iterations
-        DIV_CORRECT  = 3'b011,  // Final correction if needed
-        DIV_DONE     = 3'b100   // Result ready
+    typedef enum logic [1:0] {
+        DIV_IDLE = 2'b00,  // Waiting for start
+        DIV_INIT = 2'b01,  // Initialize registers
+        DIV_ITER = 2'b10,  // Perform WIDTH restoring iterations
+        DIV_DONE = 2'b11   // Result ready
     } div_state_t;
-    
+
     div_state_t state, next_state;
-    
+
     // ============================================================
     // Internal Registers
     // ============================================================
-    
-    // Division working registers
-    logic [2*WIDTH-1:0] P;                   // Partial remainder (2*WIDTH-bit)
-    logic [2*WIDTH-1:0] D;                   // Divisor aligned (2*WIDTH-bit)
-    logic [WIDTH-1:0]   Q;                   // Quotient accumulator
-    logic [$clog2(WIDTH)-1:0] iter_count;    // Iteration counter (0 to WIDTH-1), scales with WIDTH
-    
+    logic [WIDTH:0]   remainder_reg;  // WIDTH+1 partial remainder
+    logic [WIDTH-1:0] quotient_reg;   // Quotient shift register
+    logic [WIDTH-1:0] divisor_reg;    // Absolute divisor
+    logic [$clog2(WIDTH)-1:0] iter_count;
+
     // Sign tracking
-    logic        dividend_neg;
-    logic        divisor_neg;
-    
+    logic dividend_neg;
+    logic divisor_neg;
+
     // Special case flags
-    logic        div_by_zero;
-    logic        overflow;
-    
+    logic div_by_zero;
+    logic overflow;
+
     // Intermediate values (combinational)
     logic [WIDTH-1:0] abs_dividend;
     logic [WIDTH-1:0] abs_divisor;
+    logic [WIDTH:0]   remainder_shifted;
+    logic [WIDTH:0]   remainder_sub;
+    logic [WIDTH-1:0] quotient_next;
+    logic [WIDTH:0]   remainder_next;
     logic [WIDTH-1:0] final_quotient;
     logic [WIDTH-1:0] final_remainder;
-    
-    // Temporary variables for division iteration
-    logic [2*WIDTH-1:0] P_shifted;
-    logic [2*WIDTH-1:0] D_adjusted; // D or ~D to share one adder for add/sub
-    logic [2*WIDTH-1:0] P_next;     // Next partial remainder after selected add/sub
-    logic [2*WIDTH:0]   P_sum;      // Shared adder output with carry
-    logic               q_bit_next; // Quotient bit from next partial remainder sign
-    
+
     // ============================================================
     // State Register
     // ============================================================
@@ -73,84 +67,80 @@ module div_unit #(
         else
             state <= next_state;
     end
-    
+
     // ============================================================
     // Next State Logic
     // ============================================================
     always_comb begin
         next_state = state;
-        
+
         case (state)
             DIV_IDLE: begin
                 if (start)
                     next_state = DIV_INIT;
             end
-            
+
             DIV_INIT: begin
                 if (div_by_zero || overflow)
-                    next_state = DIV_DONE;  // Skip iterations for edge cases
+                    next_state = DIV_DONE;
                 else
                     next_state = DIV_ITER;
             end
-            
+
             DIV_ITER: begin
                 /* verilator lint_off WIDTHEXPAND */
-                if (iter_count == (WIDTH-1))  // After WIDTH iterations (0 to WIDTH-1)
+                if (iter_count == (WIDTH-1))
                 /* verilator lint_on WIDTHEXPAND */
-                    next_state = DIV_CORRECT;  // Need correction for non-restoring
+                    next_state = DIV_DONE;
                 else
                     next_state = DIV_ITER;
             end
-            
-            DIV_CORRECT: begin
-                // Final correction step for non-restoring division
-                next_state = DIV_DONE;
-            end
-            
+
             DIV_DONE: begin
-                // Return to IDLE unconditionally to avoid deadlock
-                // (start pulse should be only 1 cycle from top-level FSM)
                 next_state = DIV_IDLE;
             end
-            
+
             default: next_state = DIV_IDLE;
         endcase
     end
-    
+
     // ============================================================
-    // Combinational logic for absolute value conversion
+    // Combinational datapath helpers
     // ============================================================
     always_comb begin
-        // Default values
         abs_dividend = dividend;
         abs_divisor = divisor;
-        
-        // Compute absolute values in INIT state for signed operations
+
         if (state == DIV_INIT && is_signed && divisor != '0) begin
             abs_dividend = dividend[WIDTH-1] ? (~dividend + 1'b1) : dividend;
-            abs_divisor  = divisor[WIDTH-1]  ? (~divisor  + 1'b1) : divisor;
+            abs_divisor = divisor[WIDTH-1] ? (~divisor + 1'b1) : divisor;
         end
-        
-        // Compute shifted value and next-state update for non-restoring division
-        P_shifted = P << 1;
-        D_adjusted = P[2*WIDTH-1] ? D : ~D;
-        // Non-restoring update:
-        // - P < 0: P_next = P_shifted + D       (carry-in = 0)
-        // - P >= 0: P_next = P_shifted - D = P_shifted + ~D + 1 (carry-in = 1)
-        P_sum = {1'b0, P_shifted} + {1'b0, D_adjusted} +
-                {{(2*WIDTH){1'b0}}, (P[2*WIDTH-1] ? 1'b0 : 1'b1)};
-        P_next = P_sum[2*WIDTH-1:0];
-        q_bit_next = ~P_next[2*WIDTH-1];
+
+        // Restoring division iteration:
+        // 1) Shift {remainder,quotient} left by 1
+        // 2) Try subtracting divisor from remainder
+        // 3) If subtraction is non-negative, keep it and set quotient bit to 1
+        //    Otherwise restore shifted remainder and set quotient bit to 0
+        remainder_shifted = {remainder_reg[WIDTH-1:0], quotient_reg[WIDTH-1]};
+        remainder_sub = remainder_shifted - {1'b0, divisor_reg};
+
+        if (!remainder_sub[WIDTH]) begin
+            remainder_next = remainder_sub;
+            quotient_next = {quotient_reg[WIDTH-2:0], 1'b1};
+        end else begin
+            remainder_next = remainder_shifted;
+            quotient_next = {quotient_reg[WIDTH-2:0], 1'b0};
+        end
     end
-    
+
     // ============================================================
     // Datapath Registers
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            P <= '0;
-            D <= '0;
-            Q <= '0;
+            remainder_reg <= '0;
+            quotient_reg <= '0;
+            divisor_reg <= '0;
             iter_count <= '0;
             dividend_neg <= 1'b0;
             divisor_neg <= 1'b0;
@@ -159,17 +149,14 @@ module div_unit #(
         end else begin
             case (state)
                 DIV_INIT: begin
-                    // Check for special cases
                     div_by_zero <= (divisor == '0);
-                    // Overflow only for signed: most negative / -1
                     /* verilator lint_off WIDTHEXPAND */
-                    overflow <= is_signed && 
-                                (dividend == (1'b1 << (WIDTH-1))) && 
+                    overflow <= is_signed &&
+                                (dividend == (1'b1 << (WIDTH-1))) &&
                                 (divisor == '1);
                     /* verilator lint_on WIDTHEXPAND */
-                    
+
                     if (divisor != '0) begin
-                        // Handle sign tracking for signed division
                         if (is_signed) begin
                             dividend_neg <= dividend[WIDTH-1];
                             divisor_neg <= divisor[WIDTH-1];
@@ -177,95 +164,72 @@ module div_unit #(
                             dividend_neg <= 1'b0;
                             divisor_neg <= 1'b0;
                         end
-                        
-                        // Initialize division registers (abs values computed combinationally)
-                        P <= {{WIDTH{1'b0}}, abs_dividend};  // {remainder, dividend}
-                        D <= {abs_divisor, {WIDTH{1'b0}}};   // Divisor in upper WIDTH bits
-                        Q <= '0;
+
+                        remainder_reg <= '0;
+                        quotient_reg <= abs_dividend;
+                        divisor_reg <= abs_divisor;
                         iter_count <= '0;
                     end
                 end
-                
+
                 DIV_ITER: begin
-                    // Non-restoring division iteration
-                    // Decision based on current partial remainder sign:
-                    // - If P >= 0: shift and subtract divisor
-                    // - If P < 0: shift and add divisor
-                    // Quotient bit is determined by the result's sign (1 if non-negative, 0 if negative)
-                    
-                    P <= P_next;
-                    Q <= {Q[WIDTH-2:0], q_bit_next};
-                    
+                    remainder_reg <= remainder_next;
+                    quotient_reg <= quotient_next;
                     iter_count <= iter_count + 1'b1;
                 end
-                
-                DIV_CORRECT: begin
-                    // Final correction for non-restoring division
-                    // If the final remainder is negative, add divisor to make it positive
-                    if (P[2*WIDTH-1]) begin
-                        P <= P + D;
-                    end
-                    // Quotient is already correct from iteration loop
-                end
-                
+
                 default: begin
                     // Hold values in other states
                 end
             endcase
         end
     end
-    
+
     // ============================================================
     // Sign Correction (Combinational)
     // ============================================================
     always_comb begin
-        // Apply signs to quotient and remainder based on RISC-V specification
         if (is_signed && !div_by_zero && !overflow) begin
-            // Quotient sign: sign(dividend) XOR sign(divisor)
             if (dividend_neg ^ divisor_neg)
-                final_quotient = ~Q + 1'b1;  // Two's complement negation
+                final_quotient = ~quotient_reg + 1'b1;
             else
-                final_quotient = Q;
-            
-            // Remainder sign: same as dividend
+                final_quotient = quotient_reg;
+
             if (dividend_neg)
-                final_remainder = ~P[2*WIDTH-1:WIDTH] + 1'b1;  // Two's complement negation
+                final_remainder = ~remainder_reg[WIDTH-1:0] + 1'b1;
             else
-                final_remainder = P[2*WIDTH-1:WIDTH];
+                final_remainder = remainder_reg[WIDTH-1:0];
         end else begin
-            // Unsigned or edge cases: use values as-is
-            final_quotient = Q;
-            final_remainder = P[2*WIDTH-1:WIDTH];
+            final_quotient = quotient_reg;
+            final_remainder = remainder_reg[WIDTH-1:0];
         end
     end
-    
+
     // ============================================================
     // Output Logic (Combinational)
     // ============================================================
     always_comb begin
         ready = (state == DIV_DONE);
-        
+
         if (state == DIV_DONE) begin
             if (div_by_zero) begin
-                // RISC-V spec: division by zero
                 if (rem_sel)
-                    result = dividend;  // REM/REMU: return dividend unchanged
+                    result = dividend;
                 else
-                    result = '1;  // DIV/DIVU: return all 1's
+                    result = '1;
             end else if (overflow) begin
-                // RISC-V spec: most negative / -1 overflow
                 if (rem_sel)
-                    result = '0;  // REM: return 0
+                    result = '0;
                 else
-                    result = (1'b1 << (WIDTH-1));  // DIV: return most negative number
+                    result = (1'b1 << (WIDTH-1));
             end else begin
                 if (rem_sel)
-                    result = final_remainder;  // Remainder
+                    result = final_remainder;
                 else
-                    result = final_quotient;   // Quotient
+                    result = final_quotient;
             end
         end else begin
-            result = '0;  // Default when not ready
+            result = '0;
         end
     end
 
