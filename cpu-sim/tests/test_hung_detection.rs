@@ -1,6 +1,6 @@
 mod common;
 
-use common::init_test_logger;
+use common::{init_test_logger, run_program};
 use cpu_sim::*;
 
 #[test]

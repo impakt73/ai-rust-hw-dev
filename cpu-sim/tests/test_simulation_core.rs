@@ -1,6 +1,8 @@
 mod common;
 
-use common::{assert_tohost, create_loop_program, create_test_program, init_test_logger};
+use common::{
+    assert_tohost, create_loop_program, create_test_program, init_test_logger, run_program,
+};
 use cpu_sim::*;
 
 /// Comprehensive test that runs a full in-memory program for basic simulation verification.

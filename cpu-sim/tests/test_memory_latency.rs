@@ -1,7 +1,7 @@
 /// Test memory latency functionality
 mod common;
 
-use common::create_test_program;
+use common::{create_test_program, run_program};
 use cpu_sim::*;
 use riscv_core::instruction::*;
 

@@ -2,7 +2,10 @@
 
 #![allow(dead_code)]
 
-use cpu_sim::{FifoDataReceivedCallback, SimulationResult};
+use cpu_sim::{
+    FifoDataReceivedCallback, InstructionTrace, InteractiveSimulator, SimulationResult,
+    SimulatorView,
+};
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
@@ -12,6 +15,38 @@ use std::sync::{Arc, Mutex};
 /// Initialize the test logger (idempotent – safe to call from multiple tests).
 pub fn init_test_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
+}
+
+/// Test-only wrapper for running a program to completion with callbacks.
+#[allow(clippy::too_many_arguments)]
+pub fn run_program<F, T, P, C>(
+    max_cycles: u64,
+    print_inst_trace: bool,
+    print_fsm_state: bool,
+    inst_complete_callback: Option<F>,
+    trace_callback: Option<T>,
+    vcd_path: Option<&str>,
+    mem_latency_cycles: u32,
+    setup_callback: P,
+    termination_callback: Option<C>,
+) -> Result<SimulationResult, String>
+where
+    F: FnMut(&mut SimulatorView),
+    T: FnMut(&InstructionTrace),
+    P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
+    C: FnOnce(&SimulatorView, &SimulationResult),
+{
+    InteractiveSimulator::run_with_options(
+        max_cycles,
+        print_inst_trace,
+        print_fsm_state,
+        inst_complete_callback,
+        trace_callback,
+        vcd_path,
+        mem_latency_cycles,
+        setup_callback,
+        termination_callback,
+    )
 }
 
 /// Assert that a simulation result has the expected tohost value.

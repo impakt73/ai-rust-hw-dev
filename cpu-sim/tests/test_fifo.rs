@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
-    init_test_logger,
+    init_test_logger, run_program,
 };
 use cpu_sim::*;
 

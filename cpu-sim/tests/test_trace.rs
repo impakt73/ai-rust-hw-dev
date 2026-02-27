@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
-    init_test_logger,
+    init_test_logger, run_program,
 };
 use cpu_sim::*;
 use riscv_core::instruction::*;

@@ -1,5 +1,8 @@
 use crate::sim::Simulator;
-use crate::{BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult, SimulatorView};
+use crate::{
+    BusRequest, BusResponse, InstructionTrace, SimulationResult, SimulationStepCycleResult,
+    SimulatorView,
+};
 
 // Type alias for InteractiveSimulator's internal simulator type
 type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)>;
@@ -8,7 +11,7 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 ///
 /// This structure provides a controlled interface for interactive use of the simulator,
 /// allowing users to load programs and step through execution instruction-by-instruction.
-/// Unlike the `run_program` function which runs to completion,
+/// Unlike step-by-step execution APIs,
 /// `InteractiveSimulator` gives you fine-grained control over execution.
 ///
 /// # Examples
@@ -52,6 +55,67 @@ pub struct InteractiveSimulator {
 unsafe impl Send for InteractiveSimulator {}
 
 impl InteractiveSimulator {
+    /// Run a simulation to completion with configurable callbacks and setup hooks.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_with_options<F, T, P, C>(
+        max_cycles: u64,
+        print_inst_trace: bool,
+        print_fsm_state: bool,
+        inst_complete_callback: Option<F>,
+        trace_callback: Option<T>,
+        vcd_path: Option<&str>,
+        mem_latency_cycles: u32,
+        setup_callback: P,
+        termination_callback: Option<C>,
+    ) -> Result<SimulationResult, String>
+    where
+        F: FnMut(&mut SimulatorView),
+        T: FnMut(&InstructionTrace),
+        P: FnOnce(&mut SimulatorView) -> Result<u32, String>,
+        C: FnOnce(&SimulatorView, &SimulationResult),
+    {
+        let mut sim = Simulator::new(
+            print_inst_trace,
+            print_fsm_state,
+            inst_complete_callback,
+            trace_callback,
+            vcd_path,
+            mem_latency_cycles,
+            0, // verilator_optimization (default 0 for compatibility)
+        )?;
+
+        sim.reset().map_err(|e| format!("Reset failed: {}", e))?;
+
+        let entry_point = {
+            let mut view = SimulatorView::new(
+                &mut sim.bus,
+                &sim.cpu,
+                &mut sim.host_bus_handler,
+                &mut sim.host_bus_direct_response,
+            );
+            setup_callback(&mut view)?
+        };
+
+        log::info!("Program loaded, entry point: 0x{:08x}", entry_point);
+
+        sim.boot(entry_point)
+            .map_err(|e| format!("Boot failed: {}", e))?;
+
+        let result = sim.run(max_cycles)?;
+
+        if let Some(callback) = termination_callback {
+            let view = SimulatorView::new(
+                &mut sim.bus,
+                &sim.cpu,
+                &mut sim.host_bus_handler,
+                &mut sim.host_bus_direct_response,
+            );
+            callback(&view, &result);
+        }
+
+        Ok(result)
+    }
+
     /// Create a new InteractiveSimulator with default configuration
     ///
     /// All optional parameters are set to None or disabled:

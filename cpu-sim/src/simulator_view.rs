@@ -49,9 +49,9 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // write_memory_region is typically used within run_program's setup_callback
+    /// // write_memory_region is typically used within InteractiveSimulator::run_with_options setup_callback
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
-    /// let result = run_program(
+    /// let result = InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -110,8 +110,8 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region is typically used in run_program's termination_callback
-    /// run_program(
+    /// // dump_memory_region is typically used in InteractiveSimulator::run_with_options termination_callback
+    /// InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -181,8 +181,8 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// // dump_memory_region_as_image is typically used in run_program's termination_callback
-    /// run_program(
+    /// // dump_memory_region_as_image is typically used in InteractiveSimulator::run_with_options termination_callback
+    /// InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -311,7 +311,7 @@ impl<'a> SimulatorView<'a> {
     /// #     fn size(&self) -> u32 { 4 }
     /// #     fn reset(&mut self, _ctx: &mut SystemContext) {}
     /// # }
-    /// run_program(
+    /// InteractiveSimulator::run_with_options(
     ///     1000,
     ///     false,
     ///     false,
@@ -354,7 +354,7 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// run_program(
+    /// InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -396,7 +396,7 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// run_program(
+    /// InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
@@ -532,7 +532,7 @@ impl<'a> SimulatorView<'a> {
     /// ```no_run
     /// # use cpu_sim::*;
     /// # fn main() -> Result<(), String> {
-    /// run_program(
+    /// InteractiveSimulator::run_with_options(
     ///     100,
     ///     false, // print_inst_trace
     ///     false, // print_fsm_state
