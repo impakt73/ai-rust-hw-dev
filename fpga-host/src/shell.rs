@@ -13,6 +13,9 @@ use std::path::Path;
 /// Default baud rate for device connections
 const DEFAULT_BAUD_RATE: u32 = 1_000_000;
 
+const SIM_TRACE_CALLBACK: device_runtime::SimInstructionTraceCallback =
+    |trace| log::info!("SIM TRACE: {}", trace);
+
 /// Access size argument for commands
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum SizeArg {
@@ -301,7 +304,7 @@ fn execute_connect_sim(app: &mut App, trace: bool, vcd: Option<String>) -> Comma
         DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
             vcd_path: vcd,
             instruction_trace_callback: if trace {
-                Some(|trace| log::info!("SIM TRACE: {}", trace))
+                Some(SIM_TRACE_CALLBACK)
             } else {
                 None
             },

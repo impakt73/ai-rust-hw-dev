@@ -35,6 +35,9 @@ struct Args {
     verbose: bool,
 }
 
+const SIM_TRACE_CALLBACK: device_runtime::SimInstructionTraceCallback =
+    |trace| log::info!("SIM TRACE: {}", trace);
+
 #[derive(Subcommand)]
 enum RuntimeArgs {
     /// Connect to an FPGA over a serial link
@@ -108,7 +111,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
                     vcd_path: vcd.map(|path| path.to_string_lossy().to_string()),
                     instruction_trace_callback: if trace {
-                        Some(|trace| log::info!("SIM TRACE: {}", trace))
+                        Some(SIM_TRACE_CALLBACK)
                     } else {
                         None
                     },
