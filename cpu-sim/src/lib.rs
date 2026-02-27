@@ -20,25 +20,6 @@ pub use sim::{BootError, SimulationResult, SimulationStepCycleResult};
 pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
-
-/// Push a UTF-8 string into a FIFO RX queue as individual bytes.
-///
-/// Appends a null terminator (0x00) if the string length is a multiple of 4 bytes.
-pub fn push_string_to_fifo_rx(fifo_source: &SharedFifoDataSource, s: &str) {
-    let bytes = s.as_bytes();
-    let mut source = fifo_source
-        .lock()
-        .expect("push_string_to_fifo_rx source lock poisoned");
-
-    for &byte in bytes {
-        source.write_byte(byte);
-    }
-
-    // Add null terminator if string length is multiple of 4
-    if bytes.len().is_multiple_of(4) {
-        source.write_byte(0);
-    }
-}
 /// Unified program execution function that supports programmatic instruction loading
 ///
 /// This is the single entry point for running programs on the simulator. It uses a pre-execution
