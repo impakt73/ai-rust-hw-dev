@@ -866,6 +866,7 @@ dependencies = [
  "bus-shared",
  "cpu-sim",
  "elf",
+ "env_logger",
  "log",
  "riscv_core",
  "riscv_shared",

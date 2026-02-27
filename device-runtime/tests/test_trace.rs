@@ -1,11 +1,12 @@
-mod common;
+mod cpu_sim_common;
 
-use common::{
+use cpu_sim::*;
+use cpu_sim_common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
     init_test_logger,
 };
-use cpu_sim::*;
 use riscv_core::instruction::*;
+use riscv_core::trace::InstructionTrace;
 use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::{Arc, Mutex};
@@ -20,7 +21,7 @@ fn run_program_with_options<T, F>(
     termination_callback: Option<F>,
 ) -> Result<SimulationResult, String>
 where
-    T: FnMut(&riscv_core::trace::InstructionTrace),
+    T: FnMut(&InstructionTrace),
     F: FnOnce(&SimulatorView, &SimulationResult),
 {
     const START_ADDR: u32 = 0x8000_0000;
@@ -621,7 +622,7 @@ fn test_comprehensive_trace_validation() {
     ];
 
     // Add termination sequence
-    instructions.extend(common::tohost_termination(15, 16, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(15, 16, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -630,7 +631,7 @@ fn test_comprehensive_trace_validation() {
         GLOBAL_MAX_CYCLES,
         false,
         None,
-        Some(|trace: &riscv_core::trace::InstructionTrace| {
+        Some(|trace: &InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
@@ -769,7 +770,7 @@ fn test_trace_with_branches() {
         addi(5, 0, 99), // 0x18: SKIPPED
         addi(6, 0, 1),  // 0x1C: x6 = 1
     ];
-    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -778,7 +779,7 @@ fn test_trace_with_branches() {
         GLOBAL_MAX_CYCLES,
         false,
         None,
-        Some(|trace: &riscv_core::trace::InstructionTrace| {
+        Some(|trace: &InstructionTrace| {
             captured_traces.push(trace.clone());
         }),
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
@@ -863,7 +864,7 @@ fn test_trace_and_vcd_together() {
 
     // Simple test program
     let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
-    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Run with VCD enabled
     run_program_with_options(
@@ -871,7 +872,7 @@ fn test_trace_and_vcd_together() {
         GLOBAL_MAX_CYCLES,
         false,
         Some(vcd_path_str),
-        None::<fn(&riscv_core::trace::InstructionTrace)>,
+        None::<fn(&InstructionTrace)>,
         Some(|_sim: &SimulatorView, result: &SimulationResult| {
             assert_eq!(result.tohost_value, Some(SUCCESS_CODE));
         }),

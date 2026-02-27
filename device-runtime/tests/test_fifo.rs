@@ -1,10 +1,10 @@
-mod common;
+mod cpu_sim_common;
 
-use common::{
+use cpu_sim::*;
+use cpu_sim_common::{
     assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
     init_test_logger,
 };
-use cpu_sim::*;
 use riscv_shared::bus::FIFO_BASE;
 
 #[test]

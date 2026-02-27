@@ -13,6 +13,7 @@ riscv_shared = { path = "../riscv_shared" }
 serialport = "4.6"
 
 [dev-dependencies]
+env_logger = "0.10"
 riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
 sim-tests = { path = "../sim-tests" }
