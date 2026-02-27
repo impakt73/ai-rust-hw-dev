@@ -25,7 +25,10 @@ fn test_fifo_hello_world() {
         move |sim| {
             sim.write_memory_region(0x8000_0000, &program);
             let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
-            cpu_sim::push_string_to_fifo_rx(&fifo_source, test_string);
+            fifo_source
+                .lock()
+                .expect("test fifo_source lock poisoned")
+                .push_string_to_fifo_rx(test_string);
             let fifo = Fifo::new_with_callback(fifo_source, callback);
             sim.register_device(FIFO_BASE, Box::new(fifo))
                 .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
