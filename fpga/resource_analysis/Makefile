@@ -35,7 +35,7 @@ FPU_BASE_SOURCES = \
 # Module source definitions
 SOURCES_alu = $(RTL_DIR)/cpu/alu.sv $(RTL_DIR)/cpu/div_unit.sv
 SOURCES_branch_unit = $(RTL_DIR)/cpu/branch_unit.sv
-SOURCES_csr_file = $(RTL_DIR)/cpu/csr_file.sv
+SOURCES_csr_file = $(RTL_DIR)/cpu/csr_file.sv $(RTL_DIR)/memory/sync_dpram.sv
 SOURCES_decoder = $(RTL_DIR)/cpu/decoder.sv
 SOURCES_decompress = $(RTL_DIR)/cpu/decompress.sv
 SOURCES_div_unit = $(RTL_DIR)/cpu/div_unit.sv

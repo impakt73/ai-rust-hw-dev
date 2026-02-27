@@ -382,6 +382,7 @@ impl FpgaDeviceRuntime {
                             addr: req_addr,
                             data: response.rdata,
                             size: response.size,
+                            burst_data: response.data,
                         }
                     };
                     return Ok(Some(event));
@@ -678,11 +679,33 @@ impl FpgaDeviceRuntime {
 
     /// Process a host-initiated request directly in SystemBus.
     fn process_system_bus_request(request: &BusRequest, bus: &mut SystemBus) -> BusEvent {
+        let beat_bytes = usize::from(request.size.byte_count());
+        let beats = request.burst_len.max(1);
         if request.we {
-            match request.size {
-                AccessSize::Byte => bus.write_byte(request.addr, request.wdata as u8),
-                AccessSize::Halfword => bus.write_halfword(request.addr, request.wdata as u16),
-                AccessSize::Word => bus.write_word(request.addr, request.wdata),
+            for beat_idx in 0..beats {
+                let addr = if request.dst_fixed {
+                    request.addr
+                } else {
+                    request
+                        .addr
+                        .checked_add(beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"))
+                        .expect("request range pre-validated")
+                };
+                let byte_offset = (beat_idx as usize) * beat_bytes;
+                let mut beat_buf = [0u8; 4];
+                if request.data.len() >= byte_offset + beat_bytes {
+                    beat_buf[..beat_bytes]
+                        .copy_from_slice(&request.data[byte_offset..byte_offset + beat_bytes]);
+                } else if beat_idx == 0 {
+                    beat_buf = request.wdata.to_le_bytes();
+                }
+                let wdata = u32::from_le_bytes(beat_buf);
+
+                match request.size {
+                    AccessSize::Byte => bus.write_byte(addr, wdata as u8),
+                    AccessSize::Halfword => bus.write_halfword(addr, wdata as u16),
+                    AccessSize::Word => bus.write_word(addr, wdata),
+                }
             }
             BusEvent::HostWriteResponse {
                 addr: request.addr,
@@ -690,15 +713,31 @@ impl FpgaDeviceRuntime {
                 size: request.size,
             }
         } else {
-            let rdata = match request.size {
-                AccessSize::Byte => bus.read_byte(request.addr) as u32,
-                AccessSize::Halfword => bus.read_halfword(request.addr) as u32,
-                AccessSize::Word => bus.read_word(request.addr),
-            };
+            let mut burst_data = Vec::with_capacity((beats as usize) * beat_bytes);
+            for beat_idx in 0..beats {
+                let addr = if request.src_fixed {
+                    request.addr
+                } else {
+                    request
+                        .addr
+                        .checked_add(beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"))
+                        .expect("request range pre-validated")
+                };
+                let rdata = match request.size {
+                    AccessSize::Byte => bus.read_byte(addr) as u32,
+                    AccessSize::Halfword => bus.read_halfword(addr) as u32,
+                    AccessSize::Word => bus.read_word(addr),
+                };
+                burst_data.extend_from_slice(&rdata.to_le_bytes()[..beat_bytes]);
+            }
+            let mut first = [0u8; 4];
+            first[..beat_bytes].copy_from_slice(&burst_data[..beat_bytes]);
+            let rdata = u32::from_le_bytes(first);
             BusEvent::HostReadResponse {
                 addr: request.addr,
                 data: rdata,
                 size: request.size,
+                burst_data,
             }
         }
     }

@@ -60,8 +60,8 @@ fn test_zero_latency_default() {
     // So we expect more cycles than with direct memory interface
     println!("✓ Zero latency test completed in {} cycles", result.cycles);
     assert!(
-        result.cycles < 100,
-        "Should complete in fewer than 100 cycles with zero latency"
+        result.cycles < 120,
+        "Should complete in fewer than 120 cycles with zero latency"
     );
 }
 

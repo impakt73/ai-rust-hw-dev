@@ -191,6 +191,28 @@ fn test_runtime_write_and_read_memory_region_sram_without_cpu_program() {
 }
 
 #[test]
+fn test_runtime_memory_region_aligned_word_block_and_single_tail_bytes() {
+    let mut runtime = create_test_runtime();
+    let addr = DRAM_BASE + 0x200;
+
+    // Aligned interior (word path) plus single-byte tail/head behavior.
+    let payload = vec![
+        0xAA, 0xBB, 0xCC, 0xDD, // word 0
+        0x11, 0x22, 0x33, 0x44, // word 1
+        0x99, // tail byte
+    ];
+
+    runtime
+        .write_memory_region(addr + 1, &payload, None)
+        .expect("unaligned write should succeed");
+
+    let read_back = runtime
+        .read_memory_region(addr + 1, payload.len() as u32, None)
+        .expect("unaligned read should succeed");
+    assert_eq!(read_back, payload);
+}
+
+#[test]
 fn test_runtime_write_sram_then_cpu_reads_it() {
     let mut runtime = create_test_runtime();
     let payload = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];

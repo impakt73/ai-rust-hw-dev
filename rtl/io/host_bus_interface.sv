@@ -1,12 +1,13 @@
 // Host Bus Interface Module
-// Routes host bus transactions between system bus, RX buffer, and TX buffer
+// Routes host bus transactions between system bus, RX parser, and TX serializer.
+// Supports burst-native metadata framing and beat-stream execution.
 
 module host_bus_interface (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
 
-    // Bus Slave Interface (from System Bus - CPU→Host path)
+    // Bus Slave Interface (from System Bus - CPU->Host path)
     input  logic [31:0] addr,
     input  logic [31:0] wdata,
     output logic [31:0] rdata,
@@ -15,7 +16,7 @@ module host_bus_interface (
     input  logic        req,
     output logic        ready,
 
-    // Bus Master Interface (to Arbiter - Host→CPU path)
+    // Bus Master Interface (to Arbiter - Host->CPU path)
     output logic [31:0] host_bus_addr,
     output logic [31:0] host_bus_wdata,
     input  logic [31:0] host_bus_rdata,
@@ -36,37 +37,39 @@ module host_bus_interface (
 );
 
     // ============================================================
-    // RX Buffer Signals
+    // RX beat stream signals
     // ============================================================
-    logic        buf_pkt_valid;
-    logic        buf_pkt_req;
-    logic        buf_pkt_we;
-    logic [1:0]  buf_pkt_size;
-    logic [31:0] buf_pkt_addr;
-    logic [31:0] buf_pkt_data;
-    logic        buf_pkt_ready;
-
-    logic        buf_resp_valid;
-    logic        buf_req_valid;
-    logic        buf_resp_ready;
-    logic        buf_req_ready;
+    logic        rx_pkt_valid;
+    logic        rx_pkt_ready;
+    logic        rx_pkt_start;
+    logic        rx_pkt_last;
+    logic        rx_pkt_req;
+    logic        rx_pkt_we;
+    logic [1:0]  rx_pkt_size;
+    logic        rx_pkt_src_fixed;
+    logic        rx_pkt_dst_fixed;
+    logic [15:0] rx_pkt_burst_len_m1;
+    logic [31:0] rx_pkt_base_addr;
+    logic [31:0] rx_pkt_data;
 
     // ============================================================
-    // TX Buffer Signals
+    // TX beat stream signals
     // ============================================================
     logic        tx_pkt_valid;
+    logic        tx_pkt_ready;
+    logic        tx_pkt_start;
+    logic        tx_pkt_last;
     logic        tx_pkt_req;
     logic        tx_pkt_we;
     logic [1:0]  tx_pkt_size;
-    logic [31:0] tx_pkt_addr;
+    logic        tx_pkt_src_fixed;
+    logic        tx_pkt_dst_fixed;
+    logic [15:0] tx_pkt_burst_len_m1;
+    logic [31:0] tx_pkt_base_addr;
     logic [31:0] tx_pkt_data;
-    logic        tx_pkt_ready;
-
-    logic        tx_cpu_pkt_accepted;
-    logic        tx_host_pkt_accepted;
 
     // ============================================================
-    // CPU Request Tracking (CPU-initiated transactions)
+    // CPU request/response tracking
     // ============================================================
     logic [31:0] cpu_cap_addr;
     logic [31:0] cpu_cap_wdata;
@@ -74,20 +77,40 @@ module host_bus_interface (
     logic [1:0]  cpu_cap_size;
     logic        cpu_req_pending;
     logic        cpu_wait_resp;
+    logic [31:0] cpu_resp_data;
+    logic        cpu_resp_seen;
 
     // ============================================================
-    // Host Response Tracking (for host-initiated transactions)
+    // Host transaction execution state
     // ============================================================
-    logic [31:0] host_resp_rdata;
-    logic        host_resp_we;
-    logic [1:0]  host_resp_size;
-    logic        host_resp_pending;
+    typedef enum logic [2:0] {
+        HOST_IDLE        = 3'd0,
+        HOST_WRITE_BUS   = 3'd1,
+        HOST_WRITE_WAIT  = 3'd2,
+        HOST_WRITE_RESP  = 3'd3,
+        HOST_READ_BUS    = 3'd4,
+        HOST_READ_TX     = 3'd5
+    } host_state_t;
 
-    logic bus_master_handshake_complete;
-    assign bus_master_handshake_complete = host_bus_req && host_bus_ready;
+    host_state_t host_state;
+
+    logic        host_req_we;
+    logic [1:0]  host_req_size;
+    logic        host_req_src_fixed;
+    logic        host_req_dst_fixed;
+    logic [15:0] host_req_burst_len_m1;
+    logic [31:0] host_req_base_addr;
+    logic [31:0] host_curr_addr;
+    logic [2:0]  host_stride;
+    logic [16:0] host_beats_remaining;
+    logic [31:0] host_write_data;
+    logic [31:0] host_read_data;
+
+    logic host_bus_handshake;
+    assign host_bus_handshake = host_bus_req && host_bus_ready;
 
     // ============================================================
-    // RX Buffer Instance
+    // RX/TX submodules
     // ============================================================
     host_bus_rx rx_buf (
         .clk(clk),
@@ -95,53 +118,20 @@ module host_bus_interface (
         .rx_data(rx_data),
         .rx_valid(rx_valid),
         .rx_ready(rx_ready),
-        .packet_valid(buf_pkt_valid),
-        .packet_req(buf_pkt_req),
-        .packet_we(buf_pkt_we),
-        .packet_size(buf_pkt_size),
-        .packet_addr(buf_pkt_addr),
-        .packet_data(buf_pkt_data),
-        .packet_ready(buf_pkt_ready)
+        .packet_valid(rx_pkt_valid),
+        .packet_start(rx_pkt_start),
+        .packet_last(rx_pkt_last),
+        .packet_req(rx_pkt_req),
+        .packet_we(rx_pkt_we),
+        .packet_size(rx_pkt_size),
+        .packet_src_fixed(rx_pkt_src_fixed),
+        .packet_dst_fixed(rx_pkt_dst_fixed),
+        .packet_burst_len_m1(rx_pkt_burst_len_m1),
+        .packet_base_addr(rx_pkt_base_addr),
+        .packet_data(rx_pkt_data),
+        .packet_ready(rx_pkt_ready)
     );
 
-    assign buf_resp_valid = buf_pkt_valid && !buf_pkt_req;
-    assign buf_req_valid  = buf_pkt_valid && buf_pkt_req;
-
-    // ============================================================
-    // TX Buffer Input Arbitration
-    // Priority: host responses > CPU requests
-    // ============================================================
-    always_comb begin
-        tx_pkt_valid = 1'b0;
-        tx_pkt_req   = 1'b0;
-        tx_pkt_we    = 1'b0;
-        tx_pkt_size  = 2'b00;
-        tx_pkt_addr  = 32'h0;
-        tx_pkt_data  = 32'h0;
-
-        if (host_resp_pending) begin
-            tx_pkt_valid = 1'b1;
-            tx_pkt_req   = 1'b0;
-            tx_pkt_we    = host_resp_we;
-            tx_pkt_size  = host_resp_size;
-            tx_pkt_addr  = 32'h0;
-            tx_pkt_data  = host_resp_rdata;
-        end else if (cpu_req_pending) begin
-            tx_pkt_valid = 1'b1;
-            tx_pkt_req   = 1'b1;
-            tx_pkt_we    = cpu_cap_we;
-            tx_pkt_size  = cpu_cap_size;
-            tx_pkt_addr  = cpu_cap_addr;
-            tx_pkt_data  = cpu_cap_wdata;
-        end
-    end
-
-    assign tx_cpu_pkt_accepted  = tx_pkt_valid && tx_pkt_ready && tx_pkt_req;
-    assign tx_host_pkt_accepted = tx_pkt_valid && tx_pkt_ready && !tx_pkt_req;
-
-    // ============================================================
-    // TX Buffer Instance
-    // ============================================================
     host_bus_tx tx_buf (
         .clk(clk),
         .rst_n(rst_n),
@@ -149,54 +139,156 @@ module host_bus_interface (
         .tx_valid(tx_valid),
         .tx_ready(tx_ready),
         .packet_valid(tx_pkt_valid),
+        .packet_ready(tx_pkt_ready),
+        .packet_start(tx_pkt_start),
+        .packet_last(tx_pkt_last),
         .packet_req(tx_pkt_req),
         .packet_we(tx_pkt_we),
         .packet_size(tx_pkt_size),
-        .packet_addr(tx_pkt_addr),
-        .packet_data(tx_pkt_data),
-        .packet_ready(tx_pkt_ready)
+        .packet_src_fixed(tx_pkt_src_fixed),
+        .packet_dst_fixed(tx_pkt_dst_fixed),
+        .packet_burst_len_m1(tx_pkt_burst_len_m1),
+        .packet_base_addr(tx_pkt_base_addr),
+        .packet_data(tx_pkt_data)
     );
 
     // ============================================================
-    // CPU Slave Interface (ready when buffered host response is available)
+    // CPU slave interface
     // ============================================================
-    assign ready = cpu_wait_resp && buf_resp_valid;
-    assign rdata = buf_pkt_data;
+    assign ready = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req && rx_pkt_last;
+    assign rdata = cpu_resp_seen ? cpu_resp_data : rx_pkt_data;
 
     // ============================================================
-    // Buffer Ready Signals
+    // RX packet consumption
     // ============================================================
-    assign buf_resp_ready = ready;
-    assign buf_req_ready  = bus_master_handshake_complete && !host_resp_pending;
-    assign buf_pkt_ready  = (buf_resp_ready && buf_resp_valid) || (buf_req_ready && buf_req_valid);
+    always_comb begin
+        rx_pkt_ready = 1'b0;
+
+        // CPU response path (host response to CPU-originated request)
+        if (cpu_wait_resp && rx_pkt_valid && !rx_pkt_req) begin
+            rx_pkt_ready = 1'b1;
+        end else begin
+            case (host_state)
+                HOST_IDLE: begin
+                    // Accept host request start beat (or metadata-only read request)
+                    if (rx_pkt_valid && rx_pkt_req && rx_pkt_start) begin
+                        rx_pkt_ready = 1'b1;
+                    end
+                end
+
+                HOST_WRITE_WAIT: begin
+                    // Accept next write payload beat from host RX
+                    if (rx_pkt_valid && rx_pkt_req && !rx_pkt_start) begin
+                        rx_pkt_ready = 1'b1;
+                    end
+                end
+
+                default: begin
+                    rx_pkt_ready = 1'b0;
+                end
+            endcase
+        end
+    end
 
     // ============================================================
-    // Bus Master Interface (Host→CPU path)
+    // TX arbitration (host responses have priority over CPU requests)
     // ============================================================
-    assign host_bus_addr  = buf_pkt_addr;
-    assign host_bus_wdata = buf_pkt_data;
-    assign host_bus_we    = buf_pkt_we;
-    assign host_bus_size  = buf_pkt_size;
-    assign host_bus_req   = buf_req_valid && !host_resp_pending;
+    always_comb begin
+        tx_pkt_valid        = 1'b0;
+        tx_pkt_start        = 1'b0;
+        tx_pkt_last         = 1'b0;
+        tx_pkt_req          = 1'b0;
+        tx_pkt_we           = 1'b0;
+        tx_pkt_size         = 2'b00;
+        tx_pkt_src_fixed    = 1'b0;
+        tx_pkt_dst_fixed    = 1'b0;
+        tx_pkt_burst_len_m1 = 16'h0000;
+        tx_pkt_base_addr    = 32'h0000_0000;
+        tx_pkt_data         = 32'h0000_0000;
+
+        case (host_state)
+            HOST_WRITE_RESP: begin
+                tx_pkt_valid        = 1'b1;
+                tx_pkt_start        = 1'b1;
+                tx_pkt_last         = 1'b1;
+                tx_pkt_req          = 1'b0;
+                tx_pkt_we           = 1'b1;
+                tx_pkt_size         = host_req_size;
+                tx_pkt_src_fixed    = host_req_src_fixed;
+                tx_pkt_dst_fixed    = host_req_dst_fixed;
+                tx_pkt_burst_len_m1 = host_req_burst_len_m1;
+                tx_pkt_base_addr    = host_req_base_addr;
+            end
+
+            HOST_READ_TX: begin
+                tx_pkt_valid        = 1'b1;
+                tx_pkt_start        = (host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1));
+                tx_pkt_last         = (host_beats_remaining == 17'd1);
+                tx_pkt_req          = 1'b0;
+                tx_pkt_we           = 1'b0;
+                tx_pkt_size         = host_req_size;
+                tx_pkt_src_fixed    = host_req_src_fixed;
+                tx_pkt_dst_fixed    = host_req_dst_fixed;
+                tx_pkt_burst_len_m1 = host_req_burst_len_m1;
+                tx_pkt_base_addr    = host_req_base_addr;
+                tx_pkt_data         = host_read_data;
+            end
+
+            default: begin
+                if (cpu_req_pending) begin
+                    tx_pkt_valid        = 1'b1;
+                    tx_pkt_start        = 1'b1;
+                    tx_pkt_last         = 1'b1;
+                    tx_pkt_req          = 1'b1;
+                    tx_pkt_we           = cpu_cap_we;
+                    tx_pkt_size         = cpu_cap_size;
+                    tx_pkt_src_fixed    = 1'b0;
+                    tx_pkt_dst_fixed    = 1'b0;
+                    tx_pkt_burst_len_m1 = 16'h0000;
+                    tx_pkt_base_addr    = cpu_cap_addr;
+                    tx_pkt_data         = cpu_cap_wdata;
+                end
+            end
+        endcase
+    end
 
     // ============================================================
-    // Sequential request/response tracking
+    // Bus master drive (host-initiated request execution)
+    // ============================================================
+    assign host_bus_addr  = host_curr_addr;
+    assign host_bus_wdata = host_write_data;
+    assign host_bus_we    = host_req_we;
+    assign host_bus_size  = host_req_size;
+    assign host_bus_req   = (host_state == HOST_WRITE_BUS) || (host_state == HOST_READ_BUS);
+
+    // ============================================================
+    // Sequential control
     // ============================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            cpu_cap_addr      <= 32'h0;
-            cpu_cap_wdata     <= 32'h0;
-            cpu_cap_we        <= 1'b0;
-            cpu_cap_size      <= 2'b00;
-            cpu_req_pending   <= 1'b0;
-            cpu_wait_resp     <= 1'b0;
+            cpu_cap_addr    <= 32'h0000_0000;
+            cpu_cap_wdata   <= 32'h0000_0000;
+            cpu_cap_we      <= 1'b0;
+            cpu_cap_size    <= 2'b00;
+            cpu_req_pending <= 1'b0;
+            cpu_wait_resp   <= 1'b0;
+            cpu_resp_data   <= 32'h0000_0000;
+            cpu_resp_seen   <= 1'b0;
 
-            host_resp_rdata   <= 32'h0;
-            host_resp_we      <= 1'b0;
-            host_resp_size    <= 2'b00;
-            host_resp_pending <= 1'b0;
+            host_state           <= HOST_IDLE;
+            host_req_we          <= 1'b0;
+            host_req_size        <= 2'b00;
+            host_req_src_fixed   <= 1'b0;
+            host_req_dst_fixed   <= 1'b0;
+            host_req_burst_len_m1<= 16'h0000;
+            host_req_base_addr   <= 32'h0000_0000;
+            host_curr_addr       <= 32'h0000_0000;
+            host_stride          <= 3'd1;
+            host_beats_remaining <= 17'd0;
+            host_write_data      <= 32'h0000_0000;
+            host_read_data       <= 32'h0000_0000;
         end else begin
-            // Capture CPU request (one at a time)
+            // Capture CPU request (single outstanding)
             if (!cpu_req_pending && !cpu_wait_resp && req) begin
                 cpu_cap_addr    <= addr;
                 cpu_cap_wdata   <= wdata;
@@ -205,28 +297,119 @@ module host_bus_interface (
                 cpu_req_pending <= 1'b1;
             end
 
-            // CPU request accepted by TX buffer
-            if (tx_cpu_pkt_accepted) begin
+            // CPU request accepted by TX
+            if (cpu_req_pending && tx_pkt_valid && tx_pkt_ready && tx_pkt_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
+                cpu_resp_seen   <= 1'b0;
             end
 
-            // CPU response consumed from RX buffer
-            if (buf_resp_ready) begin
+            // CPU response consumed from RX
+            if (ready) begin
                 cpu_wait_resp <= 1'b0;
+                cpu_resp_seen <= 1'b0;
             end
 
-            // Host response packet accepted by TX buffer
-            if (tx_host_pkt_accepted) begin
-                host_resp_pending <= 1'b0;
-            end else if (bus_master_handshake_complete && !host_resp_pending) begin
-                // Capture bus master completion as TX response payload
-                host_resp_we      <= buf_pkt_we;
-                host_resp_size    <= buf_pkt_size;
-                host_resp_rdata   <= host_bus_rdata;
-                host_resp_pending <= 1'b1;
+            // Latch first response beat for deterministic CPU read data if malformed
+            // multi-beat responses are observed.
+            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req && !cpu_resp_seen) begin
+                cpu_resp_data <= rx_pkt_data;
+                cpu_resp_seen <= 1'b1;
             end
+
+            case (host_state)
+                HOST_IDLE: begin
+                    if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && rx_pkt_start) begin
+                        host_req_we           <= rx_pkt_we;
+                        host_req_size         <= rx_pkt_size;
+                        host_req_src_fixed    <= rx_pkt_src_fixed;
+                        host_req_dst_fixed    <= rx_pkt_dst_fixed;
+                        host_req_burst_len_m1 <= rx_pkt_burst_len_m1;
+                        host_req_base_addr    <= rx_pkt_base_addr;
+                        host_curr_addr        <= rx_pkt_base_addr;
+                        host_beats_remaining  <= {1'b0, rx_pkt_burst_len_m1} + 17'd1;
+
+                        case (rx_pkt_size)
+                            2'b00: host_stride <= 3'd1;
+                            2'b01: host_stride <= 3'd2;
+                            default: host_stride <= 3'd4;
+                        endcase
+
+                        if (rx_pkt_we) begin
+                            host_write_data <= rx_pkt_data;
+                            host_state <= HOST_WRITE_BUS;
+                        end else begin
+                            host_state <= HOST_READ_BUS;
+                        end
+                    end
+                end
+
+                HOST_WRITE_BUS: begin
+                    if (host_bus_handshake) begin
+                        if (host_beats_remaining == 17'd1) begin
+                            host_state <= HOST_WRITE_RESP;
+                        end else begin
+                            host_beats_remaining <= host_beats_remaining - 17'd1;
+                            if (!host_req_dst_fixed) begin
+                                host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
+                            end
+                            host_state <= HOST_WRITE_WAIT;
+                        end
+                    end
+                end
+
+                HOST_WRITE_WAIT: begin
+                    if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && !rx_pkt_start) begin
+                        host_write_data <= rx_pkt_data;
+                        host_state <= HOST_WRITE_BUS;
+                    end
+                end
+
+                HOST_WRITE_RESP: begin
+                    if (tx_pkt_valid && tx_pkt_ready) begin
+                        host_state <= HOST_IDLE;
+                    end
+                end
+
+                HOST_READ_BUS: begin
+                    if (host_bus_handshake) begin
+                        host_read_data <= host_bus_rdata;
+                        host_state <= HOST_READ_TX;
+                    end
+                end
+
+                HOST_READ_TX: begin
+                    if (tx_pkt_valid && tx_pkt_ready) begin
+                        if (host_beats_remaining == 17'd1) begin
+                            host_state <= HOST_IDLE;
+                        end else begin
+                            host_beats_remaining <= host_beats_remaining - 17'd1;
+                            if (!host_req_src_fixed) begin
+                                host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
+                            end
+                            host_state <= HOST_READ_BUS;
+                        end
+                    end
+                end
+
+                default: host_state <= HOST_IDLE;
+            endcase
         end
     end
+
+`ifdef ASSERT_ON
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // no-op
+        end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin
+            assert (rx_pkt_start)
+                else $error("host_bus_interface: CPU response beat missing packet_start");
+            assert (rx_pkt_last)
+                else $error("host_bus_interface: CPU response must be single-beat (packet_last=1)");
+            assert (rx_pkt_burst_len_m1 == 16'h0000)
+                else $error("host_bus_interface: CPU response burst_len_m1 must be 0");
+        end
+    end
+`endif
 
 endmodule

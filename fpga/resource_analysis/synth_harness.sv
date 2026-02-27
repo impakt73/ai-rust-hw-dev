@@ -100,6 +100,7 @@ module synth_harness (
         .clk(clk),
         .rst_n(rst_n),
         .is_csr(stim_sel[0]),
+        .instr_complete(stim_sel[1]),
         .funct3(stim_sel[3:1]),
         .rs1(stim_sel[4:0]),
         .csr_addr(stim_reg[0][11:0]),
