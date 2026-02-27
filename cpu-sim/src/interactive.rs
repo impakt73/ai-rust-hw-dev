@@ -1,8 +1,5 @@
 use crate::sim::Simulator;
-use crate::{
-    BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult,
-    SimulationStepInstructionResult, SimulatorView,
-};
+use crate::{BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult, SimulatorView};
 
 // Type alias for InteractiveSimulator's internal simulator type
 type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)>;
@@ -23,13 +20,14 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 ///
 /// // Step through instructions one at a time
 /// loop {
-///     match sim.step_instruction() {
-///         Ok(result) => {
+///     match sim.step_cycle() {
+///         Ok(result) if result.instruction_completed => {
 ///             if let Some(tohost) = result.tohost_value {
 ///                 println!("Program terminated with tohost: 0x{:08x}", tohost);
 ///                 break;
 ///             }
 ///         }
+///         Ok(_) => {}
 ///         Err(e) => {
 ///             eprintln!("Error: {}", e);
 ///             break;
@@ -125,12 +123,13 @@ impl InteractiveSimulator {
     /// // Now load and run your program
     /// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
     /// loop {
-    ///     match sim.step_instruction() {
-    ///         Ok(result) => {
+    ///     match sim.step_cycle() {
+    ///         Ok(result) if result.instruction_completed => {
     ///             if result.tohost_value.is_some() {
     ///                 break;
     ///             }
     ///         }
+    ///         Ok(_) => {}
     ///         Err(e) => {
     ///             eprintln!("Error: {}", e);
     ///             break;
@@ -149,45 +148,10 @@ impl InteractiveSimulator {
             .map_err(|e| format!("{}", e))
     }
 
-    /// Execute a single instruction and return the result
-    ///
-    /// Steps the simulator forward by one instruction. This may take multiple clock cycles
-    /// depending on the instruction type and memory latency configuration.
-    ///
-    /// # Returns
-    /// * `Ok(SimulationStepInstructionResult)` containing execution information (elapsed time
-    ///   and cycles executed) and optional tohost termination value
-    ///
-    /// # Errors
-    /// - Returns an error if the CPU enters a hung state
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::InteractiveSimulator;
-    /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_program(0x8000_0000, &[]).unwrap();
-    ///
-    /// // Execute one instruction
-    /// match sim.step_instruction() {
-    ///     Ok(result) => {
-    ///         if let Some(tohost) = result.tohost_value {
-    ///             println!("Program halted with value: 0x{:08x}", tohost);
-    ///         }
-    ///     }
-    ///     Err(e) => eprintln!("Error: {}", e),
-    /// }
-    /// ```
-    pub fn step_instruction(&mut self) -> Result<SimulationStepInstructionResult, String> {
-        // Step the simulator by one instruction
-        self.simulator
-            .step_instruction()
-            .map_err(|e| format!("Execution error: {}", e))
-    }
-
     /// Execute a single clock cycle and return the result
     ///
     /// Steps the simulator forward by one clock cycle. This is a lower-level interface
-    /// than `step_instruction()`, allowing cycle-by-cycle control for debugging or
+    /// for debugging or
     /// timing-sensitive testing.
     ///
     /// # Returns
@@ -232,7 +196,7 @@ impl InteractiveSimulator {
     /// Send a bus request from the host to the RTL target
     ///
     /// This forwards the request to the simulator's internal host bus handler.
-    /// The request will be processed during subsequent `step_instruction()` calls.
+    /// The request will be processed during subsequent `step_cycle()` calls.
     ///
     /// # Arguments
     /// * `request` - Bus request (read or write) to send to the RTL target

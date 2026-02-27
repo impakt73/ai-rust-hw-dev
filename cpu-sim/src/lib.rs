@@ -16,9 +16,7 @@ pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use interactive::InteractiveSimulator;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim::{
-    BootError, SimulationResult, SimulationStepCycleResult, SimulationStepInstructionResult,
-};
+pub use sim::{BootError, SimulationResult, SimulationStepCycleResult};
 pub use simulator_view::SimulatorView;
 
 use sim::Simulator;
