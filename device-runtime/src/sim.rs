@@ -121,6 +121,7 @@ impl SimDeviceRuntime {
         let mut simulator = match InteractiveSimulator::new_with_options(
             args.instruction_trace_callback,
             args.vcd_path.as_deref(),
+            args.memory_latency_cycles,
         ) {
             Ok(sim) => sim,
             Err(e) => {

@@ -58,6 +58,9 @@ enum RuntimeArgs {
         /// Optional VCD output path.
         #[arg(long)]
         vcd: Option<PathBuf>,
+        /// Fixed simulator memory latency in cycles.
+        #[arg(long, default_value_t = 0)]
+        memory_latency_cycles: u32,
     },
 }
 
@@ -107,7 +110,11 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 baud,
                 startup_reset: device_runtime::StartupReset::None,
             },
-            RuntimeArgs::Sim { trace, vcd } => DeviceRuntimeType::Sim {
+            RuntimeArgs::Sim {
+                trace,
+                vcd,
+                memory_latency_cycles,
+            } => DeviceRuntimeType::Sim {
                 args: SimDeviceRuntimeArgs {
                     vcd_path: vcd.map(|path| path.to_string_lossy().to_string()),
                     instruction_trace_callback: if trace {
@@ -115,6 +122,7 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                     } else {
                         None
                     },
+                    memory_latency_cycles,
                 },
             },
         };
