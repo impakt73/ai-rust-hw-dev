@@ -13,172 +13,184 @@ pub mod trace;
 pub mod instruction;
 
 // Define the Cpu module (CPU core)
-#[verilog(src = "../rtl/cpu/cpu.sv", name = "cpu")]
+#[verilog(src = "../rtl/common/cpu/cpu.sv", name = "cpu")]
 pub struct Cpu;
 
 // Define the Top module (top-level wrapper with RTL peripherals)
-#[verilog(src = "../rtl/top.sv", name = "top")]
+#[verilog(src = "../rtl/common/top.sv", name = "top")]
 pub struct Top;
 
 // Define ALU module
-#[verilog(src = "../rtl/cpu/alu.sv", name = "alu")]
+#[verilog(src = "../rtl/common/cpu/alu.sv", name = "alu")]
 pub struct Alu;
 
 // Define RegFile module
-#[verilog(src = "../rtl/cpu/regfile.sv", name = "regfile")]
+#[verilog(src = "../rtl/common/cpu/regfile.sv", name = "regfile")]
 pub struct RegFile;
 
 // Define Decompress module
-#[verilog(src = "../rtl/cpu/decompress.sv", name = "decompress")]
+#[verilog(src = "../rtl/common/cpu/decompress.sv", name = "decompress")]
 pub struct Decompress;
 
 // Define FP RegFile module
-#[verilog(src = "../rtl/fpu/fp_regfile.sv", name = "fp_regfile")]
+#[verilog(src = "../rtl/common/fpu/fp_regfile.sv", name = "fp_regfile")]
 pub struct FpRegFile;
 
 // Define FPU module
-#[verilog(src = "../rtl/fpu/fpu.sv", name = "fpu")]
+#[verilog(src = "../rtl/common/fpu/fpu.sv", name = "fpu")]
 pub struct Fpu;
 
 // Define LED Controller module
 #[verilog(
-    src = "../rtl/peripherals/led_controller_peripheral.sv",
+    src = "../rtl/common/peripherals/led_controller_peripheral.sv",
     name = "led_controller_peripheral"
 )]
 pub struct LedControllerPeripheral;
 
 // Define UART core module (no FIFOs, ready/valid interface)
-#[verilog(src = "../rtl/io/uart.sv", name = "uart")]
+#[verilog(src = "../rtl/common/io/uart.sv", name = "uart")]
 pub struct Uart;
 
 // Define UART wrapper module configured for 1M baud
 #[verilog(
-    src = "../rtl/wrappers/uart_1m_baud_wrapper.sv",
+    src = "../rtl/common/wrappers/uart_1m_baud_wrapper.sv",
     name = "uart_1m_baud_wrapper"
 )]
 pub struct Uart1MBaud;
 
 // Define Clock Peripheral module
 #[verilog(
-    src = "../rtl/peripherals/clock_peripheral.sv",
+    src = "../rtl/common/peripherals/clock_peripheral.sv",
     name = "clock_peripheral"
 )]
 pub struct ClockPeripheral;
 
 // Define System Controller module
 #[verilog(
-    src = "../rtl/peripherals/system_controller_peripheral.sv",
+    src = "../rtl/common/peripherals/system_controller_peripheral.sv",
     name = "system_controller"
 )]
 pub struct SystemController;
 
 // Define System LED Controller module
-#[verilog(src = "../rtl/io/sys_led_controller.sv", name = "sys_led_controller")]
+#[verilog(
+    src = "../rtl/common/io/sys_led_controller.sv",
+    name = "sys_led_controller"
+)]
 pub struct SysLedController;
 
 // Define Host Bus Interface module
-#[verilog(src = "../rtl/io/host_bus_interface.sv", name = "host_bus_interface")]
+#[verilog(
+    src = "../rtl/common/io/host_bus_interface.sv",
+    name = "host_bus_interface"
+)]
 pub struct HostBusInterface;
 
 // Define Host RX Buffer module (bidirectional packet buffering)
-#[verilog(src = "../rtl/io/host_bus_rx.sv", name = "host_bus_rx")]
+#[verilog(src = "../rtl/common/io/host_bus_rx.sv", name = "host_bus_rx")]
 pub struct HostBusRx;
 
 // Define Bus Arbiter module
-#[verilog(src = "../rtl/memory/bus_arbiter.sv", name = "bus_arbiter")]
+#[verilog(src = "../rtl/common/memory/bus_arbiter.sv", name = "bus_arbiter")]
 pub struct BusArbiter;
 
 // Define FPU submodules
-#[verilog(src = "../rtl/fpu/fpu_classifier.sv", name = "fpu_classifier")]
+#[verilog(src = "../rtl/common/fpu/fpu_classifier.sv", name = "fpu_classifier")]
 pub struct FpuClassifier;
 
-#[verilog(src = "../rtl/fpu/fpu_comparator.sv", name = "fpu_comparator")]
+#[verilog(src = "../rtl/common/fpu/fpu_comparator.sv", name = "fpu_comparator")]
 pub struct FpuComparator;
 
-#[verilog(src = "../rtl/fpu/fpu_int_to_float.sv", name = "fpu_int_to_float")]
+#[verilog(
+    src = "../rtl/common/fpu/fpu_int_to_float.sv",
+    name = "fpu_int_to_float"
+)]
 pub struct FpuIntToFloat;
 
-#[verilog(src = "../rtl/fpu/fpu_float_to_int.sv", name = "fpu_float_to_int")]
+#[verilog(
+    src = "../rtl/common/fpu/fpu_float_to_int.sv",
+    name = "fpu_float_to_int"
+)]
 pub struct FpuFloatToInt;
 
-#[verilog(src = "../rtl/fpu/fpu_sqrt.sv", name = "fpu_sqrt")]
+#[verilog(src = "../rtl/common/fpu/fpu_sqrt.sv", name = "fpu_sqrt")]
 pub struct FpuSqrt;
 
 // Define FF synchronizer default wrapper module
 #[verilog(
-    src = "../rtl/wrappers/ff_sync_default_wrapper.sv",
+    src = "../rtl/common/wrappers/ff_sync_default_wrapper.sv",
     name = "ff_sync_default_wrapper"
 )]
 pub struct FfSyncDefaultWrapper;
 
 // Define FF synchronizer parameterized wrapper module (2-stage, 4-bit)
 #[verilog(
-    src = "../rtl/wrappers/ff_sync_param_wrapper.sv",
+    src = "../rtl/common/wrappers/ff_sync_param_wrapper.sv",
     name = "ff_sync_param_wrapper"
 )]
 pub struct FfSyncParamWrapper;
 
 // Define Async FIFO wrapper modules for CDC FIFO tests
 #[verilog(
-    src = "../rtl/wrappers/async_fifo_test_wrapper.sv",
+    src = "../rtl/common/wrappers/async_fifo_test_wrapper.sv",
     name = "async_fifo_test_wrapper"
 )]
 pub struct AsyncFifoTestWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/async_fifo_sync3_wrapper.sv",
+    src = "../rtl/common/wrappers/async_fifo_sync3_wrapper.sv",
     name = "async_fifo_sync3_wrapper"
 )]
 pub struct AsyncFifoSync3Wrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/sram_test_wrapper.sv",
+    src = "../rtl/common/wrappers/sram_test_wrapper.sv",
     name = "sram_test_wrapper"
 )]
 pub struct SramTestWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/sram_peripheral_test_wrapper.sv",
+    src = "../rtl/common/wrappers/sram_peripheral_test_wrapper.sv",
     name = "sram_peripheral_test_wrapper"
 )]
 pub struct SramPeripheralTestWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/phase_accumulator_wrapper.sv",
+    src = "../rtl/common/wrappers/phase_accumulator_wrapper.sv",
     name = "phase_accumulator_wrapper"
 )]
 pub struct PhaseAccumulatorWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/activity_indicator_wrapper.sv",
+    src = "../rtl/common/wrappers/activity_indicator_wrapper.sv",
     name = "activity_indicator_wrapper"
 )]
 pub struct ActivityIndicatorWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/skid_buffer_wrapper.sv",
+    src = "../rtl/common/wrappers/skid_buffer_wrapper.sv",
     name = "skid_buffer_wrapper"
 )]
 pub struct SkidBufferWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/square_wave_generator_wrapper.sv",
+    src = "../rtl/common/wrappers/square_wave_generator_wrapper.sv",
     name = "square_wave_generator_wrapper"
 )]
 pub struct SquareWaveGeneratorWrapper;
 
 #[verilog(
-    src = "../rtl/wrappers/sys_led_controller_wrapper.sv",
+    src = "../rtl/common/wrappers/sys_led_controller_wrapper.sv",
     name = "sys_led_controller_wrapper"
 )]
 pub struct SysLedControllerWrapper;
 
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
-    if std::path::Path::new("rtl").exists() {
-        "rtl"
+    if std::path::Path::new("rtl/common").exists() {
+        "rtl/common"
     } else {
-        "../rtl"
+        "../rtl/common"
     }
 }
 

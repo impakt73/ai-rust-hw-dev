@@ -28,7 +28,7 @@ jobs:
       run: verilator --version
 
     - name: Run RTL lint
-      run: find rtl -name '*.sv' -exec verilator --lint-only -Wno-MULTITOP {} +
+      run: find rtl/common -name '*.sv' -exec verilator --lint-only -Wno-MULTITOP {} +
     
     - name: Verify FPGA tools installation
       run: |
@@ -63,9 +63,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: |
-          fpga/build/riscv_fpga.bin
-          fpga/build/riscv_fpga_timing.rpt
-        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'fpga/**/*.sv', 'fpga/**/*.pcf', 'fpga/Makefile') }}
+          rtl/fpga/build/riscv_fpga.bin
+          rtl/fpga/build/riscv_fpga_timing.rpt
+        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/**/*.pcf', 'rtl/fpga/Makefile') }}
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -93,11 +93,11 @@ jobs:
     
     - name: Verify FPGA synthesis (cache miss)
       if: steps.fpga-cache.outputs.cache-hit != 'true'
-      working-directory: fpga
+      working-directory: rtl/fpga
       run: make
 
     - name: Verify cached FPGA synthesis artifacts (cache hit)
       if: steps.fpga-cache.outputs.cache-hit == 'true'
       run: |
-        test -f fpga/build/riscv_fpga.bin || (echo "Missing fpga/build/riscv_fpga.bin" && exit 1)
-        test -f fpga/build/riscv_fpga_timing.rpt || (echo "Missing fpga/build/riscv_fpga_timing.rpt" && exit 1)
+        test -f rtl/fpga/build/riscv_fpga.bin || (echo "Missing rtl/fpga/build/riscv_fpga.bin" && exit 1)
+        test -f rtl/fpga/build/riscv_fpga_timing.rpt || (echo "Missing rtl/fpga/build/riscv_fpga_timing.rpt" && exit 1)
