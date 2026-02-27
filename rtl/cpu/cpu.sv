@@ -850,9 +850,6 @@ module cpu #(
                 // Decode instruction and present addresses to register file.
                 // Register data will be captured in S_REG_READ after BRAM latency.
                 decode_reg_write = 1'b1;
-                // Capture CSR read data before write (for read-modify-write operations)
-                if (is_csr)
-                    csr_rdata_write = 1'b1;
             end
             
             // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
@@ -861,6 +858,9 @@ module cpu #(
                 // BRAM data is now available, capture it
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
+                // Capture CSR read data after CSR BRAM read latency
+                if (is_csr_reg)
+                    csr_rdata_write = 1'b1;
                 // FP register reads (for FP operations) - using registered signals
                 if (fp_reg_write_reg || fp_to_int_reg || int_to_fp_reg || is_fp_store_reg) begin
                     fa_reg_write = 1'b1;
