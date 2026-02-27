@@ -21,7 +21,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/csr_file.sv \
 	$(RTL_DIR)/cpu/decoder.sv \
 	$(RTL_DIR)/cpu/decompress.sv \
-	$(RTL_DIR)/cpu/div_unit.sv \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
@@ -34,7 +33,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/io/sys_led_controller.sv \
 	$(RTL_DIR)/cpu/mem_interface.sv \
 	$(RTL_DIR)/cpu/m_unit.sv \
-	$(RTL_DIR)/cpu/mul_unit.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
 	$(RTL_DIR)/cpu/regfile.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \

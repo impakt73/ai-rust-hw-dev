@@ -1,5 +1,6 @@
 // Division Unit Module
-// Hardware-synthesizable division with WIDTH+1 remainder datapath
+// Hardware-synthesizable restoring division with WIDTH+1 remainder datapath
+// Uses narrower remainder arithmetic than prior 2*WIDTH partial-remainder form to reduce LUT cost
 // Parameterizable width for signed and unsigned division and remainder
 
 module div_unit #(
@@ -38,7 +39,7 @@ module div_unit #(
     logic [WIDTH:0]   remainder_reg;  // WIDTH+1 partial remainder
     logic [WIDTH-1:0] quotient_reg;   // Quotient shift register
     logic [WIDTH-1:0] divisor_reg;    // Absolute divisor
-    logic [$clog2(WIDTH)-1:0] iter_count;
+    logic [$clog2(WIDTH)-1:0] iter_count;  // Counts 0..WIDTH-1; $clog2(WIDTH) is sufficient for terminal count WIDTH-1
 
     // Sign tracking
     logic dividend_neg;

@@ -14,6 +14,15 @@ module m_unit #(
     output logic             ready
 );
 
+    localparam logic [2:0] OP_MUL    = 3'b000;
+    localparam logic [2:0] OP_MULH   = 3'b001;
+    localparam logic [2:0] OP_MULHSU = 3'b010;
+    localparam logic [2:0] OP_MULHU  = 3'b011;
+    localparam logic [2:0] OP_DIV    = 3'b100;
+    localparam logic [2:0] OP_DIVU   = 3'b101;
+    localparam logic [2:0] OP_REM    = 3'b110;
+    localparam logic [2:0] OP_REMU   = 3'b111;
+
     typedef enum logic [1:0] {
         M_IDLE = 2'b00,
         M_INIT = 2'b01,
@@ -25,7 +34,7 @@ module m_unit #(
 
     logic                   is_div_reg;
     logic [2:0]             op_type_reg;
-    logic [$clog2(WIDTH)-1:0] iter_count;
+    logic [$clog2(WIDTH)-1:0] iter_count;  // Counts 0..WIDTH-1; $clog2(WIDTH) is sufficient for terminal count WIDTH-1
 
     // Multiply datapath
     logic [2*WIDTH-1:0] product_reg;
@@ -54,16 +63,18 @@ module m_unit #(
     logic [WIDTH-1:0]   div_final_quotient;
     logic [WIDTH-1:0]   div_final_remainder;
 
-    logic div_is_signed_input;
-    logic div_is_remainder_input;
-    logic div_skip_iter_input;
+    logic div_is_signed;
+    logic div_is_remainder;
+    logic div_skip_iter;
+    logic [WIDTH-1:0] neg_one;
 
-    assign div_is_signed_input = (op_type == 3'b100) || (op_type == 3'b110);
-    assign div_is_remainder_input = (op_type == 3'b110) || (op_type == 3'b111);
+    assign div_is_signed = (op_type == OP_DIV) || (op_type == OP_REM);
+    assign div_is_remainder = (op_type == OP_REM) || (op_type == OP_REMU);
+    assign neg_one = {WIDTH{1'b1}};
     /* verilator lint_off WIDTHEXPAND */
-    assign div_skip_iter_input =
+    assign div_skip_iter =
         op_type[2] &&
-        ((b == '0) || (div_is_signed_input && (a == (1'b1 << (WIDTH-1))) && (b == '1)));
+        ((b == '0) || (div_is_signed && (a == (1'b1 << (WIDTH-1))) && (b == neg_one)));
     /* verilator lint_on WIDTHEXPAND */
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -83,7 +94,7 @@ module m_unit #(
             end
 
             M_INIT: begin
-                if (div_skip_iter_input)
+                if (div_skip_iter)
                     next_state = M_DONE;
                 else
                     next_state = M_ITER;
@@ -111,10 +122,10 @@ module m_unit #(
         mul_abs_b = b;
 
         if (state == M_INIT) begin
-            if ((op_type == 3'b000) || (op_type == 3'b001) || (op_type == 3'b010))
+            if ((op_type == OP_MUL) || (op_type == OP_MULH) || (op_type == OP_MULHSU))
                 mul_abs_a = a[WIDTH-1] ? (~a + 1'b1) : a;
 
-            if ((op_type == 3'b000) || (op_type == 3'b001))
+            if ((op_type == OP_MUL) || (op_type == OP_MULH))
                 mul_abs_b = b[WIDTH-1] ? (~b + 1'b1) : b;
         end
 
@@ -127,7 +138,7 @@ module m_unit #(
 
         div_abs_dividend = a;
         div_abs_divisor = b;
-        if (state == M_INIT && div_is_signed_input && b != '0) begin
+        if (state == M_INIT && div_is_signed && b != '0) begin
             div_abs_dividend = a[WIDTH-1] ? (~a + 1'b1) : a;
             div_abs_divisor = b[WIDTH-1] ? (~b + 1'b1) : b;
         end
@@ -180,11 +191,11 @@ module m_unit #(
                     if (op_type[2]) begin
                         div_by_zero_reg <= (b == '0);
                         /* verilator lint_off WIDTHEXPAND */
-                        div_overflow_reg <= div_is_signed_input && (a == (1'b1 << (WIDTH-1))) && (b == '1);
+                        div_overflow_reg <= div_is_signed && (a == (1'b1 << (WIDTH-1))) && (b == neg_one);
                         /* verilator lint_on WIDTHEXPAND */
 
                         if (b != '0) begin
-                            if (div_is_signed_input) begin
+                            if (div_is_signed) begin
                                 div_dividend_neg_reg <= a[WIDTH-1];
                                 div_divisor_neg_reg <= b[WIDTH-1];
                             end else begin
@@ -197,9 +208,9 @@ module m_unit #(
                             div_divisor_reg <= div_abs_divisor;
                         end
                     end else begin
-                        if ((op_type == 3'b000) || (op_type == 3'b001))
+                        if ((op_type == OP_MUL) || (op_type == OP_MULH))
                             mul_result_negative_reg <= a[WIDTH-1] ^ b[WIDTH-1];
-                        else if (op_type == 3'b010)
+                        else if (op_type == OP_MULHSU)
                             mul_result_negative_reg <= a[WIDTH-1];
                         else
                             mul_result_negative_reg <= 1'b0;
@@ -236,23 +247,23 @@ module m_unit #(
         if (state == M_DONE) begin
             if (is_div_reg) begin
                 if (div_by_zero_reg) begin
-                    if (div_is_remainder_input)
+                    if (div_is_remainder)
                         result = a;
                     else
                         result = '1;
                 end else if (div_overflow_reg) begin
-                    if (div_is_remainder_input)
+                    if (div_is_remainder)
                         result = '0;
                     else
                         result = (1'b1 << (WIDTH-1));
                 end else begin
-                    if (div_is_remainder_input)
+                    if (div_is_remainder)
                         result = div_final_remainder;
                     else
                         result = div_final_quotient;
                 end
             end else begin
-                if (op_type_reg == 3'b000)
+                if (op_type_reg == OP_MUL)
                     result = mul_final_product[WIDTH-1:0];
                 else
                     result = mul_final_product[2*WIDTH-1:WIDTH];
