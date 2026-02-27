@@ -208,6 +208,7 @@ When implementing cross-layer changes:
 - ❌ Silent type casting with `as` → Use `try_into()` or explicit masking
 - ❌ `.unwrap()` in production code → Use `?` or `expect()` with context
 - ❌ `static mut` → Use atomics or `RefCell`/`Mutex`
+- ❌ Re-exporting external crate types with `pub use` as a shortcut → Import from the source crate at each usage site
 - ❌ Ignoring clippy warnings → All warnings must be addressed
 - ❌ Skipping `cargo fmt` → Code must be formatted before commit
 
