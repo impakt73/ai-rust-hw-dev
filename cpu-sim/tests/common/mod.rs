@@ -19,9 +19,9 @@ pub fn init_test_logger() {
 
 /// Test-only wrapper for running a program to completion with callbacks.
 ///
-/// `setup_callback` receives a mutable `Simulator` to load memory (typically via
-/// `write_memory_region`) and register devices (`sim.bus.register_device`), then
-/// returns the program entry point.
+/// `setup_callback` receives a mutable `Simulator<F, T>` to load memory (typically via
+/// `write_memory_region`) and register devices (`sim.bus.register_device`), then returns
+/// the program entry point.
 #[allow(clippy::too_many_arguments)]
 pub fn run_program<F, T, P, C>(
     max_cycles: u64,
