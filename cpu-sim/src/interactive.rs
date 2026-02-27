@@ -118,8 +118,9 @@ impl InteractiveSimulator {
     ///
     /// # Examples
     /// ```no_run
-    /// use bus_shared::{BusDevice, Video, VideoConfig, VIDEO_BASE};
+    /// use bus_shared::{BusDevice, Video, VideoConfig};
     /// use cpu_sim::InteractiveSimulator;
+    /// use riscv_shared::bus::VIDEO_BASE;
     /// use std::path::Path;
     ///
     /// fn frame_callback(_data: &[u8], config: &VideoConfig) {

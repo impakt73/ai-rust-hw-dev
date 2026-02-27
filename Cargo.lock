@@ -3121,6 +3121,7 @@ dependencies = [
  "env_logger",
  "log",
  "riscv_core",
+ "riscv_shared",
  "sim-tests",
  "softbuffer",
  "winit",

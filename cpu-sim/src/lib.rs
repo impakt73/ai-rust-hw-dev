@@ -7,15 +7,18 @@ mod simulator_view;
 
 // Public API exports - only what's needed for external use
 pub use bus_shared::{
-    is_valid_dram_range, Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice,
-    BusDeviceError, Dma, Fifo, FifoDataReceivedCallback, FifoDataSource, RegistrationError,
-    SharedFifoDataSource, SystemBus, SystemContext, Video, VideoConfig, VideoFormat, AUDIO_BASE,
-    DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE, VIDEO_BASE,
+    Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice, BusDeviceError, Dma, Fifo,
+    FifoDataReceivedCallback, FifoDataSource, RegistrationError, SharedFifoDataSource, SystemBus,
+    SystemContext, Video, VideoConfig, VideoFormat,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
 pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use interactive::InteractiveSimulator;
 pub use riscv_core::trace::InstructionTrace;
+pub use riscv_shared::bus::{
+    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, SIM_CONTROL_BASE,
+    VIDEO_BASE,
+};
 pub use sim::{BootError, SimulationResult, SimulationStepCycleResult};
 pub use simulator_view::SimulatorView;
 

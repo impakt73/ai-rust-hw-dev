@@ -6,7 +6,7 @@ use riscv_core::Top;
 use std::path::Path;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use bus_shared::{is_valid_dram_range, DRAM_BASE, DRAM_END};
+use riscv_shared::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// Restricted view of the Simulator for use in callbacks
 ///

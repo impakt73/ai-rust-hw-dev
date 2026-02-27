@@ -1,4 +1,5 @@
 use crate::bus_device::{BusDevice, BusDeviceError, SystemContext};
+use riscv_shared::bus::DRAM_BASE;
 
 /// DRAM bus device for the RISC-V CPU simulator
 ///
@@ -17,7 +18,7 @@ impl Dram {
     /// Create a new DRAM device
     pub fn new() -> Self {
         Dram {
-            base_addr: crate::bus::DRAM_BASE,
+            base_addr: DRAM_BASE,
         }
     }
 }

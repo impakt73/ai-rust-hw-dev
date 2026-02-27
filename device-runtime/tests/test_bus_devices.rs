@@ -12,7 +12,7 @@
 
 mod common;
 
-use bus_shared::{BusDevice, BusDeviceError, SystemContext, DRAM_BASE};
+use bus_shared::{BusDevice, BusDeviceError, SystemContext};
 use common::{
     append_tohost_termination, create_test_runtime_with_registrations, instructions_to_bytes,
     load_and_boot, wait_for_cpu_halt,
@@ -22,7 +22,7 @@ use device_runtime::{
     create_device_runtime, BusDeviceRegistration, DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
 use riscv_core::instruction::{addi, ebreak, lui, lw, sw};
-use riscv_shared::bus::SIM_CONTROL_BASE;
+use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
 use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;

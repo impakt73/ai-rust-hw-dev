@@ -1,11 +1,12 @@
 mod common;
 
-use bus_shared::{Video, VideoConfig, VideoFormat, VIDEO_BASE};
+use bus_shared::{Video, VideoConfig, VideoFormat};
 use common::{
     create_test_runtime_with_registrations, load_and_boot_elf, read_word_with_timeout,
     wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
 };
 use device_runtime::BusDeviceRegistration;
+use riscv_shared::bus::VIDEO_BASE;
 use std::sync::{Arc, Mutex};
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison
