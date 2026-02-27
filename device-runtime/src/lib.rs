@@ -6,7 +6,7 @@
 //! instance for the desired backend (e.g., FPGA over serial).
 
 mod fpga;
-pub mod sim;
+mod sim;
 
 use bus_shared::AccessSize;
 use bus_shared::BusDevice;

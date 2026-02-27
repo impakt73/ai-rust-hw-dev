@@ -8,18 +8,13 @@
 //! continuously. Host-initiated bus requests are forwarded through
 //! `InteractiveSimulator::send_bus_request`, which performs internal
 //! address-based routing.
+#![allow(dead_code)]
 
-#[path = "sim/api.rs"]
 mod api;
-#[path = "sim/constants.rs"]
 mod constants;
-#[path = "sim/hung_detector.rs"]
 mod hung_detector;
-#[path = "sim/interactive.rs"]
 mod interactive;
-#[path = "sim/sim.rs"]
 mod sim_core;
-#[path = "sim/simulator_view.rs"]
 mod simulator_view;
 
 use crate::{
@@ -33,17 +28,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub use api::run_program;
-pub use bus_shared::{AccessSize, BusRequest, BusResponse};
-pub use bus_shared::{
-    Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice, BusDeviceError, Dma, Fifo,
-    FifoDataReceivedCallback, FifoDataSource, RegistrationError, SharedFifoDataSource, SystemBus,
-    SystemContext, Video, VideoConfig, VideoFormat,
-};
-pub use constants::GLOBAL_MAX_CYCLES;
+pub use bus_shared::BusDevice;
+pub use bus_shared::{AccessSize, BusRequest};
 pub use interactive::InteractiveSimulator;
 pub use riscv_core::trace::InstructionTrace;
-pub use sim_core::{BootError, SimulationResult, SimulationStepCycleResult};
+pub use sim_core::{SimulationResult, SimulationStepCycleResult};
 pub use simulator_view::SimulatorView;
 
 /// Timeout for host-initiated requests (1 second)
