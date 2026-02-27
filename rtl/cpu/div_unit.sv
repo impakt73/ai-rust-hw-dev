@@ -59,8 +59,10 @@ module div_unit #(
     
     // Temporary variables for division iteration
     logic [2*WIDTH-1:0] P_shifted;
-    logic [2*WIDTH-1:0] P_add;      // P + D (for non-restoring when P is negative)
-    logic [2*WIDTH-1:0] P_sub;      // P - D (for non-restoring when P is non-negative)
+    logic [2*WIDTH-1:0] D_adjusted; // D or ~D to share one adder for add/sub
+    logic [2*WIDTH-1:0] P_next;     // Next partial remainder after selected add/sub
+    logic [2*WIDTH:0]   P_sum;      // Shared adder output with carry
+    logic               q_bit_next; // Quotient bit from next partial remainder sign
     
     // ============================================================
     // State Register
@@ -129,10 +131,13 @@ module div_unit #(
             abs_divisor  = divisor[WIDTH-1]  ? (~divisor  + 1'b1) : divisor;
         end
         
-        // Compute shifted, add, and subtract values for non-restoring division
+        // Compute shifted value and next-state update for non-restoring division
         P_shifted = P << 1;
-        P_sub = P_shifted - D;  // Subtract divisor from shifted P
-        P_add = P_shifted + D;  // Add divisor to shifted P
+        D_adjusted = P[2*WIDTH-1] ? D : ~D;
+        P_sum = {1'b0, P_shifted} + {1'b0, D_adjusted} +
+                {{(2*WIDTH){1'b0}}, (P[2*WIDTH-1] ? 1'b0 : 1'b1)};
+        P_next = P_sum[2*WIDTH-1:0];
+        q_bit_next = ~P_next[2*WIDTH-1];
     end
     
     // ============================================================
@@ -185,15 +190,8 @@ module div_unit #(
                     // - If P < 0: shift and add divisor
                     // Quotient bit is determined by the result's sign (1 if non-negative, 0 if negative)
                     
-                    if (!P[2*WIDTH-1]) begin
-                        // Partial remainder is non-negative: shift left and subtract divisor
-                        P <= P_sub;
-                        Q <= {Q[WIDTH-2:0], !P_sub[2*WIDTH-1] ? 1'b1 : 1'b0};
-                    end else begin
-                        // Partial remainder is negative: shift left and add divisor
-                        P <= P_add;
-                        Q <= {Q[WIDTH-2:0], !P_add[2*WIDTH-1] ? 1'b1 : 1'b0};
-                    end
+                    P <= P_next;
+                    Q <= {Q[WIDTH-2:0], q_bit_next};
                     
                     iter_count <= iter_count + 1'b1;
                 end
