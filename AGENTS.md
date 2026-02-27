@@ -104,7 +104,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### Tech Stack
 
-- **RTL:** SystemVerilog (in `rtl/` directory)
+- **RTL:** SystemVerilog (in `rtl/common/` directory)
 - **Verification:** Rust with marlin + Verilator (in `testbench/` directory)
 - **Build System:** Cargo workspace with 11 members: cpu-sim, riscv_core, testbench, vcd-mcp, sim-view, riscv_shared, sim-tests, fpga-host, host-bus-handler, device-runtime, bus-shared
 - **Debug Infrastructure:** FIFO-based packet protocol with formatted print macros
@@ -114,15 +114,17 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 .
 ├── Cargo.toml              # Workspace root
-├── rtl/                    # SystemVerilog RTL modules
-│   ├── top.sv             # Top-level module (CPU with RTL peripherals)
-│   ├── cpu/               # CPU core modules (cpu.sv, alu.sv, decoder.sv, etc.)
-│   ├── fpu/               # Floating-point unit modules
-│   ├── io/                # I/O modules (uart.sv, host_bus_interface.sv, etc.)
-│   ├── memory/            # Memory modules (bus.sv, sram.sv, etc.)
-│   ├── peripherals/       # RTL peripherals (LED, clock, SRAM, system controller)
-│   ├── primitives/        # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
-│   └── wrappers/          # Test wrapper modules
+├── rtl/                    # All SystemVerilog RTL modules
+│   ├── common/            # Shared RTL modules
+│   │   ├── top.sv         # Top-level module (CPU with RTL peripherals)
+│   │   ├── cpu/           # CPU core modules (cpu.sv, alu.sv, decoder.sv, etc.)
+│   │   ├── fpu/           # Floating-point unit modules
+│   │   ├── io/            # I/O modules (uart.sv, host_bus_interface.sv, etc.)
+│   │   ├── memory/        # Memory modules (bus.sv, sram.sv, etc.)
+│   │   ├── peripherals/   # RTL peripherals (LED, clock, SRAM, system controller)
+│   │   ├── primitives/    # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
+│   │   └── wrappers/      # Test wrapper modules
+│   └── fpga/              # FPGA synthesis files for iCE40-HX8K
 ├── testbench/              # Rust verification (integration tests)
 │   └── tests/             # Integration test files
 ├── cpu-sim/               # CPU simulator
@@ -147,7 +149,7 @@ cargo build                            # Build only
 cargo fmt                              # Format Rust code (mandatory before commit)
 cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings (run FIRST!)
 cargo clippy -- -D warnings            # Lint Rust code (mandatory before commit)
-find rtl -name '*.sv' -exec verilator --lint-only {} +  # Lint SystemVerilog
+find rtl/common -name '*.sv' -exec verilator --lint-only {} +  # Lint SystemVerilog
 cargo clean                            # Clear Verilator cache (after RTL changes)
 ```
 
@@ -170,8 +172,8 @@ Before marking PR ready for review:
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
-5. ✅ SystemVerilog linted (if modified): `find rtl -name '*.sv' -exec verilator --lint-only {} +`
-6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd fpga && make)`
+5. ✅ SystemVerilog linted (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only {} +`
+6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd rtl/fpga && make)`
 
 **rust-test-program Workspace:**
 7. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
