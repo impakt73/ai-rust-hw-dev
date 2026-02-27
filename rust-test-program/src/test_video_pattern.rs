@@ -21,8 +21,8 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 /// Test image dimensions
-const WIDTH: u32 = 64;
-const HEIGHT: u32 = 64;
+const WIDTH: u32 = 16;
+const HEIGHT: u32 = 16;
 
 /// Write a pixel to the framebuffer at (x, y)
 /// Pixel format is RGBA8 (4 bytes per pixel)
