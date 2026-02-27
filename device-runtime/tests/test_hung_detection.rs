@@ -1,6 +1,6 @@
 mod cpu_sim_common;
 
-use cpu_sim::*;
+use device_runtime::sim::*;
 use cpu_sim_common::init_test_logger;
 use riscv_shared::bus::DRAM_BASE;
 
@@ -35,7 +35,7 @@ fn test_hung_detection_catches_infinite_loop() {
             sim.write_memory_region(start_addr, &program_bytes);
             Ok(start_addr)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     );
 
     // Should get an error about PC stuck
@@ -108,7 +108,7 @@ fn test_hung_detection_catches_long_instruction() {
 
             Ok(start_addr)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     );
 
     // Should get an error about instruction taking too long

@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use cpu_sim::{FifoDataReceivedCallback, SimulationResult};
+use device_runtime::sim::{FifoDataReceivedCallback, SimulationResult};
 use riscv_core::instruction::*;
 use riscv_shared::bus::SIM_CONTROL_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;

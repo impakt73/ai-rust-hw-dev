@@ -1,6 +1,6 @@
 mod cpu_sim_common;
 
-use cpu_sim::*;
+use device_runtime::sim::*;
 use cpu_sim_common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
     init_test_logger,
@@ -64,7 +64,7 @@ fn test_instruction_trace() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation with trace should succeed");
 
@@ -112,7 +112,7 @@ fn test_register_trace_audit() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Register trace audit simulation should succeed");
 
@@ -161,7 +161,7 @@ fn test_trace_callback() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Trace test simulation should succeed");
 
@@ -379,7 +379,7 @@ fn test_vcd_generation() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation with VCD should succeed");
 

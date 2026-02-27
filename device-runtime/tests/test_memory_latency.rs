@@ -1,7 +1,7 @@
 /// Test memory latency functionality
 mod cpu_sim_common;
 
-use cpu_sim::*;
+use device_runtime::sim::*;
 use cpu_sim_common::{create_test_program, init_test_logger};
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
@@ -41,7 +41,7 @@ fn test_zero_latency_default() {
             sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -96,7 +96,7 @@ fn test_multi_cycle_memory_latency() {
             sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -159,7 +159,7 @@ fn test_load_store_with_latency() {
             sim.write_memory_region(0x8000_0000, &program_bytes);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -198,7 +198,7 @@ fn test_comprehensive_elf_with_latency() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 

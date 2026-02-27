@@ -6,14 +6,14 @@ description = "Device runtime trait and FPGA implementation for RISC-V CPU host 
 
 [dependencies]
 bus-shared = { path = "../bus-shared" }
-cpu-sim = { path = "../cpu-sim" }
 elf = "0.7"
+image = "0.25"
 log = "0.4"
+riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
 serialport = "4.6"
 
 [dev-dependencies]
 env_logger = "0.10"
-riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
 sim-tests = { path = "../sim-tests" }

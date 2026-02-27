@@ -1,6 +1,6 @@
 mod cpu_sim_common;
 
-use cpu_sim::*;
+use device_runtime::sim::*;
 use cpu_sim_common::{assert_tohost, create_loop_program, create_test_program, init_test_logger};
 
 /// Comprehensive test that runs a full in-memory program for basic simulation verification.
@@ -22,7 +22,7 @@ fn test_comprehensive_elf() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simulation should succeed");
 
@@ -55,7 +55,7 @@ fn test_global_max_cycles_safety_margin() {
             sim.write_memory_region(0x8000_0000, &program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Simple test should succeed");
 
@@ -80,7 +80,7 @@ fn test_global_max_cycles_safety_margin() {
             sim.write_memory_region(0x8000_0000, &loop_program);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Loop program test should succeed");
 
@@ -112,7 +112,7 @@ fn test_global_max_cycles_safety_margin() {
             sim.write_memory_region(0x8000_0000, &instructions);
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("Latency test should succeed");
 

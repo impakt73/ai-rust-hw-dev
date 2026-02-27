@@ -1,6 +1,6 @@
 mod cpu_sim_common;
 
-use cpu_sim::*;
+use device_runtime::sim::*;
 use cpu_sim_common::{
     assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
     init_test_logger,
@@ -35,7 +35,7 @@ fn test_fifo_hello_world() {
                 .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
             Ok(0x8000_0000)
         },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
+        None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>,
     )
     .expect("FIFO hello world simulation should succeed");
 

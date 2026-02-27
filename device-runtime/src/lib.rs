@@ -6,7 +6,7 @@
 //! instance for the desired backend (e.g., FPGA over serial).
 
 mod fpga;
-mod sim;
+pub mod sim;
 
 use bus_shared::AccessSize;
 use bus_shared::BusDevice;
@@ -105,7 +105,7 @@ pub enum DeviceRuntimeType {
 }
 
 /// Instruction trace callback type for simulator backend.
-pub type SimInstructionTraceCallback = fn(&cpu_sim::InstructionTrace);
+pub type SimInstructionTraceCallback = fn(&riscv_core::trace::InstructionTrace);
 
 /// Backend-specific runtime creation arguments for the simulator.
 #[derive(Debug, Clone, Default)]

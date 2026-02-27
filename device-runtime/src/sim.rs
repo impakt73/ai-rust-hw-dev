@@ -1,7 +1,7 @@
 //! Simulator device runtime implementation
 //!
 //! This module provides [`SimDeviceRuntime`], which implements the
-//! [`DeviceRuntime`] trait using the cpu-sim [`InteractiveSimulator`]
+//! [`DeviceRuntime`] trait using the internal simulator [`InteractiveSimulator`]
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
@@ -9,17 +9,42 @@
 //! `InteractiveSimulator::send_bus_request`, which performs internal
 //! address-based routing.
 
+#[path = "sim/api.rs"]
+mod api;
+#[path = "sim/constants.rs"]
+mod constants;
+#[path = "sim/hung_detector.rs"]
+mod hung_detector;
+#[path = "sim/interactive.rs"]
+mod interactive;
+#[path = "sim/sim.rs"]
+mod sim_core;
+#[path = "sim/simulator_view.rs"]
+mod simulator_view;
+
 use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
     HostRequestRoute, PendingHostRequest, ResetKind, SimDeviceRuntimeArgs,
 };
-use bus_shared::{AccessSize, BusRequest, HandlerError};
-use cpu_sim::InteractiveSimulator;
+use bus_shared::HandlerError;
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+pub use api::run_program;
+pub use bus_shared::{AccessSize, BusRequest, BusResponse};
+pub use bus_shared::{
+    Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice, BusDeviceError, Dma, Fifo,
+    FifoDataReceivedCallback, FifoDataSource, RegistrationError, SharedFifoDataSource, SystemBus,
+    SystemContext, Video, VideoConfig, VideoFormat,
+};
+pub use constants::GLOBAL_MAX_CYCLES;
+pub use interactive::InteractiveSimulator;
+pub use riscv_core::trace::InstructionTrace;
+pub use sim_core::{BootError, SimulationResult, SimulationStepCycleResult};
+pub use simulator_view::SimulatorView;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
