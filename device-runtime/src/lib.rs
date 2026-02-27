@@ -114,6 +114,8 @@ pub struct SimDeviceRuntimeArgs {
     pub vcd_path: Option<String>,
     /// Optional callback invoked on each completed instruction trace.
     pub instruction_trace_callback: Option<SimInstructionTraceCallback>,
+    /// Fixed simulated memory latency in cycles.
+    pub memory_latency_cycles: u32,
 }
 
 /// Reset mode for [`DeviceRuntime::reset`].

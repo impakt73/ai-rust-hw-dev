@@ -167,6 +167,9 @@ pub enum ConnectRuntime {
         /// Optional VCD output path.
         #[arg(long)]
         vcd: Option<String>,
+        /// Fixed simulator memory latency in cycles.
+        #[arg(long, default_value_t = 0)]
+        memory_latency_cycles: u32,
     },
 }
 
@@ -229,7 +232,11 @@ impl ShellCommand {
 
             ShellCommand::Connect { runtime } => match runtime {
                 ConnectRuntime::Fpga { device, baud } => execute_connect_fpga(app, &device, baud),
-                ConnectRuntime::Sim { trace, vcd } => execute_connect_sim(app, trace, vcd),
+                ConnectRuntime::Sim {
+                    trace,
+                    vcd,
+                    memory_latency_cycles,
+                } => execute_connect_sim(app, trace, vcd, memory_latency_cycles),
             },
 
             ShellCommand::Disconnect => execute_disconnect(app),
@@ -294,7 +301,12 @@ fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult
 }
 
 /// Execute the connect sim command
-fn execute_connect_sim(app: &mut App, trace: bool, vcd: Option<String>) -> CommandResult {
+fn execute_connect_sim(
+    app: &mut App,
+    trace: bool,
+    vcd: Option<String>,
+    memory_latency_cycles: u32,
+) -> CommandResult {
     if app.device_runtime.is_some() {
         return CommandResult::error("Already connected. Disconnect first.");
     }
@@ -309,6 +321,7 @@ fn execute_connect_sim(app: &mut App, trace: bool, vcd: Option<String>) -> Comma
                 } else {
                     None
                 },
+                memory_latency_cycles,
             },
         },
         Some(vec![fifo_reg]),
@@ -599,7 +612,8 @@ mod tests {
             Ok(ParseResult::Command(ShellCommand::Connect {
                 runtime: ConnectRuntime::Sim {
                     trace: false,
-                    vcd: None
+                    vcd: None,
+                    memory_latency_cycles: 0
                 }
             }))
         ));
@@ -613,9 +627,25 @@ mod tests {
             Ok(ParseResult::Command(ShellCommand::Connect {
                 runtime: ConnectRuntime::Sim {
                     trace: true,
-                    vcd: Some(ref path)
+                    vcd: Some(ref path),
+                    memory_latency_cycles: 0
                 }
             })) if path == "sim.vcd"
+        ));
+    }
+
+    #[test]
+    fn test_parse_connect_sim_with_memory_latency() {
+        let result = ShellCommand::parse("connect sim --memory-latency-cycles 5");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Connect {
+                runtime: ConnectRuntime::Sim {
+                    trace: false,
+                    vcd: None,
+                    memory_latency_cycles: 5
+                }
+            }))
         ));
     }
 
