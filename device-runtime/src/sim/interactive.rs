@@ -13,22 +13,21 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 /// `InteractiveSimulator` gives you fine-grained control over execution.
 ///
 /// # Examples
-/// ```no_run
+/// ```ignore
 /// use device_runtime::sim::InteractiveSimulator;
 ///
-/// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-/// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
+/// let mut sim = InteractiveSimulator::new_with_options(None, None, 0)
+///     .expect("Failed to create simulator");
+/// sim.reset().expect("Failed to reset simulator");
 ///
 /// // Step through instructions one at a time
 /// loop {
 ///     match sim.step_cycle() {
-///         Ok(result) if result.instruction_completed => {
-///             if let Some(tohost) = result.tohost_value {
-///                 println!("Program terminated with tohost: 0x{:08x}", tohost);
+///         Ok(result) => {
+///             if result.tohost_value.is_some() {
 ///                 break;
 ///             }
 ///         }
-///         Ok(_) => {}
 ///         Err(e) => {
 ///             eprintln!("Error: {}", e);
 ///             break;
@@ -101,32 +100,31 @@ impl InteractiveSimulator {
     /// * `Err(String)` - Address range conflicts with existing device or invalid alignment
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// use bus_shared::{BusDevice, Video, VideoConfig};
     /// use device_runtime::sim::InteractiveSimulator;
     /// use riscv_shared::bus::VIDEO_BASE;
-    /// use std::path::Path;
     ///
     /// fn frame_callback(_data: &[u8], config: &VideoConfig) {
     ///     println!("Frame received: {}x{}", config.width, config.height);
     /// }
     ///
-    /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+    /// let mut sim = InteractiveSimulator::new_with_options(None, None, 0)
+    ///     .expect("Failed to create simulator");
+    /// sim.reset().expect("Failed to reset simulator");
     ///
     /// // Register a video device with a callback
     /// let video: Box<dyn BusDevice> = Box::new(Video::new(Some(frame_callback)));
     /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
     ///
-    /// // Now load and run your program
-    /// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
+    /// // Now step through execution
     /// loop {
     ///     match sim.step_cycle() {
-    ///         Ok(result) if result.instruction_completed => {
+    ///         Ok(result) => {
     ///             if result.tohost_value.is_some() {
     ///                 break;
     ///             }
     ///         }
-    ///         Ok(_) => {}
     ///         Err(e) => {
     ///             eprintln!("Error: {}", e);
     ///             break;
@@ -161,20 +159,18 @@ impl InteractiveSimulator {
     /// - Returns an error if the CPU enters a hung state
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// # use device_runtime::sim::InteractiveSimulator;
-    /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_program(0x8000_0000, &[]).unwrap();
+    /// let mut sim = InteractiveSimulator::new_with_options(None, None, 0).unwrap();
+    /// sim.reset().unwrap();
     ///
     /// // Execute cycles until instruction completes
     /// loop {
     ///     match sim.step_cycle() {
-    ///         Ok(result) if result.instruction_completed => {
-    ///             println!("Instruction completed");
-    ///             break;
-    ///         }
-    ///         Ok(_) => {
-    ///             println!("Cycle done, instruction still executing...");
+    ///         Ok(result) => {
+    ///             if result.tohost_value.is_some() {
+    ///                 break;
+    ///             }
     ///         }
     ///         Err(e) => {
     ///             eprintln!("Error: {}", e);

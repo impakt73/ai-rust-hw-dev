@@ -2,8 +2,8 @@ mod common;
 
 use bus_shared::{Fifo, FifoDataSource};
 use common::{
-    create_test_runtime_with_registrations, instructions_to_bytes, load_and_boot, wait_for_cpu_halt,
-    TEST_BOOT_PC,
+    create_test_runtime_with_registrations, instructions_to_bytes, load_and_boot,
+    wait_for_cpu_halt, TEST_BOOT_PC,
 };
 use device_runtime::BusDeviceRegistration;
 use riscv_core::instruction::{addi, andi, beq, ebreak, jal, lbu, lui, lw, sb, sw};

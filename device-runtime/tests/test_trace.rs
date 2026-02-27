@@ -1,8 +1,6 @@
 mod common;
 
-use common::{
-    append_tohost_termination, instructions_to_bytes, wait_for_cpu_halt, TEST_BOOT_PC,
-};
+use common::{append_tohost_termination, instructions_to_bytes, wait_for_cpu_halt, TEST_BOOT_PC};
 use device_runtime::{create_device_runtime, DeviceRuntimeType, SimDeviceRuntimeArgs};
 use riscv_core::instruction::{add, addi};
 use riscv_core::trace::{InstructionTrace, InstructionType};
