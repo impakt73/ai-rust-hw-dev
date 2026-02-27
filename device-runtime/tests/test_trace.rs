@@ -1,10 +1,10 @@
-mod common;
+mod cpu_sim_common;
 
-use common::{
+use cpu_sim::*;
+use cpu_sim_common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
     init_test_logger,
 };
-use cpu_sim::*;
 use riscv_core::instruction::*;
 use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
@@ -621,7 +621,7 @@ fn test_comprehensive_trace_validation() {
     ];
 
     // Add termination sequence
-    instructions.extend(common::tohost_termination(15, 16, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(15, 16, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -769,7 +769,7 @@ fn test_trace_with_branches() {
         addi(5, 0, 99), // 0x18: SKIPPED
         addi(6, 0, 1),  // 0x1C: x6 = 1
     ];
-    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Collect traces
     let mut captured_traces = Vec::new();
@@ -863,7 +863,7 @@ fn test_trace_and_vcd_together() {
 
     // Simple test program
     let mut instructions = vec![addi(1, 0, 42), addi(2, 1, 8), add(3, 1, 2)];
-    instructions.extend(common::tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(cpu_sim_common::tohost_termination(7, 8, SUCCESS_CODE));
 
     // Run with VCD enabled
     run_program_with_options(
