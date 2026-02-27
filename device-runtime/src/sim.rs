@@ -1,7 +1,7 @@
 //! Simulator device runtime implementation
 //!
 //! This module provides [`SimDeviceRuntime`], which implements the
-//! [`DeviceRuntime`] trait using the cpu-sim [`InteractiveSimulator`]
+//! [`DeviceRuntime`] trait using the internal simulator [`InteractiveSimulator`]
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
@@ -9,17 +9,27 @@
 //! `InteractiveSimulator::send_bus_request`, which performs internal
 //! address-based routing.
 
+mod hung_detector;
+mod interactive;
+mod sim_core;
+mod simulator_view;
+
 use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
     HostRequestRoute, PendingHostRequest, ResetKind, SimDeviceRuntimeArgs,
 };
-use bus_shared::{AccessSize, BusRequest, HandlerError};
-use cpu_sim::InteractiveSimulator;
+use bus_shared::HandlerError;
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use bus_shared::{AccessSize, BusRequest};
+use interactive::InteractiveSimulator;
+use riscv_core::trace::InstructionTrace;
+use sim_core::SimulationStepCycleResult;
+use simulator_view::SimulatorView;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);

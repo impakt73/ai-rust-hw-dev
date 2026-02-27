@@ -1,54 +1,88 @@
-mod cpu_sim_common;
+mod common;
 
-use cpu_sim::*;
-use cpu_sim_common::{
-    assert_tohost, create_fifo_collector, create_fifo_echo_program, fifo_data_to_string,
-    init_test_logger,
+use bus_shared::{Fifo, FifoDataSource};
+use common::{
+    create_test_runtime_with_registrations, instructions_to_bytes, load_and_boot,
+    wait_for_cpu_halt, TEST_BOOT_PC,
 };
+use device_runtime::BusDeviceRegistration;
+use riscv_core::instruction::{addi, andi, beq, ebreak, jal, lbu, lui, lw, sb, sw};
 use riscv_shared::bus::FIFO_BASE;
+use riscv_shared::sim_control::SUCCESS_CODE;
+use riscv_shared::FIFO_DATA;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+fn fifo_echo_program() -> Vec<u8> {
+    let instructions = vec![
+        lui(1, FIFO_DATA),
+        addi(2, 1, 4),
+        lw(3, 2, 0),
+        andi(4, 3, 1),
+        beq(4, 0, 20),
+        lbu(5, 1, 0),
+        beq(5, 0, 12),
+        sb(1, 5, 0),
+        jal(0, -24),
+        lui(6, riscv_shared::bus::SIM_CONTROL_BASE),
+        addi(
+            7,
+            0,
+            i32::try_from(SUCCESS_CODE).expect("SUCCESS_CODE fits immediate"),
+        ),
+        sw(6, 7, 0),
+        ebreak(),
+        jal(0, 0),
+    ];
+
+    instructions_to_bytes(&instructions)
+}
 
 #[test]
-fn test_fifo_hello_world() {
-    init_test_logger();
+fn test_fifo_echo_via_runtime_api() {
+    let captured = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let captured_clone = Arc::clone(&captured);
 
-    let program = create_fifo_echo_program();
-    let (fifo_data, callback) = create_fifo_collector();
-
+    let fifo_source = Arc::new(Mutex::new(FifoDataSource::new()));
+    let fifo_source_for_test = Arc::clone(&fifo_source);
     let test_string = "Qu1ck_Br0wn-F0x!Jump5*0v3r@Lazy#D0g$2024%";
-    let result = run_program(
-        GLOBAL_MAX_CYCLES,
-        false, // print_inst_trace
-        false, // print_fsm_state
-        None::<fn(&mut SimulatorView)>,
-        None::<fn(&InstructionTrace)>,
-        None, // vcd_path
-        0,    // mem_latency_cycles
-        move |sim| {
-            sim.write_memory_region(0x8000_0000, &program);
-            let fifo_source = std::sync::Arc::new(std::sync::Mutex::new(FifoDataSource::new()));
-            fifo_source
+    let fifo = Fifo::new_with_callback(
+        fifo_source,
+        Box::new(move |byte| {
+            captured_clone
                 .lock()
-                .expect("test fifo_source lock poisoned")
-                .push_string_to_fifo_rx(test_string);
-            let fifo = Fifo::new_with_callback(fifo_source, callback);
-            sim.register_device(FIFO_BASE, Box::new(fifo))
-                .map_err(|e| format!("Failed to register FIFO device: {}", e))?;
-            Ok(0x8000_0000)
-        },
-        None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>,
-    )
-    .expect("FIFO hello world simulation should succeed");
-
-    assert_tohost(&result, 0x2a, "fifo echo program");
-
-    let received_data = fifo_data.lock().unwrap();
-    let received_string = fifo_data_to_string(&received_data);
-
-    assert_eq!(
-        received_string, test_string,
-        "Expected to receive echoed test string via FIFO"
+                .expect("captured lock poisoned")
+                .push(byte);
+        }),
     );
 
-    println!("✓ FIFO echo test passed in {} cycles", result.cycles);
-    println!("✓ Echoed data via FIFO: '{}'", received_string);
+    let mut runtime = create_test_runtime_with_registrations(Some(vec![BusDeviceRegistration {
+        base_addr: FIFO_BASE,
+        device: Box::new(fifo),
+    }]));
+
+    // Runtime initialization resets devices, so seed FIFO after runtime creation.
+    fifo_source_for_test
+        .lock()
+        .expect("fifo source lock poisoned")
+        .push_string_to_fifo_rx(test_string);
+
+    let program = fifo_echo_program();
+    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program);
+
+    let tohost = wait_for_cpu_halt(runtime.as_mut(), Duration::from_secs(10));
+    assert_eq!(tohost, Some(SUCCESS_CODE));
+
+    let echoed = String::from_utf8(
+        captured
+            .lock()
+            .expect("captured lock poisoned")
+            .iter()
+            .copied()
+            .filter(|byte| *byte != 0)
+            .collect::<Vec<u8>>(),
+    )
+    .expect("echoed bytes should be utf-8");
+
+    assert_eq!(echoed, test_string);
 }

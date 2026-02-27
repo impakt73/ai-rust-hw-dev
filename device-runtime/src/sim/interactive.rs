@@ -1,5 +1,6 @@
-use crate::sim::Simulator;
-use crate::{BusRequest, BusResponse, InstructionTrace, SimulationStepCycleResult, SimulatorView};
+use super::sim_core::Simulator;
+use super::{InstructionTrace, SimulationStepCycleResult, SimulatorView};
+use bus_shared::{BusDevice, BusRequest, BusResponse};
 
 // Type alias for InteractiveSimulator's internal simulator type
 type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)>;
@@ -12,22 +13,21 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 /// `InteractiveSimulator` gives you fine-grained control over execution.
 ///
 /// # Examples
-/// ```no_run
-/// use cpu_sim::InteractiveSimulator;
+/// ```ignore
+/// use device_runtime::sim::InteractiveSimulator;
 ///
-/// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
-/// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
+/// let mut sim = InteractiveSimulator::new_with_options(None, None, 0)
+///     .expect("Failed to create simulator");
+/// sim.reset().expect("Failed to reset simulator");
 ///
 /// // Step through instructions one at a time
 /// loop {
 ///     match sim.step_cycle() {
-///         Ok(result) if result.instruction_completed => {
-///             if let Some(tohost) = result.tohost_value {
-///                 println!("Program terminated with tohost: 0x{:08x}", tohost);
+///         Ok(result) => {
+///             if result.tohost_value.is_some() {
 ///                 break;
 ///             }
 ///         }
-///         Ok(_) => {}
 ///         Err(e) => {
 ///             eprintln!("Error: {}", e);
 ///             break;
@@ -52,25 +52,6 @@ pub struct InteractiveSimulator {
 unsafe impl Send for InteractiveSimulator {}
 
 impl InteractiveSimulator {
-    /// Create a new InteractiveSimulator with default configuration
-    ///
-    /// All optional parameters are set to None or disabled:
-    /// - No instruction tracing
-    /// - No FSM state printing
-    /// - No callbacks
-    /// - No VCD output
-    /// - Zero memory latency
-    /// - Verilator optimization level 3 (for interactive performance)
-    ///
-    /// # Returns
-    /// A new `InteractiveSimulator` instance ready to load an ELF file
-    ///
-    /// # Errors
-    /// Returns an error if the simulator fails to initialize (e.g., Verilator not available)
-    pub fn new() -> Result<Self, String> {
-        Self::new_with_options(None, None, 0)
-    }
-
     /// Create a new InteractiveSimulator with optional tracing hooks.
     ///
     /// # Arguments
@@ -119,32 +100,31 @@ impl InteractiveSimulator {
     /// * `Err(String)` - Address range conflicts with existing device or invalid alignment
     ///
     /// # Examples
-    /// ```no_run
+    /// ```ignore
     /// use bus_shared::{BusDevice, Video, VideoConfig};
-    /// use cpu_sim::InteractiveSimulator;
+    /// use device_runtime::sim::InteractiveSimulator;
     /// use riscv_shared::bus::VIDEO_BASE;
-    /// use std::path::Path;
     ///
     /// fn frame_callback(_data: &[u8], config: &VideoConfig) {
     ///     println!("Frame received: {}x{}", config.width, config.height);
     /// }
     ///
-    /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
+    /// let mut sim = InteractiveSimulator::new_with_options(None, None, 0)
+    ///     .expect("Failed to create simulator");
+    /// sim.reset().expect("Failed to reset simulator");
     ///
     /// // Register a video device with a callback
     /// let video: Box<dyn BusDevice> = Box::new(Video::new(Some(frame_callback)));
     /// sim.register_device(VIDEO_BASE, video).expect("Failed to register Video");
     ///
-    /// // Now load and run your program
-    /// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
+    /// // Now step through execution
     /// loop {
     ///     match sim.step_cycle() {
-    ///         Ok(result) if result.instruction_completed => {
+    ///         Ok(result) => {
     ///             if result.tohost_value.is_some() {
     ///                 break;
     ///             }
     ///         }
-    ///         Ok(_) => {}
     ///         Err(e) => {
     ///             eprintln!("Error: {}", e);
     ///             break;
@@ -155,7 +135,7 @@ impl InteractiveSimulator {
     pub fn register_device(
         &mut self,
         base_addr: u32,
-        device: Box<dyn crate::BusDevice>,
+        device: Box<dyn BusDevice>,
     ) -> Result<(), String> {
         self.simulator
             .bus
@@ -179,20 +159,18 @@ impl InteractiveSimulator {
     /// - Returns an error if the CPU enters a hung state
     ///
     /// # Examples
-    /// ```no_run
-    /// # use cpu_sim::InteractiveSimulator;
-    /// let mut sim = InteractiveSimulator::new().unwrap();
-    /// sim.load_program(0x8000_0000, &[]).unwrap();
+    /// ```ignore
+    /// # use device_runtime::sim::InteractiveSimulator;
+    /// let mut sim = InteractiveSimulator::new_with_options(None, None, 0).unwrap();
+    /// sim.reset().unwrap();
     ///
     /// // Execute cycles until instruction completes
     /// loop {
     ///     match sim.step_cycle() {
-    ///         Ok(result) if result.instruction_completed => {
-    ///             println!("Instruction completed");
-    ///             break;
-    ///         }
-    ///         Ok(_) => {
-    ///             println!("Cycle done, instruction still executing...");
+    ///         Ok(result) => {
+    ///             if result.tohost_value.is_some() {
+    ///                 break;
+    ///             }
     ///         }
     ///         Err(e) => {
     ///             eprintln!("Error: {}", e);
@@ -222,7 +200,6 @@ impl InteractiveSimulator {
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
         );
@@ -239,66 +216,9 @@ impl InteractiveSimulator {
     pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
         );
         view.receive_bus_response()
-    }
-
-    /// Boot the CPU from the specified program counter address.
-    ///
-    /// Issues a boot command to the CPU. This should be called after
-    /// [`reset`] and all [`write_memory_region`] calls have completed.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - Address to boot the CPU from (must be in DRAM range)
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` if the boot sequence fails
-    pub fn boot_cpu(&mut self, boot_pc: u32) -> Result<(), String> {
-        self.simulator
-            .boot(boot_pc)
-            .map_err(|e| format!("Boot failed: {}", e))
-    }
-
-    /// Load a program from raw bytes into the simulator and boot the CPU
-    ///
-    /// Writes the provided bytes into simulator memory starting at `start_addr`,
-    /// then resets the CPU and boots it from that address.  This is the
-    /// direct-instruction equivalent of loading an ELF and lets tests drive the
-    /// simulator with hand-crafted instruction sequences.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address for the program (must be in DRAM range)
-    /// * `data` - Raw instruction bytes to load
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` if the reset / boot sequence fails
-    pub fn load_program(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
-        self.reset()?;
-        self.write_memory_region(start_addr, data);
-        self.boot_cpu(start_addr)
-    }
-
-    /// Write a region of memory from a byte slice
-    ///
-    /// Writes bytes into the simulator's memory starting at `start_addr`.
-    /// The caller is responsible for calling [`reset`] before writing and
-    /// [`boot_cpu`] afterwards.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address (must be in DRAM range)
-    /// * `data` - Byte slice containing the data to write
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
-        let mut view = SimulatorView::new(
-            &mut self.simulator.bus,
-            &self.simulator.cpu,
-            &mut self.simulator.host_bus_handler,
-            &mut self.simulator.host_bus_direct_response,
-        );
-        view.write_memory_region(start_addr, data);
     }
 }

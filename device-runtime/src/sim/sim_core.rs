@@ -1,7 +1,7 @@
-use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
-use crate::simulator_view::SimulatorView;
+use super::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
+use super::simulator_view::SimulatorView;
 use bus_shared::SystemBus;
-use bus_shared::{AccessSize, BusRequest, BusResponse, HostBusHandler};
+use bus_shared::{AccessSize, BusResponse, HostBusHandler};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::time::Instant;
@@ -14,8 +14,6 @@ const BOOT_TIMEOUT_CYCLES: u32 = 10_000;
 pub enum BootError {
     /// A boot phase timed out waiting for a condition
     Timeout { phase: &'static str, cycles: u32 },
-    /// The CPU STATUS register indicates an unexpected state
-    UnexpectedStatus { status: u32 },
 }
 
 impl std::fmt::Display for BootError {
@@ -23,13 +21,6 @@ impl std::fmt::Display for BootError {
         match self {
             BootError::Timeout { phase, cycles } => {
                 write!(f, "Boot timeout in '{}' after {} cycles", phase, cycles)
-            }
-            BootError::UnexpectedStatus { status } => {
-                write!(
-                    f,
-                    "CPU is not in boot state after reset - hardware issue (STATUS=0x{:08x})",
-                    status
-                )
             }
         }
     }
@@ -49,17 +40,7 @@ struct PendingResponse {
 /// Result of stepping a single clock cycle
 #[derive(Debug)]
 pub struct SimulationStepCycleResult {
-    pub instruction_completed: bool,
     pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
-}
-
-/// Result of a simulation run
-#[derive(Debug)]
-pub struct SimulationResult {
-    pub cycles: u64,
-    pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
 }
 
 /// RISC-V CPU Simulator
@@ -226,7 +207,6 @@ where
         if let Some(ref mut callback) = self.inst_complete_callback {
             let mut view = SimulatorView::new(
                 &mut self.bus,
-                &self.cpu,
                 &mut self.host_bus_handler,
                 &mut self.host_bus_direct_response,
             );
@@ -437,49 +417,6 @@ where
         Ok(())
     }
 
-    /// Boot the CPU from the S_BOOT state by writing the system-controller BOOT register.
-    ///
-    /// This method assumes [`Self::reset`] has completed and the CPU is waiting for a
-    /// host boot command. It first reads the system-controller status register to verify
-    /// the CPU is still in boot-wait state, then writes `boot_pc` to the BOOT register.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - Program counter value to boot from.
-    ///
-    /// # Returns
-    /// * `Ok(())` if boot sequence completes successfully.
-    ///
-    /// # Errors
-    /// * [`BootError::Timeout`] if a host-bus response times out.
-    /// * [`BootError::UnexpectedStatus`] if the CPU is not in the expected boot-wait state.
-    pub fn boot(&mut self, boot_pc: u32) -> Result<(), BootError> {
-        // Step 1: Read STATUS register to confirm CPU is waiting to be booted
-        let status_addr = riscv_shared::bus::sysctrl_status_addr();
-        let status_request = BusRequest::read(status_addr, AccessSize::Word);
-        self.host_bus_handler
-            .send_request(status_request)
-            .expect("Failed to send STATUS read request");
-
-        let response = self.wait_for_bus_response("STATUS read")?;
-        // Check that cpu_booting bit (bit 0) is set
-        if (response.rdata & riscv_shared::bus::SYSCTRL_STATUS_CPU_BOOTING) == 0 {
-            return Err(BootError::UnexpectedStatus {
-                status: response.rdata,
-            });
-        }
-
-        // Step 2: Write boot address to BOOT register to complete boot process
-        let boot_addr = riscv_shared::bus::sysctrl_boot_addr();
-        let boot_request = BusRequest::write(boot_addr, boot_pc, AccessSize::Word);
-        self.host_bus_handler
-            .send_request(boot_request)
-            .expect("Failed to send BOOT write request");
-
-        // Wait for write acknowledgement - CPU boot process is now complete
-        self.wait_for_bus_response("BOOT write")?;
-        Ok(())
-    }
-
     /// Execute a single clock cycle during the boot process
     ///
     /// This is a simplified clock cycle that only handles the host bus interface
@@ -492,24 +429,6 @@ where
         self.cpu.clk = 1;
         self.cpu.eval();
         self.dump_vcd();
-    }
-
-    /// Cycle the design until a bus response is received, then return it.
-    /// Returns a timeout error if no response is received within BOOT_TIMEOUT_CYCLES.
-    fn wait_for_bus_response(&mut self, phase: &'static str) -> Result<BusResponse, BootError> {
-        for cycle in 0..BOOT_TIMEOUT_CYCLES {
-            self.boot_clock_cycle();
-            if let Some(response) = self.host_bus_handler.receive_response() {
-                return Ok(response);
-            }
-            if cycle == BOOT_TIMEOUT_CYCLES - 1 {
-                return Err(BootError::Timeout {
-                    phase,
-                    cycles: BOOT_TIMEOUT_CYCLES,
-                });
-            }
-        }
-        unreachable!()
     }
 
     /// Get the current LED output value
@@ -610,88 +529,7 @@ where
         let halt_value = self.bus.sim_control.acknowledge_termination();
 
         Ok(SimulationStepCycleResult {
-            instruction_completed: instruction_complete,
             tohost_value: halt_value,
-            elapsed_cpu_time_us: elapsed_us,
         })
-    }
-
-    /// Run the simulation for up to max_cycles
-    ///
-    /// **Note:** This method does not reset or boot the CPU. Callers are responsible
-    /// for invoking `reset()`/`boot()` before calling `run()`.
-    ///
-    /// Returns Ok(SimulationResult) on normal completion or Err on error
-    ///
-    /// # Arguments
-    /// * `max_cycles` - Maximum number of cycles to run
-    ///
-    /// # Errors
-    /// Returns error if hung state is detected or other simulation errors occur
-    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
-        log::info!("Starting simulation (max {} cycles)", max_cycles);
-
-        let mut total_elapsed_us: u64 = 0;
-
-        while self.cycle_count < max_cycles {
-            // Execute one cycle and terminate immediately if a halt signal is observed.
-            let step_result = self
-                .step_cycle()
-                .map_err(|e| format!("Hung state detected: {}", e))?;
-            total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
-
-            if let Some(tohost_value) = step_result.tohost_value {
-                log::info!(
-                    "Halt signal detected via SimControl, value=0x{:08x}",
-                    tohost_value
-                );
-                return Ok(SimulationResult {
-                    cycles: self.cycle_count,
-                    tohost_value: Some(tohost_value),
-                    elapsed_cpu_time_us: total_elapsed_us,
-                });
-            }
-
-            // Log execution periodically for debugging
-            if !self.print_inst_trace
-                && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
-            {
-                log::debug!(
-                    "Cycle {}: PC=0x{:08x}",
-                    self.cycle_count,
-                    self.cpu.debug_current_pc
-                );
-            }
-        }
-
-        log::warn!("Simulation reached max cycles ({})", max_cycles);
-        Ok(SimulationResult {
-            cycles: self.cycle_count,
-            tohost_value: None,
-            elapsed_cpu_time_us: total_elapsed_us,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use riscv_shared::bus::SIM_CONTROL_BASE;
-
-    #[test]
-    fn test_run_returns_immediately_on_pending_tohost() {
-        let mut sim: Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)> =
-            Simulator::new(false, false, None, None, None, 0, 0)
-                .expect("simulator should initialize");
-        sim.reset().expect("reset should succeed");
-
-        let expected_tohost = 0x2a;
-        sim.bus.write_word(SIM_CONTROL_BASE, expected_tohost);
-
-        let result = sim
-            .run(sim.cycle_count + 1)
-            .expect("run should succeed with pending tohost");
-
-        assert_eq!(result.tohost_value, Some(expected_tohost));
     }
 }
