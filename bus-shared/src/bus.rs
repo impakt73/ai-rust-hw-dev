@@ -29,7 +29,7 @@ pub struct SystemBus {
     // Shared memory accessible by all devices
     pub memory: Memory,
 
-    // Internal devices as concrete public fields (for SimulatorView access)
+    // Internal devices as concrete public fields (for simulator access)
     pub dram: Dram,
     pub sim_control: SimControl,
 

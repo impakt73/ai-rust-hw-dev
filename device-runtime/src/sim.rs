@@ -1,18 +1,16 @@
 //! Simulator device runtime implementation
 //!
 //! This module provides [`SimDeviceRuntime`], which implements the
-//! [`DeviceRuntime`] trait using the internal simulator [`InteractiveSimulator`]
+//! [`DeviceRuntime`] trait using the internal simulator core
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
 //! continuously. Host-initiated bus requests are forwarded through
-//! `InteractiveSimulator::send_bus_request`, which performs internal
+//! the simulator's `send_bus_request`, which performs internal
 //! address-based routing.
 
 mod hung_detector;
-mod interactive;
 mod sim_core;
-mod simulator_view;
 
 use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
@@ -26,10 +24,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use bus_shared::{AccessSize, BusRequest};
-use interactive::InteractiveSimulator;
 use riscv_core::trace::InstructionTrace;
-use sim_core::SimulationStepCycleResult;
-use simulator_view::SimulatorView;
+use sim_core::Simulator;
+
+type SimCore = Simulator<fn(&InstructionTrace)>;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
@@ -58,7 +56,7 @@ enum RuntimeEvent {
 
 /// Simulator device runtime that runs the CPU in software.
 ///
-/// Implements [`DeviceRuntime`] by running the interactive simulator
+/// Implements [`DeviceRuntime`] by running the simulator core
 /// on a background thread. The main thread communicates via channels
 /// and shared state.
 pub(crate) struct SimDeviceRuntime {
@@ -75,7 +73,7 @@ pub(crate) struct SimDeviceRuntime {
 impl SimDeviceRuntime {
     /// Create a new SimDeviceRuntime.
     ///
-    /// Initializes the interactive simulator and launches a background thread
+    /// Initializes the simulator and launches a background thread
     /// to step through instructions.
     pub(crate) fn new(
         bus_devices: Option<Vec<BusDeviceRegistration>>,
@@ -127,8 +125,8 @@ impl SimDeviceRuntime {
         bus_devices: Option<Vec<BusDeviceRegistration>>,
         args: SimDeviceRuntimeArgs,
     ) {
-        // Create the interactive simulator
-        let mut simulator = match InteractiveSimulator::new_with_options(
+        // Create the simulator core
+        let mut simulator = match SimCore::new_with_options(
             args.instruction_trace_callback,
             args.vcd_path.as_deref(),
             args.memory_latency_cycles,
