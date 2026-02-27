@@ -6,6 +6,7 @@ use common::{
 };
 use cpu_sim::*;
 use riscv_core::instruction::*;
+use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::{Arc, Mutex};
 

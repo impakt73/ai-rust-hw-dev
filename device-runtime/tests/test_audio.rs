@@ -2,12 +2,13 @@ mod audio_test_common;
 mod common;
 
 use audio_test_common::generate_stereo_sample;
-use bus_shared::{Audio, AudioConfig, AUDIO_BASE};
+use bus_shared::{Audio, AudioConfig};
 use common::{
     create_test_runtime_with_registrations, load_and_boot_elf, read_word_with_timeout,
     wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
 };
 use device_runtime::BusDeviceRegistration;
+use riscv_shared::bus::AUDIO_BASE;
 use std::sync::{Arc, Mutex};
 
 #[test]

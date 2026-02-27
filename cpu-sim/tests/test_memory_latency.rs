@@ -4,6 +4,7 @@ mod common;
 use common::create_test_program;
 use cpu_sim::*;
 use riscv_core::instruction::*;
+use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
 
 /// Helper function to initialize test logger (idempotent)
 fn init_test_logger() {

@@ -676,7 +676,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus_shared::SIM_CONTROL_BASE;
+    use riscv_shared::bus::SIM_CONTROL_BASE;
 
     #[test]
     fn test_run_returns_immediately_on_pending_tohost() {
