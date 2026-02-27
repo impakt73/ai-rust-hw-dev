@@ -8,10 +8,7 @@
 //! continuously. Host-initiated bus requests are forwarded through
 //! `InteractiveSimulator::send_bus_request`, which performs internal
 //! address-based routing.
-#![allow(dead_code)]
 
-mod api;
-mod constants;
 mod hung_detector;
 mod interactive;
 mod sim_core;
@@ -28,12 +25,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub use bus_shared::BusDevice;
-pub use bus_shared::{AccessSize, BusRequest};
-pub use interactive::InteractiveSimulator;
-pub use riscv_core::trace::InstructionTrace;
-pub use sim_core::{SimulationResult, SimulationStepCycleResult};
-pub use simulator_view::SimulatorView;
+use bus_shared::{AccessSize, BusRequest};
+use interactive::InteractiveSimulator;
+use riscv_core::trace::InstructionTrace;
+use sim_core::SimulationStepCycleResult;
+use simulator_view::SimulatorView;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);

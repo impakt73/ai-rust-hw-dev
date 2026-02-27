@@ -53,25 +53,6 @@ pub struct InteractiveSimulator {
 unsafe impl Send for InteractiveSimulator {}
 
 impl InteractiveSimulator {
-    /// Create a new InteractiveSimulator with default configuration
-    ///
-    /// All optional parameters are set to None or disabled:
-    /// - No instruction tracing
-    /// - No FSM state printing
-    /// - No callbacks
-    /// - No VCD output
-    /// - Zero memory latency
-    /// - Verilator optimization level 3 (for interactive performance)
-    ///
-    /// # Returns
-    /// A new `InteractiveSimulator` instance ready to load an ELF file
-    ///
-    /// # Errors
-    /// Returns an error if the simulator fails to initialize (e.g., Verilator not available)
-    pub fn new() -> Result<Self, String> {
-        Self::new_with_options(None, None, 0)
-    }
-
     /// Create a new InteractiveSimulator with optional tracing hooks.
     ///
     /// # Arguments
@@ -223,7 +204,6 @@ impl InteractiveSimulator {
     pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
         );
@@ -240,66 +220,9 @@ impl InteractiveSimulator {
     pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
         let mut view = SimulatorView::new(
             &mut self.simulator.bus,
-            &self.simulator.cpu,
             &mut self.simulator.host_bus_handler,
             &mut self.simulator.host_bus_direct_response,
         );
         view.receive_bus_response()
-    }
-
-    /// Boot the CPU from the specified program counter address.
-    ///
-    /// Issues a boot command to the CPU. This should be called after
-    /// [`reset`] and all [`write_memory_region`] calls have completed.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - Address to boot the CPU from (must be in DRAM range)
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` if the boot sequence fails
-    pub fn boot_cpu(&mut self, boot_pc: u32) -> Result<(), String> {
-        self.simulator
-            .boot(boot_pc)
-            .map_err(|e| format!("Boot failed: {}", e))
-    }
-
-    /// Load a program from raw bytes into the simulator and boot the CPU
-    ///
-    /// Writes the provided bytes into simulator memory starting at `start_addr`,
-    /// then resets the CPU and boots it from that address.  This is the
-    /// direct-instruction equivalent of loading an ELF and lets tests drive the
-    /// simulator with hand-crafted instruction sequences.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address for the program (must be in DRAM range)
-    /// * `data` - Raw instruction bytes to load
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(String)` if the reset / boot sequence fails
-    pub fn load_program(&mut self, start_addr: u32, data: &[u8]) -> Result<(), String> {
-        self.reset()?;
-        self.write_memory_region(start_addr, data);
-        self.boot_cpu(start_addr)
-    }
-
-    /// Write a region of memory from a byte slice
-    ///
-    /// Writes bytes into the simulator's memory starting at `start_addr`.
-    /// The caller is responsible for calling [`reset`] before writing and
-    /// [`boot_cpu`] afterwards.
-    ///
-    /// # Arguments
-    /// * `start_addr` - Starting address (must be in DRAM range)
-    /// * `data` - Byte slice containing the data to write
-    pub fn write_memory_region(&mut self, start_addr: u32, data: &[u8]) {
-        let mut view = SimulatorView::new(
-            &mut self.simulator.bus,
-            &self.simulator.cpu,
-            &mut self.simulator.host_bus_handler,
-            &mut self.simulator.host_bus_direct_response,
-        );
-        view.write_memory_region(start_addr, data);
     }
 }
