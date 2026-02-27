@@ -3,11 +3,11 @@
 //! This module provides the interactive command shell functionality.
 
 use crate::app::{create_fifo_device, App};
+use bus_shared::{AccessSize, BusRequest};
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{
     access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind, SimDeviceRuntimeArgs,
 };
-use host_bus_handler::{AccessSize, BusRequest};
 use std::path::Path;
 
 /// Default baud rate for device connections

@@ -2,11 +2,11 @@
 
 #![allow(dead_code)]
 
+use bus_shared::AccessSize;
 use device_runtime::{
     create_device_runtime, BusDeviceRegistration, BusEvent, BusRequest, DeviceRuntime,
     DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
-use host_bus_handler::AccessSize;
 use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
 use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
 use std::path::{Path, PathBuf};

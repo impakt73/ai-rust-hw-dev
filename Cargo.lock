@@ -722,7 +722,6 @@ version = "0.1.0"
 dependencies = [
  "bus-shared",
  "env_logger",
- "host-bus-handler",
  "image",
  "log",
  "riscv_core",
@@ -867,7 +866,6 @@ dependencies = [
  "bus-shared",
  "cpu-sim",
  "elf",
- "host-bus-handler",
  "log",
  "riscv_core",
  "riscv_shared",
@@ -1136,7 +1134,6 @@ dependencies = [
  "clap",
  "crossterm",
  "device-runtime",
- "host-bus-handler",
  "log",
  "ratatui",
  "riscv_shared",
@@ -1326,13 +1323,6 @@ name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
-
-[[package]]
-name = "host-bus-handler"
-version = "0.1.0"
-dependencies = [
- "riscv_shared",
-]
 
 [[package]]
 name = "humantime"

@@ -785,4 +785,5 @@ impl HostBusHandler {
 }
 
 #[cfg(test)]
+#[path = "host_bus_handler_tests.rs"]
 mod tests;
