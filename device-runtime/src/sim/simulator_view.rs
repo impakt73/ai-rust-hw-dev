@@ -47,7 +47,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// // write_memory_region is typically used within run_program's setup_callback
     /// let instructions = vec![0x13, 0x01, 0x00, 0x00]; // addi x2, x0, 0
@@ -108,7 +108,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// // dump_memory_region is typically used in run_program's termination_callback
     /// run_program(
@@ -179,7 +179,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// // dump_memory_region_as_image is typically used in run_program's termination_callback
     /// run_program(
@@ -299,7 +299,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Example
     /// ```no_run
-    /// use cpu_sim::*;
+    /// use device_runtime::sim::*;
     ///
     /// # struct MyVideoDevice;
     /// # impl MyVideoDevice {
@@ -352,7 +352,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// run_program(
     ///     100,
@@ -394,7 +394,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// run_program(
     ///     100,
@@ -526,7 +526,7 @@ impl<'a> SimulatorView<'a> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::*;
+    /// # use device_runtime::sim::*;
     /// # fn main() -> Result<(), String> {
     /// run_program(
     ///     100,

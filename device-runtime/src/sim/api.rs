@@ -21,15 +21,15 @@ use super::{InstructionTrace, SimulationResult, SimulatorView};
 ///
 /// # Examples
 /// ```no_run
-/// use cpu_sim::run_program;
+/// use device_runtime::sim::run_program;
 ///
 /// // Example: Load instruction array programmatically
 /// run_program(
 ///     1000,
 ///     false,
 ///     false,
-///     None::<fn(&mut cpu_sim::SimulatorView)>,
-///     None::<fn(&cpu_sim::InstructionTrace)>,
+///     None::<fn(&mut device_runtime::sim::SimulatorView)>,
+///     None::<fn(&device_runtime::sim::InstructionTrace)>,
 ///     None,
 ///     0, // Zero latency
 ///     |sim| {
@@ -41,7 +41,7 @@ use super::{InstructionTrace, SimulationResult, SimulatorView};
 ///         sim.write_memory_region(start_addr, &bytes);
 ///         Ok(start_addr)
 ///     },
-///     None::<fn(&cpu_sim::SimulatorView, &cpu_sim::SimulationResult)>
+///     None::<fn(&device_runtime::sim::SimulatorView, &device_runtime::sim::SimulationResult)>
 /// )?;
 /// # Ok::<(), String>(())
 /// ```

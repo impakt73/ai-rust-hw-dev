@@ -14,7 +14,7 @@ type InteractiveSimulatorType = Simulator<fn(&mut SimulatorView), fn(&Instructio
 ///
 /// # Examples
 /// ```no_run
-/// use cpu_sim::InteractiveSimulator;
+/// use device_runtime::sim::InteractiveSimulator;
 ///
 /// let mut sim = InteractiveSimulator::new().expect("Failed to create simulator");
 /// sim.load_program(0x8000_0000, &[]).expect("Failed to load program");
@@ -122,7 +122,7 @@ impl InteractiveSimulator {
     /// # Examples
     /// ```no_run
     /// use bus_shared::{BusDevice, Video, VideoConfig};
-    /// use cpu_sim::InteractiveSimulator;
+    /// use device_runtime::sim::InteractiveSimulator;
     /// use riscv_shared::bus::VIDEO_BASE;
     /// use std::path::Path;
     ///
@@ -181,7 +181,7 @@ impl InteractiveSimulator {
     ///
     /// # Examples
     /// ```no_run
-    /// # use cpu_sim::InteractiveSimulator;
+    /// # use device_runtime::sim::InteractiveSimulator;
     /// let mut sim = InteractiveSimulator::new().unwrap();
     /// sim.load_program(0x8000_0000, &[]).unwrap();
     ///
