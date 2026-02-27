@@ -50,8 +50,8 @@ module host_bus_rx (
     logic [31:0] packet_base_addr_reg;
 
     logic [2:0]  beat_bytes_reg;
-    logic [18:0] expected_payload_bytes_reg;
-    logic [18:0] payload_bytes_rcvd_reg;
+    logic [16:0] burst_len_reg;
+    logic [16:0] beats_remaining_reg;
     logic [1:0]  beat_byte_idx_reg;
     logic [31:0] beat_accum_reg;
 
@@ -63,8 +63,6 @@ module host_bus_rx (
     logic [31:0] beat_word_with_byte;
     logic [2:0]  beat_bytes_local;
     logic [16:0] burst_len_local;
-    logic [18:0] payload_bytes_local;
-    logic [18:0] payload_bytes_next;
     logic        beat_done;
     logic        is_last_beat;
 
@@ -110,11 +108,11 @@ module host_bus_rx (
             packet_burst_len_m1_reg <= 16'h0000;
             packet_base_addr_reg    <= 32'h0000_0000;
 
-            beat_bytes_reg             <= 3'd1;
-            expected_payload_bytes_reg <= 19'd0;
-            payload_bytes_rcvd_reg     <= 19'd0;
-            beat_byte_idx_reg          <= 2'd0;
-            beat_accum_reg             <= 32'h0000_0000;
+            beat_bytes_reg      <= 3'd1;
+            burst_len_reg       <= 17'd0;
+            beats_remaining_reg <= 17'd0;
+            beat_byte_idx_reg   <= 2'd0;
+            beat_accum_reg      <= 32'h0000_0000;
 
             out_valid_reg <= 1'b0;
             out_start_reg <= 1'b0;
@@ -188,19 +186,13 @@ module host_bus_rx (
                         endcase
 
                         burst_len_local = {1'b0, packet_burst_len_m1_reg} + 17'd1;
-                        if (payload_enabled) begin
-                            payload_bytes_local = burst_len_local * beat_bytes_local;
-                        end else begin
-                            payload_bytes_local = 19'd0;
-                        end
+                        beat_bytes_reg      <= beat_bytes_local;
+                        burst_len_reg       <= burst_len_local;
+                        beats_remaining_reg <= burst_len_local;
+                        beat_byte_idx_reg   <= 2'd0;
+                        beat_accum_reg      <= 32'h0000_0000;
 
-                        beat_bytes_reg             <= beat_bytes_local;
-                        expected_payload_bytes_reg <= payload_bytes_local;
-                        payload_bytes_rcvd_reg     <= 19'd0;
-                        beat_byte_idx_reg          <= 2'd0;
-                        beat_accum_reg             <= 32'h0000_0000;
-
-                        if (payload_bytes_local == 19'd0) begin
+                        if (!payload_enabled) begin
                             // Metadata-only packet (read request or write response)
                             out_valid_reg <= 1'b1;
                             out_start_reg <= 1'b1;
@@ -217,17 +209,20 @@ module host_bus_rx (
                         beat_done = ({1'b0, beat_byte_idx_reg} == (beat_bytes_reg - 3'd1));
 
                         if (beat_done) begin
-                            payload_bytes_next = payload_bytes_rcvd_reg + {{16{1'b0}}, beat_bytes_reg};
-                            is_last_beat = (payload_bytes_next == expected_payload_bytes_reg);
+                            is_last_beat = (beats_remaining_reg == 17'd1);
 
                             out_valid_reg <= 1'b1;
-                            out_start_reg <= (payload_bytes_rcvd_reg == 19'd0);
+                            out_start_reg <= (beats_remaining_reg == burst_len_reg);
                             out_last_reg  <= is_last_beat;
                             out_data_reg  <= beat_word_with_byte;
 
-                            payload_bytes_rcvd_reg <= payload_bytes_next;
-                            beat_byte_idx_reg      <= 2'd0;
-                            beat_accum_reg         <= 32'h0000_0000;
+`ifdef ASSERT_ON
+                            assert (beats_remaining_reg != 17'd0)
+                                else $error("host_bus_rx: beats_remaining_reg underflow");
+`endif
+                            beats_remaining_reg <= beats_remaining_reg - 17'd1;
+                            beat_byte_idx_reg <= 2'd0;
+                            beat_accum_reg    <= 32'h0000_0000;
 
                             if (is_last_beat) begin
                                 state <= STATE_IDLE;
