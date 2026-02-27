@@ -1,7 +1,9 @@
 use super::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
-use super::simulator_view::SimulatorView;
 use bus_shared::SystemBus;
-use bus_shared::{AccessSize, BusResponse, HostBusHandler};
+use bus_shared::{
+    classify_request_region, request_end_addr, AccessSize, BusDevice, BusRequest, BusResponse,
+    HandlerError, HostBusHandler, RequestAddressRegion,
+};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::time::Instant;
@@ -49,9 +51,8 @@ pub struct SimulationStepCycleResult {
 /// The CPU model borrows from the runtime with a 'static lifetime, which is safe because:
 /// 1. The runtime is boxed (stable heap address)
 /// 2. Field drop order ensures CPU drops before runtime (fields drop in declaration order)
-pub struct Simulator<F, T>
+pub struct Simulator<T>
 where
-    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
@@ -69,7 +70,6 @@ where
     total_elapsed_time_us: u64, // Cumulative elapsed time in microseconds
     print_inst_trace: bool,
     print_fsm_state: bool,
-    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
@@ -84,9 +84,8 @@ where
     pub(crate) hung_detector: Option<HungDetector>,
 }
 
-impl<F, T> Simulator<F, T>
+impl<T> Simulator<T>
 where
-    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with optional callbacks
@@ -99,7 +98,6 @@ where
     /// # Arguments
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
-    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
@@ -107,7 +105,6 @@ where
     pub fn new(
         print_inst_trace: bool,
         print_fsm_state: bool,
-        inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
@@ -171,7 +168,6 @@ where
             total_elapsed_time_us: 0,
             print_inst_trace,
             print_fsm_state,
-            inst_complete_callback,
             trace_callback,
             vcd_time: 0,
             mem_latency_cycles,
@@ -202,17 +198,6 @@ where
 
     /// Handle callbacks and tracing when an instruction completes
     fn handle_instruction_complete(&mut self) {
-        // Call inst_complete callback if provided (after instruction completion)
-        // This callback receives restricted access to the Simulator via SimulatorView
-        if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(
-                &mut self.bus,
-                &mut self.host_bus_handler,
-                &mut self.host_bus_direct_response,
-            );
-            callback(&mut view);
-        }
-
         // Unified instruction trace handling
         // Check if trace callback is valid or instruction trace printing is enabled
         if self.trace_callback.is_some() || self.print_inst_trace {
@@ -341,6 +326,140 @@ where
             AccessSize::Halfword => self.bus.write_halfword(addr, wdata as u16),
             AccessSize::Word => self.bus.write_word(addr, wdata),
         }
+    }
+
+    /// Create a new simulator with default interactive options.
+    pub fn new_with_options(
+        trace_callback: Option<T>,
+        vcd_path: Option<&str>,
+        mem_latency_cycles: u32,
+    ) -> Result<Self, String> {
+        Self::new(
+            false, // print_inst_trace
+            false, // print_fsm_state
+            trace_callback,
+            vcd_path,
+            mem_latency_cycles,
+            3, // verilator_optimization (level 3 for interactive performance)
+        )
+    }
+
+    /// Register a custom bus device at the specified base address.
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), String> {
+        self.bus
+            .register_device(base_addr, device)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Send a bus request from the host to the simulator target.
+    pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
+        if request_end_addr(&request).is_none() {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            ));
+        }
+
+        if self.host_bus_handler.has_pending_outgoing_request()
+            || self.host_bus_direct_response.is_some()
+        {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::RequestPending
+            ));
+        }
+
+        match classify_request_region(&request) {
+            RequestAddressRegion::RtlPeripheral => self
+                .host_bus_handler
+                .send_request(request)
+                .map_err(|e| format!("Host request rejected: {:?}", e)),
+            RequestAddressRegion::NonRtl => {
+                let beat_bytes = usize::from(request.size.byte_count());
+                let beats = request.burst_len.max(1);
+                let response = if request.we {
+                    for beat_idx in 0..beats {
+                        let addr = if request.dst_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let byte_offset = (beat_idx as usize) * beat_bytes;
+                        let mut beat_buf = [0u8; 4];
+                        if request.data.len() >= byte_offset + beat_bytes {
+                            beat_buf[..beat_bytes].copy_from_slice(
+                                &request.data[byte_offset..byte_offset + beat_bytes],
+                            );
+                        } else if beat_idx == 0 {
+                            beat_buf = request.wdata.to_le_bytes();
+                        }
+                        let wdata = u32::from_le_bytes(beat_buf);
+
+                        match request.size {
+                            AccessSize::Byte => self.bus.write_byte(addr, wdata as u8),
+                            AccessSize::Halfword => self.bus.write_halfword(addr, wdata as u16),
+                            AccessSize::Word => self.bus.write_word(addr, wdata),
+                        }
+                    }
+                    let mut response = BusResponse::write_ack(request.size);
+                    response.addr = request.addr;
+                    response.burst_len = request.burst_len;
+                    response.src_fixed = request.src_fixed;
+                    response.dst_fixed = request.dst_fixed;
+                    response
+                } else {
+                    let mut burst_data = Vec::with_capacity((beats as usize) * beat_bytes);
+                    for beat_idx in 0..beats {
+                        let addr = if request.src_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let rdata = match request.size {
+                            AccessSize::Byte => self.bus.read_byte(addr) as u32,
+                            AccessSize::Halfword => self.bus.read_halfword(addr) as u32,
+                            AccessSize::Word => self.bus.read_word(addr),
+                        };
+                        burst_data.extend_from_slice(&rdata.to_le_bytes()[..beat_bytes]);
+                    }
+                    BusResponse::burst_read_data(
+                        request.addr,
+                        request.size,
+                        request.burst_len,
+                        request.src_fixed,
+                        request.dst_fixed,
+                        burst_data,
+                    )
+                };
+                self.host_bus_direct_response = Some(response);
+                Ok(())
+            }
+            RequestAddressRegion::SpansRtlBoundary => Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            )),
+        }
+    }
+
+    /// Receive a bus response from the simulator target.
+    pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
+        self.host_bus_direct_response
+            .take()
+            .or_else(|| self.host_bus_handler.receive_response())
     }
 
     /// Reset the CPU hardware and leave it in boot state (S_BOOT).
