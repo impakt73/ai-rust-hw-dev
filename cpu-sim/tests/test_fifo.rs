@@ -5,6 +5,7 @@ use common::{
     init_test_logger,
 };
 use cpu_sim::*;
+use riscv_shared::bus::FIFO_BASE;
 
 #[test]
 fn test_fifo_hello_world() {
