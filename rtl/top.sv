@@ -54,7 +54,8 @@ module top #(
     output logic [31:0] debug_current_instruction,
     output logic [3:0]  debug_fsm_state,
     output logic        rst_n_out,
-    output logic        cpu_booting
+    output logic        cpu_booting,
+    output logic [31:0] halted_value
 );
 
     // ============================================================
@@ -134,6 +135,7 @@ module top #(
     logic        sysctrl_cpu_boot;
     logic [31:0] sysctrl_cpu_boot_addr;
     logic        sysctrl_req_cpu_halt;
+    logic [31:0] sysctrl_halted_value;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
     
@@ -480,11 +482,14 @@ module top #(
         .cpu_boot_addr(sysctrl_cpu_boot_addr),
         .cpu_boot(sysctrl_cpu_boot),
         .req_cpu_halt(sysctrl_req_cpu_halt),
+        .halted_value(sysctrl_halted_value),
         
         // CPU status inputs
         .cpu_halted(cpu_halted_internal),
         .cpu_booting(cpu_is_booting)
     );
+
+    assign halted_value = sysctrl_halted_value;
 
     // ============================================================
     // System LED Controller Instantiation
