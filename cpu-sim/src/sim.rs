@@ -632,21 +632,15 @@ where
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;
-        let mut halt_value = None;
 
         while self.cycle_count < max_cycles {
-            // Execute one cycle and only evaluate halt on instruction boundaries.
+            // Execute one cycle and terminate immediately if a halt signal is observed.
             let step_result = self
                 .step_cycle()
                 .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
-            halt_value = halt_value.or(step_result.tohost_value);
 
-            if !step_result.instruction_completed {
-                continue;
-            }
-
-            if let Some(tohost_value) = halt_value.take() {
+            if let Some(tohost_value) = step_result.tohost_value {
                 log::info!(
                     "Halt signal detected via SimControl, value=0x{:08x}",
                     tohost_value
@@ -676,5 +670,28 @@ where
             tohost_value: None,
             elapsed_cpu_time_us: total_elapsed_us,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bus_shared::SIM_CONTROL_BASE;
+
+    #[test]
+    fn test_run_returns_immediately_on_pending_tohost() {
+        let mut sim: Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)> =
+            Simulator::new(false, false, None, None, None, 0, 0)
+                .expect("simulator should initialize");
+        sim.reset().expect("reset should succeed");
+
+        let expected_tohost = 0x2a;
+        sim.bus.write_word(SIM_CONTROL_BASE, expected_tohost);
+
+        let result = sim
+            .run(sim.cycle_count + 1)
+            .expect("run should succeed with pending tohost");
+
+        assert_eq!(result.tohost_value, Some(expected_tohost));
     }
 }
