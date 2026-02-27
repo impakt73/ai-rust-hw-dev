@@ -1,7 +1,7 @@
 mod cpu_sim_common;
 
-use device_runtime::sim::*;
 use cpu_sim_common::init_test_logger;
+use device_runtime::sim::*;
 use riscv_shared::bus::DRAM_BASE;
 
 #[test]

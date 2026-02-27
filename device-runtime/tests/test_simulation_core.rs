@@ -1,7 +1,7 @@
 mod cpu_sim_common;
 
-use device_runtime::sim::*;
 use cpu_sim_common::{assert_tohost, create_loop_program, create_test_program, init_test_logger};
+use device_runtime::sim::*;
 
 /// Comprehensive test that runs a full in-memory program for basic simulation verification.
 #[allow(dead_code)]

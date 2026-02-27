@@ -1,10 +1,10 @@
 mod cpu_sim_common;
 
-use device_runtime::sim::*;
 use cpu_sim_common::{
     assert_tohost, create_register_trace_program, create_test_program, create_trace_test_program,
     init_test_logger,
 };
+use device_runtime::sim::*;
 use riscv_core::instruction::*;
 use riscv_core::trace::InstructionTrace;
 use riscv_shared::bus::DRAM_BASE;

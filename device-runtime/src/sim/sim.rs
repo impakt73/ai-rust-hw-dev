@@ -679,6 +679,7 @@ mod tests {
     use riscv_shared::bus::SIM_CONTROL_BASE;
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn test_run_returns_immediately_on_pending_tohost() {
         let mut sim: Simulator<fn(&mut SimulatorView), fn(&InstructionTrace)> =
             Simulator::new(false, false, None, None, None, 0, 0)
