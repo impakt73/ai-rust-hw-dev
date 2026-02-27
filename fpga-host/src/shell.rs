@@ -4,7 +4,9 @@
 
 use crate::app::{create_fifo_device, App};
 use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
-use device_runtime::{access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind};
+use device_runtime::{
+    access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind, SimDeviceRuntimeArgs,
+};
 use host_bus_handler::{AccessSize, BusRequest};
 use std::path::Path;
 
@@ -155,7 +157,14 @@ pub enum ConnectRuntime {
         baud: u32,
     },
     /// Connect to the software simulator
-    Sim,
+    Sim {
+        /// Enable instruction trace callback logging.
+        #[arg(long)]
+        trace: bool,
+        /// Optional VCD output path.
+        #[arg(long)]
+        vcd: Option<String>,
+    },
 }
 
 /// Parse a string as either hex (with 0x prefix) or decimal
@@ -217,7 +226,7 @@ impl ShellCommand {
 
             ShellCommand::Connect { runtime } => match runtime {
                 ConnectRuntime::Fpga { device, baud } => execute_connect_fpga(app, &device, baud),
-                ConnectRuntime::Sim => execute_connect_sim(app),
+                ConnectRuntime::Sim { trace, vcd } => execute_connect_sim(app, trace, vcd),
             },
 
             ShellCommand::Disconnect => execute_disconnect(app),
@@ -282,13 +291,23 @@ fn execute_connect_fpga(app: &mut App, device: &str, baud: u32) -> CommandResult
 }
 
 /// Execute the connect sim command
-fn execute_connect_sim(app: &mut App) -> CommandResult {
+fn execute_connect_sim(app: &mut App, trace: bool, vcd: Option<String>) -> CommandResult {
     if app.device_runtime.is_some() {
         return CommandResult::error("Already connected. Disconnect first.");
     }
 
     let (fifo_reg, fifo_rx) = create_fifo_device();
-    match create_device_runtime(DeviceRuntimeType::Sim, Some(vec![fifo_reg])) {
+    match create_device_runtime(
+        DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
+            vcd_path: vcd,
+            instruction_trace_callback: if trace {
+                Some(|trace| log::info!("SIM TRACE: {}", trace))
+            } else {
+                None
+            },
+        }),
+        Some(vec![fifo_reg]),
+    ) {
         Ok(runtime) => {
             app.fifo_line_rx = Some(fifo_rx);
             app.device_runtime = Some(runtime);
@@ -573,8 +592,25 @@ mod tests {
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Connect {
-                runtime: ConnectRuntime::Sim
+                runtime: ConnectRuntime::Sim {
+                    trace: false,
+                    vcd: None
+                }
             }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_connect_sim_with_trace_and_vcd() {
+        let result = ShellCommand::parse("connect sim --trace --vcd sim.vcd");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::Connect {
+                runtime: ConnectRuntime::Sim {
+                    trace: true,
+                    vcd: Some(ref path)
+                }
+            })) if path == "sim.vcd"
         ));
     }
 

@@ -99,6 +99,20 @@ pub enum DeviceRuntimeType {
     },
     /// Software simulator
     Sim,
+    /// Software simulator with backend-specific configuration
+    SimWithArgs(SimDeviceRuntimeArgs),
+}
+
+/// Instruction trace callback type for simulator backend.
+pub type SimInstructionTraceCallback = fn(&cpu_sim::InstructionTrace);
+
+/// Backend-specific runtime creation arguments for the simulator.
+#[derive(Debug, Clone, Default)]
+pub struct SimDeviceRuntimeArgs {
+    /// Optional path to write VCD waveform dumps.
+    pub vcd_path: Option<String>,
+    /// Optional callback invoked on each completed instruction trace.
+    pub instruction_trace_callback: Option<SimInstructionTraceCallback>,
 }
 
 /// Reset mode for [`DeviceRuntime::reset`].
@@ -146,7 +160,12 @@ pub fn create_device_runtime(
             Ok(Box::new(runtime))
         }
         DeviceRuntimeType::Sim => {
-            let runtime = sim::SimDeviceRuntime::new(bus_devices)
+            let runtime = sim::SimDeviceRuntime::new(bus_devices, SimDeviceRuntimeArgs::default())
+                .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
+            Ok(Box::new(runtime))
+        }
+        DeviceRuntimeType::SimWithArgs(args) => {
+            let runtime = sim::SimDeviceRuntime::new(bus_devices, args)
                 .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }

@@ -68,14 +68,26 @@ impl InteractiveSimulator {
     /// # Errors
     /// Returns an error if the simulator fails to initialize (e.g., Verilator not available)
     pub fn new() -> Result<Self, String> {
+        Self::new_with_options(None, None)
+    }
+
+    /// Create a new InteractiveSimulator with optional tracing hooks.
+    ///
+    /// # Arguments
+    /// * `trace_callback` - Optional callback invoked after each instruction completes
+    /// * `vcd_path` - Optional path to enable VCD waveform dumping
+    pub fn new_with_options(
+        trace_callback: Option<fn(&InstructionTrace)>,
+        vcd_path: Option<&str>,
+    ) -> Result<Self, String> {
         let simulator = Simulator::new(
             false, // print_inst_trace
             false, // print_fsm_state
             None,  // inst_complete_callback
-            None,  // trace_callback
-            None,  // vcd_path
-            0,     // mem_latency_cycles
-            3,     // verilator_optimization (level 3 for interactive performance)
+            trace_callback,
+            vcd_path,
+            0, // mem_latency_cycles
+            3, // verilator_optimization (level 3 for interactive performance)
         )?;
 
         Ok(InteractiveSimulator { simulator })

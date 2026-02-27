@@ -11,7 +11,7 @@ mod ui;
 use app::{create_fifo_device, App};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
-use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType};
+use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType, SimDeviceRuntimeArgs};
 use ratatui::DefaultTerminal;
 use std::io;
 use std::panic;
@@ -48,7 +48,14 @@ enum RuntimeArgs {
         baud: u32,
     },
     /// Use the software simulator
-    Sim,
+    Sim {
+        /// Enable instruction trace callback logging.
+        #[arg(long)]
+        trace: bool,
+        /// Optional VCD output path.
+        #[arg(long)]
+        vcd: Option<PathBuf>,
+    },
 }
 
 fn main() -> io::Result<()> {
@@ -97,7 +104,16 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                 baud,
                 startup_reset: device_runtime::StartupReset::None,
             },
-            RuntimeArgs::Sim => DeviceRuntimeType::Sim,
+            RuntimeArgs::Sim { trace, vcd } => {
+                DeviceRuntimeType::SimWithArgs(SimDeviceRuntimeArgs {
+                    vcd_path: vcd.map(|path| path.to_string_lossy().to_string()),
+                    instruction_trace_callback: if trace {
+                        Some(|trace| log::info!("SIM TRACE: {}", trace))
+                    } else {
+                        None
+                    },
+                })
+            }
         };
         let (fifo_reg, fifo_rx) = create_fifo_device();
         match create_device_runtime(runtime_type, Some(vec![fifo_reg])) {
