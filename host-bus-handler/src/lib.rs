@@ -1,17 +1,28 @@
 //! Host Bus Handler
 //!
 //! Burst-capable packet protocol handler mirroring host-bus RTL framing.
+//!
+//! Packet types:
+//! - `0x0`: CPU-initiated request (FPGA -> host)
+//! - `0x1`: Host response to CPU request (host -> FPGA)
+//! - `0x2`: Host-initiated request (host -> FPGA)
+//! - `0x3`: FPGA response to host request (FPGA -> host)
 
 use riscv_shared::bus::{RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
 
+/// Access size for bus operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessSize {
+    /// Byte access (1 byte).
     Byte = 0,
+    /// Halfword access (2 bytes).
     Halfword = 1,
+    /// Word access (4 bytes).
     Word = 2,
 }
 
 impl AccessSize {
+    /// Number of bytes transferred per beat for this access size.
     pub fn byte_count(self) -> u8 {
         match self {
             AccessSize::Byte => 1,
@@ -20,10 +31,12 @@ impl AccessSize {
         }
     }
 
+    /// Protocol size encoding used in `ctrl0[3:2]`.
     pub fn to_size_code(self) -> u8 {
         self as u8
     }
 
+    /// Convert protocol size encoding (`0`, `1`, `2`) into [`AccessSize`].
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(AccessSize::Byte),
@@ -38,19 +51,29 @@ impl AccessSize {
 pub const MAX_BURST_BEATS: u32 = 65_536;
 const CTRL1_RESERVED_MASK: u8 = 0xFE;
 
+/// Bus request representing a read or write burst transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusRequest {
+    /// First-beat address.
     pub addr: u32,
+    /// First write beat as a convenience scalar mirror of `data`.
     pub wdata: u32,
+    /// `true` for write, `false` for read.
     pub we: bool,
+    /// Transfer size per beat.
     pub size: AccessSize,
+    /// Number of beats in the burst.
     pub burst_len: u32,
+    /// Source address remains fixed across beats.
     pub src_fixed: bool,
+    /// Destination address remains fixed across beats.
     pub dst_fixed: bool,
+    /// Burst payload bytes (write requests only).
     pub data: Vec<u8>,
 }
 
 impl BusRequest {
+    /// Create a single-beat read request.
     pub fn read(addr: u32, size: AccessSize) -> Self {
         Self {
             addr,
@@ -64,6 +87,7 @@ impl BusRequest {
         }
     }
 
+    /// Create a single-beat write request.
     pub fn write(addr: u32, data: u32, size: AccessSize) -> Self {
         let mut bytes = data.to_le_bytes().to_vec();
         bytes.truncate(size.byte_count() as usize);
@@ -79,6 +103,7 @@ impl BusRequest {
         }
     }
 
+    /// Create a read request with explicit burst metadata.
     pub fn burst_read(
         addr: u32,
         size: AccessSize,
@@ -98,6 +123,7 @@ impl BusRequest {
         }
     }
 
+    /// Create a write request with explicit burst metadata and payload bytes.
     pub fn burst_write(
         addr: u32,
         size: AccessSize,
@@ -123,19 +149,29 @@ impl BusRequest {
     }
 }
 
+/// Response to a bus request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusResponse {
+    /// First read beat as a convenience scalar mirror of `data`.
     pub rdata: u32,
+    /// Transfer size per beat.
     pub size: AccessSize,
+    /// Echoed write enable bit from the request.
     pub we: bool,
+    /// Echoed first-beat address.
     pub addr: u32,
+    /// Echoed burst length.
     pub burst_len: u32,
+    /// Echoed source fixed flag.
     pub src_fixed: bool,
+    /// Echoed destination fixed flag.
     pub dst_fixed: bool,
+    /// Burst payload bytes (read responses only).
     pub data: Vec<u8>,
 }
 
 impl BusResponse {
+    /// Create a single-beat write acknowledgement response.
     pub fn write_ack(size: AccessSize) -> Self {
         Self {
             rdata: 0,
@@ -149,6 +185,7 @@ impl BusResponse {
         }
     }
 
+    /// Create a single-beat read response.
     pub fn read_data(data: u32, size: AccessSize) -> Self {
         let mut bytes = data.to_le_bytes().to_vec();
         bytes.truncate(size.byte_count() as usize);
@@ -164,6 +201,7 @@ impl BusResponse {
         }
     }
 
+    /// Create a burst read response with explicit metadata and payload bytes.
     pub fn burst_read_data(
         addr: u32,
         size: AccessSize,
@@ -189,24 +227,40 @@ impl BusResponse {
     }
 }
 
+/// Error types for handler operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandlerError {
+    /// Handler cannot accept more RX packets because both internal buffers are full.
     BufferFull,
+    /// A host-initiated request is already pending completion.
     RequestPending,
+    /// No TX byte is available to transfer.
     NoDataAvailable,
+    /// No CPU-initiated request is available to accept.
     NoRequestAvailable,
+    /// `complete_request` was called without a previously accepted request.
     NoOutstandingRequest,
+    /// Request touches non-RTL address space or spans RTL boundary.
     InvalidAddressRange,
+    /// Burst metadata or payload shape is inconsistent with protocol expectations.
     InvalidBurstConfig,
 }
 
+/// Address-region classification for host-initiated requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestAddressRegion {
+    /// Entire request span is within RTL peripheral space.
     RtlPeripheral,
+    /// Entire request span is outside RTL peripheral space.
     NonRtl,
+    /// Request span crosses into/out of RTL peripheral space.
     SpansRtlBoundary,
 }
 
+/// Compute the inclusive end address touched by a request burst.
+///
+/// When the relevant side is fixed (`dst_fixed` for writes, `src_fixed` for reads),
+/// only one beat contributes to the address span.
 pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
     let stride = u32::from(request.size.byte_count());
     let address_span_beats =
@@ -220,6 +274,10 @@ pub fn request_end_addr(request: &BusRequest) -> Option<u32> {
     request.addr.checked_add(last_byte_offset)
 }
 
+/// Classify which memory region a request touches.
+///
+/// If end-address computation overflows, this is treated as [`RequestAddressRegion::NonRtl`]
+/// and rejected by [`HostBusHandler::send_request`].
 pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     let Some(end_addr) = request_end_addr(request) else {
         return RequestAddressRegion::NonRtl;
@@ -235,13 +293,20 @@ pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
     }
 }
 
+/// RX state machine states for burst packet parsing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RxState {
+    /// Waiting for `ctrl0`.
     Idle,
+    /// Waiting for `ctrl1`.
     Ctrl1,
+    /// Waiting for `len_m1[7:0]`.
     Len0,
+    /// Waiting for `len_m1[15:8]`.
     Len1,
+    /// Receiving little-endian address bytes.
     Addr { byte_idx: u8 },
+    /// Receiving payload bytes (if present for this packet type/direction).
     Payload { remaining: usize },
 }
 
@@ -257,8 +322,15 @@ struct IncomingResponse {
     response: Option<BusResponse>,
 }
 
+/// Host-side handler mirroring the RTL host-bus packet interface.
+///
+/// Interface groups:
+/// 1. Byte-stream IO: [`Self::transfer_rx_byte`], [`Self::transfer_tx_byte`]
+/// 2. Host-initiated flow: [`Self::send_request`], [`Self::receive_response`]
+/// 3. CPU-initiated flow: [`Self::accept_request`], [`Self::complete_request`]
 #[derive(Debug)]
 pub struct HostBusHandler {
+    // RX state machine and temporary packet accumulators.
     rx_state: RxState,
     rx_packet_type: u8,
     rx_temp_we: bool,
@@ -269,10 +341,12 @@ pub struct HostBusHandler {
     rx_addr_accumulator: u32,
     rx_payload: Vec<u8>,
 
+    // Buffered packets received from FPGA.
     outgoing_response: IncomingResponse,
     incoming_request: IncomingRequest,
     accepted_request: Option<BusRequest>,
 
+    // TX buffering and pending outbound packets.
     tx_buffer: Vec<u8>,
     tx_index: usize,
     outgoing_request: Option<BusRequest>,
@@ -287,6 +361,7 @@ impl Default for HostBusHandler {
 }
 
 impl HostBusHandler {
+    /// Create a new handler in idle state.
     pub fn new() -> Self {
         HostBusHandler {
             rx_state: RxState::Idle,
@@ -309,10 +384,12 @@ impl HostBusHandler {
         }
     }
 
+    /// Reset the handler back to its initial idle state.
     pub fn reset(&mut self) {
         *self = Self::new();
     }
 
+    /// Returns whether one more RX byte can be accepted right now.
     pub fn can_accept_rx(&self) -> bool {
         if self.rx_state != RxState::Idle {
             return true;
@@ -320,6 +397,7 @@ impl HostBusHandler {
         !self.outgoing_response.valid || !self.incoming_request.valid
     }
 
+    /// Feed one received byte into the RX state machine.
     pub fn transfer_rx_byte(&mut self, byte: u8) -> Result<(), HandlerError> {
         if !self.can_accept_rx() {
             return Err(HandlerError::BufferFull);
@@ -404,6 +482,7 @@ impl HostBusHandler {
         Ok(())
     }
 
+    /// Pull one byte from the TX state machine if available.
     pub fn transfer_tx_byte(&mut self) -> Option<u8> {
         if self.tx_index >= self.tx_buffer.len() {
             self.tx_buffer.clear();
@@ -431,6 +510,7 @@ impl HostBusHandler {
             || (self.outgoing_request.is_some() && !self.outgoing_request_tx_started)
     }
 
+    /// Queue a host-initiated request for transmission.
     pub fn send_request(&mut self, request: BusRequest) -> Result<(), HandlerError> {
         if self.outgoing_request.is_some() {
             return Err(HandlerError::RequestPending);
@@ -455,6 +535,7 @@ impl HostBusHandler {
         Ok(())
     }
 
+    /// Fetch a decoded response for a previously transmitted host-initiated request.
     pub fn receive_response(&mut self) -> Option<BusResponse> {
         if !self.outgoing_response.valid {
             return None;
@@ -470,6 +551,7 @@ impl HostBusHandler {
         self.outgoing_response.response.take()
     }
 
+    /// Accept the next buffered CPU-initiated request from FPGA.
     pub fn accept_request(&mut self) -> Result<BusRequest, HandlerError> {
         if !self.incoming_request.valid || self.accepted_request.is_some() {
             return Err(HandlerError::NoRequestAvailable);
@@ -486,6 +568,7 @@ impl HostBusHandler {
         Ok(request)
     }
 
+    /// Complete an accepted CPU-initiated request and queue a response packet.
     pub fn complete_request(&mut self, mut response: BusResponse) -> Result<(), HandlerError> {
         let Some(accepted) = self.accepted_request.as_ref() else {
             return Err(HandlerError::NoOutstandingRequest);
@@ -535,6 +618,7 @@ impl HostBusHandler {
 
     fn start_tx_packet(&mut self) -> Option<()> {
         if self.accepted_request.is_some() && self.pending_response.is_some() {
+            // Priority 1: respond to accepted CPU-initiated request first.
             let response = self.pending_response.take()?;
             self.tx_buffer = Self::encode_packet(
                 0x01,
@@ -551,6 +635,7 @@ impl HostBusHandler {
         }
 
         if self.outgoing_request.is_some() && !self.outgoing_request_tx_started {
+            // Priority 2: transmit next host-initiated request.
             let request = self.outgoing_request.as_ref()?;
             self.tx_buffer = Self::encode_packet(
                 0x02,
@@ -584,6 +669,7 @@ impl HostBusHandler {
 
         match self.rx_packet_type {
             0x00 | 0x02 => {
+                // Request packet: buffer for host-side consumer.
                 if self.incoming_request.valid {
                     return Err(HandlerError::BufferFull);
                 }
@@ -591,6 +677,7 @@ impl HostBusHandler {
                 self.incoming_request.request = Some(request);
             }
             0x01 | 0x03 => {
+                // Response packet: buffer for host-initiated request path.
                 if self.outgoing_response.valid {
                     return Err(HandlerError::BufferFull);
                 }
