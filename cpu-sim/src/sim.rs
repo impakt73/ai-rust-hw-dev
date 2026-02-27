@@ -46,14 +46,6 @@ struct PendingResponse {
     accepted_cycle: u64,
 }
 
-/// Result of stepping a single instruction
-#[derive(Debug)]
-pub struct SimulationStepInstructionResult {
-    pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
-    pub cycles_executed: u64,
-}
-
 /// Result of stepping a single clock cycle
 #[derive(Debug)]
 pub struct SimulationStepCycleResult {
@@ -624,41 +616,6 @@ where
         })
     }
 
-    /// Execute a single simulation step (one instruction - may take multiple cycles)
-    /// Returns SimulationStepInstructionResult containing:
-    /// - tohost_value: Some(value) if halt detected, None otherwise
-    /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
-    /// - cycles_executed: Number of cycles executed for this instruction
-    ///
-    /// # Errors
-    /// Returns `HungStateError` if the CPU is detected to be in a hung state
-    pub fn step_instruction(&mut self) -> Result<SimulationStepInstructionResult, HungStateError> {
-        let start_elapsed_time_us = self.total_elapsed_time_us;
-        let start_cycle_count = self.cycle_count;
-
-        // Multi-cycle execution loop - continue until instruction completes
-        // Capture first tohost value from cycle results (one-shot: consumed by step_cycle)
-        let mut halt_value = None;
-        loop {
-            let cycle_result = self.step_cycle()?;
-            halt_value = halt_value.or(cycle_result.tohost_value);
-            if cycle_result.instruction_completed {
-                break;
-            }
-        }
-
-        let elapsed_us = self
-            .total_elapsed_time_us
-            .saturating_sub(start_elapsed_time_us);
-        let cycles_executed = self.cycle_count.saturating_sub(start_cycle_count);
-
-        Ok(SimulationStepInstructionResult {
-            tohost_value: halt_value,
-            elapsed_cpu_time_us: elapsed_us,
-            cycles_executed,
-        })
-    }
-
     /// Run the simulation for up to max_cycles
     ///
     /// **Note:** This method does not reset or boot the CPU. Callers are responsible
@@ -675,15 +632,21 @@ where
         log::info!("Starting simulation (max {} cycles)", max_cycles);
 
         let mut total_elapsed_us: u64 = 0;
+        let mut halt_value = None;
 
         while self.cycle_count < max_cycles {
-            // Execute one step and check for halt
+            // Execute one cycle and only evaluate halt on instruction boundaries.
             let step_result = self
-                .step_instruction()
+                .step_cycle()
                 .map_err(|e| format!("Hung state detected: {}", e))?;
             total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
+            halt_value = halt_value.or(step_result.tohost_value);
 
-            if let Some(tohost_value) = step_result.tohost_value {
+            if !step_result.instruction_completed {
+                continue;
+            }
+
+            if let Some(tohost_value) = halt_value.take() {
                 log::info!(
                     "Halt signal detected via SimControl, value=0x{:08x}",
                     tohost_value

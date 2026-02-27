@@ -5,6 +5,22 @@ use common::create_simple_exit_program;
 use cpu_sim::{AccessSize, BusRequest, InteractiveSimulator};
 use riscv_shared::SUCCESS_CODE;
 
+fn step_instruction_via_cycle(
+    sim: &mut InteractiveSimulator,
+) -> Result<(Option<u32>, u64), String> {
+    let mut cycles_executed = 0;
+    let mut tohost_value = None;
+
+    loop {
+        let result = sim.step_cycle()?;
+        cycles_executed += 1;
+        tohost_value = tohost_value.or(result.tohost_value);
+        if result.instruction_completed {
+            return Ok((tohost_value, cycles_executed));
+        }
+    }
+}
+
 #[test]
 fn test_interactive_simulator_step_without_elf() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -87,10 +103,10 @@ fn test_interactive_simulator_simple_program() {
     let mut tohost_value = None;
 
     for _ in 0..max_instructions {
-        match sim.step_instruction() {
-            Ok(result) => {
+        match step_instruction_via_cycle(&mut sim) {
+            Ok((tohost, _cycles_executed)) => {
                 instruction_count += 1;
-                if let Some(value) = result.tohost_value {
+                if let Some(value) = tohost {
                     tohost_value = Some(value);
                     break;
                 }
@@ -127,9 +143,9 @@ fn test_interactive_simulator_multiple_programs() {
         .expect("Failed to load first program");
     let mut tohost_1 = None;
     for _ in 0..100 {
-        match sim.step_instruction() {
-            Ok(result) => {
-                if let Some(value) = result.tohost_value {
+        match step_instruction_via_cycle(&mut sim) {
+            Ok((tohost, _cycles_executed)) => {
+                if let Some(value) = tohost {
                     tohost_1 = Some(value);
                     break;
                 }
@@ -144,9 +160,9 @@ fn test_interactive_simulator_multiple_programs() {
         .expect("Failed to load second program");
     let mut tohost_2 = None;
     for _ in 0..100 {
-        match sim.step_instruction() {
-            Ok(result) => {
-                if let Some(value) = result.tohost_value {
+        match step_instruction_via_cycle(&mut sim) {
+            Ok((tohost, _cycles_executed)) => {
+                if let Some(value) = tohost {
                     tohost_2 = Some(value);
                     break;
                 }
@@ -167,18 +183,16 @@ fn test_interactive_simulator_step_result() {
     sim.load_program(0x8000_0000, &program)
         .expect("Failed to load program");
 
-    // Step once and verify SimulationStepInstructionResult structure
-    let result = sim.step_instruction().expect("First step should succeed");
+    // Step once and verify instruction-complete stepping behavior
+    let (tohost_value, cycles_executed) =
+        step_instruction_via_cycle(&mut sim).expect("First step should succeed");
 
     // Check that tohost is None initially (program hasn't terminated)
-    assert_eq!(
-        result.tohost_value, None,
-        "First instruction should not terminate"
-    );
+    assert_eq!(tohost_value, None, "First instruction should not terminate");
 
     // Check that cycles executed is reasonable (should be non-zero)
     assert!(
-        result.cycles_executed > 0,
+        cycles_executed > 0,
         "Cycles executed should be greater than 0"
     );
 }
