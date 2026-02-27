@@ -33,6 +33,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/io/host_bus_tx.sv \
 	$(RTL_DIR)/io/sys_led_controller.sv \
 	$(RTL_DIR)/cpu/mem_interface.sv \
+	$(RTL_DIR)/cpu/m_unit.sv \
 	$(RTL_DIR)/cpu/mul_unit.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
 	$(RTL_DIR)/cpu/regfile.sv \

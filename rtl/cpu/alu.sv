@@ -46,138 +46,67 @@ module alu #(
     localparam logic [4:0] ALU_MAXU   = 5'b10101;  // Maximum (unsigned)
 
     // ============================================================
-    // M Extension: Division Unit (Conditional Generation)
+    // M Extension: Shared Iterative M Unit (MUL/DIV)
     // ============================================================
-    // Division unit signals
-    logic        div_start;
-    logic        div_is_signed;
-    logic        div_rem_sel;
-    logic [31:0] div_result;
-    logic        div_ready;
     logic        is_div_op;
-    
+    logic        is_mul_op;
+    logic        is_m_op;
+    logic        m_start;
+    logic [2:0]  m_op_type;
+    logic [31:0] m_result;
+    logic        m_ready;
+
+    assign is_div_op = (alu_op == ALU_DIV)  ||
+                       (alu_op == ALU_DIVU) ||
+                       (alu_op == ALU_REM)  ||
+                       (alu_op == ALU_REMU);
+
+    assign is_mul_op = (alu_op == ALU_MUL)    ||
+                       (alu_op == ALU_MULH)   ||
+                       (alu_op == ALU_MULHSU) ||
+                       (alu_op == ALU_MULHU);
+
+    assign is_m_op = is_div_op || is_mul_op;
+    assign m_start = alu_start && is_m_op;
+
+    // m_op_type encoding:
+    // 000=MUL 001=MULH 010=MULHSU 011=MULHU 100=DIV 101=DIVU 110=REM 111=REMU
+    always_comb begin
+        case (alu_op)
+            ALU_MUL:    m_op_type = 3'b000;
+            ALU_MULH:   m_op_type = 3'b001;
+            ALU_MULHSU: m_op_type = 3'b010;
+            ALU_MULHU:  m_op_type = 3'b011;
+            ALU_DIV:    m_op_type = 3'b100;
+            ALU_DIVU:   m_op_type = 3'b101;
+            ALU_REM:    m_op_type = 3'b110;
+            ALU_REMU:   m_op_type = 3'b111;
+            default:    m_op_type = 3'b000;
+        endcase
+    end
+
     generate
         if (ENABLE_M_EXT) begin : gen_m_ext
-            // Instantiate division unit with default 32-bit width for integer operations
-            div_unit #(
+            m_unit #(
                 .WIDTH(32)
-            ) u_div (
+            ) u_m_unit (
                 .clk(clk),
                 .rst_n(rst_n),
-                .start(div_start),
-                .is_signed(div_is_signed),
-                .rem_sel(div_rem_sel),
-                .dividend(a),
-                .divisor(b),
-                .result(div_result),
-                .ready(div_ready)
+                .start(m_start),
+                .op_type(m_op_type),
+                .a(a),
+                .b(b),
+                .result(m_result),
+                .ready(m_ready)
             );
-            
-            // Detect division operations
-            assign is_div_op = (alu_op == ALU_DIV)  || 
-                               (alu_op == ALU_DIVU) || 
-                               (alu_op == ALU_REM)  || 
-                               (alu_op == ALU_REMU);
-            
-            // Start division when requested
-            assign div_start = alu_start && is_div_op;
-            
-            // Configure division unit based on operation
-            always_comb begin
-                case (alu_op)
-                    ALU_DIV: begin
-                        div_is_signed = 1'b1;
-                        div_rem_sel = 1'b0;  // Quotient
-                    end
-                    ALU_DIVU: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b0;  // Quotient
-                    end
-                    ALU_REM: begin
-                        div_is_signed = 1'b1;
-                        div_rem_sel = 1'b1;  // Remainder
-                    end
-                    ALU_REMU: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b1;  // Remainder
-                    end
-                    default: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b0;
-                    end
-                endcase
-            end
         end else begin : gen_no_m_ext
-            // M extension disabled: No division unit
-            assign div_result = 32'd0;
-            assign div_ready = 1'b1;
-            assign is_div_op = 1'b0;
-            assign div_start = 1'b0;
-            assign div_is_signed = 1'b0;
-            assign div_rem_sel = 1'b0;
+            assign m_result = 32'd0;
+            assign m_ready = 1'b1;
         end
     endgenerate
-    
-    // ============================================================
-    // M Extension: Multiplication Unit (Conditional Generation)
-    // ============================================================
-    // Multi-cycle shift-and-add multiplier for MUL, MULH, MULHSU, MULHU
-    // Replaces single-cycle 64x64 multiplier for better FPGA resource usage
-    logic        mul_start;
-    logic [1:0]  mul_op_type;
-    logic [31:0] mul_result;
-    logic        mul_ready;
-    logic        is_mul_op;
-    
-    generate
-        if (ENABLE_M_EXT) begin : gen_multiplier
-            // Instantiate multiplication unit with default 32-bit width for integer operations
-            mul_unit #(
-                .WIDTH(32)
-            ) u_mul (
-                .clk(clk),
-                .rst_n(rst_n),
-                .start(mul_start),
-                .op_type(mul_op_type),
-                .multiplicand(a),
-                .multiplier(b),
-                .result(mul_result),
-                .ready(mul_ready)
-            );
-            
-            // Detect multiplication operations
-            assign is_mul_op = (alu_op == ALU_MUL)    ||
-                               (alu_op == ALU_MULH)   ||
-                               (alu_op == ALU_MULHSU) ||
-                               (alu_op == ALU_MULHU);
-            
-            // Start multiplication when requested
-            assign mul_start = alu_start && is_mul_op;
-            
-            // Map ALU operation to mul_unit op_type
-            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-            always_comb begin
-                case (alu_op)
-                    ALU_MUL:    mul_op_type = 2'b00;
-                    ALU_MULH:   mul_op_type = 2'b01;
-                    ALU_MULHSU: mul_op_type = 2'b10;
-                    ALU_MULHU:  mul_op_type = 2'b11;
-                    default:    mul_op_type = 2'b00;
-                endcase
-            end
-            
-        end else begin : gen_no_multiplier
-            // M extension disabled: No multiplier
-            assign mul_result = 32'd0;
-            assign mul_ready = 1'b1;
-            assign is_mul_op = 1'b0;
-            assign mul_start = 1'b0;
-            assign mul_op_type = 2'b00;
-        end
-    endgenerate
-    
-    // ALU ready signal: waits for multi-cycle operations (div or mul)
-    assign alu_ready = is_div_op ? div_ready : (is_mul_op ? mul_ready : 1'b1);
+
+    // ALU ready signal: waits for shared multi-cycle M operations
+    assign alu_ready = is_m_op ? m_ready : 1'b1;
 
     always_comb begin
         // Default initialization to avoid latches
@@ -196,27 +125,27 @@ module alu #(
             ALU_SLT:  result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
             ALU_SLTU: result = (a < b) ? 32'd1 : 32'd0;
             
-            // M Extension - Multiplication operations (using multi-cycle mul_unit)
+            // M Extension - Multiplication operations (shared m_unit)
             ALU_MUL,
             ALU_MULH,
             ALU_MULHSU,
             ALU_MULHU: begin
                 if (ENABLE_M_EXT) begin
-                    result = mul_result;  // Comes from multiplication unit
+                    result = m_result;
                 end else begin
-                    result = 32'd0;  // M extension disabled
+                    result = 32'd0;
                 end
             end
             
-            // M Extension - Division operations (multi-cycle via division unit)
+            // M Extension - Division operations (shared m_unit)
             ALU_DIV,
             ALU_DIVU,
             ALU_REM,
             ALU_REMU: begin
                 if (ENABLE_M_EXT) begin
-                    result = div_result;  // Comes from division unit
+                    result = m_result;
                 end else begin
-                    result = 32'd0;  // M extension disabled
+                    result = 32'd0;
                 end
             end
             

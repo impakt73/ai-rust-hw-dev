@@ -247,6 +247,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "cpu/fetch_buffer.sv", // RV32C fetch buffer
         "cpu/decompress.sv",  // RV32C decompressor
         "cpu/alu.sv",
+        "cpu/m_unit.sv",
         "cpu/div_unit.sv",
         "cpu/mul_unit.sv",
         "cpu/regfile.sv",
@@ -262,7 +263,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["cpu/alu.sv", "cpu/div_unit.sv", "cpu/mul_unit.sv"])
+    create_runtime(&["cpu/alu.sv", "cpu/m_unit.sv", "cpu/div_unit.sv", "cpu/mul_unit.sv"])
 }
 
 // Helper function to create a runtime for the MulUnit
