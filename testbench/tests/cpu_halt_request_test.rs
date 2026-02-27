@@ -64,4 +64,14 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
         dut.halted, 1,
         "CPU halted output should assert in HALT state"
     );
+    assert_eq!(
+        dut.instr_complete, 0,
+        "instr_complete should not assert while CPU is in HALT state"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.instr_complete, 0,
+        "instr_complete must remain low while CPU stays halted"
+    );
 }
