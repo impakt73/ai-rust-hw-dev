@@ -7,7 +7,6 @@ description = "Device runtime trait and FPGA implementation for RISC-V CPU host 
 [dependencies]
 bus-shared = { path = "../bus-shared" }
 elf = "0.7"
-image = "0.25"
 log = "0.4"
 riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
