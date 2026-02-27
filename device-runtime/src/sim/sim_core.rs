@@ -528,7 +528,6 @@ where
         // Check for termination via SimControl device
         let halt_value = self.bus.sim_control.acknowledge_termination();
 
-        let _ = elapsed_us;
         Ok(SimulationStepCycleResult {
             tohost_value: halt_value,
         })
