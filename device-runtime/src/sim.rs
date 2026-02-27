@@ -13,8 +13,8 @@ use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
     HostRequestRoute, PendingHostRequest, ResetKind, SimDeviceRuntimeArgs,
 };
+use bus_shared::{AccessSize, BusRequest, HandlerError};
 use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{AccessSize, BusRequest, HandlerError};
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -268,7 +268,7 @@ impl DeviceRuntime for SimDeviceRuntime {
             let mut pending = self.pending_host_request.lock().unwrap();
             if pending.is_some() {
                 return Err(DeviceError::HandlerError(
-                    host_bus_handler::HandlerError::RequestPending,
+                    bus_shared::HandlerError::RequestPending,
                 ));
             }
             *pending = Some(PendingHostRequest {
@@ -314,7 +314,7 @@ impl DeviceRuntime for SimDeviceRuntime {
     fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError> {
         if self.has_pending_host_request() {
             return Err(DeviceError::HandlerError(
-                host_bus_handler::HandlerError::RequestPending,
+                bus_shared::HandlerError::RequestPending,
             ));
         }
 

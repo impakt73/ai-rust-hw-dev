@@ -72,8 +72,8 @@ To synthesize the design for iCE40-HX8K FPGA:
 # Install open-source FPGA tools (Ubuntu/Debian)
 sudo apt-get install -y yosys fpga-icestorm nextpnr-ice40
 
-# Navigate to fpga directory
-cd fpga
+# Navigate to rtl/fpga directory
+cd rtl/fpga
 
 # Run synthesis
 make
@@ -82,7 +82,7 @@ make
 sudo make program
 ```
 
-See **[fpga/README.md](fpga/README.md)** for detailed instructions.
+See **[rtl/fpga/README.md](rtl/fpga/README.md)** for detailed instructions.
 
 ## Architecture
 
@@ -97,8 +97,9 @@ This design enables higher clock frequencies and more realistic hardware impleme
 
 ## Project Structure
 
-- **`rtl/`** - SystemVerilog RTL implementation organized into subdirectories (`cpu/`, `fpu/`, `io/`, `memory/`, `peripherals/`, `primitives/`, `wrappers/`)
-- **`fpga/`** - FPGA synthesis files for iCE40-HX8K (Yosys + nextpnr workflow)
+- **`rtl/`** - All SystemVerilog RTL organized into:
+  - **`rtl/common/`** - Shared RTL modules (`cpu/`, `fpu/`, `io/`, `memory/`, `peripherals/`, `primitives/`, `wrappers/`)
+  - **`rtl/fpga/`** - FPGA synthesis files for iCE40-HX8K (Yosys + nextpnr workflow)
 - **`testbench/`** - Rust-based verification tests (testbench package, integration tests)
 - **`cpu-sim/`** - Command-line CPU simulator for running ELF executables with VCD waveform dumping
 - **`riscv_core/`** - Shared Verilator bindings and utilities
@@ -115,7 +116,7 @@ This design enables higher clock frequencies and more realistic hardware impleme
 ## Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
-- **[fpga/README.md](fpga/README.md)** - FPGA synthesis guide for iCE40-HX8K using open-source tools
+- **[rtl/fpga/README.md](rtl/fpga/README.md)** - FPGA synthesis guide for iCE40-HX8K using open-source tools
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
 - **[sim-view/README.md](sim-view/README.md)** - Real-time video and audio viewer for simulated programs
 - **[rust-test-program/README.md](rust-test-program/README.md)** - Information about test programs (automatically built when tests run)

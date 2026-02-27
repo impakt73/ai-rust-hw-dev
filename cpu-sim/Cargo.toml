@@ -7,7 +7,6 @@ edition = "2021"
 bus-shared = { path = "../bus-shared" }
 riscv_core = { path = "../riscv_core" }
 riscv_shared = { path = "../riscv_shared" }
-host-bus-handler = { path = "../host-bus-handler" }
 log = "0.4"
 env_logger = "0.10"
 image = "0.25"

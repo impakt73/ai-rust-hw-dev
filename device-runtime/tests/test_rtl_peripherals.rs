@@ -14,13 +14,13 @@
 
 mod common;
 
+use bus_shared::{AccessSize, HandlerError};
 use common::{
     create_test_runtime, drain_events_until_idle, instructions_to_bytes, load_and_boot,
     read_word_with_timeout, tohost_termination, wait_for_cpu_halt, wait_for_host_write_response,
     write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use device_runtime::{BusRequest, DeviceError};
-use host_bus_handler::{AccessSize, HandlerError};
 use riscv_core::instruction::{
     addi, andi, beq, blt, bne, ebreak, jal, lui, lw, ori, sb, sh, sub, sw,
 };

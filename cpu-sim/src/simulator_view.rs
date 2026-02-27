@@ -1,4 +1,4 @@
-use host_bus_handler::{
+use bus_shared::{
     classify_request_region, request_end_addr, BusRequest, BusResponse, HandlerError,
     HostBusHandler, RequestAddressRegion,
 };
@@ -462,13 +462,11 @@ impl<'a> SimulatorView<'a> {
                         let wdata = u32::from_le_bytes(beat_buf);
 
                         match request.size {
-                            host_bus_handler::AccessSize::Byte => {
-                                self.bus.write_byte(addr, wdata as u8)
-                            }
-                            host_bus_handler::AccessSize::Halfword => {
+                            bus_shared::AccessSize::Byte => self.bus.write_byte(addr, wdata as u8),
+                            bus_shared::AccessSize::Halfword => {
                                 self.bus.write_halfword(addr, wdata as u16)
                             }
-                            host_bus_handler::AccessSize::Word => self.bus.write_word(addr, wdata),
+                            bus_shared::AccessSize::Word => self.bus.write_word(addr, wdata),
                         }
                     }
                     let mut response = BusResponse::write_ack(request.size);
@@ -491,11 +489,9 @@ impl<'a> SimulatorView<'a> {
                                 .expect("request range pre-validated")
                         };
                         let rdata = match request.size {
-                            host_bus_handler::AccessSize::Byte => self.bus.read_byte(addr) as u32,
-                            host_bus_handler::AccessSize::Halfword => {
-                                self.bus.read_halfword(addr) as u32
-                            }
-                            host_bus_handler::AccessSize::Word => self.bus.read_word(addr),
+                            bus_shared::AccessSize::Byte => self.bus.read_byte(addr) as u32,
+                            bus_shared::AccessSize::Halfword => self.bus.read_halfword(addr) as u32,
+                            bus_shared::AccessSize::Word => self.bus.read_word(addr),
                         };
                         burst_data.extend_from_slice(&rdata.to_le_bytes()[..beat_bytes]);
                     }

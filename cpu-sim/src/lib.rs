@@ -6,13 +6,13 @@ mod sim;
 mod simulator_view;
 
 // Public API exports - only what's needed for external use
+pub use bus_shared::{AccessSize, BusRequest, BusResponse};
 pub use bus_shared::{
     Audio, AudioChannels, AudioConfig, AudioSampleRate, BusDevice, BusDeviceError, Dma, Fifo,
     FifoDataReceivedCallback, FifoDataSource, RegistrationError, SharedFifoDataSource, SystemBus,
     SystemContext, Video, VideoConfig, VideoFormat,
 };
 pub use constants::GLOBAL_MAX_CYCLES;
-pub use host_bus_handler::{AccessSize, BusRequest, BusResponse};
 pub use interactive::InteractiveSimulator;
 pub use riscv_core::trace::InstructionTrace;
 pub use sim::{BootError, SimulationResult, SimulationStepCycleResult};
