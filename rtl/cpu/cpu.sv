@@ -962,13 +962,6 @@ module cpu #(
             end
         endcase
         
-        // Special case: assert instr_complete_internal when entering HALT from another state
-        // This must be done AFTER the case statement to avoid being overridden
-        // Special case: HALT state stays complete once entered
-        // This ensures delayed instr_complete signal stays high for the Rust code to see
-        if (current_state == S_HALT) begin
-            instr_complete_internal = 1'b1;
-        end
     end
     
     // ============================================================
