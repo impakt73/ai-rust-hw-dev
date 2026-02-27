@@ -134,6 +134,9 @@ module div_unit #(
         // Compute shifted value and next-state update for non-restoring division
         P_shifted = P << 1;
         D_adjusted = P[2*WIDTH-1] ? D : ~D;
+        // Non-restoring update:
+        // - P < 0: P_next = P_shifted + D       (carry-in = 0)
+        // - P >= 0: P_next = P_shifted - D = P_shifted + ~D + 1 (carry-in = 1)
         P_sum = {1'b0, P_shifted} + {1'b0, D_adjusted} +
                 {{(2*WIDTH){1'b0}}, (P[2*WIDTH-1] ? 1'b0 : 1'b1)};
         P_next = P_sum[2*WIDTH-1:0];
