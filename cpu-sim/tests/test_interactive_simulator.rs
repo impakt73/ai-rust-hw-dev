@@ -13,9 +13,10 @@ fn step_instruction_via_cycle(
 
     loop {
         let result = sim.step_cycle()?;
+        let result_tohost = result.tohost_value;
         cycles_executed += 1;
-        tohost_value = tohost_value.or(result.tohost_value);
-        if result.instruction_completed || tohost_value.is_some() {
+        tohost_value = tohost_value.or(result_tohost);
+        if result.instruction_completed || result_tohost.is_some() {
             return Ok((tohost_value, cycles_executed));
         }
     }
