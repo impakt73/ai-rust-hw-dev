@@ -10,7 +10,6 @@ use device_runtime::{
 };
 use riscv_shared::bus::FIFO_BASE;
 use rustyline::history::{DefaultHistory, History, SearchDirection};
-use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -387,14 +386,11 @@ impl App {
     }
 
     fn history_entry(&self, index: usize) -> Option<String> {
-        let entry = self
-            .command_history
-            .get(index, SearchDirection::Forward)
-            .ok()??;
-        Some(match entry.entry {
-            Cow::Borrowed(s) => s.to_string(),
-            Cow::Owned(s) => s,
-        })
+        let entry = match self.command_history.get(index, SearchDirection::Forward) {
+            Ok(Some(entry)) => entry,
+            _ => return None,
+        };
+        Some(entry.entry.into_owned())
     }
 
     fn history_file_path() -> Option<PathBuf> {
