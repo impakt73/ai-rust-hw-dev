@@ -9,7 +9,10 @@ use device_runtime::{
     access_size_name, bytes_for_size, size_name, BusDeviceRegistration, BusEvent, DeviceRuntime,
 };
 use riscv_shared::bus::FIFO_BASE;
+use rustyline::history::{DefaultHistory, History, SearchDirection};
+use std::borrow::Cow;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -24,6 +27,8 @@ const MAX_LOG_LINES: usize = 1000;
 
 /// Maximum number of command history entries to retain
 const MAX_HISTORY_ENTRIES: usize = 500;
+/// History file location under user's home directory
+const HISTORY_FILENAME: &str = ".fpga-host-history";
 
 /// A log line entry for display
 #[derive(Debug, Clone)]
@@ -41,8 +46,7 @@ pub struct App {
     /// Command input buffer
     pub input_buffer: String,
     /// Command history for up/down navigation
-    /// VecDeque for efficient pop_front when capping at MAX_HISTORY_ENTRIES
-    pub command_history: VecDeque<String>,
+    pub command_history: DefaultHistory,
     /// Current position in command history (None = not navigating)
     pub history_index: Option<usize>,
     /// Log message buffer for display (ring buffer)
@@ -64,10 +68,16 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub fn new() -> Self {
+        let mut command_history = DefaultHistory::new();
+        let _ = command_history.set_max_len(MAX_HISTORY_ENTRIES);
+        if let Some(path) = Self::history_file_path() {
+            let _ = command_history.load(&path);
+        }
+
         Self {
             device_runtime: None,
             input_buffer: String::new(),
-            command_history: VecDeque::with_capacity(MAX_HISTORY_ENTRIES),
+            command_history,
             history_index: None,
             log_messages: VecDeque::with_capacity(MAX_LOG_LINES),
             should_quit: false,
@@ -137,11 +147,10 @@ impl App {
             return;
         }
 
-        // Add to history (with cap)
-        if self.command_history.len() >= MAX_HISTORY_ENTRIES {
-            self.command_history.pop_front();
+        // Add to history
+        if self.command_history.add(&input).is_ok() {
+            self.save_history();
         }
-        self.command_history.push_back(input.clone());
         self.history_index = None;
         self.input_buffer.clear();
 
@@ -333,7 +342,9 @@ impl App {
 
         if let Some(idx) = new_index {
             self.history_index = Some(idx);
-            self.input_buffer = self.command_history[idx].clone();
+            if let Some(entry) = self.history_entry(idx) {
+                self.input_buffer = entry;
+            }
         }
     }
 
@@ -346,7 +357,9 @@ impl App {
         match self.history_index {
             Some(idx) if idx < self.command_history.len() - 1 => {
                 self.history_index = Some(idx + 1);
-                self.input_buffer = self.command_history[idx + 1].clone();
+                if let Some(entry) = self.history_entry(idx + 1) {
+                    self.input_buffer = entry;
+                }
             }
             Some(_) => {
                 // At the end of history, clear input
@@ -371,6 +384,32 @@ impl App {
     /// Scroll log view down
     fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    fn history_entry(&self, index: usize) -> Option<String> {
+        let entry = self
+            .command_history
+            .get(index, SearchDirection::Forward)
+            .ok()??;
+        Some(match entry.entry {
+            Cow::Borrowed(s) => s.to_string(),
+            Cow::Owned(s) => s,
+        })
+    }
+
+    fn history_file_path() -> Option<PathBuf> {
+        if cfg!(test) {
+            return None;
+        }
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|path| path.join(HISTORY_FILENAME))
+    }
+
+    fn save_history(&mut self) {
+        if let Some(path) = Self::history_file_path() {
+            let _ = self.command_history.save(&path);
+        }
     }
 }
 
@@ -414,4 +453,30 @@ pub fn create_fifo_device() -> (BusDeviceRegistration, mpsc::Receiver<String>) {
         device: Box::new(fifo),
     };
     (registration, rx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::App;
+
+    #[test]
+    fn test_command_history_navigation() {
+        let mut app = App::new();
+        app.input_buffer = "status".to_string();
+        app.submit_command();
+        app.input_buffer = "boot 0x80000000".to_string();
+        app.submit_command();
+
+        app.history_prev();
+        assert_eq!(app.input_buffer, "boot 0x80000000");
+
+        app.history_prev();
+        assert_eq!(app.input_buffer, "status");
+
+        app.history_next();
+        assert_eq!(app.input_buffer, "boot 0x80000000");
+
+        app.history_next();
+        assert!(app.input_buffer.is_empty());
+    }
 }
