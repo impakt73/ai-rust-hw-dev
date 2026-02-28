@@ -1,17 +1,14 @@
 //! Application state management
 //!
-//! This module contains the main application state and event handling logic.
+//! This module contains the main application state and command execution logic.
 
 use bus_shared::AccessSize;
 use bus_shared::{Fifo, FifoDataSource, SharedFifoDataSource};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use device_runtime::{
     access_size_name, bytes_for_size, size_name, BusDeviceRegistration, BusEvent, DeviceRuntime,
 };
 use riscv_shared::bus::FIFO_BASE;
-use rustyline::history::{DefaultHistory, History, SearchDirection};
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -23,11 +20,6 @@ const MAX_FIFO_LINES_PER_TICK: usize = 64;
 const FIFO_CHANNEL_CAPACITY: usize = 256;
 
 const MAX_LOG_LINES: usize = 1000;
-
-/// Maximum number of command history entries to retain
-const MAX_HISTORY_ENTRIES: usize = 500;
-/// History file location under user's home directory
-const HISTORY_FILENAME: &str = ".fpga-host-history";
 
 /// A log line entry for display
 #[derive(Debug, Clone)]
@@ -42,20 +34,12 @@ pub struct LogLine {
 pub struct App {
     /// Device runtime connection state
     pub device_runtime: Option<Box<dyn DeviceRuntime>>,
-    /// Command input buffer
-    pub input_buffer: String,
-    /// Command history for up/down navigation
-    pub command_history: DefaultHistory,
-    /// Current position in command history (None = not navigating)
-    pub history_index: Option<usize>,
     /// Log message buffer for display (ring buffer)
     pub log_messages: VecDeque<LogLine>,
     /// Whether the application should exit
     pub should_quit: bool,
     /// Bus request statistics
     pub request_count: u64,
-    /// Scroll offset for log view (0 = auto-scroll to bottom)
-    pub scroll_offset: usize,
     /// Verbose logging mode
     pub verbose: bool,
     /// Last loaded ELF entry point (for boot command)
@@ -67,21 +51,11 @@ pub struct App {
 impl App {
     /// Create a new application instance
     pub fn new() -> Self {
-        let mut command_history = DefaultHistory::new();
-        let _ = command_history.set_max_len(MAX_HISTORY_ENTRIES);
-        if let Some(path) = Self::history_file_path() {
-            let _ = command_history.load(&path);
-        }
-
         Self {
             device_runtime: None,
-            input_buffer: String::new(),
-            command_history,
-            history_index: None,
             log_messages: VecDeque::with_capacity(MAX_LOG_LINES),
             should_quit: false,
             request_count: 0,
-            scroll_offset: 0,
             verbose: false,
             last_entry_point: None,
             fifo_line_rx: None,
@@ -98,63 +72,14 @@ impl App {
         self.device_runtime.is_some()
     }
 
-    /// Handle a keyboard event
-    pub fn handle_key_event(&mut self, key: KeyEvent) {
-        match key.code {
-            // Ctrl+C triggers exit
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.should_quit = true;
-            }
-            // Enter submits command
-            KeyCode::Enter => {
-                self.submit_command();
-            }
-            // Backspace deletes character
-            KeyCode::Backspace => {
-                self.input_buffer.pop();
-            }
-            // Up/Down for command history
-            KeyCode::Up => {
-                self.history_prev();
-            }
-            KeyCode::Down => {
-                self.history_next();
-            }
-            // Page Up/Down for log scrolling
-            KeyCode::PageUp => {
-                self.scroll_up(10);
-            }
-            KeyCode::PageDown => {
-                self.scroll_down(10);
-            }
-            // Escape to reset scroll to bottom
-            KeyCode::Esc => {
-                self.scroll_offset = 0;
-            }
-            // Regular character input
-            KeyCode::Char(c) => {
-                self.input_buffer.push(c);
-            }
-            _ => {}
-        }
-    }
-
-    /// Submit the current command in the input buffer
-    fn submit_command(&mut self) {
-        let input = self.input_buffer.trim().to_string();
+    /// Parse and execute a shell command line.
+    pub fn execute_command_line(&mut self, input: &str) {
         if input.is_empty() {
             return;
         }
 
-        // Add to history
-        if self.command_history.add(&input).is_ok() {
-            self.save_history();
-        }
-        self.history_index = None;
-        self.input_buffer.clear();
-
         // Parse and execute command
-        match crate::shell::ShellCommand::parse(&input) {
+        match crate::shell::ShellCommand::parse(input) {
             Ok(crate::shell::ParseResult::Command(cmd)) => {
                 let result = cmd.execute(self);
                 if let Some(msg) = result.message {
@@ -191,6 +116,75 @@ impl App {
             self.log_messages.pop_front();
         }
         self.log_messages.push_back(LogLine { level, message });
+    }
+
+    /// Take all queued log messages, leaving the internal buffer empty.
+    pub fn take_logs(&mut self) -> Vec<LogLine> {
+        self.log_messages.drain(..).collect()
+    }
+
+    /// Poll the active runtime once and queue any resulting logs.
+    pub fn poll_runtime(&mut self) {
+        let mut should_disconnect = false;
+
+        if let Some(ref mut runtime) = self.device_runtime {
+            match runtime.poll() {
+                Ok(Some(event)) => match &event {
+                    BusEvent::Read { .. } | BusEvent::Write { .. } => {
+                        // CPU-initiated transaction
+                        self.log_bus_event(&event);
+                        self.request_count += 1;
+                    }
+                    BusEvent::HostReadResponse {
+                        addr, data, size, ..
+                    } => {
+                        // Host-initiated read response
+                        self.log_host_read_response(*addr, *data, *size);
+                    }
+                    BusEvent::HostWriteResponse { addr, wdata, size } => {
+                        // Host-initiated write response - log with request details
+                        self.log_host_write_response(*addr, *wdata, *size);
+                    }
+                    BusEvent::HostRequestTimeout { addr } => {
+                        self.add_log(
+                            log::Level::Warn,
+                            format!(
+                                "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
+                                addr
+                            ),
+                        );
+                    }
+                    BusEvent::TohostTermination { value } => {
+                        self.add_log(
+                            log::Level::Info,
+                            format!("Tohost termination detected (value: 0x{:08x})", value),
+                        );
+                    }
+                },
+                Ok(None) => {}
+                Err(e) => {
+                    // Check if this is a fatal error (e.g., device disconnected)
+                    if e.is_fatal() {
+                        self.add_log(log::Level::Error, format!("Device connection lost: {}", e));
+                        should_disconnect = true;
+                    } else {
+                        self.add_log(log::Level::Error, format!("Device runtime error: {}", e));
+                    }
+                }
+            }
+        }
+
+        if should_disconnect {
+            if let Some(runtime) = self.device_runtime.take() {
+                let device = runtime.to_string();
+                drop(runtime);
+                self.fifo_line_rx = None;
+                self.add_log(
+                    log::Level::Warn,
+                    format!("Disconnected from {} due to device error", device),
+                );
+            }
+        }
     }
 
     /// Log a bus event
@@ -320,93 +314,6 @@ impl App {
             self.fifo_line_rx = None;
         }
     }
-
-    /// Navigate to previous command in history
-    fn history_prev(&mut self) {
-        if self.command_history.is_empty() {
-            return;
-        }
-
-        let new_index = match self.history_index {
-            None => {
-                // Start from the end
-                Some(self.command_history.len() - 1)
-            }
-            Some(idx) if idx > 0 => Some(idx - 1),
-            Some(_) => {
-                // Already at the beginning
-                return;
-            }
-        };
-
-        if let Some(idx) = new_index {
-            self.history_index = Some(idx);
-            if let Some(entry) = self.history_entry(idx) {
-                self.input_buffer = entry;
-            }
-        }
-    }
-
-    /// Navigate to next command in history
-    fn history_next(&mut self) {
-        if self.command_history.is_empty() {
-            return;
-        }
-
-        match self.history_index {
-            Some(idx) if idx < self.command_history.len() - 1 => {
-                self.history_index = Some(idx + 1);
-                if let Some(entry) = self.history_entry(idx + 1) {
-                    self.input_buffer = entry;
-                }
-            }
-            Some(_) => {
-                // At the end of history, clear input
-                self.history_index = None;
-                self.input_buffer.clear();
-            }
-            None => {
-                // Not in history mode
-            }
-        }
-    }
-
-    /// Scroll log view up
-    fn scroll_up(&mut self, lines: usize) {
-        if self.log_messages.is_empty() {
-            return;
-        }
-        let max_offset = self.log_messages.len() - 1;
-        self.scroll_offset = (self.scroll_offset + lines).min(max_offset);
-    }
-
-    /// Scroll log view down
-    fn scroll_down(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
-    }
-
-    fn history_entry(&self, index: usize) -> Option<String> {
-        let entry = match self.command_history.get(index, SearchDirection::Forward) {
-            Ok(Some(entry)) => entry,
-            _ => return None,
-        };
-        Some(entry.entry.into_owned())
-    }
-
-    fn history_file_path() -> Option<PathBuf> {
-        if cfg!(test) {
-            return None;
-        }
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .map(|path| path.join(HISTORY_FILENAME))
-    }
-
-    fn save_history(&mut self) {
-        if let Some(path) = Self::history_file_path() {
-            let _ = self.command_history.save(&path);
-        }
-    }
 }
 
 impl Default for App {
@@ -456,23 +363,13 @@ mod tests {
     use super::App;
 
     #[test]
-    fn test_command_history_navigation() {
+    fn test_execute_command_line_status() {
         let mut app = App::new();
-        app.input_buffer = "status".to_string();
-        app.submit_command();
-        app.input_buffer = "boot 0x80000000".to_string();
-        app.submit_command();
-
-        app.history_prev();
-        assert_eq!(app.input_buffer, "boot 0x80000000");
-
-        app.history_prev();
-        assert_eq!(app.input_buffer, "status");
-
-        app.history_next();
-        assert_eq!(app.input_buffer, "boot 0x80000000");
-
-        app.history_next();
-        assert!(app.input_buffer.is_empty());
+        app.execute_command_line("status");
+        let logs = app.take_logs();
+        assert!(!logs.is_empty());
+        assert!(logs.iter().any(|line| line
+            .message
+            .contains("Not connected. Use 'connect fpga <device> [baud]' to connect.")));
     }
 }

@@ -15,7 +15,7 @@ device-runtime = { path = "../device-runtime" }
 log = "0.4"
 riscv_shared = { path = "../riscv_shared" }
 shell-words = "1.1"
-rustyline = "14.0"
+rustyline = "17.0"
 
 # TUI dependencies
 ratatui = "0.29"

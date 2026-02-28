@@ -1,22 +1,19 @@
 //! FPGA Host Interface
 //!
 //! This binary provides a host interface for communicating with a RISC-V CPU
-//! via a device runtime. It features an interactive TUI with a scrolling log
-//! view, command shell, and dynamic device connection management.
+//! via a device runtime. It features an interactive command shell powered by
+//! rustyline with history and dynamic device connection management.
 
 mod app;
 mod shell;
-mod ui;
 
 use app::{create_fifo_device, App};
 use clap::{Parser, Subcommand};
-use crossterm::event::{self, Event};
-use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType, SimDeviceRuntimeArgs};
-use ratatui::DefaultTerminal;
+use device_runtime::{create_device_runtime, DeviceRuntimeType, SimDeviceRuntimeArgs};
+use rustyline::{error::ReadlineError, DefaultEditor};
 use std::io;
-use std::panic;
+use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::time::Duration;
 
 #[derive(Parser)]
 #[command(author, version, about = "FPGA Host Interface for RISC-V CPU")]
@@ -37,6 +34,7 @@ struct Args {
 
 const SIM_TRACE_CALLBACK: device_runtime::SimInstructionTraceCallback =
     |trace| log::info!("SIM TRACE: {}", trace);
+const HISTORY_FILE_NAME: &str = ".fpga-host-history";
 
 #[derive(Subcommand)]
 enum RuntimeArgs {
@@ -67,30 +65,15 @@ enum RuntimeArgs {
 fn main() -> io::Result<()> {
     // Parse CLI arguments
     let args = Args::parse();
-
-    // Set up panic hook to restore terminal on panic
-    let original_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        // Attempt to restore terminal before displaying panic
-        ratatui::restore();
-        original_hook(panic_info);
-    }));
-
-    // Initialize terminal (switches to alternate screen)
-    let terminal = ratatui::init();
-
-    // Run the application
-    let result = run_app(terminal, args);
-
-    // Restore terminal to normal state
-    ratatui::restore();
-
-    result
+    run_app(args)
 }
 
 /// Main application loop
-fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
+fn run_app(args: Args) -> io::Result<()> {
     let mut app = App::new();
+    let mut editor = DefaultEditor::new()
+        .map_err(|e| io::Error::other(format!("Failed to initialize rustyline editor: {e}")))?;
+    let history_path = history_file_path();
 
     // Apply verbose mode from CLI args
     app.set_verbose(args.verbose);
@@ -167,86 +150,63 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
         }
     }
 
+    if let Some(path) = history_path.as_ref() {
+        match editor.load_history(path) {
+            Ok(()) => {}
+            Err(ReadlineError::Io(io_error)) if io_error.kind() == ErrorKind::NotFound => {}
+            Err(e) => app.add_log(
+                log::Level::Warn,
+                format!("Failed to load history file {}: {}", path.display(), e),
+            ),
+        }
+    }
+
+    print_logs(&mut app);
+
     // Main event loop
     loop {
-        // Draw UI
-        terminal.draw(|frame| ui::render(frame, &app))?;
+        poll_and_print(&mut app);
 
-        // Handle input events (with timeout for device polling)
-        if event::poll(Duration::from_millis(10))? {
-            if let Event::Key(key) = event::read()? {
-                app.handle_key_event(key);
-            }
-        }
+        let prompt = if app.is_connected() {
+            "[CONNECTED] > "
+        } else {
+            "[DISCONNECTED] > "
+        };
 
-        // Poll device runtime if connected
-        let mut should_disconnect = false;
-
-        if let Some(ref mut runtime) = app.device_runtime {
-            match runtime.poll() {
-                Ok(Some(event)) => {
-                    match &event {
-                        BusEvent::Read { .. } | BusEvent::Write { .. } => {
-                            // CPU-initiated transaction
-                            app.log_bus_event(&event);
-                            app.request_count += 1;
-                        }
-                        BusEvent::HostReadResponse {
-                            addr, data, size, ..
-                        } => {
-                            // Host-initiated read response
-                            app.log_host_read_response(*addr, *data, *size);
-                        }
-                        BusEvent::HostWriteResponse { addr, wdata, size } => {
-                            // Host-initiated write response - log with request details
-                            app.log_host_write_response(*addr, *wdata, *size);
-                        }
-                        BusEvent::HostRequestTimeout { addr } => {
-                            // Host request timed out - emit warning in TUI
-                            app.add_log(
-                                log::Level::Warn,
-                                format!(
-                                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
-                                    addr
-                                )
-                            );
-                        }
-                        BusEvent::TohostTermination { value } => {
-                            app.add_log(
-                                log::Level::Info,
-                                format!("Tohost termination detected (value: 0x{:08x})", value),
-                            );
-                        }
+        match editor.readline(prompt) {
+            Ok(line) => {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                editor
+                    .add_history_entry(line)
+                    .map_err(|e| io::Error::other(format!("Failed to add history entry: {e}")))?;
+                if let Some(path) = history_path.as_ref() {
+                    if let Err(e) = editor.save_history(path) {
+                        app.add_log(
+                            log::Level::Warn,
+                            format!("Failed to save history file {}: {}", path.display(), e),
+                        );
                     }
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    // Check if this is a fatal error (e.g., device disconnected)
-                    if e.is_fatal() {
-                        app.add_log(log::Level::Error, format!("Device connection lost: {}", e));
-                        should_disconnect = true;
-                    } else {
-                        app.add_log(log::Level::Error, format!("Device runtime error: {}", e));
-                    }
-                }
+                app.execute_command_line(line);
             }
-        }
-
-        // Handle fatal device errors by disconnecting (outside the borrow)
-        if should_disconnect {
-            if let Some(runtime) = app.device_runtime.take() {
-                let device = runtime.to_string();
-                drop(runtime);
-                app.fifo_line_rx = None;
+            Err(ReadlineError::Interrupted) => {
                 app.add_log(
-                    log::Level::Warn,
-                    format!("Disconnected from {} due to device error", device),
+                    log::Level::Info,
+                    "Interrupted (Ctrl+C). Use 'exit' to quit.".to_string(),
                 );
             }
+            Err(ReadlineError::Eof) => {
+                app.add_log(log::Level::Info, "Received EOF. Exiting...".to_string());
+                app.should_quit = true;
+            }
+            Err(e) => {
+                return Err(io::Error::other(format!("Unexpected readline error: {e}")));
+            }
         }
-
-        // Drain any lines printed by the CPU program via the FIFO
-        app.poll_fifo();
+        poll_and_print(&mut app);
 
         // Check exit condition
         if app.should_quit {
@@ -255,4 +215,22 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn history_file_path() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|path| path.join(HISTORY_FILE_NAME))
+}
+
+fn print_logs(app: &mut App) {
+    for line in app.take_logs() {
+        println!("[{:5}] {}", line.level, line.message);
+    }
+}
+
+fn poll_and_print(app: &mut App) {
+    app.poll_runtime();
+    app.poll_fifo();
+    print_logs(app);
 }
