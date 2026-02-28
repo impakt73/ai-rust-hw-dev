@@ -446,7 +446,7 @@ Combine `{addr, wdata, we, size}` into a 67-bit data bundle for the skid buffer.
 ## 9. Expected Outcomes
 
 ### After Phase 1 (Skid Buffers)
-- **Fmax:** 37-40 MHz (from 34.91 MHz, ~6-15% improvement)
+- **Fmax:** 37-40 MHz (from 34.91 MHz, ~6-14% improvement)
 - **Logic utilization:** ~63-65% (small increase from skid buffer logic)
 - **Functional behavior:** Identical (skid buffers are transparent when not stalling)
 
