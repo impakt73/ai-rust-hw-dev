@@ -47,7 +47,10 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
     dut.req_halt = 0;
     dut.mem_d_valid = 0;
     dut.eval();
-    assert_eq!(dut.mem_a_valid, 1, "FETCH should request instruction memory");
+    assert_eq!(
+        dut.mem_a_valid, 1,
+        "FETCH should request instruction memory"
+    );
 
     dut.req_halt = 1;
     dut.eval();

@@ -294,7 +294,7 @@ module cpu #(
         if (!rst_n)
             mem_req_inflight <= 1'b0;
         else if (mem_d_valid && mem_d_ready)
-            mem_req_inflight <= 1'b0;
+            mem_req_inflight <= mem_a_valid && mem_a_ready;
         else if (mem_a_valid && mem_a_ready)
             mem_req_inflight <= 1'b1;
     end

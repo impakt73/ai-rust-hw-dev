@@ -66,18 +66,16 @@ module bus_bridge (
             pending_resp_rdata <= 32'h0;
             pending_resp_valid <= 1'b0;
         end else begin
-            if (a_handshake) begin
+            if (pending_req_valid && mem_ready) begin
+                pending_req_valid  <= 1'b0;
+                pending_resp_rdata <= mem_rdata;
+                pending_resp_valid <= 1'b1;
+            end else if (a_handshake) begin
                 pending_req_addr  <= mem_a_addr;
                 pending_req_wdata <= mem_a_wdata;
                 pending_req_we    <= mem_a_we;
                 pending_req_size  <= mem_a_size;
                 pending_req_valid <= 1'b1;
-            end
-            
-            if (pending_req_valid && mem_ready) begin
-                pending_req_valid  <= 1'b0;
-                pending_resp_rdata <= mem_rdata;
-                pending_resp_valid <= 1'b1;
             end
             
             if (d_handshake) begin
