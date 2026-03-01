@@ -248,6 +248,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
+        "io/bus_bridge.sv",  // CPU A/D channel to legacy bus adapter
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller

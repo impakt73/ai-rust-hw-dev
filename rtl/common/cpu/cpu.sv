@@ -22,18 +22,18 @@ module cpu #(
     input  logic        req_halt,
     input  logic [31:0] boot_addr,
     
-    // Unified memory interface (used for both instruction fetch and data access)
-    // In multi-cycle operation, instruction fetch (S_FETCH) and data access
-    // (S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW) never occur simultaneously, so no
-    // arbiter is required. For future pipelining, an arbiter would multiplex
-    // these internal signals to the external memory interface.
-    output logic [31:0] mem_addr,      // Memory address
-    output logic [31:0] mem_wdata,     // Write data
-    input  logic [31:0] mem_rdata,     // Read data
-    output logic        mem_we,        // Write enable
-    output logic [1:0]  mem_size,      // Operation size: 00=byte, 01=halfword, 10=word
-    output logic        mem_req,       // Memory request
-    input  logic        mem_ready,     // Memory operation complete
+    // Memory address channel (A)
+    output logic [31:0] mem_a_addr,    // Memory address
+    output logic [31:0] mem_a_wdata,   // Write data
+    output logic        mem_a_we,      // Write enable
+    output logic [1:0]  mem_a_size,    // Operation size: 00=byte, 01=halfword, 10=word
+    output logic        mem_a_valid,   // Address channel valid
+    input  logic        mem_a_ready,   // Address channel ready
+    
+    // Memory data channel (D)
+    input  logic [31:0] mem_d_rdata,   // Read data / write response payload
+    input  logic        mem_d_valid,   // Data channel valid
+    output logic        mem_d_ready,   // Data channel ready
     
     // System control signals
     output logic        halted,       // CPU halted (ECALL/EBREAK)
@@ -64,13 +64,13 @@ module cpu #(
     // ============================================================
     typedef enum logic [3:0] {
         S_BOOT       = 4'b0000,  // After reset, wait for boot signal
-        S_FETCH      = 4'b0001,  // Fetch instruction (wait for mem_ready)
+        S_FETCH      = 4'b0001,  // Fetch instruction (wait for D-channel response)
         S_DECODE     = 4'b0010,  // Decode instruction, start register file read
         S_REG_READ   = 4'b1100,  // Wait for BRAM register file read (1-cycle latency)
         S_EXECUTE    = 4'b0011,  // ALU operation
         S_MEM_ADDR   = 4'b0100,  // Calculate memory address
-        S_MEM_READ   = 4'b0101,  // Load from memory (wait for mem_ready)
-        S_MEM_WRITE  = 4'b0110,  // Store to memory (wait for mem_ready)
+        S_MEM_READ   = 4'b0101,  // Load from memory (wait for D-channel response)
+        S_MEM_WRITE  = 4'b0110,  // Store to memory (wait for D-channel response)
         S_WRITEBACK  = 4'b0111,  // Write result to register
         S_BRANCH     = 4'b1000,  // Branch decision
         S_CSR        = 4'b1001,  // CSR operation
@@ -275,19 +275,29 @@ module cpu #(
     logic        dmem_we_internal;     // Data memory write enable
     logic [1:0]  dmem_size_internal;   // Data memory operation size
     logic        dmem_req_internal;    // Data memory request
+    logic        mem_req_inflight;     // Address request accepted, waiting for data response
     
-    // Memory ready signal routing (unified interface drives both)
-    // Since the FSM ensures only one type of request is active at a time,
-    // mem_ready can be used directly for both instruction and data operations.
-    // In S_FETCH: mem_ready indicates instruction is ready
-    // In S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW: mem_ready indicates data operation complete
-    logic        imem_ready_internal;  // Instruction memory ready (routed from mem_ready)
-    logic        dmem_ready_internal;  // Data memory ready (routed from mem_ready)
+    // Memory ready signal routing
+    // In S_FETCH: imem_ready_internal indicates instruction response handshake
+    // In S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW: dmem_ready_internal indicates
+    // data response handshake.
+    logic        imem_ready_internal;  // Instruction memory response handshake
+    logic        dmem_ready_internal;  // Data memory response handshake
     
-    // Route mem_ready directly to internal ready signals
-    // The FSM guarantees mutual exclusion between instruction and data requests
-    assign imem_ready_internal = mem_ready;
-    assign dmem_ready_internal = mem_ready;
+    // Response completes on D-channel valid/ready handshake
+    assign imem_ready_internal = mem_d_valid && mem_d_ready;
+    assign dmem_ready_internal = mem_d_valid && mem_d_ready;
+    
+    // Track whether an address-channel request has been accepted and is awaiting
+    // a data-channel response.
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            mem_req_inflight <= 1'b0;
+        else if (mem_d_valid && mem_d_ready)
+            mem_req_inflight <= 1'b0;
+        else if (mem_a_valid && mem_a_ready)
+            mem_req_inflight <= 1'b1;
+    end
     
     // A extension: SC success/failure logic
     logic        sc_success;
@@ -579,12 +589,12 @@ module cpu #(
     // ============================================================
     
     // Instantiate fetch buffer module
-    // Note: Uses mem_rdata and imem_ready_internal for instruction fetch
+    // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
     fetch_buffer u_fetch_buffer (
         .clk(clk),
         .rst_n(rst_n),
-        .imem_data(mem_rdata),           // Unified memory read data
-        .imem_ready(imem_ready_internal), // Routed from unified mem_ready
+        .imem_data(mem_d_rdata),         // Memory read data from D channel
+        .imem_ready(imem_ready_internal), // Routed from D-channel handshake
         .pc(pc),
         .ir_write(ir_write),
         .pc_write(pc_write),
@@ -1117,7 +1127,7 @@ module cpu #(
         .alu_result(alu_out_reg),  // Use registered ALU output for address
         .rs2_data(b_reg),           // Use registered rs2 data
         .fs2_data(fs2_data),        // F extension: FP store data
-        .dmem_rdata(mem_rdata),     // Unified memory read data
+        .dmem_rdata(mem_d_rdata),   // Memory read data from D channel
         .amo_wdata(amo_write_data),     // A extension: muxed AMO write data
         .dmem_addr(dmem_addr_internal),
         .dmem_wdata(dmem_wdata_internal),
@@ -1258,42 +1268,41 @@ module cpu #(
     end
     
     // ============================================================
-    // Unified Memory Interface Multiplexing
+    // Memory Address Channel Multiplexing
     // ============================================================
     // In multi-cycle operation, instruction fetch (S_FETCH) and data access
     // (S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW) never occur simultaneously.
     // This multiplexer routes either instruction or data signals to the
-    // unified memory interface based on FSM state.
-    //
-    // For future pipelining: An arbiter would be inserted here to handle
-    // simultaneous instruction and data requests. The internal signals
-    // (imem_*_internal, dmem_*_internal) would become arbiter inputs.
+    // address channel based on FSM state.
     
     always_comb begin
         // Default: instruction fetch (S_FETCH state)
         if (imem_req_internal) begin
             // Instruction fetch: read from PC, no write
-            mem_addr  = imem_addr_internal;
-            mem_wdata = 32'h0;
-            mem_we    = 1'b0;
-            mem_size  = 2'b10; // Always word-sized for instructions
-            mem_req   = 1'b1;
+            mem_a_addr  = imem_addr_internal;
+            mem_a_wdata = 32'h0;
+            mem_a_we    = 1'b0;
+            mem_a_size  = 2'b10; // Always word-sized for instructions
+            mem_a_valid = 1'b1;
         end else if (dmem_req_internal) begin
             // Data access: use data memory signals
-            mem_addr  = dmem_addr_internal;
-            mem_wdata = dmem_wdata_internal;
-            mem_we    = dmem_we_internal;
-            mem_size  = dmem_size_internal;
-            mem_req   = 1'b1;
+            mem_a_addr  = dmem_addr_internal;
+            mem_a_wdata = dmem_wdata_internal;
+            mem_a_we    = dmem_we_internal;
+            mem_a_size  = dmem_size_internal;
+            mem_a_valid = 1'b1;
         end else begin
             // No memory request: drive defaults
-            mem_addr  = 32'h0;
-            mem_wdata = 32'h0;
-            mem_we    = 1'b0;
-            mem_size  = 2'b00;
-            mem_req   = 1'b0;
+            mem_a_addr  = 32'h0;
+            mem_a_wdata = 32'h0;
+            mem_a_we    = 1'b0;
+            mem_a_size  = 2'b00;
+            mem_a_valid = 1'b0;
         end
     end
+    
+    // CPU accepts D-channel responses only after an A-channel request handshake
+    assign mem_d_ready = mem_req_inflight;
     
     // Debug outputs for trace callback (use captured values at instruction completion)
     assign debug_rs1_data = trace_rs1_data_reg;

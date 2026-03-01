@@ -3,9 +3,9 @@
 // Uses the bus module to route RTL peripheral requests
 // External memory requests are routed directly from CPU to host_bus_interface
 //
-// UNIFIED MEMORY INTERFACE: Uses a single memory interface for both instruction
-// fetch and data access. The CPU's multi-cycle FSM ensures only one type of
-// access is active at a time.
+// CPU MEMORY CHANNELS: CPU uses separate address (A) and data (D) channels.
+// bus_bridge adapts A/D channels to the legacy unified memory interface used by
+// host_bus_mux and downstream bus/peripheral infrastructure.
 //
 // HOST INTERFACE: External memory requests are serialized to an 8-bit byte stream
 // via the host_bus_interface module for communication with a host (simulation or FPGA).
@@ -75,8 +75,19 @@ module top #(
     assign rst_n_out = rst_n_internal;
 
     // ============================================================
-    // Internal CPU Memory Interface Signals (Unified)
+    // CPU <-> bus_bridge Memory Channel Signals
     // ============================================================
+    logic [31:0] cpu_mem_a_addr;
+    logic [31:0] cpu_mem_a_wdata;
+    logic        cpu_mem_a_we;
+    logic [1:0]  cpu_mem_a_size;
+    logic        cpu_mem_a_valid;
+    logic        cpu_mem_a_ready;
+    logic [31:0] cpu_mem_d_rdata;
+    logic        cpu_mem_d_valid;
+    logic        cpu_mem_d_ready;
+    
+    // Legacy unified bus signals (bus_bridge -> host_bus_mux)
     logic [31:0] cpu_mem_addr;
     logic [31:0] cpu_mem_wdata;
     logic [31:0] cpu_mem_rdata;
@@ -188,7 +199,7 @@ module top #(
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
     
     // ============================================================
-    // CPU Host-Bus Multiplexer
+    // CPU Host-Bus Multiplexer (legacy unified interface input)
     // ============================================================
     host_bus_mux #(
         .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
@@ -375,14 +386,16 @@ module top #(
         .req_halt(sysctrl_req_cpu_halt),
         .boot_addr(sysctrl_cpu_boot_addr),
         
-        // Unified memory interface
-        .mem_addr(cpu_mem_addr),
-        .mem_wdata(cpu_mem_wdata),
-        .mem_rdata(cpu_mem_rdata),
-        .mem_we(cpu_mem_we),
-        .mem_size(cpu_mem_size),
-        .mem_req(cpu_mem_req),
-        .mem_ready(cpu_mem_ready),
+        // Memory address/data channels
+        .mem_a_addr(cpu_mem_a_addr),
+        .mem_a_wdata(cpu_mem_a_wdata),
+        .mem_a_we(cpu_mem_a_we),
+        .mem_a_size(cpu_mem_a_size),
+        .mem_a_valid(cpu_mem_a_valid),
+        .mem_a_ready(cpu_mem_a_ready),
+        .mem_d_rdata(cpu_mem_d_rdata),
+        .mem_d_valid(cpu_mem_d_valid),
+        .mem_d_ready(cpu_mem_d_ready),
         
         // System control
         .halted(cpu_halted_internal),
@@ -400,6 +413,36 @@ module top #(
         
         // Boot state indicator
         .is_booting(cpu_is_booting)
+    );
+    
+    // ============================================================
+    // CPU Memory Bus Bridge (A/D channels -> legacy unified bus)
+    // ============================================================
+    bus_bridge cpu_bus_bridge (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+        
+        // Address channel from CPU
+        .mem_a_addr(cpu_mem_a_addr),
+        .mem_a_wdata(cpu_mem_a_wdata),
+        .mem_a_we(cpu_mem_a_we),
+        .mem_a_size(cpu_mem_a_size),
+        .mem_a_valid(cpu_mem_a_valid),
+        .mem_a_ready(cpu_mem_a_ready),
+        
+        // Data channel to CPU
+        .mem_d_rdata(cpu_mem_d_rdata),
+        .mem_d_valid(cpu_mem_d_valid),
+        .mem_d_ready(cpu_mem_d_ready),
+        
+        // Legacy unified bus interface (to host_bus_mux)
+        .mem_addr(cpu_mem_addr),
+        .mem_wdata(cpu_mem_wdata),
+        .mem_rdata(cpu_mem_rdata),
+        .mem_we(cpu_mem_we),
+        .mem_size(cpu_mem_size),
+        .mem_req(cpu_mem_req),
+        .mem_ready(cpu_mem_ready)
     );
     
     // Pass through halted signal
