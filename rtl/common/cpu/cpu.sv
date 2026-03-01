@@ -276,6 +276,8 @@ module cpu #(
     logic [1:0]  dmem_size_internal;   // Data memory operation size
     logic        dmem_req_internal;    // Data memory request
     logic        mem_req_inflight;     // Address request accepted, waiting for data response
+    logic        mem_a_handshake;
+    logic        mem_d_handshake;
     
     // Memory ready signal routing
     // In S_FETCH: imem_ready_internal indicates instruction response handshake
@@ -287,16 +289,16 @@ module cpu #(
     // Response completes on D-channel valid/ready handshake
     assign imem_ready_internal = mem_d_valid && mem_d_ready;
     assign dmem_ready_internal = mem_d_valid && mem_d_ready;
+    assign mem_a_handshake = mem_a_valid && mem_a_ready;
+    assign mem_d_handshake = mem_d_valid && mem_d_ready;
     
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             mem_req_inflight <= 1'b0;
-        else if (mem_d_valid && mem_d_ready)
-            mem_req_inflight <= mem_a_valid && mem_a_ready;
-        else if (mem_a_valid && mem_a_ready)
-            mem_req_inflight <= 1'b1;
+        else
+            mem_req_inflight <= (mem_req_inflight || mem_a_handshake) && !mem_d_handshake;
     end
     
     // A extension: SC success/failure logic
@@ -1283,14 +1285,14 @@ module cpu #(
             mem_a_wdata = 32'h0;
             mem_a_we    = 1'b0;
             mem_a_size  = 2'b10; // Always word-sized for instructions
-            mem_a_valid = 1'b1;
+            mem_a_valid = !mem_req_inflight;
         end else if (dmem_req_internal) begin
             // Data access: use data memory signals
             mem_a_addr  = dmem_addr_internal;
             mem_a_wdata = dmem_wdata_internal;
             mem_a_we    = dmem_we_internal;
             mem_a_size  = dmem_size_internal;
-            mem_a_valid = 1'b1;
+            mem_a_valid = !mem_req_inflight;
         end else begin
             // No memory request: drive defaults
             mem_a_addr  = 32'h0;

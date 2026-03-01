@@ -18,7 +18,7 @@ fn reset_and_boot_to_fetch(dut: &mut Cpu) {
     dut.rst_n = 0;
     dut.boot = 0;
     dut.req_halt = 0;
-    dut.mem_a_ready = 1;
+    dut.mem_a_ready = 0;
     dut.mem_d_valid = 0;
     dut.mem_d_rdata = 0;
     dut.eval();
