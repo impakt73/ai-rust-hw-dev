@@ -18,8 +18,9 @@ fn reset_and_boot_to_fetch(dut: &mut Cpu) {
     dut.rst_n = 0;
     dut.boot = 0;
     dut.req_halt = 0;
-    dut.mem_ready = 0;
-    dut.mem_rdata = 0;
+    dut.mem_a_ready = 0;
+    dut.mem_d_valid = 0;
+    dut.mem_d_rdata = 0;
     dut.eval();
     clock_cycle!(dut);
     clock_cycle!(dut);
@@ -44,14 +45,17 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
     assert_eq!(dut.debug_fsm_state, S_FETCH, "CPU should be in FETCH state");
 
     dut.req_halt = 0;
-    dut.mem_ready = 0;
+    dut.mem_d_valid = 0;
     dut.eval();
-    assert_eq!(dut.mem_req, 1, "FETCH should request instruction memory");
+    assert_eq!(
+        dut.mem_a_valid, 1,
+        "FETCH should request instruction memory"
+    );
 
     dut.req_halt = 1;
     dut.eval();
     assert_eq!(
-        dut.mem_req, 0,
+        dut.mem_a_valid, 0,
         "req_halt should gate off instruction fetch memory requests"
     );
 

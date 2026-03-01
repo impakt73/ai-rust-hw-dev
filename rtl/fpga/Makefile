@@ -26,6 +26,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
+	$(RTL_DIR)/io/bus_bridge.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/io/host_bus_interface.sv \
