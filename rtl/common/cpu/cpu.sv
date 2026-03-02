@@ -478,9 +478,8 @@ module cpu #(
     end
     
     // Branch/Jump Target Registers
-    // Pre-compute branch and jump targets during DECODE to break timing path
-    // For B-type and JAL: pc + immediate is computed when decode_reg_write is asserted
-    // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
+    // Pre-compute branch and jump targets using the existing ALU datapath
+    // and register results to break timing paths into PC update logic.
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
     always_ff @(posedge clk or negedge rst_n) begin
@@ -489,16 +488,16 @@ module cpu #(
             jal_target_reg <= 32'h0;
             jalr_target_reg <= 32'h0;
         end else begin
-            // Capture B-type and JAL targets during DECODE
-            // These use combinational decoder outputs (pc, imm_b, imm_j) before they're registered
+            // Capture B-type and JAL targets during DECODE from ALU result
             if (decode_reg_write) begin
-                branch_target_reg <= (pc + imm_b) & ~32'h1;  // Halfword aligned for RV32C
-                jal_target_reg <= (pc + imm_j) & ~32'h1;     // Halfword aligned for RV32C
+                if (opcode == 7'b1100011)  // B-type branch
+                    branch_target_reg <= alu_result & ~32'h1;
+                else if (opcode == 7'b1101111)  // JAL
+                    jal_target_reg <= alu_result & ~32'h1;
             end
-            // Capture JALR target during EXECUTE (a_reg + imm_i_reg)
-            // a_reg is stable after DECODE, imm_i_reg is registered
+            // Capture JALR target during EXECUTE
             if (jalr_target_write) begin
-                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Halfword aligned for RV32C
+                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;
             end
         end
     end
@@ -1056,9 +1055,14 @@ module cpu #(
         // Default: use the operation from decoder
         alu_op_mux = alu_op_reg;
         
+        // Use ADD for branch/JAL target pre-computation in S_DECODE
+        if (current_state == S_DECODE &&
+            (opcode == 7'b1100011 || opcode == 7'b1101111)) begin
+            alu_op_mux = 5'b00000;  // ALU_ADD
+        end
         // Special case for S_MEM_ADDR: always use ADD for address calculation
         // even if the instruction is an AMO with a different operation
-        if (current_state == S_MEM_ADDR) begin
+        else if (current_state == S_MEM_ADDR) begin
             alu_op_mux = 5'b00000;  // ALU_ADD
         end
     end
@@ -1070,8 +1074,22 @@ module cpu #(
         // For S-type stores (SW, FSW), use imm_s; for I-type (loads, etc.), use imm_i
         alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011 || opcode_reg == 7'b0100111) ? imm_s_reg : imm_i_reg) : b_reg;
         
+        // Special case for S_DECODE: compute branch/JAL PC-relative targets
+        if (current_state == S_DECODE) begin
+            case (opcode)
+                7'b1100011: begin // Branch
+                    alu_a = pc;
+                    alu_b = imm_b;
+                end
+                7'b1101111: begin // JAL
+                    alu_a = pc;
+                    alu_b = imm_j;
+                end
+                default: ;
+            endcase
+        end
         // Special case for S_MEM_ADDR with AMO/LR/SC: address is just rs1 (no offset)
-        if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
+        else if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
             alu_a = a_reg;  // rs1
             alu_b = 32'h0;  // No offset for atomic operations
         end
@@ -1083,7 +1101,8 @@ module cpu #(
                     alu_a = instr_pc_reg;
                     alu_b = imm_u_reg;
                 end
-                7'b1101111, 7'b1100111: begin // JAL, JALR
+                7'b1101111,       // JAL
+                7'b1100111: begin // JALR
                     // Compute PC+4 for return address using the instruction PC captured at decode
                     alu_a = instr_pc_reg;
                     alu_b = 32'd4;

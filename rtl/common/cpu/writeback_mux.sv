@@ -42,10 +42,10 @@ module writeback_mux (
             rd_data = imm_u;
         end else if (opcode == 7'b0010111) begin
             // AUIPC - Add Upper Immediate to PC
-            rd_data = pc + imm_u;
+            rd_data = alu_result;
         end else if (jump) begin
             // JAL/JALR - Store return address (PC + 4)
-            rd_data = pc + 32'd4;
+            rd_data = alu_result;
         end else if (is_csr) begin
             // CSR instruction - Return old CSR value
             rd_data = csr_rdata;
