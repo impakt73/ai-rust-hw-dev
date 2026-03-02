@@ -16,11 +16,12 @@ macro_rules! clock_cycle {
 
 fn reset_module(dut: &mut HostBusInterface) {
     dut.rst_n = 0;
-    dut.req = 0;
-    dut.we = 0;
-    dut.addr = 0;
-    dut.wdata = 0;
-    dut.size = 0;
+    dut.mem_a_valid = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_addr = 0;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_size = 0;
+    dut.mem_d_ready = 0;
     dut.tx_ready = 0;
     dut.rx_valid = 0;
     dut.rx_data = 0;
@@ -107,7 +108,7 @@ fn test_reset_state() {
 
     reset_module(&mut dut);
 
-    assert_eq!(dut.ready, 0);
+    assert_eq!(dut.mem_d_valid, 0);
     assert_eq!(dut.tx_valid, 0);
     assert_eq!(dut.rx_ready, 1);
     assert_eq!(dut.host_bus_req, 0);
@@ -123,13 +124,13 @@ fn test_cpu_single_write_request_uses_8byte_metadata_header() {
     reset_module(&mut dut);
 
     // CPU -> host single-beat write request
-    dut.addr = 0x1234_5678;
-    dut.wdata = 0xDEAD_BEEF;
-    dut.we = 1;
-    dut.size = 0b10;
-    dut.req = 1;
+    dut.mem_a_addr = 0x1234_5678;
+    dut.mem_a_wdata = 0xDEAD_BEEF;
+    dut.mem_a_we = 1;
+    dut.mem_a_size = 0b10;
+    dut.mem_a_valid = 1;
     clock_cycle!(dut);
-    dut.req = 0;
+    dut.mem_a_valid = 0;
 
     let tx_packet = collect_tx_bytes_with_bus_model(&mut dut, 12, |_| 0);
     assert_eq!(

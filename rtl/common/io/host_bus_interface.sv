@@ -7,14 +7,16 @@ module host_bus_interface (
     input  logic        clk,
     input  logic        rst_n,
 
-    // Bus Slave Interface (from System Bus - CPU->Host path)
-    input  logic [31:0] addr,
-    input  logic [31:0] wdata,
-    output logic [31:0] rdata,
-    input  logic        we,
-    input  logic [1:0]  size,
-    input  logic        req,
-    output logic        ready,
+    // Bus Slave Interface (from CPU/host_bus_mux - A/D channels)
+    input  logic [31:0] mem_a_addr,
+    input  logic [31:0] mem_a_wdata,
+    input  logic        mem_a_we,
+    input  logic [1:0]  mem_a_size,
+    input  logic        mem_a_valid,
+    output logic        mem_a_ready,
+    output logic [31:0] mem_d_rdata,
+    output logic        mem_d_valid,
+    input  logic        mem_d_ready,
 
     // Bus Master Interface (to Arbiter - Host->CPU path)
     output logic [31:0] host_bus_addr,
@@ -78,7 +80,7 @@ module host_bus_interface (
     logic        cpu_req_pending;
     logic        cpu_wait_resp;
     logic [31:0] cpu_resp_data;
-    logic        cpu_resp_seen;
+    logic        cpu_resp_valid;
 
     // ============================================================
     // Host transaction execution state
@@ -155,8 +157,9 @@ module host_bus_interface (
     // ============================================================
     // CPU slave interface
     // ============================================================
-    assign ready = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req && rx_pkt_last;
-    assign rdata = cpu_resp_seen ? cpu_resp_data : rx_pkt_data;
+    assign mem_a_ready = !cpu_req_pending && !cpu_wait_resp && !cpu_resp_valid;
+    assign mem_d_rdata = cpu_resp_data;
+    assign mem_d_valid = cpu_resp_valid;
 
     // ============================================================
     // RX packet consumption
@@ -165,7 +168,7 @@ module host_bus_interface (
         rx_pkt_ready = 1'b0;
 
         // CPU response path (host response to CPU-originated request)
-        if (cpu_wait_resp && rx_pkt_valid && !rx_pkt_req) begin
+        if (cpu_wait_resp && rx_pkt_valid && !rx_pkt_req && rx_pkt_last) begin
             rx_pkt_ready = 1'b1;
         end else begin
             case (host_state)
@@ -273,7 +276,7 @@ module host_bus_interface (
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
             cpu_resp_data   <= 32'h0000_0000;
-            cpu_resp_seen   <= 1'b0;
+            cpu_resp_valid  <= 1'b0;
 
             host_state           <= HOST_IDLE;
             host_req_we          <= 1'b0;
@@ -289,11 +292,11 @@ module host_bus_interface (
             host_read_data       <= 32'h0000_0000;
         end else begin
             // Capture CPU request (single outstanding)
-            if (!cpu_req_pending && !cpu_wait_resp && req) begin
-                cpu_cap_addr    <= addr;
-                cpu_cap_wdata   <= wdata;
-                cpu_cap_we      <= we;
-                cpu_cap_size    <= size;
+            if (mem_a_valid && mem_a_ready) begin
+                cpu_cap_addr    <= mem_a_addr;
+                cpu_cap_wdata   <= mem_a_wdata;
+                cpu_cap_we      <= mem_a_we;
+                cpu_cap_size    <= mem_a_size;
                 cpu_req_pending <= 1'b1;
             end
 
@@ -301,20 +304,15 @@ module host_bus_interface (
             if (cpu_req_pending && tx_pkt_valid && tx_pkt_ready && tx_pkt_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
-                cpu_resp_seen   <= 1'b0;
             end
 
-            // CPU response consumed from RX
-            if (ready) begin
+            // CPU response consumed on D channel, or latched from host RX
+            if (mem_d_valid && mem_d_ready) begin
+                cpu_resp_valid <= 1'b0;
+            end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req && rx_pkt_last) begin
                 cpu_wait_resp <= 1'b0;
-                cpu_resp_seen <= 1'b0;
-            end
-
-            // Latch first response beat for deterministic CPU read data if malformed
-            // multi-beat responses are observed.
-            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req && !cpu_resp_seen) begin
                 cpu_resp_data <= rx_pkt_data;
-                cpu_resp_seen <= 1'b1;
+                cpu_resp_valid <= 1'b1;
             end
 
             case (host_state)

@@ -3,9 +3,9 @@
 // Uses the bus module to route RTL peripheral requests
 // External memory requests are routed directly from CPU to host_bus_interface
 //
-// CPU MEMORY CHANNELS: CPU uses separate address (A) and data (D) channels.
-// bus_bridge adapts A/D channels to the legacy unified memory interface used by
-// host_bus_mux and downstream bus/peripheral infrastructure.
+// CPU MEMORY CHANNELS: CPU and host_bus_mux use separate address (A) and data (D)
+// channels. bus_bridge adapts only the host_bus_mux system path to the legacy
+// unified memory interface used by arbiter/system_bus/peripherals.
 //
 // HOST INTERFACE: External memory requests are serialized to an 8-bit byte stream
 // via the host_bus_interface module for communication with a host (simulation or FPGA).
@@ -75,7 +75,7 @@ module top #(
     assign rst_n_out = rst_n_internal;
 
     // ============================================================
-    // CPU <-> bus_bridge Memory Channel Signals
+    // CPU Memory Channel Signals
     // ============================================================
     logic [31:0] cpu_mem_a_addr;
     logic [31:0] cpu_mem_a_wdata;
@@ -86,15 +86,6 @@ module top #(
     logic [31:0] cpu_mem_d_rdata;
     logic        cpu_mem_d_valid;
     logic        cpu_mem_d_ready;
-    
-    // Legacy unified bus signals (bus_bridge -> host_bus_mux)
-    logic [31:0] cpu_mem_addr;
-    logic [31:0] cpu_mem_wdata;
-    logic [31:0] cpu_mem_rdata;
-    logic        cpu_mem_we;
-    logic [1:0]  cpu_mem_size;
-    logic        cpu_mem_req;
-    logic        cpu_mem_ready;
     
     // ============================================================
     // LED Controller Interface Signals
@@ -149,9 +140,23 @@ module top #(
     logic [31:0] sysctrl_halted_value;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
+    logic        cpu_combined_rst_n;
     
     // ============================================================
-    // CPU→Arbiter Signals (RTL peripheral accesses only)
+    // host_bus_mux -> bus_bridge Signals (RTL peripheral path, A/D channels)
+    // ============================================================
+    logic [31:0] cpu_to_sys_mem_a_addr;
+    logic [31:0] cpu_to_sys_mem_a_wdata;
+    logic        cpu_to_sys_mem_a_we;
+    logic [1:0]  cpu_to_sys_mem_a_size;
+    logic        cpu_to_sys_mem_a_valid;
+    logic        cpu_to_sys_mem_a_ready;
+    logic [31:0] cpu_to_sys_mem_d_rdata;
+    logic        cpu_to_sys_mem_d_valid;
+    logic        cpu_to_sys_mem_d_ready;
+    
+    // ============================================================
+    // CPU→Arbiter Signals (legacy unified interface)
     // ============================================================
     logic [31:0] cpu_to_arb_addr;
     logic [31:0] cpu_to_arb_wdata;
@@ -160,17 +165,19 @@ module top #(
     logic [1:0]  cpu_to_arb_size;
     logic        cpu_to_arb_req;
     logic        cpu_to_arb_ready;
-    
+
     // ============================================================
-    // CPU→External Interface Signals (non-RTL peripheral accesses)
+    // CPU→External Interface Signals (non-RTL peripheral accesses, A/D channels)
     // ============================================================
-    logic [31:0] cpu_to_ext_addr;
-    logic [31:0] cpu_to_ext_wdata;
-    logic [31:0] cpu_to_ext_rdata;
-    logic        cpu_to_ext_we;
-    logic [1:0]  cpu_to_ext_size;
-    logic        cpu_to_ext_req;
-    logic        cpu_to_ext_ready;
+    logic [31:0] cpu_to_ext_mem_a_addr;
+    logic [31:0] cpu_to_ext_mem_a_wdata;
+    logic        cpu_to_ext_mem_a_we;
+    logic [1:0]  cpu_to_ext_mem_a_size;
+    logic        cpu_to_ext_mem_a_valid;
+    logic        cpu_to_ext_mem_a_ready;
+    logic [31:0] cpu_to_ext_mem_d_rdata;
+    logic        cpu_to_ext_mem_d_valid;
+    logic        cpu_to_ext_mem_d_ready;
     
     // ============================================================
     // Arbiter Output Signals (Arbiter → Bus)
@@ -199,38 +206,77 @@ module top #(
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
     
     // ============================================================
-    // CPU Host-Bus Multiplexer (legacy unified interface input)
+    // CPU Host-Bus Multiplexer (A/D channels)
     // ============================================================
     host_bus_mux #(
         .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
         .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
     ) cpu_host_bus_mux (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+
         // CPU-side interface
-        .cpu_addr(cpu_mem_addr),
-        .cpu_wdata(cpu_mem_wdata),
-        .cpu_rdata(cpu_mem_rdata),
-        .cpu_we(cpu_mem_we),
-        .cpu_size(cpu_mem_size),
-        .cpu_req(cpu_mem_req),
-        .cpu_ready(cpu_mem_ready),
+        .cpu_mem_a_addr(cpu_mem_a_addr),
+        .cpu_mem_a_wdata(cpu_mem_a_wdata),
+        .cpu_mem_a_we(cpu_mem_a_we),
+        .cpu_mem_a_size(cpu_mem_a_size),
+        .cpu_mem_a_valid(cpu_mem_a_valid),
+        .cpu_mem_a_ready(cpu_mem_a_ready),
+        .cpu_mem_d_rdata(cpu_mem_d_rdata),
+        .cpu_mem_d_valid(cpu_mem_d_valid),
+        .cpu_mem_d_ready(cpu_mem_d_ready),
         
         // System bus path (RTL peripherals)
-        .sys_addr(cpu_to_arb_addr),
-        .sys_wdata(cpu_to_arb_wdata),
-        .sys_rdata(cpu_to_arb_rdata),
-        .sys_we(cpu_to_arb_we),
-        .sys_size(cpu_to_arb_size),
-        .sys_req(cpu_to_arb_req),
-        .sys_ready(cpu_to_arb_ready),
+        .sys_mem_a_addr(cpu_to_sys_mem_a_addr),
+        .sys_mem_a_wdata(cpu_to_sys_mem_a_wdata),
+        .sys_mem_a_we(cpu_to_sys_mem_a_we),
+        .sys_mem_a_size(cpu_to_sys_mem_a_size),
+        .sys_mem_a_valid(cpu_to_sys_mem_a_valid),
+        .sys_mem_a_ready(cpu_to_sys_mem_a_ready),
+        .sys_mem_d_rdata(cpu_to_sys_mem_d_rdata),
+        .sys_mem_d_valid(cpu_to_sys_mem_d_valid),
+        .sys_mem_d_ready(cpu_to_sys_mem_d_ready),
         
         // Host bus path (external memory / Rust peripherals)
-        .host_addr(cpu_to_ext_addr),
-        .host_wdata(cpu_to_ext_wdata),
-        .host_rdata(cpu_to_ext_rdata),
-        .host_we(cpu_to_ext_we),
-        .host_size(cpu_to_ext_size),
-        .host_req(cpu_to_ext_req),
-        .host_ready(cpu_to_ext_ready)
+        .host_mem_a_addr(cpu_to_ext_mem_a_addr),
+        .host_mem_a_wdata(cpu_to_ext_mem_a_wdata),
+        .host_mem_a_we(cpu_to_ext_mem_a_we),
+        .host_mem_a_size(cpu_to_ext_mem_a_size),
+        .host_mem_a_valid(cpu_to_ext_mem_a_valid),
+        .host_mem_a_ready(cpu_to_ext_mem_a_ready),
+        .host_mem_d_rdata(cpu_to_ext_mem_d_rdata),
+        .host_mem_d_valid(cpu_to_ext_mem_d_valid),
+        .host_mem_d_ready(cpu_to_ext_mem_d_ready)
+    );
+
+    // ============================================================
+    // CPU System-Bus Bridge (A/D channels -> legacy unified bus)
+    // ============================================================
+    bus_bridge cpu_bus_bridge (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+
+        // Address channel from host_bus_mux system path
+        .mem_a_addr(cpu_to_sys_mem_a_addr),
+        .mem_a_wdata(cpu_to_sys_mem_a_wdata),
+        .mem_a_we(cpu_to_sys_mem_a_we),
+        .mem_a_size(cpu_to_sys_mem_a_size),
+        .mem_a_valid(cpu_to_sys_mem_a_valid),
+        .mem_a_ready(cpu_to_sys_mem_a_ready),
+
+        // Data channel to host_bus_mux system path
+        .mem_d_rdata(cpu_to_sys_mem_d_rdata),
+        .mem_d_valid(cpu_to_sys_mem_d_valid),
+        .mem_d_ready(cpu_to_sys_mem_d_ready),
+
+        // Legacy unified bus interface (to arbiter CPU master port)
+        .mem_addr(cpu_to_arb_addr),
+        .mem_wdata(cpu_to_arb_wdata),
+        .mem_rdata(cpu_to_arb_rdata),
+        .mem_we(cpu_to_arb_we),
+        .mem_size(cpu_to_arb_size),
+        .mem_req(cpu_to_arb_req),
+        .mem_ready(cpu_to_arb_ready)
     );
     
     // ============================================================
@@ -338,13 +384,15 @@ module top #(
         .rst_n(rst_n_internal),
         
         // Bus Slave Interface (from host_bus_mux CPU external path)
-        .addr(cpu_to_ext_addr),
-        .wdata(cpu_to_ext_wdata),
-        .rdata(cpu_to_ext_rdata),
-        .we(cpu_to_ext_we),
-        .size(cpu_to_ext_size),
-        .req(cpu_to_ext_req),
-        .ready(cpu_to_ext_ready),
+        .mem_a_addr(cpu_to_ext_mem_a_addr),
+        .mem_a_wdata(cpu_to_ext_mem_a_wdata),
+        .mem_a_we(cpu_to_ext_mem_a_we),
+        .mem_a_size(cpu_to_ext_mem_a_size),
+        .mem_a_valid(cpu_to_ext_mem_a_valid),
+        .mem_a_ready(cpu_to_ext_mem_a_ready),
+        .mem_d_rdata(cpu_to_ext_mem_d_rdata),
+        .mem_d_valid(cpu_to_ext_mem_d_valid),
+        .mem_d_ready(cpu_to_ext_mem_d_ready),
         
         // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
         .host_bus_addr(host_master_addr),
@@ -370,7 +418,6 @@ module top #(
     // CPU Reset Signal - Combined from internal reset and system controller
     // ============================================================
     // CPU is reset when either the internal reset or system controller requests it
-    logic cpu_combined_rst_n;
     assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
     
     // ============================================================
@@ -413,36 +460,6 @@ module top #(
         
         // Boot state indicator
         .is_booting(cpu_is_booting)
-    );
-    
-    // ============================================================
-    // CPU Memory Bus Bridge (A/D channels -> legacy unified bus)
-    // ============================================================
-    bus_bridge cpu_bus_bridge (
-        .clk(clk),
-        .rst_n(cpu_combined_rst_n),
-        
-        // Address channel from CPU
-        .mem_a_addr(cpu_mem_a_addr),
-        .mem_a_wdata(cpu_mem_a_wdata),
-        .mem_a_we(cpu_mem_a_we),
-        .mem_a_size(cpu_mem_a_size),
-        .mem_a_valid(cpu_mem_a_valid),
-        .mem_a_ready(cpu_mem_a_ready),
-        
-        // Data channel to CPU
-        .mem_d_rdata(cpu_mem_d_rdata),
-        .mem_d_valid(cpu_mem_d_valid),
-        .mem_d_ready(cpu_mem_d_ready),
-        
-        // Legacy unified bus interface (to host_bus_mux)
-        .mem_addr(cpu_mem_addr),
-        .mem_wdata(cpu_mem_wdata),
-        .mem_rdata(cpu_mem_rdata),
-        .mem_we(cpu_mem_we),
-        .mem_size(cpu_mem_size),
-        .mem_req(cpu_mem_req),
-        .mem_ready(cpu_mem_ready)
     );
     
     // Pass through halted signal
