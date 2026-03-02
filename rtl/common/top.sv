@@ -86,6 +86,20 @@ module top #(
     logic [31:0] cpu_mem_d_rdata;
     logic        cpu_mem_d_valid;
     logic        cpu_mem_d_ready;
+
+    // CPU <-> host_bus_mux skid-buffered channel signals
+    logic [31:0] cpu_mux_mem_a_addr;
+    logic [31:0] cpu_mux_mem_a_wdata;
+    logic        cpu_mux_mem_a_we;
+    logic [1:0]  cpu_mux_mem_a_size;
+    logic        cpu_mux_mem_a_valid;
+    logic        cpu_mux_mem_a_ready;
+    logic [31:0] cpu_mux_mem_d_rdata;
+    logic        cpu_mux_mem_d_valid;
+    logic        cpu_mux_mem_d_ready;
+
+    logic [66:0] cpu_mem_a_skid_in_data;
+    logic [66:0] cpu_mem_a_skid_out_data;
     
     // ============================================================
     // LED Controller Interface Signals
@@ -204,6 +218,38 @@ module top #(
     // Shared RTL peripheral range configuration for host_bus_mux and bus
     localparam RTL_PERIPH_BASE  = 32'h50000000;
     localparam RTL_PERIPH_LIMIT = 32'h60000000;
+
+    assign cpu_mem_a_skid_in_data  = {cpu_mem_a_addr, cpu_mem_a_wdata, cpu_mem_a_we, cpu_mem_a_size};
+    assign {cpu_mux_mem_a_addr, cpu_mux_mem_a_wdata, cpu_mux_mem_a_we, cpu_mux_mem_a_size} = cpu_mem_a_skid_out_data;
+
+    // ============================================================
+    // CPU <-> host_bus_mux skid buffers
+    // ============================================================
+    skid_buffer #(
+        .WIDTH(67)
+    ) cpu_mem_a_skid_buffer (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+        .in_valid(cpu_mem_a_valid),
+        .in_data(cpu_mem_a_skid_in_data),
+        .in_ready(cpu_mem_a_ready),
+        .out_valid(cpu_mux_mem_a_valid),
+        .out_data(cpu_mem_a_skid_out_data),
+        .out_ready(cpu_mux_mem_a_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(32)
+    ) cpu_mem_d_skid_buffer (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+        .in_valid(cpu_mux_mem_d_valid),
+        .in_data(cpu_mux_mem_d_rdata),
+        .in_ready(cpu_mux_mem_d_ready),
+        .out_valid(cpu_mem_d_valid),
+        .out_data(cpu_mem_d_rdata),
+        .out_ready(cpu_mem_d_ready)
+    );
     
     // ============================================================
     // CPU Host-Bus Multiplexer (A/D channels)
@@ -216,15 +262,15 @@ module top #(
         .rst_n(cpu_combined_rst_n),
 
         // CPU-side interface
-        .cpu_mem_a_addr(cpu_mem_a_addr),
-        .cpu_mem_a_wdata(cpu_mem_a_wdata),
-        .cpu_mem_a_we(cpu_mem_a_we),
-        .cpu_mem_a_size(cpu_mem_a_size),
-        .cpu_mem_a_valid(cpu_mem_a_valid),
-        .cpu_mem_a_ready(cpu_mem_a_ready),
-        .cpu_mem_d_rdata(cpu_mem_d_rdata),
-        .cpu_mem_d_valid(cpu_mem_d_valid),
-        .cpu_mem_d_ready(cpu_mem_d_ready),
+        .cpu_mem_a_addr(cpu_mux_mem_a_addr),
+        .cpu_mem_a_wdata(cpu_mux_mem_a_wdata),
+        .cpu_mem_a_we(cpu_mux_mem_a_we),
+        .cpu_mem_a_size(cpu_mux_mem_a_size),
+        .cpu_mem_a_valid(cpu_mux_mem_a_valid),
+        .cpu_mem_a_ready(cpu_mux_mem_a_ready),
+        .cpu_mem_d_rdata(cpu_mux_mem_d_rdata),
+        .cpu_mem_d_valid(cpu_mux_mem_d_valid),
+        .cpu_mem_d_ready(cpu_mux_mem_d_ready),
         
         // System bus path (RTL peripherals)
         .sys_mem_a_addr(cpu_to_sys_mem_a_addr),

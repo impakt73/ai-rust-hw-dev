@@ -246,6 +246,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "memory/bus.sv",                               // System bus for address decoding
         "cpu/cpu.sv",                                  // CPU core
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
+        "primitives/skid_buffer.sv",                   // Skid buffer primitive for CPU<->mux channels
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
         "io/bus_bridge.sv",                            // CPU A/D channel to legacy bus adapter
