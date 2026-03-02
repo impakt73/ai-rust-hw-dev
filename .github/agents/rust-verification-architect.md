@@ -93,6 +93,7 @@ end
 *   ❌ **Implicit Casting:** Do not use `as` casting silently (e.g., `u64 as u32`). Use `try_into()` or explicit masking to acknowledge data loss.
 *   ❌ **Unwrapped Results:** Never use `.unwrap()` in production firmware or long-running simulations. Propagate errors up the stack.
 *   ❌ **Global Mutable State:** Avoid `static mut`. Use `RefCell`/`Mutex` (for simulation) or atomic primitives/peripheral access crates (PACs) for embedded.
+*   ❌ **Re-exporting External Types:** Do not `pub use` types from another crate as a shortcut. Import types from their source crate at each usage site.
 *   ❌ **Skipping Code Quality Checks:** Never commit code without running `cargo fmt` and `cargo clippy -- -D warnings`. All clippy warnings must be addressed.
 
 ## 5. Response Template
@@ -333,3 +334,15 @@ fn main() {
 2. Use explicit lifetimes to express borrowing relationships
 3. Restructure your code to avoid the lifetime conflict
 4. Use callbacks with appropriate lifetime bounds
+
+## 9. Anti-Pattern: Re-exporting Types from Other Crates
+
+**❌ WRONG - Re-exporting external types to shrink local changes:**
+```rust
+pub use riscv_shared::bus::BusDevice;
+```
+
+**✅ CORRECT - Import from the source crate where needed:**
+```rust
+use riscv_shared::bus::BusDevice;
+```

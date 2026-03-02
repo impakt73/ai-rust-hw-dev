@@ -2,7 +2,7 @@
 use sim_view::{gui_backends, headless_backends, viewer};
 
 use clap::Parser;
-use device_runtime::{DeviceRuntimeType, StartupReset};
+use device_runtime::{DeviceRuntimeType, SimDeviceRuntimeArgs, StartupReset};
 use gui_backends::{GuiAudioBackend, GuiEventSource, GuiVideoBackend};
 use headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend};
 use std::path::PathBuf;
@@ -89,7 +89,9 @@ impl From<StartupResetArg> for StartupReset {
 
 fn runtime_type_from_args(args: &Args) -> Result<DeviceRuntimeType, String> {
     match args.runtime {
-        RuntimeBackend::Sim => Ok(DeviceRuntimeType::Sim),
+        RuntimeBackend::Sim => Ok(DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        }),
         RuntimeBackend::Fpga => {
             let device = args
                 .fpga_device

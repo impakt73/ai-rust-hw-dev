@@ -12,9 +12,11 @@ use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
     HostRequestRoute, PendingHostRequest, ResetKind,
 };
-use bus_shared::{is_valid_dram_range, SystemBus};
-use host_bus_handler::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
-use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM};
+use bus_shared::SystemBus;
+use bus_shared::{AccessSize, BusRequest, BusResponse, HandlerError, HostBusHandler};
+use riscv_shared::bus::{
+    is_valid_dram_range, sysctrl_reset_addr, SYSCTRL_RESET_CPU, SYSCTRL_RESET_SYSTEM,
+};
 use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -774,7 +776,7 @@ impl DeviceRuntime for FpgaDeviceRuntime {
             let mut pending = self.pending_host_request.lock().unwrap();
             if pending.is_some() {
                 return Err(DeviceError::HandlerError(
-                    host_bus_handler::HandlerError::RequestPending,
+                    bus_shared::HandlerError::RequestPending,
                 ));
             }
             *pending = Some(PendingHostRequest {
@@ -824,7 +826,7 @@ impl DeviceRuntime for FpgaDeviceRuntime {
     fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError> {
         if self.has_pending_host_request() {
             return Err(DeviceError::HandlerError(
-                host_bus_handler::HandlerError::RequestPending,
+                bus_shared::HandlerError::RequestPending,
             ));
         }
 

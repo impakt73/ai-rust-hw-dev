@@ -8,11 +8,11 @@
 mod fpga;
 mod sim;
 
+use bus_shared::AccessSize;
 use bus_shared::BusDevice;
-use host_bus_handler::AccessSize;
-pub use host_bus_handler::BusRequest;
-use host_bus_handler::RequestAddressRegion;
-use host_bus_handler::MAX_BURST_BEATS;
+pub use bus_shared::BusRequest;
+use bus_shared::RequestAddressRegion;
+use bus_shared::MAX_BURST_BEATS;
 use riscv_shared::bus::{sysctrl_boot_addr, sysctrl_status_addr, SYSCTRL_STATUS_CPU_BOOTING};
 use std::path::Path;
 
@@ -24,7 +24,7 @@ pub enum DeviceError {
     /// I/O error during communication
     IoError(std::io::Error),
     /// Handler error (e.g., buffer full)
-    HandlerError(host_bus_handler::HandlerError),
+    HandlerError(bus_shared::HandlerError),
 }
 
 impl DeviceError {
@@ -79,8 +79,8 @@ impl From<std::io::Error> for DeviceError {
     }
 }
 
-impl From<host_bus_handler::HandlerError> for DeviceError {
-    fn from(e: host_bus_handler::HandlerError) -> Self {
+impl From<bus_shared::HandlerError> for DeviceError {
+    fn from(e: bus_shared::HandlerError) -> Self {
         DeviceError::HandlerError(e)
     }
 }
@@ -98,7 +98,24 @@ pub enum DeviceRuntimeType {
         startup_reset: StartupReset,
     },
     /// Software simulator
-    Sim,
+    Sim {
+        /// Backend-specific simulator configuration
+        args: SimDeviceRuntimeArgs,
+    },
+}
+
+/// Instruction trace callback type for simulator backend.
+pub type SimInstructionTraceCallback = fn(&riscv_core::trace::InstructionTrace);
+
+/// Backend-specific runtime creation arguments for the simulator.
+#[derive(Debug, Clone, Default)]
+pub struct SimDeviceRuntimeArgs {
+    /// Optional path to write VCD waveform dumps.
+    pub vcd_path: Option<String>,
+    /// Optional callback invoked on each completed instruction trace.
+    pub instruction_trace_callback: Option<SimInstructionTraceCallback>,
+    /// Fixed simulated memory latency in cycles.
+    pub memory_latency_cycles: u32,
 }
 
 /// Reset mode for [`DeviceRuntime::reset`].
@@ -145,8 +162,8 @@ pub fn create_device_runtime(
                 fpga::FpgaDeviceRuntime::connect(&device, baud, startup_reset, bus_devices)?;
             Ok(Box::new(runtime))
         }
-        DeviceRuntimeType::Sim => {
-            let runtime = sim::SimDeviceRuntime::new(bus_devices)
+        DeviceRuntimeType::Sim { args } => {
+            let runtime = sim::SimDeviceRuntime::new(bus_devices, args)
                 .map_err(|e| DeviceError::OpenFailed(Box::new(std::io::Error::other(e))))?;
             Ok(Box::new(runtime))
         }
@@ -235,11 +252,11 @@ pub(crate) enum HostRequestRoute {
 }
 
 pub(crate) fn classify_host_request_route(request: &BusRequest) -> HostRequestRoute {
-    if host_bus_handler::request_end_addr(request).is_none() {
+    if bus_shared::request_end_addr(request).is_none() {
         return HostRequestRoute::InvalidSpanningRegion;
     }
 
-    match host_bus_handler::classify_request_region(request) {
+    match bus_shared::classify_request_region(request) {
         RequestAddressRegion::RtlPeripheral => HostRequestRoute::HostBusHandler,
         RequestAddressRegion::NonRtl => HostRequestRoute::SystemBus,
         RequestAddressRegion::SpansRtlBoundary => HostRequestRoute::InvalidSpanningRegion,

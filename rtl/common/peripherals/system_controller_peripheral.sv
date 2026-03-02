@@ -22,6 +22,7 @@ module system_controller (
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
     output logic        req_cpu_halt,  // Pulse to request CPU halt
+    output logic [31:0] halted_value,  // Latched halt value register
     
     // CPU status inputs
     input  logic        cpu_halted,    // From CPU halted signal
@@ -116,6 +117,7 @@ module system_controller (
     end
     
     assign cpu_boot_addr = boot_addr_reg;
+    assign halted_value  = halt_reg;
     
     // ========================================================================
     // Read Logic - Combinational

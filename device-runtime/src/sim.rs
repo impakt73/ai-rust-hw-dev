@@ -1,25 +1,33 @@
 //! Simulator device runtime implementation
 //!
 //! This module provides [`SimDeviceRuntime`], which implements the
-//! [`DeviceRuntime`] trait using the cpu-sim [`InteractiveSimulator`]
+//! [`DeviceRuntime`] trait using the internal simulator core
 //! to run a software simulation of the RISC-V CPU.
 //!
 //! The simulator runs on a background thread, stepping instructions
 //! continuously. Host-initiated bus requests are forwarded through
-//! `InteractiveSimulator::send_bus_request`, which performs internal
+//! the simulator's `send_bus_request`, which performs internal
 //! address-based routing.
+
+mod hung_detector;
+mod sim_core;
 
 use crate::{
     classify_host_request_route, BusDeviceRegistration, BusEvent, DeviceError, DeviceRuntime,
-    HostRequestRoute, PendingHostRequest, ResetKind,
+    HostRequestRoute, PendingHostRequest, ResetKind, SimDeviceRuntimeArgs,
 };
-use cpu_sim::InteractiveSimulator;
-use host_bus_handler::{AccessSize, BusRequest, HandlerError};
+use bus_shared::HandlerError;
 use riscv_shared::bus::{sysctrl_reset_addr, SYSCTRL_RESET_CPU};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use bus_shared::{AccessSize, BusRequest};
+use riscv_core::trace::InstructionTrace;
+use sim_core::Simulator;
+
+type SimCore = Simulator<fn(&InstructionTrace)>;
 
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
@@ -48,7 +56,7 @@ enum RuntimeEvent {
 
 /// Simulator device runtime that runs the CPU in software.
 ///
-/// Implements [`DeviceRuntime`] by running the interactive simulator
+/// Implements [`DeviceRuntime`] by running the simulator core
 /// on a background thread. The main thread communicates via channels
 /// and shared state.
 pub(crate) struct SimDeviceRuntime {
@@ -65,9 +73,12 @@ pub(crate) struct SimDeviceRuntime {
 impl SimDeviceRuntime {
     /// Create a new SimDeviceRuntime.
     ///
-    /// Initializes the interactive simulator and launches a background thread
+    /// Initializes the simulator and launches a background thread
     /// to step through instructions.
-    pub(crate) fn new(bus_devices: Option<Vec<BusDeviceRegistration>>) -> Result<Self, String> {
+    pub(crate) fn new(
+        bus_devices: Option<Vec<BusDeviceRegistration>>,
+        args: SimDeviceRuntimeArgs,
+    ) -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<RuntimeCommand>();
         let (event_tx, event_rx) = mpsc::channel::<RuntimeEvent>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
@@ -76,7 +87,14 @@ impl SimDeviceRuntime {
         let pending_clone = Arc::clone(&pending_host_request);
 
         let thread_handle = thread::spawn(move || {
-            Self::run_loop(command_rx, event_tx, pending_clone, ready_tx, bus_devices);
+            Self::run_loop(
+                command_rx,
+                event_tx,
+                pending_clone,
+                ready_tx,
+                bus_devices,
+                args,
+            );
         });
 
         match ready_rx.recv_timeout(RUNTIME_INIT_TIMEOUT) {
@@ -105,9 +123,14 @@ impl SimDeviceRuntime {
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         ready_tx: mpsc::Sender<Result<(), String>>,
         bus_devices: Option<Vec<BusDeviceRegistration>>,
+        args: SimDeviceRuntimeArgs,
     ) {
-        // Create the interactive simulator
-        let mut simulator = match InteractiveSimulator::new() {
+        // Create the simulator core
+        let mut simulator = match SimCore::new_with_options(
+            args.instruction_trace_callback,
+            args.vcd_path.as_deref(),
+            args.memory_latency_cycles,
+        ) {
             Ok(sim) => sim,
             Err(e) => {
                 let _ = ready_tx.send(Err(format!("Failed to create simulator: {}", e)));
@@ -253,7 +276,7 @@ impl DeviceRuntime for SimDeviceRuntime {
             let mut pending = self.pending_host_request.lock().unwrap();
             if pending.is_some() {
                 return Err(DeviceError::HandlerError(
-                    host_bus_handler::HandlerError::RequestPending,
+                    bus_shared::HandlerError::RequestPending,
                 ));
             }
             *pending = Some(PendingHostRequest {
@@ -299,7 +322,7 @@ impl DeviceRuntime for SimDeviceRuntime {
     fn reset(&mut self, kind: ResetKind) -> Result<(), DeviceError> {
         if self.has_pending_host_request() {
             return Err(DeviceError::HandlerError(
-                host_bus_handler::HandlerError::RequestPending,
+                bus_shared::HandlerError::RequestPending,
             ));
         }
 

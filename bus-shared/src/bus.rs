@@ -3,11 +3,7 @@ use crate::dram::Dram;
 use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
-// Re-export constants from riscv_shared for backward compatibility
-pub use riscv_shared::bus::{
-    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, LED_BASE, RTL_PERIPH_BASE,
-    RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, VIDEO_BASE,
-};
+use riscv_shared::bus::{DRAM_BASE, RTL_PERIPH_BASE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE};
 
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +29,7 @@ pub struct SystemBus {
     // Shared memory accessible by all devices
     pub memory: Memory,
 
-    // Internal devices as concrete public fields (for SimulatorView access)
+    // Internal devices as concrete public fields (for simulator access)
     pub dram: Dram,
     pub sim_control: SimControl,
 

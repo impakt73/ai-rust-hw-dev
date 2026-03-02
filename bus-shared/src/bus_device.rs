@@ -1,7 +1,7 @@
 use crate::memory::Memory;
 
 /// DRAM memory range: DRAM_BASE to DRAM_END (inclusive)
-use crate::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
+use riscv_shared::bus::{is_valid_dram_range, DRAM_BASE, DRAM_END};
 
 /// SystemContext provides BusDevice implementations with access to system memory
 ///

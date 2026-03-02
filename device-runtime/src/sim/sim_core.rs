@@ -1,7 +1,9 @@
-use crate::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
-use crate::simulator_view::SimulatorView;
+use super::hung_detector::{HungDetector, HungDetectorConfig, HungStateError};
 use bus_shared::SystemBus;
-use host_bus_handler::{AccessSize, BusRequest, BusResponse, HostBusHandler};
+use bus_shared::{
+    classify_request_region, request_end_addr, AccessSize, BusDevice, BusRequest, BusResponse,
+    HandlerError, HostBusHandler, RequestAddressRegion,
+};
 use riscv_core::trace::InstructionTrace;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::time::Instant;
@@ -14,8 +16,6 @@ const BOOT_TIMEOUT_CYCLES: u32 = 10_000;
 pub enum BootError {
     /// A boot phase timed out waiting for a condition
     Timeout { phase: &'static str, cycles: u32 },
-    /// The CPU STATUS register indicates an unexpected state
-    UnexpectedStatus { status: u32 },
 }
 
 impl std::fmt::Display for BootError {
@@ -23,13 +23,6 @@ impl std::fmt::Display for BootError {
         match self {
             BootError::Timeout { phase, cycles } => {
                 write!(f, "Boot timeout in '{}' after {} cycles", phase, cycles)
-            }
-            BootError::UnexpectedStatus { status } => {
-                write!(
-                    f,
-                    "CPU is not in boot state after reset - hardware issue (STATUS=0x{:08x})",
-                    status
-                )
             }
         }
     }
@@ -46,28 +39,10 @@ struct PendingResponse {
     accepted_cycle: u64,
 }
 
-/// Result of stepping a single instruction
-#[derive(Debug)]
-pub struct SimulationStepInstructionResult {
-    pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
-    pub cycles_executed: u64,
-}
-
 /// Result of stepping a single clock cycle
 #[derive(Debug)]
 pub struct SimulationStepCycleResult {
-    pub instruction_completed: bool,
     pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
-}
-
-/// Result of a simulation run
-#[derive(Debug)]
-pub struct SimulationResult {
-    pub cycles: u64,
-    pub tohost_value: Option<u32>,
-    pub elapsed_cpu_time_us: u64,
 }
 
 /// RISC-V CPU Simulator
@@ -76,9 +51,8 @@ pub struct SimulationResult {
 /// The CPU model borrows from the runtime with a 'static lifetime, which is safe because:
 /// 1. The runtime is boxed (stable heap address)
 /// 2. Field drop order ensures CPU drops before runtime (fields drop in declaration order)
-pub struct Simulator<F, T>
+pub struct Simulator<T>
 where
-    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     // CRITICAL: Fields must be in this order for safe drop semantics
@@ -96,7 +70,6 @@ where
     total_elapsed_time_us: u64, // Cumulative elapsed time in microseconds
     print_inst_trace: bool,
     print_fsm_state: bool,
-    inst_complete_callback: Option<F>,
     trace_callback: Option<T>,
     vcd_time: u64, // VCD timestamp counter (incremented independently from cycle_count)
     // Memory latency simulation
@@ -111,9 +84,8 @@ where
     pub(crate) hung_detector: Option<HungDetector>,
 }
 
-impl<F, T> Simulator<F, T>
+impl<T> Simulator<T>
 where
-    F: FnMut(&mut SimulatorView),
     T: FnMut(&InstructionTrace),
 {
     /// Create a new simulator with optional callbacks
@@ -126,7 +98,6 @@ where
     /// # Arguments
     /// * `print_inst_trace` - Enable instruction trace printing
     /// * `print_fsm_state` - Enable FSM state printing
-    /// * `inst_complete_callback` - Optional callback invoked after each instruction completes
     /// * `trace_callback` - Optional callback for instruction traces
     /// * `vcd_path` - Optional path to VCD file for waveform tracing
     /// * `mem_latency_cycles` - Number of cycles to delay memory operations
@@ -134,7 +105,6 @@ where
     pub fn new(
         print_inst_trace: bool,
         print_fsm_state: bool,
-        inst_complete_callback: Option<F>,
         trace_callback: Option<T>,
         vcd_path: Option<&str>,
         mem_latency_cycles: u32,
@@ -198,7 +168,6 @@ where
             total_elapsed_time_us: 0,
             print_inst_trace,
             print_fsm_state,
-            inst_complete_callback,
             trace_callback,
             vcd_time: 0,
             mem_latency_cycles,
@@ -229,18 +198,6 @@ where
 
     /// Handle callbacks and tracing when an instruction completes
     fn handle_instruction_complete(&mut self) {
-        // Call inst_complete callback if provided (after instruction completion)
-        // This callback receives restricted access to the Simulator via SimulatorView
-        if let Some(ref mut callback) = self.inst_complete_callback {
-            let mut view = SimulatorView::new(
-                &mut self.bus,
-                &self.cpu,
-                &mut self.host_bus_handler,
-                &mut self.host_bus_direct_response,
-            );
-            callback(&mut view);
-        }
-
         // Unified instruction trace handling
         // Check if trace callback is valid or instruction trace printing is enabled
         if self.trace_callback.is_some() || self.print_inst_trace {
@@ -371,6 +328,140 @@ where
         }
     }
 
+    /// Create a new simulator with default interactive options.
+    pub fn new_with_options(
+        trace_callback: Option<T>,
+        vcd_path: Option<&str>,
+        mem_latency_cycles: u32,
+    ) -> Result<Self, String> {
+        Self::new(
+            false, // print_inst_trace
+            false, // print_fsm_state
+            trace_callback,
+            vcd_path,
+            mem_latency_cycles,
+            3, // verilator_optimization (level 3 for interactive performance)
+        )
+    }
+
+    /// Register a custom bus device at the specified base address.
+    pub fn register_device(
+        &mut self,
+        base_addr: u32,
+        device: Box<dyn BusDevice>,
+    ) -> Result<(), String> {
+        self.bus
+            .register_device(base_addr, device)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Send a bus request from the host to the simulator target.
+    pub fn send_bus_request(&mut self, request: BusRequest) -> Result<(), String> {
+        if request_end_addr(&request).is_none() {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            ));
+        }
+
+        if self.host_bus_handler.has_pending_outgoing_request()
+            || self.host_bus_direct_response.is_some()
+        {
+            return Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::RequestPending
+            ));
+        }
+
+        match classify_request_region(&request) {
+            RequestAddressRegion::RtlPeripheral => self
+                .host_bus_handler
+                .send_request(request)
+                .map_err(|e| format!("Host request rejected: {:?}", e)),
+            RequestAddressRegion::NonRtl => {
+                let beat_bytes = usize::from(request.size.byte_count());
+                let beats = request.burst_len.max(1);
+                let response = if request.we {
+                    for beat_idx in 0..beats {
+                        let addr = if request.dst_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let byte_offset = (beat_idx as usize) * beat_bytes;
+                        let mut beat_buf = [0u8; 4];
+                        if request.data.len() >= byte_offset + beat_bytes {
+                            beat_buf[..beat_bytes].copy_from_slice(
+                                &request.data[byte_offset..byte_offset + beat_bytes],
+                            );
+                        } else if beat_idx == 0 {
+                            beat_buf = request.wdata.to_le_bytes();
+                        }
+                        let wdata = u32::from_le_bytes(beat_buf);
+
+                        match request.size {
+                            AccessSize::Byte => self.bus.write_byte(addr, wdata as u8),
+                            AccessSize::Halfword => self.bus.write_halfword(addr, wdata as u16),
+                            AccessSize::Word => self.bus.write_word(addr, wdata),
+                        }
+                    }
+                    let mut response = BusResponse::write_ack(request.size);
+                    response.addr = request.addr;
+                    response.burst_len = request.burst_len;
+                    response.src_fixed = request.src_fixed;
+                    response.dst_fixed = request.dst_fixed;
+                    response
+                } else {
+                    let mut burst_data = Vec::with_capacity((beats as usize) * beat_bytes);
+                    for beat_idx in 0..beats {
+                        let addr = if request.src_fixed {
+                            request.addr
+                        } else {
+                            request
+                                .addr
+                                .checked_add(
+                                    beat_idx * u32::try_from(beat_bytes).expect("beat bytes fit"),
+                                )
+                                .expect("request range pre-validated")
+                        };
+                        let rdata = match request.size {
+                            AccessSize::Byte => self.bus.read_byte(addr) as u32,
+                            AccessSize::Halfword => self.bus.read_halfword(addr) as u32,
+                            AccessSize::Word => self.bus.read_word(addr),
+                        };
+                        burst_data.extend_from_slice(&rdata.to_le_bytes()[..beat_bytes]);
+                    }
+                    BusResponse::burst_read_data(
+                        request.addr,
+                        request.size,
+                        request.burst_len,
+                        request.src_fixed,
+                        request.dst_fixed,
+                        burst_data,
+                    )
+                };
+                self.host_bus_direct_response = Some(response);
+                Ok(())
+            }
+            RequestAddressRegion::SpansRtlBoundary => Err(format!(
+                "Host request rejected: {:?}",
+                HandlerError::InvalidAddressRange
+            )),
+        }
+    }
+
+    /// Receive a bus response from the simulator target.
+    pub fn receive_bus_response(&mut self) -> Option<BusResponse> {
+        self.host_bus_direct_response
+            .take()
+            .or_else(|| self.host_bus_handler.receive_response())
+    }
+
     /// Reset the CPU hardware and leave it in boot state (S_BOOT).
     ///
     /// # Returns
@@ -445,49 +536,6 @@ where
         Ok(())
     }
 
-    /// Boot the CPU from the S_BOOT state by writing the system-controller BOOT register.
-    ///
-    /// This method assumes [`Self::reset`] has completed and the CPU is waiting for a
-    /// host boot command. It first reads the system-controller status register to verify
-    /// the CPU is still in boot-wait state, then writes `boot_pc` to the BOOT register.
-    ///
-    /// # Arguments
-    /// * `boot_pc` - Program counter value to boot from.
-    ///
-    /// # Returns
-    /// * `Ok(())` if boot sequence completes successfully.
-    ///
-    /// # Errors
-    /// * [`BootError::Timeout`] if a host-bus response times out.
-    /// * [`BootError::UnexpectedStatus`] if the CPU is not in the expected boot-wait state.
-    pub fn boot(&mut self, boot_pc: u32) -> Result<(), BootError> {
-        // Step 1: Read STATUS register to confirm CPU is waiting to be booted
-        let status_addr = riscv_shared::bus::sysctrl_status_addr();
-        let status_request = BusRequest::read(status_addr, AccessSize::Word);
-        self.host_bus_handler
-            .send_request(status_request)
-            .expect("Failed to send STATUS read request");
-
-        let response = self.wait_for_bus_response("STATUS read")?;
-        // Check that cpu_booting bit (bit 0) is set
-        if (response.rdata & riscv_shared::bus::SYSCTRL_STATUS_CPU_BOOTING) == 0 {
-            return Err(BootError::UnexpectedStatus {
-                status: response.rdata,
-            });
-        }
-
-        // Step 2: Write boot address to BOOT register to complete boot process
-        let boot_addr = riscv_shared::bus::sysctrl_boot_addr();
-        let boot_request = BusRequest::write(boot_addr, boot_pc, AccessSize::Word);
-        self.host_bus_handler
-            .send_request(boot_request)
-            .expect("Failed to send BOOT write request");
-
-        // Wait for write acknowledgement - CPU boot process is now complete
-        self.wait_for_bus_response("BOOT write")?;
-        Ok(())
-    }
-
     /// Execute a single clock cycle during the boot process
     ///
     /// This is a simplified clock cycle that only handles the host bus interface
@@ -500,24 +548,6 @@ where
         self.cpu.clk = 1;
         self.cpu.eval();
         self.dump_vcd();
-    }
-
-    /// Cycle the design until a bus response is received, then return it.
-    /// Returns a timeout error if no response is received within BOOT_TIMEOUT_CYCLES.
-    fn wait_for_bus_response(&mut self, phase: &'static str) -> Result<BusResponse, BootError> {
-        for cycle in 0..BOOT_TIMEOUT_CYCLES {
-            self.boot_clock_cycle();
-            if let Some(response) = self.host_bus_handler.receive_response() {
-                return Ok(response);
-            }
-            if cycle == BOOT_TIMEOUT_CYCLES - 1 {
-                return Err(BootError::Timeout {
-                    phase,
-                    cycles: BOOT_TIMEOUT_CYCLES,
-                });
-            }
-        }
-        unreachable!()
     }
 
     /// Get the current LED output value
@@ -618,100 +648,7 @@ where
         let halt_value = self.bus.sim_control.acknowledge_termination();
 
         Ok(SimulationStepCycleResult {
-            instruction_completed: instruction_complete,
             tohost_value: halt_value,
-            elapsed_cpu_time_us: elapsed_us,
-        })
-    }
-
-    /// Execute a single simulation step (one instruction - may take multiple cycles)
-    /// Returns SimulationStepInstructionResult containing:
-    /// - tohost_value: Some(value) if halt detected, None otherwise
-    /// - elapsed_cpu_time_us: CPU time elapsed during this step in microseconds
-    /// - cycles_executed: Number of cycles executed for this instruction
-    ///
-    /// # Errors
-    /// Returns `HungStateError` if the CPU is detected to be in a hung state
-    pub fn step_instruction(&mut self) -> Result<SimulationStepInstructionResult, HungStateError> {
-        let start_elapsed_time_us = self.total_elapsed_time_us;
-        let start_cycle_count = self.cycle_count;
-
-        // Multi-cycle execution loop - continue until instruction completes
-        // Capture first tohost value from cycle results (one-shot: consumed by step_cycle)
-        let mut halt_value = None;
-        loop {
-            let cycle_result = self.step_cycle()?;
-            halt_value = halt_value.or(cycle_result.tohost_value);
-            if cycle_result.instruction_completed {
-                break;
-            }
-        }
-
-        let elapsed_us = self
-            .total_elapsed_time_us
-            .saturating_sub(start_elapsed_time_us);
-        let cycles_executed = self.cycle_count.saturating_sub(start_cycle_count);
-
-        Ok(SimulationStepInstructionResult {
-            tohost_value: halt_value,
-            elapsed_cpu_time_us: elapsed_us,
-            cycles_executed,
-        })
-    }
-
-    /// Run the simulation for up to max_cycles
-    ///
-    /// **Note:** This method does not reset or boot the CPU. Callers are responsible
-    /// for invoking `reset()`/`boot()` before calling `run()`.
-    ///
-    /// Returns Ok(SimulationResult) on normal completion or Err on error
-    ///
-    /// # Arguments
-    /// * `max_cycles` - Maximum number of cycles to run
-    ///
-    /// # Errors
-    /// Returns error if hung state is detected or other simulation errors occur
-    pub fn run(&mut self, max_cycles: u64) -> Result<SimulationResult, String> {
-        log::info!("Starting simulation (max {} cycles)", max_cycles);
-
-        let mut total_elapsed_us: u64 = 0;
-
-        while self.cycle_count < max_cycles {
-            // Execute one step and check for halt
-            let step_result = self
-                .step_instruction()
-                .map_err(|e| format!("Hung state detected: {}", e))?;
-            total_elapsed_us = total_elapsed_us.saturating_add(step_result.elapsed_cpu_time_us);
-
-            if let Some(tohost_value) = step_result.tohost_value {
-                log::info!(
-                    "Halt signal detected via SimControl, value=0x{:08x}",
-                    tohost_value
-                );
-                return Ok(SimulationResult {
-                    cycles: self.cycle_count,
-                    tohost_value: Some(tohost_value),
-                    elapsed_cpu_time_us: total_elapsed_us,
-                });
-            }
-
-            // Log execution periodically for debugging
-            if !self.print_inst_trace
-                && (self.cycle_count.is_multiple_of(1000) || log::log_enabled!(log::Level::Debug))
-            {
-                log::debug!(
-                    "Cycle {}: PC=0x{:08x}",
-                    self.cycle_count,
-                    self.cpu.debug_current_pc
-                );
-            }
-        }
-
-        log::warn!("Simulation reached max cycles ({})", max_cycles);
-        Ok(SimulationResult {
-            cycles: self.cycle_count,
-            tohost_value: None,
-            elapsed_cpu_time_us: total_elapsed_us,
         })
     }
 }

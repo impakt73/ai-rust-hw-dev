@@ -4,7 +4,7 @@
 //! and audio samples with proper timestamps.
 
 use bus_shared::AudioChannels;
-use device_runtime::DeviceRuntimeType;
+use device_runtime::{DeviceRuntimeType, SimDeviceRuntimeArgs};
 use sim_view::backend_traits::{TestCommand, ViewerEvent};
 use sim_view::{
     headless_backends::{HeadlessAudioBackend, HeadlessEventSource, HeadlessVideoBackend},
@@ -26,7 +26,9 @@ fn test_headless_basic_functionality() {
         initial_height: 240,
         max_cycles: 10000, // Limit execution
         print_inst_trace: false,
-        runtime_type: DeviceRuntimeType::Sim,
+        runtime_type: DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -56,7 +58,9 @@ fn test_headless_event_injection() {
         initial_height: 240,
         max_cycles: 100000,
         print_inst_trace: false,
-        runtime_type: DeviceRuntimeType::Sim,
+        runtime_type: DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -96,7 +100,9 @@ fn test_video_pattern_frame_count_on_completion() {
         initial_height: 240,
         max_cycles: 1000000,
         print_inst_trace: false,
-        runtime_type: DeviceRuntimeType::Sim,
+        runtime_type: DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -128,7 +134,9 @@ fn test_video_pattern_sequential_frames_differ() {
         initial_height: 240,
         max_cycles: 1000000,
         print_inst_trace: false,
-        runtime_type: DeviceRuntimeType::Sim,
+        runtime_type: DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");
@@ -172,7 +180,9 @@ fn test_audio_config_change_and_samples() {
         initial_height: 240,
         max_cycles: 5000000, // Generous limit for audio test
         print_inst_trace: false,
-        runtime_type: DeviceRuntimeType::Sim,
+        runtime_type: DeviceRuntimeType::Sim {
+            args: SimDeviceRuntimeArgs::default(),
+        },
     };
 
     let mut viewer = SimViewer::new(config, video, audio, events).expect("Failed to create viewer");

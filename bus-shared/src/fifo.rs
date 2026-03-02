@@ -22,6 +22,20 @@ impl FifoDataSource {
         self.host_to_cpu.push_back(byte);
     }
 
+    /// Push a UTF-8 string into host→CPU queue as individual bytes.
+    ///
+    /// Appends a null terminator (0x00) if the string length is a multiple of 4 bytes.
+    pub fn push_string_to_fifo_rx(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        for &byte in bytes {
+            self.write_byte(byte);
+        }
+
+        if bytes.len().is_multiple_of(4) {
+            self.write_byte(0);
+        }
+    }
+
     /// Pop the next byte for CPU consumption.
     fn read_byte(&mut self) -> Option<u8> {
         self.host_to_cpu.pop_front()
@@ -250,5 +264,18 @@ mod tests {
             fifo.write_byte(&mut ctx, 0x04, 0x12),
             Err(BusDeviceError::UnsupportedSize { size: 1, .. })
         ));
+    }
+
+    #[test]
+    fn test_push_string_to_fifo_rx_appends_null_for_4byte_multiple() {
+        let mut source = FifoDataSource::new();
+        source.push_string_to_fifo_rx("abcd");
+
+        assert_eq!(source.read_byte(), Some(b'a'));
+        assert_eq!(source.read_byte(), Some(b'b'));
+        assert_eq!(source.read_byte(), Some(b'c'));
+        assert_eq!(source.read_byte(), Some(b'd'));
+        assert_eq!(source.read_byte(), Some(0));
+        assert_eq!(source.read_byte(), None);
     }
 }

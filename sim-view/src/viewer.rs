@@ -2,11 +2,12 @@ use crate::backend_traits::{
     AudioBackend, EventSource, Key, KeyModifiers, TestCommand, VideoBackend, ViewerEvent,
 };
 use crate::shared_buffers::{SharedAudioBuffer, SharedVideoBuffer};
-use bus_shared::{Audio, AudioConfig, Video, VideoConfig, AUDIO_BASE, VIDEO_BASE};
+use bus_shared::{Audio, AudioConfig, Video, VideoConfig};
 use device_runtime::{
     create_device_runtime, BusDeviceRegistration, BusEvent, DeviceRuntime, DeviceRuntimeType,
     ResetKind,
 };
+use riscv_shared::bus::{AUDIO_BASE, VIDEO_BASE};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

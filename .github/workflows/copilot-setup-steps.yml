@@ -86,7 +86,7 @@ jobs:
           echo "  verilator --lint-only rtl/*.sv               - Lint SystemVerilog files"
           echo "  cargo clean                                  - Clean build artifacts (after RTL changes)"
           echo ""
-          echo "FPGA Synthesis commands (in fpga/ directory):"
+          echo "FPGA Synthesis commands (in rtl/fpga/ directory):"
           echo "  make check-tools                             - Verify FPGA tools installed"
           echo "  make                                         - Full synthesis flow"
           echo "  make timing                                  - Generate timing report"

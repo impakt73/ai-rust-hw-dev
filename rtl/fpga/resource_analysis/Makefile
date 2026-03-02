@@ -6,7 +6,7 @@ DEVICE = hx8k
 PACKAGE = cb132
 
 # Paths
-RTL_DIR = ../../rtl
+RTL_DIR = ../../common
 FPGA_DIR = ..
 BUILD_DIR = build
 HARNESS = synth_harness.sv

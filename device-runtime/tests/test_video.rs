@@ -1,12 +1,16 @@
 mod common;
 
-use bus_shared::{Video, VideoConfig, VideoFormat, VIDEO_BASE};
+use bus_shared::{Video, VideoConfig, VideoFormat};
 use common::{
     create_test_runtime_with_registrations, load_and_boot_elf, read_word_with_timeout,
     wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT,
 };
 use device_runtime::BusDeviceRegistration;
+use riscv_shared::bus::VIDEO_BASE;
 use std::sync::{Arc, Mutex};
+
+const TEST_WIDTH: u32 = 16;
+const TEST_HEIGHT: u32 = 16;
 
 /// Helper to convert a single pixel from any format to RGBA8 for comparison
 fn pixel_to_rgba8(pixel_data: &[u8], format: VideoFormat) -> [u8; 4] {
@@ -122,54 +126,54 @@ fn test_video_pattern() {
 
 /// Verify frame 0: Red/Green checkerboard pattern
 fn verify_frame_0_checkerboard(pixel_data: &[u8], config: &VideoConfig) {
-    assert_eq!(config.width, 64, "Frame 0 width should be 64");
-    assert_eq!(config.height, 64, "Frame 0 height should be 64");
+    assert_eq!(config.width, TEST_WIDTH, "Frame 0 width should be 16");
+    assert_eq!(config.height, TEST_HEIGHT, "Frame 0 height should be 16");
     assert_eq!(config.format, VideoFormat::Rgba8);
 
     // Verify checkerboard pattern at key points
     // (0, 0): even+even -> Red
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 0, 0, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 0, 0, config.format);
     assert_eq!(pixel, [255, 0, 0, 255], "Pixel (0,0) should be red");
 
     // (1, 0): odd+even -> Green
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 1, 0, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 1, 0, config.format);
     assert_eq!(pixel, [0, 255, 0, 255], "Pixel (1,0) should be green");
 
     // (0, 1): even+odd -> Green
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 0, 1, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 0, 1, config.format);
     assert_eq!(pixel, [0, 255, 0, 255], "Pixel (0,1) should be green");
 
     // (1, 1): odd+odd -> Red
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 1, 1, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 1, 1, config.format);
     assert_eq!(pixel, [255, 0, 0, 255], "Pixel (1,1) should be red");
 
-    // (32, 32): even+even -> Red
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 32, 32, config.format);
-    assert_eq!(pixel, [255, 0, 0, 255], "Pixel (32,32) should be red");
+    // (8, 8): even+even -> Red
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 8, 8, config.format);
+    assert_eq!(pixel, [255, 0, 0, 255], "Pixel (8,8) should be red");
 
     println!("  ✓ Frame 0 checkerboard pattern verified");
 }
 
 /// Verify frame 1: Blue/Yellow diagonal stripes
 fn verify_frame_1_diagonal_stripes(pixel_data: &[u8], config: &VideoConfig) {
-    assert_eq!(config.width, 64, "Frame 1 width should be 64");
-    assert_eq!(config.height, 64, "Frame 1 height should be 64");
+    assert_eq!(config.width, TEST_WIDTH, "Frame 1 width should be 16");
+    assert_eq!(config.height, TEST_HEIGHT, "Frame 1 height should be 16");
     assert_eq!(config.format, VideoFormat::Rgba8);
 
     // (0, 0): (0+0) % 16 = 0 < 8 -> Blue
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 0, 0, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 0, 0, config.format);
     assert_eq!(pixel, [0, 0, 255, 255], "Pixel (0,0) should be blue");
 
     // (8, 0): (8+0) % 16 = 8 >= 8 -> Yellow
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 8, 0, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 8, 0, config.format);
     assert_eq!(pixel, [255, 255, 0, 255], "Pixel (8,0) should be yellow");
 
     // (0, 8): (0+8) % 16 = 8 >= 8 -> Yellow
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 0, 8, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 0, 8, config.format);
     assert_eq!(pixel, [255, 255, 0, 255], "Pixel (0,8) should be yellow");
 
     // (4, 4): (4+4) % 16 = 8 >= 8 -> Yellow
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 4, 4, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 4, 4, config.format);
     assert_eq!(pixel, [255, 255, 0, 255], "Pixel (4,4) should be yellow");
 
     println!("  ✓ Frame 1 diagonal stripes pattern verified");
@@ -177,38 +181,38 @@ fn verify_frame_1_diagonal_stripes(pixel_data: &[u8], config: &VideoConfig) {
 
 /// Verify frame 2: Grayscale gradient
 fn verify_frame_2_gradient(pixel_data: &[u8], config: &VideoConfig) {
-    assert_eq!(config.width, 64, "Frame 2 width should be 64");
-    assert_eq!(config.height, 64, "Frame 2 height should be 64");
+    assert_eq!(config.width, TEST_WIDTH, "Frame 2 width should be 16");
+    assert_eq!(config.height, TEST_HEIGHT, "Frame 2 height should be 16");
     assert_eq!(config.format, VideoFormat::Rgba8);
 
     // (0, 0): gray = 0
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 0, 0, config.format);
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 0, 0, config.format);
     assert_eq!(pixel, [0, 0, 0, 255], "Pixel (0,0) should be black");
 
-    // (63, 0): gray = (63 * 255) / 64 = 251
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 63, 0, config.format);
-    let expected_gray = ((63 * 255) / 64) as u8;
+    // (15, 0): gray = (15 * 255) / 16 = 239
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 15, 0, config.format);
+    let expected_gray = ((15 * 255) / TEST_WIDTH) as u8;
     assert_eq!(
         pixel,
         [expected_gray, expected_gray, expected_gray, 255],
-        "Pixel (63,0) should be near white"
+        "Pixel (15,0) should be near white"
     );
 
-    // (32, 0): gray = (32 * 255) / 64 = 127
-    let pixel = get_pixel_rgba8(pixel_data, 64, 64, 32, 0, config.format);
-    let expected_gray = ((32 * 255) / 64) as u8;
+    // (8, 0): gray = (8 * 255) / 16 = 127
+    let pixel = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 8, 0, config.format);
+    let expected_gray = ((8 * 255) / TEST_WIDTH) as u8;
     assert_eq!(
         pixel,
         [expected_gray, expected_gray, expected_gray, 255],
-        "Pixel (32,0) should be mid-gray"
+        "Pixel (8,0) should be mid-gray"
     );
 
     // Verify gradient increases along x-axis
-    let pixel_10 = get_pixel_rgba8(pixel_data, 64, 64, 10, 0, config.format);
-    let pixel_20 = get_pixel_rgba8(pixel_data, 64, 64, 20, 0, config.format);
-    let pixel_30 = get_pixel_rgba8(pixel_data, 64, 64, 30, 0, config.format);
+    let pixel_2 = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 2, 0, config.format);
+    let pixel_4 = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 4, 0, config.format);
+    let pixel_6 = get_pixel_rgba8(pixel_data, TEST_WIDTH, TEST_HEIGHT, 6, 0, config.format);
     assert!(
-        pixel_10[0] < pixel_20[0] && pixel_20[0] < pixel_30[0],
+        pixel_2[0] < pixel_4[0] && pixel_4[0] < pixel_6[0],
         "Gradient should increase from left to right"
     );
 
