@@ -38,7 +38,7 @@ module reset_controller #(
     assign reset_complete = (counter >= COUNTER_WIDTH'(RESET_CYCLES));
     
     // Counter logic
-    always_ff @(posedge clk or negedge rst_n_in) begin
+    always_ff @(posedge clk) begin
         if (!rst_n_in) begin
             // Input reset asserted - clear counter
             counter <= '0;
@@ -55,7 +55,7 @@ module reset_controller #(
     // Registered output reset signal
     // Output is low (reset asserted) until counter reaches RESET_CYCLES
     // Using active-low output to match standard reset conventions
-    always_ff @(posedge clk or negedge rst_n_in) begin
+    always_ff @(posedge clk) begin
         if (!rst_n_in) begin
             // Input reset asserted - output reset asserted (low)
             rst_n_out <= 1'b0;

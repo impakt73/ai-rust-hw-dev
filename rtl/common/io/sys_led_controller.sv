@@ -6,7 +6,7 @@
 //
 // Interface:
 //   clk                 - System clock
-//   rst_n               - Asynchronous active-low reset
+//   rst_n               - Synchronous active-low reset
 //   cpu_booting         - High while CPU is in boot state
 //   cpu_halted          - High while CPU is halted
 //   instr_complete      - CPU instruction completion pulse
@@ -101,7 +101,7 @@ module sys_led_controller #(
         .indicator(host_bus_tx_indicator)
     );
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             sys_led <= 8'hFF;
         end else begin

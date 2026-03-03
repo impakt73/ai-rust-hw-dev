@@ -26,7 +26,7 @@ module synth_harness (
     logic [4:0]  stim_sel;
     
     // Register the inputs to prevent constant propagation
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             for (int i = 0; i < 8; i++) begin
                 stim_reg[i] <= 32'h0;
@@ -529,7 +529,7 @@ module synth_harness (
 
 `else
     // Default: just a counter
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             result_reg <= 32'h0;
         else

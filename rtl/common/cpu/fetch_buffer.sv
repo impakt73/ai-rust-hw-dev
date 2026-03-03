@@ -46,7 +46,7 @@ module fetch_buffer (
     // ============================================================
     // Buffer Registers
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             buffered_half <= 16'h0;
             buffer_valid <= 1'b0;

@@ -78,7 +78,7 @@ module system_controller (
     // ========================================================================
     // Main Control Registers
     // ========================================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             sys_rst       <= 1'b0;
             cpu_rst_n     <= 1'b1;

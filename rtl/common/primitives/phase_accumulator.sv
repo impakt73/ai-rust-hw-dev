@@ -8,7 +8,7 @@
 //
 // Interface:
 //   clk   - System clock
-//   rst_n - Asynchronous active-low reset
+//   rst_n - Synchronous active-low reset
 //   tick  - One-cycle pulse at the configured average frequency
 
 module phase_accumulator #(
@@ -46,7 +46,7 @@ module phase_accumulator #(
 
     assign phase_sum = {1'b0, phase_acc} + {1'b0, PHASE_INCREMENT[PHASE_WIDTH-1:0]};
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             phase_acc <= '0;
             tick <= 1'b0;

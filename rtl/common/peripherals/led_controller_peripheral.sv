@@ -30,7 +30,7 @@ module led_controller_peripheral (
     assign led_out = led_out_reg;
     
     // Register file with reset
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             led_out_reg <= 8'h00;  // All LEDs off on reset
         end else if (we) begin

@@ -150,7 +150,7 @@ module host_bus_tx (
         endcase
     end
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             state <= STATE_IDLE;
 
@@ -220,7 +220,7 @@ module host_bus_tx (
     end
 
 `ifdef ASSERT_ON
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             // no-op
         end else begin
