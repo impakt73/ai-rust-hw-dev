@@ -243,7 +243,7 @@ module sram_peripheral (
     
     logic read_pending;
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             read_pending              <= 1'b0;
             split_write_pending       <= 1'b0;

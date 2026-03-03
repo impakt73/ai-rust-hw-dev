@@ -156,6 +156,11 @@ The multi-cycle design adds handshaking signals:
 - Prefix with purpose: `imem_`, `dmem_`, `alu_`, etc.
 - Keep ports consistent with RISC-V naming: `rs1`, `rs2`, `rd`, `funct3`, etc.
 
+### Reset Conventions
+- Use **synchronous resets only** in project RTL modules.
+- Keep reset ports active-low as `rst_n`.
+- For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (!rst_n)`.
+
 ### Linting
 ```bash
 # Lint SystemVerilog files before committing (RTL files are in subdirectories)

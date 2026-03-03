@@ -264,7 +264,7 @@ module host_bus_interface (
     // ============================================================
     // Sequential control
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             cpu_cap_addr    <= 32'h0000_0000;
             cpu_cap_wdata   <= 32'h0000_0000;
@@ -398,7 +398,7 @@ module host_bus_interface (
     end
 
 `ifdef ASSERT_ON
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             // no-op
         end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin

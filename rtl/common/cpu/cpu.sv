@@ -294,7 +294,7 @@ module cpu #(
     
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             mem_req_inflight <= 1'b0;
         else
@@ -316,7 +316,7 @@ module cpu #(
     // ============================================================
     // State Register (Flip-Flop Based FSM)
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             current_state <= S_BOOT;
         else
@@ -333,7 +333,7 @@ module cpu #(
     // - Reset to 1 (assume valid on startup)
     // - Populated with decompressor validity when instruction fetched (ir_write)
     // - ANDed with decoder validity when decoded (decode_reg_write)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
@@ -348,7 +348,7 @@ module cpu #(
     end
     
     // Operand Registers (Integer)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             a_reg <= 32'h0;
             b_reg <= 32'h0;
@@ -363,7 +363,7 @@ module cpu #(
     // ============================================================
     generate
         if (ENABLE_F_EXT) begin : gen_fp_operand_regs
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     fa_reg <= 32'h0;
                     fb_reg <= 32'h0;
@@ -383,7 +383,7 @@ module cpu #(
     endgenerate
     
     // Result Registers
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             alu_out_reg <= 32'h0;
             fpu_out_reg <= 32'h0;
@@ -399,7 +399,7 @@ module cpu #(
     end
     
     // Decoder Output Registers
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             opcode_reg <= 7'h0;
             rd_reg <= 5'h0;
@@ -483,7 +483,7 @@ module cpu #(
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             branch_target_reg <= 32'h0;
             jal_target_reg <= 32'h0;
@@ -509,7 +509,7 @@ module cpu #(
     // Delayed instr_complete signal for proper trace timing
     // Capture happens on cycle N when instr_complete_internal goes high
     // Output port sees delayed version on cycle N+1 after values have settled
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             instr_complete <= 1'b0;
         else
@@ -517,7 +517,7 @@ module cpu #(
     end
     
     // Capture completed instruction info when instruction finishes
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             completed_pc_reg <= 32'h0;
             completed_instr_reg <= 32'h0;
@@ -534,7 +534,7 @@ module cpu #(
     end
     
     // Track if ALU start pulse has been sent (for multi-cycle operations)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             alu_start_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
@@ -543,7 +543,7 @@ module cpu #(
             alu_start_sent <= 1'b1;  // Mark as sent after pulsing
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             alu_start_sent_rmw <= 1'b0;
         else if (current_state != S_ATOMIC_RMW)
@@ -553,7 +553,7 @@ module cpu #(
     end
     
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             fpu_start_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
@@ -565,7 +565,7 @@ module cpu #(
     // ============================================================
     // LR/SC Reservation Tracking (A Extension)
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             reservation_valid <= 1'b0;
             reservation_addr <= 32'h0;
@@ -641,7 +641,7 @@ module cpu #(
         end
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             pc <= 32'h0;
         else if (current_state == S_BOOT && boot)
@@ -1198,7 +1198,7 @@ module cpu #(
             // FCSR (Floating Point Control and Status Register)
             // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
             // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
                 end else begin

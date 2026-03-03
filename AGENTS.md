@@ -58,6 +58,12 @@ What files do you need to modify?
 - **Only run tests and lints AFTER making code changes** to verify that your specific changes are correct.
 - If a session resumes mid-PR where the branch already has existing changes, running tests/lints to understand the current state may be appropriate.
 
+### Reset Style (RTL)
+
+- **Use synchronous resets only** across project RTL modules.
+- Keep reset ports active-low (`rst_n`) unless the module interface requires otherwise.
+- For sequential logic, use `always_ff @(posedge clk)` (or domain clock) and handle reset inside the block with `if (!rst_n)`.
+
 ### Debugging Methodology
 
 **For hardware-related work (FPGA Architect, HW-SW Integration):**

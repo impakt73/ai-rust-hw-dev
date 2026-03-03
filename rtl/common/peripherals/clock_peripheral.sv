@@ -102,7 +102,7 @@ module clock_peripheral #(
             assign microsecond_elapsed = 1'b1;
             
             // Keep cycle_counter at 0 (unused but declared for consistency)
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     cycle_counter <= '0;
                 end else begin
@@ -111,7 +111,7 @@ module clock_peripheral #(
             end
         end else begin : gen_high_freq
             // At higher frequencies (> 1 MHz): count cycles until 1 µs
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     cycle_counter <= '0;
                 end else if (cycle_counter >= CYCLE_COUNTER_WIDTH'(CYCLES_PER_US - 1)) begin
@@ -129,7 +129,7 @@ module clock_peripheral #(
     // ============================================================
     // Microseconds Elapsed Register
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             elapsed_us <= 32'h0;
         end else if (microsecond_elapsed) begin
@@ -140,7 +140,7 @@ module clock_peripheral #(
     // ============================================================
     // Microsecond Sub-Counter (0-999) for Millisecond Rollover
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             us_sub_counter <= 10'h0;
         end else if (microsecond_elapsed) begin
@@ -158,7 +158,7 @@ module clock_peripheral #(
     // ============================================================
     // Milliseconds Elapsed Register
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             elapsed_ms <= 32'h0;
         end else if (millisecond_elapsed) begin
@@ -169,7 +169,7 @@ module clock_peripheral #(
     // ============================================================
     // Millisecond Sub-Counter (0-999) for Second Rollover
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             ms_sub_counter <= 10'h0;
         end else if (millisecond_elapsed) begin
@@ -187,7 +187,7 @@ module clock_peripheral #(
     // ============================================================
     // Seconds Elapsed Register
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             elapsed_s <= 32'h0;
         end else if (second_elapsed) begin

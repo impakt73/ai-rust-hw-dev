@@ -62,7 +62,7 @@ module fp_regfile #(
     end
 
     // Write operation (synchronous)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             // Reset all FP registers to +0.0 (0x00000000)
             for (int i = 0; i < 32; i++) begin

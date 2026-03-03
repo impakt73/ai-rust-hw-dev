@@ -58,7 +58,7 @@ module mul_unit #(
     // ============================================================
     // State Register
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             state <= MUL_IDLE;
         else
@@ -128,7 +128,7 @@ module mul_unit #(
     // ============================================================
     // Datapath Registers
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             product <= '0;
             mcand <= '0;

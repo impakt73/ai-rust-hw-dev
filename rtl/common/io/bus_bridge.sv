@@ -56,7 +56,7 @@ module bus_bridge (
     assign mem_d_rdata = pending_resp_rdata;
     assign mem_d_valid = pending_resp_valid;
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             pending_req_addr   <= 32'h0;
             pending_req_wdata  <= 32'h0;

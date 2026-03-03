@@ -121,7 +121,7 @@ module async_fifo #(
         .rdata(rdata)
     );
 
-    always_ff @(posedge wr_clk or negedge rst_n) begin
+    always_ff @(posedge wr_clk) begin
         if (!rst_n) begin
             wr_ptr_bin  <= '0;
             wr_ptr_gray <= '0;
@@ -133,7 +133,7 @@ module async_fifo #(
         end
     end
 
-    always_ff @(posedge rd_clk or negedge rst_n) begin
+    always_ff @(posedge rd_clk) begin
         if (!rst_n) begin
             rd_ptr_bin  <= '0;
             rd_ptr_gray <= '0;

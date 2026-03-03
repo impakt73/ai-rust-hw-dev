@@ -8,7 +8,7 @@
 //
 // Interface:
 //   clk     - System clock
-//   rst_n   - Asynchronous active-low reset
+//   rst_n   - Synchronous active-low reset
 //   wr_en   - Write enable (data written on rising edge when not full)
 //   rd_en   - Read enable (advances read pointer on rising edge when not empty)
 //   wdata   - Data to write
@@ -71,7 +71,7 @@ module sync_fifo #(
     assign rdata = mem[rd_ptr];
     
     // FIFO management logic
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             wr_ptr <= '0;
             rd_ptr <= '0;
