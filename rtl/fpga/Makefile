@@ -168,7 +168,7 @@ help:
 	@echo "  all          - Synthesize and generate bitstream (default)"
 	@echo "  $(JSON)      - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
-	@echo "  $(BIN)       - Generate bitstream (icepack)"
+	@echo "  $(BIN)       - Generate bitstream (target-specific packer)"
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
 	@echo "  program      - Program FPGA with bitstream"
