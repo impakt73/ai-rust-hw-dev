@@ -64,7 +64,7 @@ jobs:
           nextpnr-ice40 --version
           nextpnr-ecp5 --version
           iceprog --help 2>&1 | head -1
-          openFPGALoader --version
+          openFPGALoader --help 2>&1 | head -1
 
       - name: Summary of installed tools
         run: |
@@ -78,7 +78,7 @@ jobs:
           echo "nextpnr-ice40: $(nextpnr-ice40 --version)"
           echo "nextpnr-ecp5: $(nextpnr-ecp5 --version)"
           echo "iceprog: $(iceprog --help 2>&1 | head -1)"
-          echo "openFPGALoader: $(openFPGALoader --version | head -1)"
+          echo "openFPGALoader: $(openFPGALoader --help 2>&1 | head -1)"
           echo ""
           echo "Common commands:"
           echo "  cargo test                                   - Run all tests"
