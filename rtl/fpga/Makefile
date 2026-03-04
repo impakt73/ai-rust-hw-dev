@@ -4,7 +4,7 @@
 # Project configuration
 PROJECT = riscv_fpga
 TOP_MODULE = fpga_top
-TARGET ?= ice40hx8k
+TARGET ?= ice40_alchitry_cu
 
 # File paths
 RTL_DIR = ../common
@@ -47,10 +47,10 @@ RTL_SOURCES = \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
 
-ifeq ($(TARGET),ice40hx8k)
+ifeq ($(TARGET),ice40_alchitry_cu)
 DEVICE = hx8k
 PACKAGE = cb132
-FPGA_DIR = .
+FPGA_DIR = ice40_alchitry_cu
 CONSTRAINT = $(FPGA_DIR)/ice40hx8k.pcf
 SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(JSON)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
@@ -82,8 +82,10 @@ OUTPUT_EXT = bit
 endif
 
 ifndef SYNTH_CMD
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40hx8k or TARGET=ecp5_icepi_zero)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu or TARGET=ecp5_icepi_zero)
 endif
+
+BUILD_DIR := build/$(TARGET)
 
 FPGA_SOURCES = \
 	$(FPGA_DIR)/stub_fpu.sv \
@@ -133,11 +135,11 @@ $(BIN): $(PNR_OUT)
 # Timing analysis
 .PHONY: timing
 timing: $(PNR_OUT)
-ifeq ($(TARGET),ice40hx8k)
+ifeq ($(TARGET),ice40_alchitry_cu)
 	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
 	@echo "Timing report written to $(TIMING)"
 else
-	@echo "Timing report generation is only implemented for TARGET=ice40hx8k"
+	@echo "Timing report generation is only implemented for TARGET=ice40_alchitry_cu"
 endif
 
 # Resource utilization report
@@ -179,7 +181,7 @@ help:
 	@echo "  - icestorm   : Bitstream generation and programming"
 	@echo ""
 	@echo "Target selection:"
-	@echo "  - make TARGET=ice40hx8k        (default: Alchitry Cu v1)"
+	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 
 .PHONY: check-tools
@@ -187,7 +189,7 @@ check-tools:
 	@echo "Checking for required tools..."
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
-ifeq ($(TARGET),ice40hx8k)
+ifeq ($(TARGET),ice40_alchitry_cu)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
 	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
 endif

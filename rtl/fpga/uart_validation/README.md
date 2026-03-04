@@ -2,7 +2,7 @@
 
 This project provides a focused FPGA image for validating `rtl/uart.sv` behavior on real hardware.
 
-It is structured similarly to `fpga/led_demo`, but uses the newer root FPGA flow (`fpga/Makefile` and `fpga/ice40hx8k.pcf`) as the baseline.
+It is structured similarly to `fpga/led_demo`, but uses the newer root FPGA flow (`fpga/Makefile` and `fpga/ice40_alchitry_cu/ice40hx8k.pcf`) as the baseline.
 
 ## Validation Modes
 

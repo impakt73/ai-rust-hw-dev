@@ -25,7 +25,7 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 
 # Constraint file
-PCF = ../ice40hx8k.pcf
+PCF = ../ice40_alchitry_cu/ice40hx8k.pcf
 
 # Output files
 JSON = $(BUILD_DIR)/$(PROJECT).json
