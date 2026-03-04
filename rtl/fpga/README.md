@@ -1,6 +1,10 @@
 # FPGA Synthesis for Alchitry Cu v1
 
-This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu v1 board (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + IceStorm).
+This directory contains files for synthesizing the RISC-V CPU to FPGA targets using open-source tools (Yosys + nextpnr + device-specific packers).
+
+Currently supported targets:
+- **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
+- **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
 
 ## Status: ✅ Successfully Synthesized
 
@@ -73,8 +77,11 @@ make -j$(nproc) && sudo make install && cd ..
 # Navigate to fpga directory
 cd fpga
 
-# Run full synthesis flow (takes 2-5 minutes first time)
+# Run full synthesis flow for default target (iCE40)
 make
+
+# Run full synthesis flow for ECP5 iCE Pi Zero
+make TARGET=ecp5_icepi_zero
 
 # This generates:
 # - build/riscv_fpga.json  (synthesis output)
@@ -94,9 +101,12 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Files
 
-- **`fpga_top.sv`**: Top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
-- **`stub_fpu.sv`**: Stub floating-point unit (F extension disabled for iCE40 resource constraints)
-- **`ice40hx8k.pcf`**: Pin constraint file for Alchitry Cu v1 board
+- **`ice40_alchitry_cu/fpga_top.sv`**: iCE40 top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
+- **`ice40_alchitry_cu/stub_fpu.sv`**: iCE40 stub floating-point unit (F extension disabled for iCE40 resource constraints)
+- **`ice40_alchitry_cu/ice40hx8k.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
+- **`ecp5/fpga_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
+- **`ecp5/stub_fpu.sv`**: ECP5 stub floating-point unit
+- **`ecp5/icepi_zero_25f.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -139,7 +149,7 @@ Reference: [Alchitry Cu PCF](https://github.com/r1cebank/alchitry-cu-utils/blob/
 
 The `led_demo/` subdirectory contains a standalone LED rotation demo (`led_demo/led_pattern_top.sv`) that displays an alternating pattern on the 8 LEDs.
 
-The main FPGA design (`fpga_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
+The main iCE40 FPGA design (`ice40_alchitry_cu/fpga_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
 
 **Example LED pattern (pseudo-assembly):**
 
@@ -177,7 +187,7 @@ jal  x0, main_loop     # Repeat
 
 The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ensures timing closure. If you need a different frequency, update:
 
-1. **PLL parameters**: Edit `fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
+1. **PLL parameters**: Edit `ice40_alchitry_cu/fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
 2. **Makefile**: Change `--freq 25` to match your target frequency
 3. **Test program**: Update delay loop count in your program to match the new cycle count
 
@@ -224,7 +234,7 @@ The FPGA design loads programs at runtime via the host UART interface. To run yo
 
 To modify the system clock frequency:
 
-1. Update PLL parameters in `fpga_top.sv` (DIVR, DIVF, DIVQ)
+1. Update PLL parameters in `ice40_alchitry_cu/fpga_top.sv` (DIVR, DIVF, DIVQ)
 2. Change `--freq` in `Makefile` to match your target frequency
 3. Re-run synthesis and check timing
 

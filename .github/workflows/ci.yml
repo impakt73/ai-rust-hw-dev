@@ -20,7 +20,7 @@ jobs:
     - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40
+        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
         # Bump version (v2 -> v3) to force cache refresh
         version: v3
     
@@ -34,6 +34,7 @@ jobs:
       run: |
         yosys --version
         nextpnr-ice40 --version
+        nextpnr-ecp5 --version
         iceprog --help 2>&1 | head -1
     
     - name: Install Rust
@@ -58,14 +59,22 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
-    - name: Cache FPGA synthesis artifacts
-      id: fpga-cache
+    - name: Cache iCE40 FPGA synthesis artifacts
+      id: fpga-cache-ice40
       uses: actions/cache@v4
       with:
         path: |
-          rtl/fpga/build/riscv_fpga.bin
-          rtl/fpga/build/riscv_fpga_timing.rpt
-        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/**/*.pcf', 'rtl/fpga/Makefile') }}
+          rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin
+          rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt
+        key: ${{ runner.os }}-fpga-synth-ice40-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/ice40_alchitry_cu/**/*.sv', 'rtl/fpga/ice40_alchitry_cu/**/*.pcf', 'rtl/fpga/Makefile') }}
+
+    - name: Cache ECP5 FPGA synthesis artifacts
+      id: fpga-cache-ecp5
+      uses: actions/cache@v4
+      with:
+        path: |
+          rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit
+        key: ${{ runner.os }}-fpga-synth-ecp5-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/ecp5/**/*.sv', 'rtl/fpga/ecp5/**/*.lpf', 'rtl/fpga/Makefile') }}
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -91,13 +100,23 @@ jobs:
       working-directory: rust-test-program
       run: cargo build --release --verbose
     
-    - name: Verify FPGA synthesis (cache miss)
-      if: steps.fpga-cache.outputs.cache-hit != 'true'
+    - name: Verify iCE40 FPGA synthesis (cache miss)
+      if: steps.fpga-cache-ice40.outputs.cache-hit != 'true'
       working-directory: rtl/fpga
-      run: make
+      run: make TARGET=ice40_alchitry_cu
 
-    - name: Verify cached FPGA synthesis artifacts (cache hit)
-      if: steps.fpga-cache.outputs.cache-hit == 'true'
+    - name: Verify cached iCE40 FPGA synthesis artifacts (cache hit)
+      if: steps.fpga-cache-ice40.outputs.cache-hit == 'true'
       run: |
-        test -f rtl/fpga/build/riscv_fpga.bin || (echo "Missing rtl/fpga/build/riscv_fpga.bin" && exit 1)
-        test -f rtl/fpga/build/riscv_fpga_timing.rpt || (echo "Missing rtl/fpga/build/riscv_fpga_timing.rpt" && exit 1)
+        test -f rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin || (echo "Missing rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin" && exit 1)
+        test -f rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt || (echo "Missing rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt" && exit 1)
+
+    - name: Verify ECP5 FPGA synthesis (cache miss)
+      if: steps.fpga-cache-ecp5.outputs.cache-hit != 'true'
+      working-directory: rtl/fpga
+      run: make TARGET=ecp5_icepi_zero
+
+    - name: Verify cached ECP5 FPGA synthesis artifacts (cache hit)
+      if: steps.fpga-cache-ecp5.outputs.cache-hit == 'true'
+      run: |
+        test -f rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit || (echo "Missing rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit" && exit 1)

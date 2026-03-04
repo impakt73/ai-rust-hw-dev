@@ -2,7 +2,7 @@
 
 This project provides a focused FPGA image for validating `rtl/uart.sv` behavior on real hardware.
 
-It is structured similarly to `fpga/led_demo`, but uses the newer root FPGA flow (`fpga/Makefile` and `fpga/ice40hx8k.pcf`) as the baseline.
+It is structured similarly to `rtl/fpga/led_demo`, but uses the newer root FPGA flow (`rtl/fpga/Makefile` and `rtl/fpga/ice40_alchitry_cu/ice40hx8k.pcf`) as the baseline.
 
 ## Validation Modes
 
@@ -17,7 +17,7 @@ Default mode is `2`.
 ## Build and Program
 
 ```bash
-cd fpga/uart_validation
+cd rtl/fpga/uart_validation
 make                # build bitstream
 make program        # flash to connected board
 ```
@@ -38,7 +38,7 @@ A minimal Rust validator is included in `host-validator/`.
 ### Usage
 
 ```bash
-cd fpga/uart_validation/host-validator
+cd rtl/fpga/uart_validation/host-validator
 cargo run -- /dev/ttyUSB0 1000000
 ```
 

@@ -27,7 +27,7 @@ jobs:
       - name: Cache and install apt packages
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          packages: verilator gcc-riscv64-unknown-elf libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40
+          packages: verilator gcc-riscv64-unknown-elf libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
           # Bump version (v2 -> v3) to force cache refresh
           version: v3
       
@@ -62,7 +62,9 @@ jobs:
           riscv64-unknown-elf-gcc --version
           yosys --version
           nextpnr-ice40 --version
+          nextpnr-ecp5 --version
           iceprog --help 2>&1 | head -1
+          command -v openFPGALoader
 
       - name: Summary of installed tools
         run: |
@@ -74,7 +76,9 @@ jobs:
           echo "RISC-V GCC: $(riscv64-unknown-elf-gcc --version | head -1)"
           echo "Yosys: $(yosys --version | head -1)"
           echo "nextpnr-ice40: $(nextpnr-ice40 --version)"
+          echo "nextpnr-ecp5: $(nextpnr-ecp5 --version)"
           echo "iceprog: $(iceprog --help 2>&1 | head -1)"
+          echo "openFPGALoader: $(command -v openFPGALoader)"
           echo ""
           echo "Common commands:"
           echo "  cargo test                                   - Run all tests"
