@@ -82,12 +82,12 @@ OUTPUT_EXT = bit
 endif
 
 ifndef SYNTH_CMD
-$(error Unsupported TARGET='$(TARGET)'. Supported: ice40hx8k, ecp5_icepi_zero)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40hx8k or TARGET=ecp5_icepi_zero)
 endif
 
 FPGA_SOURCES = \
-	$(FPGA_DIR)/fpga_top.sv \
-	$(FPGA_DIR)/stub_fpu.sv
+	$(FPGA_DIR)/stub_fpu.sv \
+	$(FPGA_DIR)/fpga_top.sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 

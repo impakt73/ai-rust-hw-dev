@@ -16,7 +16,7 @@ module fpu (
     assign fp_result = 32'h0;
     assign int_result = 32'h0;
     assign fflags = 5'h0;
-    assign fpu_ready = 1'b0;
+    assign fpu_ready = 1'b1;
 endmodule
 
 module fp_regfile (
