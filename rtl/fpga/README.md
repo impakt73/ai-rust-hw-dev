@@ -1,6 +1,10 @@
 # FPGA Synthesis for Alchitry Cu v1
 
-This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu v1 board (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + IceStorm).
+This directory contains files for synthesizing the RISC-V CPU to FPGA targets using open-source tools (Yosys + nextpnr + device-specific packers).
+
+Currently supported targets:
+- **`TARGET=ice40hx8k`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
+- **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
 
 ## Status: ✅ Successfully Synthesized
 
@@ -73,8 +77,11 @@ make -j$(nproc) && sudo make install && cd ..
 # Navigate to fpga directory
 cd fpga
 
-# Run full synthesis flow (takes 2-5 minutes first time)
+# Run full synthesis flow for default target (iCE40)
 make
+
+# Run full synthesis flow for ECP5 iCE Pi Zero
+make TARGET=ecp5_icepi_zero
 
 # This generates:
 # - build/riscv_fpga.json  (synthesis output)
@@ -94,9 +101,12 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Files
 
-- **`fpga_top.sv`**: Top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
-- **`stub_fpu.sv`**: Stub floating-point unit (F extension disabled for iCE40 resource constraints)
-- **`ice40hx8k.pcf`**: Pin constraint file for Alchitry Cu v1 board
+- **`fpga_top.sv`**: iCE40 top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
+- **`stub_fpu.sv`**: iCE40 stub floating-point unit (F extension disabled for iCE40 resource constraints)
+- **`ice40hx8k.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
+- **`ecp5/fpga_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
+- **`ecp5/stub_fpu.sv`**: ECP5 stub floating-point unit
+- **`ecp5/icepi_zero_25f.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 

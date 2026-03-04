@@ -20,7 +20,7 @@ jobs:
     - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40
+        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 prjtrellis nextpnr-ecp5 openfpgaloader
         # Bump version (v2 -> v3) to force cache refresh
         version: v3
     
@@ -34,6 +34,7 @@ jobs:
       run: |
         yosys --version
         nextpnr-ice40 --version
+        nextpnr-ecp5 --version
         iceprog --help 2>&1 | head -1
     
     - name: Install Rust
@@ -65,7 +66,7 @@ jobs:
         path: |
           rtl/fpga/build/riscv_fpga.bin
           rtl/fpga/build/riscv_fpga_timing.rpt
-        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/**/*.pcf', 'rtl/fpga/Makefile') }}
+        key: ${{ runner.os }}-fpga-synth-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/**/*.pcf', 'rtl/fpga/**/*.lpf', 'rtl/fpga/Makefile') }}
     
     - name: Check formatting
       run: cargo fmt -- --check
@@ -95,6 +96,10 @@ jobs:
       if: steps.fpga-cache.outputs.cache-hit != 'true'
       working-directory: rtl/fpga
       run: make
+
+    - name: Verify ECP5 FPGA synthesis
+      working-directory: rtl/fpga
+      run: make TARGET=ecp5_icepi_zero
 
     - name: Verify cached FPGA synthesis artifacts (cache hit)
       if: steps.fpga-cache.outputs.cache-hit == 'true'

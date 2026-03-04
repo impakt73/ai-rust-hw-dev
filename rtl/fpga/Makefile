@@ -4,12 +4,10 @@
 # Project configuration
 PROJECT = riscv_fpga
 TOP_MODULE = fpga_top
-DEVICE = hx8k
-PACKAGE = cb132
+TARGET ?= ice40hx8k
 
 # File paths
 RTL_DIR = ../common
-FPGA_DIR = .
 BUILD_DIR = build
 
 # Source files (includes M extension support for multiply/divide)
@@ -49,19 +47,53 @@ RTL_SOURCES = \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
 
+ifeq ($(TARGET),ice40hx8k)
+DEVICE = hx8k
+PACKAGE = cb132
+FPGA_DIR = .
+CONSTRAINT = $(FPGA_DIR)/ice40hx8k.pcf
+SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(JSON)
+PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
+PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
+		--json $(JSON) \
+		--pcf $(CONSTRAINT) \
+		--asc $(PNR_OUT) \
+		--freq 25
+PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
+PROGRAM_CMD = $(ICEPROG) $(BIN)
+OUTPUT_EXT = bin
+endif
+
+ifeq ($(TARGET),ecp5_icepi_zero)
+DEVICE = 25k
+PACKAGE = CABGA256
+FPGA_DIR = ecp5
+CONSTRAINT = $(FPGA_DIR)/icepi_zero_25f.lpf
+SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(JSON)
+PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
+PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
+		--json $(JSON) \
+		--lpf $(CONSTRAINT) \
+		--textcfg $(PNR_OUT) \
+		--freq 50
+PACK_CMD = $(ECPPACK) $(PNR_OUT) $(BIN)
+PROGRAM_CMD = $(OPENFPGALOADER) -b icepi_zero $(BIN)
+OUTPUT_EXT = bit
+endif
+
+ifndef SYNTH_CMD
+$(error Unsupported TARGET='$(TARGET)'. Supported: ice40hx8k, ecp5_icepi_zero)
+endif
+
 FPGA_SOURCES = \
-	$(FPGA_DIR)/stub_fpu.sv \
-	$(FPGA_DIR)/fpga_top.sv
+	$(FPGA_DIR)/fpga_top.sv \
+	$(FPGA_DIR)/stub_fpu.sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 
-# Constraint file
-PCF = $(FPGA_DIR)/ice40hx8k.pcf
-
 # Output files
 JSON = $(BUILD_DIR)/$(PROJECT).json
-ASC = $(BUILD_DIR)/$(PROJECT).asc
-BIN = $(BUILD_DIR)/$(PROJECT).bin
+BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
@@ -71,6 +103,12 @@ NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
 ICEPROG = iceprog
 ICETIME = icetime
+ECPPACK = ecppack
+OPENFPGALOADER = openFPGALoader
+
+ifeq ($(TARGET),ecp5_icepi_zero)
+NEXTPNR = nextpnr-ecp5
+endif
 
 # Default target
 .PHONY: all
@@ -83,25 +121,24 @@ $(BUILD_DIR):
 # Synthesis with Yosys
 $(JSON): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
-			     synth_ice40 -top $(TOP_MODULE) -json $(JSON)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
+			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
-$(ASC): $(JSON) $(PCF)
-	bash -e -o pipefail -c '$(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-	           --json $(JSON) \
-	           --pcf $(PCF) \
-	           --asc $(ASC) \
-	           --freq 25 \
-	           2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+$(PNR_OUT): $(JSON) $(CONSTRAINT)
+	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
-$(BIN): $(ASC)
-	bash -e -o pipefail -c '$(ICEPACK) $(ASC) $(BIN)'
+$(BIN): $(PNR_OUT)
+	bash -e -o pipefail -c '$(PACK_CMD)'
 
 # Timing analysis
 .PHONY: timing
-timing: $(ASC)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(ASC)
+timing: $(PNR_OUT)
+ifeq ($(TARGET),ice40hx8k)
+	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
 	@echo "Timing report written to $(TIMING)"
+else
+	@echo "Timing report generation is only implemented for TARGET=ice40hx8k"
+endif
 
 # Resource utilization report
 .PHONY: utilization
@@ -112,7 +149,7 @@ utilization: $(JSON)
 # Program FPGA
 .PHONY: program
 program: $(BIN)
-	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
+	bash -e -o pipefail -c '$(PROGRAM_CMD)'
 
 # Clean build artifacts
 .PHONY: clean
@@ -123,11 +160,12 @@ clean:
 .PHONY: help
 help:
 	@echo "RISC-V FPGA Synthesis Makefile"
+	@echo "  Target board: $(TARGET)"
 	@echo ""
 	@echo "Targets:"
 	@echo "  all          - Synthesize and generate bitstream (default)"
 	@echo "  $(JSON)      - Run synthesis only (Yosys)"
-	@echo "  $(ASC)       - Run place and route (nextpnr)"
+	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
 	@echo "  $(BIN)       - Generate bitstream (icepack)"
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
@@ -139,12 +177,22 @@ help:
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
 	@echo "  - icestorm   : Bitstream generation and programming"
+	@echo ""
+	@echo "Target selection:"
+	@echo "  - make TARGET=ice40hx8k        (default: Alchitry Cu v1)"
+	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 
 .PHONY: check-tools
 check-tools:
 	@echo "Checking for required tools..."
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
-	@which $(NEXTPNR) > /dev/null || (echo "ERROR: nextpnr-ice40 not found"; exit 1)
+	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
+ifeq ($(TARGET),ice40hx8k)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
 	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
+endif
+ifeq ($(TARGET),ecp5_icepi_zero)
+	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
+endif
 	@echo "All required tools found!"
