@@ -184,8 +184,7 @@ synth-full-cpu: $(BUILD_DIR)
 		$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
 		$(RTL_DIR)/top.sv \
 		$(FPGA_DIR)/common/fpga_common_top.sv \
-		$(FPGA_DIR)/ice40_alchitry_cu/ice40_alchitry_cu_top.sv \
-		$(FPGA_DIR)/ice40_alchitry_cu/stub_fpu.sv; \
+		$(FPGA_DIR)/ice40_alchitry_cu/ice40_alchitry_cu_top.sv; \
 		synth_ice40 -top ice40_alchitry_cu_top -json $(BUILD_DIR)/full_cpu.json" \
 		2>&1 | tee $(BUILD_DIR)/full_cpu.log
 	@echo ""
