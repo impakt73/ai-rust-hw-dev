@@ -101,12 +101,13 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Files
 
-- **`ice40_alchitry_cu/fpga_top.sv`**: iCE40 top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
+- **`common/fpga_common_top.sv`**: Shared FPGA top logic (CPU + host UART + reset-button synchronization)
+- **`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`**: iCE40 top-level FPGA wrapper module
 - **`ice40_alchitry_cu/stub_fpu.sv`**: iCE40 stub floating-point unit (F extension disabled for iCE40 resource constraints)
-- **`ice40_alchitry_cu/ice40hx8k.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
-- **`ecp5/fpga_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
-- **`ecp5/stub_fpu.sv`**: ECP5 stub floating-point unit
-- **`ecp5/icepi_zero_25f.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
+- **`ice40_alchitry_cu/ice40_alchitry_cu.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
+- **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
+- **`ecp5_icepi_zero/stub_fpu.sv`**: ECP5 stub floating-point unit
+- **`ecp5_icepi_zero/ecp5_icepi_zero.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -149,7 +150,7 @@ Reference: [Alchitry Cu PCF](https://github.com/r1cebank/alchitry-cu-utils/blob/
 
 The `led_demo/` subdirectory contains a standalone LED rotation demo (`led_demo/led_pattern_top.sv`) that displays an alternating pattern on the 8 LEDs.
 
-The main iCE40 FPGA design (`ice40_alchitry_cu/fpga_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
+The main iCE40 FPGA design (`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
 
 **Example LED pattern (pseudo-assembly):**
 
@@ -187,7 +188,7 @@ jal  x0, main_loop     # Repeat
 
 The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ensures timing closure. If you need a different frequency, update:
 
-1. **PLL parameters**: Edit `ice40_alchitry_cu/fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
+1. **PLL parameters**: Edit `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
 2. **Makefile**: Change `--freq 25` to match your target frequency
 3. **Test program**: Update delay loop count in your program to match the new cycle count
 
@@ -234,7 +235,7 @@ The FPGA design loads programs at runtime via the host UART interface. To run yo
 
 To modify the system clock frequency:
 
-1. Update PLL parameters in `ice40_alchitry_cu/fpga_top.sv` (DIVR, DIVF, DIVQ)
+1. Update PLL parameters in `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` (DIVR, DIVF, DIVQ)
 2. Change `--freq` in `Makefile` to match your target frequency
 3. Re-run synthesis and check timing
 

@@ -1,21 +1,19 @@
-// FPGA Top-Level Module for iCE Pi Zero (ECP5-25F)
-// Wraps RISC-V CPU with host communication via USB serial
-
-module fpga_top #(
+module fpga_common_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
-    parameter bit ENABLE_F_EXT = 1'b0
+    parameter bit ENABLE_F_EXT = 1'b0,
+    parameter int CLK_FREQ_HZ = 25_000_000,
+    parameter int RESET_CYCLES = 25_000_000,
+    parameter bit RESET_N_FROM_BUTTON = 1'b1
 ) (
-    input  logic clk,
-    input  logic rst_n_btn,
-    output logic led,
-    input  logic usb_rx,
-    output logic usb_tx
+    input  logic       sys_clk,
+    input  logic       rst_n_btn,
+    input  logic       rst_n_external,
+    input  logic       usb_rx,
+    output logic       usb_tx,
+    output logic [7:0] led_out,
+    output logic [7:0] sys_led_out,
+    output logic       rst_n_core
 );
-    // iCE Pi Zero board clock is 50 MHz
-    logic sys_clk;
-    assign sys_clk = clk;
-
-    // Synchronize reset button (active low) to system clock domain
     logic rst_n_btn_sync2;
     ff_sync #(
         .STAGES(2),
@@ -30,6 +28,15 @@ module fpga_top #(
     logic reset_request;
     assign reset_request = ~rst_n_btn_sync2;
 
+    logic top_rst_n;
+    always_comb begin
+        if (RESET_N_FROM_BUTTON) begin
+            top_rst_n = rst_n_external & rst_n_btn_sync2;
+        end else begin
+            top_rst_n = rst_n_external;
+        end
+    end
+
     logic [7:0] host_tx_data;
     logic       host_tx_valid;
     logic       host_tx_ready;
@@ -37,11 +44,8 @@ module fpga_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     logic       com_err;
-
-    logic [7:0]  led_out;
-    logic [7:0]  sys_led_out;
-    logic        halted;
-    logic        instr_complete;
+    logic       halted;
+    logic       instr_complete;
     logic [31:0] debug_rs1_data;
     logic [31:0] debug_rs2_data;
     logic [31:0] debug_rd_data;
@@ -50,16 +54,15 @@ module fpga_top #(
     logic [31:0] debug_current_pc;
     logic [31:0] debug_current_instruction;
     logic [3:0]  debug_fsm_state;
-    logic        rst_n;
 
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .CLK_FREQ_HZ(50_000_000),
-        .RESET_CYCLES(50_000_000)
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
+        .RESET_CYCLES(RESET_CYCLES)
     ) cpu_inst (
         .clk(sys_clk),
-        .rst_n(rst_n_btn_sync2),
+        .rst_n(top_rst_n),
         .reset_request(reset_request),
         .host_tx_data(host_tx_data),
         .host_tx_valid(host_tx_valid),
@@ -80,15 +83,15 @@ module fpga_top #(
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
-        .rst_n_out(rst_n)
+        .rst_n_out(rst_n_core)
     );
 
     uart #(
-        .CLK_FREQ_HZ(50_000_000),
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .BAUD_RATE(1_000_000)
     ) host_uart_inst (
         .clk(sys_clk),
-        .rst_n(rst_n),
+        .rst_n(rst_n_core),
         .tx_data(host_tx_data),
         .tx_valid(host_tx_valid),
         .tx_ready(host_tx_ready),
@@ -100,7 +103,5 @@ module fpga_top #(
         .tx_out(usb_tx),
         .rx_in(usb_rx)
     );
-
-    assign led = sys_led_out[0];
 
 endmodule

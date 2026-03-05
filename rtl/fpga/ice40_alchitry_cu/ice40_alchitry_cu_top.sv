@@ -9,7 +9,7 @@
 // - Host computer handles external memory (DRAM) accesses
 // - CPU's internal UART is looped back for self-test
 
-module fpga_top #(
+module ice40_alchitry_cu_top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (enabled for shift-add multiplier)
     parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
 ) (
@@ -70,11 +70,6 @@ module fpga_top #(
     logic sys_clk;
     assign sys_clk = pll_clk_global;
     
-    // ============================================================
-    // Reset Synchronization
-    // ============================================================
-    logic rst_n;
-    
     // Synchronize PLL lock to system clock domain (2-FF synchronizer)
     logic pll_locked_sync2;
     ff_sync #(
@@ -86,130 +81,29 @@ module fpga_top #(
         .din(pll_locked),
         .dout(pll_locked_sync2)
     );
-
-    // Synchronize reset button (active low) to system clock domain (2-FF synchronizer)
-    logic rst_n_btn_sync2;
-    ff_sync #(
-        .STAGES(2),
-        .WIDTH(1)
-    ) rst_n_btn_sync_inst (
-        .clk(sys_clk),
-        .rst_n(1'b1),
-        .din(rst_n_btn),
-        .dout(rst_n_btn_sync2)
-    );
-    
-    // Use synchronized button as reset request (active high when button pressed)
-    logic reset_request;
-    assign reset_request = ~rst_n_btn_sync2;
-    
-    // ============================================================
-    // Host Bus Interface Signals
-    // ============================================================
-    // Serialized bus transactions between CPU and host UART
-    logic [7:0] host_tx_data;
-    logic       host_tx_valid;
-    logic       host_tx_ready;
-    logic [7:0] host_rx_data;
-    logic       host_rx_valid;
-    logic       host_rx_ready;
-    logic       com_err;
     
     // LED controller output
     logic [7:0]  led_out;
     
     // System LED output (from system controller)
     logic [7:0]  sys_led_out;
+    logic rst_n_core;
     
-    // System control
-    logic halted;
-    logic instr_complete;
-    
-    // Debug signals (unused in FPGA, but required by CPU)
-    logic [31:0] debug_rs1_data;
-    logic [31:0] debug_rs2_data;
-    logic [31:0] debug_rd_data;
-    logic [31:0] debug_pc;
-    logic [31:0] debug_instruction;
-    logic [31:0] debug_current_pc;
-    logic [31:0] debug_current_instruction;
-    logic [3:0]  debug_fsm_state;
-    
-    // ============================================================
-    // CPU Core with Peripherals
-    // ============================================================
-    // CPU's internal UART is looped back for self-test
-    // Memory access is handled via host bus interface through USB
-    top #(
+    fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .CLK_FREQ_HZ(25_000_000),       // 25 MHz (PLL output) - used by Clock Peripheral
-        .RESET_CYCLES(25_000_000)       // Hold reset for ~1 second after PLL lock
-    ) cpu_inst (
-        .clk(sys_clk),
-        .rst_n(pll_locked_sync2),
-        .reset_request(reset_request),
-        
-        // Host bus interface (serialized memory transactions)
-        .host_tx_data(host_tx_data),
-        .host_tx_valid(host_tx_valid),
-        .host_tx_ready(host_tx_ready),
-        .host_rx_data(host_rx_data),
-        .host_rx_valid(host_rx_valid),
-        .host_rx_ready(host_rx_ready),
-        .com_err(com_err),
-        
-        // LED peripheral
+        .CLK_FREQ_HZ(25_000_000),
+        .RESET_CYCLES(25_000_000),
+        .RESET_N_FROM_BUTTON(1'b0)
+    ) fpga_common_top_inst (
+        .sys_clk(sys_clk),
+        .rst_n_btn(rst_n_btn),
+        .rst_n_external(pll_locked_sync2),
+        .usb_rx(usb_rx),
+        .usb_tx(usb_tx),
         .led_out(led_out),
-        
-        // System LED (from system controller)
         .sys_led_out(sys_led_out),
-        
-        // System control
-        .halted(halted),
-        .instr_complete(instr_complete),
-        
-        // Debug outputs
-        .debug_rs1_data(debug_rs1_data),
-        .debug_rs2_data(debug_rs2_data),
-        .debug_rd_data(debug_rd_data),
-        .debug_pc(debug_pc),
-        .debug_instruction(debug_instruction),
-        .debug_current_pc(debug_current_pc),
-        .debug_current_instruction(debug_current_instruction),
-        .debug_fsm_state(debug_fsm_state),
-        .rst_n_out(rst_n)
-    );
-    
-    // ============================================================
-    // Host Communication UART
-    // ============================================================
-    // UART for host bus interface communication via USB serial
-    // Direct connection using uart.sv module with ready/valid interface
-    // This is much simpler than the previous FSM-based approach using uart_peripheral
-    
-    uart #(
-        .CLK_FREQ_HZ(25_000_000),  // 25 MHz (PLL output)
-        .BAUD_RATE(1_000_000)
-    ) host_uart_inst (
-        .clk(sys_clk),
-        .rst_n(rst_n),
-        
-        // TX interface - directly connected to host_tx signals
-        .tx_data(host_tx_data),
-        .tx_valid(host_tx_valid),
-        .tx_ready(host_tx_ready),
-        
-        // RX interface - directly connected to host_rx signals
-        .rx_data(host_rx_data),
-        .rx_valid(host_rx_valid),
-        .rx_ready(host_rx_ready),
-        .rx_error(com_err),
-        .rx_error_clr(1'b0),  // Not used in host interface
-        
-        // Serial pins - connected to USB serial
-        .tx_out(usb_tx),
-        .rx_in(usb_rx)
+        .rst_n_core(rst_n_core)
     );
     
     // ============================================================
@@ -235,7 +129,7 @@ module fpga_top #(
     logic [7:0] button_counter;
     
     always_ff @(posedge sys_clk) begin
-        if (!rst_n) begin
+        if (!rst_n_core) begin
             io_button_sync1 <= 5'b0;
             io_button_sync2 <= 5'b0;
             io_button_prev  <= 5'b0;

@@ -74,7 +74,7 @@ jobs:
       with:
         path: |
           rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit
-        key: ${{ runner.os }}-fpga-synth-ecp5-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/ecp5/**/*.sv', 'rtl/fpga/ecp5/**/*.lpf', 'rtl/fpga/Makefile') }}
+        key: ${{ runner.os }}-fpga-synth-ecp5-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/ecp5_icepi_zero/**/*.sv', 'rtl/fpga/ecp5_icepi_zero/**/*.lpf', 'rtl/fpga/Makefile') }}
     
     - name: Check formatting
       run: cargo fmt -- --check
