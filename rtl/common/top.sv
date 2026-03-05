@@ -19,7 +19,6 @@ module top #(
 ) (
     input  logic        clk,
     input  logic        rst_n,
-    input  logic        reset_request,
     
     // Host TX Interface (to External Host)
     // Serialized bus transactions sent to host
@@ -67,8 +66,7 @@ module top #(
         .RESET_CYCLES(RESET_CYCLES)
     ) reset_ctrl (
         .clk(clk),
-        .rst_n_in(rst_n),
-        .reset_request(reset_request | sysctrl_sys_rst),
+        .rst_n_in(rst_n & ~sysctrl_sys_rst),
         .rst_n_out(rst_n_internal)
     );
 

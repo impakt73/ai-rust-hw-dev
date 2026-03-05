@@ -2,41 +2,16 @@ module fpga_common_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
     parameter int CLK_FREQ_HZ = 25_000_000,
-    parameter int RESET_CYCLES = 25_000_000,
-    parameter bit RESET_N_FROM_BUTTON = 1'b1
+    parameter int RESET_CYCLES = 25_000_000
 ) (
     input  logic       sys_clk,
-    input  logic       rst_n_btn,
-    input  logic       rst_n_external,
+    input  logic       rst_n,
     input  logic       usb_rx,
     output logic       usb_tx,
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,
     output logic       rst_n_core
 );
-    logic rst_n_btn_sync2;
-    ff_sync #(
-        .STAGES(2),
-        .WIDTH(1)
-    ) rst_n_btn_sync_inst (
-        .clk(sys_clk),
-        .rst_n(1'b1),
-        .din(rst_n_btn),
-        .dout(rst_n_btn_sync2)
-    );
-
-    logic reset_request;
-    assign reset_request = ~rst_n_btn_sync2;
-
-    logic top_rst_n;
-    always_comb begin
-        if (RESET_N_FROM_BUTTON) begin
-            top_rst_n = rst_n_external & rst_n_btn_sync2;
-        end else begin
-            top_rst_n = rst_n_external;
-        end
-    end
-
     logic [7:0] host_tx_data;
     logic       host_tx_valid;
     logic       host_tx_ready;
@@ -62,8 +37,7 @@ module fpga_common_top #(
         .RESET_CYCLES(RESET_CYCLES)
     ) cpu_inst (
         .clk(sys_clk),
-        .rst_n(top_rst_n),
-        .reset_request(reset_request),
+        .rst_n(rst_n),
         .host_tx_data(host_tx_data),
         .host_tx_valid(host_tx_valid),
         .host_tx_ready(host_tx_ready),
