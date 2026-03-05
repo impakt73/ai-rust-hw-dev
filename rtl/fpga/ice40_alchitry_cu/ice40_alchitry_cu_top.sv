@@ -50,6 +50,8 @@ module ice40_alchitry_cu_top #(
     logic pll_clk_global; // PLL output on global clock network (25 MHz)
     logic pll_locked;     // PLL lock indicator
     logic rst_n_btn_sync2;
+    // Keep synchronizer reset deasserted so it can safely sample the async button
+    // even while downstream reset is asserted.
     ff_sync #(
         .STAGES(2),
         .WIDTH(1)
