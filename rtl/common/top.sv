@@ -67,8 +67,7 @@ module top #(
         .RESET_CYCLES(RESET_CYCLES)
     ) reset_ctrl (
         .clk(clk),
-        .rst_n_in(rst_n),
-        .reset_request(reset_request | sysctrl_sys_rst),
+        .rst_n_in(rst_n & ~(reset_request | sysctrl_sys_rst)),
         .rst_n_out(rst_n_internal)
     );
 
