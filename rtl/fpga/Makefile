@@ -26,6 +26,16 @@ RTL_SOURCES = \
 	$(RTL_DIR)/io/bus_bridge.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
+	$(RTL_DIR)/fpu/fp_regfile.sv \
+	$(RTL_DIR)/fpu/fpu.sv \
+	$(RTL_DIR)/fpu/fpu_classifier.sv \
+	$(RTL_DIR)/fpu/fpu_comparator.sv \
+	$(RTL_DIR)/fpu/fpu_div_assemble.sv \
+	$(RTL_DIR)/fpu/fpu_div_setup.sv \
+	$(RTL_DIR)/fpu/fpu_float_to_int.sv \
+	$(RTL_DIR)/fpu/fpu_fma.sv \
+	$(RTL_DIR)/fpu/fpu_int_to_float.sv \
+	$(RTL_DIR)/fpu/fpu_sqrt.sv \
 	$(RTL_DIR)/io/host_bus_interface.sv \
 	$(RTL_DIR)/io/host_bus_rx.sv \
 	$(RTL_DIR)/io/host_bus_tx.sv \
@@ -90,7 +100,6 @@ BUILD_DIR := build/$(TARGET)
 
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
-	$(FPGA_DIR)/stub_fpu.sv \
 	$(FPGA_DIR)/$(TOP_MODULE).sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
