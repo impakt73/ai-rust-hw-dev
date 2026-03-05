@@ -38,7 +38,6 @@ module fpga_common_top #(
     ) cpu_inst (
         .clk(sys_clk),
         .rst_n(rst_n),
-        .reset_request(1'b0),
         .host_tx_data(host_tx_data),
         .host_tx_valid(host_tx_valid),
         .host_tx_ready(host_tx_ready),

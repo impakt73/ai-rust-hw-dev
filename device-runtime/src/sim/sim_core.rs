@@ -475,7 +475,6 @@ where
         self.cpu.host_rx_valid = 0;
         self.cpu.host_rx_data = 0;
         self.cpu.com_err = 0;
-        self.cpu.reset_request = 0;
 
         // Drive reset low
         self.cpu.rst_n = 0;
