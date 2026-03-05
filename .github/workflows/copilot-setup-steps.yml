@@ -56,9 +56,10 @@ jobs:
           sudo chmod +x /usr/local/bin/fasm2frames
 
           # Generate Artix-7 chipdb required by nextpnr-xilinx.
-          python3 /opt/openxc7/opt/nextpnr-xilinx/python/bbaexport.py --device xc7a35tcsg324-1 --bba /tmp/xc7a35tcsg324-1.bba
-          bbasm -l /tmp/xc7a35tcsg324-1.bba /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
-          rm -f /tmp/xc7a35tcsg324-1.bba
+          CHIPDB_BBA="$(mktemp /tmp/xc7a35tcsg324-1.XXXXXX.bba)"
+          trap 'rm -f "${CHIPDB_BBA}"' EXIT
+          python3 /opt/openxc7/opt/nextpnr-xilinx/python/bbaexport.py --device xc7a35tcsg324-1 --bba "${CHIPDB_BBA}"
+          bbasm -l "${CHIPDB_BBA}" /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
       
       - name: Install Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
