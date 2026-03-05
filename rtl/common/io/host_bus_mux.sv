@@ -4,6 +4,7 @@
 // - Host bus interface path (external memory / Rust peripherals)
 
 module host_bus_mux #(
+    // NOTE: These nibble assignments must stay in sync with rtl/common/memory/bus.sv.
     parameter logic [3:0] SYSCTRL_TOP_NIBBLE = 4'h2,
     parameter logic [3:0] LED_TOP_NIBBLE     = 4'h5,
     parameter logic [3:0] CLOCK_TOP_NIBBLE   = 4'h6,

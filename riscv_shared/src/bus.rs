@@ -2,10 +2,22 @@
 
 /// Rust Peripheral Address Space
 /// Legacy contiguous Rust peripheral base (deprecated for decode).
-pub const RUST_PERIPH_BASE: u32 = 0x0000_0000;
+///
+/// Rust peripherals are no longer in one contiguous range, so decode logic must
+/// use explicit per-device base constants. This constant is retained only for
+/// backwards compatibility with older callers.
+pub const RUST_PERIPH_DEPRECATED_BASE: u32 = 0x0000_0000;
+#[allow(deprecated)]
+pub const RUST_PERIPH_BASE: u32 = RUST_PERIPH_DEPRECATED_BASE;
 
-/// Legacy contiguous Rust peripheral limit (exclusive, deprecated for decode)
-pub const RUST_PERIPH_LIMIT: u32 = 0x8000_0000;
+/// Legacy contiguous Rust peripheral limit (exclusive, deprecated for decode).
+///
+/// Rust peripherals are no longer in one contiguous range, so decode logic must
+/// use explicit per-device base constants. This constant is retained only for
+/// backwards compatibility with older callers.
+pub const RUST_PERIPH_DEPRECATED_LIMIT: u32 = 0x8000_0000;
+#[allow(deprecated)]
+pub const RUST_PERIPH_LIMIT: u32 = RUST_PERIPH_DEPRECATED_LIMIT;
 
 /// Base address for SimControl device (tohost register)
 pub const SIM_CONTROL_BASE: u32 = 0xF000_0000;
@@ -24,7 +36,7 @@ pub const FIFO_BASE: u32 = 0x3000_0000;
 /// RTL Peripheral Address Space
 /// Legacy contiguous RTL peripheral base (deprecated for decode).
 ///
-/// Kept for compatibility only. Do not use this range for decode logic because
+/// Kept for compatibility only. Do not use this base/limit pair for decode logic because
 /// RTL peripherals are now placed on non-contiguous 256MB windows and decoded
 /// by top nibble via [`is_rtl_peripheral_addr()`].
 pub const RTL_PERIPH_BASE: u32 = 0x5000_0000;
@@ -119,6 +131,8 @@ pub const fn sysctrl_halt_addr() -> u32 {
 /// - `0x5xxxxxxx`: LED Controller
 /// - `0x6xxxxxxx`: Clock Peripheral
 /// - `0x7xxxxxxx`: SRAM Peripheral
+///
+/// This is implemented as a top-nibble check using `addr >> 28`.
 pub const fn is_rtl_peripheral_addr(addr: u32) -> bool {
     matches!(addr >> 28, 0x2 | 0x5 | 0x6 | 0x7)
 }

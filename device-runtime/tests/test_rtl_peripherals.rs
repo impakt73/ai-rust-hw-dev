@@ -474,6 +474,7 @@ fn test_host_request_routes_non_rtl_to_system_bus() {
 #[test]
 fn test_host_request_spanning_rtl_boundary_is_rejected() {
     let mut runtime = create_test_runtime();
+    // Last address before the LED RTL window at 0x5000_0000.
     let request = BusRequest::read(0x4FFF_FFFF, AccessSize::Word);
 
     assert!(matches!(

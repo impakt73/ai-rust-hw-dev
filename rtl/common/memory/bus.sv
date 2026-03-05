@@ -77,10 +77,11 @@ module bus (
     localparam logic [3:0] CLOCK_TOP_NIBBLE   = 4'h6;
     localparam logic [3:0] SRAM_TOP_NIBBLE    = 4'h7;
 
-    localparam logic [27:0] LED_WINDOW_LIMIT     = 28'h0000010; // 16B
-    localparam logic [27:0] CLOCK_WINDOW_LIMIT   = 28'h0000010; // 16B
-    localparam logic [27:0] SRAM_WINDOW_LIMIT    = 28'h0003000; // 12KB
-    localparam logic [27:0] SYSCTRL_WINDOW_LIMIT = 28'h0000010; // 16B
+    localparam logic [27:0] SMALL_PERIPH_WINDOW_SIZE = 28'h0000010; // 16B
+    localparam logic [27:0] LED_WINDOW_SIZE     = SMALL_PERIPH_WINDOW_SIZE;
+    localparam logic [27:0] CLOCK_WINDOW_SIZE   = SMALL_PERIPH_WINDOW_SIZE;
+    localparam logic [27:0] SRAM_WINDOW_SIZE    = 28'h0003000; // 12KB
+    localparam logic [27:0] SYSCTRL_WINDOW_SIZE = 28'h0000010; // 16B
     // ============================================================
     // Address Decoder
     // ============================================================
@@ -96,16 +97,16 @@ module bus (
         sel_sysctrl  = 1'b0;
         
         // Select peripheral by top nibble, then gate with low-window range.
-        if (master_addr[31:28] == LED_TOP_NIBBLE && master_addr[27:0] < LED_WINDOW_LIMIT) begin
+        if (master_addr[31:28] == LED_TOP_NIBBLE && master_addr[27:0] < LED_WINDOW_SIZE) begin
             sel_led = 1'b1;
         end
-        else if (master_addr[31:28] == CLOCK_TOP_NIBBLE && master_addr[27:0] < CLOCK_WINDOW_LIMIT) begin
+        else if (master_addr[31:28] == CLOCK_TOP_NIBBLE && master_addr[27:0] < CLOCK_WINDOW_SIZE) begin
             sel_clock = 1'b1;
         end
-        else if (master_addr[31:28] == SRAM_TOP_NIBBLE && master_addr[27:0] < SRAM_WINDOW_LIMIT) begin
+        else if (master_addr[31:28] == SRAM_TOP_NIBBLE && master_addr[27:0] < SRAM_WINDOW_SIZE) begin
             sel_sram = 1'b1;
         end
-        else if (master_addr[31:28] == SYSCTRL_TOP_NIBBLE && master_addr[27:0] < SYSCTRL_WINDOW_LIMIT) begin
+        else if (master_addr[31:28] == SYSCTRL_TOP_NIBBLE && master_addr[27:0] < SYSCTRL_WINDOW_SIZE) begin
             sel_sysctrl = 1'b1;
         end
     end
