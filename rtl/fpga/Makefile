@@ -3,7 +3,6 @@
 
 # Project configuration
 PROJECT = riscv_fpga
-TOP_MODULE = fpga_top
 TARGET ?= ice40_alchitry_cu
 
 # File paths
@@ -51,7 +50,8 @@ ifeq ($(TARGET),ice40_alchitry_cu)
 DEVICE = hx8k
 PACKAGE = cb132
 FPGA_DIR = ice40_alchitry_cu
-CONSTRAINT = $(FPGA_DIR)/ice40hx8k.pcf
+TOP_MODULE = ice40_alchitry_cu_top
+CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
 SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(JSON)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -67,8 +67,9 @@ endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 DEVICE = 25k
 PACKAGE = CABGA256
-FPGA_DIR = ecp5
-CONSTRAINT = $(FPGA_DIR)/icepi_zero_25f.lpf
+FPGA_DIR = ecp5_icepi_zero
+TOP_MODULE = ecp5_icepi_zero_top
+CONSTRAINT = $(FPGA_DIR)/ecp5_icepi_zero.lpf
 SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(JSON)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -88,8 +89,9 @@ endif
 BUILD_DIR := build/$(TARGET)
 
 FPGA_SOURCES = \
+	common/fpga_common_top.sv \
 	$(FPGA_DIR)/stub_fpu.sv \
-	$(FPGA_DIR)/fpga_top.sv
+	$(FPGA_DIR)/$(TOP_MODULE).sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 

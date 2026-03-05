@@ -353,7 +353,7 @@ The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
 | File | Purpose |
 |------|---------|
-| `fpga/fpga_top.sv` | FPGA top-level wrapper |
+| `fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv` | iCE40 target top-level wrapper |
 | `fpga/Makefile` | Build automation |
 | `fpga/build/yosys.log` | Synthesis output |
 | `fpga/build/nextpnr.log` | Place & route output |

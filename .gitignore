@@ -27,6 +27,7 @@ obj_dir/
 
 # FPGA build artifacts
 fpga/build/
+rtl/fpga/build/
 fpga/*.json
 fpga/*.asc
 fpga/*.bin
