@@ -97,13 +97,13 @@ DEVICE = xc7a35tcsg324-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
-NETLIST = $(BUILD_DIR)/$(PROJECT).edif
-SYNTH_CMD = synth_xilinx -family xc7 -top $(TOP_MODULE) -edif $(NETLIST)
+NETLIST = $(BUILD_DIR)/$(PROJECT).json
+SYNTH_CMD = synth_xilinx -family xc7 -top $(TOP_MODULE); write_json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).fasm
 CHIPDB ?= $(OPENXC7_CHIPDB)
 PNR_CMD = $(NEXTPNR) --chipdb $(CHIPDB) \
 		--xdc $(CONSTRAINT) \
-		--edif $(NETLIST) \
+		--json $(NETLIST) \
 		--fasm $(PNR_OUT) \
 		--freq 50
 FRAMES = $(BUILD_DIR)/$(PROJECT).frames
@@ -142,8 +142,8 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 FASM2FRAMES = fasm2frames
 XC7FRAMES2BIT = xc7frames2bit
-OPENXC7_CHIPDB ?= /opt/openxc7/share/nextpnr-xilinx/xc7/chipdb/xc7a35tcsg324.bin
-XRAY_PART_FILE ?= /opt/openxc7/share/prjxray/database/artix7/xc7a35tcsg324-1/part.yaml
+OPENXC7_CHIPDB ?= /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
+XRAY_PART_FILE ?= /opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5

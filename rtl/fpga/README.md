@@ -144,8 +144,8 @@ Default Makefile paths can be overridden for your openXC7 installation:
 
 ```bash
 make TARGET=artix7_alchitry_au \
-  OPENXC7_CHIPDB=/opt/openxc7/share/nextpnr-xilinx/xc7/chipdb/xc7a35tcsg324.bin \
-  XRAY_PART_FILE=/opt/openxc7/share/prjxray/database/artix7/xc7a35tcsg324-1/part.yaml
+  OPENXC7_CHIPDB=/opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin \
+  XRAY_PART_FILE=/opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
 ```
 
 ## Pin Assignments (Alchitry Cu v1)

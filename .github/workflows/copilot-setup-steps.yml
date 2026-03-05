@@ -27,9 +27,38 @@ jobs:
       - name: Cache and install apt packages
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
-          packages: verilator gcc-riscv64-unknown-elf libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
-          # Bump version (v2 -> v3) to force cache refresh
-          version: v3
+          packages: verilator gcc-riscv64-unknown-elf libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader squashfs-tools patchelf cmake libboost-iostreams-dev libboost-thread-dev libboost-program-options-dev libboost-python-dev libboost-filesystem-dev libboost-system-dev libboost-regex-dev libboost-chrono-dev libboost-atomic-dev libeigen3-dev python3-pip
+          # Bump version (v3 -> v4) to force cache refresh
+          version: v4
+
+      - name: Install Artix-7 (openXC7) tooling
+        run: |
+          sudo mkdir -p /opt/openxc7/share/nextpnr-xilinx
+          wget -O /tmp/openxc7_0.8.2_amd64.snap https://github.com/openXC7/openXC7-snap/releases/download/0.8.2/openxc7_0.8.2_amd64.snap
+          sudo unsquashfs -f -d /opt/openxc7 /tmp/openxc7_0.8.2_amd64.snap
+
+          # Install prjxray python dependencies and source utility scripts for fasm2frames.
+          python3 -m pip install --user git+https://github.com/f4pga/prjxray.git
+          git clone --depth 1 https://github.com/f4pga/prjxray.git /tmp/prjxray-src
+          sudo mv /tmp/prjxray-src /opt/openxc7/prjxray-src
+          PYTHON_USER_SITE="$(python3 -c 'import site; print(site.getusersitepackages())')"
+
+          # Promote tool binaries from the snap payload into /usr/local/bin with host loader.
+          for tool in nextpnr-xilinx bbasm xc7frames2bit; do
+            sudo cp "/opt/openxc7/usr/bin/${tool}" "/usr/local/bin/${tool}.real"
+            sudo patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "/usr/local/bin/${tool}.real"
+            printf '%s\n' '#!/usr/bin/env bash' "LD_LIBRARY_PATH=/opt/openxc7/usr/lib/x86_64-linux-gnu:/opt/openxc7/lib/x86_64-linux-gnu exec /usr/local/bin/${tool}.real \"\$@\"" | sudo tee "/usr/local/bin/${tool}" >/dev/null
+            sudo chmod +x "/usr/local/bin/${tool}"
+          done
+
+          # Wrapper for fasm2frames with prjxray-db path baked in.
+          printf '%s\n' '#!/usr/bin/env bash' "PYTHONPATH=/opt/openxc7/prjxray-src:${PYTHON_USER_SITE} exec python3 /opt/openxc7/prjxray-src/utils/fasm2frames.py --db-root /opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db \"\$@\"" | sudo tee /usr/local/bin/fasm2frames >/dev/null
+          sudo chmod +x /usr/local/bin/fasm2frames
+
+          # Generate Artix-7 chipdb required by nextpnr-xilinx.
+          python3 /opt/openxc7/opt/nextpnr-xilinx/python/bbaexport.py --device xc7a35tcsg324-1 --bba /tmp/xc7a35tcsg324-1.bba
+          bbasm -l /tmp/xc7a35tcsg324-1.bba /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
+          rm -f /tmp/xc7a35tcsg324-1.bba
       
       - name: Install Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -63,8 +92,12 @@ jobs:
           yosys --version
           nextpnr-ice40 --version
           nextpnr-ecp5 --version
+          nextpnr-xilinx --version
+          fasm2frames --help | head -1
+          xc7frames2bit --help | head -1
           iceprog --help 2>&1 | head -1
           command -v openFPGALoader
+          test -f /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
 
       - name: Summary of installed tools
         run: |
@@ -77,6 +110,10 @@ jobs:
           echo "Yosys: $(yosys --version | head -1)"
           echo "nextpnr-ice40: $(nextpnr-ice40 --version)"
           echo "nextpnr-ecp5: $(nextpnr-ecp5 --version)"
+          echo "nextpnr-xilinx: $(nextpnr-xilinx --version)"
+          echo "fasm2frames: $(command -v fasm2frames)"
+          echo "xc7frames2bit: $(command -v xc7frames2bit)"
+          echo "Artix-7 chipdb: /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin"
           echo "iceprog: $(iceprog --help 2>&1 | head -1)"
           echo "openFPGALoader: $(command -v openFPGALoader)"
           echo ""
@@ -93,6 +130,7 @@ jobs:
           echo "FPGA Synthesis commands (in rtl/fpga/ directory):"
           echo "  make check-tools                             - Verify FPGA tools installed"
           echo "  make                                         - Full synthesis flow"
+          echo "  make TARGET=artix7_alchitry_au build/artix7_alchitry_au/riscv_fpga.json - Artix-7 synthesis netlist"
           echo "  make timing                                  - Generate timing report"
           echo "  make clean                                   - Remove build artifacts"
           echo ""
