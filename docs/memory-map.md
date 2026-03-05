@@ -9,33 +9,31 @@ The canonical definitions of memory-map ranges and base addresses live in [`risc
 ```
 Address Range            | Device              | Type | Description
 -------------------------|---------------------|------|----------------------------
-0x40000000 - 0x40000003  | SimControl          | Rust | Simulation control (tohost)
-0x40001000 - 0x4000100F  | Video               | Rust | Video frame buffer
-0x40002000 - 0x4000200F  | Audio               | Rust | Audio buffer
-0x40003000 - 0x40003007  | FIFO                | Rust | Host communication FIFO
-0x40004000 - 0x40004013  | DMA                 | Rust | DMA controller
-0x40005000 - 0x4FFFFFFF  | Reserved (Rust)     | Rust | Reserved for future Rust peripherals
+0x00000000 - 0x0000000F  | Video               | Rust | Video frame buffer
+0x10000000 - 0x1000000F  | Audio               | Rust | Audio buffer
+0x30000000 - 0x30000007  | FIFO                | Rust | Host communication FIFO
+0x40000000 - 0x40000013  | DMA                 | Rust | DMA controller
+0xF0000000 - 0xF0000003  | SimControl          | Rust | Simulation control (tohost)
+0x20000000 - 0x2000000F  | System Controller   | RTL  | CPU boot and reset control
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
-0x51000000 - 0x5100000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
-0x52000000 - 0x52002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
-0x52003000 - 0x52FFFFFF  | Reserved (RTL)      | RTL  | Reserved for future RTL peripherals
-0x53000000 - 0x5300000F  | System Controller   | RTL  | CPU boot and reset control
-0x53000010 - 0x5FFFFFFF  | Reserved (RTL)      | RTL  | Reserved for future RTL peripherals
+0x60000000 - 0x6000000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
+0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
 0x80000000 - 0xFFFFFFFF  | DRAM                | Both | System memory (2 GiB)
 ```
 
 ## Peripheral Types
 
-- **Rust peripherals** (`0x40000000 - 0x4FFFFFFF`): Handled by the Rust `SystemBus`,
-  simulation-only. Not synthesized to FPGA.
-- **RTL peripherals** (`0x50000000 - 0x5FFFFFFF`): Handled by the SystemVerilog `bus.sv`
-  address decoder, synthesizable to FPGA.
+- **Rust peripherals** (`0x0xxxxxxx`, `0x1xxxxxxx`, `0x3xxxxxxx`, `0x4xxxxxxx`, `0xFxxxxxxx`):
+  Handled by the Rust `SystemBus`, simulation-only. Not synthesized to FPGA.
+- **RTL peripherals** (`0x2xxxxxxx`, `0x5xxxxxxx`, `0x6xxxxxxx`, `0x7xxxxxxx`):
+  Handled by the SystemVerilog `bus.sv` address decoder (top-nibble select),
+  synthesizable to FPGA.
 - **DRAM** (`0x80000000 - 0xFFFFFFFF`): Main system memory. Accessed through the external
   memory interface on both RTL and Rust sides.
 
-## Rust Peripherals (0x40000000 - 0x4FFFFFFF)
+## Rust Peripherals (top-nibble decoded windows)
 
-### SimControl (0x40000000)
+### SimControl (0xF0000000)
 
 The SimControl device provides the `tohost` register used to signal program
 termination to the simulator.
@@ -53,7 +51,7 @@ addi(val, 0, 42);            // Load success code
 sw(reg, val, 0);             // Write to tohost → halts simulation
 ```
 
-### Video (0x40001000)
+### Video (0x00000000)
 
 The Video device provides a framebuffer interface for rendering.
 
@@ -66,7 +64,7 @@ The Video device provides a framebuffer interface for rendering.
 
 **Constants:** `VIDEO_BASE`, `VIDEO_ADDR`, `VIDEO_CONFIG`, `VIDEO_STATUS`, `VIDEO_PRESENT`
 
-### Audio (0x40002000)
+### Audio (0x10000000)
 
 The Audio device provides a sample buffer interface for audio output.
 
@@ -79,7 +77,7 @@ The Audio device provides a sample buffer interface for audio output.
 
 **Constants:** `AUDIO_BASE`, `AUDIO_ADDR`, `AUDIO_CONFIG`, `AUDIO_STATUS`, `AUDIO_DMA`
 
-### FIFO (0x40003000)
+### FIFO (0x30000000)
 
 The FIFO device provides bidirectional host communication using a packet protocol.
 
@@ -90,7 +88,7 @@ The FIFO device provides bidirectional host communication using a packet protoco
 
 **Constants:** `FIFO_BASE`, `FIFO_DATA`, `FIFO_STATUS`, `RX_VALID`, `TX_READY`
 
-### DMA (0x40004000)
+### DMA (0x40000000)
 
 The DMA device provides hardware-accelerated memory-to-memory transfers.
 
@@ -104,7 +102,7 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 
 **Constants:** `DMA_BASE`, `DMA_SRC_ADDR`, `DMA_DST_ADDR`, `DMA_SIZE`, `DMA_STATUS`, `DMA_DISPATCH`
 
-## RTL Peripherals (0x50000000 - 0x5FFFFFFF)
+## RTL Peripherals (top-nibble decoded windows)
 
 ### LED Controller (0x50000000)
 
@@ -116,7 +114,7 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 - **Latency:** Single-cycle (ready = 1'b1)
 - **Constants:** `LED_BASE`, `LED_SIZE`, `LED_OUT_OFFSET`
 
-### Clock Peripheral (0x51000000)
+### Clock Peripheral (0x60000000)
 
 | Offset | Register   | Access | Description |
 |--------|------------|--------|-------------|
@@ -129,16 +127,16 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 - **Note:** Clock frequency is configurable via `CLK_FREQ_HZ` parameter
 - **Constants:** `CLOCK_BASE`, `CLOCK_SIZE`, `CLOCK_ELAPSED_US_OFFSET`, `CLOCK_ELAPSED_MS_OFFSET`, `CLOCK_ELAPSED_S_OFFSET`
 
-### SRAM Peripheral (0x52000000)
+### SRAM Peripheral (0x70000000)
 
 12KB of general-purpose on-chip SRAM. Used by `rust-test-program` for the text, rodata, data, bss, and stack sections.
 
-- **Size:** 12KB (0x52000000 – 0x52002FFF)
+- **Size:** 12KB (0x70000000 – 0x70002FFF)
 - **Access sizes:** Byte, halfword, word
 - **Latency:** Writes: single-cycle (ready asserted immediately); Reads: 1-cycle latency (ready asserted in the cycle after request)
 - **Constants:** `SRAM_BASE`, `SRAM_SIZE`
 
-### System Controller (0x53000000)
+### System Controller (0x20000000)
 
 | Offset | Register | Access | Description |
 |--------|----------|--------|-------------|

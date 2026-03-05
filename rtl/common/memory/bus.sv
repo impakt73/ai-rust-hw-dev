@@ -5,20 +5,18 @@
 //
 // Address Map:
 // - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
-// - Clock Peripheral:    0x51000000 - 0x5100000F (16 bytes)
-// - SRAM Peripheral:     0x52000000 - 0x52002FFF (12KB)
-// - System Controller:   0x53000000 - 0x5300000F (16 bytes)
+// - Clock Peripheral:    0x60000000 - 0x6000000F (16 bytes)
+// - SRAM Peripheral:     0x70000000 - 0x70002FFF (12KB)
+// - System Controller:   0x20000000 - 0x2000000F (16 bytes)
 // External memory (DRAM + Rust peripherals) is routed outside this module.
 //
-// Unmapped addresses (within RTL peripheral range but not LED/CLOCK/SRAM/SYSCTRL):
+// Unmapped addresses (within selected RTL peripheral nibble windows but outside
+// each peripheral's low-order decode window):
 // - Reads return 0
 // - Writes are dropped
 // - Ready is asserted immediately
 
-module bus #(
-    parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
-    parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
-) (
+module bus (
     // Clock and reset (unused in current combinational implementation)
     /* verilator lint_off UNUSED */
     input  logic        clk,
@@ -74,14 +72,15 @@ module bus #(
     // ============================================================
     // Address Range Definitions
     // ============================================================
-    localparam LED_BASE   = 32'h50000000;
-    localparam LED_LIMIT  = 32'h50000010;  // LED_BASE + 16 bytes
-    localparam CLOCK_BASE = 32'h51000000;
-    localparam CLOCK_LIMIT = 32'h51000010; // CLOCK_BASE + 16 bytes
-    localparam SRAM_BASE  = 32'h52000000;
-    localparam SRAM_LIMIT = 32'h52003000;  // SRAM_BASE + 12KB
-    localparam SYSCTRL_BASE  = 32'h53000000;
-    localparam SYSCTRL_LIMIT = 32'h53000010; // SYSCTRL_BASE + 16 bytes
+    localparam logic [3:0] SYSCTRL_TOP_NIBBLE = 4'h2;
+    localparam logic [3:0] LED_TOP_NIBBLE     = 4'h5;
+    localparam logic [3:0] CLOCK_TOP_NIBBLE   = 4'h6;
+    localparam logic [3:0] SRAM_TOP_NIBBLE    = 4'h7;
+
+    localparam logic [27:0] LED_WINDOW_LIMIT     = 28'h0000010; // 16B
+    localparam logic [27:0] CLOCK_WINDOW_LIMIT   = 28'h0000010; // 16B
+    localparam logic [27:0] SRAM_WINDOW_LIMIT    = 28'h0003000; // 12KB
+    localparam logic [27:0] SYSCTRL_WINDOW_LIMIT = 28'h0000010; // 16B
     // ============================================================
     // Address Decoder
     // ============================================================
@@ -96,27 +95,18 @@ module bus #(
         sel_sram     = 1'b0;
         sel_sysctrl  = 1'b0;
         
-        // Check if address is in LED range
-        if (master_addr >= LED_BASE && master_addr < LED_LIMIT) begin
+        // Select peripheral by top nibble, then gate with low-window range.
+        if (master_addr[31:28] == LED_TOP_NIBBLE && master_addr[27:0] < LED_WINDOW_LIMIT) begin
             sel_led = 1'b1;
         end
-        // Check if address is in Clock Peripheral range
-        else if (master_addr >= CLOCK_BASE && master_addr < CLOCK_LIMIT) begin
+        else if (master_addr[31:28] == CLOCK_TOP_NIBBLE && master_addr[27:0] < CLOCK_WINDOW_LIMIT) begin
             sel_clock = 1'b1;
         end
-        // Check if address is in SRAM Peripheral range
-        else if (master_addr >= SRAM_BASE && master_addr < SRAM_LIMIT) begin
+        else if (master_addr[31:28] == SRAM_TOP_NIBBLE && master_addr[27:0] < SRAM_WINDOW_LIMIT) begin
             sel_sram = 1'b1;
         end
-        // Check if address is in System Controller range
-        else if (master_addr >= SYSCTRL_BASE && master_addr < SYSCTRL_LIMIT) begin
+        else if (master_addr[31:28] == SYSCTRL_TOP_NIBBLE && master_addr[27:0] < SYSCTRL_WINDOW_LIMIT) begin
             sel_sysctrl = 1'b1;
-        end
-        // Check if address is in unmapped RTL peripheral space
-        // (unmapped: no select asserted, uses default response)
-        else if (master_addr >= RTL_PERIPH_BASE && master_addr < RTL_PERIPH_LIMIT) begin
-            // Unmapped RTL peripheral address - no slave selected
-            // Response mux returns rdata=0 and ready=1 for this case
         end
     end
     

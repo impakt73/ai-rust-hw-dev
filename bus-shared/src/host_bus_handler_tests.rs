@@ -168,13 +168,13 @@ fn test_request_end_addr_uses_single_beat_for_fixed_requests() {
 
 #[test]
 fn test_classify_request_region_detects_burst_boundary_crossing() {
-    let req = BusRequest::burst_read(0x5FFF_FFFC, AccessSize::Word, 2, false, false);
+    let req = BusRequest::burst_read(0x7FFF_FFFC, AccessSize::Word, 2, false, false);
     assert_eq!(
         classify_request_region(&req),
         RequestAddressRegion::SpansRtlBoundary
     );
 
-    let fixed_req = BusRequest::burst_read(0x5FFF_FFFC, AccessSize::Word, 2, true, false);
+    let fixed_req = BusRequest::burst_read(0x7FFF_FFFC, AccessSize::Word, 2, true, false);
     assert_eq!(
         classify_request_region(&fixed_req),
         RequestAddressRegion::RtlPeripheral

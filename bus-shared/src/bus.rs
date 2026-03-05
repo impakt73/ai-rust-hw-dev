@@ -3,7 +3,7 @@ use crate::dram::Dram;
 use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
-use riscv_shared::bus::{DRAM_BASE, RTL_PERIPH_BASE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE};
+use riscv_shared::bus::{is_rtl_peripheral_addr, DRAM_BASE, SIM_CONTROL_BASE};
 
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +82,7 @@ impl SystemBus {
     /// RTL peripherals are handled directly by the Verilator top module,
     /// not by the Rust SystemBus. This method helps identify such addresses.
     pub fn is_rtl_peripheral(&self, addr: u32) -> bool {
-        (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&addr)
+        is_rtl_peripheral_addr(addr)
     }
 
     /// Update the elapsed time (called by simulator after each step)

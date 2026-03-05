@@ -203,16 +203,15 @@ Before marking PR ready for review:
 ```
 Address Range          | Device           | Type | Description
 -----------------------|------------------|------|----------------------------
-0x40000000-0x40000003 | SimControl       | Rust | Simulation control
-0x40001000-0x4000100F | Video            | Rust | Video frame buffer
-0x40002000-0x4000200F | Audio            | Rust | Audio buffer
-0x40003000-0x40003007 | FIFO             | Rust | Host communication FIFO
-0x40004000-0x40004013 | DMA              | Rust | DMA controller
+0x00000000-0x0000000F | Video            | Rust | Video frame buffer
+0x10000000-0x1000000F | Audio            | Rust | Audio buffer
+0x30000000-0x30000007 | FIFO             | Rust | Host communication FIFO
+0x40000000-0x40000013 | DMA              | Rust | DMA controller
+0xF0000000-0xF0000003 | SimControl       | Rust | Simulation control
+0x20000000-0x2000000F | System Controller| RTL  | CPU boot and reset control
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
-0x51000000-0x5100000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
-0x52000000-0x52002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
-0x52003000-0x52FFFFFF | Reserved (RTL)   | RTL  | Reserved for future RTL peripherals
-0x53000000-0x5300000F | System Controller| RTL  | CPU boot and reset control
+0x60000000-0x6000000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
+0x70000000-0x70002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
 0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
 ```
 
@@ -225,7 +224,7 @@ Address Range          | Device           | Type | Description
 - **Latency:** Single-cycle (ready = 1'b1)
 
 **Clock Peripheral:**
-- **Address:** 0x51000000
+- **Address:** 0x60000000
 - **Registers (all read-only):**
   - 0x00: ELAPSED_US - Elapsed microseconds since reset
   - 0x04: ELAPSED_MS - Elapsed milliseconds since reset
@@ -235,8 +234,8 @@ Address Range          | Device           | Type | Description
 - **Note:** Clock frequency is configurable via CLK_FREQ_HZ parameter
 
 **RTL vs Rust Peripherals:**
-- **RTL peripherals** (0x50000000-0x5FFFFFFF): Handled by Verilator, synthesizable to FPGA
-- **Rust peripherals** (0x40000000-0x4FFFFFFF): Handled by SystemBus, simulation only
+- **RTL peripherals** (`0x2xxxxxxx`, `0x5xxxxxxx`, `0x6xxxxxxx`, `0x7xxxxxxx`): Handled by Verilator, synthesizable to FPGA
+- **Rust peripherals** (`0x0xxxxxxx`, `0x1xxxxxxx`, `0x3xxxxxxx`, `0x4xxxxxxx`, `0xFxxxxxxx`): Handled by SystemBus, simulation only
 
 **DRAM range:** 0x80000000 - 0xFFFFFFFF
 
@@ -260,7 +259,7 @@ lw(13, 15, 0);        // Read LED_OUT into register x13
 **Clock Peripheral Usage Example:**
 ```rust
 // Read elapsed time from clock peripheral
-lui(15, 0x51000000);  // Load Clock peripheral base address
+lui(15, 0x60000000);  // Load Clock peripheral base address
 
 // Read elapsed microseconds
 lw(10, 15, 0x00);     // Read ELAPSED_US into register x10

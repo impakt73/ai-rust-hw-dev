@@ -1,11 +1,13 @@
 // Host Bus Mux
 // Routes CPU memory transactions to either:
-// - System bus path (RTL peripherals)
+// - System bus path (RTL peripherals selected by top nibble)
 // - Host bus interface path (external memory / Rust peripherals)
 
 module host_bus_mux #(
-    parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
-    parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
+    parameter logic [3:0] SYSCTRL_TOP_NIBBLE = 4'h2,
+    parameter logic [3:0] LED_TOP_NIBBLE     = 4'h5,
+    parameter logic [3:0] CLOCK_TOP_NIBBLE   = 4'h6,
+    parameter logic [3:0] SRAM_TOP_NIBBLE    = 4'h7
 ) (
     // CPU-side interface
     input  logic [31:0] cpu_addr,
@@ -36,7 +38,11 @@ module host_bus_mux #(
 );
     logic sel_rtl_periph;
 
-    assign sel_rtl_periph = (cpu_addr >= RTL_PERIPH_BASE) && (cpu_addr < RTL_PERIPH_LIMIT);
+    assign sel_rtl_periph =
+        (cpu_addr[31:28] == SYSCTRL_TOP_NIBBLE) ||
+        (cpu_addr[31:28] == LED_TOP_NIBBLE) ||
+        (cpu_addr[31:28] == CLOCK_TOP_NIBBLE) ||
+        (cpu_addr[31:28] == SRAM_TOP_NIBBLE);
 
     assign sys_addr  = cpu_addr;
     assign sys_wdata = cpu_wdata;

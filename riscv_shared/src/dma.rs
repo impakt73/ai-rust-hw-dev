@@ -6,7 +6,7 @@
 use core::ptr::{read_volatile, write_volatile};
 
 /// DMA device base address
-pub const DMA_BASE: u32 = 0x4000_4000;
+pub const DMA_BASE: u32 = 0x4000_0000;
 
 /// DMA source address register offset
 pub const DMA_SRC_ADDR: u32 = DMA_BASE;
