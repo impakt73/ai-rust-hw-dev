@@ -353,6 +353,7 @@ pub fn create_bus_arbiter_runtime() -> Result<VerilatorRuntime, Box<dyn std::err
     create_runtime(&["memory/bus_arbiter.sv"])
 }
 
+// Helper function to create a runtime for the Registered Bus
 pub fn create_registered_bus_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "memory/registered_bus.sv",

@@ -170,7 +170,10 @@ module registered_bus #(
                 end
 
                 S_SLAVE_RESP: begin
-                    if (selected_slave_d_valid && !pending_resp_valid) begin
+                    if (selected_slave_d_valid
+                        && selected_slave_valid
+                        && slave_mem_d_ready[selected_slave_idx]
+                        && !pending_resp_valid) begin
                         pending_resp_rdata <= selected_slave_d_rdata;
                         pending_resp_valid <= 1'b1;
                         state <= S_MASTER_RESP;
