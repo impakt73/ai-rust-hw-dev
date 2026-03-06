@@ -241,6 +241,8 @@ endif
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(FASM2FRAMES) > /dev/null || (echo "ERROR: fasm2frames not found"; exit 1)
 	@which $(XC7FRAMES2BIT) > /dev/null || (echo "ERROR: xc7frames2bit not found"; exit 1)
+	@test -f $(CHIPDB) || (echo "ERROR: Artix chipdb not found at $(CHIPDB)"; exit 1)
+	@test -f $(PART_FILE) || (echo "ERROR: Artix part file not found at $(PART_FILE)"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
 endif
 	@echo "All required tools found!"

@@ -1,7 +1,7 @@
 # Alchitry Au (Artix-7 XC7A35T) XDC constraints
 
 # Clock: 100 MHz on-board oscillator
-create_clock -name sys_clk_100mhz -period 10.000 [get_ports clk]
+create_clock -name clk_100mhz -period 10.000 [get_ports clk]
 set_property PACKAGE_PIN N14 [get_ports clk]
 set_property IOSTANDARD LVCMOS33 [get_ports clk]
 
