@@ -1,7 +1,8 @@
 //! Bus device base addresses and memory range validation
 
 /// Rust Peripheral Address Space
-/// Base address for Rust peripherals (simulation-only peripherals handled by SystemBus)
+/// Base address for Rust peripherals handled by SystemBus (including DRAM)
+/// and reached through the host-bus path on FPGA backends.
 pub const RUST_PERIPH_BASE: u32 = 0x8000_0000;
 
 /// Limit marker for Rust peripheral region (inclusive upper-half address space)
@@ -116,7 +117,7 @@ pub const fn is_rtl_peripheral_addr(addr: u32) -> bool {
     (addr & 0x8000_0000) == 0
 }
 
-/// Base address for DRAM
+/// Base address for DRAM (a Rust peripheral in this project)
 pub const DRAM_BASE: u32 = 0x8000_0000;
 
 /// End address for DRAM (inclusive)

@@ -235,7 +235,7 @@ Address Range          | Device           | Type | Description
 
 **RTL vs Rust Peripherals:**
 - **RTL peripherals** (`0x00000000-0x7FFFFFFF`): Handled by Verilator, synthesizable to FPGA
-- **Rust peripherals** (`0x80000000-0xFFFFFFFF`): Handled by SystemBus, simulation only
+- **Rust peripherals** (`0x80000000-0xFFFFFFFF`): Handled by SystemBus (including DRAM) and reached from FPGA via the host bus interface
 
 **DRAM range:** 0x80000000 - 0xFFFFFFFF
 
