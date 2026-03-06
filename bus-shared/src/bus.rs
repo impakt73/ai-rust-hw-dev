@@ -3,7 +3,7 @@ use crate::dram::Dram;
 use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
-use riscv_shared::bus::{is_rtl_peripheral_addr, is_valid_dram_range, DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::bus::{is_rtl_peripheral_addr, DRAM_BASE, SIM_CONTROL_BASE};
 
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,12 +53,19 @@ impl SystemBus {
         let dram = Dram::new();
         let sim_control = SimControl::new();
 
-        // Pre-populate memory map with fixed non-DRAM internal devices
-        let memory_map = vec![MemoryMapEntry {
-            base: SIM_CONTROL_BASE,
-            end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
-            id: DeviceId::SimControl,
-        }];
+        // Pre-populate memory map with internal devices
+        let memory_map = vec![
+            MemoryMapEntry {
+                base: SIM_CONTROL_BASE,
+                end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
+                id: DeviceId::SimControl,
+            },
+            MemoryMapEntry {
+                base: DRAM_BASE,
+                end: DRAM_BASE.saturating_add(dram.size()),
+                id: DeviceId::Dram,
+            },
+        ];
 
         SystemBus {
             memory,
@@ -106,15 +113,11 @@ impl SystemBus {
 
         let end = base_addr.saturating_add(size);
 
-        // Check for overlaps with existing devices.
+        // Check for overlaps with existing devices
         for entry in &self.memory_map {
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
-                    DeviceId::Dram => {
-                        unreachable!(
-                            "register_device overlap check encountered DRAM in memory_map."
-                        )
-                    }
+                    DeviceId::Dram => self.dram.name(),
                     DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
@@ -155,38 +158,27 @@ impl SystemBus {
     /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
     #[allow(dead_code)]
     pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)> + '_ {
-        core::iter::once((DRAM_BASE, self.dram.size(), self.dram.name())).chain(
-            self.memory_map.iter().map(|entry| {
-                let size = entry.end.wrapping_sub(entry.base);
-                let name = match entry.id {
-                    DeviceId::Dram => {
-                        unreachable!("registered_devices encountered DRAM in memory_map.")
-                    }
-                    DeviceId::SimControl => self.sim_control.name(),
-                    DeviceId::External(idx) => self.external_devices[idx].name(),
-                };
-                (entry.base, size, name)
-            }),
-        )
+        self.memory_map.iter().map(|entry| {
+            let size = entry.end.wrapping_sub(entry.base);
+            let name = match entry.id {
+                DeviceId::Dram => self.dram.name(),
+                DeviceId::SimControl => self.sim_control.name(),
+                DeviceId::External(idx) => self.external_devices[idx].name(),
+            };
+            (entry.base, size, name)
+        })
     }
 
     /// Find the device ID for the given address
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
     fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
-        // Check explicitly mapped non-DRAM entries first (SimControl + external MMIO)
         for entry in &self.memory_map {
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
                 return Some((entry.id, offset));
             }
         }
-
-        // Fall back to DRAM for valid DRAM addresses
-        if is_valid_dram_range(addr, 1) {
-            return Some((DeviceId::Dram, addr - DRAM_BASE));
-        }
-
         None
     }
 
@@ -195,14 +187,6 @@ impl SystemBus {
     /// Routes the request to the appropriate device based on address.
     /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -222,6 +206,11 @@ impl SystemBus {
                     0
                 }
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus read_word from unmapped address 0x{:08x}, returning 0",
@@ -236,14 +225,6 @@ impl SystemBus {
     /// Routes the request to the appropriate device based on address.
     /// If no device matches, logs a warning and discards the write.
     pub fn write_word(&mut self, addr: u32, value: u32) {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -261,6 +242,11 @@ impl SystemBus {
             if let Err(e) = result {
                 log::warn!("Bus write_word error at 0x{:08x}: {}", addr, e);
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus write_word to unmapped address 0x{:08x} (value=0x{:08x}), discarding",
@@ -276,14 +262,6 @@ impl SystemBus {
     /// If no device matches or device doesn't support halfword access,
     /// logs a warning and returns 0.
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -305,6 +283,11 @@ impl SystemBus {
                     0
                 }
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus read_halfword from unmapped address 0x{:08x}, returning 0",
@@ -320,14 +303,6 @@ impl SystemBus {
     /// If no device matches or device doesn't support halfword access,
     /// logs a warning and discards the write.
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -347,6 +322,11 @@ impl SystemBus {
             if let Err(e) = result {
                 log::warn!("Bus write_halfword error at 0x{:08x}: {}", addr, e);
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus write_halfword to unmapped address 0x{:08x} (value=0x{:04x}), discarding",
@@ -362,14 +342,6 @@ impl SystemBus {
     /// If no device matches or device doesn't support byte access,
     /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -389,6 +361,11 @@ impl SystemBus {
                     0
                 }
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus read_byte from unmapped address 0x{:08x}, returning 0",
@@ -404,14 +381,6 @@ impl SystemBus {
     /// If no device matches or device doesn't support byte access,
     /// logs a warning and discards the write.
     pub fn write_byte(&mut self, addr: u32, value: u8) {
-        // RTL peripherals should never reach Rust - they're handled by Verilator
-        if is_rtl_peripheral_addr(addr) {
-            panic!(
-                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
-                addr
-            );
-        }
-
         if let Some((id, offset)) = self.find_device_id(addr) {
             // Create SystemContext for device access to memory
             let mut ctx = SystemContext::with_elapsed_time(&mut self.memory, self.elapsed_time_us);
@@ -429,6 +398,11 @@ impl SystemBus {
             if let Err(e) = result {
                 log::warn!("Bus write_byte error at 0x{:08x}: {}", addr, e);
             }
+        } else if is_rtl_peripheral_addr(addr) {
+            panic!(
+                "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
+                addr
+            );
         } else {
             log::warn!(
                 "Bus write_byte to unmapped address 0x{:08x} (value=0x{:02x}), discarding",
