@@ -1,11 +1,17 @@
 use riscv_core::{create_registered_bus_runtime, RegisteredBusWrapper};
 
-fn clock_cycle(dut: &mut RegisteredBusWrapper) {
-    dut.clk = 0;
-    dut.eval();
-    dut.clk = 1;
-    dut.eval();
-    dut.clk = 0;
+macro_rules! clock_cycle {
+    ($dut:expr) => {
+        $dut.clk = 0;
+        $dut.eval();
+        $dut.clk = 1;
+        $dut.eval();
+        $dut.clk = 0;
+        $dut.eval();
+    };
+}
+
+fn eval_comb(dut: &mut RegisteredBusWrapper) {
     dut.eval();
 }
 
@@ -18,46 +24,89 @@ fn configure_ranges(dut: &mut RegisteredBusWrapper) {
 
 fn set_master_request(
     dut: &mut RegisteredBusWrapper,
+    master_idx: usize,
     addr: u32,
     wdata: u32,
     we: u8,
     size: u8,
     valid: u8,
 ) {
-    dut.master_mem_a_addr = addr;
-    dut.master_mem_a_wdata = wdata;
-    dut.master_mem_a_we = we;
-    dut.master_mem_a_size = size;
-    dut.master_mem_a_valid = valid;
+    match master_idx {
+        0 => {
+            dut.master0_mem_a_addr = addr;
+            dut.master0_mem_a_wdata = wdata;
+            dut.master0_mem_a_we = we;
+            dut.master0_mem_a_size = size;
+            dut.master0_mem_a_valid = valid;
+        }
+        1 => {
+            dut.master1_mem_a_addr = addr;
+            dut.master1_mem_a_wdata = wdata;
+            dut.master1_mem_a_we = we;
+            dut.master1_mem_a_size = size;
+            dut.master1_mem_a_valid = valid;
+        }
+        _ => panic!("unsupported master index {master_idx}"),
+    }
 }
 
-fn set_slave0_response(dut: &mut RegisteredBusWrapper, rdata: u32, valid: u8) {
-    dut.slave0_mem_d_rdata = rdata;
-    dut.slave0_mem_d_valid = valid;
+fn set_master_d_ready(dut: &mut RegisteredBusWrapper, master_idx: usize, ready: u8) {
+    match master_idx {
+        0 => dut.master0_mem_d_ready = ready,
+        1 => dut.master1_mem_d_ready = ready,
+        _ => panic!("unsupported master index {master_idx}"),
+    }
 }
 
-fn set_slave1_response(dut: &mut RegisteredBusWrapper, rdata: u32, valid: u8) {
-    dut.slave1_mem_d_rdata = rdata;
-    dut.slave1_mem_d_valid = valid;
+fn set_slave_a_ready(dut: &mut RegisteredBusWrapper, slave_idx: usize, ready: u8) {
+    match slave_idx {
+        0 => dut.slave0_mem_a_ready = ready,
+        1 => dut.slave1_mem_a_ready = ready,
+        _ => panic!("unsupported slave index {slave_idx}"),
+    }
+}
+
+fn set_slave_response(dut: &mut RegisteredBusWrapper, slave_idx: usize, rdata: u32, valid: u8) {
+    match slave_idx {
+        0 => {
+            dut.slave0_mem_d_rdata = rdata;
+            dut.slave0_mem_d_valid = valid;
+        }
+        1 => {
+            dut.slave1_mem_d_rdata = rdata;
+            dut.slave1_mem_d_valid = valid;
+        }
+        _ => panic!("unsupported slave index {slave_idx}"),
+    }
+}
+
+fn clear_master_requests(dut: &mut RegisteredBusWrapper) {
+    set_master_request(dut, 0, 0, 0, 0, 0, 0);
+    set_master_request(dut, 1, 0, 0, 0, 0, 0);
+}
+
+fn clear_slave_responses(dut: &mut RegisteredBusWrapper) {
+    set_slave_response(dut, 0, 0, 0);
+    set_slave_response(dut, 1, 0, 0);
 }
 
 fn reset_dut(dut: &mut RegisteredBusWrapper) {
     dut.rst_n = 0;
-    dut.master_mem_d_ready = 0;
-    dut.slave0_mem_a_ready = 1;
-    dut.slave1_mem_a_ready = 1;
-    set_master_request(dut, 0, 0, 0, 0, 0);
-    set_slave0_response(dut, 0, 0);
-    set_slave1_response(dut, 0, 0);
+    set_master_d_ready(dut, 0, 0);
+    set_master_d_ready(dut, 1, 0);
+    set_slave_a_ready(dut, 0, 1);
+    set_slave_a_ready(dut, 1, 1);
+    clear_master_requests(dut);
+    clear_slave_responses(dut);
     configure_ranges(dut);
-    clock_cycle(dut);
+    clock_cycle!(dut);
 
     dut.rst_n = 1;
-    clock_cycle(dut);
+    clock_cycle!(dut);
 }
 
 #[test]
-fn test_registered_bus_routes_to_two_slaves() {
+fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     let runtime = create_registered_bus_runtime().expect("Failed to create registered_bus runtime");
     let mut dut = runtime
         .create_model_simple::<RegisteredBusWrapper>()
@@ -65,100 +114,74 @@ fn test_registered_bus_routes_to_two_slaves() {
 
     reset_dut(&mut dut);
 
-    assert_eq!(dut.master_mem_a_ready, 1, "bus should accept first request");
+    set_master_request(&mut dut, 0, 0x5000_0020, 0xAAAA_0001, 0, 0b10, 1);
+    set_master_request(&mut dut, 1, 0x6000_0030, 0xBBBB_0002, 1, 0b10, 1);
+    eval_comb(&mut dut);
 
-    // Transaction 1: route to slave 0
-    set_master_request(&mut dut, 0x5000_0020, 0xABCD_1234, 0, 0b10, 1);
-    clock_cycle(&mut dut); // A handshake in IDLE
+    assert_eq!(dut.master0_mem_a_ready, 1, "master0 should win address arbitration");
+    assert_eq!(dut.master1_mem_a_ready, 0, "master1 should wait behind master0");
 
-    set_master_request(&mut dut, 0, 0, 0, 0, 0);
-    dut.slave0_mem_a_ready = 0;
-    clock_cycle(&mut dut); // decode/selection stage (held)
+    clock_cycle!(dut);
+    set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
+    set_slave_a_ready(&mut dut, 0, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
 
-    assert_eq!(dut.slave0_mem_a_valid, 1, "slave0 should receive A request");
-    assert_eq!(
-        dut.slave1_mem_a_valid, 0,
-        "slave1 should not receive A request"
-    );
-    assert_eq!(
-        dut.slave0_mem_a_addr, 0x5000_0020,
-        "slave0 address mismatch"
-    );
+    assert_eq!(dut.slave0_mem_a_valid, 1, "slave0 should see master0 request first");
+    assert_eq!(dut.slave0_mem_a_addr, 0x5000_0020, "slave0 address mismatch");
+    assert_eq!(dut.slave1_mem_a_valid, 0, "slave1 must remain idle while master0 is buffered");
+    assert_eq!(dut.master0_mem_a_ready, 0, "address side should stall while request is buffered");
+    assert_eq!(dut.master1_mem_a_ready, 0, "master1 must wait while request is buffered");
 
-    dut.slave0_mem_a_ready = 1;
-    clock_cycle(&mut dut); // wait for D response
-    assert_eq!(
-        dut.slave0_mem_d_ready, 1,
-        "slave0 D channel should be connected"
-    );
-    assert_eq!(
-        dut.slave1_mem_d_ready, 0,
-        "slave1 D channel should be disconnected"
-    );
-    assert_eq!(
-        dut.master_mem_a_ready, 0,
-        "new requests must stall while busy"
-    );
+    set_slave_a_ready(&mut dut, 0, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
 
-    set_slave0_response(&mut dut, 0x1111_2222, 1);
-    clock_cycle(&mut dut); // capture slave D response
-    set_slave0_response(&mut dut, 0, 0);
+    assert_eq!(dut.master1_mem_a_ready, 1, "master1 should become eligible once slave0 accepts");
 
-    assert_eq!(
-        dut.master_mem_d_valid, 1,
-        "master D response should become valid"
-    );
-    assert_eq!(
-        dut.master_mem_d_rdata, 0x1111_2222,
-        "master D response mismatch"
-    );
+    clock_cycle!(dut);
+    set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
+    set_slave_a_ready(&mut dut, 1, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
 
-    dut.master_mem_d_ready = 1;
-    clock_cycle(&mut dut); // consume master D response
-    dut.master_mem_d_ready = 0;
-
-    assert_eq!(dut.master_mem_a_ready, 1, "bus should accept next request");
-
-    // Transaction 2: route to slave 1
-    set_master_request(&mut dut, 0x6FFF_F030, 0xDEAD_BEEF, 1, 0b10, 1);
-    clock_cycle(&mut dut); // A handshake in IDLE
-
-    set_master_request(&mut dut, 0, 0, 0, 0, 0);
-    dut.slave1_mem_a_ready = 0;
-    clock_cycle(&mut dut); // decode/selection stage (held)
-
-    assert_eq!(
-        dut.slave0_mem_a_valid, 0,
-        "slave0 should not receive second request"
-    );
-    assert_eq!(
-        dut.slave1_mem_a_valid, 1,
-        "slave1 should receive second request"
-    );
-    assert_eq!(
-        dut.slave1_mem_a_addr, 0x6FFF_F030,
-        "slave1 address mismatch"
-    );
+    assert_eq!(dut.slave1_mem_a_valid, 1, "slave1 should receive the buffered master1 request");
+    assert_eq!(dut.slave1_mem_a_addr, 0x6000_0030, "slave1 address mismatch");
     assert_eq!(dut.slave1_mem_a_we, 1, "slave1 write-enable mismatch");
 
-    dut.slave1_mem_a_ready = 1;
-    clock_cycle(&mut dut); // wait for D response
-    set_slave1_response(&mut dut, 0x3333_4444, 1);
-    clock_cycle(&mut dut);
-    set_slave1_response(&mut dut, 0, 0);
+    set_slave_a_ready(&mut dut, 1, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
 
-    assert_eq!(
-        dut.master_mem_d_valid, 1,
-        "second master D response should be valid"
-    );
-    assert_eq!(
-        dut.master_mem_d_rdata, 0x3333_4444,
-        "second response data mismatch"
-    );
+    set_slave_response(&mut dut, 0, 0x1111_2222, 1);
+    set_slave_response(&mut dut, 1, 0x3333_4444, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master0_mem_d_valid, 1, "slave0 response should be routed first");
+    assert_eq!(dut.master0_mem_d_rdata, 0x1111_2222, "master0 response data mismatch");
+    assert_eq!(dut.master1_mem_d_valid, 0, "slave1 response must wait behind slave0");
+
+    set_master_d_ready(&mut dut, 0, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    set_master_d_ready(&mut dut, 0, 0);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master0_mem_d_valid, 0, "master0 response should clear after handshake");
+    assert_eq!(dut.master1_mem_d_valid, 0, "slave1 response should not transfer in the same cycle");
+
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master1_mem_d_valid, 1, "slave1 response should route after slave0 completes");
+    assert_eq!(dut.master1_mem_d_rdata, 0x3333_4444, "master1 response data mismatch");
 }
 
 #[test]
-fn test_registered_bus_unmapped_address_returns_zero() {
+fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured() {
     let runtime = create_registered_bus_runtime().expect("Failed to create registered_bus runtime");
     let mut dut = runtime
         .create_model_simple::<RegisteredBusWrapper>()
@@ -166,43 +189,77 @@ fn test_registered_bus_unmapped_address_returns_zero() {
 
     reset_dut(&mut dut);
 
-    set_master_request(&mut dut, 0x4000_0000, 0, 0, 0b10, 1);
-    clock_cycle(&mut dut); // A handshake in IDLE
+    set_master_request(&mut dut, 0, 0x5000_0010, 0xAAAA_5555, 0, 0b10, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
+    clock_cycle!(dut);
 
-    set_master_request(&mut dut, 0, 0, 0, 0, 0);
-    clock_cycle(&mut dut); // decode unmapped + queue zero response
+    set_master_request(&mut dut, 1, 0x5000_0040, 0xBBBB_6666, 1, 0b10, 1);
+    eval_comb(&mut dut);
+    assert_eq!(dut.master1_mem_a_ready, 1, "master1 request should be accepted while the bus is idle");
+    clock_cycle!(dut);
+    set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
 
-    assert_eq!(
-        dut.master_mem_a_ready, 0,
-        "A channel should stay blocked while response is pending"
-    );
+    assert_eq!(dut.slave0_mem_a_valid, 0, "slave0 must stay busy while its prior response is pending");
+    assert_eq!(dut.master0_mem_d_valid, 0, "no response should be visible before slave0 responds");
 
-    assert_eq!(
-        dut.slave0_mem_a_valid, 0,
-        "unmapped request must not hit slave0"
-    );
-    assert_eq!(
-        dut.slave1_mem_a_valid, 0,
-        "unmapped request must not hit slave1"
-    );
-    assert_eq!(
-        dut.master_mem_d_valid, 1,
-        "unmapped request should return a response"
-    );
-    assert_eq!(
-        dut.master_mem_d_rdata, 0,
-        "unmapped request should return zero data"
-    );
+    set_master_d_ready(&mut dut, 0, 0);
+    set_slave_response(&mut dut, 0, 0x1234_5678, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    clear_slave_responses(&mut dut);
+    set_slave_a_ready(&mut dut, 0, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
 
-    dut.master_mem_d_ready = 1;
-    clock_cycle(&mut dut);
+    assert_eq!(dut.master0_mem_d_valid, 1, "master0 should receive the first response");
+    assert_eq!(dut.master0_mem_d_rdata, 0x1234_5678, "master0 response data mismatch");
+    assert_eq!(dut.slave0_mem_a_valid, 1, "slave0 should accept the held master1 request once the response is captured");
+    assert_eq!(dut.slave0_mem_a_addr, 0x5000_0040, "held request address mismatch");
+    assert_eq!(dut.slave0_mem_a_we, 1, "held request write-enable mismatch");
 
-    assert_eq!(
-        dut.master_mem_d_valid, 0,
-        "response should clear after handshake"
-    );
-    assert_eq!(
-        dut.master_mem_a_ready, 1,
-        "bus should become idle after response"
-    );
+    set_slave_a_ready(&mut dut, 0, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master1_mem_a_ready, 0, "no new address request should be accepted until the held request is dispatched");
+}
+
+#[test]
+fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
+    let runtime = create_registered_bus_runtime().expect("Failed to create registered_bus runtime");
+    let mut dut = runtime
+        .create_model_simple::<RegisteredBusWrapper>()
+        .expect("Failed to create registered_bus model");
+
+    reset_dut(&mut dut);
+
+    set_master_request(&mut dut, 1, 0x4000_0000, 0xDEAD_BEEF, 1, 0b10, 1);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master0_mem_a_ready, 0, "inactive master0 should not be selected");
+    assert_eq!(dut.master1_mem_a_ready, 1, "master1 should be able to issue the unmapped request");
+
+    clock_cycle!(dut);
+    set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.slave0_mem_a_valid, 0, "unmapped request must not hit slave0");
+    assert_eq!(dut.slave1_mem_a_valid, 0, "unmapped request must not hit slave1");
+    assert_eq!(dut.master0_mem_d_valid, 0, "master0 must not see master1's response");
+    assert_eq!(dut.master1_mem_d_valid, 1, "master1 should receive the synthesized zero response");
+    assert_eq!(dut.master1_mem_d_rdata, 0, "unmapped access should return zero data");
+
+    set_master_d_ready(&mut dut, 1, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(dut.master1_mem_d_valid, 0, "master1 response should clear after handshake");
 }
