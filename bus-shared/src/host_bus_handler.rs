@@ -8,7 +8,7 @@
 //! - `0x2`: Host-initiated request (host -> FPGA)
 //! - `0x3`: FPGA response to host request (FPGA -> host)
 
-use riscv_shared::bus::{RTL_PERIPH_BASE, RTL_PERIPH_LIMIT};
+use riscv_shared::bus::is_rtl_peripheral_addr;
 
 /// Access size for bus operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,8 +283,8 @@ pub fn classify_request_region(request: &BusRequest) -> RequestAddressRegion {
         return RequestAddressRegion::NonRtl;
     };
 
-    let start_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&request.addr);
-    let end_in_rtl = (RTL_PERIPH_BASE..RTL_PERIPH_LIMIT).contains(&end_addr);
+    let start_in_rtl = is_rtl_peripheral_addr(request.addr);
+    let end_in_rtl = is_rtl_peripheral_addr(end_addr);
 
     match (start_in_rtl, end_in_rtl) {
         (true, true) => RequestAddressRegion::RtlPeripheral,

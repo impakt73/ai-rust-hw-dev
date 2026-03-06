@@ -19,7 +19,7 @@ use common::{
     wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::{addi, beq, ebreak, jal, lbu, lhu, lui, lw, sb, sw};
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
+use riscv_shared::bus::{DRAM_BASE, DRAM_END, SIM_CONTROL_BASE, SRAM_BASE};
 use std::time::{Duration, Instant};
 
 const CALLBACK_TEST_TIMEOUT_SECS: u64 = 2;
@@ -80,9 +80,11 @@ fn test_valid_dram_accesses() {
 
 #[test]
 fn test_boundary_at_dram_end_byte_read() {
+    let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
         addi(10, 0, 0x42),         // x10 = test byte
-        addi(11, 0, -2),           // x11 = 0xFFFF_FFFE (upper DRAM boundary - 1)
+        lui(11, dram_after_end),   // x11 = DRAM_END + 1
+        addi(11, 11, -2),          // x11 = 0x8FFF_FFFE (DRAM_END - 1)
         sb(11, 10, 0),             // byte write near upper DRAM boundary
         lbu(10, 11, 0),            // read back written byte
         lui(12, SIM_CONTROL_BASE), // x12 = tohost base
@@ -95,8 +97,10 @@ fn test_boundary_at_dram_end_byte_read() {
 
 #[test]
 fn test_boundary_at_dram_end_word_read_out_of_bounds() {
+    let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
-        addi(11, 0, -1),           // x11 = 0xFFFF_FFFF (upper DRAM boundary address)
+        lui(11, dram_after_end),   // x11 = DRAM_END + 1
+        addi(11, 11, -1),          // x11 = 0x8FFF_FFFF (DRAM_END)
         lw(10, 11, 0),             // word access spans beyond boundary, expected 0
         lui(12, SIM_CONTROL_BASE), // x12 = tohost base
         sw(12, 10, 0),             // tohost = x10
@@ -340,26 +344,26 @@ fn test_runtime_memory_region_callback_receives_unrelated_events() {
 }
 
 #[test]
-fn test_runtime_memory_region_u32_max_boundary_accesses_are_valid() {
+fn test_runtime_memory_region_dram_end_boundary_accesses_are_valid() {
     let mut runtime = create_test_runtime();
     runtime
-        .write_memory_region(u32::MAX, &[0xA5], None)
-        .expect("1-byte write at 0xFFFF_FFFF should be valid");
+        .write_memory_region(DRAM_END, &[0xA5], None)
+        .expect("1-byte write at DRAM_END should be valid");
     assert_eq!(
         runtime
-            .read_memory_region(u32::MAX, 1, None)
-            .expect("1-byte read at 0xFFFF_FFFF should be valid")
+            .read_memory_region(DRAM_END, 1, None)
+            .expect("1-byte read at DRAM_END should be valid")
             .len(),
         1
     );
 
     runtime
-        .write_memory_region(u32::MAX - 1, &[0x34, 0x12], None)
-        .expect("2-byte write ending at 0xFFFF_FFFF should be valid");
+        .write_memory_region(DRAM_END - 1, &[0x34, 0x12], None)
+        .expect("2-byte write ending at DRAM_END should be valid");
     assert_eq!(
         runtime
-            .read_memory_region(u32::MAX - 1, 2, None)
-            .expect("2-byte read ending at 0xFFFF_FFFF should be valid")
+            .read_memory_region(DRAM_END - 1, 2, None)
+            .expect("2-byte read ending at DRAM_END should be valid")
             .len(),
         2
     );

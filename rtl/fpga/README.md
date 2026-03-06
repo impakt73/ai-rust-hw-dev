@@ -5,6 +5,7 @@ This directory contains files for synthesizing the RISC-V CPU to FPGA targets us
 Currently supported targets:
 - **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
 - **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
+- **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T)
 
 ## Status: ✅ Successfully Synthesized
 
@@ -23,9 +24,9 @@ The FPGA implementation includes:
 
 - ✅ **RISC-V RV32IMAC CPU**: Base integer + Multiply + Atomic + Compressed instruction sets (F extension disabled)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
-- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x51000000
-- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x52000000
-- ✅ **System Controller**: CPU boot and reset control mapped at 0x53000000
+- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x60000000
+- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
+- ✅ **System Controller**: CPU boot and reset control mapped at 0x20000000
 - ✅ **UART Host Interface**: USB serial communication for host-initiated and CPU-initiated bus requests
 - ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
 
@@ -83,10 +84,12 @@ make
 # Run full synthesis flow for ECP5 iCE Pi Zero
 make TARGET=ecp5_icepi_zero
 
+# Run full synthesis flow for Artix-7 Alchitry Au
+# (requires openXC7 toolchain: nextpnr-xilinx, fasm2frames, xc7frames2bit)
+make TARGET=artix7_alchitry_au
+
 # This generates:
-# - build/riscv_fpga.json  (synthesis output)
-# - build/riscv_fpga.asc   (place-and-route output)
-# - build/riscv_fpga.bin   (bitstream for programming)
+# - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
 ```
 
 ### Program FPGA (Requires Hardware)
@@ -107,6 +110,8 @@ sudo iceprog build/riscv_fpga.bin
 - **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
 - **`../common/fpu/*.sv`**: Shared floating-point unit implementation sources (always included for synthesis; `ENABLE_F_EXT` remains disabled by default)
 - **`ecp5_icepi_zero/ecp5_icepi_zero.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
+- **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
+- **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -127,6 +132,21 @@ sudo iceprog build/riscv_fpga.bin
 - **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
 - **Programming**: USB cable for iceprog
+
+## Artix-7 (Alchitry Au) Toolchain Notes
+
+The Artix-7 target uses the openXC7 flow:
+- `nextpnr-xilinx`
+- `fasm2frames`
+- `xc7frames2bit`
+
+Default Makefile paths can be overridden for your openXC7 installation:
+
+```bash
+make TARGET=artix7_alchitry_au \
+  OPENXC7_CHIPDB=/opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin \
+  XRAY_PART_FILE=/opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
+```
 
 ## Pin Assignments (Alchitry Cu v1)
 
@@ -226,7 +246,7 @@ Common issues:
 
 The FPGA design loads programs at runtime via the host UART interface. To run your own program:
 
-1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x52000000, DRAM forwarded to host)
+1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x70000000, DRAM forwarded to host)
 2. Use `sim-view --runtime fpga --fpga-device /dev/ttyUSB0` to load and run the ELF
 3. Or use the `fpga-host` crate directly for programmatic control
 

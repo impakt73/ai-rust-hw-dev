@@ -1,6 +1,6 @@
 // Clock Peripheral
 // Provides elapsed time counters since reset
-// Memory-mapped at 0x51000000 in RTL peripheral address space
+// Memory-mapped at 0x60000000 in RTL peripheral address space
 //
 // FPGA-optimized design: uses cascaded counters with pulse signals
 // instead of large counters and division operations.

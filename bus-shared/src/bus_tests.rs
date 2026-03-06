@@ -1,6 +1,5 @@
 use super::*;
 use crate::bus_device::{BusDevice, BusDeviceError, RegistrationError, SystemContext};
-use riscv_shared::bus::FIFO_BASE;
 use std::collections::HashMap;
 
 /// Mock device for testing device registration
@@ -174,13 +173,21 @@ fn test_device_registration_overlap_error() {
 }
 
 #[test]
-fn test_device_registration_fifo_range_available() {
+fn test_device_registration_dram_range_protected() {
     let mut bus = SystemBus::new();
 
-    // FIFO is no longer an internal device; registering at FIFO_BASE should succeed.
-    let dev = Box::new(MockDevice::new(8, "TestDevice"));
-    let result = bus.register_device(FIFO_BASE, dev);
-    assert!(result.is_ok());
+    // Try to register device in DRAM range (0x8000_0000 to 0x8FFF_FFFF)
+    let dev = Box::new(MockDevice::new(256, "TestDevice"));
+    let result = bus.register_device(0x8000_0000, dev);
+
+    assert!(matches!(
+        result,
+        Err(RegistrationError::AddressOverlap { .. })
+    ));
+
+    if let Err(RegistrationError::AddressOverlap { existing_name, .. }) = result {
+        assert_eq!(existing_name, "DRAM");
+    }
 }
 
 #[test]
@@ -202,21 +209,13 @@ fn test_device_registration_sim_control_range_protected() {
 }
 
 #[test]
-fn test_device_registration_dram_range_protected() {
+fn test_device_registration_lower_half_range_allowed() {
     let mut bus = SystemBus::new();
 
-    // Try to register device in DRAM range (0x8000_0000 and above)
+    // Device can be registered in a non-overlapping lower-half range.
     let dev = Box::new(MockDevice::new(256, "TestDevice"));
-    let result = bus.register_device(0x8000_0000, dev);
-
-    assert!(matches!(
-        result,
-        Err(RegistrationError::AddressOverlap { .. })
-    ));
-
-    if let Err(RegistrationError::AddressOverlap { existing_name, .. }) = result {
-        assert_eq!(existing_name, "DRAM");
-    }
+    let result = bus.register_device(0x6000_0000, dev);
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -300,24 +299,21 @@ fn test_device_read_write_routing() {
 }
 
 #[test]
-fn test_device_unmapped_address_read_returns_zero() {
+#[should_panic(expected = "RTL peripheral read should be handled by Verilator")]
+fn test_device_unmapped_low_address_read_panics() {
     let mut bus = SystemBus::new();
 
-    // Read from unmapped address
-    let value = bus.read_word(0x6000_0000);
-    assert_eq!(value, 0);
+    // Lower-half addresses are RTL-routed and should not be handled by Rust SystemBus.
+    let _ = bus.read_word(0x1000_0000);
 }
 
 #[test]
-fn test_device_unmapped_address_write_discarded() {
+#[should_panic(expected = "RTL peripheral write should be handled by Verilator")]
+fn test_device_unmapped_low_address_write_panics() {
     let mut bus = SystemBus::new();
 
-    // Write to unmapped address (should not panic, just log warning)
-    bus.write_word(0x6000_0000, 0x12345678);
-
-    // Verify write was discarded (read returns 0)
-    let value = bus.read_word(0x6000_0000);
-    assert_eq!(value, 0);
+    // Lower-half addresses are RTL-routed and should not be handled by Rust SystemBus.
+    bus.write_word(0x1000_0000, 0x12345678);
 }
 
 #[test]

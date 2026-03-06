@@ -1,12 +1,9 @@
 // Host Bus Mux
 // Routes CPU memory transactions to either:
-// - System bus path (RTL peripherals)
-// - Host bus interface path (external memory / Rust peripherals)
+// - System bus path (RTL peripherals, addr[31] == 0)
+// - Host bus interface path (Rust/external memory, addr[31] == 1)
 
-module host_bus_mux #(
-    parameter logic [31:0] RTL_PERIPH_BASE  = 32'h50000000,
-    parameter logic [31:0] RTL_PERIPH_LIMIT = 32'h60000000
-) (
+module host_bus_mux (
     // CPU-side interface
     input  logic [31:0] cpu_addr,
     input  logic [31:0] cpu_wdata,
@@ -36,7 +33,7 @@ module host_bus_mux #(
 );
     logic sel_rtl_periph;
 
-    assign sel_rtl_periph = (cpu_addr >= RTL_PERIPH_BASE) && (cpu_addr < RTL_PERIPH_LIMIT);
+    assign sel_rtl_periph = (cpu_addr[31] == 1'b0);
 
     assign sys_addr  = cpu_addr;
     assign sys_wdata = cpu_wdata;
