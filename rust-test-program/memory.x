@@ -2,8 +2,8 @@ MEMORY
 {
   /* Main memory starts at 0x80000000 */
   RAM : ORIGIN = 0x80000000, LENGTH = 256M
-  /* SRAM peripheral memory starts at 0x52000000 */
-  SRAM : ORIGIN = 0x52000000, LENGTH = 12K
+  /* SRAM peripheral memory starts at 0x70000000 */
+  SRAM : ORIGIN = 0x70000000, LENGTH = 12K
 }
 
 REGION_ALIAS("REGION_TEXT", SRAM);

@@ -24,9 +24,9 @@ The FPGA implementation includes:
 
 - ✅ **RISC-V RV32IMAC CPU**: Base integer + Multiply + Atomic + Compressed instruction sets (F extension disabled)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
-- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x51000000
-- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x52000000
-- ✅ **System Controller**: CPU boot and reset control mapped at 0x53000000
+- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x60000000
+- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
+- ✅ **System Controller**: CPU boot and reset control mapped at 0x20000000
 - ✅ **UART Host Interface**: USB serial communication for host-initiated and CPU-initiated bus requests
 - ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
 
@@ -246,7 +246,7 @@ Common issues:
 
 The FPGA design loads programs at runtime via the host UART interface. To run your own program:
 
-1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x52000000, DRAM forwarded to host)
+1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x70000000, DRAM forwarded to host)
 2. Use `sim-view --runtime fpga --fpga-device /dev/ttyUSB0` to load and run the ELF
 3. Or use the `fpga-host` crate directly for programmatic control
 
