@@ -209,7 +209,7 @@ fn test_device_registration_sim_control_range_protected() {
 }
 
 #[test]
-fn test_device_registration_lower_half_non_rtl_range_allowed() {
+fn test_device_registration_lower_half_range_allowed() {
     let mut bus = SystemBus::new();
 
     // Device can be registered in a non-overlapping lower-half range.

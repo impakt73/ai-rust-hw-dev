@@ -3,11 +3,14 @@
 // Decodes only RTL peripheral addresses. Top-level host_bus_mux handles
 // external-vs-RTL range split before requests reach this module.
 //
-// Address Map:
+// Address Map (top-nibble window decode):
 // - LED Controller:      0x50000000 - 0x5000000F (16 bytes)
 // - Clock Peripheral:    0x60000000 - 0x6000000F (16 bytes)
 // - SRAM Peripheral:     0x70000000 - 0x70002FFF (12KB)
 // - System Controller:   0x20000000 - 0x2000000F (16 bytes)
+// Note: decode matches only master_addr[31:28]. Accesses anywhere within a
+// selected 256MiB nibble window are routed to that peripheral and may mirror
+// or alias internally by design.
 // External memory (DRAM + Rust peripherals) is routed outside this module.
 //
 // Unmapped addresses:

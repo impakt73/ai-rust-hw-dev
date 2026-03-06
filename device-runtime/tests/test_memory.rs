@@ -80,9 +80,10 @@ fn test_valid_dram_accesses() {
 
 #[test]
 fn test_boundary_at_dram_end_byte_read() {
+    let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
         addi(10, 0, 0x42),         // x10 = test byte
-        lui(11, 0x9000_0000),      // x11 = 0x9000_0000
+        lui(11, dram_after_end),   // x11 = DRAM_END + 1
         addi(11, 11, -2),          // x11 = 0x8FFF_FFFE (DRAM_END - 1)
         sb(11, 10, 0),             // byte write near upper DRAM boundary
         lbu(10, 11, 0),            // read back written byte
@@ -96,8 +97,9 @@ fn test_boundary_at_dram_end_byte_read() {
 
 #[test]
 fn test_boundary_at_dram_end_word_read_out_of_bounds() {
+    let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
-        lui(11, 0x9000_0000),      // x11 = 0x9000_0000
+        lui(11, dram_after_end),   // x11 = DRAM_END + 1
         addi(11, 11, -1),          // x11 = 0x8FFF_FFFF (DRAM_END)
         lw(10, 11, 0),             // word access spans beyond boundary, expected 0
         lui(12, SIM_CONTROL_BASE), // x12 = tohost base

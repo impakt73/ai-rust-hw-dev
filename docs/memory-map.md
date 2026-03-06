@@ -30,6 +30,8 @@ Address Range            | Device              | Type | Description
 - **RTL peripherals** (`0x00000000 - 0x7FFFFFFF`):
   Handled by the SystemVerilog `bus.sv` address decoder (top-bit split + top-nibble select),
   synthesizable to FPGA.
+  Decode is window-based on the top nibble (`addr[31:28]`), so accesses within a given
+  256 MiB RTL window may intentionally mirror/alias at the peripheral level.
 - **DRAM** (`0x80000000 - 0x8FFFFFFF`): Main system memory implemented as a
   Rust peripheral and handled by the Rust `SystemBus` path (including FPGA
   host-side access through the host bus).
