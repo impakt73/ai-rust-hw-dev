@@ -173,21 +173,30 @@ fn test_device_registration_overlap_error() {
 }
 
 #[test]
-fn test_device_registration_dram_range_protected() {
+fn test_device_registration_dram_range_allowed_for_external_mmio() {
     let mut bus = SystemBus::new();
 
-    // Try to register device in DRAM range (0x8000_0000 and above)
+    // External devices may carve out explicit regions in upper-half space.
     let dev = Box::new(MockDevice::new(256, "TestDevice"));
-    let result = bus.register_device(0x8000_0000, dev);
+    let result = bus.register_device(0xA000_0000, dev);
+    assert!(result.is_ok());
+}
 
-    assert!(matches!(
-        result,
-        Err(RegistrationError::AddressOverlap { .. })
-    ));
+#[test]
+fn test_device_registration_dram_overlap_routes_to_external_device() {
+    let mut bus = SystemBus::new();
 
-    if let Err(RegistrationError::AddressOverlap { existing_name, .. }) = result {
-        assert_eq!(existing_name, "DRAM");
-    }
+    // Register an upper-half external device that overlaps DRAM catch-all.
+    let dev = Box::new(MockDevice::new(256, "AudioLikeDevice"));
+    bus.register_device(0xA000_0000, dev).unwrap();
+
+    // Access in the carved-out range should hit external device, not DRAM.
+    bus.write_word(0xA000_0000, 0xDEADBEEF);
+    assert_eq!(bus.read_word(0xA000_0000), 0xDEADBEEF);
+
+    // Nearby DRAM address outside external window should still use DRAM fallback.
+    bus.write_word(0xA000_0200, 0xCAFEBABE);
+    assert_eq!(bus.read_word(0xA000_0200), 0xCAFEBABE);
 }
 
 #[test]
