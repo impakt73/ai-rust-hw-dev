@@ -94,6 +94,12 @@ pub struct HostBusRx;
 #[verilog(src = "../rtl/common/memory/bus_arbiter.sv", name = "bus_arbiter")]
 pub struct BusArbiter;
 
+#[verilog(
+    src = "../rtl/common/wrappers/registered_bus_wrapper.sv",
+    name = "registered_bus_wrapper"
+)]
+pub struct RegisteredBusWrapper;
+
 // Define FPU submodules
 #[verilog(src = "../rtl/common/fpu/fpu_classifier.sv", name = "fpu_classifier")]
 pub struct FpuClassifier;
@@ -345,6 +351,14 @@ pub fn create_host_bus_rx_runtime() -> Result<VerilatorRuntime, Box<dyn std::err
 // Helper function to create a runtime for the Bus Arbiter
 pub fn create_bus_arbiter_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["memory/bus_arbiter.sv"])
+}
+
+// Helper function to create a runtime for the Registered Bus
+pub fn create_registered_bus_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/registered_bus.sv",
+        "wrappers/registered_bus_wrapper.sv",
+    ])
 }
 
 // Helper function to create a runtime for the FPU
