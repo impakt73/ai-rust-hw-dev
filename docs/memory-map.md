@@ -9,11 +9,11 @@ The canonical definitions of memory-map ranges and base addresses live in [`risc
 ```
 Address Range            | Device              | Type | Description
 -------------------------|---------------------|------|----------------------------
-0x00000000 - 0x0000000F  | Video               | Rust | Video frame buffer
-0x10000000 - 0x1000000F  | Audio               | Rust | Audio buffer
-0x30000000 - 0x30000007  | FIFO                | Rust | Host communication FIFO
-0x40000000 - 0x40000013  | DMA                 | Rust | DMA controller
 0xF0000000 - 0xF0000003  | SimControl          | Rust | Simulation control (tohost)
+0x90000000 - 0x9000000F  | Video               | Rust | Video frame buffer
+0xA0000000 - 0xA000000F  | Audio               | Rust | Audio buffer
+0xB0000000 - 0xB0000007  | FIFO                | Rust | Host communication FIFO
+0xC0000000 - 0xC0000013  | DMA                 | Rust | DMA controller
 0x20000000 - 0x2000000F  | System Controller   | RTL  | CPU boot and reset control
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
 0x60000000 - 0x6000000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
@@ -23,15 +23,15 @@ Address Range            | Device              | Type | Description
 
 ## Peripheral Types
 
-- **Rust peripherals** (`0x0xxxxxxx`, `0x1xxxxxxx`, `0x3xxxxxxx`, `0x4xxxxxxx`, `0xFxxxxxxx`):
+- **Rust peripherals** (`0x80000000 - 0xFFFFFFFF`):
   Handled by the Rust `SystemBus`, simulation-only. Not synthesized to FPGA.
-- **RTL peripherals** (`0x2xxxxxxx`, `0x5xxxxxxx`, `0x6xxxxxxx`, `0x7xxxxxxx`):
-  Handled by the SystemVerilog `bus.sv` address decoder (top-nibble select),
+- **RTL peripherals** (`0x00000000 - 0x7FFFFFFF`):
+  Handled by the SystemVerilog `bus.sv` address decoder (top-bit split + top-nibble select),
   synthesizable to FPGA.
 - **DRAM** (`0x80000000 - 0xFFFFFFFF`): Main system memory. Accessed through the external
   memory interface on both RTL and Rust sides.
 
-## Rust Peripherals (top-nibble decoded windows)
+## Rust Peripherals (upper-half address space)
 
 ### SimControl (0xF0000000)
 
@@ -51,7 +51,7 @@ addi(val, 0, 42);            // Load success code
 sw(reg, val, 0);             // Write to tohost → halts simulation
 ```
 
-### Video (0x00000000)
+### Video (0x90000000)
 
 The Video device provides a framebuffer interface for rendering.
 
@@ -64,7 +64,7 @@ The Video device provides a framebuffer interface for rendering.
 
 **Constants:** `VIDEO_BASE`, `VIDEO_ADDR`, `VIDEO_CONFIG`, `VIDEO_STATUS`, `VIDEO_PRESENT`
 
-### Audio (0x10000000)
+### Audio (0xA0000000)
 
 The Audio device provides a sample buffer interface for audio output.
 
@@ -77,7 +77,7 @@ The Audio device provides a sample buffer interface for audio output.
 
 **Constants:** `AUDIO_BASE`, `AUDIO_ADDR`, `AUDIO_CONFIG`, `AUDIO_STATUS`, `AUDIO_DMA`
 
-### FIFO (0x30000000)
+### FIFO (0xB0000000)
 
 The FIFO device provides bidirectional host communication using a packet protocol.
 
@@ -88,7 +88,7 @@ The FIFO device provides bidirectional host communication using a packet protoco
 
 **Constants:** `FIFO_BASE`, `FIFO_DATA`, `FIFO_STATUS`, `RX_VALID`, `TX_READY`
 
-### DMA (0x40000000)
+### DMA (0xC0000000)
 
 The DMA device provides hardware-accelerated memory-to-memory transfers.
 

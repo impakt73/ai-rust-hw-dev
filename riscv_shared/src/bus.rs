@@ -1,47 +1,31 @@
 //! Bus device base addresses and memory range validation
 
 /// Rust Peripheral Address Space
-/// Legacy contiguous Rust peripheral base (deprecated for decode).
-///
-/// Rust peripherals are no longer in one contiguous range, so decode logic must
-/// use explicit per-device base constants. This constant is retained only for
-/// backwards compatibility with older callers.
-pub const RUST_PERIPH_DEPRECATED_BASE: u32 = 0x0000_0000;
-#[allow(deprecated)]
-pub const RUST_PERIPH_BASE: u32 = RUST_PERIPH_DEPRECATED_BASE;
+/// Base address for Rust peripherals (simulation-only peripherals handled by SystemBus)
+pub const RUST_PERIPH_BASE: u32 = 0x8000_0000;
 
-/// Legacy contiguous Rust peripheral limit (exclusive, deprecated for decode).
-///
-/// Rust peripherals are no longer in one contiguous range, so decode logic must
-/// use explicit per-device base constants. This constant is retained only for
-/// backwards compatibility with older callers.
-pub const RUST_PERIPH_DEPRECATED_LIMIT: u32 = 0x8000_0000;
-#[allow(deprecated)]
-pub const RUST_PERIPH_LIMIT: u32 = RUST_PERIPH_DEPRECATED_LIMIT;
+/// Limit marker for Rust peripheral region (inclusive upper-half address space)
+pub const RUST_PERIPH_LIMIT: u32 = 0xFFFF_FFFF;
 
 /// Base address for SimControl device (tohost register)
 pub const SIM_CONTROL_BASE: u32 = 0xF000_0000;
 
 /// Base address for Video device
 /// This is the recommended base address for external Video bus devices
-pub const VIDEO_BASE: u32 = 0x0000_0000;
+pub const VIDEO_BASE: u32 = 0x9000_0000;
 
 /// Base address for Audio device
 /// This is the recommended base address for external Audio bus devices
-pub const AUDIO_BASE: u32 = 0x1000_0000;
+pub const AUDIO_BASE: u32 = 0xA000_0000;
 
 /// Base address for FIFO device
-pub const FIFO_BASE: u32 = 0x3000_0000;
+pub const FIFO_BASE: u32 = 0xB000_0000;
 
 /// RTL Peripheral Address Space
-/// Legacy contiguous RTL peripheral base (deprecated for decode).
-///
-/// Kept for compatibility only. Do not use this base/limit pair for decode logic because
-/// RTL peripherals are now placed on non-contiguous 256MB windows and decoded
-/// by top nibble via [`is_rtl_peripheral_addr()`].
-pub const RTL_PERIPH_BASE: u32 = 0x5000_0000;
+/// Base address for RTL peripherals (synthesizable peripherals in Verilog)
+pub const RTL_PERIPH_BASE: u32 = 0x0000_0000;
 
-/// Legacy contiguous RTL peripheral limit (exclusive, deprecated for decode)
+/// Limit address for RTL peripherals (exclusive)
 pub const RTL_PERIPH_LIMIT: u32 = 0x8000_0000;
 
 /// LED Controller Peripheral (RTL)
@@ -124,17 +108,12 @@ pub const fn sysctrl_halt_addr() -> u32 {
     SYSCTRL_BASE + SYSCTRL_HALT_OFFSET
 }
 
-/// Check if an address targets an RTL peripheral window.
+/// Check if an address targets RTL peripheral space.
 ///
-/// RTL peripherals are selected by top nibble:
-/// - `0x2xxxxxxx`: System Controller
-/// - `0x5xxxxxxx`: LED Controller
-/// - `0x6xxxxxxx`: Clock Peripheral
-/// - `0x7xxxxxxx`: SRAM Peripheral
-///
-/// This is implemented as a top-nibble check using `addr >> 28`.
+/// By convention, all RTL peripherals live in the lower half of the address
+/// space and all Rust/host-routed devices live in the upper half.
 pub const fn is_rtl_peripheral_addr(addr: u32) -> bool {
-    matches!(addr >> 28, 0x2 | 0x5 | 0x6 | 0x7)
+    (addr & 0x8000_0000) == 0
 }
 
 /// Base address for DRAM

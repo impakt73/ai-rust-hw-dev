@@ -203,11 +203,11 @@ Before marking PR ready for review:
 ```
 Address Range          | Device           | Type | Description
 -----------------------|------------------|------|----------------------------
-0x00000000-0x0000000F | Video            | Rust | Video frame buffer
-0x10000000-0x1000000F | Audio            | Rust | Audio buffer
-0x30000000-0x30000007 | FIFO             | Rust | Host communication FIFO
-0x40000000-0x40000013 | DMA              | Rust | DMA controller
 0xF0000000-0xF0000003 | SimControl       | Rust | Simulation control
+0x90000000-0x9000000F | Video            | Rust | Video frame buffer
+0xA0000000-0xA000000F | Audio            | Rust | Audio buffer
+0xB0000000-0xB0000007 | FIFO             | Rust | Host communication FIFO
+0xC0000000-0xC0000013 | DMA              | Rust | DMA controller
 0x20000000-0x2000000F | System Controller| RTL  | CPU boot and reset control
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x60000000-0x6000000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
@@ -234,8 +234,8 @@ Address Range          | Device           | Type | Description
 - **Note:** Clock frequency is configurable via CLK_FREQ_HZ parameter
 
 **RTL vs Rust Peripherals:**
-- **RTL peripherals** (`0x2xxxxxxx`, `0x5xxxxxxx`, `0x6xxxxxxx`, `0x7xxxxxxx`): Handled by Verilator, synthesizable to FPGA
-- **Rust peripherals** (`0x0xxxxxxx`, `0x1xxxxxxx`, `0x3xxxxxxx`, `0x4xxxxxxx`, `0xFxxxxxxx`): Handled by SystemBus, simulation only
+- **RTL peripherals** (`0x00000000-0x7FFFFFFF`): Handled by Verilator, synthesizable to FPGA
+- **Rust peripherals** (`0x80000000-0xFFFFFFFF`): Handled by SystemBus, simulation only
 
 **DRAM range:** 0x80000000 - 0xFFFFFFFF
 

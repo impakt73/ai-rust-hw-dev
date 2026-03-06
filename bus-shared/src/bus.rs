@@ -121,8 +121,14 @@ impl SystemBus {
 
         let end = base_addr.saturating_add(size);
 
-        // Check for overlaps with existing devices
+        // Check for overlaps with existing devices.
+        // DRAM is intentionally skipped here so Rust MMIO devices can live in
+        // the upper-half address space (>= 0x8000_0000) while DRAM remains the
+        // fallback for all other upper-half addresses.
         for entry in &self.memory_map {
+            if entry.id == DeviceId::Dram {
+                continue;
+            }
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
                     DeviceId::Dram => self.dram.name(),
@@ -181,13 +187,23 @@ impl SystemBus {
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
     fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
+        let mut dram_match: Option<(DeviceId, u32)> = None;
+
+        // Check all non-DRAM entries first (SimControl + external MMIO), so
+        // explicit MMIO windows take priority over DRAM fallback.
         for entry in &self.memory_map {
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
-                return Some((entry.id, offset));
+                if entry.id == DeviceId::Dram {
+                    dram_match = Some((entry.id, offset));
+                } else {
+                    return Some((entry.id, offset));
+                }
             }
         }
-        None
+
+        // Fall back to DRAM if no higher-priority MMIO entry matched.
+        dram_match
     }
 
     /// Read a 32-bit word from the bus

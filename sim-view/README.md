@@ -192,10 +192,10 @@ cargo run --package sim-view -- --max-cycles 100000 path/to/program.elf
 
 The simulator uses the following memory-mapped I/O addresses:
 
-- `0x4000_0000` - SimControl (tohost register) - Built-in
-- `0x4000_1000` - Video device (`VIDEO_BASE`)
-- `0x4000_2000` - Audio device (`AUDIO_BASE`)
-- `0x4000_3000` - FIFO device - Built-in
+- `0xF000_0000` - SimControl (tohost register) - Built-in
+- `0x9000_0000` - Video device (`VIDEO_BASE`)
+- `0xA000_0000` - Audio device (`AUDIO_BASE`)
+- `0xB000_0000` - FIFO device - Built-in
 - `0x2000_0000`, `0x5000_0000`, `0x6000_0000`, `0x7000_0000` windows - RTL peripherals
 - `0x8000_0000 - 0xFFFF_FFFF` - DRAM - Built-in
 
