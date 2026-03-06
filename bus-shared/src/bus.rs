@@ -53,7 +53,7 @@ impl SystemBus {
         let dram = Dram::new();
         let sim_control = SimControl::new();
 
-        // Pre-populate memory map with fixed non-DRAM internal devices.
+        // Pre-populate memory map with fixed non-DRAM internal devices
         let memory_map = vec![MemoryMapEntry {
             base: SIM_CONTROL_BASE,
             end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
@@ -110,9 +110,11 @@ impl SystemBus {
         for entry in &self.memory_map {
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
-                    DeviceId::Dram => unreachable!(
-                        "register_device overlap check encountered DRAM in memory_map; this is a programming error"
-                    ),
+                    DeviceId::Dram => {
+                        unreachable!(
+                            "register_device overlap check encountered DRAM in memory_map."
+                        )
+                    }
                     DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
@@ -157,9 +159,9 @@ impl SystemBus {
             self.memory_map.iter().map(|entry| {
                 let size = entry.end.wrapping_sub(entry.base);
                 let name = match entry.id {
-                    DeviceId::Dram => unreachable!(
-                        "registered_devices encountered DRAM in memory_map; this is a programming error"
-                    ),
+                    DeviceId::Dram => {
+                        unreachable!("registered_devices encountered DRAM in memory_map.")
+                    }
                     DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
@@ -172,7 +174,7 @@ impl SystemBus {
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
     fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
-        // Check explicitly mapped non-DRAM entries first (SimControl + external MMIO).
+        // Check explicitly mapped non-DRAM entries first (SimControl + external MMIO)
         for entry in &self.memory_map {
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
@@ -180,7 +182,7 @@ impl SystemBus {
             }
         }
 
-        // Fall back to DRAM for valid DRAM addresses.
+        // Fall back to DRAM for valid DRAM addresses
         if is_valid_dram_range(addr, 1) {
             return Some((DeviceId::Dram, addr - DRAM_BASE));
         }
