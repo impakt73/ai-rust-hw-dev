@@ -18,7 +18,7 @@ Address Range            | Device              | Type | Description
 0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
 0x60000000 - 0x6000000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
 0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
-0x80000000 - 0xFFFFFFFF  | DRAM                | Both | System memory (2 GiB)
+0x80000000 - 0xFFFFFFFF  | DRAM                | Rust | System memory (2 GiB)
 ```
 
 ## Peripheral Types
@@ -28,8 +28,8 @@ Address Range            | Device              | Type | Description
 - **RTL peripherals** (`0x00000000 - 0x7FFFFFFF`):
   Handled by the SystemVerilog `bus.sv` address decoder (top-bit split + top-nibble select),
   synthesizable to FPGA.
-- **DRAM** (`0x80000000 - 0xFFFFFFFF`): Main system memory. Accessed through the external
-  memory interface on both RTL and Rust sides.
+- **DRAM** (`0x80000000 - 0xFFFFFFFF`): Main system memory handled by the Rust
+  `SystemBus` path for simulation backends.
 
 ## Rust Peripherals (upper-half address space)
 

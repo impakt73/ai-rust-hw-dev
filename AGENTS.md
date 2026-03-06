@@ -212,7 +212,7 @@ Address Range          | Device           | Type | Description
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x60000000-0x6000000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
 0x70000000-0x70002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
-0x80000000-0xFFFFFFFF | DRAM             | Both | System memory (2 GiB)
+0x80000000-0xFFFFFFFF | DRAM             | Rust | System memory (2 GiB)
 ```
 
 **LED Controller Peripheral:**
