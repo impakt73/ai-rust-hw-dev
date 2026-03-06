@@ -71,6 +71,7 @@ module registered_bus #(
         selected_master_idx = '0;
         selected_master_valid = 1'b0;
 
+        // Fixed-priority arbitration: lowest index master wins each cycle.
         for (int unsigned master_idx = 0; master_idx < NUM_MASTERS; master_idx++) begin
             if (!selected_master_valid && master_mem_a_valid[master_idx]) begin
                 selected_master_idx = MASTER_IDX_W'(master_idx);
@@ -97,6 +98,7 @@ module registered_bus #(
         selected_resp_slave_idx = '0;
         selected_resp_slave_valid = 1'b0;
 
+        // Fixed-priority arbitration: lowest index slave response wins each cycle.
         for (int unsigned slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx++) begin
             if (!selected_resp_slave_valid
                 && slave_response_pending[slave_idx]

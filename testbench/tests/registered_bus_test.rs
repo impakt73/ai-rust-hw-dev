@@ -118,8 +118,14 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     set_master_request(&mut dut, 1, 0x6000_0030, 0xBBBB_0002, 1, 0b10, 1);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master0_mem_a_ready, 1, "master0 should win address arbitration");
-    assert_eq!(dut.master1_mem_a_ready, 0, "master1 should wait behind master0");
+    assert_eq!(
+        dut.master0_mem_a_ready, 1,
+        "master0 should win address arbitration"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 should wait behind master0"
+    );
 
     clock_cycle!(dut);
     set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
@@ -127,18 +133,36 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     eval_comb(&mut dut);
     clock_cycle!(dut);
 
-    assert_eq!(dut.slave0_mem_a_valid, 1, "slave0 should see master0 request first");
-    assert_eq!(dut.slave0_mem_a_addr, 0x5000_0020, "slave0 address mismatch");
-    assert_eq!(dut.slave1_mem_a_valid, 0, "slave1 must remain idle while master0 is buffered");
-    assert_eq!(dut.master0_mem_a_ready, 0, "address side should stall while request is buffered");
-    assert_eq!(dut.master1_mem_a_ready, 0, "master1 must wait while request is buffered");
+    assert_eq!(
+        dut.slave0_mem_a_valid, 1,
+        "slave0 should see master0 request first"
+    );
+    assert_eq!(
+        dut.slave0_mem_a_addr, 0x5000_0020,
+        "slave0 address mismatch"
+    );
+    assert_eq!(
+        dut.slave1_mem_a_valid, 0,
+        "slave1 must remain idle while master0 is buffered"
+    );
+    assert_eq!(
+        dut.master0_mem_a_ready, 0,
+        "address side should stall while request is buffered"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 must wait while request is buffered"
+    );
 
     set_slave_a_ready(&mut dut, 0, 1);
     eval_comb(&mut dut);
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master1_mem_a_ready, 1, "master1 should become eligible once slave0 accepts");
+    assert_eq!(
+        dut.master1_mem_a_ready, 1,
+        "master1 should become eligible once slave0 accepts"
+    );
 
     clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
@@ -146,8 +170,14 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     eval_comb(&mut dut);
     clock_cycle!(dut);
 
-    assert_eq!(dut.slave1_mem_a_valid, 1, "slave1 should receive the buffered master1 request");
-    assert_eq!(dut.slave1_mem_a_addr, 0x6000_0030, "slave1 address mismatch");
+    assert_eq!(
+        dut.slave1_mem_a_valid, 1,
+        "slave1 should receive the buffered master1 request"
+    );
+    assert_eq!(
+        dut.slave1_mem_a_addr, 0x6000_0030,
+        "slave1 address mismatch"
+    );
     assert_eq!(dut.slave1_mem_a_we, 1, "slave1 write-enable mismatch");
 
     set_slave_a_ready(&mut dut, 1, 1);
@@ -160,9 +190,18 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master0_mem_d_valid, 1, "slave0 response should be routed first");
-    assert_eq!(dut.master0_mem_d_rdata, 0x1111_2222, "master0 response data mismatch");
-    assert_eq!(dut.master1_mem_d_valid, 0, "slave1 response must wait behind slave0");
+    assert_eq!(
+        dut.master0_mem_d_valid, 1,
+        "slave0 response should be routed first"
+    );
+    assert_eq!(
+        dut.master0_mem_d_rdata, 0x1111_2222,
+        "master0 response data mismatch"
+    );
+    assert_eq!(
+        dut.master1_mem_d_valid, 0,
+        "slave1 response must wait behind slave0"
+    );
 
     set_master_d_ready(&mut dut, 0, 1);
     eval_comb(&mut dut);
@@ -170,14 +209,26 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     set_master_d_ready(&mut dut, 0, 0);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master0_mem_d_valid, 0, "master0 response should clear after handshake");
-    assert_eq!(dut.master1_mem_d_valid, 0, "slave1 response should not transfer in the same cycle");
+    assert_eq!(
+        dut.master0_mem_d_valid, 0,
+        "master0 response should clear after handshake"
+    );
+    assert_eq!(
+        dut.master1_mem_d_valid, 0,
+        "slave1 response should not transfer in the same cycle"
+    );
 
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master1_mem_d_valid, 1, "slave1 response should route after slave0 completes");
-    assert_eq!(dut.master1_mem_d_rdata, 0x3333_4444, "master1 response data mismatch");
+    assert_eq!(
+        dut.master1_mem_d_valid, 1,
+        "slave1 response should route after slave0 completes"
+    );
+    assert_eq!(
+        dut.master1_mem_d_rdata, 0x3333_4444,
+        "master1 response data mismatch"
+    );
 }
 
 #[test]
@@ -197,14 +248,23 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
 
     set_master_request(&mut dut, 1, 0x5000_0040, 0xBBBB_6666, 1, 0b10, 1);
     eval_comb(&mut dut);
-    assert_eq!(dut.master1_mem_a_ready, 1, "master1 request should be accepted while the bus is idle");
+    assert_eq!(
+        dut.master1_mem_a_ready, 1,
+        "master1 request should be accepted while the bus is idle"
+    );
     clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
     eval_comb(&mut dut);
     clock_cycle!(dut);
 
-    assert_eq!(dut.slave0_mem_a_valid, 0, "slave0 must stay busy while its prior response is pending");
-    assert_eq!(dut.master0_mem_d_valid, 0, "no response should be visible before slave0 responds");
+    assert_eq!(
+        dut.slave0_mem_a_valid, 0,
+        "slave0 must stay busy while its prior response is pending"
+    );
+    assert_eq!(
+        dut.master0_mem_d_valid, 0,
+        "no response should be visible before slave0 responds"
+    );
 
     set_master_d_ready(&mut dut, 0, 0);
     set_slave_response(&mut dut, 0, 0x1234_5678, 1);
@@ -215,10 +275,22 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     eval_comb(&mut dut);
     clock_cycle!(dut);
 
-    assert_eq!(dut.master0_mem_d_valid, 1, "master0 should receive the first response");
-    assert_eq!(dut.master0_mem_d_rdata, 0x1234_5678, "master0 response data mismatch");
-    assert_eq!(dut.slave0_mem_a_valid, 1, "slave0 should accept the held master1 request once the response is captured");
-    assert_eq!(dut.slave0_mem_a_addr, 0x5000_0040, "held request address mismatch");
+    assert_eq!(
+        dut.master0_mem_d_valid, 1,
+        "master0 should receive the first response"
+    );
+    assert_eq!(
+        dut.master0_mem_d_rdata, 0x1234_5678,
+        "master0 response data mismatch"
+    );
+    assert_eq!(
+        dut.slave0_mem_a_valid, 1,
+        "slave0 should accept the held master1 request once the response is captured"
+    );
+    assert_eq!(
+        dut.slave0_mem_a_addr, 0x5000_0040,
+        "held request address mismatch"
+    );
     assert_eq!(dut.slave0_mem_a_we, 1, "held request write-enable mismatch");
 
     set_slave_a_ready(&mut dut, 0, 1);
@@ -226,7 +298,10 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master1_mem_a_ready, 0, "no new address request should be accepted until the held request is dispatched");
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "no new address request should be accepted until the held request is dispatched"
+    );
 }
 
 #[test]
@@ -241,8 +316,14 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
     set_master_request(&mut dut, 1, 0x4000_0000, 0xDEAD_BEEF, 1, 0b10, 1);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master0_mem_a_ready, 0, "inactive master0 should not be selected");
-    assert_eq!(dut.master1_mem_a_ready, 1, "master1 should be able to issue the unmapped request");
+    assert_eq!(
+        dut.master0_mem_a_ready, 0,
+        "inactive master0 should not be selected"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 1,
+        "master1 should be able to issue the unmapped request"
+    );
 
     clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
@@ -250,16 +331,34 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.slave0_mem_a_valid, 0, "unmapped request must not hit slave0");
-    assert_eq!(dut.slave1_mem_a_valid, 0, "unmapped request must not hit slave1");
-    assert_eq!(dut.master0_mem_d_valid, 0, "master0 must not see master1's response");
-    assert_eq!(dut.master1_mem_d_valid, 1, "master1 should receive the synthesized zero response");
-    assert_eq!(dut.master1_mem_d_rdata, 0, "unmapped access should return zero data");
+    assert_eq!(
+        dut.slave0_mem_a_valid, 0,
+        "unmapped request must not hit slave0"
+    );
+    assert_eq!(
+        dut.slave1_mem_a_valid, 0,
+        "unmapped request must not hit slave1"
+    );
+    assert_eq!(
+        dut.master0_mem_d_valid, 0,
+        "master0 must not see master1's response"
+    );
+    assert_eq!(
+        dut.master1_mem_d_valid, 1,
+        "master1 should receive the synthesized zero response"
+    );
+    assert_eq!(
+        dut.master1_mem_d_rdata, 0,
+        "unmapped access should return zero data"
+    );
 
     set_master_d_ready(&mut dut, 1, 1);
     eval_comb(&mut dut);
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
-    assert_eq!(dut.master1_mem_d_valid, 0, "master1 response should clear after handshake");
+    assert_eq!(
+        dut.master1_mem_d_valid, 0,
+        "master1 response should clear after handshake"
+    );
 }
