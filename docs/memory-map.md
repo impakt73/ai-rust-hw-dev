@@ -24,12 +24,13 @@ Address Range            | Device              | Type | Description
 ## Peripheral Types
 
 - **Rust peripherals** (`0x80000000 - 0xFFFFFFFF`):
-  Handled by the Rust `SystemBus`, simulation-only. Not synthesized to FPGA.
+  Handled by the Rust `SystemBus` on the host. On FPGA backends, these same
+  addresses are reached remotely through the host bus interface.
 - **RTL peripherals** (`0x00000000 - 0x7FFFFFFF`):
   Handled by the SystemVerilog `bus.sv` address decoder (top-bit split + top-nibble select),
   synthesizable to FPGA.
 - **DRAM** (`0x80000000 - 0xFFFFFFFF`): Main system memory handled by the Rust
-  `SystemBus` path for simulation backends.
+  `SystemBus` path (including FPGA host-side access through the host bus).
 
 ## Rust Peripherals (upper-half address space)
 

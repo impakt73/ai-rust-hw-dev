@@ -3,7 +3,7 @@ use crate::dram::Dram;
 use crate::memory::Memory;
 use crate::sim_control::SimControl;
 
-use riscv_shared::bus::{is_rtl_peripheral_addr, is_valid_dram_range, DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::bus::{is_rtl_peripheral_addr, DRAM_BASE, SIM_CONTROL_BASE};
 
 /// Lightweight handle identifying which device owns an address range
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,12 +53,19 @@ impl SystemBus {
         let dram = Dram::new();
         let sim_control = SimControl::new();
 
-        // Pre-populate memory map with fixed non-DRAM internal devices.
-        let memory_map = vec![MemoryMapEntry {
-            base: SIM_CONTROL_BASE,
-            end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
-            id: DeviceId::SimControl,
-        }];
+        // Pre-populate memory map with internal devices
+        let memory_map = vec![
+            MemoryMapEntry {
+                base: SIM_CONTROL_BASE,
+                end: SIM_CONTROL_BASE.saturating_add(sim_control.size()),
+                id: DeviceId::SimControl,
+            },
+            MemoryMapEntry {
+                base: DRAM_BASE,
+                end: DRAM_BASE.saturating_add(dram.size()),
+                id: DeviceId::Dram,
+            },
+        ];
 
         SystemBus {
             memory,
@@ -68,14 +75,6 @@ impl SystemBus {
             memory_map,
             elapsed_time_us: 0,
         }
-    }
-
-    /// Check if an address is in the RTL peripheral address space
-    ///
-    /// RTL peripherals are handled directly by the Verilator top module,
-    /// not by the Rust SystemBus. This method helps identify such addresses.
-    pub fn is_rtl_peripheral(&self, addr: u32) -> bool {
-        is_rtl_peripheral_addr(addr)
     }
 
     /// Update the elapsed time (called by simulator after each step)
@@ -115,12 +114,16 @@ impl SystemBus {
         let end = base_addr.saturating_add(size);
 
         // Check for overlaps with existing devices.
+        // DRAM is intentionally skipped here so Rust MMIO devices can live in
+        // the upper-half address space (>= 0x8000_0000) while DRAM remains the
+        // fallback for all other upper-half addresses.
         for entry in &self.memory_map {
+            if entry.id == DeviceId::Dram {
+                continue;
+            }
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
-                    DeviceId::Dram => unreachable!(
-                        "register_device overlap check encountered DRAM in memory_map; this is a programming error"
-                    ),
+                    DeviceId::Dram => self.dram.name(),
                     DeviceId::SimControl => self.sim_control.name(),
                     DeviceId::External(idx) => self.external_devices[idx].name(),
                 };
@@ -161,39 +164,38 @@ impl SystemBus {
     /// Returns an iterator over (base_addr, size, name) tuples for all registered devices.
     #[allow(dead_code)]
     pub fn registered_devices(&self) -> impl Iterator<Item = (u32, u32, &str)> + '_ {
-        core::iter::once((DRAM_BASE, self.dram.size(), self.dram.name())).chain(
-            self.memory_map.iter().map(|entry| {
-                let size = entry.end.wrapping_sub(entry.base);
-                let name = match entry.id {
-                    DeviceId::Dram => unreachable!(
-                        "registered_devices encountered DRAM in memory_map; this is a programming error"
-                    ),
-                    DeviceId::SimControl => self.sim_control.name(),
-                    DeviceId::External(idx) => self.external_devices[idx].name(),
-                };
-                (entry.base, size, name)
-            }),
-        )
+        self.memory_map.iter().map(|entry| {
+            let size = entry.end.wrapping_sub(entry.base);
+            let name = match entry.id {
+                DeviceId::Dram => self.dram.name(),
+                DeviceId::SimControl => self.sim_control.name(),
+                DeviceId::External(idx) => self.external_devices[idx].name(),
+            };
+            (entry.base, size, name)
+        })
     }
 
     /// Find the device ID for the given address
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
     fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
-        // Check explicitly mapped non-DRAM entries first (SimControl + external MMIO).
+        let mut dram_match: Option<(DeviceId, u32)> = None;
+
+        // Check all non-DRAM entries first (SimControl + external MMIO), so
+        // explicit MMIO windows take priority over DRAM fallback.
         for entry in &self.memory_map {
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
-                return Some((entry.id, offset));
+                if entry.id == DeviceId::Dram {
+                    dram_match = Some((entry.id, offset));
+                } else {
+                    return Some((entry.id, offset));
+                }
             }
         }
 
-        // Fall back to DRAM for valid DRAM addresses.
-        if is_valid_dram_range(addr, 1) {
-            return Some((DeviceId::Dram, addr - DRAM_BASE));
-        }
-
-        None
+        // Fall back to DRAM if no higher-priority MMIO entry matched.
+        dram_match
     }
 
     /// Read a 32-bit word from the bus
@@ -202,7 +204,7 @@ impl SystemBus {
     /// If no device matches, logs a warning and returns 0.
     pub fn read_word(&mut self, addr: u32) -> u32 {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
@@ -243,7 +245,7 @@ impl SystemBus {
     /// If no device matches, logs a warning and discards the write.
     pub fn write_word(&mut self, addr: u32, value: u32) {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
@@ -283,7 +285,7 @@ impl SystemBus {
     /// logs a warning and returns 0.
     pub fn read_halfword(&mut self, addr: u32) -> u16 {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
@@ -327,7 +329,7 @@ impl SystemBus {
     /// logs a warning and discards the write.
     pub fn write_halfword(&mut self, addr: u32, value: u16) {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
@@ -369,7 +371,7 @@ impl SystemBus {
     /// logs a warning and returns 0.
     pub fn read_byte(&mut self, addr: u32) -> u8 {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral read should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
@@ -411,7 +413,7 @@ impl SystemBus {
     /// logs a warning and discards the write.
     pub fn write_byte(&mut self, addr: u32, value: u8) {
         // RTL peripherals should never reach Rust - they're handled by Verilator
-        if self.is_rtl_peripheral(addr) {
+        if is_rtl_peripheral_addr(addr) {
             panic!(
                 "RTL peripheral write should be handled by Verilator, not Rust: 0x{:08x}",
                 addr
