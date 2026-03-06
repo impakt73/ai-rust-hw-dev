@@ -18,7 +18,9 @@ module registered_bus #(
     output logic                                 master_mem_d_valid,
     input  logic                                 master_mem_d_ready,
 
-    // Slave address map (base + total size in bytes)
+    // Slave address map.
+    // Decode matches top nibble (addr[31:28]) against slave_base_addr[i][31:28].
+    // slave_addr_size is used as an enable: zero disables a slave entry.
     input  logic [NUM_SLAVES-1:0][31:0]          slave_base_addr,
     input  logic [NUM_SLAVES-1:0][31:0]          slave_addr_size,
 
@@ -77,7 +79,7 @@ module registered_bus #(
         for (i = 0; i < NUM_SLAVES; i++) begin
             if (!decoded_slave_valid
                 && (slave_addr_size[i] != 32'h0)
-                && ((pending_req_addr - slave_base_addr[i]) < slave_addr_size[i])) begin
+                && (pending_req_addr[31:28] == slave_base_addr[i][31:28])) begin
                 decoded_slave_idx = SLAVE_IDX_W'(i);
                 decoded_slave_valid = 1'b1;
             end

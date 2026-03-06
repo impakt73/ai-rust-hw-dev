@@ -12,7 +12,7 @@ fn clock_cycle(dut: &mut RegisteredBusWrapper) {
 fn configure_ranges(dut: &mut RegisteredBusWrapper) {
     dut.slave0_base_addr = 0x5000_0000;
     dut.slave0_addr_size = 0x0000_1000;
-    dut.slave1_base_addr = 0x5100_0000;
+    dut.slave1_base_addr = 0x6000_0000;
     dut.slave1_addr_size = 0x0000_1000;
 }
 
@@ -120,7 +120,7 @@ fn test_registered_bus_routes_to_two_slaves() {
     assert_eq!(dut.master_mem_a_ready, 1, "bus should accept next request");
 
     // Transaction 2: route to slave 1
-    set_master_request(&mut dut, 0x5100_0030, 0xDEAD_BEEF, 1, 0b10, 1);
+    set_master_request(&mut dut, 0x6FFF_F030, 0xDEAD_BEEF, 1, 0b10, 1);
     clock_cycle(&mut dut); // A handshake in IDLE
 
     set_master_request(&mut dut, 0, 0, 0, 0, 0);
@@ -136,7 +136,7 @@ fn test_registered_bus_routes_to_two_slaves() {
         "slave1 should receive second request"
     );
     assert_eq!(
-        dut.slave1_mem_a_addr, 0x5100_0030,
+        dut.slave1_mem_a_addr, 0x6FFF_F030,
         "slave1 address mismatch"
     );
     assert_eq!(dut.slave1_mem_a_we, 1, "slave1 write-enable mismatch");
@@ -166,7 +166,7 @@ fn test_registered_bus_unmapped_address_returns_zero() {
 
     reset_dut(&mut dut);
 
-    set_master_request(&mut dut, 0x5300_0000, 0, 0, 0b10, 1);
+    set_master_request(&mut dut, 0x4000_0000, 0, 0, 0b10, 1);
     clock_cycle(&mut dut); // A handshake in IDLE
 
     set_master_request(&mut dut, 0, 0, 0, 0, 0);
