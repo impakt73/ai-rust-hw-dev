@@ -212,7 +212,7 @@ Address Range          | Device           | Type | Description
 0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
 0x60000000-0x6000000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
 0x70000000-0x70002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
-0x80000000-0xFFFFFFFF | DRAM             | Rust | System memory (2 GiB)
+0x80000000-0x8FFFFFFF | DRAM             | Rust | System memory (256 MiB)
 ```
 
 **LED Controller Peripheral:**
@@ -237,7 +237,7 @@ Address Range          | Device           | Type | Description
 - **RTL peripherals** (`0x00000000-0x7FFFFFFF`): Handled by Verilator, synthesizable to FPGA
 - **Rust peripherals** (`0x80000000-0xFFFFFFFF`): Handled by SystemBus (including DRAM) and reached from FPGA via the host bus interface
 
-**DRAM range:** 0x80000000 - 0xFFFFFFFF
+**DRAM range:** 0x80000000 - 0x8FFFFFFF
 
 Tests must use addresses in the DRAM range:
 ```rust

@@ -113,13 +113,8 @@ impl SystemBus {
 
         let end = base_addr.saturating_add(size);
 
-        // Check for overlaps with existing devices.
-        // DRAM is treated as a catch-all fallback for the upper-half address space,
-        // so external devices are allowed to carve out explicit sub-ranges within DRAM.
+        // Check for overlaps with existing devices
         for entry in &self.memory_map {
-            if matches!(entry.id, DeviceId::Dram) {
-                continue;
-            }
             if ranges_overlap(base_addr, end, entry.base, entry.end) {
                 let device_name = match entry.id {
                     DeviceId::Dram => self.dram.name(),
@@ -178,41 +173,7 @@ impl SystemBus {
     ///
     /// Returns the DeviceId handle and the offset relative to the device's base address.
     fn find_device_id(&self, addr: u32) -> Option<(DeviceId, u32)> {
-        // Priority order:
-        // 1) External devices (latest registration wins)
-        // 2) SimControl fixed window
-        // 3) DRAM catch-all fallback
-
-        // External devices: search reverse registration order.
-        // Overlapping external ranges are rejected at registration time, so this
-        // preserves deterministic behavior while allowing the most recently
-        // added non-overlapping external mapping to take priority over DRAM.
-        for entry in self.memory_map.iter().rev() {
-            if !matches!(entry.id, DeviceId::External(_)) {
-                continue;
-            }
-            if addr >= entry.base && addr < entry.end {
-                let offset = addr - entry.base;
-                return Some((entry.id, offset));
-            }
-        }
-
-        // SimControl: exact reserved window.
         for entry in &self.memory_map {
-            if !matches!(entry.id, DeviceId::SimControl) {
-                continue;
-            }
-            if addr >= entry.base && addr < entry.end {
-                let offset = addr - entry.base;
-                return Some((entry.id, offset));
-            }
-        }
-
-        // DRAM fallback.
-        for entry in &self.memory_map {
-            if !matches!(entry.id, DeviceId::Dram) {
-                continue;
-            }
             if addr >= entry.base && addr < entry.end {
                 let offset = addr - entry.base;
                 return Some((entry.id, offset));

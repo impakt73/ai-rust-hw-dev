@@ -121,8 +121,8 @@ pub const fn is_rtl_peripheral_addr(addr: u32) -> bool {
 pub const DRAM_BASE: u32 = 0x8000_0000;
 
 /// End address for DRAM (inclusive)
-/// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0xFFFF_FFFF]
-pub const DRAM_END: u32 = 0xFFFF_FFFF;
+/// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0x8FFF_FFFF] (256 MiB)
+pub const DRAM_END: u32 = 0x8FFF_FFFF;
 
 /// Check if an address range is within the valid DRAM range
 ///
