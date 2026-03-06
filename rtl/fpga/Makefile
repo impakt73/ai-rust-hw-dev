@@ -62,10 +62,10 @@ PACKAGE = cb132
 FPGA_DIR = ice40_alchitry_cu
 TOP_MODULE = ice40_alchitry_cu_top
 CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
-SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(JSON)
+SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-		--json $(JSON) \
+		--json $(NETLIST) \
 		--pcf $(CONSTRAINT) \
 		--asc $(PNR_OUT) \
 		--freq 25
@@ -80,10 +80,10 @@ PACKAGE = CABGA256
 FPGA_DIR = ecp5_icepi_zero
 TOP_MODULE = ecp5_icepi_zero_top
 CONSTRAINT = $(FPGA_DIR)/ecp5_icepi_zero.lpf
-SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(JSON)
+SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-		--json $(JSON) \
+		--json $(NETLIST) \
 		--lpf $(CONSTRAINT) \
 		--textcfg $(PNR_OUT) \
 		--freq 50
@@ -92,11 +92,34 @@ PROGRAM_CMD = $(OPENFPGALOADER) -b icepi_zero $(BIN)
 OUTPUT_EXT = bit
 endif
 
+ifeq ($(TARGET),artix7_alchitry_au)
+DEVICE = xc7a35tcsg324-1
+FPGA_DIR = artix7_alchitry_au
+TOP_MODULE = artix7_alchitry_au_top
+CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
+NETLIST = $(BUILD_DIR)/$(PROJECT).json
+SYNTH_CMD = synth_xilinx -family xc7 -top $(TOP_MODULE); write_json $(NETLIST)
+PNR_OUT = $(BUILD_DIR)/$(PROJECT).fasm
+CHIPDB ?= $(OPENXC7_CHIPDB)
+PNR_CMD = $(NEXTPNR) --chipdb $(CHIPDB) \
+		--xdc $(CONSTRAINT) \
+		--json $(NETLIST) \
+		--fasm $(PNR_OUT) \
+		--freq 50
+FRAMES = $(BUILD_DIR)/$(PROJECT).frames
+PART_FILE ?= $(XRAY_PART_FILE)
+PACK_CMD = $(FASM2FRAMES) --part $(DEVICE) $(PNR_OUT) $(FRAMES) && \
+		$(XC7FRAMES2BIT) --part-file $(PART_FILE) --frm-file $(FRAMES) --output-file $(BIN)
+PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
+OUTPUT_EXT = bit
+endif
+
 ifndef SYNTH_CMD
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu or TARGET=ecp5_icepi_zero)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, or TARGET=artix7_alchitry_au)
 endif
 
 BUILD_DIR := build/$(TARGET)
+NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
@@ -105,7 +128,6 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 
 # Output files
-JSON = $(BUILD_DIR)/$(PROJECT).json
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
@@ -118,9 +140,16 @@ ICEPROG = iceprog
 ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
+FASM2FRAMES = fasm2frames
+XC7FRAMES2BIT = xc7frames2bit
+OPENXC7_CHIPDB ?= /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
+XRAY_PART_FILE ?= /opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
+endif
+ifeq ($(TARGET),artix7_alchitry_au)
+NEXTPNR = nextpnr-xilinx
 endif
 
 # Default target
@@ -132,11 +161,11 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # Synthesis with Yosys
-$(JSON): $(ALL_SOURCES) | $(BUILD_DIR)
+$(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
 			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
-$(PNR_OUT): $(JSON) $(CONSTRAINT)
+$(PNR_OUT): $(NETLIST) $(CONSTRAINT)
 	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
@@ -155,7 +184,7 @@ endif
 
 # Resource utilization report
 .PHONY: utilization
-utilization: $(JSON)
+utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
 
 
@@ -177,7 +206,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all          - Synthesize and generate bitstream (default)"
-	@echo "  $(JSON)      - Run synthesis only (Yosys)"
+	@echo "  $(NETLIST)   - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
 	@echo "  $(BIN)       - Generate bitstream (target-specific packer)"
 	@echo "  timing       - Generate timing report"
@@ -194,6 +223,7 @@ help:
 	@echo "Target selection:"
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
+	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
 
 .PHONY: check-tools
 check-tools:
@@ -206,6 +236,13 @@ ifeq ($(TARGET),ice40_alchitry_cu)
 endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
+endif
+ifeq ($(TARGET),artix7_alchitry_au)
+	@which $(FASM2FRAMES) > /dev/null || (echo "ERROR: fasm2frames not found"; exit 1)
+	@which $(XC7FRAMES2BIT) > /dev/null || (echo "ERROR: xc7frames2bit not found"; exit 1)
+	@test -f $(CHIPDB) || (echo "ERROR: Artix chipdb not found at $(CHIPDB)"; exit 1)
+	@test -f $(PART_FILE) || (echo "ERROR: Artix part file not found at $(PART_FILE)"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
 endif
 	@echo "All required tools found!"
