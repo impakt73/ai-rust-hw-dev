@@ -150,6 +150,12 @@ pub struct AsyncFifoTestWrapper;
 pub struct AsyncFifoSync3Wrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/sync_fifo_test_wrapper.sv",
+    name = "sync_fifo_test_wrapper"
+)]
+pub struct SyncFifoTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sram_test_wrapper.sv",
     name = "sram_test_wrapper"
 )]
@@ -251,6 +257,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "primitives/reset_controller.sv",              // Power-on reset controller
         "memory/bus.sv",                               // System bus for address decoding
         "cpu/cpu.sv",                                  // CPU core
+        "memory/sync_dpram.sv",                        // BRAM-friendly simple dual-port RAM
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
@@ -429,6 +436,15 @@ pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "memory/sync_dpram.sv",
         "primitives/async_fifo.sv",
         "wrappers/async_fifo_sync3_wrapper.sv",
+    ])
+}
+
+// Helper function to create a runtime for sync FIFO wrapper (DEPTH=4)
+pub fn create_sync_fifo_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_dpram.sv",
+        "primitives/sync_fifo.sv",
+        "wrappers/sync_fifo_test_wrapper.sv",
     ])
 }
 

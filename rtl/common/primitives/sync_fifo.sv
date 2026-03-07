@@ -1,6 +1,6 @@
 // Synchronous FIFO Module
 // Generic FIFO with configurable data width and depth
-// Supports single-cycle read and write operations
+// Uses sync_dpram storage for BRAM-friendly implementation
 //
 // Parameters:
 //   WIDTH - Data width in bits (default: 8)
@@ -12,7 +12,7 @@
 //   wr_en   - Write enable (data written on rising edge when not full)
 //   rd_en   - Read enable (advances read pointer on rising edge when not empty)
 //   wdata   - Data to write
-//   rdata   - Data at read pointer (combinatorial output)
+//   rdata   - Data at read pointer (registered output, one cycle after address)
 //   full    - FIFO is full, cannot accept more data
 //   empty   - FIFO is empty, no data available
 //   count   - Number of entries currently in FIFO
@@ -50,9 +50,6 @@ module sync_fifo #(
         end
     end
 
-    // FIFO storage
-    logic [WIDTH-1:0] mem [0:DEPTH-1];
-    
     // Pointers
     logic [PTR_WIDTH-1:0] wr_ptr;
     logic [PTR_WIDTH-1:0] rd_ptr;
@@ -67,8 +64,18 @@ module sync_fifo #(
     assign full  = (count == DEPTH[CNT_WIDTH-1:0]);
     assign empty = (count == '0);
     
-    // Combinatorial read data output
-    assign rdata = mem[rd_ptr];
+    sync_dpram #(
+        .DATA_WIDTH(WIDTH),
+        .ADDR_WIDTH(PTR_WIDTH)
+    ) u_mem (
+        .wclk(clk),
+        .rclk(clk),
+        .we(do_write),
+        .waddr(wr_ptr),
+        .wdata(wdata),
+        .raddr(rd_ptr),
+        .rdata(rdata)
+    );
     
     // FIFO management logic
     always_ff @(posedge clk) begin
@@ -90,11 +97,6 @@ module sync_fifo #(
                 // Read only
                 rd_ptr <= rd_ptr + 1'b1;
                 count  <= count - 1'b1;
-            end
-            
-            // Write to FIFO memory (only when write is valid)
-            if (do_write) begin
-                mem[wr_ptr] <= wdata;
             end
         end
     end
