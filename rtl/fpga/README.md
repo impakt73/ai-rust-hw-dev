@@ -11,10 +11,10 @@ Currently supported targets:
 
 The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
 
-- **Extensions**: M (multiply/divide) enabled (shift-add multiplier); F (floating-point) disabled
-- **ISA supported**: RV32I base instruction set + M (multiply) + C (compressed) + A (atomic) + Zicsr
-- **Resource usage**: ~74% logic cells (5,698/7,680), 50% BRAM (16/32)
-- **Clock frequency**: 25 MHz (via PLL), design achieves 30.56 MHz max
+- **Extensions**: M (multiply/divide) disabled by default; F (floating-point) disabled
+- **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
+- **Resource usage**: 4,399 SB_LUT4s and 7,306 total mapped cells after disabling M by default
+- **Clock frequency**: 25 MHz (via PLL), latest build achieves 39.50 MHz max
 - **Communication**: CPU communicates with host over USB serial (UART) using the host bus protocol
 - **External memory**: DRAM accesses are forwarded to the host computer over UART
 
@@ -22,7 +22,7 @@ The FPGA design is configured to run on the iCE40-HX8K within resource constrain
 
 The FPGA implementation includes:
 
-- ✅ **RISC-V RV32IMAC CPU**: Base integer + Multiply + Atomic + Compressed instruction sets (F extension disabled)
+- ✅ **RISC-V RV32IAC CPU**: Base integer + Atomic + Compressed instruction sets (M and F disabled by default on iCE40)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
 - ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x60000000
 - ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
@@ -128,7 +128,7 @@ sudo iceprog build/riscv_fpga.bin
 ## Hardware Requirements
 
 - **Board**: Alchitry Cu v1 (Lattice iCE40-HX8K-CB132)
-- **Resources Used**: ~5,700 LUTs, 74% utilization, 16 BRAMs (50%)
+- **Resources Used**: 4,399 SB_LUT4s, 7,306 total mapped cells, 30 BRAMs
 - **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
 - **Programming**: USB cable for iceprog
@@ -211,7 +211,7 @@ The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ens
 
 The design uses ~74% of HX8K logic resources. If synthesis fails:
 
-1. **Already optimized**: M extension uses shift-add multiplier, F extension is disabled by default
+1. **Already optimized**: M and F extensions are disabled by default on the iCE40 target
 2. **Reduce BRAM usage**: Minimize the on-chip SRAM allocation if possible
 
 ### "make program" fails
