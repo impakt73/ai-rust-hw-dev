@@ -1,5 +1,5 @@
 # Makefile for RISC-V FPGA Synthesis
-# Targets Alchitry Cu v1 (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + icestorm)
+# Supports open-source Lattice flows plus a Vivado batch flow for the Alchitry Au.
 
 # Project configuration
 PROJECT = riscv_fpga
@@ -93,28 +93,16 @@ OUTPUT_EXT = bit
 endif
 
 ifeq ($(TARGET),artix7_alchitry_au)
-DEVICE = xc7a35tftg256-1
+PART = xc7a35tftg256-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
-NETLIST = $(BUILD_DIR)/$(PROJECT).json
-SYNTH_CMD = synth_xilinx -family xc7 -top $(TOP_MODULE); write_json $(NETLIST)
-PNR_OUT = $(BUILD_DIR)/$(PROJECT).fasm
-CHIPDB ?= $(OPENXC7_CHIPDB)
-PNR_CMD = $(NEXTPNR) --chipdb $(CHIPDB) \
-		--xdc $(CONSTRAINT) \
-		--json $(NETLIST) \
-		--fasm $(PNR_OUT) \
-		--freq 50
-FRAMES = $(BUILD_DIR)/$(PROJECT).frames
-PART_FILE ?= $(XRAY_PART_FILE)
-PACK_CMD = $(FASM2FRAMES) --db-root $(OPENXC7_XRAYDB_ROOT) --part $(DEVICE) $(PNR_OUT) $(FRAMES) && \
-		$(XC7FRAMES2BIT) --part-file $(PART_FILE) --frm-file $(FRAMES) --output-file $(BIN)
+VIVADO_TCL = $(FPGA_DIR)/vivado_build.tcl
 PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
 OUTPUT_EXT = bit
 endif
 
-ifndef SYNTH_CMD
+ifndef FPGA_DIR
 $(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, or TARGET=artix7_alchitry_au)
 endif
 
@@ -140,18 +128,10 @@ ICEPROG = iceprog
 ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
-FASM2FRAMES = fasm2frames
-XC7FRAMES2BIT = xc7frames2bit
-OPENXC7_CHIPDB_ROOT ?= /usr/share/nextpnr/xilinx-chipdb
-OPENXC7_XRAYDB_ROOT ?= /usr/share/xray/database/artix7
-OPENXC7_CHIPDB ?= $(OPENXC7_CHIPDB_ROOT)/$(DEVICE).bin
-XRAY_PART_FILE ?= $(OPENXC7_XRAYDB_ROOT)/$(DEVICE)/part.yaml
+VIVADO = vivado
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
-endif
-ifeq ($(TARGET),artix7_alchitry_au)
-NEXTPNR = nextpnr-xilinx
 endif
 
 # Default target
@@ -163,6 +143,12 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # Synthesis with Yosys
+ifeq ($(TARGET),artix7_alchitry_au)
+$(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
+	$(VIVADO) -mode batch -source $(abspath $(VIVADO_TCL)) -tclargs \
+		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))") 2>&1 | tee $(BUILD_DIR)/vivado.log
+else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
 			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
@@ -173,9 +159,15 @@ $(PNR_OUT): $(NETLIST) $(CONSTRAINT)
 # Generate bitstream
 $(BIN): $(PNR_OUT)
 	bash -e -o pipefail -c '$(PACK_CMD)'
+endif
 
 # Timing analysis
 .PHONY: timing
+ifeq ($(TARGET),artix7_alchitry_au)
+timing: $(BIN)
+	@test -f $(TIMING) || (echo "ERROR: Expected timing report at $(TIMING)"; exit 1)
+	@echo "Timing report written to $(TIMING)"
+else
 timing: $(PNR_OUT)
 ifeq ($(TARGET),ice40_alchitry_cu)
 	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
@@ -183,11 +175,18 @@ ifeq ($(TARGET),ice40_alchitry_cu)
 else
 	@echo "Timing report generation is only implemented for TARGET=ice40_alchitry_cu"
 endif
+endif
 
 # Resource utilization report
 .PHONY: utilization
+ifeq ($(TARGET),artix7_alchitry_au)
+utilization: $(BIN)
+	@test -f $(UTILIZATION) || (echo "ERROR: Expected utilization report at $(UTILIZATION)"; exit 1)
+	@cat $(UTILIZATION)
+else
 utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
+endif
 
 
 # Program FPGA
@@ -208,9 +207,13 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all          - Synthesize and generate bitstream (default)"
+ifeq ($(TARGET),artix7_alchitry_au)
+	@echo "  $(BIN)       - Run the Vivado batch flow and generate the bitstream"
+else
 	@echo "  $(NETLIST)   - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
 	@echo "  $(BIN)       - Generate bitstream (target-specific packer)"
+endif
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
 	@echo "  program      - Program FPGA with bitstream"
@@ -218,9 +221,14 @@ help:
 	@echo "  help         - Show this help message"
 	@echo ""
 	@echo "Prerequisites:"
+ifeq ($(TARGET),artix7_alchitry_au)
+	@echo "  - vivado     : Xilinx Vivado batch/CLI tools"
+	@echo "  - openFPGALoader : Optional board programming tool"
+else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
 	@echo "  - icestorm   : Bitstream generation and programming"
+endif
 	@echo ""
 	@echo "Target selection:"
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
@@ -230,6 +238,10 @@ help:
 .PHONY: check-tools
 check-tools:
 	@echo "Checking for required tools..."
+ifeq ($(TARGET),artix7_alchitry_au)
+	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (optional for programming)"; exit 0)
+else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
 ifeq ($(TARGET),ice40_alchitry_cu)
@@ -240,11 +252,5 @@ ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
 endif
-ifeq ($(TARGET),artix7_alchitry_au)
-	@which $(FASM2FRAMES) > /dev/null || (echo "ERROR: fasm2frames not found"; exit 1)
-	@which $(XC7FRAMES2BIT) > /dev/null || (echo "ERROR: xc7frames2bit not found"; exit 1)
-	@test -f $(CHIPDB) || (echo "ERROR: Artix chipdb not found at $(CHIPDB)"; exit 1)
-	@test -f $(PART_FILE) || (echo "ERROR: Artix part file not found at $(PART_FILE)"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
 endif
 	@echo "All required tools found!"

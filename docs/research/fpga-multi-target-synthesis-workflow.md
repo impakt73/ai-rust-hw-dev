@@ -1,8 +1,10 @@
-# FPGA Multi-Target Synthesis Workflow: Artix-7, ECP5, and Cyclone V via Open Source Tooling
+# FPGA Multi-Target Synthesis Workflow Research: Artix-7, ECP5, and Cyclone V
 
-**Research Document**  
-**Context:** Extending the existing iCE40-HX8K Yosys/nextpnr synthesis flow to also target Xilinx Artix-7, Lattice ECP5, and Intel/Altera Cyclone V FPGAs, using only open source tools  
+**Research Document**
+**Context:** Historical research into extending the existing iCE40-HX8K Yosys/nextpnr synthesis flow to also target Xilinx Artix-7, Lattice ECP5, and Intel/Altera Cyclone V FPGAs
 **Date:** 2026-03-04
+
+**Status Update (2026-03-07):** The open-source Xilinx Artix-7 flow described in this document is no longer supported by this repository. The supported Alchitry Au build flow now uses Vivado batch/TCL under `rtl/fpga/`.
 
 ---
 
@@ -14,8 +16,8 @@ The project currently targets the Lattice iCE40-HX8K (Alchitry Cu v1) using an a
 
 1. **Lattice ECP5** is the most natural extension. The toolchain mirrors the iCE40 flow almost exactly: `synth_ecp5` in Yosys, `nextpnr-ecp5` for place and route, and Project Trellis (`ecppack`) for bitstream generation. The target board is the **iCE Pi Zero** (ECP5-25F), an OSHW-certified Raspberry Pi Zero form factor board with a built-in USB-JTAG/UART converter and 50 MHz MEMS oscillator.
 
-2. **Xilinx Artix-7** support is maturing via two parallel open source efforts:
-   - **nextpnr-xilinx** (from the openXC7 project): Extends nextpnr to Xilinx 7-Series using Project X-Ray device databases. It is the most architecturally consistent approach for this project as it mirrors the existing flow.
+2. **Xilinx Artix-7** support was researched via two parallel open source efforts, but that path is now historical-only for this repository:
+   - **nextpnr-xilinx** (from the openXC7 project): Extends nextpnr to Xilinx 7-Series using Project X-Ray device databases. It was the most architecturally consistent open-source option considered during this research.
    - **F4PGA** (formerly SymbiFlow): A more comprehensive umbrella project that uses VPR for placement and routing. It is more mature but relies on a larger software stack.
    - The target board is the **Alchitry Au** (XC7A35T), which shares the same form factor, connector standard, and USB-C programming interface as the existing Alchitry Cu v1.
 
@@ -236,13 +238,13 @@ On an ECP5-25F (iCE Pi Zero), the RV32IMAC design (F extension disabled) would u
 
 ---
 
-## 3. Xilinx Artix-7 Target
+## 3. Xilinx Artix-7 Target (Historical Research Only)
 
 ### 3.1 Tool Overview
 
-Xilinx 7-Series (which includes Artix-7) is supported by two open source flows:
+Xilinx 7-Series (which includes Artix-7) was evaluated with two open source flows during research for this repository. These flows are not supported by the current project build; the supported Alchitry Au flow uses Vivado batch/TCL.
 
-#### Option A: nextpnr-xilinx / openXC7 (Recommended for this project)
+#### Option A: nextpnr-xilinx / openXC7 (Historical evaluation)
 
 | Stage | Tool | Notes |
 |-------|------|-------|
@@ -266,7 +268,7 @@ Xilinx 7-Series (which includes Artix-7) is supported by two open source flows:
 
 **Status:** More comprehensive device support but larger dependency chain. Best suited when F4PGA's architecture-aware VPR provides better results than nextpnr-xilinx.
 
-**For this project, nextpnr-xilinx / openXC7 is recommended** as it maintains architectural consistency with the existing iCE40 flow (same nextpnr P&R tool, same JSON netlist handoff).
+**For this project, nextpnr-xilinx / openXC7 is no longer supported.** This section is retained only as historical research notes from the earlier open-source evaluation.
 
 ### 3.2 Synthesis Command
 
@@ -289,7 +291,7 @@ The `synth_xilinx -family xc7` pass handles:
 ```bash
 # Generate nextpnr-xilinx database for the target device first:
 python3 nextpnr-xilinx/xilinx/python/bbaexport.py \
-    --device xc7a35tcsg324-1 \
+    --device xc7a35tftg256-1 \
     --bba build/xc7a35t.bba
 
 # Run P&R:
@@ -306,10 +308,10 @@ nextpnr-xilinx \
 
 ```bash
 # Convert FASM to frames
-fasm2frames --part xc7a35tcsg324-1 build/$(PROJECT).fasm build/$(PROJECT).frames
+fasm2frames --part xc7a35tftg256-1 build/$(PROJECT).fasm build/$(PROJECT).frames
 
 # Convert frames to bitstream
-xc7frames2bit --part-file $(XRAY_DB)/xc7a35tcsg324-1/part.yaml \
+xc7frames2bit --part-file $(XRAY_DB)/xc7a35tftg256-1/part.yaml \
               --frm-file build/$(PROJECT).frames \
               --output-file build/$(PROJECT).bit
 
@@ -404,9 +406,11 @@ set_property IOSTANDARD  LVCMOS33 [get_ports usb_tx]
 
 ### 3.7 Recommended Artix-7 Board: Alchitry Au
 
+The original research draft incorrectly listed the Alchitry Au package as CSG324. The actual Alchitry Au board uses the XC7A35T-1 in the FTG256 package, which is reflected below.
+
 | Board | FPGA | Resources | Clock | UART | Form Factor |
 |-------|------|-----------|-------|------|-------------|
-| **Alchitry Au** ⭐ | XC7A35T-1C (CSG324) | 33K LUT6, 90 DSP48 | 100 MHz (N14) | USB-C (FTDI FT2232HQ) | 65×45 mm (same as Cu) |
+| **Alchitry Au** ⭐ | XC7A35T-1 (FTG256) | 33K LUT6, 90 DSP48 | 100 MHz (N14) | USB-C (FTDI FT2232HQ) | 65×45 mm (same as Cu) |
 | **Alchitry Au+** (v2) | XC7A35T-1C (CSG324) | 33K LUT6, 90 DSP48 | 100 MHz | USB-C (FTDI FT2232HQ) | 65×45 mm |
 | **Arty A7-35T** (Digilent) | XC7A35T (CSG324) | 33K LUT6, 90 DSP48 | 100 MHz | USB-UART (FTDI) | 101×76 mm |
 | **Arty A7-100T** (Digilent) | XC7A100T | 101K LUT6, 240 DSP48 | 100 MHz | USB-UART (FTDI) | 101×76 mm |
@@ -652,7 +656,7 @@ ifeq ($(TARGET), ecp5_icepi_zero)
 endif
 
 ifeq ($(TARGET), artix7_alchitry_au)
-  DEVICE        = xc7a35tcsg324-1
+  DEVICE        = xc7a35tftg256-1
   FPGA_DIR      = artix7
   CONSTRAINT    = $(FPGA_DIR)/alchitry_au.xdc
   SYNTH_CMD     = synth_xilinx -family xc7 -top $(TOP_MODULE) -edif $(EDIF)
@@ -752,9 +756,9 @@ cmake -B build . && cmake --build build -j$(nproc)
 sudo cmake --install build && cd ..
 ```
 
-### 6.2 Artix-7 Tools via openXC7 (Recommended)
+### 6.2 Artix-7 Tools via openXC7 (Historical, Unsupported)
 
-The **openXC7 toolchain-installer** (https://github.com/openXC7/toolchain-installer) provides a script that installs all required tools from pre-built binaries or Nix packages:
+The **openXC7 toolchain-installer** (https://github.com/openXC7/toolchain-installer) was part of the historical open-source evaluation for Artix-7. It is not part of the supported repository flow now that the Alchitry Au target uses Vivado batch mode.
 
 ```bash
 # Clone openXC7 toolchain installer
@@ -789,7 +793,7 @@ git clone https://github.com/gatecat/nextpnr-xilinx.git
 cd nextpnr-xilinx
 cmake -DARCH=xilinx -DCMAKE_INSTALL_PREFIX=/usr/local .
 # Generate chipdb for target device
-python3 xilinx/python/bbaexport.py --device xc7a35tcsg324-1 --bba bba/xc7a35t.bba
+python3 xilinx/python/bbaexport.py --device xc7a35tftg256-1 --bba bba/xc7a35t.bba
 bbasm --l bba/xc7a35t.bba bba/xc7a35t.bin
 make -j$(nproc) && sudo make install && cd ..
 ```
@@ -898,7 +902,7 @@ jobs:
         run: cd rtl/fpga && make TARGET=${{ matrix.target }}
 ```
 
-**Note:** The Artix-7 target is excluded from automated CI initially due to the more complex openXC7 tool installation. The Cyclone V (Analogue Pocket) target is excluded entirely from CI due to its experimental status. The ECP5 and iCE40 targets can be run in CI using system packages.
+**Note:** The Artix-7 target is excluded from the open-source CI matrix described here because the supported repository flow now uses Vivado for Alchitry Au builds. The Cyclone V (Analogue Pocket) target is excluded entirely from CI due to its experimental status. The ECP5 and iCE40 targets can be run in CI using system packages.
 
 ---
 
@@ -956,11 +960,10 @@ jobs:
    - Effort: Low (tool parity with existing flow, apt-installable)
    - 3× more logic than iCE40; same synthesis/P&R toolchain philosophy
 
-2. **Phase 2: Artix-7 (Alchitry Au)** – Medium value, medium risk
+2. **Phase 2: Artix-7 (Alchitry Au)** – Historical research path
    - Target board: Alchitry Au (XC7A35T)
-   - Effort: Medium (openXC7 install, PLLE2_ADV wrapper, XDC constraints)
-   - Seamless board ecosystem upgrade from Alchitry Cu; DDR3 RAM bonus
-   - Monitor openXC7 maturity before committing to CI integration
+   - Historical effort estimate: Medium (openXC7 install, PLLE2_ADV wrapper, XDC constraints)
+   - The repository no longer pursues this open-source path; the supported Au build now uses Vivado batch/TCL instead
 
 3. **Phase 3: Cyclone V (Analogue Pocket)** – Exploratory / research
    - Target device: 5CSEBA6U23I7 (49K ALMs)
