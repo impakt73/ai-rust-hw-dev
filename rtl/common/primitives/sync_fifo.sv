@@ -54,7 +54,9 @@ module sync_fifo #(
     logic [PTR_WIDTH-1:0] wr_ptr;
     logic [PTR_WIDTH-1:0] rd_ptr;
 
-    // Output staging register keeps read data aligned with rd_valid.
+    // Output staging register keeps rdata aligned with rd_valid, while load_pending
+    // tracks the one-cycle RAM refill needed before the next head word can be staged
+    // from sync_dpram's registered read output.
     logic [WIDTH-1:0] out_data;
     logic             out_valid;
     logic             load_pending;
@@ -77,7 +79,7 @@ module sync_fifo #(
     // Bypass writes directly into the output register when the queue would otherwise
     // be empty after accounting for a same-cycle read of the current head word.
     // That occurs either when the FIFO is currently empty, or when a same-cycle read
-    // is consuming the only staged output word (count == 1).
+    // is consuming the only staged output word (count == CNT_WIDTH'(1)).
     assign direct_write = wr_fire && (
         ((count == '0) && !rd_fire) ||
         ((count == CNT_WIDTH'(1)) && rd_fire)
@@ -117,6 +119,7 @@ module sync_fifo #(
                 rd_ptr <= rd_ptr + 1'b1;
             end
 
+            // Single-statement occupancy accounting for concurrent write/read handshakes.
             // rd_fire can only occur when out_valid/rd_valid is high, so count is
             // guaranteed to be non-zero before the decrement term is applied.
             count <= count + CNT_WIDTH'(wr_fire) - CNT_WIDTH'(rd_fire);
@@ -124,7 +127,8 @@ module sync_fifo #(
             // load_pending and rd_fire are mutually exclusive because load_pending only
             // exists while out_valid is deasserted, which in turn forces rd_valid low.
             // This load step must run before the rd_fire handling below so a newly
-            // presented head word is visible on the next cycle before any later read.
+            // staged head word is ready on the very next cycle, without inserting an
+            // extra bubble beyond the RAM refill cycle already tracked by load_pending.
             if (load_pending) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;
