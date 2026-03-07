@@ -76,6 +76,8 @@ module sync_fifo #(
 
     // Bypass writes directly into the output register when the queue would otherwise
     // be empty after accounting for a same-cycle read of the current head word.
+    // That occurs either when the FIFO is currently empty, or when a same-cycle read
+    // is consuming the only staged output word (count == 1).
     assign direct_write = wr_fire && (
         ((count == '0) && !rd_fire) ||
         ((count == CNT_WIDTH'(1)) && rd_fire)
@@ -121,6 +123,8 @@ module sync_fifo #(
 
             // load_pending and rd_fire are mutually exclusive because load_pending only
             // exists while out_valid is deasserted, which in turn forces rd_valid low.
+            // This load step must run before the rd_fire handling below so a newly
+            // presented head word is visible on the next cycle before any later read.
             if (load_pending) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;

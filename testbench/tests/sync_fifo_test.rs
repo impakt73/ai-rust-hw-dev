@@ -1,5 +1,7 @@
 use riscv_core::{create_sync_fifo_runtime, SyncFifoTestWrapper};
 
+const READ_DATA_TIMEOUT_CYCLES: usize = 8;
+
 fn tick(dut: &mut SyncFifoTestWrapper) {
     dut.clk = 0;
     dut.eval();
@@ -23,7 +25,9 @@ fn reset_fifo(dut: &mut SyncFifoTestWrapper) {
 }
 
 fn wait_for_read_data(dut: &mut SyncFifoTestWrapper) {
-    for _ in 0..8 {
+    // The staged sync_fifo can insert a refill bubble between words, but that latency
+    // is still bounded to a small number of clocks for this DEPTH=4 test wrapper.
+    for _ in 0..READ_DATA_TIMEOUT_CYCLES {
         if dut.rd_valid != 0 {
             return;
         }
