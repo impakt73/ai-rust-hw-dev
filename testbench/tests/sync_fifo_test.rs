@@ -39,6 +39,9 @@ fn test_sync_fifo_registered_read_behavior() {
     tick(&mut dut);
     dut.wr_en = 0;
 
+    // The write completed on the preceding rising edge, so empty/count reflect the
+    // newly queued entry immediately even though the RAM-backed read data is still
+    // one clock behind.
     assert_eq!(dut.empty, 0, "FIFO should contain one entry after a write");
     assert_eq!(dut.count, 1, "FIFO count should increment after a write");
     assert_eq!(
@@ -82,6 +85,9 @@ fn test_sync_fifo_preserves_order_with_registered_output() {
         dut.rd_en = 1;
         tick(&mut dut);
         dut.rd_en = 0;
+        // The read tick returns the current head word because sync_dpram samples the
+        // pre-increment read pointer on that edge. The following idle tick advances
+        // rdata to the next head entry.
         assert_eq!(dut.rdata, expected, "FIFO must preserve write order");
         tick(&mut dut);
     }
