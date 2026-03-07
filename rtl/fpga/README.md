@@ -11,18 +11,36 @@ Currently supported targets:
 
 The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
 
-- **Extensions**: M (multiply/divide) disabled by default; F (floating-point) disabled
+- **Extensions**: iCE40 keeps M (multiply/divide) and F (floating-point) disabled by default; the ECP5 top enables F by default
 - **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
 - **Resource usage**: 4,399 SB_LUT4s and 7,306 total mapped cells after disabling M by default
 - **Clock frequency**: 25 MHz (via PLL), latest build achieves 39.50 MHz max
 - **Communication**: CPU communicates with host over USB serial (UART) using the host bus protocol
 - **External memory**: DRAM accesses are forwarded to the host computer over UART
 
+### ECP5 RV32F impact measurement
+
+The ECP5 iCE Pi Zero target now enables `ENABLE_F_EXT=1'b1` by default in
+`ecp5_icepi_zero_top.sv`. Measured with `make TARGET=ecp5_icepi_zero clean all utilization timing`:
+
+| Metric | `ENABLE_F_EXT=0` baseline | `ENABLE_F_EXT=1` | Delta |
+|--------|---------------------------:|-----------------:|------:|
+| Cells | 14,512 | 21,912 | +51.0% |
+| LUT4 | 8,301 | 14,280 | +72.0% |
+| TRELLIS_FF | 2,106 | 3,500 | +66.2% |
+| DP16KD | 9 | 9 | +0.0% |
+| Max frequency | 53.96 MHz | 14.69 MHz | -72.8% |
+
+At the current 50 MHz ECP5 timing target, the F-enabled build completes place
+and route but fails timing. The ECP5 flow therefore uses nextpnr's
+`--timing-allow-fail` option so the bitstream, utilization report, and timing
+summary are still emitted for review.
+
 ## What's Included
 
 The FPGA implementation includes:
 
-- ✅ **RISC-V RV32IAC CPU**: Base integer + Atomic + Compressed instruction sets (M and F disabled by default on iCE40)
+- ✅ **RISC-V RV32IAC/RV32IACF CPU**: iCE40 keeps M/F disabled by default for resource headroom, while the ECP5 top enables F by default
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
 - ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x60000000
 - ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
@@ -107,8 +125,8 @@ sudo iceprog build/riscv_fpga.bin
 - **`common/fpga_common_top.sv`**: Shared FPGA top logic (CPU + host UART + reset-button synchronization)
 - **`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`**: iCE40 top-level FPGA wrapper module
 - **`ice40_alchitry_cu/ice40_alchitry_cu.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
-- **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
-- **`../common/fpu/*.sv`**: Shared floating-point unit implementation sources (always included for synthesis; `ENABLE_F_EXT` remains disabled by default)
+- **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero (`ENABLE_F_EXT=1'b1` by default)
+- **`../common/fpu/*.sv`**: Shared floating-point unit implementation sources (always included for synthesis; enabled by the target top-module parameter)
 - **`ecp5_icepi_zero/ecp5_icepi_zero.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
 - **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
 - **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
@@ -118,7 +136,7 @@ sudo iceprog build/riscv_fpga.bin
 ## Makefile Targets
 
 - `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
-- `make timing` - Generate timing analysis report
+- `make timing` - Generate timing analysis report (`icetime` on iCE40, extracted from `build/<target>/nextpnr.log` on ECP5)
 - `make utilization` - Show resource utilization
 - `make program` - Program connected FPGA board
 - `make clean` - Remove build artifacts

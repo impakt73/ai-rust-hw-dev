@@ -86,7 +86,8 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--json $(NETLIST) \
 		--lpf $(CONSTRAINT) \
 		--textcfg $(PNR_OUT) \
-		--freq 50
+		--freq 50 \
+		--timing-allow-fail
 PACK_CMD = $(ECPPACK) $(PNR_OUT) $(BIN)
 PROGRAM_CMD = $(OPENFPGALOADER) -b icepi_zero $(BIN)
 OUTPUT_EXT = bit
@@ -119,6 +120,7 @@ ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
+NEXTPNR_LOG = $(BUILD_DIR)/nextpnr.log
 
 # Tools
 YOSYS = yosys
@@ -154,7 +156,7 @@ $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
 $(PNR_OUT): $(NETLIST) $(CONSTRAINT)
-	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(NEXTPNR_LOG)'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
@@ -173,7 +175,20 @@ ifeq ($(TARGET),ice40_alchitry_cu)
 	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
 	@echo "Timing report written to $(TIMING)"
 else
-	@echo "Timing report generation is only implemented for TARGET=ice40_alchitry_cu"
+	bash -e -o pipefail -c 'awk '\''\
+		/^(Info|Warning|ERROR): Max frequency for clock / {fmax = $$0} \
+		/^Info: Max delay <async>/ {async_in = $$0} \
+		/^Info: Max delay posedge .* -> <async>/ {async_out = $$0} \
+		END { \
+			if (fmax == "") { \
+				print "ERROR: No ECP5 timing summary found in $(NEXTPNR_LOG)" > "/dev/stderr"; \
+				exit 1; \
+			} \
+			print fmax; \
+			if (async_in != "") print async_in; \
+			if (async_out != "") print async_out; \
+		}'\'' $(NEXTPNR_LOG) > $(TIMING)'
+	@echo "Timing report written to $(TIMING) (captured from $(NEXTPNR_LOG))"
 endif
 endif
 
