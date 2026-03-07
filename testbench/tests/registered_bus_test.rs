@@ -362,3 +362,80 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
         "master1 response should clear after handshake"
     );
 }
+
+#[test]
+fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere() {
+    let runtime = create_registered_bus_runtime().expect("Failed to create registered_bus runtime");
+    let mut dut = runtime
+        .create_model_simple::<RegisteredBusWrapper>()
+        .expect("Failed to create registered_bus model");
+
+    reset_dut(&mut dut);
+
+    set_master_request(&mut dut, 0, 0x5000_0010, 0xAAAA_1111, 0, 0b10, 1);
+    eval_comb(&mut dut);
+    assert_eq!(
+        dut.master0_mem_a_ready, 1,
+        "master0 mapped request should be accepted"
+    );
+    clock_cycle!(dut);
+
+    set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+
+    set_master_request(&mut dut, 1, 0x4000_0000, 0xBBBB_2222, 1, 0b10, 1);
+    eval_comb(&mut dut);
+    assert_eq!(
+        dut.master1_mem_a_ready, 1,
+        "master1 unmapped request should be accepted while slave0 response is pending"
+    );
+    clock_cycle!(dut);
+
+    set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
+    set_slave_response(&mut dut, 0, 0x1234_5678, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.master1_mem_d_valid, 1,
+        "master1 should receive the synthesized unmapped response first"
+    );
+    assert_eq!(
+        dut.master1_mem_d_rdata, 0,
+        "concurrent unmapped request must still return zero data"
+    );
+    assert_eq!(
+        dut.master0_mem_d_valid, 0,
+        "slave0 response must not overwrite the unmapped response"
+    );
+
+    set_master_d_ready(&mut dut, 1, 1);
+    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    set_master_d_ready(&mut dut, 1, 0);
+    eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.master1_mem_d_valid, 0,
+        "master1 synthesized response should clear after handshake"
+    );
+    assert_eq!(
+        dut.slave0_mem_d_ready, 1,
+        "slave0 response should still be pending after the unmapped response is consumed"
+    );
+
+    clock_cycle!(dut);
+    clear_slave_responses(&mut dut);
+    eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.master0_mem_d_valid, 1,
+        "slave0 response should be delivered after the unmapped response completes"
+    );
+    assert_eq!(
+        dut.master0_mem_d_rdata, 0x1234_5678,
+        "master0 should still receive the original slave response data"
+    );
+}

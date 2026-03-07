@@ -149,7 +149,7 @@ module registered_bus #(
                               && !slave_response_pending[decoded_slave_idx]
                               && slave_mem_a_ready[decoded_slave_idx];
     assign unmapped_req_accept = pending_req_valid && !decoded_slave_valid && !pending_resp_valid;
-    assign slave_resp_accept = !pending_resp_valid && selected_resp_slave_valid;
+    assign slave_resp_accept = !pending_resp_valid && !unmapped_req_accept && selected_resp_slave_valid;
     assign master_resp_accept = pending_resp_valid && master_mem_d_ready[pending_resp_master_idx];
 
     always_ff @(posedge clk) begin
