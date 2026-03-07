@@ -1,6 +1,6 @@
 # FPGA Synthesis for Alchitry Cu v1
 
-This directory contains files for synthesizing the RISC-V CPU to FPGA targets using open-source tools (Yosys + nextpnr + device-specific packers).
+This directory contains files for synthesizing the RISC-V CPU to FPGA targets using open-source tools for the Lattice boards and a Vivado batch flow for the Alchitry Au target.
 
 Currently supported targets:
 - **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
@@ -85,7 +85,7 @@ make
 make TARGET=ecp5_icepi_zero
 
 # Run full synthesis flow for Artix-7 Alchitry Au
-# (requires openXC7 toolchain: nextpnr-xilinx, fasm2frames, xc7frames2bit)
+# (requires Xilinx Vivado in PATH; the proprietary flow is driven by TCL)
 make TARGET=artix7_alchitry_au
 
 # This generates:
@@ -117,7 +117,7 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Makefile Targets
 
-- `make` or `make all` - Full synthesis flow (JSON → ASC → BIN)
+- `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
 - `make program` - Program connected FPGA board
@@ -135,17 +135,13 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Artix-7 (Alchitry Au) Toolchain Notes
 
-The Artix-7 target uses the openXC7 flow:
-- `nextpnr-xilinx`
-- `fasm2frames`
-- `xc7frames2bit`
+The Artix-7 target now uses the proprietary Vivado CLI flow in batch mode. The flow is encapsulated in `artix7_alchitry_au/vivado_build.tcl`, which reads all RTL/XDC inputs, runs synthesis/place/route, and emits the bitstream plus reports into `build/artix7_alchitry_au/`.
 
-Default Makefile paths can be overridden for your openXC7 installation:
+By default the Makefile expects `vivado` to be available in your `PATH`. If needed, override the executable path:
 
 ```bash
 make TARGET=artix7_alchitry_au \
-  OPENXC7_CHIPDB=/opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin \
-  XRAY_PART_FILE=/opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
+  VIVADO=/opt/Xilinx/Vivado/2025.1/bin/vivado
 ```
 
 ## Pin Assignments (Alchitry Cu v1)
