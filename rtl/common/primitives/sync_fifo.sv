@@ -115,8 +115,12 @@ module sync_fifo #(
                 rd_ptr <= rd_ptr + 1'b1;
             end
 
+            // rd_fire can only occur when out_valid/rd_valid is high, so count is
+            // guaranteed to be non-zero before the decrement term is applied.
             count <= count + CNT_WIDTH'(wr_fire) - CNT_WIDTH'(rd_fire);
 
+            // load_pending and rd_fire are mutually exclusive because load_pending only
+            // exists while out_valid is deasserted, which in turn forces rd_valid low.
             if (load_pending) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;

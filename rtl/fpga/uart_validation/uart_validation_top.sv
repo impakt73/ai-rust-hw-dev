@@ -161,7 +161,7 @@ module uart_validation_top #(
                 assign led[4] = uart_rx_error;
                 assign led[5] = fifo_wr_valid && fifo_wr_ready;
                 assign led[6] = (fifo_count == '0);
-                assign led[7] = (fifo_count == FIFO_DEPTH[$clog2(FIFO_DEPTH):0]);
+                assign led[7] = (fifo_count == FIFO_DEPTH);
             end
         end
     endgenerate
