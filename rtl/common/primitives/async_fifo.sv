@@ -100,10 +100,14 @@ module async_fifo #(
 
     assign rd_items_available = wr_ptr_bin_sync_rd - rd_ptr_bin;
     assign full_next  = (wr_ptr_gray_next == full_compare_gray(rd_ptr_gray_sync_wr));
+    // Start a BRAM fetch either when the output staging register is empty and data is
+    // available, or when the current staged word is being consumed and more words remain.
     assign start_load = (!load_pending) && (
         (!out_valid && (rd_items_available != '0)) ||
         (rd_fire && (rd_items_available > PTR_WIDTH'(1)))
     );
+    // While a staged head word is valid, continuously point the RAM read address at the
+    // next unread entry so a following rd_fire can immediately launch the refill read.
     assign ram_raddr = rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(out_valid);
 
     ff_sync #(
@@ -159,6 +163,10 @@ module async_fifo #(
             out_valid   <= 1'b0;
             load_pending <= 1'b0;
         end else begin
+            // Read-side staging pipeline:
+            //   idle    -> loading : start_load asserts and launches a BRAM read
+            //   loading -> valid   : load_pending captures ram_rdata into out_data
+            //   valid   -> loading : rd_fire consumes the head word while more data remains
             if (load_pending) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;
