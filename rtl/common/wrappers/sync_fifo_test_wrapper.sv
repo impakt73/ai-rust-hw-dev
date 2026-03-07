@@ -1,12 +1,12 @@
 module sync_fifo_test_wrapper (
     input  logic       clk,
     input  logic       rst_n,
-    input  logic       wr_en,
+    input  logic       wr_valid,
+    output logic       wr_ready,
     input  logic [7:0] wdata,
-    input  logic       rd_en,
+    output logic       rd_valid,
+    input  logic       rd_ready,
     output logic [7:0] rdata,
-    output logic       full,
-    output logic       empty,
     output logic [2:0] count
 );
 
@@ -16,12 +16,12 @@ module sync_fifo_test_wrapper (
     ) u_sync_fifo (
         .clk(clk),
         .rst_n(rst_n),
-        .wr_en(wr_en),
+        .wr_valid(wr_valid),
+        .wr_ready(wr_ready),
         .wdata(wdata),
-        .rd_en(rd_en),
+        .rd_valid(rd_valid),
+        .rd_ready(rd_ready),
         .rdata(rdata),
-        .full(full),
-        .empty(empty),
         .count(count)
     );
 

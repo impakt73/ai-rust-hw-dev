@@ -1,21 +1,21 @@
 // Synchronous FIFO Module
 // Generic FIFO with configurable data width and depth
-// Uses sync_dpram storage for BRAM-friendly implementation
+// Uses sync_dpram storage with ready/valid handshakes on both sides
 //
 // Parameters:
 //   WIDTH - Data width in bits (default: 8)
 //   DEPTH - Number of entries (must be power of 2, >= 2, default: 8)
 //
 // Interface:
-//   clk     - System clock
-//   rst_n   - Synchronous active-low reset
-//   wr_en   - Write enable (data written on rising edge when not full)
-//   rd_en   - Read enable (advances read pointer on rising edge when not empty)
-//   wdata   - Data to write
-//   rdata   - Data at read pointer (registered output, one cycle after address)
-//   full    - FIFO is full, cannot accept more data
-//   empty   - FIFO is empty, no data available
-//   count   - Number of entries currently in FIFO
+//   clk      - System clock
+//   rst_n    - Synchronous active-low reset
+//   wr_valid - Write data is valid this cycle
+//   wr_ready - FIFO can accept write data this cycle
+//   wdata    - Data to write when wr_valid && wr_ready
+//   rd_valid - Read data is valid this cycle (authoritative read-side handshake)
+//   rd_ready - Consumer can accept read data this cycle
+//   rdata    - Current head word when rd_valid is asserted
+//   count    - Number of entries currently in FIFO
 
 module sync_fifo #(
     parameter int WIDTH = 8,
@@ -25,16 +25,16 @@ module sync_fifo #(
     input  logic             rst_n,
     
     // Write interface
-    input  logic             wr_en,
+    input  logic             wr_valid,
+    output logic             wr_ready,
     input  logic [WIDTH-1:0] wdata,
     
     // Read interface
-    input  logic             rd_en,
+    output logic             rd_valid,
+    input  logic             rd_ready,
     output logic [WIDTH-1:0] rdata,
     
-    // Status outputs
-    output logic             full,
-    output logic             empty,
+    // Occupancy output
     output logic [$clog2(DEPTH):0] count
 );
 
@@ -53,16 +53,36 @@ module sync_fifo #(
     // Pointers
     logic [PTR_WIDTH-1:0] wr_ptr;
     logic [PTR_WIDTH-1:0] rd_ptr;
-    
-    // Internal signals for valid operations
-    logic do_write;
-    logic do_read;
-    assign do_write = wr_en && !full;
-    assign do_read  = rd_en && !empty;
-    
-    // Status flags
-    assign full  = (count == DEPTH[CNT_WIDTH-1:0]);
-    assign empty = (count == '0);
+
+    // Output staging register keeps read data aligned with rd_valid.
+    logic [WIDTH-1:0] out_data;
+    logic             out_valid;
+    logic             load_pending;
+    logic [WIDTH-1:0] ram_rdata;
+
+    // Internal handshake signals
+    logic wr_fire;
+    logic rd_fire;
+    logic direct_write;
+    logic ram_write;
+    logic start_load;
+
+    assign rd_valid = out_valid;
+    assign rdata    = out_data;
+    assign wr_ready = (count < DEPTH[CNT_WIDTH-1:0]) || rd_fire;
+
+    assign wr_fire = wr_valid && wr_ready;
+    assign rd_fire = rd_valid && rd_ready;
+
+    // Bypass writes directly into the output register when the queue would otherwise
+    // be empty after accounting for a same-cycle read of the current head word.
+    assign direct_write = wr_fire && (
+        ((count == '0) && !rd_fire) ||
+        ((count == CNT_WIDTH'(1)) && rd_fire)
+    );
+
+    assign ram_write  = wr_fire && !direct_write;
+    assign start_load = rd_fire && (count > CNT_WIDTH'(1));
     
     sync_dpram #(
         .DATA_WIDTH(WIDTH),
@@ -70,11 +90,11 @@ module sync_fifo #(
     ) u_mem (
         .wclk(clk),
         .rclk(clk),
-        .we(do_write),
+        .we(ram_write),
         .waddr(wr_ptr),
         .wdata(wdata),
         .raddr(rd_ptr),
-        .rdata(rdata)
+        .rdata(ram_rdata)
     );
     
     // FIFO management logic
@@ -82,21 +102,43 @@ module sync_fifo #(
         if (!rst_n) begin
             wr_ptr <= '0;
             rd_ptr <= '0;
+            out_data <= '0;
+            out_valid <= 1'b0;
+            load_pending <= 1'b0;
             count  <= '0;
         end else begin
-            // Handle pointer and count updates based on read/write operations
-            if (do_write && do_read) begin
-                // Simultaneous read/write: count unchanged
+            if (ram_write) begin
                 wr_ptr <= wr_ptr + 1'b1;
+            end
+
+            if (start_load) begin
                 rd_ptr <= rd_ptr + 1'b1;
-            end else if (do_write) begin
-                // Write only
-                wr_ptr <= wr_ptr + 1'b1;
-                count  <= count + 1'b1;
-            end else if (do_read) begin
-                // Read only
-                rd_ptr <= rd_ptr + 1'b1;
-                count  <= count - 1'b1;
+            end
+
+            count <= count + CNT_WIDTH'(wr_fire) - CNT_WIDTH'(rd_fire);
+
+            if (load_pending) begin
+                out_data <= ram_rdata;
+                out_valid <= 1'b1;
+                load_pending <= 1'b0;
+            end
+
+            if (rd_fire) begin
+                if (direct_write) begin
+                    out_data <= wdata;
+                    out_valid <= 1'b1;
+                    load_pending <= 1'b0;
+                end else if (start_load) begin
+                    out_valid <= 1'b0;
+                    load_pending <= 1'b1;
+                end else begin
+                    out_valid <= 1'b0;
+                    load_pending <= 1'b0;
+                end
+            end else if (direct_write) begin
+                out_data <= wdata;
+                out_valid <= 1'b1;
+                load_pending <= 1'b0;
             end
         end
     end

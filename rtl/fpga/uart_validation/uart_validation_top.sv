@@ -88,11 +88,11 @@ module uart_validation_top #(
     logic       uart_rx_error;
 
     logic [7:0] fifo_rdata;
-    logic       fifo_full;
-    logic       fifo_empty;
+    logic       fifo_wr_ready;
+    logic       fifo_rd_valid;
     logic [$clog2(FIFO_DEPTH):0] fifo_count;
-    logic       fifo_wr_en;
-    logic       fifo_rd_en;
+    logic       fifo_wr_valid;
+    logic       fifo_rd_ready;
 
     // ============================================================
     // Validation Mode Selection
@@ -132,12 +132,12 @@ module uart_validation_top #(
                 assign led[4] = uart_rx_error;
                 assign led[7:5] = 3'b000;
             end else begin : gen_uart_fifo_echo
-                assign fifo_wr_en = uart_rx_valid && !fifo_full;
-                assign uart_rx_ready = !fifo_full;
+                assign fifo_wr_valid = uart_rx_valid;
+                assign uart_rx_ready = fifo_wr_ready;
 
                 assign uart_tx_data = fifo_rdata;
-                assign uart_tx_valid = !fifo_empty;
-                assign fifo_rd_en = uart_tx_ready && !fifo_empty;
+                assign uart_tx_valid = fifo_rd_valid;
+                assign fifo_rd_ready = uart_tx_ready;
 
                 sync_fifo #(
                     .WIDTH(8),
@@ -145,12 +145,12 @@ module uart_validation_top #(
                 ) fifo_inst (
                     .clk(sys_clk),
                     .rst_n(rst_n),
-                    .wr_en(fifo_wr_en),
+                    .wr_valid(fifo_wr_valid),
+                    .wr_ready(fifo_wr_ready),
                     .wdata(uart_rx_data),
-                    .rd_en(fifo_rd_en),
+                    .rd_valid(fifo_rd_valid),
+                    .rd_ready(fifo_rd_ready),
                     .rdata(fifo_rdata),
-                    .full(fifo_full),
-                    .empty(fifo_empty),
                     .count(fifo_count)
                 );
 
@@ -159,9 +159,9 @@ module uart_validation_top #(
                 assign led[2] = uart_rx_valid;
                 assign led[3] = uart_tx_ready;
                 assign led[4] = uart_rx_error;
-                assign led[5] = fifo_wr_en;
-                assign led[6] = fifo_empty;
-                assign led[7] = fifo_full;
+                assign led[5] = fifo_wr_valid && fifo_wr_ready;
+                assign led[6] = (fifo_count == '0);
+                assign led[7] = (fifo_count == FIFO_DEPTH[$clog2(FIFO_DEPTH):0]);
             end
         end
     endgenerate

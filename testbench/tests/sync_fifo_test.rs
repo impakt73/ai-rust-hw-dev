@@ -13,8 +13,8 @@ fn tick(dut: &mut SyncFifoTestWrapper) {
 
 fn reset_fifo(dut: &mut SyncFifoTestWrapper) {
     dut.rst_n = 0;
-    dut.wr_en = 0;
-    dut.rd_en = 0;
+    dut.wr_valid = 0;
+    dut.rd_ready = 0;
     dut.wdata = 0;
     tick(dut);
     tick(dut);
@@ -22,42 +22,66 @@ fn reset_fifo(dut: &mut SyncFifoTestWrapper) {
     tick(dut);
 }
 
+fn wait_for_read_data(dut: &mut SyncFifoTestWrapper) {
+    for _ in 0..8 {
+        if dut.rd_valid != 0 {
+            return;
+        }
+        tick(dut);
+    }
+    panic!("timed out waiting for rd_valid");
+}
+
 #[test]
-fn test_sync_fifo_registered_read_behavior() {
+fn test_sync_fifo_ready_valid_first_word_fall_through() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
     let mut dut = runtime
         .create_model_simple::<SyncFifoTestWrapper>()
         .expect("Failed to create sync_fifo model");
 
     reset_fifo(&mut dut);
-    assert_eq!(dut.empty, 1, "FIFO should be empty after reset");
-    assert_eq!(dut.full, 0, "FIFO should not be full after reset");
+    assert_eq!(dut.wr_ready, 1, "FIFO should accept writes after reset");
+    assert_eq!(
+        dut.rd_valid, 0,
+        "FIFO should not present read data after reset"
+    );
     assert_eq!(dut.count, 0, "FIFO count should be zero after reset");
 
     dut.wdata = 0xA5;
-    dut.wr_en = 1;
+    dut.wr_valid = 1;
     tick(&mut dut);
-    dut.wr_en = 0;
+    dut.wr_valid = 0;
 
-    // The write completed on the preceding rising edge, so empty/count reflect the
-    // newly queued entry immediately even though the RAM-backed read data is still
-    // one clock behind.
-    assert_eq!(dut.empty, 0, "FIFO should contain one entry after a write");
+    assert_eq!(
+        dut.wr_ready, 1,
+        "FIFO should still be able to accept more writes"
+    );
+    assert_eq!(
+        dut.rd_valid, 1,
+        "First write should appear immediately at the output"
+    );
     assert_eq!(dut.count, 1, "FIFO count should increment after a write");
     assert_eq!(
-        dut.rdata, 0,
-        "RAM-backed FIFO output should not update until the following clock"
+        dut.rdata, 0xA5,
+        "Output data should match the queued head word"
     );
 
+    dut.rd_ready = 1;
     tick(&mut dut);
+    dut.rd_ready = 0;
+
     assert_eq!(
-        dut.rdata, 0xA5,
-        "FIFO read data should update one clock after the address is presented"
+        dut.rd_valid, 0,
+        "FIFO should deassert rd_valid after consuming the last word"
+    );
+    assert_eq!(
+        dut.count, 0,
+        "FIFO count should return to zero after a read"
     );
 }
 
 #[test]
-fn test_sync_fifo_preserves_order_with_registered_output() {
+fn test_sync_fifo_preserves_order_with_ready_valid_reads() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
     let mut dut = runtime
         .create_model_simple::<SyncFifoTestWrapper>()
@@ -67,37 +91,109 @@ fn test_sync_fifo_preserves_order_with_registered_output() {
 
     for value in [0x10u8, 0x11, 0x12, 0x13] {
         dut.wdata = value;
-        dut.wr_en = 1;
+        dut.wr_valid = 1;
         tick(&mut dut);
     }
-    dut.wr_en = 0;
+    dut.wr_valid = 0;
 
-    assert_eq!(dut.full, 1, "FIFO should be full after four writes");
+    assert_eq!(dut.wr_ready, 0, "FIFO should apply backpressure when full");
+    assert_eq!(
+        dut.rd_valid, 1,
+        "FIFO should present the head entry when non-empty"
+    );
     assert_eq!(dut.count, 4, "FIFO count should equal depth when full");
 
-    tick(&mut dut);
-    assert_eq!(
-        dut.rdata, 0x10,
-        "First queued value should appear after a settle clock"
-    );
-
     for expected in [0x10u8, 0x11, 0x12, 0x13] {
-        dut.rd_en = 1;
-        tick(&mut dut);
-        dut.rd_en = 0;
-        // The read tick returns the current head word because sync_dpram samples the
-        // pre-increment read pointer on that edge. The following idle tick advances
-        // rdata to the next head entry.
+        wait_for_read_data(&mut dut);
         assert_eq!(dut.rdata, expected, "FIFO must preserve write order");
+        dut.rd_ready = 1;
         tick(&mut dut);
+        dut.rd_ready = 0;
     }
 
     assert_eq!(
-        dut.empty, 1,
-        "FIFO should be empty after reading all entries"
+        dut.rd_valid, 0,
+        "FIFO should deassert rd_valid after reading all entries"
+    );
+    assert_eq!(
+        dut.wr_ready, 1,
+        "FIFO should accept writes again after draining"
     );
     assert_eq!(
         dut.count, 0,
         "FIFO count should return to zero after all reads"
+    );
+}
+
+#[test]
+fn test_sync_fifo_write_backpressure_and_simultaneous_pop_push() {
+    let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
+    let mut dut = runtime
+        .create_model_simple::<SyncFifoTestWrapper>()
+        .expect("Failed to create sync_fifo model");
+
+    reset_fifo(&mut dut);
+
+    for value in [0x20u8, 0x21, 0x22, 0x23] {
+        dut.wdata = value;
+        dut.wr_valid = 1;
+        tick(&mut dut);
+    }
+    dut.wr_valid = 0;
+
+    assert_eq!(dut.count, 4, "FIFO should be full before backpressure test");
+    assert_eq!(
+        dut.wr_ready, 0,
+        "wr_ready should drop when the FIFO is full"
+    );
+    assert_eq!(
+        dut.rdata, 0x20,
+        "Head word should remain stable while stalled"
+    );
+
+    dut.wdata = 0xEE;
+    dut.wr_valid = 1;
+    tick(&mut dut);
+    dut.wr_valid = 0;
+
+    assert_eq!(
+        dut.count, 4,
+        "Stalled write must not increase FIFO occupancy"
+    );
+    assert_eq!(
+        dut.rdata, 0x20,
+        "Blocked write must not disturb the current head word"
+    );
+
+    dut.wdata = 0x24;
+    dut.wr_valid = 1;
+    dut.rd_ready = 1;
+    tick(&mut dut);
+    dut.wr_valid = 0;
+    dut.rd_ready = 0;
+
+    assert_eq!(
+        dut.count, 4,
+        "Simultaneous pop/push at full should preserve occupancy"
+    );
+
+    for expected in [0x21u8, 0x22, 0x23, 0x24] {
+        wait_for_read_data(&mut dut);
+        assert_eq!(
+            dut.rdata, expected,
+            "FIFO must keep ordering across pop/push at full"
+        );
+        dut.rd_ready = 1;
+        tick(&mut dut);
+        dut.rd_ready = 0;
+    }
+
+    assert_eq!(
+        dut.rd_valid, 0,
+        "FIFO should be empty after draining remaining entries"
+    );
+    assert_eq!(
+        dut.count, 0,
+        "FIFO count should return to zero after draining"
     );
 }
