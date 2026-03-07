@@ -289,7 +289,7 @@ The `synth_xilinx -family xc7` pass handles:
 ```bash
 # Generate nextpnr-xilinx database for the target device first:
 python3 nextpnr-xilinx/xilinx/python/bbaexport.py \
-    --device xc7a35tcsg324-1 \
+    --device xc7a35tftg256-1 \
     --bba build/xc7a35t.bba
 
 # Run P&R:
@@ -306,10 +306,10 @@ nextpnr-xilinx \
 
 ```bash
 # Convert FASM to frames
-fasm2frames --part xc7a35tcsg324-1 build/$(PROJECT).fasm build/$(PROJECT).frames
+fasm2frames --part xc7a35tftg256-1 build/$(PROJECT).fasm build/$(PROJECT).frames
 
 # Convert frames to bitstream
-xc7frames2bit --part-file $(XRAY_DB)/xc7a35tcsg324-1/part.yaml \
+xc7frames2bit --part-file $(XRAY_DB)/xc7a35tftg256-1/part.yaml \
               --frm-file build/$(PROJECT).frames \
               --output-file build/$(PROJECT).bit
 
@@ -652,7 +652,7 @@ ifeq ($(TARGET), ecp5_icepi_zero)
 endif
 
 ifeq ($(TARGET), artix7_alchitry_au)
-  DEVICE        = xc7a35tcsg324-1
+  DEVICE        = xc7a35tftg256-1
   FPGA_DIR      = artix7
   CONSTRAINT    = $(FPGA_DIR)/alchitry_au.xdc
   SYNTH_CMD     = synth_xilinx -family xc7 -top $(TOP_MODULE) -edif $(EDIF)
@@ -789,7 +789,7 @@ git clone https://github.com/gatecat/nextpnr-xilinx.git
 cd nextpnr-xilinx
 cmake -DARCH=xilinx -DCMAKE_INSTALL_PREFIX=/usr/local .
 # Generate chipdb for target device
-python3 xilinx/python/bbaexport.py --device xc7a35tcsg324-1 --bba bba/xc7a35t.bba
+python3 xilinx/python/bbaexport.py --device xc7a35tftg256-1 --bba bba/xc7a35t.bba
 bbasm --l bba/xc7a35t.bba bba/xc7a35t.bin
 make -j$(nproc) && sudo make install && cd ..
 ```

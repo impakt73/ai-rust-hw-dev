@@ -93,7 +93,7 @@ OUTPUT_EXT = bit
 endif
 
 ifeq ($(TARGET),artix7_alchitry_au)
-PART = xc7a35tcsg324-1
+PART = xc7a35tftg256-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc

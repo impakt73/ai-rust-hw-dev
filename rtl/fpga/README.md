@@ -5,7 +5,7 @@ This directory contains files for synthesizing the RISC-V CPU to FPGA targets us
 Currently supported targets:
 - **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
 - **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
-- **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T)
+- **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T-FTG256-1)
 
 ## Status: ✅ Successfully Synthesized
 
