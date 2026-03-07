@@ -98,9 +98,6 @@ FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
 VIVADO_TCL = $(FPGA_DIR)/vivado_build.tcl
-VIVADO_CMD = $(VIVADO) -mode batch -source $(abspath $(VIVADO_TCL)) -tclargs \
-	"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
-	$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
 OUTPUT_EXT = bit
 endif
@@ -148,7 +145,9 @@ $(BUILD_DIR):
 # Synthesis with Yosys
 ifeq ($(TARGET),artix7_alchitry_au)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
-	bash -e -o pipefail -c '$(VIVADO_CMD) 2>&1 | tee $(BUILD_DIR)/vivado.log'
+	$(VIVADO) -mode batch -source $(abspath $(VIVADO_TCL)) -tclargs \
+		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))") 2>&1 | tee $(BUILD_DIR)/vivado.log
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \

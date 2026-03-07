@@ -10,6 +10,8 @@ set constraint_file [file normalize [lindex $argv 3]]
 set rtl_sources [lrange $argv 4 end]
 
 file mkdir $build_dir
+cd $build_dir
+create_project -in_memory -part $fpga_part
 
 foreach rtl_source $rtl_sources {
     read_verilog -sv [file normalize $rtl_source]
@@ -17,13 +19,15 @@ foreach rtl_source $rtl_sources {
 
 read_xdc $constraint_file
 
-synth_design -top $top_module -part $fpga_part
+synth_design -top $top_module
+write_checkpoint -force riscv_fpga_synth.dcp
 opt_design
 place_design
 phys_opt_design
+write_checkpoint -force riscv_fpga_placed.dcp
 route_design
 
-report_timing_summary -file [file join $build_dir riscv_fpga_timing.rpt]
-report_utilization -file [file join $build_dir riscv_fpga_utilization.rpt]
-write_checkpoint -force [file join $build_dir riscv_fpga_routed.dcp]
-write_bitstream -force [file join $build_dir riscv_fpga.bit]
+report_timing_summary -file riscv_fpga_timing.rpt
+report_utilization -file riscv_fpga_utilization.rpt
+write_checkpoint -force riscv_fpga_routed.dcp
+write_bitstream -force riscv_fpga.bit
