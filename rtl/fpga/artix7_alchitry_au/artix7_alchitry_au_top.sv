@@ -7,7 +7,7 @@ module artix7_alchitry_au_top #(
 ) (
     input  logic clk,
     input  logic rst_n_btn,
-    output logic led,
+    output logic [7:0] led,
     input  logic usb_rx,
     output logic usb_tx
 );
@@ -97,6 +97,6 @@ module artix7_alchitry_au_top #(
         .rst_n_core()
     );
 
-    assign led = sys_led_out[0];
+    assign led = sys_led_out;
 
 endmodule

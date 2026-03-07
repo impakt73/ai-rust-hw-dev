@@ -93,7 +93,7 @@ OUTPUT_EXT = bit
 endif
 
 ifeq ($(TARGET),artix7_alchitry_au)
-DEVICE = xc7a35tcsg324-1
+DEVICE = xc7a35tftg256-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
@@ -108,7 +108,7 @@ PNR_CMD = $(NEXTPNR) --chipdb $(CHIPDB) \
 		--freq 50
 FRAMES = $(BUILD_DIR)/$(PROJECT).frames
 PART_FILE ?= $(XRAY_PART_FILE)
-PACK_CMD = $(FASM2FRAMES) --part $(DEVICE) $(PNR_OUT) $(FRAMES) && \
+PACK_CMD = $(FASM2FRAMES) --db-root $(OPENXC7_XRAYDB_ROOT) --part $(DEVICE) $(PNR_OUT) $(FRAMES) && \
 		$(XC7FRAMES2BIT) --part-file $(PART_FILE) --frm-file $(FRAMES) --output-file $(BIN)
 PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
 OUTPUT_EXT = bit
@@ -142,8 +142,10 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 FASM2FRAMES = fasm2frames
 XC7FRAMES2BIT = xc7frames2bit
-OPENXC7_CHIPDB ?= /opt/openxc7/share/nextpnr-xilinx/xc7a35tcsg324-1.bin
-XRAY_PART_FILE ?= /opt/openxc7/opt/nextpnr-xilinx/external/prjxray-db/artix7/xc7a35tcsg324-1/part.yaml
+OPENXC7_CHIPDB_ROOT ?= /usr/share/nextpnr/xilinx-chipdb
+OPENXC7_XRAYDB_ROOT ?= /usr/share/xray/database/artix7
+OPENXC7_CHIPDB ?= $(OPENXC7_CHIPDB_ROOT)/$(DEVICE).bin
+XRAY_PART_FILE ?= $(OPENXC7_XRAYDB_ROOT)/$(DEVICE)/part.yaml
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
