@@ -285,7 +285,7 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     );
     assert_eq!(
         dut.slave0_mem_a_valid, 1,
-        "slave0 should accept the held master1 request once the response is captured"
+        "slave0 should see the held master1 request once the response is captured"
     );
     assert_eq!(
         dut.slave0_mem_a_addr, 0x5000_0040,
