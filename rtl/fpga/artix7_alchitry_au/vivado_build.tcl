@@ -1,5 +1,5 @@
 if {[llength $argv] < 5} {
-    puts stderr "Usage: vivado_build.tcl <build_dir> <top_module> <part> <constraint> <sources...>"
+    puts stderr "Usage: vivado_build.tcl <build_dir> <top_module> <fpga_part> <constraint_file> <source_files...>"
     exit 1
 }
 
