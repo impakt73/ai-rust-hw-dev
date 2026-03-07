@@ -176,9 +176,9 @@ ifeq ($(TARGET),ice40_alchitry_cu)
 	@echo "Timing report written to $(TIMING)"
 else
 	bash -e -o pipefail -c 'awk '\''\
-		/^(Info|Warning|ERROR): Max frequency for clock / {fmax = $$0} \
-		/^Info: Max delay <async>/ {async_in = $$0} \
-		/^Info: Max delay posedge .* -> <async>/ {async_out = $$0} \
+		/^(Info|Warning|ERROR): Max frequency for clock / {fmax = $$0; sub(/^(Info|Warning|ERROR): /, "", fmax)} \
+		/^Info: Max delay <async>/ {async_in = $$0; sub(/^Info: /, "", async_in)} \
+		/^Info: Max delay posedge .* -> <async>/ {async_out = $$0; sub(/^Info: /, "", async_out)} \
 		END { \
 			if (fmax == "") { \
 				print "ERROR: No ECP5 timing summary found in $(NEXTPNR_LOG)" > "/dev/stderr"; \

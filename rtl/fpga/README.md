@@ -32,9 +32,9 @@ The ECP5 iCE Pi Zero target now enables `ENABLE_F_EXT=1'b1` by default in
 | Max frequency | 53.96 MHz | 14.69 MHz | -72.8% |
 
 At the current 50 MHz ECP5 timing target, the F-enabled build completes place
-and route but fails timing. The ECP5 flow therefore uses nextpnr's
-`--timing-allow-fail` option so the bitstream, utilization report, and timing
-summary are still emitted for review.
+and route but only achieves 14.69 MHz, so it still fails timing. The ECP5 flow
+therefore uses nextpnr's `--timing-allow-fail` option so the bitstream,
+utilization report, and timing summary are still emitted for review.
 
 ## What's Included
 
