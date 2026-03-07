@@ -6,6 +6,18 @@
 //   WIDTH       - Data width in bits (default: 8)
 //   DEPTH       - Number of entries (must be power of 2, >= 2, default: 8)
 //   SYNC_STAGES - Number of FF synchronizer stages for CDC pointers (default: 2)
+//
+// Interface:
+//   wr_clk   - Write-domain clock
+//   rd_clk   - Read-domain clock
+//   rst_n    - Synchronous active-low reset for both domains
+//   wr_valid - Write data is valid this wr_clk cycle
+//   wr_ready - FIFO can accept write data this wr_clk cycle
+//   wdata    - Data to write when wr_valid && wr_ready
+//   rd_valid - Read data is staged and valid this rd_clk cycle
+//   rd_ready - Consumer can accept read data this rd_clk cycle
+//   rdata    - Current staged head word when rd_valid is asserted
+//   count    - Number of queued entries currently visible in the wr_clk domain
 
 module async_fifo #(
     parameter int WIDTH = 8,
