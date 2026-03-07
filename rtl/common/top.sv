@@ -192,17 +192,10 @@ module top #(
     logic        host_master_req;
     logic        host_master_ready;
     
-    // Shared RTL peripheral range configuration for host_bus_mux and bus
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-    
     // ============================================================
     // CPU Host-Bus Multiplexer (legacy unified interface input)
     // ============================================================
-    host_bus_mux #(
-        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
-        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
-    ) cpu_host_bus_mux (
+    host_bus_mux cpu_host_bus_mux (
         // CPU-side interface
         .cpu_addr(cpu_mem_addr),
         .cpu_wdata(cpu_mem_wdata),
@@ -272,10 +265,7 @@ module top #(
     // Bus Module Instantiation
     // ============================================================
     // Routes requests from arbiter to the appropriate peripheral based on address
-    bus #(
-        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
-        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
-    ) system_bus (
+    bus system_bus (
         .clk(clk),
         .rst_n(rst_n_internal),
         

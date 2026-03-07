@@ -1,6 +1,5 @@
-module async_fifo_test_wrapper (
-    input  logic       wr_clk,
-    input  logic       rd_clk,
+module sync_fifo_test_wrapper (
+    input  logic       clk,
     input  logic       rst_n,
     input  logic       wr_valid,
     output logic       wr_ready,
@@ -11,13 +10,11 @@ module async_fifo_test_wrapper (
     output logic [2:0] count
 );
 
-    async_fifo #(
+    sync_fifo #(
         .WIDTH(8),
-        .DEPTH(4),
-        .SYNC_STAGES(2)
-    ) u_async_fifo (
-        .wr_clk(wr_clk),
-        .rd_clk(rd_clk),
+        .DEPTH(4)
+    ) u_sync_fifo (
+        .clk(clk),
         .rst_n(rst_n),
         .wr_valid(wr_valid),
         .wr_ready(wr_ready),

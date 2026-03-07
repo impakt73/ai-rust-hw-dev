@@ -1,9 +1,9 @@
 // SRAM Peripheral
 // 12KB memory-mapped SRAM peripheral with subword write masking
-// Memory-mapped at 0x52000000 in RTL peripheral address space
+// Memory-mapped at 0x70000000 in RTL peripheral address space
 //
 // Size: 12KB (0x3000 bytes, 3072 words)
-// Address Range: 0x52000000 - 0x52002FFF
+// Address Range: 0x70000000 - 0x70002FFF
 //
 // Features:
 // - 12KB total memory (3072 x 32-bit words)

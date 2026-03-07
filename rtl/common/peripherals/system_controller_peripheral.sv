@@ -32,10 +32,10 @@ module system_controller (
     // ========================================================================
     // Register Map (offsets from base address)
     // ========================================================================
-    localparam [31:0] REG_STATUS = 32'h00;  // Read-only: CPU status
-    localparam [31:0] REG_RESET  = 32'h04;  // Write-only: Reset control
-    localparam [31:0] REG_BOOT   = 32'h08;  // Write-only: Boot address
-    localparam [31:0] REG_HALT   = 32'h0C;  // Read/write: Halt code
+    localparam logic [3:0] REG_STATUS = 4'h0;  // Read-only: CPU status
+    localparam logic [3:0] REG_RESET  = 4'h4;  // Write-only: Reset control
+    localparam logic [3:0] REG_BOOT   = 4'h8;  // Write-only: Boot address
+    localparam logic [3:0] REG_HALT   = 4'hC;  // Read/write: Halt code
     
     // Reset control values
     localparam [31:0] RESET_SYSTEM = 32'h00000001;  // System reset
@@ -66,10 +66,10 @@ module system_controller (
         write_halt  = 1'b0;
         
         if (req && we) begin
-            case (addr[7:0])  // Use lower 8 bits for register decode
-                REG_BOOT[7:0]:  write_boot  = 1'b1;
-                REG_RESET[7:0]: write_reset = 1'b1;
-                REG_HALT[7:0]:  write_halt  = 1'b1;
+            case (addr[3:0])  // Use only register offset bits
+                REG_BOOT:  write_boot  = 1'b1;
+                REG_RESET: write_reset = 1'b1;
+                REG_HALT:  write_halt  = 1'b1;
                 default: ;
             endcase
         end
@@ -126,13 +126,13 @@ module system_controller (
         rdata = 32'h00000000;
         
         if (req && !we) begin
-            case (addr[7:0])
-                REG_STATUS[7:0]: begin
+            case (addr[3:0])
+                REG_STATUS: begin
                     // Bit 0 = cpu_booting, Bit 1 = cpu_halted
                     rdata = {30'h0, cpu_halted, cpu_booting};
                 end
 
-                REG_HALT[7:0]: begin
+                REG_HALT: begin
                     rdata = halt_reg;
                 end
                 

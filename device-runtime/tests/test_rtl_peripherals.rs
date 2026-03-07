@@ -25,8 +25,8 @@ use riscv_core::instruction::{
     addi, andi, beq, blt, bne, ebreak, jal, lui, lw, ori, sb, sh, sub, sw,
 };
 use riscv_shared::bus::{
-    DRAM_BASE, LED_BASE, LED_OUT_OFFSET, LED_SIZE, RTL_PERIPH_BASE, SIM_CONTROL_BASE, SYSCTRL_BASE,
-    SYSCTRL_STATUS_OFFSET,
+    DRAM_BASE, LED_BASE, LED_OUT_OFFSET, LED_SIZE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE,
+    SYSCTRL_BASE, SYSCTRL_STATUS_OFFSET,
 };
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 use std::time::Duration;
@@ -474,7 +474,8 @@ fn test_host_request_routes_non_rtl_to_system_bus() {
 #[test]
 fn test_host_request_spanning_rtl_boundary_is_rejected() {
     let mut runtime = create_test_runtime();
-    let request = BusRequest::read(RTL_PERIPH_BASE - 1, AccessSize::Word);
+    // Last address in lower-half (RTL) space; a word access crosses into upper-half.
+    let request = BusRequest::read(RTL_PERIPH_LIMIT - 1, AccessSize::Word);
 
     assert!(matches!(
         runtime.send_host_request(request),
