@@ -108,9 +108,8 @@ module async_fifo #(
     );
     // While a staged head word is valid, continuously point the RAM read address at the
     // next unread entry so a following rd_fire can immediately launch the refill read.
-    assign ram_raddr = out_valid
-        ? (rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(1))
-        : rd_ptr_bin[ADDR_WIDTH-1:0];
+    assign ram_raddr = out_valid ? (rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(1))
+                                 : rd_ptr_bin[ADDR_WIDTH-1:0];
 
     ff_sync #(
         .STAGES(SYNC_STAGES),
@@ -166,9 +165,9 @@ module async_fifo #(
             load_pending <= 1'b0;
         end else begin
             // Read-side staging pipeline:
-            //   idle    -> loading : start_load asserts and launches a BRAM read
-            //   loading -> valid   : load_pending captures ram_rdata into out_data
-            //   valid   -> loading : rd_fire consumes the head word while more data remains
+            //   idle    (out_valid=0, load_pending=0) -> loading : start_load launches a BRAM read
+            //   loading (load_pending=1)              -> valid   : ram_rdata is captured into out_data
+            //   valid   (out_valid=1, load_pending=0) -> loading : rd_fire consumes the head word while more data remains
             if (load_pending) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;
@@ -179,13 +178,8 @@ module async_fifo #(
             rd_ptr_gray <= rd_ptr_gray_next;
 
             if (rd_fire) begin
-                if (start_load) begin
-                    out_valid <= 1'b0;
-                    load_pending <= 1'b1;
-                end else begin
-                    out_valid <= 1'b0;
-                    load_pending <= 1'b0;
-                end
+                out_valid <= 1'b0;
+                load_pending <= start_load;
             end else if (start_load) begin
                 load_pending <= 1'b1;
             end
