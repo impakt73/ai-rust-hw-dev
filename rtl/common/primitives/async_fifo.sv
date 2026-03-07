@@ -17,16 +17,16 @@ module async_fifo #(
     input  logic             rst_n,
 
     // Write interface (wr_clk domain)
-    input  logic             wr_en,
+    input  logic             wr_valid,
+    output logic             wr_ready,
     input  logic [WIDTH-1:0] wdata,
 
     // Read interface (rd_clk domain)
-    input  logic             rd_en,
+    output logic             rd_valid,
+    input  logic             rd_ready,
     output logic [WIDTH-1:0] rdata,
 
     // Status outputs
-    output logic             full,   // wr_clk domain
-    output logic             empty,  // rd_clk domain
     output logic [$clog2(DEPTH):0] count // wr_clk domain view
 );
 
@@ -38,14 +38,22 @@ module async_fifo #(
     logic [PTR_WIDTH-1:0] rd_ptr_bin, rd_ptr_bin_next;
     logic [PTR_WIDTH-1:0] rd_ptr_gray, rd_ptr_gray_next;
 
+    logic [PTR_WIDTH-1:0] wr_ptr_bin_sync_rd;
     logic [PTR_WIDTH-1:0] wr_ptr_gray_sync_rd;
     logic [PTR_WIDTH-1:0] rd_ptr_gray_sync_wr;
     logic [PTR_WIDTH-1:0] rd_ptr_bin_sync_wr;
+    logic [WIDTH-1:0]     out_data;
+    logic                 out_valid;
+    logic                 load_pending;
+    logic [WIDTH-1:0]     ram_rdata;
+    logic                 full;
 
     logic wr_do_write;
-    logic rd_do_read;
+    logic rd_fire;
     logic full_next;
-    logic empty_next;
+    logic start_load;
+    logic [PTR_WIDTH-1:0] rd_items_available;
+    logic [ADDR_WIDTH-1:0] ram_raddr;
 
     function automatic logic [PTR_WIDTH-1:0] bin_to_gray(input logic [PTR_WIDTH-1:0] bin);
         bin_to_gray = bin ^ (bin >> 1);
@@ -74,19 +82,29 @@ module async_fifo #(
         end
     end
 
-    assign wr_do_write = wr_en && !full;
-    assign rd_do_read  = rd_en && !empty;
+    assign wr_ready    = !full;
+    assign rd_valid    = out_valid;
+    assign rdata       = out_data;
+
+    assign wr_do_write = wr_valid && wr_ready;
+    assign rd_fire     = rd_valid && rd_ready;
 
     assign wr_ptr_bin_next  = wr_ptr_bin + PTR_WIDTH'(wr_do_write);
     assign wr_ptr_gray_next = bin_to_gray(wr_ptr_bin_next);
-    assign rd_ptr_bin_next  = rd_ptr_bin + PTR_WIDTH'(rd_do_read);
+    assign rd_ptr_bin_next  = rd_ptr_bin + PTR_WIDTH'(rd_fire);
     assign rd_ptr_gray_next = bin_to_gray(rd_ptr_bin_next);
 
+    assign wr_ptr_bin_sync_rd = gray_to_bin(wr_ptr_gray_sync_rd);
     assign rd_ptr_bin_sync_wr = gray_to_bin(rd_ptr_gray_sync_wr);
     assign count = wr_ptr_bin - rd_ptr_bin_sync_wr;
 
+    assign rd_items_available = wr_ptr_bin_sync_rd - rd_ptr_bin;
     assign full_next  = (wr_ptr_gray_next == full_compare_gray(rd_ptr_gray_sync_wr));
-    assign empty_next = (rd_ptr_gray_next == wr_ptr_gray_sync_rd);
+    assign start_load = (!load_pending) && (
+        (!out_valid && (rd_items_available != '0)) ||
+        (rd_fire && (rd_items_available > PTR_WIDTH'(1)))
+    );
+    assign ram_raddr = rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(out_valid);
 
     ff_sync #(
         .STAGES(SYNC_STAGES),
@@ -117,8 +135,8 @@ module async_fifo #(
         .we(wr_do_write),
         .waddr(wr_ptr_bin[ADDR_WIDTH-1:0]),
         .wdata(wdata),
-        .raddr(rd_ptr_bin[ADDR_WIDTH-1:0]),
-        .rdata(rdata)
+        .raddr(ram_raddr),
+        .rdata(ram_rdata)
     );
 
     always_ff @(posedge wr_clk) begin
@@ -137,11 +155,30 @@ module async_fifo #(
         if (!rst_n) begin
             rd_ptr_bin  <= '0;
             rd_ptr_gray <= '0;
-            empty       <= 1'b1;
+            out_data    <= '0;
+            out_valid   <= 1'b0;
+            load_pending <= 1'b0;
         end else begin
+            if (load_pending) begin
+                out_data <= ram_rdata;
+                out_valid <= 1'b1;
+                load_pending <= 1'b0;
+            end
+
             rd_ptr_bin  <= rd_ptr_bin_next;
             rd_ptr_gray <= rd_ptr_gray_next;
-            empty       <= empty_next;
+
+            if (rd_fire) begin
+                if (start_load) begin
+                    out_valid <= 1'b0;
+                    load_pending <= 1'b1;
+                end else begin
+                    out_valid <= 1'b0;
+                    load_pending <= 1'b0;
+                end
+            end else if (start_load) begin
+                load_pending <= 1'b1;
+            end
         end
     end
 
