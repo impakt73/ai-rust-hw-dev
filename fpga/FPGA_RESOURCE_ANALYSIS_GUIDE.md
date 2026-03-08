@@ -30,7 +30,8 @@ The analysis document combines **two kinds of data** for each FPGA target:
 From repository root:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
 ```
 
 Required tools:
@@ -40,11 +41,14 @@ Required tools:
 - `nextpnr-ecp5`
 - `icepack`
 - `ecppack`
+- `rg` (ripgrep, used for metric extraction checks)
+
+If `rg` is unavailable, use `grep -E` with the same pattern.
 
 Check availability:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd "$REPO_ROOT/rtl/fpga"
 make check-tools TARGET=ice40_alchitry_cu
 make check-tools TARGET=ecp5_icepi_zero
 ```
@@ -56,7 +60,7 @@ make check-tools TARGET=ecp5_icepi_zero
 Run both target flows from `rtl/fpga`:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd "$REPO_ROOT/rtl/fpga"
 
 make clean TARGET=ice40_alchitry_cu
 make TARGET=ice40_alchitry_cu all utilization
@@ -93,7 +97,7 @@ Quick check:
 
 ```bash
 rg -n "ICESTORM_LC|ICESTORM_RAM|SB_IO|SB_GB|ICESTORM_PLL|Max frequency for clock 'pll_clk_global'" \
-  /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga/build/ice40_alchitry_cu/nextpnr.log
+  "$REPO_ROOT/rtl/fpga/build/ice40_alchitry_cu/nextpnr.log"
 ```
 
 ### ECP5 (from nextpnr)
@@ -117,7 +121,7 @@ Quick check:
 
 ```bash
 rg -n "TRELLIS_COMB|TRELLIS_FF|DP16KD|TRELLIS_IO|DCCA|EHXPLLL|Max frequency for clock '\\$glbnet\\$clk\\$TRELLIS_IO_IN'" \
-  /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga/build/ecp5_icepi_zero/nextpnr.log
+  "$REPO_ROOT/rtl/fpga/build/ecp5_icepi_zero/nextpnr.log"
 ```
 
 ---
@@ -129,7 +133,7 @@ The Makefile synthesis flattens for implementation outputs, so the report additi
 Run:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd "$REPO_ROOT/rtl/fpga"
 
 # ICE40 hierarchical stats JSON
 yosys -q -p " \
@@ -180,6 +184,12 @@ yosys -q -p " \
   tee -o build/ecp5_icepi_zero/hier_stat.json stat -json"
 ```
 
+Notes:
+
+- ICE40 hierarchical synthesis explicitly loads `+/ice40/cells_sim.v` because `ice40_alchitry_cu_top` instantiates `SB_PLL40_CORE`.
+  - In Yosys, `+/` means "resolve from Yosys's built-in share/data directory".
+- ECP5 hierarchical synthesis does not require an equivalent explicit cell sim file in this flow.
+
 ---
 
 ## 6) Build the markdown tables
@@ -206,17 +216,17 @@ Confirm report numbers match logs:
 ```bash
 # ICE40 utilization/Fmax references
 rg -n "ICESTORM_LC|ICESTORM_RAM|SB_IO|SB_GB|ICESTORM_PLL|Max frequency for clock 'pll_clk_global'" \
-  /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga/build/ice40_alchitry_cu/nextpnr.log
+  "$REPO_ROOT/rtl/fpga/build/ice40_alchitry_cu/nextpnr.log"
 
 # ECP5 utilization/Fmax references
 rg -n "TRELLIS_COMB|TRELLIS_FF|DP16KD|TRELLIS_IO|DCCA|EHXPLLL|Max frequency for clock '\\$glbnet\\$clk\\$TRELLIS_IO_IN'" \
-  /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga/build/ecp5_icepi_zero/nextpnr.log
+  "$REPO_ROOT/rtl/fpga/build/ecp5_icepi_zero/nextpnr.log"
 ```
 
 Check only intended report/docs files are modified:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev
+cd "$REPO_ROOT"
 git --no-pager status --short
 ```
 
@@ -234,4 +244,3 @@ When repeating this process after a merge from `main`:
 - [ ] Update all report tables and timestamp
 - [ ] Re-verify utilization/Fmax values against `nextpnr.log`
 - [ ] Confirm ALU detailed breakdown is still present for both targets
-
