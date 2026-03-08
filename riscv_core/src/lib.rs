@@ -58,6 +58,24 @@ pub struct Uart;
 )]
 pub struct Uart1MBaud;
 
+#[verilog(
+    src = "../rtl/common/wrappers/i2s_serializer_test_wrappers.sv",
+    name = "i2s_serializer_equal_width_wrapper"
+)]
+pub struct I2sSerializerEqualWidthWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/i2s_serializer_test_wrappers.sv",
+    name = "i2s_serializer_expand_wrapper"
+)]
+pub struct I2sSerializerExpandWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/i2s_serializer_test_wrappers.sv",
+    name = "i2s_serializer_truncate_wrapper"
+)]
+pub struct I2sSerializerTruncateWrapper;
+
 // Define Clock Peripheral module
 #[verilog(
     src = "../rtl/common/peripherals/clock_peripheral.sv",
@@ -323,6 +341,30 @@ pub fn create_uart_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Err
 // Helper function to create a runtime for the UART core at 1M baud
 pub fn create_uart_1m_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["io/uart.sv", "wrappers/uart_1m_baud_wrapper.sv"])
+}
+
+pub fn create_i2s_serializer_equal_width_runtime(
+) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "io/i2s_serializer.sv",
+        "wrappers/i2s_serializer_test_wrappers.sv",
+    ])
+}
+
+pub fn create_i2s_serializer_expand_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "io/i2s_serializer.sv",
+        "wrappers/i2s_serializer_test_wrappers.sv",
+    ])
+}
+
+pub fn create_i2s_serializer_truncate_runtime(
+) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "io/i2s_serializer.sv",
+        "wrappers/i2s_serializer_test_wrappers.sv",
+    ])
 }
 
 // Helper function to create a runtime for the Clock Peripheral
