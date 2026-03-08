@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document describes the RTL migration from the legacy unified peripheral bus interface to the newer address/data channel interface already used by the CPU-facing memory path. The end state is an FPGA RTL interconnect where:
+This document describes the RTL migration from the legacy unified peripheral bus interface to the newer address/data channel interface already used by the CPU-facing memory path. The end-state goal is an FPGA RTL interconnect where:
 
 - all RTL peripherals speak the `mem_a_*` / `mem_d_*` interface,
 - the legacy `bus.sv` decoder is replaced by `registered_bus.sv`,
@@ -124,7 +124,7 @@ The migration should preserve this decode model unless a separate design change 
 The following are explicitly out of scope for this change:
 
 - maintaining legacy bus compatibility,
-- supporting mixed old/new peripheral interface variants long-term,
+- supporting mixed old/new peripheral interface variants in the long term,
 - redesigning the top-nibble peripheral address map,
 - changing the CPU-to-host external memory path for upper-half addresses.
 
@@ -259,7 +259,7 @@ Planned changes:
 
 Important constraint:
 
-- host-initiated requests must target only the lower-half RTL-owned address space in the migrated topology; upper-half addresses must not be routed back into the host path.
+- host-initiated requests must target only the lower-half RTL-owned address space in the migrated topology; upper-half addresses must not be routed back into the host path because that would violate the loop-prevention rule described in [Section 4.1](#41-why-host_bus_mux-must-remain).
 
 ### 5.6 `rtl/common/top.sv`
 
@@ -305,7 +305,8 @@ Before rewiring the top-level, standardize how each migrated peripheral will use
 - when a request is considered accepted,
 - whether writes generate a zero-data D response or a side-effect-only acknowledgement,
 - whether reads are immediate or registered,
-- how unmapped or invalid accesses behave.
+- how unmapped accesses behave, and
+- how invalid accesses behave.
 
 Deliverable:
 
