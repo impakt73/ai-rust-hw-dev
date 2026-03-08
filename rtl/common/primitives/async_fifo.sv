@@ -56,6 +56,8 @@ module async_fifo #(
     logic [PTR_WIDTH-1:0] rd_ptr_bin_sync_wr;
     logic [WIDTH-1:0]     out_data;
     logic                 out_valid;
+    logic                 load_pending_stage1;
+    logic                 load_pending_stage2;
     logic                 load_pending;
     logic [WIDTH-1:0]     ram_rdata;
     logic                 full;
@@ -114,6 +116,8 @@ module async_fifo #(
     assign full_next  = (wr_ptr_gray_next == full_compare_gray(rd_ptr_gray_sync_wr));
     // Start a BRAM fetch either when the output staging register is empty and data is
     // available, or when the current staged word is being consumed and more words remain.
+    assign load_pending = load_pending_stage1 || load_pending_stage2;
+
     assign start_load = (!load_pending) && (
         (!out_valid && (rd_items_available != '0)) ||
         (rd_fire && (rd_items_available > PTR_WIDTH'(1)))
@@ -174,26 +178,30 @@ module async_fifo #(
             rd_ptr_gray <= '0;
             out_data    <= '0;
             out_valid   <= 1'b0;
-            load_pending <= 1'b0;
+            load_pending_stage1 <= 1'b0;
+            load_pending_stage2 <= 1'b0;
         end else begin
             // Read-side staging pipeline:
             //   idle    (out_valid=0, load_pending=0) -> loading : start_load launches a BRAM read
             //   loading (load_pending=1)              -> valid   : ram_rdata is captured into out_data
             //   valid   (out_valid=1, load_pending=0) -> loading : rd_fire consumes the head word while more data remains
-            if (load_pending) begin
+            if (load_pending_stage2) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;
-                load_pending <= 1'b0;
             end
+
+            load_pending_stage2 <= load_pending_stage1;
+            load_pending_stage1 <= 1'b0;
 
             rd_ptr_bin  <= rd_ptr_bin_next;
             rd_ptr_gray <= rd_ptr_gray_next;
 
             if (rd_fire) begin
                 out_valid <= 1'b0;
-                load_pending <= start_load;
+                load_pending_stage1 <= start_load;
+                load_pending_stage2 <= 1'b0;
             end else if (start_load) begin
-                load_pending <= 1'b1;
+                load_pending_stage1 <= 1'b1;
             end
         end
     end

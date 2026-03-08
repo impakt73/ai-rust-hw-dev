@@ -16,7 +16,7 @@
 //   - Each sync_dpram instance uses 256x32-bit = 2× iCE40 SB_RAM40_4K blocks
 //
 // LATENCY:
-//   - Reads: 1 cycle (synchronous BRAM read)
+//   - Reads: 2 cycles (synchronous BRAM read + output pipeline register)
 //   - Writes: 1 cycle (synchronous BRAM write)
 //
 // x0 HANDLING:

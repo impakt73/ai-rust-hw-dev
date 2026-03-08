@@ -9,8 +9,9 @@
 // subsystem while remaining compatible with future arbiter integration if
 // pipelining is added.
 //
-// REGISTER FILE: Uses dual-banked BRAM with 1-cycle read latency.
-// The S_REG_READ state provides time for BRAM reads to complete after S_DECODE.
+// REGISTER FILE: Uses dual-banked BRAM with 2-cycle read latency.
+// The S_REG_READ and S_REG_READ_WAIT states provide time for BRAM reads to
+// complete after S_DECODE.
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -66,7 +67,8 @@ module cpu #(
         S_BOOT       = 4'b0000,  // After reset, wait for boot signal
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for D-channel response)
         S_DECODE     = 4'b0010,  // Decode instruction, start register file read
-        S_REG_READ   = 4'b1100,  // Wait for BRAM register file read (1-cycle latency)
+        S_REG_READ   = 4'b1100,  // Launch BRAM register file read pipeline
+        S_REG_READ_WAIT = 4'b1101,  // Capture BRAM register file read data
         S_EXECUTE    = 4'b0011,  // ALU operation
         S_MEM_ADDR   = 4'b0100,  // Calculate memory address
         S_MEM_READ   = 4'b0101,  // Load from memory (wait for D-channel response)
@@ -685,14 +687,19 @@ module cpu #(
             
             S_DECODE: begin
                 // Decode instruction and start register file read.
-                // Always transition to S_REG_READ to wait for BRAM read latency (1 cycle).
-                // Register file addresses are presented this cycle, data available next cycle.
+                // Always transition through S_REG_READ and S_REG_READ_WAIT to cover the
+                // two-cycle BRAM read latency.
                 next_state = S_REG_READ;
             end
             
-            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
-            // Uses opcode_reg (captured in S_DECODE) to determine next state
+            // S_REG_READ: Wait for the internal BRAM pipeline stage
             S_REG_READ: begin
+                next_state = S_REG_READ_WAIT;
+            end
+
+            // S_REG_READ_WAIT: BRAM data is now visible on the module outputs
+            // Uses opcode_reg (captured in S_DECODE) to determine next state
+            S_REG_READ_WAIT: begin
                 // Check for invalid instruction using the merged validity register.
                 // is_instruction_valid_reg combines:
                 // 1. Decompressor validity (captured during ir_write in S_FETCH)
@@ -860,13 +867,16 @@ module cpu #(
             
             S_DECODE: begin
                 // Decode instruction and present addresses to register file.
-                // Register data will be captured in S_REG_READ after BRAM latency.
+                // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
                 decode_reg_write = 1'b1;
             end
             
-            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
-            // This state captures register data after BRAM synchronous read
             S_REG_READ: begin
+            end
+            
+            // S_REG_READ_WAIT: Capture BRAM register file read data
+            // This state captures register data after BRAM synchronous read
+            S_REG_READ_WAIT: begin
                 // BRAM data is now available, capture it
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
@@ -1034,7 +1044,8 @@ module cpu #(
     );
     
     // Register file instantiation (write enable gated by FSM)
-    // Uses dual-banked BRAM with 1-cycle read latency, handled by S_REG_READ state
+    // Uses dual-banked BRAM with 2-cycle read latency, handled by S_REG_READ and
+    // S_REG_READ_WAIT states
     // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
     logic reg_write_x0_gate;
     assign reg_write_x0_gate = (rd_reg != 5'd0);

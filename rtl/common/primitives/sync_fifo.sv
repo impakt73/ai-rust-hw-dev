@@ -54,12 +54,13 @@ module sync_fifo #(
     logic [PTR_WIDTH-1:0] wr_ptr;
     logic [PTR_WIDTH-1:0] rd_ptr;
 
-    // Output staging register keeps rdata aligned with rd_valid, while load_pending
-    // tracks the one-cycle RAM refill needed before the next head word can be staged
-    // from sync_dpram's registered read output.
+    // Output staging register keeps rdata aligned with rd_valid, while the load
+    // pipeline tracks the two-cycle RAM refill needed before the next head word
+    // can be staged from sync_dpram's registered read output.
     logic [WIDTH-1:0] out_data;
     logic             out_valid;
-    logic             load_pending;
+    logic             load_pending_stage1;
+    logic             load_pending_stage2;
     logic [WIDTH-1:0] ram_rdata;
 
     // Internal handshake signals
@@ -108,7 +109,8 @@ module sync_fifo #(
             rd_ptr <= '0;
             out_data <= '0;
             out_valid <= 1'b0;
-            load_pending <= 1'b0;
+            load_pending_stage1 <= 1'b0;
+            load_pending_stage2 <= 1'b0;
             count  <= '0;
         end else begin
             if (ram_write) begin
@@ -124,33 +126,39 @@ module sync_fifo #(
             // guaranteed to be non-zero before the decrement term is applied.
             count <= count + CNT_WIDTH'(wr_fire) - CNT_WIDTH'(rd_fire);
 
-            // load_pending and rd_fire are mutually exclusive because load_pending only
-            // exists while out_valid is deasserted, which in turn forces rd_valid low.
-            // This load step must run before the rd_fire handling below so a newly
-            // staged head word is ready on the very next cycle, without inserting an
-            // extra bubble beyond the RAM refill cycle already tracked by load_pending.
-            if (load_pending) begin
+            // The load pipeline and rd_fire are mutually exclusive because the load
+            // pipeline only exists while out_valid is deasserted, which in turn
+            // forces rd_valid low. This capture step must run before the rd_fire
+            // handling below so a newly staged head word is ready as soon as the
+            // two-cycle RAM refill completes.
+            if (load_pending_stage2) begin
                 out_data <= ram_rdata;
                 out_valid <= 1'b1;
-                load_pending <= 1'b0;
             end
+
+            load_pending_stage2 <= load_pending_stage1;
+            load_pending_stage1 <= 1'b0;
 
             if (rd_fire) begin
                 if (direct_write) begin
                     out_data <= wdata;
                     out_valid <= 1'b1;
-                    load_pending <= 1'b0;
+                    load_pending_stage1 <= 1'b0;
+                    load_pending_stage2 <= 1'b0;
                 end else if (start_load) begin
                     out_valid <= 1'b0;
-                    load_pending <= 1'b1;
+                    load_pending_stage1 <= 1'b1;
+                    load_pending_stage2 <= 1'b0;
                 end else begin
                     out_valid <= 1'b0;
-                    load_pending <= 1'b0;
+                    load_pending_stage1 <= 1'b0;
+                    load_pending_stage2 <= 1'b0;
                 end
             end else if (direct_write) begin
                 out_data <= wdata;
                 out_valid <= 1'b1;
-                load_pending <= 1'b0;
+                load_pending_stage1 <= 1'b0;
+                load_pending_stage2 <= 1'b0;
             end
         end
     end
