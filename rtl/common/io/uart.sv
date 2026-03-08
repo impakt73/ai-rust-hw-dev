@@ -95,7 +95,7 @@ module uart #(
     // TX ready when idle, or on the final stop-bit tick for back-to-back frames
     assign tx_ready = (tx_state == TX_IDLE) || (tx_state == TX_STOP_BIT && tx_baud_tick);
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             tx_state <= TX_IDLE;
             tx_out <= 1'b1;  // Idle high
@@ -180,7 +180,7 @@ module uart #(
     // Previous value of synchronized RX for falling-edge detection
     // Prevents false start bit detection when line is held low
     logic rx_sync_prev;
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             rx_sync_prev <= 1'b1;  // Idle high
         else
@@ -234,7 +234,7 @@ module uart #(
         end
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             rx_state <= RX_IDLE;
             rx_data <= 8'h00;

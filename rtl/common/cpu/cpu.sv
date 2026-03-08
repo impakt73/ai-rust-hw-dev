@@ -9,8 +9,9 @@
 // subsystem while remaining compatible with future arbiter integration if
 // pipelining is added.
 //
-// REGISTER FILE: Uses dual-banked BRAM with 1-cycle read latency.
-// The S_REG_READ state provides time for BRAM reads to complete after S_DECODE.
+// REGISTER FILE: Uses dual-banked BRAM with 2-cycle read latency.
+// The S_REG_READ and S_REG_READ_WAIT states provide time for BRAM reads to
+// complete after S_DECODE.
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -66,7 +67,8 @@ module cpu #(
         S_BOOT       = 4'b0000,  // After reset, wait for boot signal
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for D-channel response)
         S_DECODE     = 4'b0010,  // Decode instruction, start register file read
-        S_REG_READ   = 4'b1100,  // Wait for BRAM register file read (1-cycle latency)
+        S_REG_READ   = 4'b1100,  // Launch BRAM register file read pipeline
+        S_REG_READ_WAIT = 4'b1101,  // Capture BRAM register file read data
         S_EXECUTE    = 4'b0011,  // ALU operation
         S_MEM_ADDR   = 4'b0100,  // Calculate memory address
         S_MEM_READ   = 4'b0101,  // Load from memory (wait for D-channel response)
@@ -294,7 +296,7 @@ module cpu #(
     
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             mem_req_inflight <= 1'b0;
         else
@@ -316,7 +318,7 @@ module cpu #(
     // ============================================================
     // State Register (Flip-Flop Based FSM)
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             current_state <= S_BOOT;
         else
@@ -333,7 +335,7 @@ module cpu #(
     // - Reset to 1 (assume valid on startup)
     // - Populated with decompressor validity when instruction fetched (ir_write)
     // - ANDed with decoder validity when decoded (decode_reg_write)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
@@ -348,7 +350,7 @@ module cpu #(
     end
     
     // Operand Registers (Integer)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             a_reg <= 32'h0;
             b_reg <= 32'h0;
@@ -363,7 +365,7 @@ module cpu #(
     // ============================================================
     generate
         if (ENABLE_F_EXT) begin : gen_fp_operand_regs
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     fa_reg <= 32'h0;
                     fb_reg <= 32'h0;
@@ -383,7 +385,7 @@ module cpu #(
     endgenerate
     
     // Result Registers
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             alu_out_reg <= 32'h0;
             fpu_out_reg <= 32'h0;
@@ -399,7 +401,7 @@ module cpu #(
     end
     
     // Decoder Output Registers
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             opcode_reg <= 7'h0;
             rd_reg <= 5'h0;
@@ -483,7 +485,7 @@ module cpu #(
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             branch_target_reg <= 32'h0;
             jal_target_reg <= 32'h0;
@@ -509,7 +511,7 @@ module cpu #(
     // Delayed instr_complete signal for proper trace timing
     // Capture happens on cycle N when instr_complete_internal goes high
     // Output port sees delayed version on cycle N+1 after values have settled
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             instr_complete <= 1'b0;
         else
@@ -517,7 +519,7 @@ module cpu #(
     end
     
     // Capture completed instruction info when instruction finishes
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             completed_pc_reg <= 32'h0;
             completed_instr_reg <= 32'h0;
@@ -534,7 +536,7 @@ module cpu #(
     end
     
     // Track if ALU start pulse has been sent (for multi-cycle operations)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             alu_start_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
@@ -543,7 +545,7 @@ module cpu #(
             alu_start_sent <= 1'b1;  // Mark as sent after pulsing
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             alu_start_sent_rmw <= 1'b0;
         else if (current_state != S_ATOMIC_RMW)
@@ -553,7 +555,7 @@ module cpu #(
     end
     
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             fpu_start_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
@@ -565,7 +567,7 @@ module cpu #(
     // ============================================================
     // LR/SC Reservation Tracking (A Extension)
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             reservation_valid <= 1'b0;
             reservation_addr <= 32'h0;
@@ -641,7 +643,7 @@ module cpu #(
         end
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n)
             pc <= 32'h0;
         else if (current_state == S_BOOT && boot)
@@ -685,14 +687,19 @@ module cpu #(
             
             S_DECODE: begin
                 // Decode instruction and start register file read.
-                // Always transition to S_REG_READ to wait for BRAM read latency (1 cycle).
-                // Register file addresses are presented this cycle, data available next cycle.
+                // Always transition through S_REG_READ and S_REG_READ_WAIT to cover the
+                // two-cycle BRAM read latency.
                 next_state = S_REG_READ;
             end
             
-            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
-            // Uses opcode_reg (captured in S_DECODE) to determine next state
+            // S_REG_READ: Wait for the internal BRAM pipeline stage
             S_REG_READ: begin
+                next_state = S_REG_READ_WAIT;
+            end
+
+            // S_REG_READ_WAIT: BRAM data is now visible on the module outputs
+            // Uses opcode_reg (captured in S_DECODE) to determine next state
+            S_REG_READ_WAIT: begin
                 // Check for invalid instruction using the merged validity register.
                 // is_instruction_valid_reg combines:
                 // 1. Decompressor validity (captured during ir_write in S_FETCH)
@@ -860,13 +867,16 @@ module cpu #(
             
             S_DECODE: begin
                 // Decode instruction and present addresses to register file.
-                // Register data will be captured in S_REG_READ after BRAM latency.
+                // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
                 decode_reg_write = 1'b1;
             end
             
-            // S_REG_READ: Wait for BRAM register file read (1-cycle latency)
-            // This state captures register data after BRAM synchronous read
             S_REG_READ: begin
+            end
+            
+            // S_REG_READ_WAIT: Capture BRAM register file read data
+            // This state captures register data after BRAM synchronous read
+            S_REG_READ_WAIT: begin
                 // BRAM data is now available, capture it
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
@@ -1034,7 +1044,8 @@ module cpu #(
     );
     
     // Register file instantiation (write enable gated by FSM)
-    // Uses dual-banked BRAM with 1-cycle read latency, handled by S_REG_READ state
+    // Uses dual-banked BRAM with 2-cycle read latency, handled by S_REG_READ and
+    // S_REG_READ_WAIT states
     // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
     logic reg_write_x0_gate;
     assign reg_write_x0_gate = (rd_reg != 5'd0);
@@ -1198,7 +1209,7 @@ module cpu #(
             // FCSR (Floating Point Control and Status Register)
             // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
             // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
-            always_ff @(posedge clk or negedge rst_n) begin
+            always_ff @(posedge clk) begin
                 if (!rst_n) begin
                     fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
                 end else begin

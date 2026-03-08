@@ -1,15 +1,20 @@
 # FPGA Synthesis for Alchitry Cu v1
 
-This directory contains files for synthesizing the RISC-V CPU to the Alchitry Cu v1 board (iCE40-HX8K-CB132) using open-source tools (Yosys + nextpnr + IceStorm).
+This directory contains files for synthesizing the RISC-V CPU to FPGA targets using open-source tools for the Lattice boards and a Vivado batch flow for the Alchitry Au target.
+
+Currently supported targets:
+- **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
+- **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
+- **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T-FTG256-1)
 
 ## Status: ✅ Successfully Synthesized
 
 The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
 
-- **Extensions**: M (multiply/divide) enabled (shift-add multiplier); F (floating-point) disabled
-- **ISA supported**: RV32I base instruction set + M (multiply) + C (compressed) + A (atomic) + Zicsr
-- **Resource usage**: ~74% logic cells (5,698/7,680), 50% BRAM (16/32)
-- **Clock frequency**: 25 MHz (via PLL), design achieves 30.56 MHz max
+- **Extensions**: M (multiply/divide) disabled by default; F (floating-point) disabled
+- **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
+- **Resource usage**: 4,399 SB_LUT4s and 7,306 total mapped cells after disabling M by default
+- **Clock frequency**: 25 MHz (via PLL), latest build achieves 39.50 MHz max
 - **Communication**: CPU communicates with host over USB serial (UART) using the host bus protocol
 - **External memory**: DRAM accesses are forwarded to the host computer over UART
 
@@ -17,11 +22,11 @@ The FPGA design is configured to run on the iCE40-HX8K within resource constrain
 
 The FPGA implementation includes:
 
-- ✅ **RISC-V RV32IMAC CPU**: Base integer + Multiply + Atomic + Compressed instruction sets (F extension disabled)
+- ✅ **RISC-V RV32IAC CPU**: Base integer + Atomic + Compressed instruction sets (M and F disabled by default on iCE40)
 - ✅ **LED Controller Peripheral**: 8-bit LED output mapped at 0x50000000
-- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x51000000
-- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x52000000
-- ✅ **System Controller**: CPU boot and reset control mapped at 0x53000000
+- ✅ **Clock Peripheral**: Elapsed time counters (us/ms/s) mapped at 0x60000000
+- ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
+- ✅ **System Controller**: CPU boot and reset control mapped at 0x20000000
 - ✅ **UART Host Interface**: USB serial communication for host-initiated and CPU-initiated bus requests
 - ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
 
@@ -73,13 +78,18 @@ make -j$(nproc) && sudo make install && cd ..
 # Navigate to fpga directory
 cd fpga
 
-# Run full synthesis flow (takes 2-5 minutes first time)
+# Run full synthesis flow for default target (iCE40)
 make
 
+# Run full synthesis flow for ECP5 iCE Pi Zero
+make TARGET=ecp5_icepi_zero
+
+# Run full synthesis flow for Artix-7 Alchitry Au
+# (requires Xilinx Vivado in PATH; the proprietary flow is driven by TCL)
+make TARGET=artix7_alchitry_au
+
 # This generates:
-# - build/riscv_fpga.json  (synthesis output)
-# - build/riscv_fpga.asc   (place-and-route output)
-# - build/riscv_fpga.bin   (bitstream for programming)
+# - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
 ```
 
 ### Program FPGA (Requires Hardware)
@@ -94,15 +104,20 @@ sudo iceprog build/riscv_fpga.bin
 
 ## Files
 
-- **`fpga_top.sv`**: Top-level FPGA wrapper module (wraps RISC-V CPU with UART host communication)
-- **`stub_fpu.sv`**: Stub floating-point unit (F extension disabled for iCE40 resource constraints)
-- **`ice40hx8k.pcf`**: Pin constraint file for Alchitry Cu v1 board
+- **`common/fpga_common_top.sv`**: Shared FPGA top logic (CPU + host UART + reset-button synchronization)
+- **`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`**: iCE40 top-level FPGA wrapper module
+- **`ice40_alchitry_cu/ice40_alchitry_cu.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
+- **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
+- **`../common/fpu/*.sv`**: Shared floating-point unit implementation sources (always included for synthesis; `ENABLE_F_EXT` remains disabled by default)
+- **`ecp5_icepi_zero/ecp5_icepi_zero.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
+- **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
+- **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
 ## Makefile Targets
 
-- `make` or `make all` - Full synthesis flow (JSON → ASC → BIN)
+- `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
 - `make program` - Program connected FPGA board
@@ -113,10 +128,21 @@ sudo iceprog build/riscv_fpga.bin
 ## Hardware Requirements
 
 - **Board**: Alchitry Cu v1 (Lattice iCE40-HX8K-CB132)
-- **Resources Used**: ~5,700 LUTs, 74% utilization, 16 BRAMs (50%)
+- **Resources Used**: 4,399 SB_LUT4s, 7,306 total mapped cells, 30 BRAMs
 - **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
 - **Programming**: USB cable for iceprog
+
+## Artix-7 (Alchitry Au) Toolchain Notes
+
+The Artix-7 target now uses the proprietary Vivado CLI flow in batch mode. The flow is encapsulated in `artix7_alchitry_au/vivado_build.tcl`, which reads all RTL/XDC inputs, runs synthesis/place/route, and emits the bitstream plus reports into `build/artix7_alchitry_au/`.
+
+By default the Makefile expects `vivado` to be available in your `PATH`. If needed, override the executable path:
+
+```bash
+make TARGET=artix7_alchitry_au \
+  VIVADO=/opt/Xilinx/Vivado/2025.1/bin/vivado
+```
 
 ## Pin Assignments (Alchitry Cu v1)
 
@@ -139,7 +165,7 @@ Reference: [Alchitry Cu PCF](https://github.com/r1cebank/alchitry-cu-utils/blob/
 
 The `led_demo/` subdirectory contains a standalone LED rotation demo (`led_demo/led_pattern_top.sv`) that displays an alternating pattern on the 8 LEDs.
 
-The main FPGA design (`fpga_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
+The main iCE40 FPGA design (`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`) does not pre-load a fixed test program. Instead, programs are loaded at runtime by the host computer via the UART host bus interface. Use `fpga-host` or `sim-view --runtime fpga` to load and run RISC-V ELF programs on the FPGA.
 
 **Example LED pattern (pseudo-assembly):**
 
@@ -177,7 +203,7 @@ jal  x0, main_loop     # Repeat
 
 The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ensures timing closure. If you need a different frequency, update:
 
-1. **PLL parameters**: Edit `fpga_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
+1. **PLL parameters**: Edit `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
 2. **Makefile**: Change `--freq 25` to match your target frequency
 3. **Test program**: Update delay loop count in your program to match the new cycle count
 
@@ -185,7 +211,7 @@ The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ens
 
 The design uses ~74% of HX8K logic resources. If synthesis fails:
 
-1. **Already optimized**: M extension uses shift-add multiplier, F extension is disabled by default
+1. **Already optimized**: M and F extensions are disabled by default on the iCE40 target
 2. **Reduce BRAM usage**: Minimize the on-chip SRAM allocation if possible
 
 ### "make program" fails
@@ -216,7 +242,7 @@ Common issues:
 
 The FPGA design loads programs at runtime via the host UART interface. To run your own program:
 
-1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x52000000, DRAM forwarded to host)
+1. Build a RISC-V ELF targeting the CPU's memory map (SRAM at 0x70000000, DRAM forwarded to host)
 2. Use `sim-view --runtime fpga --fpga-device /dev/ttyUSB0` to load and run the ELF
 3. Or use the `fpga-host` crate directly for programmatic control
 
@@ -224,7 +250,7 @@ The FPGA design loads programs at runtime via the host UART interface. To run yo
 
 To modify the system clock frequency:
 
-1. Update PLL parameters in `fpga_top.sv` (DIVR, DIVF, DIVQ)
+1. Update PLL parameters in `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` (DIVR, DIVF, DIVQ)
 2. Change `--freq` in `Makefile` to match your target frequency
 3. Re-run synthesis and check timing
 

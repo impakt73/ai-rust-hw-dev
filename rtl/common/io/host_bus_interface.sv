@@ -7,23 +7,29 @@ module host_bus_interface (
     input  logic        clk,
     input  logic        rst_n,
 
-    // Bus Slave Interface (from System Bus - CPU->Host path)
-    input  logic [31:0] addr,
-    input  logic [31:0] wdata,
-    output logic [31:0] rdata,
-    input  logic        we,
-    input  logic [1:0]  size,
-    input  logic        req,
-    output logic        ready,
+    // CPU slave interface (CPU->Host path)
+    input  logic [31:0] mem_a_addr,
+    input  logic [31:0] mem_a_wdata,
+    input  logic        mem_a_we,
+    input  logic [1:0]  mem_a_size,
+    input  logic        mem_a_valid,
+    output logic        mem_a_ready,
 
-    // Bus Master Interface (to Arbiter - Host->CPU path)
-    output logic [31:0] host_bus_addr,
-    output logic [31:0] host_bus_wdata,
-    input  logic [31:0] host_bus_rdata,
-    output logic        host_bus_we,
-    output logic [1:0]  host_bus_size,
-    output logic        host_bus_req,
-    input  logic        host_bus_ready,
+    output logic [31:0] mem_d_rdata,
+    output logic        mem_d_valid,
+    input  logic        mem_d_ready,
+
+    // Host-initiated master interface (Host->RTL path)
+    output logic [31:0] host_mem_a_addr,
+    output logic [31:0] host_mem_a_wdata,
+    output logic        host_mem_a_we,
+    output logic [1:0]  host_mem_a_size,
+    output logic        host_mem_a_valid,
+    input  logic        host_mem_a_ready,
+
+    input  logic [31:0] host_mem_d_rdata,
+    input  logic        host_mem_d_valid,
+    output logic        host_mem_d_ready,
 
     // Host TX Interface (to External Host)
     output logic [7:0]  tx_data,
@@ -78,18 +84,20 @@ module host_bus_interface (
     logic        cpu_req_pending;
     logic        cpu_wait_resp;
     logic [31:0] cpu_resp_data;
-    logic        cpu_resp_seen;
+    logic        cpu_resp_valid;
 
     // ============================================================
     // Host transaction execution state
     // ============================================================
     typedef enum logic [2:0] {
         HOST_IDLE        = 3'd0,
-        HOST_WRITE_BUS   = 3'd1,
-        HOST_WRITE_WAIT  = 3'd2,
-        HOST_WRITE_RESP  = 3'd3,
-        HOST_READ_BUS    = 3'd4,
-        HOST_READ_TX     = 3'd5
+        HOST_WRITE_A     = 3'd1,
+        HOST_WRITE_D     = 3'd2,
+        HOST_WRITE_WAIT  = 3'd3,
+        HOST_WRITE_RESP  = 3'd4,
+        HOST_READ_A      = 3'd5,
+        HOST_READ_D      = 3'd6,
+        HOST_READ_TX     = 3'd7
     } host_state_t;
 
     host_state_t host_state;
@@ -106,8 +114,10 @@ module host_bus_interface (
     logic [31:0] host_write_data;
     logic [31:0] host_read_data;
 
-    logic host_bus_handshake;
-    assign host_bus_handshake = host_bus_req && host_bus_ready;
+    logic host_a_handshake;
+    logic host_d_handshake;
+    assign host_a_handshake = host_mem_a_valid && host_mem_a_ready;
+    assign host_d_handshake = host_mem_d_valid && host_mem_d_ready;
 
     // ============================================================
     // RX/TX submodules
@@ -155,8 +165,14 @@ module host_bus_interface (
     // ============================================================
     // CPU slave interface
     // ============================================================
-    assign ready = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req && rx_pkt_last;
-    assign rdata = cpu_resp_seen ? cpu_resp_data : rx_pkt_data;
+    logic cpu_a_handshake;
+    logic cpu_d_handshake;
+    assign cpu_a_handshake = mem_a_valid && mem_a_ready;
+    assign cpu_d_handshake = mem_d_valid && mem_d_ready;
+
+    assign mem_a_ready = !cpu_req_pending && !cpu_wait_resp && !cpu_resp_valid;
+    assign mem_d_rdata = cpu_resp_data;
+    assign mem_d_valid = cpu_resp_valid;
 
     // ============================================================
     // RX packet consumption
@@ -255,16 +271,17 @@ module host_bus_interface (
     // ============================================================
     // Bus master drive (host-initiated request execution)
     // ============================================================
-    assign host_bus_addr  = host_curr_addr;
-    assign host_bus_wdata = host_write_data;
-    assign host_bus_we    = host_req_we;
-    assign host_bus_size  = host_req_size;
-    assign host_bus_req   = (host_state == HOST_WRITE_BUS) || (host_state == HOST_READ_BUS);
+    assign host_mem_a_addr  = host_curr_addr;
+    assign host_mem_a_wdata = host_write_data;
+    assign host_mem_a_we    = host_req_we;
+    assign host_mem_a_size  = host_req_size;
+    assign host_mem_a_valid = (host_state == HOST_WRITE_A) || (host_state == HOST_READ_A);
+    assign host_mem_d_ready = (host_state == HOST_WRITE_D) || (host_state == HOST_READ_D);
 
     // ============================================================
     // Sequential control
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             cpu_cap_addr    <= 32'h0000_0000;
             cpu_cap_wdata   <= 32'h0000_0000;
@@ -273,7 +290,7 @@ module host_bus_interface (
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
             cpu_resp_data   <= 32'h0000_0000;
-            cpu_resp_seen   <= 1'b0;
+            cpu_resp_valid  <= 1'b0;
 
             host_state           <= HOST_IDLE;
             host_req_we          <= 1'b0;
@@ -289,11 +306,11 @@ module host_bus_interface (
             host_read_data       <= 32'h0000_0000;
         end else begin
             // Capture CPU request (single outstanding)
-            if (!cpu_req_pending && !cpu_wait_resp && req) begin
-                cpu_cap_addr    <= addr;
-                cpu_cap_wdata   <= wdata;
-                cpu_cap_we      <= we;
-                cpu_cap_size    <= size;
+            if (cpu_a_handshake) begin
+                cpu_cap_addr    <= mem_a_addr;
+                cpu_cap_wdata   <= mem_a_wdata;
+                cpu_cap_we      <= mem_a_we;
+                cpu_cap_size    <= mem_a_size;
                 cpu_req_pending <= 1'b1;
             end
 
@@ -301,20 +318,18 @@ module host_bus_interface (
             if (cpu_req_pending && tx_pkt_valid && tx_pkt_ready && tx_pkt_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
-                cpu_resp_seen   <= 1'b0;
             end
 
-            // CPU response consumed from RX
-            if (ready) begin
+            // CPU response consumed by the CPU D channel
+            if (cpu_d_handshake) begin
+                cpu_resp_valid <= 1'b0;
+            end
+
+            // CPU response captured from RX
+            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin
                 cpu_wait_resp <= 1'b0;
-                cpu_resp_seen <= 1'b0;
-            end
-
-            // Latch first response beat for deterministic CPU read data if malformed
-            // multi-beat responses are observed.
-            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req && !cpu_resp_seen) begin
                 cpu_resp_data <= rx_pkt_data;
-                cpu_resp_seen <= 1'b1;
+                cpu_resp_valid <= 1'b1;
             end
 
             case (host_state)
@@ -337,15 +352,21 @@ module host_bus_interface (
 
                         if (rx_pkt_we) begin
                             host_write_data <= rx_pkt_data;
-                            host_state <= HOST_WRITE_BUS;
+                            host_state <= HOST_WRITE_A;
                         end else begin
-                            host_state <= HOST_READ_BUS;
+                            host_state <= HOST_READ_A;
                         end
                     end
                 end
 
-                HOST_WRITE_BUS: begin
-                    if (host_bus_handshake) begin
+                HOST_WRITE_A: begin
+                    if (host_a_handshake) begin
+                        host_state <= HOST_WRITE_D;
+                    end
+                end
+
+                HOST_WRITE_D: begin
+                    if (host_d_handshake) begin
                         if (host_beats_remaining == 17'd1) begin
                             host_state <= HOST_WRITE_RESP;
                         end else begin
@@ -361,7 +382,7 @@ module host_bus_interface (
                 HOST_WRITE_WAIT: begin
                     if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && !rx_pkt_start) begin
                         host_write_data <= rx_pkt_data;
-                        host_state <= HOST_WRITE_BUS;
+                        host_state <= HOST_WRITE_A;
                     end
                 end
 
@@ -371,9 +392,15 @@ module host_bus_interface (
                     end
                 end
 
-                HOST_READ_BUS: begin
-                    if (host_bus_handshake) begin
-                        host_read_data <= host_bus_rdata;
+                HOST_READ_A: begin
+                    if (host_a_handshake) begin
+                        host_state <= HOST_READ_D;
+                    end
+                end
+
+                HOST_READ_D: begin
+                    if (host_d_handshake) begin
+                        host_read_data <= host_mem_d_rdata;
                         host_state <= HOST_READ_TX;
                     end
                 end
@@ -387,7 +414,7 @@ module host_bus_interface (
                             if (!host_req_src_fixed) begin
                                 host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
                             end
-                            host_state <= HOST_READ_BUS;
+                            host_state <= HOST_READ_A;
                         end
                     end
                 end
@@ -398,7 +425,7 @@ module host_bus_interface (
     end
 
 `ifdef ASSERT_ON
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             // no-op
         end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin

@@ -7,7 +7,7 @@
 //
 // Interface:
 //   clk       - System clock
-//   rst_n     - Asynchronous active-low reset
+//   rst_n     - Synchronous active-low reset
 //   activity  - High level triggers one indicator cycle when idle
 //   indicator - Registered indicator output
 
@@ -46,7 +46,7 @@ module activity_indicator #(
         end
     end
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             counter <= '0;
             pulse_active <= 1'b0;

@@ -6,7 +6,7 @@ const ACTIVITY_FREQ_MILLIHERTZ: u32 = 250;
 const ACTIVITY_DENOM_MILLIHERTZ: u32 = 2 * ACTIVITY_FREQ_MILLIHERTZ;
 // Half-period cycles with millihertz scaling, rounded up for integer division.
 const ACTIVITY_HALF_PERIOD_CYCLES: u32 =
-    (WRAPPER_CLK_FREQ_HZ * 1000 + ACTIVITY_DENOM_MILLIHERTZ - 1) / ACTIVITY_DENOM_MILLIHERTZ;
+    (WRAPPER_CLK_FREQ_HZ * 1000).div_ceil(ACTIVITY_DENOM_MILLIHERTZ);
 const ACTIVITY_OBSERVE_CYCLES: u32 = (ACTIVITY_HALF_PERIOD_CYCLES * 2) + 8;
 
 fn clock_cycle(dut: &mut SysLedControllerWrapper) {

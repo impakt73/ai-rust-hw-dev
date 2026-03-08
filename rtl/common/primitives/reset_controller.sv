@@ -1,18 +1,15 @@
 // Reset Controller Module
 // Generates a power-on reset signal that remains asserted (low) for a
 // configurable number of clock cycles after the input reset is deasserted.
-// Also supports soft reset requests from on-board logic (e.g., CPU).
 //
 // Usage:
 //   - Connect rst_n_in to PLL lock signal (or other stable reset source)
-//   - Connect reset_request to CPU/system reset request (active high)
 //   - Use rst_n_out (active low) directly for downstream modules
 //
 // Behavior:
 //   - When rst_n_in is low, the counter resets and rst_n_out is held low (reset asserted)
 //   - When rst_n_in goes high, the counter starts counting
 //   - rst_n_out remains low until the counter reaches RESET_CYCLES
-//   - If reset_request is asserted at any time, the counter restarts
 //   - rst_n_out is registered to avoid timing issues
 
 module reset_controller #(
@@ -20,7 +17,6 @@ module reset_controller #(
 ) (
     input  logic clk,           // System clock
     input  logic rst_n_in,      // Input reset (active low, typically from PLL lock)
-    input  logic reset_request, // Reset request from on-board logic (active high)
     output logic rst_n_out      // Output reset (active low, registered: 0 = reset asserted)
 );
 
@@ -38,12 +34,9 @@ module reset_controller #(
     assign reset_complete = (counter >= COUNTER_WIDTH'(RESET_CYCLES));
     
     // Counter logic
-    always_ff @(posedge clk or negedge rst_n_in) begin
+    always_ff @(posedge clk) begin
         if (!rst_n_in) begin
             // Input reset asserted - clear counter
-            counter <= '0;
-        end else if (reset_request) begin
-            // Soft reset requested - restart counter
             counter <= '0;
         end else if (!reset_complete) begin
             // Count up until we reach RESET_CYCLES
@@ -55,12 +48,9 @@ module reset_controller #(
     // Registered output reset signal
     // Output is low (reset asserted) until counter reaches RESET_CYCLES
     // Using active-low output to match standard reset conventions
-    always_ff @(posedge clk or negedge rst_n_in) begin
+    always_ff @(posedge clk) begin
         if (!rst_n_in) begin
             // Input reset asserted - output reset asserted (low)
-            rst_n_out <= 1'b0;
-        end else if (reset_request) begin
-            // Soft reset requested - output reset asserted (low)
             rst_n_out <= 1'b0;
         end else begin
             // Output follows reset_complete (high when reset done)

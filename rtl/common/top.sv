@@ -1,11 +1,13 @@
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
-// Uses the bus module to route RTL peripheral requests
-// External memory requests are routed directly from CPU to host_bus_interface
+// Uses registered_bus to route RTL peripheral requests
+// External memory requests are routed from CPU to host_bus_interface
 //
 // CPU MEMORY CHANNELS: CPU uses separate address (A) and data (D) channels.
-// bus_bridge adapts A/D channels to the legacy unified memory interface used by
-// host_bus_mux and downstream bus/peripheral infrastructure.
+// host_bus_mux routes CPU A/D channels to either the external host bus
+// interface or the RTL peripheral path. registered_bus arbitrates between
+// CPU-originated RTL accesses and host-initiated RTL accesses, then routes
+// requests to the downstream RTL peripherals.
 //
 // HOST INTERFACE: External memory requests are serialized to an 8-bit byte stream
 // via the host_bus_interface module for communication with a host (simulation or FPGA).
@@ -19,7 +21,6 @@ module top #(
 ) (
     input  logic        clk,
     input  logic        rst_n,
-    input  logic        reset_request,
     
     // Host TX Interface (to External Host)
     // Serialized bus transactions sent to host
@@ -67,15 +68,14 @@ module top #(
         .RESET_CYCLES(RESET_CYCLES)
     ) reset_ctrl (
         .clk(clk),
-        .rst_n_in(rst_n),
-        .reset_request(reset_request | sysctrl_sys_rst),
+        .rst_n_in(rst_n & ~sysctrl_sys_rst),
         .rst_n_out(rst_n_internal)
     );
 
     assign rst_n_out = rst_n_internal;
 
     // ============================================================
-    // CPU <-> bus_bridge Memory Channel Signals
+    // CPU <-> host_bus_mux Memory Channel Signals
     // ============================================================
     logic [31:0] cpu_mem_a_addr;
     logic [31:0] cpu_mem_a_wdata;
@@ -87,58 +87,57 @@ module top #(
     logic        cpu_mem_d_valid;
     logic        cpu_mem_d_ready;
     
-    // Legacy unified bus signals (bus_bridge -> host_bus_mux)
-    logic [31:0] cpu_mem_addr;
-    logic [31:0] cpu_mem_wdata;
-    logic [31:0] cpu_mem_rdata;
-    logic        cpu_mem_we;
-    logic [1:0]  cpu_mem_size;
-    logic        cpu_mem_req;
-    logic        cpu_mem_ready;
-    
     // ============================================================
     // LED Controller Interface Signals
     // ============================================================
-    logic [31:0] led_addr;
-    logic [31:0] led_wdata;
-    logic [31:0] led_rdata;
-    logic        led_we;
-    logic [1:0]  led_size;
-    logic        led_req;
-    logic        led_ready;
+    logic [31:0] led_mem_a_addr;
+    logic [31:0] led_mem_a_wdata;
+    logic        led_mem_a_we;
+    logic [1:0]  led_mem_a_size;
+    logic        led_mem_a_valid;
+    logic        led_mem_a_ready;
+    logic [31:0] led_mem_d_rdata;
+    logic        led_mem_d_valid;
+    logic        led_mem_d_ready;
     
     // ============================================================
     // Clock Peripheral Interface Signals
     // ============================================================
-    logic [31:0] clock_addr;
-    logic [31:0] clock_wdata;
-    logic [31:0] clock_rdata;
-    logic        clock_we;
-    logic [1:0]  clock_size;
-    logic        clock_req;
-    logic        clock_ready;
+    logic [31:0] clock_mem_a_addr;
+    logic [31:0] clock_mem_a_wdata;
+    logic        clock_mem_a_we;
+    logic [1:0]  clock_mem_a_size;
+    logic        clock_mem_a_valid;
+    logic        clock_mem_a_ready;
+    logic [31:0] clock_mem_d_rdata;
+    logic        clock_mem_d_valid;
+    logic        clock_mem_d_ready;
     
     // ============================================================
     // SRAM Peripheral Interface Signals
     // ============================================================
-    logic [31:0] sram_addr;
-    logic [31:0] sram_wdata;
-    logic [31:0] sram_rdata;
-    logic        sram_we;
-    logic [1:0]  sram_size;
-    logic        sram_req;
-    logic        sram_ready;
+    logic [31:0] sram_mem_a_addr;
+    logic [31:0] sram_mem_a_wdata;
+    logic        sram_mem_a_we;
+    logic [1:0]  sram_mem_a_size;
+    logic        sram_mem_a_valid;
+    logic        sram_mem_a_ready;
+    logic [31:0] sram_mem_d_rdata;
+    logic        sram_mem_d_valid;
+    logic        sram_mem_d_ready;
     
     // ============================================================
     // System Controller Interface Signals
     // ============================================================
-    logic [31:0] sysctrl_addr;
-    logic [31:0] sysctrl_wdata;
-    logic [31:0] sysctrl_rdata;
-    logic        sysctrl_we;
-    logic [1:0]  sysctrl_size;
-    logic        sysctrl_req;
-    logic        sysctrl_ready;
+    logic [31:0] sysctrl_mem_a_addr;
+    logic [31:0] sysctrl_mem_a_wdata;
+    logic        sysctrl_mem_a_we;
+    logic [1:0]  sysctrl_mem_a_size;
+    logic        sysctrl_mem_a_valid;
+    logic        sysctrl_mem_a_ready;
+    logic [31:0] sysctrl_mem_d_rdata;
+    logic        sysctrl_mem_d_valid;
+    logic        sysctrl_mem_d_ready;
     
     // System Controller control signals
     logic        sysctrl_sys_rst;
@@ -151,180 +150,223 @@ module top #(
     logic        cpu_halted_internal;
     
     // ============================================================
-    // CPU→Arbiter Signals (RTL peripheral accesses only)
+    // host_bus_mux -> registered_bus Signals (CPU RTL peripheral accesses only)
     // ============================================================
-    logic [31:0] cpu_to_arb_addr;
-    logic [31:0] cpu_to_arb_wdata;
-    logic [31:0] cpu_to_arb_rdata;
-    logic        cpu_to_arb_we;
-    logic [1:0]  cpu_to_arb_size;
-    logic        cpu_to_arb_req;
-    logic        cpu_to_arb_ready;
-    
+    logic [31:0] cpu_to_arb_a_addr;
+    logic [31:0] cpu_to_arb_a_wdata;
+    logic        cpu_to_arb_a_we;
+    logic [1:0]  cpu_to_arb_a_size;
+    logic        cpu_to_arb_a_valid;
+    logic        cpu_to_arb_a_ready;
+    logic [31:0] cpu_to_arb_d_rdata;
+    logic        cpu_to_arb_d_valid;
+    logic        cpu_to_arb_d_ready;
+
     // ============================================================
     // CPU→External Interface Signals (non-RTL peripheral accesses)
     // ============================================================
-    logic [31:0] cpu_to_ext_addr;
-    logic [31:0] cpu_to_ext_wdata;
-    logic [31:0] cpu_to_ext_rdata;
-    logic        cpu_to_ext_we;
-    logic [1:0]  cpu_to_ext_size;
-    logic        cpu_to_ext_req;
-    logic        cpu_to_ext_ready;
+    logic [31:0] cpu_to_ext_a_addr;
+    logic [31:0] cpu_to_ext_a_wdata;
+    logic        cpu_to_ext_a_we;
+    logic [1:0]  cpu_to_ext_a_size;
+    logic        cpu_to_ext_a_valid;
+    logic        cpu_to_ext_a_ready;
+    logic [31:0] cpu_to_ext_d_rdata;
+    logic        cpu_to_ext_d_valid;
+    logic        cpu_to_ext_d_ready;
     
     // ============================================================
-    // Arbiter Output Signals (Arbiter → Bus)
+    // registered_bus Master/Slave Wiring
     // ============================================================
-    logic [31:0] arb_bus_addr;
-    logic [31:0] arb_bus_wdata;
-    logic [31:0] arb_bus_rdata;
-    logic        arb_bus_we;
-    logic [1:0]  arb_bus_size;
-    logic        arb_bus_req;
-    logic        arb_bus_ready;
+    logic [31:0] host_mem_a_addr;
+    logic [31:0] host_mem_a_wdata;
+    logic        host_mem_a_we;
+    logic [1:0]  host_mem_a_size;
+    logic        host_mem_a_valid;
+    logic        host_mem_a_ready;
+    logic [31:0] host_mem_d_rdata;
+    logic        host_mem_d_valid;
+    logic        host_mem_d_ready;
+
+    logic [63:0]      registered_master_mem_a_addr;
+    logic [63:0]      registered_master_mem_a_wdata;
+    logic [1:0]       registered_master_mem_a_we;
+    logic [3:0]       registered_master_mem_a_size;
+    logic [1:0]       registered_master_mem_a_valid;
+    logic [1:0]       registered_master_mem_a_ready;
+    logic [63:0]      registered_master_mem_d_rdata;
+    logic [1:0]       registered_master_mem_d_valid;
+    logic [1:0]       registered_master_mem_d_ready;
+
+    logic [127:0]     registered_slave_base_addr;
+    logic [127:0]     registered_slave_addr_size;
+    logic [127:0]     registered_slave_mem_a_addr;
+    logic [127:0]     registered_slave_mem_a_wdata;
+    logic [3:0]       registered_slave_mem_a_we;
+    logic [7:0]       registered_slave_mem_a_size;
+    logic [3:0]       registered_slave_mem_a_valid;
+    logic [3:0]       registered_slave_mem_a_ready;
+    logic [127:0]     registered_slave_mem_d_rdata;
+    logic [3:0]       registered_slave_mem_d_valid;
+    logic [3:0]       registered_slave_mem_d_ready;
+
+    logic             sys_bus_handshake;
+
+    // ============================================================
+    // CPU Reset Signal - Combined from internal reset and system controller
+    // ============================================================
+    // CPU is reset when either the internal reset or system controller requests it
+    logic cpu_combined_rst_n;
+    assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
     
     // ============================================================
-    // Host Bus Master Interface Signals (Host → Arbiter)
+    // CPU Host-Bus Multiplexer
     // ============================================================
-    logic [31:0] host_master_addr;
-    logic [31:0] host_master_wdata;
-    logic [31:0] host_master_rdata;
-    logic        host_master_we;
-    logic [1:0]  host_master_size;
-    logic        host_master_req;
-    logic        host_master_ready;
-    
-    // Shared RTL peripheral range configuration for host_bus_mux and bus
-    localparam RTL_PERIPH_BASE  = 32'h50000000;
-    localparam RTL_PERIPH_LIMIT = 32'h60000000;
-    
-    // ============================================================
-    // CPU Host-Bus Multiplexer (legacy unified interface input)
-    // ============================================================
-    host_bus_mux #(
-        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
-        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
-    ) cpu_host_bus_mux (
+    host_bus_mux cpu_host_bus_mux (
+        .clk(clk),
+        .rst_n(cpu_combined_rst_n),
+
         // CPU-side interface
-        .cpu_addr(cpu_mem_addr),
-        .cpu_wdata(cpu_mem_wdata),
-        .cpu_rdata(cpu_mem_rdata),
-        .cpu_we(cpu_mem_we),
-        .cpu_size(cpu_mem_size),
-        .cpu_req(cpu_mem_req),
-        .cpu_ready(cpu_mem_ready),
+        .cpu_mem_a_addr(cpu_mem_a_addr),
+        .cpu_mem_a_wdata(cpu_mem_a_wdata),
+        .cpu_mem_a_we(cpu_mem_a_we),
+        .cpu_mem_a_size(cpu_mem_a_size),
+        .cpu_mem_a_valid(cpu_mem_a_valid),
+        .cpu_mem_a_ready(cpu_mem_a_ready),
+        .cpu_mem_d_rdata(cpu_mem_d_rdata),
+        .cpu_mem_d_valid(cpu_mem_d_valid),
+        .cpu_mem_d_ready(cpu_mem_d_ready),
         
         // System bus path (RTL peripherals)
-        .sys_addr(cpu_to_arb_addr),
-        .sys_wdata(cpu_to_arb_wdata),
-        .sys_rdata(cpu_to_arb_rdata),
-        .sys_we(cpu_to_arb_we),
-        .sys_size(cpu_to_arb_size),
-        .sys_req(cpu_to_arb_req),
-        .sys_ready(cpu_to_arb_ready),
+        .sys_mem_a_addr(cpu_to_arb_a_addr),
+        .sys_mem_a_wdata(cpu_to_arb_a_wdata),
+        .sys_mem_a_we(cpu_to_arb_a_we),
+        .sys_mem_a_size(cpu_to_arb_a_size),
+        .sys_mem_a_valid(cpu_to_arb_a_valid),
+        .sys_mem_a_ready(cpu_to_arb_a_ready),
+        .sys_mem_d_rdata(cpu_to_arb_d_rdata),
+        .sys_mem_d_valid(cpu_to_arb_d_valid),
+        .sys_mem_d_ready(cpu_to_arb_d_ready),
         
         // Host bus path (external memory / Rust peripherals)
-        .host_addr(cpu_to_ext_addr),
-        .host_wdata(cpu_to_ext_wdata),
-        .host_rdata(cpu_to_ext_rdata),
-        .host_we(cpu_to_ext_we),
-        .host_size(cpu_to_ext_size),
-        .host_req(cpu_to_ext_req),
-        .host_ready(cpu_to_ext_ready)
+        .host_mem_a_addr(cpu_to_ext_a_addr),
+        .host_mem_a_wdata(cpu_to_ext_a_wdata),
+        .host_mem_a_we(cpu_to_ext_a_we),
+        .host_mem_a_size(cpu_to_ext_a_size),
+        .host_mem_a_valid(cpu_to_ext_a_valid),
+        .host_mem_a_ready(cpu_to_ext_a_ready),
+        .host_mem_d_rdata(cpu_to_ext_d_rdata),
+        .host_mem_d_valid(cpu_to_ext_d_valid),
+        .host_mem_d_ready(cpu_to_ext_d_ready)
     );
-    
+
+    assign registered_master_mem_a_addr[31:0] = host_mem_a_addr;
+    assign registered_master_mem_a_wdata[31:0] = host_mem_a_wdata;
+    assign registered_master_mem_a_we[0] = host_mem_a_we;
+    assign registered_master_mem_a_size[1:0] = host_mem_a_size;
+    assign registered_master_mem_a_valid[0] = host_mem_a_valid;
+    assign host_mem_a_ready = registered_master_mem_a_ready[0];
+    assign host_mem_d_rdata = registered_master_mem_d_rdata[31:0];
+    assign host_mem_d_valid = registered_master_mem_d_valid[0];
+    assign registered_master_mem_d_ready[0] = host_mem_d_ready;
+
+    assign registered_master_mem_a_addr[63:32] = cpu_to_arb_a_addr;
+    assign registered_master_mem_a_wdata[63:32] = cpu_to_arb_a_wdata;
+    assign registered_master_mem_a_we[1] = cpu_to_arb_a_we;
+    assign registered_master_mem_a_size[3:2] = cpu_to_arb_a_size;
+    assign registered_master_mem_a_valid[1] = cpu_to_arb_a_valid;
+    assign cpu_to_arb_a_ready = registered_master_mem_a_ready[1];
+    assign cpu_to_arb_d_rdata = registered_master_mem_d_rdata[63:32];
+    assign cpu_to_arb_d_valid = registered_master_mem_d_valid[1];
+    assign registered_master_mem_d_ready[1] = cpu_to_arb_d_ready;
+
+    assign registered_slave_base_addr[31:0] = 32'h2000_0000;
+    assign registered_slave_addr_size[31:0] = 32'h0000_0010;
+    assign registered_slave_base_addr[63:32] = 32'h5000_0000;
+    assign registered_slave_addr_size[63:32] = 32'h0000_0010;
+    assign registered_slave_base_addr[95:64] = 32'h6000_0000;
+    assign registered_slave_addr_size[95:64] = 32'h0000_0010;
+    assign registered_slave_base_addr[127:96] = 32'h7000_0000;
+    assign registered_slave_addr_size[127:96] = 32'h0000_3000;
+
+    assign sysctrl_mem_a_addr = registered_slave_mem_a_addr[31:0];
+    assign sysctrl_mem_a_wdata = registered_slave_mem_a_wdata[31:0];
+    assign sysctrl_mem_a_we = registered_slave_mem_a_we[0];
+    assign sysctrl_mem_a_size = registered_slave_mem_a_size[1:0];
+    assign sysctrl_mem_a_valid = registered_slave_mem_a_valid[0];
+    assign registered_slave_mem_a_ready[0] = sysctrl_mem_a_ready;
+    assign registered_slave_mem_d_rdata[31:0] = sysctrl_mem_d_rdata;
+    assign registered_slave_mem_d_valid[0] = sysctrl_mem_d_valid;
+    assign sysctrl_mem_d_ready = registered_slave_mem_d_ready[0];
+
+    assign led_mem_a_addr = registered_slave_mem_a_addr[63:32];
+    assign led_mem_a_wdata = registered_slave_mem_a_wdata[63:32];
+    assign led_mem_a_we = registered_slave_mem_a_we[1];
+    assign led_mem_a_size = registered_slave_mem_a_size[3:2];
+    assign led_mem_a_valid = registered_slave_mem_a_valid[1];
+    assign registered_slave_mem_a_ready[1] = led_mem_a_ready;
+    assign registered_slave_mem_d_rdata[63:32] = led_mem_d_rdata;
+    assign registered_slave_mem_d_valid[1] = led_mem_d_valid;
+    assign led_mem_d_ready = registered_slave_mem_d_ready[1];
+
+    assign clock_mem_a_addr = registered_slave_mem_a_addr[95:64];
+    assign clock_mem_a_wdata = registered_slave_mem_a_wdata[95:64];
+    assign clock_mem_a_we = registered_slave_mem_a_we[2];
+    assign clock_mem_a_size = registered_slave_mem_a_size[5:4];
+    assign clock_mem_a_valid = registered_slave_mem_a_valid[2];
+    assign registered_slave_mem_a_ready[2] = clock_mem_a_ready;
+    assign registered_slave_mem_d_rdata[95:64] = clock_mem_d_rdata;
+    assign registered_slave_mem_d_valid[2] = clock_mem_d_valid;
+    assign clock_mem_d_ready = registered_slave_mem_d_ready[2];
+
+    assign sram_mem_a_addr = registered_slave_mem_a_addr[127:96];
+    assign sram_mem_a_wdata = registered_slave_mem_a_wdata[127:96];
+    assign sram_mem_a_we = registered_slave_mem_a_we[3];
+    assign sram_mem_a_size = registered_slave_mem_a_size[7:6];
+    assign sram_mem_a_valid = registered_slave_mem_a_valid[3];
+    assign registered_slave_mem_a_ready[3] = sram_mem_a_ready;
+    assign registered_slave_mem_d_rdata[127:96] = sram_mem_d_rdata;
+    assign registered_slave_mem_d_valid[3] = sram_mem_d_valid;
+    assign sram_mem_d_ready = registered_slave_mem_d_ready[3];
+
+    assign sys_bus_handshake =
+        (host_mem_d_valid && host_mem_d_ready) ||
+        (cpu_to_arb_d_valid && cpu_to_arb_d_ready);
+
     // ============================================================
-    // Bus Arbiter Instantiation
+    // Registered Bus Instantiation
     // ============================================================
-    // Arbitrates between CPU and Host master for bus access
-    // Priority: Host > CPU
-    bus_arbiter arbiter (
+    registered_bus #(
+        .NUM_MASTERS(2),
+        .NUM_SLAVES(4)
+    ) rtl_registered_bus (
         .clk(clk),
         .rst_n(rst_n_internal),
-        
-        // CPU Master Interface
-        .cpu_addr(cpu_to_arb_addr),
-        .cpu_wdata(cpu_to_arb_wdata),
-        .cpu_rdata(cpu_to_arb_rdata),
-        .cpu_we(cpu_to_arb_we),
-        .cpu_size(cpu_to_arb_size),
-        .cpu_req(cpu_to_arb_req),
-        .cpu_ready(cpu_to_arb_ready),
-        
-        // Host Master Interface (from host_bus_interface)
-        .host_addr(host_master_addr),
-        .host_wdata(host_master_wdata),
-        .host_rdata(host_master_rdata),
-        .host_we(host_master_we),
-        .host_size(host_master_size),
-        .host_req(host_master_req),
-        .host_ready(host_master_ready),
-        
-        // Slave Interface (to system_bus)
-        .bus_addr(arb_bus_addr),
-        .bus_wdata(arb_bus_wdata),
-        .bus_rdata(arb_bus_rdata),
-        .bus_we(arb_bus_we),
-        .bus_size(arb_bus_size),
-        .bus_req(arb_bus_req),
-        .bus_ready(arb_bus_ready)
-    );
-    
-    // ============================================================
-    // Bus Module Instantiation
-    // ============================================================
-    // Routes requests from arbiter to the appropriate peripheral based on address
-    bus #(
-        .RTL_PERIPH_BASE(RTL_PERIPH_BASE),
-        .RTL_PERIPH_LIMIT(RTL_PERIPH_LIMIT)
-    ) system_bus (
-        .clk(clk),
-        .rst_n(rst_n_internal),
-        
-        // Master interface (from Arbiter)
-        .master_addr(arb_bus_addr),
-        .master_wdata(arb_bus_wdata),
-        .master_rdata(arb_bus_rdata),
-        .master_we(arb_bus_we),
-        .master_size(arb_bus_size),
-        .master_req(arb_bus_req),
-        .master_ready(arb_bus_ready),
-        
-        // LED Controller interface
-        .led_addr(led_addr),
-        .led_wdata(led_wdata),
-        .led_rdata(led_rdata),
-        .led_we(led_we),
-        .led_size(led_size),
-        .led_req(led_req),
-        .led_ready(led_ready),
-        
-        // Clock Peripheral interface
-        .clock_addr(clock_addr),
-        .clock_wdata(clock_wdata),
-        .clock_rdata(clock_rdata),
-        .clock_we(clock_we),
-        .clock_size(clock_size),
-        .clock_req(clock_req),
-        .clock_ready(clock_ready),
-        
-        // SRAM Peripheral interface
-        .sram_addr(sram_addr),
-        .sram_wdata(sram_wdata),
-        .sram_rdata(sram_rdata),
-        .sram_we(sram_we),
-        .sram_size(sram_size),
-        .sram_req(sram_req),
-        .sram_ready(sram_ready),
-        
-        // System Controller interface
-        .sysctrl_addr(sysctrl_addr),
-        .sysctrl_wdata(sysctrl_wdata),
-        .sysctrl_rdata(sysctrl_rdata),
-        .sysctrl_we(sysctrl_we),
-        .sysctrl_size(sysctrl_size),
-        .sysctrl_req(sysctrl_req),
-        .sysctrl_ready(sysctrl_ready)
+
+        .master_mem_a_addr(registered_master_mem_a_addr),
+        .master_mem_a_wdata(registered_master_mem_a_wdata),
+        .master_mem_a_we(registered_master_mem_a_we),
+        .master_mem_a_size(registered_master_mem_a_size),
+        .master_mem_a_valid(registered_master_mem_a_valid),
+        .master_mem_a_ready(registered_master_mem_a_ready),
+
+        .master_mem_d_rdata(registered_master_mem_d_rdata),
+        .master_mem_d_valid(registered_master_mem_d_valid),
+        .master_mem_d_ready(registered_master_mem_d_ready),
+
+        .slave_base_addr(registered_slave_base_addr),
+        .slave_addr_size(registered_slave_addr_size),
+
+        .slave_mem_a_addr(registered_slave_mem_a_addr),
+        .slave_mem_a_wdata(registered_slave_mem_a_wdata),
+        .slave_mem_a_we(registered_slave_mem_a_we),
+        .slave_mem_a_size(registered_slave_mem_a_size),
+        .slave_mem_a_valid(registered_slave_mem_a_valid),
+        .slave_mem_a_ready(registered_slave_mem_a_ready),
+
+        .slave_mem_d_rdata(registered_slave_mem_d_rdata),
+        .slave_mem_d_valid(registered_slave_mem_d_valid),
+        .slave_mem_d_ready(registered_slave_mem_d_ready)
     );
     
     // ============================================================
@@ -337,23 +379,27 @@ module top #(
         .clk(clk),
         .rst_n(rst_n_internal),
         
-        // Bus Slave Interface (from host_bus_mux CPU external path)
-        .addr(cpu_to_ext_addr),
-        .wdata(cpu_to_ext_wdata),
-        .rdata(cpu_to_ext_rdata),
-        .we(cpu_to_ext_we),
-        .size(cpu_to_ext_size),
-        .req(cpu_to_ext_req),
-        .ready(cpu_to_ext_ready),
+        // CPU Slave Interface (from host_bus_mux CPU external path)
+        .mem_a_addr(cpu_to_ext_a_addr),
+        .mem_a_wdata(cpu_to_ext_a_wdata),
+        .mem_a_we(cpu_to_ext_a_we),
+        .mem_a_size(cpu_to_ext_a_size),
+        .mem_a_valid(cpu_to_ext_a_valid),
+        .mem_a_ready(cpu_to_ext_a_ready),
+        .mem_d_rdata(cpu_to_ext_d_rdata),
+        .mem_d_valid(cpu_to_ext_d_valid),
+        .mem_d_ready(cpu_to_ext_d_ready),
         
-        // Bus Master Interface (to Arbiter - Host→CPU path, currently unused)
-        .host_bus_addr(host_master_addr),
-        .host_bus_wdata(host_master_wdata),
-        .host_bus_rdata(host_master_rdata),
-        .host_bus_we(host_master_we),
-        .host_bus_size(host_master_size),
-        .host_bus_req(host_master_req),
-        .host_bus_ready(host_master_ready),
+        // Host-initiated master interface (to registered_bus)
+        .host_mem_a_addr(host_mem_a_addr),
+        .host_mem_a_wdata(host_mem_a_wdata),
+        .host_mem_a_we(host_mem_a_we),
+        .host_mem_a_size(host_mem_a_size),
+        .host_mem_a_valid(host_mem_a_valid),
+        .host_mem_a_ready(host_mem_a_ready),
+        .host_mem_d_rdata(host_mem_d_rdata),
+        .host_mem_d_valid(host_mem_d_valid),
+        .host_mem_d_ready(host_mem_d_ready),
         
         // Host TX Interface (to External Host)
         .tx_data(host_tx_data),
@@ -365,13 +411,6 @@ module top #(
         .rx_valid(host_rx_valid),
         .rx_ready(host_rx_ready)
     );
-    
-    // ============================================================
-    // CPU Reset Signal - Combined from internal reset and system controller
-    // ============================================================
-    // CPU is reset when either the internal reset or system controller requests it
-    logic cpu_combined_rst_n;
-    assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
     
     // ============================================================
     // CPU Core Instantiation
@@ -415,36 +454,6 @@ module top #(
         .is_booting(cpu_is_booting)
     );
     
-    // ============================================================
-    // CPU Memory Bus Bridge (A/D channels -> legacy unified bus)
-    // ============================================================
-    bus_bridge cpu_bus_bridge (
-        .clk(clk),
-        .rst_n(cpu_combined_rst_n),
-        
-        // Address channel from CPU
-        .mem_a_addr(cpu_mem_a_addr),
-        .mem_a_wdata(cpu_mem_a_wdata),
-        .mem_a_we(cpu_mem_a_we),
-        .mem_a_size(cpu_mem_a_size),
-        .mem_a_valid(cpu_mem_a_valid),
-        .mem_a_ready(cpu_mem_a_ready),
-        
-        // Data channel to CPU
-        .mem_d_rdata(cpu_mem_d_rdata),
-        .mem_d_valid(cpu_mem_d_valid),
-        .mem_d_ready(cpu_mem_d_ready),
-        
-        // Legacy unified bus interface (to host_bus_mux)
-        .mem_addr(cpu_mem_addr),
-        .mem_wdata(cpu_mem_wdata),
-        .mem_rdata(cpu_mem_rdata),
-        .mem_we(cpu_mem_we),
-        .mem_size(cpu_mem_size),
-        .mem_req(cpu_mem_req),
-        .mem_ready(cpu_mem_ready)
-    );
-    
     // Pass through halted signal
     assign halted = cpu_halted_internal;
     
@@ -457,15 +466,17 @@ module top #(
     led_controller_peripheral led_ctrl (
         .clk(clk),
         .rst_n(rst_n_internal),
-        
-        .addr(led_addr),
-        .wdata(led_wdata),
-        .rdata(led_rdata),
-        .we(led_we),
-        .req(led_req),
-        .size(led_size),
-        .ready(led_ready),
-        
+
+        .mem_a_addr(led_mem_a_addr),
+        .mem_a_wdata(led_mem_a_wdata),
+        .mem_a_we(led_mem_a_we),
+        .mem_a_size(led_mem_a_size),
+        .mem_a_valid(led_mem_a_valid),
+        .mem_a_ready(led_mem_a_ready),
+        .mem_d_rdata(led_mem_d_rdata),
+        .mem_d_valid(led_mem_d_valid),
+        .mem_d_ready(led_mem_d_ready),
+
         .led_out(led_out)
     );
     
@@ -477,14 +488,16 @@ module top #(
     ) clock_periph (
         .clk(clk),
         .rst_n(rst_n_internal),
-        
-        .addr(clock_addr),
-        .wdata(clock_wdata),
-        .rdata(clock_rdata),
-        .we(clock_we),
-        .req(clock_req),
-        .size(clock_size),
-        .ready(clock_ready)
+
+        .mem_a_addr(clock_mem_a_addr),
+        .mem_a_wdata(clock_mem_a_wdata),
+        .mem_a_we(clock_mem_a_we),
+        .mem_a_size(clock_mem_a_size),
+        .mem_a_valid(clock_mem_a_valid),
+        .mem_a_ready(clock_mem_a_ready),
+        .mem_d_rdata(clock_mem_d_rdata),
+        .mem_d_valid(clock_mem_d_valid),
+        .mem_d_ready(clock_mem_d_ready)
     );
     
     // ============================================================
@@ -493,14 +506,16 @@ module top #(
     sram_peripheral sram_periph (
         .clk(clk),
         .rst_n(rst_n_internal),
-        
-        .addr(sram_addr),
-        .wdata(sram_wdata),
-        .rdata(sram_rdata),
-        .we(sram_we),
-        .req(sram_req),
-        .size(sram_size),
-        .ready(sram_ready)
+
+        .mem_a_addr(sram_mem_a_addr),
+        .mem_a_wdata(sram_mem_a_wdata),
+        .mem_a_we(sram_mem_a_we),
+        .mem_a_size(sram_mem_a_size),
+        .mem_a_valid(sram_mem_a_valid),
+        .mem_a_ready(sram_mem_a_ready),
+        .mem_d_rdata(sram_mem_d_rdata),
+        .mem_d_valid(sram_mem_d_valid),
+        .mem_d_ready(sram_mem_d_ready)
     );
     
     // ============================================================
@@ -509,15 +524,16 @@ module top #(
     system_controller sysctrl (
         .clk(clk),
         .rst_n(rst_n_internal),
-        
-        // Bus slave interface
-        .addr(sysctrl_addr),
-        .wdata(sysctrl_wdata),
-        .rdata(sysctrl_rdata),
-        .we(sysctrl_we),
-        .req(sysctrl_req),
-        .size(sysctrl_size),
-        .ready(sysctrl_ready),
+
+        .mem_a_addr(sysctrl_mem_a_addr),
+        .mem_a_wdata(sysctrl_mem_a_wdata),
+        .mem_a_we(sysctrl_mem_a_we),
+        .mem_a_size(sysctrl_mem_a_size),
+        .mem_a_valid(sysctrl_mem_a_valid),
+        .mem_a_ready(sysctrl_mem_a_ready),
+        .mem_d_rdata(sysctrl_mem_d_rdata),
+        .mem_d_valid(sysctrl_mem_d_valid),
+        .mem_d_ready(sysctrl_mem_d_ready),
         
         // System control outputs
         .sys_rst(sysctrl_sys_rst),
@@ -545,7 +561,7 @@ module top #(
         .cpu_booting(cpu_is_booting),
         .cpu_halted(cpu_halted_internal),
         .instr_complete(instr_complete),
-        .sys_bus_handshake(arb_bus_req & arb_bus_ready),
+        .sys_bus_handshake(sys_bus_handshake),
         .host_bus_rx_handshake(host_rx_valid & host_rx_ready),
         .host_bus_tx_handshake(host_tx_valid & host_tx_ready),
         .com_err(com_err),

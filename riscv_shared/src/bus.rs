@@ -1,32 +1,33 @@
 //! Bus device base addresses and memory range validation
 
 /// Rust Peripheral Address Space
-/// Base address for Rust peripherals (simulation-only peripherals handled by SystemBus)
-pub const RUST_PERIPH_BASE: u32 = 0x4000_0000;
+/// Base address for Rust peripherals handled by SystemBus (including DRAM)
+/// and reached through the host-bus path on FPGA backends.
+pub const RUST_PERIPH_BASE: u32 = 0x8000_0000;
 
-/// Limit address for Rust peripherals (exclusive)
-pub const RUST_PERIPH_LIMIT: u32 = 0x5000_0000;
+/// Limit marker for Rust peripheral region (inclusive upper-half address space)
+pub const RUST_PERIPH_LIMIT: u32 = 0xFFFF_FFFF;
 
 /// Base address for SimControl device (tohost register)
-pub const SIM_CONTROL_BASE: u32 = 0x4000_0000;
+pub const SIM_CONTROL_BASE: u32 = 0xF000_0000;
 
 /// Base address for Video device
 /// This is the recommended base address for external Video bus devices
-pub const VIDEO_BASE: u32 = 0x4000_1000;
+pub const VIDEO_BASE: u32 = 0x9000_0000;
 
 /// Base address for Audio device
 /// This is the recommended base address for external Audio bus devices
-pub const AUDIO_BASE: u32 = 0x4000_2000;
+pub const AUDIO_BASE: u32 = 0xA000_0000;
 
 /// Base address for FIFO device
-pub const FIFO_BASE: u32 = 0x4000_3000;
+pub const FIFO_BASE: u32 = 0xB000_0000;
 
 /// RTL Peripheral Address Space
 /// Base address for RTL peripherals (synthesizable peripherals in Verilog)
-pub const RTL_PERIPH_BASE: u32 = 0x5000_0000;
+pub const RTL_PERIPH_BASE: u32 = 0x0000_0000;
 
 /// Limit address for RTL peripherals (exclusive)
-pub const RTL_PERIPH_LIMIT: u32 = 0x6000_0000;
+pub const RTL_PERIPH_LIMIT: u32 = 0x8000_0000;
 
 /// LED Controller Peripheral (RTL)
 pub const LED_BASE: u32 = 0x5000_0000;
@@ -43,11 +44,11 @@ pub const fn led_out_addr() -> u32 {
 }
 
 /// SRAM Peripheral (RTL)
-pub const SRAM_BASE: u32 = 0x5200_0000;
+pub const SRAM_BASE: u32 = 0x7000_0000;
 pub const SRAM_SIZE: u32 = 0x0000_3000; // 12KB
 
 /// Clock Peripheral (RTL)
-pub const CLOCK_BASE: u32 = 0x5100_0000;
+pub const CLOCK_BASE: u32 = 0x6000_0000;
 pub const CLOCK_SIZE: u32 = 0x0000_0010; // 16 bytes
 
 /// Clock peripheral register offsets
@@ -71,7 +72,7 @@ pub const fn clock_elapsed_s_addr() -> u32 {
 }
 
 /// System Controller Peripheral (RTL)
-pub const SYSCTRL_BASE: u32 = 0x5300_0000;
+pub const SYSCTRL_BASE: u32 = 0x2000_0000;
 pub const SYSCTRL_SIZE: u32 = 0x0000_0010; // 16 bytes
 
 /// System Controller register offsets
@@ -108,12 +109,20 @@ pub const fn sysctrl_halt_addr() -> u32 {
     SYSCTRL_BASE + SYSCTRL_HALT_OFFSET
 }
 
-/// Base address for DRAM
+/// Check if an address targets RTL peripheral space.
+///
+/// By convention, all RTL peripherals live in the lower half of the address
+/// space and all Rust/host-routed devices live in the upper half.
+pub const fn is_rtl_peripheral_addr(addr: u32) -> bool {
+    (addr & 0x8000_0000) == 0
+}
+
+/// Base address for DRAM (a Rust peripheral in this project)
 pub const DRAM_BASE: u32 = 0x8000_0000;
 
 /// End address for DRAM (inclusive)
-/// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0xFFFF_FFFF]
-pub const DRAM_END: u32 = 0xFFFF_FFFF;
+/// DRAM range is [DRAM_BASE, DRAM_END] = [0x8000_0000, 0x8FFF_FFFF] (256 MiB)
+pub const DRAM_END: u32 = 0x8FFF_FFFF;
 
 /// Check if an address range is within the valid DRAM range
 ///

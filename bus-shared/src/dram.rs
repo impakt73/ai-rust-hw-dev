@@ -89,9 +89,9 @@ impl BusDevice for Dram {
     }
 
     fn size(&self) -> u32 {
-        // DRAM size: 2 GiB mapped from 0x8000_0000 to 0xFFFF_FFFF
-        // Size = 0xFFFF_FFFF - 0x8000_0000 + 1 = 0x8000_0000 bytes
-        0x8000_0000
+        // DRAM size: 256 MiB mapped from 0x8000_0000 to 0x8FFF_FFFF
+        // Size = 0x8FFF_FFFF - 0x8000_0000 + 1 = 0x1000_0000 bytes
+        0x1000_0000
     }
 
     fn name(&self) -> &str {

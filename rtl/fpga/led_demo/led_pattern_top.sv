@@ -44,7 +44,7 @@ module led_pattern_top (
     // Counter threshold with proper width
     localparam logic [COUNTER_WIDTH-1:0] COUNTER_MAX = COUNTER_WIDTH'(SHIFT_COUNT - 1);
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             counter <= '0;
         end else if (counter >= COUNTER_MAX) begin
@@ -63,7 +63,7 @@ module led_pattern_top (
     // Initial pattern: 0xAA = 10101010 (alternating)
     logic [7:0] led_pattern;
     
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             led_pattern <= 8'hAA;  // Alternating pattern: 10101010
         end else if (shift_pulse) begin

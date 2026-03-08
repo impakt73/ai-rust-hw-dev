@@ -31,7 +31,7 @@ module sync_dpram #(
 
     // Memory array
     // Depth is 2^ADDR_WIDTH entries
-    logic [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
+    (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
 
     // Initialize memory to 0 to ensure x0 register starts at 0 (required for RISC-V)
     // Uses initial block which Yosys supports for BRAM initialization
@@ -50,9 +50,14 @@ module sync_dpram #(
     end
 
     // Read port - synchronous read (required for BRAM inference)
-    // Output is registered, data available one cycle after address
+    // Xilinx timing needs an extra internal pipeline register between the BRAM
+    // output and the externally visible output register. This makes read data
+    // available two rclk cycles after the address is presented.
+    logic [DATA_WIDTH-1:0] rdata_pipe;
+
     always_ff @(posedge rclk) begin
-        rdata <= mem[raddr];
+        rdata_pipe <= mem[raddr];
+        rdata <= rdata_pipe;
     end
 
 endmodule

@@ -1,0 +1,23 @@
+# iCE Pi Zero (ECP5-25F) LPF constraints
+
+BLOCK RESETPATHS;
+BLOCK ASYNCPATHS;
+
+# 50 MHz on-board oscillator
+LOCATE COMP "clk" SITE "P3";
+IOBUF PORT "clk" IO_TYPE=LVCMOS33;
+FREQUENCY PORT "clk" 50.000000 MHZ;
+
+# Active-low reset button
+LOCATE COMP "rst_n_btn" SITE "B1";
+IOBUF PORT "rst_n_btn" IO_TYPE=LVCMOS33;
+
+# Status LED
+LOCATE COMP "led" SITE "E3";
+IOBUF PORT "led" IO_TYPE=LVCMOS33;
+
+# USB UART
+LOCATE COMP "usb_rx" SITE "C11";
+IOBUF PORT "usb_rx" IO_TYPE=LVCMOS33;
+LOCATE COMP "usb_tx" SITE "A11";
+IOBUF PORT "usb_tx" IO_TYPE=LVCMOS33;

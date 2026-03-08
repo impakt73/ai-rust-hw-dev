@@ -8,7 +8,7 @@
 //
 // Interface:
 //   clk         - System clock
-//   rst_n       - Asynchronous active-low reset
+//   rst_n       - Synchronous active-low reset
 //   square_wave - Registered square wave output
 
 module square_wave_generator #(
@@ -43,7 +43,7 @@ module square_wave_generator #(
         end
     end
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             counter <= '0;
             square_wave <= 1'b0;

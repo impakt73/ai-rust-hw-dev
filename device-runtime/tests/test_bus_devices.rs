@@ -27,7 +27,7 @@ use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-const DUMMY_DEVICE_BASE: u32 = 0x4000_5000;
+const DUMMY_DEVICE_BASE: u32 = 0x9000_5000;
 
 // ============================================================================
 // Test Device Implementations

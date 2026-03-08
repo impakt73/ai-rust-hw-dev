@@ -16,6 +16,7 @@ BUILD_DIR = build
 # Source files
 RTL_SOURCES = \
 	$(RTL_DIR)/primitives/ff_sync.sv \
+	$(RTL_DIR)/memory/sync_dpram.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \
 	$(RTL_DIR)/io/uart.sv
 
@@ -25,7 +26,7 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 
 # Constraint file
-PCF = ../ice40hx8k.pcf
+PCF = ../ice40_alchitry_cu/ice40_alchitry_cu.pcf
 
 # Output files
 JSON = $(BUILD_DIR)/$(PROJECT).json
