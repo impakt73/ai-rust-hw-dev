@@ -3,6 +3,8 @@
 
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
+const MAX_RESPONSE_WAIT_CYCLES: usize = 10;
+
 macro_rules! clock_cycle {
     ($dut:expr) => {
         $dut.clk = 0;
@@ -16,11 +18,12 @@ macro_rules! clock_cycle {
 
 fn reset_module(dut: &mut HostBusInterface) {
     dut.rst_n = 0;
-    dut.req = 0;
-    dut.we = 0;
-    dut.addr = 0;
-    dut.wdata = 0;
-    dut.size = 0;
+    dut.mem_a_valid = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_addr = 0;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_size = 0;
+    dut.mem_d_ready = 0;
     dut.tx_ready = 0;
     dut.rx_valid = 0;
     dut.rx_data = 0;
@@ -107,7 +110,8 @@ fn test_reset_state() {
 
     reset_module(&mut dut);
 
-    assert_eq!(dut.ready, 0);
+    assert_eq!(dut.mem_a_ready, 1);
+    assert_eq!(dut.mem_d_valid, 0);
     assert_eq!(dut.tx_valid, 0);
     assert_eq!(dut.rx_ready, 1);
     assert_eq!(dut.host_bus_req, 0);
@@ -123,13 +127,14 @@ fn test_cpu_single_write_request_uses_8byte_metadata_header() {
     reset_module(&mut dut);
 
     // CPU -> host single-beat write request
-    dut.addr = 0x1234_5678;
-    dut.wdata = 0xDEAD_BEEF;
-    dut.we = 1;
-    dut.size = 0b10;
-    dut.req = 1;
+    assert_eq!(dut.mem_a_ready, 1);
+    dut.mem_a_addr = 0x1234_5678;
+    dut.mem_a_wdata = 0xDEAD_BEEF;
+    dut.mem_a_we = 1;
+    dut.mem_a_size = 0b10;
+    dut.mem_a_valid = 1;
     clock_cycle!(dut);
-    dut.req = 0;
+    dut.mem_a_valid = 0;
 
     let tx_packet = collect_tx_bytes_with_bus_model(&mut dut, 12, |_| 0);
     assert_eq!(
@@ -262,4 +267,72 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
     assert_eq!(tx_packet[5], 0xF0);
     assert_eq!(tx_packet[6], 0xFF);
     assert_eq!(tx_packet[7], 0x52);
+}
+
+#[test]
+fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    dut.mem_a_addr = 0x9000_0040;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_size = 0b10;
+    dut.mem_a_valid = 1;
+    clock_cycle!(dut);
+    dut.mem_a_valid = 0;
+
+    let tx_packet = collect_tx_bytes_with_bus_model(&mut dut, 8, |_| 0);
+    assert_eq!(tx_packet.len(), 8, "read request should emit metadata only");
+
+    send_rx_packet(
+        &mut dut,
+        &[
+            0x18, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x90, 0x78, 0x56, 0x34, 0x12,
+        ],
+    );
+
+    for _ in 0..MAX_RESPONSE_WAIT_CYCLES {
+        dut.eval();
+        if dut.mem_d_valid != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "CPU response should appear on D channel"
+    );
+    assert_eq!(dut.mem_d_rdata, 0x1234_5678);
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "single outstanding request should block new A traffic"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "response should remain buffered until ready"
+    );
+    assert_eq!(dut.mem_d_rdata, 0x1234_5678);
+
+    dut.mem_d_ready = 1;
+    clock_cycle!(dut);
+    dut.mem_d_ready = 0;
+    dut.eval();
+
+    assert_eq!(
+        dut.mem_d_valid, 0,
+        "response should clear after D handshake"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "A channel should reopen after response is consumed"
+    );
 }
