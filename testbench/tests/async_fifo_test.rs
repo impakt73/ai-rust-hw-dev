@@ -3,7 +3,7 @@ use riscv_core::{
     AsyncFifoTestWrapper,
 };
 
-const READ_DATA_TIMEOUT_CYCLES: usize = 16;
+const READ_DATA_TIMEOUT_CYCLES: usize = 24;
 
 fn tick(dut: &mut AsyncFifoTestWrapper, wr_rise: bool, rd_rise: bool) {
     dut.wr_clk = 0;
@@ -81,7 +81,8 @@ fn test_async_fifo_sync_stage_parameterization() {
     dut.wr_valid = 0;
 
     // With SYNC_STAGES=3, the write pointer takes three rd_clk edges to synchronize,
-    // then one edge to issue the BRAM read and one more to stage the word.
+    // then one edge to issue the BRAM read and two more edges for the pipelined
+    // sync_dpram output path to stage the word.
     tick_sync3(&mut dut, false, true);
     assert_eq!(
         dut.rd_valid, 0,
@@ -100,7 +101,12 @@ fn test_async_fifo_sync_stage_parameterization() {
     tick_sync3(&mut dut, false, true);
     assert_eq!(
         dut.rd_valid, 0,
-        "rd_valid should still be low while BRAM read is pending"
+        "rd_valid should still be low while the BRAM read is pending"
+    );
+    tick_sync3(&mut dut, false, true);
+    assert_eq!(
+        dut.rd_valid, 0,
+        "rd_valid should still be low while the output pipeline advances"
     );
     tick_sync3(&mut dut, false, true);
     assert_eq!(

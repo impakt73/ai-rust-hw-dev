@@ -1,6 +1,6 @@
 use riscv_core::{create_sync_fifo_runtime, SyncFifoTestWrapper};
 
-const READ_DATA_TIMEOUT_CYCLES: usize = 8;
+const READ_DATA_TIMEOUT_CYCLES: usize = 16;
 
 fn tick(dut: &mut SyncFifoTestWrapper) {
     dut.clk = 0;
@@ -25,8 +25,8 @@ fn reset_fifo(dut: &mut SyncFifoTestWrapper) {
 }
 
 fn wait_for_read_data(dut: &mut SyncFifoTestWrapper) {
-    // The staged sync_fifo can insert a refill bubble between words, but that latency
-    // is still bounded to a small number of clocks for this DEPTH=4 test wrapper.
+    // The staged sync_fifo can insert a refill bubble between words, and the
+    // sync_dpram output pipeline adds one more cycle to that refill path.
     for _ in 0..READ_DATA_TIMEOUT_CYCLES {
         if dut.rd_valid != 0 {
             return;
@@ -126,6 +126,54 @@ fn test_sync_fifo_preserves_order_with_ready_valid_reads() {
     assert_eq!(
         dut.count, 0,
         "FIFO count should return to zero after all reads"
+    );
+}
+
+#[test]
+fn test_sync_fifo_refill_latency_is_two_cycles() {
+    let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
+    let mut dut = runtime
+        .create_model_simple::<SyncFifoTestWrapper>()
+        .expect("Failed to create sync_fifo model");
+
+    reset_fifo(&mut dut);
+
+    for value in [0x31u8, 0x32] {
+        dut.wdata = value;
+        dut.wr_valid = 1;
+        tick(&mut dut);
+    }
+    dut.wr_valid = 0;
+
+    assert_eq!(
+        dut.rd_valid, 1,
+        "head word should be staged before the first read"
+    );
+    assert_eq!(dut.rdata, 0x31, "first queued word should be visible");
+
+    dut.rd_ready = 1;
+    tick(&mut dut);
+    dut.rd_ready = 0;
+
+    assert_eq!(
+        dut.rd_valid, 0,
+        "refill should deassert rd_valid immediately after consuming the staged head word"
+    );
+
+    tick(&mut dut);
+    assert_eq!(
+        dut.rd_valid, 0,
+        "first refill cycle should only advance the RAM output pipeline"
+    );
+
+    tick(&mut dut);
+    assert_eq!(
+        dut.rd_valid, 1,
+        "second refill cycle should restage the next queued word"
+    );
+    assert_eq!(
+        dut.rdata, 0x32,
+        "second queued word should appear after the refill latency"
     );
 }
 
