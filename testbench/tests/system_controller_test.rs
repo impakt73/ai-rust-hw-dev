@@ -35,11 +35,12 @@ macro_rules! clock_cycle {
 fn reset_dut(dut: &mut SystemController) {
     dut.rst_n = 0;
     dut.clk = 0;
-    dut.req = 0;
-    dut.we = 0;
-    dut.addr = 0;
-    dut.wdata = 0;
-    dut.size = 0b10; // Word
+    dut.mem_a_valid = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_addr = 0;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_size = 0b10; // Word
+    dut.mem_d_ready = 0;
     dut.cpu_halted = 0;
     dut.cpu_booting = 0;
     dut.eval();
@@ -50,28 +51,97 @@ fn reset_dut(dut: &mut SystemController) {
 }
 
 fn read_register(dut: &mut SystemController, offset: u32) -> u32 {
-    dut.addr = offset;
-    dut.we = 0;
-    dut.req = 1;
-    dut.size = 0b10; // Word
+    dut.mem_a_addr = offset;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_valid = 1;
+    dut.mem_a_size = 0b10; // Word
     dut.eval();
-    let result = dut.rdata;
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "system controller should accept read request"
+    );
     clock_cycle!(dut);
-    dut.req = 0;
+    dut.mem_a_valid = 0;
     dut.eval();
-    result
+
+    for _ in 0..8 {
+        if dut.mem_d_valid != 0 {
+            let result = dut.mem_d_rdata;
+            dut.mem_d_ready = 1;
+            dut.eval();
+            clock_cycle!(dut);
+            dut.mem_d_ready = 0;
+            dut.eval();
+            return result;
+        }
+
+        clock_cycle!(dut);
+    }
+
+    panic!("system controller read did not complete on D channel");
+}
+
+fn issue_write_register(dut: &mut SystemController, offset: u32, value: u32) {
+    dut.mem_a_addr = offset;
+    dut.mem_a_wdata = value;
+    dut.mem_a_we = 1;
+    dut.mem_a_valid = 1;
+    dut.mem_a_size = 0b10; // Word
+    dut.eval();
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "system controller should accept write request"
+    );
+    clock_cycle!(dut);
+    dut.mem_a_valid = 0;
+    dut.eval();
+}
+
+fn complete_pending_response(dut: &mut SystemController) {
+    for _ in 0..8 {
+        if dut.mem_d_valid != 0 {
+            dut.mem_d_ready = 1;
+            dut.eval();
+            clock_cycle!(dut);
+            dut.mem_d_ready = 0;
+            dut.mem_a_we = 0;
+            dut.eval();
+            return;
+        }
+
+        clock_cycle!(dut);
+    }
+
+    panic!("system controller write did not complete on D channel");
 }
 
 fn write_register(dut: &mut SystemController, offset: u32, value: u32) {
-    dut.addr = offset;
-    dut.wdata = value;
-    dut.we = 1;
-    dut.req = 1;
-    dut.size = 0b10; // Word
+    issue_write_register(dut, offset, value);
+    complete_pending_response(dut);
+}
+
+fn write_register_and_wait_for_response(dut: &mut SystemController, offset: u32, value: u32) {
+    issue_write_register(dut, offset, value);
+
+    for _ in 0..8 {
+        if dut.mem_d_valid != 0 {
+            return;
+        }
+
+        clock_cycle!(dut);
+    }
+
+    panic!("system controller write did not reach D-channel response");
+}
+
+fn finish_response_after_observation(dut: &mut SystemController) {
+    assert_eq!(dut.mem_d_valid, 1, "expected pending D-channel response");
+    dut.mem_d_ready = 1;
     dut.eval();
     clock_cycle!(dut);
-    dut.req = 0;
-    dut.we = 0;
+    dut.mem_d_ready = 0;
+    dut.mem_a_we = 0;
     dut.eval();
 }
 
@@ -91,7 +161,11 @@ fn test_system_controller_ready_always_asserted() {
 
     // Ready should always be 1 (single-cycle peripheral)
     for _ in 0..10 {
-        assert_eq!(dut.ready, 1, "Ready should always be asserted");
+        assert_eq!(dut.mem_a_ready, 1, "A channel should stay ready while idle");
+        assert_eq!(
+            dut.mem_d_valid, 0,
+            "D channel should stay idle while no request is pending"
+        );
         clock_cycle!(dut);
     }
 }
@@ -181,16 +255,16 @@ fn test_system_controller_halt_write_pulses_req_cpu_halt() {
 
     reset_dut(&mut dut);
 
-    write_register(&mut dut, REG_HALT, 0xCAFE_BABE);
+    write_register_and_wait_for_response(&mut dut, REG_HALT, 0xCAFE_BABE);
     assert_eq!(
         dut.req_cpu_halt, 1,
-        "req_cpu_halt should pulse high for the cycle after HALT write"
+        "req_cpu_halt should pulse high while the write response is pending"
     );
 
-    clock_cycle!(dut);
+    finish_response_after_observation(&mut dut);
     assert_eq!(
         dut.req_cpu_halt, 0,
-        "req_cpu_halt should deassert after the one-cycle pulse"
+        "req_cpu_halt should deassert after the write response is consumed"
     );
 }
 
@@ -265,9 +339,10 @@ fn test_system_controller_boot_requires_cpu_booting() {
     // cpu_booting is NOT set; BOOT write should still work.
     dut.cpu_booting = 0;
     dut.eval();
-    write_register(&mut dut, REG_BOOT, 0x8000_0000);
+    write_register_and_wait_for_response(&mut dut, REG_BOOT, 0x8000_0000);
     assert_eq!(dut.cpu_boot_addr, 0x8000_0000);
     assert_eq!(dut.cpu_boot, 1, "cpu_boot should pulse on BOOT write");
+    finish_response_after_observation(&mut dut);
 }
 
 #[test]
@@ -309,12 +384,12 @@ fn test_system_controller_system_reset() {
     reset_dut(&mut dut);
 
     // Trigger a system reset
-    write_register(&mut dut, REG_RESET, RESET_SYSTEM);
+    write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_SYSTEM);
     assert_eq!(
         dut.sys_rst, 0,
-        "sys_rst should remain low in write cycle and pulse next cycle"
+        "sys_rst should remain low while the reset write response is pending"
     );
-    clock_cycle!(dut);
+    finish_response_after_observation(&mut dut);
     assert_eq!(dut.sys_rst, 1, "sys_rst should pulse one cycle after write");
     clock_cycle!(dut);
     assert_eq!(
@@ -334,12 +409,12 @@ fn test_system_controller_cpu_reset() {
     reset_dut(&mut dut);
 
     // Trigger CPU reset
-    write_register(&mut dut, REG_RESET, RESET_CPU);
+    write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_CPU);
     assert_eq!(
         dut.cpu_rst_n, 0,
-        "cpu_rst_n should pulse low on RESET_CPU write"
+        "cpu_rst_n should pulse low while the RESET_CPU response is pending"
     );
-    clock_cycle!(dut);
+    finish_response_after_observation(&mut dut);
 
     assert_eq!(
         dut.cpu_rst_n, 1,
@@ -414,9 +489,9 @@ fn test_system_controller_cpu_reset_then_reboot() {
     reset_dut(&mut dut);
 
     // CPU reset
-    write_register(&mut dut, REG_RESET, RESET_CPU);
+    write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_CPU);
     assert_eq!(dut.cpu_rst_n, 0, "CPU reset should pulse cpu_rst_n low");
-    clock_cycle!(dut);
+    finish_response_after_observation(&mut dut);
     assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should deassert after pulse");
 
     // Second boot with different address

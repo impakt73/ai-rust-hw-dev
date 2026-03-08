@@ -19,14 +19,17 @@ module host_bus_interface (
     output logic        mem_d_valid,
     input  logic        mem_d_ready,
 
-    // Bus Master Interface (to Arbiter - Host->CPU path)
-    output logic [31:0] host_bus_addr,
-    output logic [31:0] host_bus_wdata,
-    input  logic [31:0] host_bus_rdata,
-    output logic        host_bus_we,
-    output logic [1:0]  host_bus_size,
-    output logic        host_bus_req,
-    input  logic        host_bus_ready,
+    // Host-initiated master interface (Host->RTL path)
+    output logic [31:0] host_mem_a_addr,
+    output logic [31:0] host_mem_a_wdata,
+    output logic        host_mem_a_we,
+    output logic [1:0]  host_mem_a_size,
+    output logic        host_mem_a_valid,
+    input  logic        host_mem_a_ready,
+
+    input  logic [31:0] host_mem_d_rdata,
+    input  logic        host_mem_d_valid,
+    output logic        host_mem_d_ready,
 
     // Host TX Interface (to External Host)
     output logic [7:0]  tx_data,
@@ -88,11 +91,13 @@ module host_bus_interface (
     // ============================================================
     typedef enum logic [2:0] {
         HOST_IDLE        = 3'd0,
-        HOST_WRITE_BUS   = 3'd1,
-        HOST_WRITE_WAIT  = 3'd2,
-        HOST_WRITE_RESP  = 3'd3,
-        HOST_READ_BUS    = 3'd4,
-        HOST_READ_TX     = 3'd5
+        HOST_WRITE_A     = 3'd1,
+        HOST_WRITE_D     = 3'd2,
+        HOST_WRITE_WAIT  = 3'd3,
+        HOST_WRITE_RESP  = 3'd4,
+        HOST_READ_A      = 3'd5,
+        HOST_READ_D      = 3'd6,
+        HOST_READ_TX     = 3'd7
     } host_state_t;
 
     host_state_t host_state;
@@ -109,8 +114,10 @@ module host_bus_interface (
     logic [31:0] host_write_data;
     logic [31:0] host_read_data;
 
-    logic host_bus_handshake;
-    assign host_bus_handshake = host_bus_req && host_bus_ready;
+    logic host_a_handshake;
+    logic host_d_handshake;
+    assign host_a_handshake = host_mem_a_valid && host_mem_a_ready;
+    assign host_d_handshake = host_mem_d_valid && host_mem_d_ready;
 
     // ============================================================
     // RX/TX submodules
@@ -264,11 +271,12 @@ module host_bus_interface (
     // ============================================================
     // Bus master drive (host-initiated request execution)
     // ============================================================
-    assign host_bus_addr  = host_curr_addr;
-    assign host_bus_wdata = host_write_data;
-    assign host_bus_we    = host_req_we;
-    assign host_bus_size  = host_req_size;
-    assign host_bus_req   = (host_state == HOST_WRITE_BUS) || (host_state == HOST_READ_BUS);
+    assign host_mem_a_addr  = host_curr_addr;
+    assign host_mem_a_wdata = host_write_data;
+    assign host_mem_a_we    = host_req_we;
+    assign host_mem_a_size  = host_req_size;
+    assign host_mem_a_valid = (host_state == HOST_WRITE_A) || (host_state == HOST_READ_A);
+    assign host_mem_d_ready = (host_state == HOST_WRITE_D) || (host_state == HOST_READ_D);
 
     // ============================================================
     // Sequential control
@@ -344,15 +352,21 @@ module host_bus_interface (
 
                         if (rx_pkt_we) begin
                             host_write_data <= rx_pkt_data;
-                            host_state <= HOST_WRITE_BUS;
+                            host_state <= HOST_WRITE_A;
                         end else begin
-                            host_state <= HOST_READ_BUS;
+                            host_state <= HOST_READ_A;
                         end
                     end
                 end
 
-                HOST_WRITE_BUS: begin
-                    if (host_bus_handshake) begin
+                HOST_WRITE_A: begin
+                    if (host_a_handshake) begin
+                        host_state <= HOST_WRITE_D;
+                    end
+                end
+
+                HOST_WRITE_D: begin
+                    if (host_d_handshake) begin
                         if (host_beats_remaining == 17'd1) begin
                             host_state <= HOST_WRITE_RESP;
                         end else begin
@@ -368,7 +382,7 @@ module host_bus_interface (
                 HOST_WRITE_WAIT: begin
                     if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && !rx_pkt_start) begin
                         host_write_data <= rx_pkt_data;
-                        host_state <= HOST_WRITE_BUS;
+                        host_state <= HOST_WRITE_A;
                     end
                 end
 
@@ -378,9 +392,15 @@ module host_bus_interface (
                     end
                 end
 
-                HOST_READ_BUS: begin
-                    if (host_bus_handshake) begin
-                        host_read_data <= host_bus_rdata;
+                HOST_READ_A: begin
+                    if (host_a_handshake) begin
+                        host_state <= HOST_READ_D;
+                    end
+                end
+
+                HOST_READ_D: begin
+                    if (host_d_handshake) begin
+                        host_read_data <= host_mem_d_rdata;
                         host_state <= HOST_READ_TX;
                     end
                 end
@@ -394,7 +414,7 @@ module host_bus_interface (
                             if (!host_req_src_fixed) begin
                                 host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
                             end
-                            host_state <= HOST_READ_BUS;
+                            host_state <= HOST_READ_A;
                         end
                     end
                 end

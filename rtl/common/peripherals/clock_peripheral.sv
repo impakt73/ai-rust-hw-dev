@@ -18,15 +18,19 @@ module clock_peripheral #(
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
-    
-    // CPU interface (memory-mapped)
-    input  logic [31:0] addr,      // Address input (full 32-bit)
-    input  logic [31:0] wdata,     // Write data (ignored - read-only peripheral)
-    output logic [31:0] rdata,     // Read data
-    input  logic        we,        // Write enable (ignored)
-    input  logic        req,       // Memory request
-    input  logic [1:0]  size,      // Access size (00=byte, 01=half, 10=word)
-    output logic        ready      // Operation complete (always ready)
+
+    // Address channel
+    input  logic [31:0] mem_a_addr,
+    input  logic [31:0] mem_a_wdata,
+    input  logic        mem_a_we,
+    input  logic [1:0]  mem_a_size,
+    input  logic        mem_a_valid,
+    output logic        mem_a_ready,
+
+    // Data channel
+    output logic [31:0] mem_d_rdata,
+    output logic        mem_d_valid,
+    input  logic        mem_d_ready
 );
 
     // ============================================================
@@ -45,8 +49,16 @@ module clock_peripheral #(
     localparam ELAPSED_MS_OFFSET = 32'h04;
     localparam ELAPSED_S_OFFSET  = 32'h08;
     
-    // Clock peripheral is single-cycle - always ready
-    assign ready = 1'b1;
+    logic [31:0] response_data;
+    logic        response_pending;
+    logic        mem_a_handshake;
+    logic        mem_d_handshake;
+
+    assign mem_a_handshake = mem_a_valid && mem_a_ready;
+    assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    assign mem_a_ready = !response_pending;
+    assign mem_d_rdata = response_data;
+    assign mem_d_valid = response_pending;
     
     // ============================================================
     // FPGA-Optimized Cascaded Counter Design
@@ -196,30 +208,41 @@ module clock_peripheral #(
     end
     
     // ============================================================
-    // Read Logic
+    // Read Logic / A/D response handling
     // ============================================================
-    // Read-only peripheral - writes are ignored
     // verilator lint_off UNUSEDSIGNAL
     // Suppress warnings for unused write signals
     logic unused_we;
     logic [31:0] unused_wdata;
     logic [1:0] unused_size;
-    assign unused_we = we;
-    assign unused_wdata = wdata;
-    assign unused_size = size;
+    assign unused_we = mem_a_we;
+    assign unused_wdata = mem_a_wdata;
+    assign unused_size = mem_a_size;
     // verilator lint_on UNUSEDSIGNAL
-    
-    always_comb begin
-        rdata = 32'h0;
-        
-        if (req && !we) begin
-            // Read based on address offset
-            case (addr[3:0])  // Use lower 4 bits for register offset
-                ELAPSED_US_OFFSET[3:0]: rdata = elapsed_us;
-                ELAPSED_MS_OFFSET[3:0]: rdata = elapsed_ms;
-                ELAPSED_S_OFFSET[3:0]:  rdata = elapsed_s;
-                default:                rdata = 32'h0;
-            endcase
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            response_data <= 32'h0;
+            response_pending <= 1'b0;
+        end else begin
+            if (mem_d_handshake) begin
+                response_pending <= 1'b0;
+            end
+
+            if (mem_a_handshake) begin
+                response_pending <= 1'b1;
+
+                if (mem_a_we) begin
+                    response_data <= 32'h0;
+                end else begin
+                    case (mem_a_addr[3:0])  // Use lower 4 bits for register offset
+                        ELAPSED_US_OFFSET[3:0]: response_data <= elapsed_us;
+                        ELAPSED_MS_OFFSET[3:0]: response_data <= elapsed_ms;
+                        ELAPSED_S_OFFSET[3:0]:  response_data <= elapsed_s;
+                        default:                response_data <= 32'h0;
+                    endcase
+                end
+            end
         end
     end
 
