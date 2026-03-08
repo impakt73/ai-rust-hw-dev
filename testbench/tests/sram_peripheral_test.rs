@@ -11,11 +11,12 @@ fn clock_cycle(dut: &mut SramPeripheralTestWrapper) {
 }
 
 fn reset(dut: &mut SramPeripheralTestWrapper) {
-    dut.req = 0;
-    dut.we = 0;
-    dut.addr = 0;
-    dut.wdata = 0;
-    dut.size = SIZE_WORD;
+    dut.mem_a_valid = 0;
+    dut.mem_a_we = 0;
+    dut.mem_a_addr = 0;
+    dut.mem_a_wdata = 0;
+    dut.mem_a_size = SIZE_WORD;
+    dut.mem_d_ready = 0;
     dut.rst_n = 0;
     clock_cycle(dut);
     clock_cycle(dut);
@@ -24,57 +25,66 @@ fn reset(dut: &mut SramPeripheralTestWrapper) {
 }
 
 fn write_access(dut: &mut SramPeripheralTestWrapper, addr: u32, wdata: u32, size: u8) -> u32 {
-    dut.addr = addr;
-    dut.wdata = wdata;
-    dut.size = size;
-    dut.we = 1;
-    dut.req = 1;
+    dut.mem_a_addr = addr;
+    dut.mem_a_wdata = wdata;
+    dut.mem_a_size = size;
+    dut.mem_a_we = 1;
+    dut.mem_a_valid = 1;
+    dut.eval();
+    assert_eq!(dut.mem_a_ready, 1, "SRAM should accept the write request");
+
+    clock_cycle(dut);
+    dut.mem_a_valid = 0;
     dut.eval();
 
     let mut wait_cycles = 0;
-    while dut.ready == 0 {
+    while dut.mem_d_valid == 0 {
         clock_cycle(dut);
         wait_cycles += 1;
     }
 
-    // Complete the transfer on the clock edge where ready is observed.
-    clock_cycle(dut);
-
-    dut.req = 0;
-    dut.we = 0;
+    dut.mem_d_ready = 1;
     dut.eval();
     clock_cycle(dut);
+    dut.mem_d_ready = 0;
+    dut.mem_a_we = 0;
+    dut.eval();
 
-    wait_cycles
+    // Count the first D-channel response cycle as part of the operation latency.
+    wait_cycles + 1
 }
 
 fn read_access(dut: &mut SramPeripheralTestWrapper, addr: u32, size: u8) -> (u32, u32) {
-    dut.addr = addr;
-    dut.size = size;
-    dut.we = 0;
-    dut.req = 1;
+    dut.mem_a_addr = addr;
+    dut.mem_a_size = size;
+    dut.mem_a_we = 0;
+    dut.mem_a_valid = 1;
+    dut.eval();
+    assert_eq!(dut.mem_a_ready, 1, "SRAM should accept the read request");
+
+    clock_cycle(dut);
+    dut.mem_a_valid = 0;
     dut.eval();
 
     let mut wait_cycles = 0;
-    while dut.ready == 0 {
+    while dut.mem_d_valid == 0 {
         clock_cycle(dut);
         wait_cycles += 1;
     }
 
-    let rdata = dut.rdata;
-
-    // Complete the transfer on the clock edge where ready is observed.
-    clock_cycle(dut);
-
-    dut.req = 0;
+    let rdata = dut.mem_d_rdata;
+    dut.mem_d_ready = 1;
     dut.eval();
     clock_cycle(dut);
+    dut.mem_d_ready = 0;
+    dut.eval();
 
-    (rdata, wait_cycles)
+    // Count the first D-channel response cycle as part of the operation latency.
+    (rdata, wait_cycles + 1)
 }
 
 #[test]
-fn test_sram_peripheral_aligned_access_latency_unchanged() {
+fn test_sram_peripheral_aligned_access_uses_d_channel_completion() {
     let runtime =
         create_sram_peripheral_runtime().expect("Failed to create SRAM peripheral runtime");
     let mut dut = runtime
@@ -84,14 +94,14 @@ fn test_sram_peripheral_aligned_access_latency_unchanged() {
 
     let write_wait = write_access(&mut dut, 0, 0xDEAD_BEEF, SIZE_WORD);
     assert_eq!(
-        write_wait, 0,
-        "aligned word writes should remain single-cycle"
+        write_wait, 1,
+        "aligned word writes should acknowledge on the next D-channel cycle"
     );
 
     let (read_data, read_wait) = read_access(&mut dut, 0, SIZE_WORD);
     assert_eq!(
         read_wait, 1,
-        "aligned word reads should remain one-cycle latency"
+        "aligned word reads should return one cycle after request acceptance"
     );
     assert_eq!(read_data, 0xDEAD_BEEF);
 }
@@ -110,8 +120,8 @@ fn test_sram_peripheral_unaligned_word_store_and_load() {
 
     let split_write_wait = write_access(&mut dut, 1, 0xAABB_CCDD, SIZE_WORD);
     assert_eq!(
-        split_write_wait, 1,
-        "unaligned word write should take one extra cycle"
+        split_write_wait, 2,
+        "unaligned word write should wait an extra cycle before D completion"
     );
 
     let (word0, _) = read_access(&mut dut, 0, SIZE_WORD);
@@ -122,7 +132,7 @@ fn test_sram_peripheral_unaligned_word_store_and_load() {
     let (unaligned_word, split_read_wait) = read_access(&mut dut, 1, SIZE_WORD);
     assert_eq!(
         split_read_wait, 2,
-        "unaligned word read should use two SRAM read cycles"
+        "unaligned word read should use two SRAM read cycles before D completion"
     );
     assert_eq!(unaligned_word, 0xAABB_CCDD);
 }
@@ -141,8 +151,8 @@ fn test_sram_peripheral_unaligned_halfword_store_and_load() {
 
     let split_halfword_write_wait = write_access(&mut dut, 3, 0x0000_ABCD, SIZE_HALFWORD);
     assert_eq!(
-        split_halfword_write_wait, 1,
-        "cross-boundary unaligned halfword write should take one extra cycle"
+        split_halfword_write_wait, 2,
+        "cross-boundary unaligned halfword write should wait an extra cycle"
     );
 
     let (word0, _) = read_access(&mut dut, 0, SIZE_WORD);

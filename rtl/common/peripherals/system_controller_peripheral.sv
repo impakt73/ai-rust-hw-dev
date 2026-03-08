@@ -6,16 +6,20 @@ module system_controller (
     // Clock and reset
     input  logic        clk,
     input  logic        rst_n,
-    
-    // CPU interface (memory-mapped)
-    input  logic [31:0] addr,      // Address input (full 32-bit)
-    input  logic [31:0] wdata,     // Write data
-    output logic [31:0] rdata,     // Read data
-    input  logic        we,        // Write enable
-    input  logic        req,       // Memory request
-    input  logic [1:0]  size,      // Access size (00=byte, 01=half, 10=word)
-    output logic        ready,     // Operation complete (always ready)
-    
+
+    // Address channel
+    input  logic [31:0] mem_a_addr,
+    input  logic [31:0] mem_a_wdata,
+    input  logic        mem_a_we,
+    input  logic [1:0]  mem_a_size,
+    input  logic        mem_a_valid,
+    output logic        mem_a_ready,
+
+    // Data channel
+    output logic [31:0] mem_d_rdata,
+    output logic        mem_d_valid,
+    input  logic        mem_d_ready,
+
     // System control outputs
     output logic        sys_rst,       // System reset output
     output logic        cpu_rst_n,     // CPU reset output (active low)
@@ -47,34 +51,17 @@ module system_controller (
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
     logic        sys_reset_pending;      // Delayed system reset pulse
-    
-    // ========================================================================
-    // System controller is single-cycle - always ready
-    // ========================================================================
-    assign ready = 1'b1;
-    
-    // ========================================================================
-    // Write Decode Logic - Detect writes to control registers
-    // ========================================================================
-    logic write_boot;
-    logic write_reset;
-    logic write_halt;
-    
-    always_comb begin
-        write_boot  = 1'b0;
-        write_reset = 1'b0;
-        write_halt  = 1'b0;
-        
-        if (req && we) begin
-            case (addr[3:0])  // Use only register offset bits
-                REG_BOOT:  write_boot  = 1'b1;
-                REG_RESET: write_reset = 1'b1;
-                REG_HALT:  write_halt  = 1'b1;
-                default: ;
-            endcase
-        end
-    end
-    
+    logic [31:0] response_data;
+    logic        response_pending;
+    logic        mem_a_handshake;
+    logic        mem_d_handshake;
+
+    assign mem_a_handshake = mem_a_valid && mem_a_ready;
+    assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    assign mem_a_ready = !response_pending;
+    assign mem_d_rdata = response_data;
+    assign mem_d_valid = response_pending;
+
     // ========================================================================
     // Main Control Registers
     // ========================================================================
@@ -87,6 +74,8 @@ module system_controller (
             halt_reg      <= 32'h00000000;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
+            response_data <= 32'h00000000;
+            response_pending <= 1'b0;
         end else begin
             // Default inactive values every cycle; writes can pulse outputs high/low.
             sys_rst      <= sys_reset_pending;
@@ -95,23 +84,54 @@ module system_controller (
             req_cpu_halt <= 1'b0;
             sys_reset_pending <= 1'b0;
 
-            if (write_reset) begin
-                if (wdata == RESET_SYSTEM) begin
-                    sys_reset_pending <= 1'b1;
-                end else if (wdata == RESET_CPU) begin
-                    cpu_rst_n <= 1'b0;
+            if (mem_d_handshake) begin
+                response_pending <= 1'b0;
+            end
+
+            if (mem_a_handshake) begin
+                response_pending <= 1'b1;
+                response_data <= 32'h00000000;
+
+                if (mem_a_we) begin
+                    case (mem_a_addr[3:0])  // Use only register offset bits
+                        REG_BOOT: begin
+                            // BOOT writes are accepted independently of cpu_booting state.
+                            boot_addr_reg <= mem_a_wdata;
+                            cpu_boot      <= 1'b1;
+                        end
+
+                        REG_RESET: begin
+                            if (mem_a_wdata == RESET_SYSTEM) begin
+                                sys_reset_pending <= 1'b1;
+                            end else if (mem_a_wdata == RESET_CPU) begin
+                                cpu_rst_n <= 1'b0;
+                            end
+                        end
+
+                        REG_HALT: begin
+                            halt_reg      <= mem_a_wdata;
+                            req_cpu_halt  <= 1'b1;
+                        end
+
+                        default: ;
+                    endcase
+                end else begin
+                    case (mem_a_addr[3:0])
+                        REG_STATUS: begin
+                            // Bit 0 = cpu_booting, Bit 1 = cpu_halted
+                            response_data <= {30'h0, cpu_halted, cpu_booting};
+                        end
+
+                        REG_HALT: begin
+                            response_data <= halt_reg;
+                        end
+
+                        // RESET and BOOT registers are write-only, read as 0
+                        default: begin
+                            response_data <= 32'h00000000;
+                        end
+                    endcase
                 end
-            end
-
-            if (write_boot) begin
-                // BOOT writes are accepted independently of cpu_booting state.
-                boot_addr_reg <= wdata;
-                cpu_boot      <= 1'b1;
-            end
-
-            if (write_halt) begin
-                halt_reg      <= wdata;
-                req_cpu_halt  <= 1'b1;
             end
         end
     end
@@ -120,34 +140,7 @@ module system_controller (
     assign halted_value  = halt_reg;
     
     // ========================================================================
-    // Read Logic - Combinational
-    // ========================================================================
-    always_comb begin
-        rdata = 32'h00000000;
-        
-        if (req && !we) begin
-            case (addr[3:0])
-                REG_STATUS: begin
-                    // Bit 0 = cpu_booting, Bit 1 = cpu_halted
-                    rdata = {30'h0, cpu_halted, cpu_booting};
-                end
-
-                REG_HALT: begin
-                    rdata = halt_reg;
-                end
-                
-                // RESET and BOOT registers are write-only, read as 0
-                default: begin
-                    rdata = 32'h00000000;
-                end
-            endcase
-        end
-    end
-
-    // ========================================================================
-    // Suppress warnings for unused signals
-    // ========================================================================
     logic [1:0] unused_size;
-    assign unused_size = size;
+    assign unused_size = mem_a_size;
 
 endmodule

@@ -27,8 +27,9 @@ fn reset_module(dut: &mut HostBusInterface) {
     dut.tx_ready = 0;
     dut.rx_valid = 0;
     dut.rx_data = 0;
-    dut.host_bus_ready = 0;
-    dut.host_bus_rdata = 0;
+    dut.host_mem_a_ready = 0;
+    dut.host_mem_d_valid = 0;
+    dut.host_mem_d_rdata = 0;
     clock_cycle!(dut);
     dut.rst_n = 1;
     clock_cycle!(dut);
@@ -69,20 +70,27 @@ fn collect_tx_bytes_with_bus_model(
     mut read_model: impl FnMut(u32) -> u32,
 ) -> Vec<u8> {
     let mut out = Vec::new();
+    let mut pending_response: Option<u32> = None;
 
     for _ in 0..2000 {
         dut.tx_ready = 0;
-        dut.host_bus_ready = 0;
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
 
         dut.eval();
 
-        if dut.host_bus_req != 0 {
-            dut.host_bus_ready = 1;
-            if dut.host_bus_we == 0 {
-                dut.host_bus_rdata = read_model(dut.host_bus_addr);
-            }
+        if dut.host_mem_a_valid != 0 {
+            dut.host_mem_a_ready = 1;
+            pending_response = Some(if dut.host_mem_a_we == 0 {
+                read_model(dut.host_mem_a_addr)
+            } else {
+                0
+            });
         }
 
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
         dut.eval();
 
         if dut.tx_valid != 0 {
@@ -91,7 +99,11 @@ fn collect_tx_bytes_with_bus_model(
             out.push(dut.tx_data);
         }
 
+        let d_handshake = pending_response.is_some() && dut.host_mem_d_ready != 0;
         clock_cycle!(dut);
+        if d_handshake {
+            pending_response = None;
+        }
 
         if out.len() == expected_len {
             break;
@@ -114,7 +126,8 @@ fn test_reset_state() {
     assert_eq!(dut.mem_d_valid, 0);
     assert_eq!(dut.tx_valid, 0);
     assert_eq!(dut.rx_ready, 1);
-    assert_eq!(dut.host_bus_req, 0);
+    assert_eq!(dut.host_mem_a_valid, 0);
+    assert_eq!(dut.host_mem_d_ready, 0);
 }
 
 #[test]
@@ -220,17 +233,25 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
     let mut seen_addrs = Vec::new();
     let mut seen_wdata = Vec::new();
     let mut tx_packet = Vec::new();
+    let mut pending_write_response = false;
 
     for _ in 0..500 {
-        dut.host_bus_ready = 0;
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
+        dut.host_mem_d_rdata = 0;
         dut.tx_ready = 0;
         dut.eval();
 
-        if dut.host_bus_req != 0 {
-            seen_addrs.push(dut.host_bus_addr);
-            seen_wdata.push(dut.host_bus_wdata);
-            dut.host_bus_ready = 1;
+        if dut.host_mem_a_valid != 0 {
+            seen_addrs.push(dut.host_mem_a_addr);
+            seen_wdata.push(dut.host_mem_a_wdata);
+            dut.host_mem_a_ready = 1;
+            pending_write_response = true;
         }
+
+        dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
+        dut.host_mem_d_rdata = 0;
+        dut.eval();
 
         if dut.tx_valid != 0 {
             dut.tx_ready = 1;
@@ -238,7 +259,11 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
             tx_packet.push(dut.tx_data);
         }
 
+        let d_handshake = pending_write_response && dut.host_mem_d_ready != 0;
         clock_cycle!(dut);
+        if d_handshake {
+            pending_write_response = false;
+        }
 
         if tx_packet.len() == 8 && seen_addrs.len() >= 2 {
             break;

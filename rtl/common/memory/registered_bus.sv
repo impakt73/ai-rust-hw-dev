@@ -8,37 +8,65 @@ module registered_bus #(
     input  logic                                 rst_n,
 
     // Master A channels (input)
-    input  logic [NUM_MASTERS-1:0][31:0]         master_mem_a_addr,
-    input  logic [NUM_MASTERS-1:0][31:0]         master_mem_a_wdata,
+    input  logic [NUM_MASTERS*32-1:0]            master_mem_a_addr,
+    input  logic [NUM_MASTERS*32-1:0]            master_mem_a_wdata,
     input  logic [NUM_MASTERS-1:0]               master_mem_a_we,
-    input  logic [NUM_MASTERS-1:0][1:0]          master_mem_a_size,
+    input  logic [NUM_MASTERS*2-1:0]             master_mem_a_size,
     input  logic [NUM_MASTERS-1:0]               master_mem_a_valid,
     output logic [NUM_MASTERS-1:0]               master_mem_a_ready,
 
     // Master D channels (output/input)
-    output logic [NUM_MASTERS-1:0][31:0]         master_mem_d_rdata,
+    output logic [NUM_MASTERS*32-1:0]            master_mem_d_rdata,
     output logic [NUM_MASTERS-1:0]               master_mem_d_valid,
     input  logic [NUM_MASTERS-1:0]               master_mem_d_ready,
 
     // Slave address map.
     // Decode matches top nibble (addr[31:28]) against slave_base_addr[i][31:28].
     // slave_addr_size is used as an enable: zero disables a slave entry.
-    input  logic [NUM_SLAVES-1:0][31:0]          slave_base_addr,
-    input  logic [NUM_SLAVES-1:0][31:0]          slave_addr_size,
+    input  logic [NUM_SLAVES*32-1:0]             slave_base_addr,
+    input  logic [NUM_SLAVES*32-1:0]             slave_addr_size,
 
     // Slave A channels (output/input)
-    output logic [NUM_SLAVES-1:0][31:0]          slave_mem_a_addr,
-    output logic [NUM_SLAVES-1:0][31:0]          slave_mem_a_wdata,
+    output logic [NUM_SLAVES*32-1:0]             slave_mem_a_addr,
+    output logic [NUM_SLAVES*32-1:0]             slave_mem_a_wdata,
     output logic [NUM_SLAVES-1:0]                slave_mem_a_we,
-    output logic [NUM_SLAVES-1:0][1:0]           slave_mem_a_size,
+    output logic [NUM_SLAVES*2-1:0]              slave_mem_a_size,
     output logic [NUM_SLAVES-1:0]                slave_mem_a_valid,
     input  logic [NUM_SLAVES-1:0]                slave_mem_a_ready,
 
     // Slave D channels (input/output)
-    input  logic [NUM_SLAVES-1:0][31:0]          slave_mem_d_rdata,
+    input  logic [NUM_SLAVES*32-1:0]             slave_mem_d_rdata,
     input  logic [NUM_SLAVES-1:0]                slave_mem_d_valid,
     output logic [NUM_SLAVES-1:0]                slave_mem_d_ready
 );
+
+    logic [31:0]                                 master_mem_a_addr_int [NUM_MASTERS];
+    logic [31:0]                                 master_mem_a_wdata_int [NUM_MASTERS];
+    logic [1:0]                                  master_mem_a_size_int [NUM_MASTERS];
+    logic [31:0]                                 master_mem_d_rdata_int [NUM_MASTERS];
+
+    logic [31:0]                                 slave_base_addr_int [NUM_SLAVES];
+    logic [31:0]                                 slave_addr_size_int [NUM_SLAVES];
+    logic [31:0]                                 slave_mem_a_addr_int [NUM_SLAVES];
+    logic [31:0]                                 slave_mem_a_wdata_int [NUM_SLAVES];
+    logic [1:0]                                  slave_mem_a_size_int [NUM_SLAVES];
+    logic [31:0]                                 slave_mem_d_rdata_int [NUM_SLAVES];
+
+    for (genvar master_idx = 0; master_idx < NUM_MASTERS; master_idx++) begin : gen_master_bus_vectors
+        assign master_mem_a_addr_int[master_idx] = master_mem_a_addr[(master_idx*32) +: 32];
+        assign master_mem_a_wdata_int[master_idx] = master_mem_a_wdata[(master_idx*32) +: 32];
+        assign master_mem_a_size_int[master_idx] = master_mem_a_size[(master_idx*2) +: 2];
+        assign master_mem_d_rdata[(master_idx*32) +: 32] = master_mem_d_rdata_int[master_idx];
+    end
+
+    for (genvar slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx++) begin : gen_slave_bus_vectors
+        assign slave_base_addr_int[slave_idx] = slave_base_addr[(slave_idx*32) +: 32];
+        assign slave_addr_size_int[slave_idx] = slave_addr_size[(slave_idx*32) +: 32];
+        assign slave_mem_a_addr[(slave_idx*32) +: 32] = slave_mem_a_addr_int[slave_idx];
+        assign slave_mem_a_wdata[(slave_idx*32) +: 32] = slave_mem_a_wdata_int[slave_idx];
+        assign slave_mem_a_size[(slave_idx*2) +: 2] = slave_mem_a_size_int[slave_idx];
+        assign slave_mem_d_rdata_int[slave_idx] = slave_mem_d_rdata[(slave_idx*32) +: 32];
+    end
 
     logic                                        pending_req_valid;
     logic [MASTER_IDX_W-1:0]                     pending_req_master_idx;
@@ -52,7 +80,7 @@ module registered_bus #(
     logic [31:0]                                 pending_resp_rdata;
 
     logic [NUM_SLAVES-1:0]                       slave_response_pending;
-    logic [NUM_SLAVES-1:0][MASTER_IDX_W-1:0]     slave_response_master_idx;
+    logic [NUM_SLAVES*MASTER_IDX_W-1:0]         slave_response_master_idx;
 
     logic [MASTER_IDX_W-1:0]                     selected_master_idx;
     logic                                        selected_master_valid;
@@ -86,8 +114,8 @@ module registered_bus #(
 
         for (int unsigned slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx++) begin
             if (!decoded_slave_valid
-                && (slave_addr_size[slave_idx] != 32'h0)
-                && (pending_req_addr[31:28] == slave_base_addr[slave_idx][31:28])) begin
+                && (slave_addr_size_int[slave_idx] != 32'h0)
+                && (pending_req_addr[31:28] == slave_base_addr_int[slave_idx][31:28])) begin
                 decoded_slave_idx = SLAVE_IDX_W'(slave_idx);
                 decoded_slave_valid = 1'b1;
             end
@@ -111,25 +139,30 @@ module registered_bus #(
 
     always_comb begin
         master_mem_a_ready = '0;
-        master_mem_d_rdata = '0;
         master_mem_d_valid = '0;
-
-        slave_mem_a_addr = '0;
-        slave_mem_a_wdata = '0;
         slave_mem_a_we = '0;
-        slave_mem_a_size = '0;
         slave_mem_a_valid = '0;
         slave_mem_d_ready = '0;
+
+        for (int unsigned master_idx = 0; master_idx < NUM_MASTERS; master_idx++) begin
+            master_mem_d_rdata_int[master_idx] = 32'h0;
+        end
+
+        for (int unsigned slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx++) begin
+            slave_mem_a_addr_int[slave_idx] = 32'h0;
+            slave_mem_a_wdata_int[slave_idx] = 32'h0;
+            slave_mem_a_size_int[slave_idx] = 2'b00;
+        end
 
         if (!pending_req_valid && selected_master_valid) begin
             master_mem_a_ready[selected_master_idx] = 1'b1;
         end
 
         if (pending_req_valid && decoded_slave_valid && !slave_response_pending[decoded_slave_idx]) begin
-            slave_mem_a_addr[decoded_slave_idx] = pending_req_addr;
-            slave_mem_a_wdata[decoded_slave_idx] = pending_req_wdata;
+            slave_mem_a_addr_int[decoded_slave_idx] = pending_req_addr;
+            slave_mem_a_wdata_int[decoded_slave_idx] = pending_req_wdata;
             slave_mem_a_we[decoded_slave_idx] = pending_req_we;
-            slave_mem_a_size[decoded_slave_idx] = pending_req_size;
+            slave_mem_a_size_int[decoded_slave_idx] = pending_req_size;
             slave_mem_a_valid[decoded_slave_idx] = 1'b1;
         end
 
@@ -138,7 +171,7 @@ module registered_bus #(
         end
 
         if (pending_resp_valid) begin
-            master_mem_d_rdata[pending_resp_master_idx] = pending_resp_rdata;
+            master_mem_d_rdata_int[pending_resp_master_idx] = pending_resp_rdata;
             master_mem_d_valid[pending_resp_master_idx] = 1'b1;
         end
     end
@@ -171,16 +204,16 @@ module registered_bus #(
             if (master_req_accept) begin
                 pending_req_valid <= 1'b1;
                 pending_req_master_idx <= selected_master_idx;
-                pending_req_addr <= master_mem_a_addr[selected_master_idx];
-                pending_req_wdata <= master_mem_a_wdata[selected_master_idx];
+                pending_req_addr <= master_mem_a_addr_int[selected_master_idx];
+                pending_req_wdata <= master_mem_a_wdata_int[selected_master_idx];
                 pending_req_we <= master_mem_a_we[selected_master_idx];
-                pending_req_size <= master_mem_a_size[selected_master_idx];
+                pending_req_size <= master_mem_a_size_int[selected_master_idx];
             end
 
             if (slave_req_accept) begin
                 pending_req_valid <= 1'b0;
                 slave_response_pending[decoded_slave_idx] <= 1'b1;
-                slave_response_master_idx[decoded_slave_idx] <= pending_req_master_idx;
+                slave_response_master_idx[(decoded_slave_idx*MASTER_IDX_W) +: MASTER_IDX_W] <= pending_req_master_idx;
             end else if (unmapped_req_accept) begin
                 pending_req_valid <= 1'b0;
                 pending_resp_valid <= 1'b1;
@@ -190,8 +223,9 @@ module registered_bus #(
 
             if (slave_resp_accept) begin
                 pending_resp_valid <= 1'b1;
-                pending_resp_master_idx <= slave_response_master_idx[selected_resp_slave_idx];
-                pending_resp_rdata <= slave_mem_d_rdata[selected_resp_slave_idx];
+                pending_resp_master_idx <=
+                    slave_response_master_idx[(selected_resp_slave_idx*MASTER_IDX_W) +: MASTER_IDX_W];
+                pending_resp_rdata <= slave_mem_d_rdata_int[selected_resp_slave_idx];
                 slave_response_pending[selected_resp_slave_idx] <= 1'b0;
             end else if (master_resp_accept) begin
                 pending_resp_valid <= 1'b0;
