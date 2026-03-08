@@ -39,6 +39,7 @@ fn test_low_address_routes_to_system_path_and_holds_response() {
 
     reset_module(&mut dut);
 
+    // Initial post-reset state: mux should accept the first CPU A-channel request.
     assert_eq!(dut.cpu_mem_a_ready, 1);
     dut.cpu_mem_a_addr = 0x5000_0010;
     dut.cpu_mem_a_wdata = 0xCAFE_BABE;

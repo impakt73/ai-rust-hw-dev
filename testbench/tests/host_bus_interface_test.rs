@@ -3,6 +3,8 @@
 
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
+const MAX_RESPONSE_WAIT_CYCLES: usize = 10;
+
 macro_rules! clock_cycle {
     ($dut:expr) => {
         $dut.clk = 0;
@@ -294,7 +296,7 @@ fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
         ],
     );
 
-    for _ in 0..10 {
+    for _ in 0..MAX_RESPONSE_WAIT_CYCLES {
         dut.eval();
         if dut.mem_d_valid != 0 {
             break;
