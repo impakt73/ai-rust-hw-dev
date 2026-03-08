@@ -22,11 +22,14 @@ module i2s_serializer #(
     logic reload_pending;
     logic next_channel;
 
+    // The serializer does not divide or synthesize a new bit clock.
+    // The caller must provide clk at the desired I2S bit-clock rate.
     assign i2s_bclk = clk;
     assign sample_ready = reload_pending;
 
     generate
         if (INPUT_SAMPLE_WIDTH >= OUTPUT_SAMPLE_WIDTH) begin : gen_truncate_input
+            // Extract the OUTPUT_SAMPLE_WIDTH most-significant input bits.
             assign formatted_sample = sample_data[INPUT_SAMPLE_WIDTH-1 -: OUTPUT_SAMPLE_WIDTH];
         end else begin : gen_pad_input
             assign formatted_sample = {sample_data, {PAD_BITS{1'b0}}};
@@ -47,7 +50,7 @@ module i2s_serializer #(
             reload_pending <= 1'b0;
             i2s_lrclk <= next_channel;
             // Standard I2S changes LRCLK one bit clock before the next word's MSB.
-            // Drive zero during that alignment slot before shifting the next sample.
+            // This zero drive is that alignment slot before shifting the next sample.
             i2s_sd <= 1'b0;
         end else begin
             i2s_sd <= shift_reg[OUTPUT_SAMPLE_WIDTH-1];
@@ -57,6 +60,7 @@ module i2s_serializer #(
                 shift_reg <= '0;
             end
 
+            // After OUTPUT_SAMPLE_WIDTH bits have been transmitted, request a reload.
             if (bit_index == BIT_INDEX_WIDTH'(OUTPUT_SAMPLE_WIDTH - 1)) begin
                 reload_pending <= 1'b1;
                 next_channel <= ~next_channel;

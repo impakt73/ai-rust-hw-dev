@@ -5,8 +5,8 @@ use riscv_core::{
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
-        // End each helper cycle with clk low to match the repo's existing Verilator tests
-        // and leave outputs in a stable post-edge state for assertions.
+        // End each helper cycle with clk low to leave outputs in a stable
+        // post-edge state for assertions after the active rising edge.
         $dut.clk = 0;
         $dut.eval();
         $dut.clk = 1;
@@ -29,6 +29,8 @@ macro_rules! reset_dut {
 
 macro_rules! capture_bits {
     ($dut:expr, $cycles:expr) => {{
+        // Sample i2s_sd after each full low-high-low helper cycle so each entry
+        // reflects the stable serial-data value driven for that transmitted bit.
         let mut bits = Vec::with_capacity($cycles);
         for _ in 0..$cycles {
             clock_cycle!($dut);
