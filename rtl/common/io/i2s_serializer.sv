@@ -46,6 +46,8 @@ module i2s_serializer #(
             bit_index <= '0;
             reload_pending <= 1'b0;
             i2s_lrclk <= next_channel;
+            // Standard I2S changes LRCLK one bit clock before the next word's MSB.
+            // Drive zero during that alignment slot before shifting the next sample.
             i2s_sd <= 1'b0;
         end else begin
             i2s_sd <= shift_reg[OUTPUT_SAMPLE_WIDTH-1];

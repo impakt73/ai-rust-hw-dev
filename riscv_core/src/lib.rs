@@ -343,24 +343,7 @@ pub fn create_uart_1m_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::
     create_runtime(&["io/uart.sv", "wrappers/uart_1m_baud_wrapper.sv"])
 }
 
-pub fn create_i2s_serializer_equal_width_runtime(
-) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&[
-        "io/i2s_serializer.sv",
-        "wrappers/i2s_serializer_test_wrappers.sv",
-    ])
-}
-
-pub fn create_i2s_serializer_expand_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
-{
-    create_runtime(&[
-        "io/i2s_serializer.sv",
-        "wrappers/i2s_serializer_test_wrappers.sv",
-    ])
-}
-
-pub fn create_i2s_serializer_truncate_runtime(
-) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+pub fn create_i2s_serializer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
         "io/i2s_serializer.sv",
         "wrappers/i2s_serializer_test_wrappers.sv",
