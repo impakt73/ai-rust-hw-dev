@@ -82,6 +82,14 @@ The newer interface already used in the CPU memory path is split into:
 - `mem_d_valid`
 - `mem_d_ready`
 
+#### Completion contract
+
+The migrated system will use the following architectural rule for all address/data channel transactions:
+
+- **every accepted memory request must complete on the D channel, regardless of whether it is a read or a write,**
+- software and RTL requesters must treat `mem_d_valid && mem_d_ready` as the acknowledgement that the operation has completed, and
+- for **writes**, `mem_d_rdata` is **unspecified** and must not be used.
+
 This interface already exists in production or near-production RTL in:
 
 - `rtl/common/io/host_bus_mux.sv`
@@ -118,6 +126,7 @@ The migration should preserve this decode model unless a separate design change 
    - master 1: CPU-originated accesses to the RTL peripheral half-space
 5. Preserve host priority by master ordering in `registered_bus`.
 6. Keep `host_bus_mux` in front of the CPU path.
+7. Require all reads and writes to wait for D-channel completion, with write-response data treated as unspecified.
 
 ### 3.2 Non-goals
 
@@ -186,7 +195,7 @@ Planned changes:
 - replace `addr/wdata/rdata/we/size/req/ready` with `mem_a_*` / `mem_d_*`,
 - accept one request at a time using the standard valid/ready handshake,
 - return the current LED register value on reads through the D channel,
-- complete writes through the D channel with a completion response,
+- complete writes only when the D channel acknowledges the request, with unspecified `mem_d_rdata` for writes,
 - preserve current byte/halfword/word behavior and reserved-bit masking.
 
 Expected behavior:
@@ -204,7 +213,7 @@ Planned changes:
 - replace the legacy request/ready interface with `mem_a_*` / `mem_d_*`,
 - preserve read-only semantics,
 - return elapsed counter values through the D channel,
-- preserve current invalid-write handling behavior as closely as possible.
+- preserve current invalid-write handling behavior as closely as possible while still issuing a D-channel completion acknowledgement.
 
 Expected behavior:
 
@@ -219,7 +228,7 @@ Planned changes:
 
 - migrate all register accesses to A/D handshakes,
 - preserve reset, boot, halt, and status behavior,
-- ensure writes that trigger control effects still do so exactly once per accepted request.
+- ensure writes that trigger control effects still do so exactly once per request that later completes on the D channel.
 
 Expected behavior:
 
@@ -237,11 +246,11 @@ Planned changes:
 - replace the unified bus interface with `mem_a_*` / `mem_d_*`,
 - preserve byte/halfword/word writes,
 - preserve the existing on-chip SRAM address window and backing memory,
-- explicitly document and implement read-response latency under the new protocol.
+- explicitly document and implement request completion latency under the new protocol for both reads and writes.
 
 Expected behavior:
 
-- writes should still complete without changing visible SRAM contents semantics,
+- writes should still complete through the D channel without changing visible SRAM contents semantics,
 - reads should retain deterministic latency even if the new interconnect adds an additional registered stage,
 - the implementation should avoid creating combinational loops between `mem_a_ready` and `mem_d_valid`.
 
@@ -255,7 +264,7 @@ Planned changes:
   with a host-master A/D channel pair,
 - keep packet parsing and serialization responsibilities unchanged,
 - issue host-initiated target requests into `registered_bus` using the new interface,
-- consume D-channel completions and serialize them back to the host exactly once.
+- consume D-channel completions and serialize them back to the host exactly once, treating write-response data as unspecified.
 
 Important constraint:
 
@@ -303,14 +312,15 @@ Any RTL changes to this file should be limited to issues discovered while integr
 Before rewiring the top-level, standardize how each migrated peripheral will use the A/D protocol:
 
 - when a request is considered accepted,
-- whether writes generate a zero-data D response or a side-effect-only acknowledgement,
+- how all requests wait for D-channel acknowledgement before they are considered complete,
+- how writes return an acknowledgement with unspecified `mem_d_rdata`,
 - whether reads are immediate or registered,
 - how unmapped accesses behave, and
 - how invalid accesses behave.
 
 Deliverable:
 
-- one consistent response model used by all FPGA RTL peripherals.
+- one consistent response model used by all FPGA RTL peripherals, where every request completes on the D channel.
 
 ### Phase 2: Convert individual peripherals
 
@@ -407,9 +417,9 @@ Any top-level legacy bus signal declarations that existed only to connect those 
 
 ## 9. Risks and Open Questions
 
-### 9.1 Peripheral response contract
+### 9.1 Peripheral response contract enforcement
 
-The largest architectural detail to settle before implementation is the exact D-channel completion behavior for simple write-only or side-effect-heavy peripherals. The migration should choose one contract and apply it consistently.
+The D-channel completion contract is now fixed for the migration: every request, including writes, must wait for D-channel acknowledgement before it is considered complete. For write requests, `mem_d_rdata` is unspecified and must not be consumed. The implementation risk is no longer deciding the contract, but applying it consistently across all peripherals and the host-initiated path.
 
 ### 9.2 SRAM response timing
 
