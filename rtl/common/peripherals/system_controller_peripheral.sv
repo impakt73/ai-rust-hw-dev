@@ -46,6 +46,7 @@ module system_controller (
     // ========================================================================
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
+    logic        halt_pending;           // Hold halt request until CPU acknowledges
     logic        sys_reset_pending;      // Delayed system reset pulse
     logic [31:0] response_data;
     logic        response_pending;
@@ -54,7 +55,6 @@ module system_controller (
     typedef enum logic [2:0] {
         OP_IDLE,
         OP_BOOT_WAIT,
-        OP_HALT_WAIT,
         OP_CPU_RESET_WAIT_HALT,
         OP_CPU_RESET_ASSERT,
         OP_CPU_RESET_WAIT_BOOT
@@ -77,6 +77,7 @@ module system_controller (
             cpu_boot      <= 1'b0;
             boot_addr_reg <= 32'h00000000;
             halt_reg      <= 32'h00000000;
+            halt_pending  <= 1'b0;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
             response_data <= 32'h00000000;
@@ -94,18 +95,17 @@ module system_controller (
                 response_pending <= 1'b0;
             end
 
+            if (halt_pending) begin
+                if (cpu_halted) begin
+                    halt_pending <= 1'b0;
+                end else begin
+                    req_cpu_halt <= 1'b1;
+                end
+            end
+
             case (pending_op)
                 OP_BOOT_WAIT: begin
                     if (!cpu_booting) begin
-                        response_data <= 32'h00000000;
-                        response_pending <= 1'b1;
-                        pending_op <= OP_IDLE;
-                    end
-                end
-
-                OP_HALT_WAIT: begin
-                    req_cpu_halt <= 1'b1;
-                    if (cpu_halted) begin
                         response_data <= 32'h00000000;
                         response_pending <= 1'b1;
                         pending_op <= OP_IDLE;
@@ -149,17 +149,23 @@ module system_controller (
 
                         REG_RESET: begin
                             if (mem_a_wdata[0]) begin
-                                req_cpu_halt <= 1'b1;
-                                pending_op <= OP_CPU_RESET_WAIT_HALT;
+                                if (cpu_booting) begin
+                                    pending_op <= OP_CPU_RESET_ASSERT;
+                                end else begin
+                                    req_cpu_halt <= 1'b1;
+                                    pending_op <= OP_CPU_RESET_WAIT_HALT;
+                                end
                             end else begin
                                 sys_reset_pending <= 1'b1;
                             end
                         end
 
                         REG_HALT: begin
-                            halt_reg      <= mem_a_wdata;
-                            req_cpu_halt  <= 1'b1;
-                            pending_op    <= OP_HALT_WAIT;
+                            halt_reg          <= mem_a_wdata;
+                            response_data     <= 32'h00000000;
+                            response_pending  <= 1'b1;
+                            req_cpu_halt      <= 1'b1;
+                            halt_pending      <= 1'b1;
                         end
 
                         default: begin

@@ -7,11 +7,14 @@
 ///   0x04 - RESET  (WO): write-data bit 0 selects reset type
 ///                      bit 0 = 0 => system reset, bit 0 = 1 => CPU reset
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
-///   0x0C - HALT   (RW): termination code + CPU halt request held until
-///                      `cpu_halted` acknowledges the halt operation
+///   0x0C - HALT   (RW): termination code + CPU halt request
 ///
-/// Reads respond immediately; BOOT, HALT, and CPU reset writes respond after the
-/// corresponding CPU state transition completes.
+/// Reads respond immediately; BOOT and CPU reset writes respond after the
+/// corresponding CPU state transition completes. HALT writes acknowledge on the
+/// D channel immediately so an in-flight CPU store can retire, while
+/// `req_cpu_halt` stays asserted until `cpu_halted` acknowledges the halt.
+/// The controller remains A-channel ready after the HALT write response so
+/// software can continue polling STATUS while the halt is pending.
 use riscv_core::{create_system_controller_runtime, SystemController};
 
 // Register offsets
@@ -240,7 +243,7 @@ fn test_system_controller_halt_register_read_write() {
 }
 
 #[test]
-fn test_system_controller_halt_write_waits_for_cpu_halt() {
+fn test_system_controller_halt_write_acknowledges_immediately() {
     let runtime =
         create_system_controller_runtime().expect("Failed to create system controller runtime");
     let mut dut = runtime
@@ -255,18 +258,35 @@ fn test_system_controller_halt_write_waits_for_cpu_halt() {
         "req_cpu_halt should assert while the controller waits for the CPU to halt"
     );
     assert_eq!(
-        dut.mem_d_valid, 0,
-        "HALT writes must wait for cpu_halted before responding"
+        dut.mem_d_valid, 1,
+        "HALT writes must acknowledge immediately so a CPU store can retire"
     );
     assert_eq!(
         dut.mem_a_ready, 0,
-        "controller must block new requests while a HALT is in flight"
+        "controller should not accept a new request until the write response is consumed"
+    );
+
+    finish_response_after_observation(&mut dut);
+    assert_eq!(
+        dut.req_cpu_halt, 1,
+        "req_cpu_halt should remain asserted after the write response is consumed"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "controller should return to A-channel ready while the halt request is pending"
+    );
+
+    let status = read_register(&mut dut, REG_STATUS);
+    assert_eq!(
+        status & 0x02,
+        0,
+        "STATUS should continue reporting cpu_halted=0 while halt is pending"
     );
 
     clock_cycle!(dut);
     assert_eq!(
         dut.mem_d_valid, 0,
-        "HALT response should remain blocked until cpu_halted goes high"
+        "HALT write response should only be emitted once"
     );
     assert_eq!(
         dut.req_cpu_halt, 1,
@@ -276,14 +296,12 @@ fn test_system_controller_halt_write_waits_for_cpu_halt() {
     dut.cpu_halted = 1;
     clock_cycle!(dut);
     assert_eq!(
-        dut.mem_d_valid, 1,
-        "HALT response should be released once cpu_halted goes high"
+        dut.mem_d_valid, 0,
+        "cpu_halted should not generate a second HALT write response"
     );
-
-    finish_response_after_observation(&mut dut);
     assert_eq!(
         dut.req_cpu_halt, 0,
-        "req_cpu_halt should deassert after the write response is consumed"
+        "req_cpu_halt should deassert once cpu_halted is observed"
     );
 }
 
@@ -618,6 +636,52 @@ fn test_system_controller_cpu_reset_then_reboot() {
         "Boot address should be updated on reboot"
     );
     assert_eq!(dut.cpu_rst_n, 1, "CPU should be released after reboot");
+}
+
+#[test]
+fn test_system_controller_cpu_reset_while_already_booting() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    dut.cpu_booting = 1;
+    dut.eval();
+
+    issue_write_register(&mut dut, REG_RESET, RESET_CPU);
+    assert_eq!(
+        dut.req_cpu_halt, 0,
+        "CPU reset should skip halt sequencing when the CPU is already in boot state"
+    );
+    assert_eq!(
+        dut.mem_d_valid, 0,
+        "CPU reset should still wait for the reset pulse before responding"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.cpu_rst_n, 0,
+        "CPU reset should still pulse cpu_rst_n low when already booting"
+    );
+    assert_eq!(
+        dut.req_cpu_halt, 0,
+        "halt request should remain deasserted while resetting a booting CPU"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "CPU reset response should complete once the boot-state CPU observes the reset pulse"
+    );
+    finish_response_after_observation(&mut dut);
+
+    assert_eq!(
+        dut.cpu_rst_n, 1,
+        "cpu_rst_n should deassert after the one-cycle reset pulse"
+    );
 }
 
 #[test]
