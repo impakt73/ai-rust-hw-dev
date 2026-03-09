@@ -522,7 +522,7 @@ fn test_system_controller_reset_uses_only_bit_zero() {
     clock_cycle!(dut);
     assert_eq!(dut.cpu_rst_n, 1, "CPU should be in S_IDLE");
 
-    // Write a value with bit 0 cleared; only bit 0 should select the reset type.
+    // 0x42 keeps bit 0 cleared while setting upper bits to prove only bit 0 matters.
     write_register_and_wait_for_response(&mut dut, REG_RESET, 0x42);
     assert_eq!(
         dut.sys_rst, 0,
