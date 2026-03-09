@@ -1,3 +1,11 @@
+// I2S serializer for single-channel sample beats.
+//
+// Clocking note:
+//   - This module does not generate its own bit clock; it forwards clk to i2s_bclk.
+//   - The user is responsible for generating the I2S bit clock externally.
+//   - Because LRCLK and SD are updated on the internal rising edge, the clk input
+//     provided to this module must be derived from the bit clock shifted backward
+//     by 180 degrees so LRCLK/SD are aligned for downstream I2S sampling.
 module i2s_serializer #(
     parameter int INPUT_SAMPLE_WIDTH = 16,
     parameter int OUTPUT_SAMPLE_WIDTH = 16
@@ -16,14 +24,22 @@ module i2s_serializer #(
     localparam int PAD_BITS = (OUTPUT_SAMPLE_WIDTH > INPUT_SAMPLE_WIDTH) ?
         (OUTPUT_SAMPLE_WIDTH - INPUT_SAMPLE_WIDTH) : 0;
 
+    initial begin
+        if (INPUT_SAMPLE_WIDTH < 1) begin
+            $fatal(1, "i2s_serializer: INPUT_SAMPLE_WIDTH (%0d) must be >= 1", INPUT_SAMPLE_WIDTH);
+        end
+        if (OUTPUT_SAMPLE_WIDTH < 1) begin
+            $fatal(1, "i2s_serializer: OUTPUT_SAMPLE_WIDTH (%0d) must be >= 1", OUTPUT_SAMPLE_WIDTH);
+        end
+    end
+
     logic [OUTPUT_SAMPLE_WIDTH-1:0] shift_reg;
     logic [OUTPUT_SAMPLE_WIDTH-1:0] formatted_sample;
     logic [BIT_INDEX_WIDTH-1:0] bit_index;
     logic reload_pending;
     logic next_channel;
 
-    // The serializer does not divide or synthesize a new bit clock.
-    // The caller must provide clk at the desired I2S bit-clock rate.
+    // Forward the caller-provided bit clock phase directly to the I2S pins.
     assign i2s_bclk = clk;
     assign sample_ready = reload_pending;
 
