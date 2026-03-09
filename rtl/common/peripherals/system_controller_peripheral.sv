@@ -25,7 +25,7 @@ module system_controller (
     output logic        cpu_rst_n,     // CPU reset output (active low)
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
-    output logic        req_cpu_halt,  // Pulse to request CPU halt
+    output logic        req_cpu_halt,  // Halt request output to CPU
     output logic [31:0] halted_value,  // Latched halt value register
     
     // CPU status inputs
@@ -47,14 +47,21 @@ module system_controller (
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
     logic        sys_reset_pending;      // Delayed system reset pulse
+    logic        cpu_reset_wait_halt;    // Waiting for cpu_halted before reset pulse
+    logic        cpu_reset_pulse_pending;// Reset pulse scheduled for next cycle
+    logic        cpu_reset_wait_boot;    // Waiting for cpu_booting after reset pulse
+    logic        cpu_reset_wait_boot_armed; // Ignore stale cpu_booting for one cycle
     logic [31:0] response_data;
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    logic        cpu_reset_in_progress;
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
-    assign mem_a_ready = !response_pending;
+    assign cpu_reset_in_progress =
+        cpu_reset_wait_halt || cpu_reset_pulse_pending || cpu_reset_wait_boot;
+    assign mem_a_ready = !response_pending && !cpu_reset_in_progress;
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
 
@@ -70,10 +77,14 @@ module system_controller (
             halt_reg      <= 32'h00000000;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
+            cpu_reset_wait_halt <= 1'b0;
+            cpu_reset_pulse_pending <= 1'b0;
+            cpu_reset_wait_boot <= 1'b0;
+            cpu_reset_wait_boot_armed <= 1'b0;
             response_data <= 32'h00000000;
             response_pending <= 1'b0;
         end else begin
-            // Default inactive values every cycle; writes can pulse outputs high/low.
+            // Default inactive values every cycle; writes/sequencers can pulse outputs.
             sys_rst      <= sys_reset_pending;
             cpu_rst_n    <= 1'b1;
             cpu_boot     <= 1'b0;
@@ -82,6 +93,30 @@ module system_controller (
 
             if (mem_d_handshake) begin
                 response_pending <= 1'b0;
+            end
+
+            if (cpu_reset_wait_halt) begin
+                req_cpu_halt <= 1'b1;
+                if (cpu_halted || cpu_booting) begin
+                    cpu_reset_wait_halt <= 1'b0;
+                    cpu_reset_pulse_pending <= 1'b1;
+                end
+            end
+
+            if (cpu_reset_pulse_pending) begin
+                cpu_rst_n <= 1'b0;
+                cpu_reset_pulse_pending <= 1'b0;
+                cpu_reset_wait_boot <= 1'b1;
+                cpu_reset_wait_boot_armed <= 1'b0;
+            end
+
+            if (cpu_reset_wait_boot) begin
+                if (!cpu_reset_wait_boot_armed) begin
+                    cpu_reset_wait_boot_armed <= 1'b1;
+                end else if (cpu_booting) begin
+                    cpu_reset_wait_boot <= 1'b0;
+                    cpu_reset_wait_boot_armed <= 1'b0;
+                end
             end
 
             if (mem_a_handshake) begin
@@ -98,7 +133,12 @@ module system_controller (
 
                         REG_RESET: begin
                             if (mem_a_wdata[0]) begin
-                                cpu_rst_n <= 1'b0;
+                                if (cpu_halted || cpu_booting) begin
+                                    cpu_reset_pulse_pending <= 1'b1;
+                                end else begin
+                                    req_cpu_halt <= 1'b1;
+                                    cpu_reset_wait_halt <= 1'b1;
+                                end
                             end else begin
                                 sys_reset_pending <= 1'b1;
                             end
