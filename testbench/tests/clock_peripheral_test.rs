@@ -167,13 +167,13 @@ fn test_clock_peripheral_microseconds() {
     clock_cycle!(dut);
     let us_1 = read_register(&mut dut, ELAPSED_US);
     assert!(
-        us_1 >= us_0 + 1,
+        us_1 > us_0,
         "ELAPSED_US should advance after one clock cycle"
     );
 
     clock_cycle!(dut);
     let us_2 = read_register(&mut dut, ELAPSED_US);
-    assert!(us_2 >= us_1 + 1, "ELAPSED_US should keep advancing");
+    assert!(us_2 > us_1, "ELAPSED_US should keep advancing");
 
     for _ in 0..8 {
         clock_cycle!(dut);

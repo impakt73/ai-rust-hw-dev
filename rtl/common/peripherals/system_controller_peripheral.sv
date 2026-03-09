@@ -51,10 +51,19 @@ module system_controller (
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    typedef enum logic [2:0] {
+        OP_IDLE,
+        OP_BOOT_WAIT,
+        OP_HALT_WAIT,
+        OP_CPU_RESET_WAIT_HALT,
+        OP_CPU_RESET_ASSERT,
+        OP_CPU_RESET_WAIT_BOOT
+    } pending_op_t;
+    pending_op_t pending_op;
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
-    assign mem_a_ready = !response_pending;
+    assign mem_a_ready = (pending_op == OP_IDLE) && !response_pending;
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
 
@@ -72,6 +81,7 @@ module system_controller (
             sys_reset_pending <= 1'b0;
             response_data <= 32'h00000000;
             response_pending <= 1'b0;
+            pending_op <= OP_IDLE;
         end else begin
             // Default inactive values every cycle; writes can pulse outputs high/low.
             sys_rst      <= sys_reset_pending;
@@ -84,21 +94,63 @@ module system_controller (
                 response_pending <= 1'b0;
             end
 
-            if (mem_a_handshake) begin
-                response_pending <= 1'b1;
-                response_data <= 32'h00000000;
+            case (pending_op)
+                OP_BOOT_WAIT: begin
+                    if (!cpu_booting) begin
+                        response_data <= 32'h00000000;
+                        response_pending <= 1'b1;
+                        pending_op <= OP_IDLE;
+                    end
+                end
 
+                OP_HALT_WAIT: begin
+                    req_cpu_halt <= 1'b1;
+                    if (cpu_halted) begin
+                        response_data <= 32'h00000000;
+                        response_pending <= 1'b1;
+                        pending_op <= OP_IDLE;
+                    end
+                end
+
+                OP_CPU_RESET_WAIT_HALT: begin
+                    req_cpu_halt <= 1'b1;
+                    if (cpu_halted) begin
+                        pending_op <= OP_CPU_RESET_ASSERT;
+                    end
+                end
+
+                OP_CPU_RESET_ASSERT: begin
+                    cpu_rst_n <= 1'b0;
+                    pending_op <= OP_CPU_RESET_WAIT_BOOT;
+                end
+
+                OP_CPU_RESET_WAIT_BOOT: begin
+                    if (cpu_booting) begin
+                        response_data <= 32'h00000000;
+                        response_pending <= 1'b1;
+                        pending_op <= OP_IDLE;
+                    end
+                end
+
+                default: begin
+                    pending_op <= OP_IDLE;
+                end
+            endcase
+
+            if (mem_a_handshake) begin
                 if (mem_a_we) begin
                     case (mem_a_addr[3:0])  // Use only register offset bits
                         REG_BOOT: begin
                             // BOOT writes are accepted independently of cpu_booting state.
                             boot_addr_reg <= mem_a_wdata;
                             cpu_boot      <= 1'b1;
+                            pending_op    <= OP_BOOT_WAIT;
                         end
 
                         REG_RESET: begin
                             if (mem_a_wdata[0]) begin
-                                cpu_rst_n <= 1'b0;
+                                req_cpu_halt <= 1'b1;
+                                pending_op <= OP_CPU_RESET_WAIT_HALT;
                             end else begin
                                 sys_reset_pending <= 1'b1;
                             end
@@ -107,11 +159,16 @@ module system_controller (
                         REG_HALT: begin
                             halt_reg      <= mem_a_wdata;
                             req_cpu_halt  <= 1'b1;
+                            pending_op    <= OP_HALT_WAIT;
                         end
 
-                        default: ;
+                        default: begin
+                            response_data <= 32'h00000000;
+                            response_pending <= 1'b1;
+                        end
                     endcase
                 end else begin
+                    response_pending <= 1'b1;
                     case (mem_a_addr[3:0])
                         REG_STATUS: begin
                             // Bit 0 = cpu_booting, Bit 1 = cpu_halted
