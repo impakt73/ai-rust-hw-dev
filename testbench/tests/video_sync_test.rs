@@ -32,6 +32,12 @@ fn reset_minimal_wrapper(dut: &mut VideoSyncMinimalWrapper) {
     dut.rst_n = 1;
 }
 
+fn advance_default_wrapper(dut: &mut VideoSyncWrapper, cycles: usize) {
+    for _ in 0..cycles {
+        clock_cycle!(dut);
+    }
+}
+
 #[test]
 fn test_video_sync_holds_registered_defaults_during_reset() {
     let runtime = create_video_sync_runtime().expect("Failed to create video_sync runtime");
@@ -188,6 +194,75 @@ fn test_video_sync_supports_minimal_geometry_and_active_high_syncs() {
         assert_eq!(
             dut.active_y, active_y,
             "unexpected minimal-wrapper active_y coordinate"
+        );
+    }
+}
+
+#[test]
+fn test_video_sync_zeroes_coordinates_outside_active_region() {
+    let runtime = create_video_sync_runtime().expect("Failed to create video_sync runtime");
+    let mut dut = runtime
+        .create_model_simple::<VideoSyncWrapper>()
+        .expect("Failed to create video_sync model");
+
+    reset_default_wrapper(&mut dut);
+
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL + 1);
+    assert_eq!(
+        dut.active_video, 1,
+        "second line should begin in active video"
+    );
+    assert_eq!(dut.active_x, 0, "second line should restart x at zero");
+    assert_eq!(
+        dut.active_y, 1,
+        "second line should increment y in active region"
+    );
+
+    advance_default_wrapper(&mut dut, 4);
+    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - 4) {
+        assert_eq!(
+            dut.active_video, 0,
+            "horizontal blanking should deassert active_video"
+        );
+        assert_eq!(
+            dut.active_x, 0,
+            "active_x must be zero during horizontal blanking"
+        );
+        assert_eq!(
+            dut.active_y, 0,
+            "active_y must be zero during horizontal blanking"
+        );
+        clock_cycle!(&mut dut);
+    }
+
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL);
+    assert_eq!(
+        dut.active_video, 0,
+        "vertical blanking line should be inactive"
+    );
+    assert_eq!(
+        dut.line_start, 1,
+        "vertical blanking line should still start a line"
+    );
+    assert_eq!(
+        dut.active_x, 0,
+        "active_x must be zero in vertical blanking"
+    );
+    assert_eq!(
+        dut.active_y, 0,
+        "active_y must be zero in vertical blanking"
+    );
+
+    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - 1) {
+        clock_cycle!(&mut dut);
+        assert_eq!(dut.active_video, 0, "vertical blanking must stay inactive");
+        assert_eq!(
+            dut.active_x, 0,
+            "active_x must remain zero in vertical blanking"
+        );
+        assert_eq!(
+            dut.active_y, 0,
+            "active_y must remain zero in vertical blanking"
         );
     }
 }

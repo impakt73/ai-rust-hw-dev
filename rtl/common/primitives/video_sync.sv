@@ -134,8 +134,8 @@ module video_sync #(
         frame_start_next = (h_counter_next == '0) && (v_counter_next == '0);
         hsync_next = h_in_sync_region ? HSYNC_ACTIVE_HIGH : ~HSYNC_ACTIVE_HIGH;
         vsync_next = v_in_sync_region ? VSYNC_ACTIVE_HIGH : ~VSYNC_ACTIVE_HIGH;
-        active_x_next = h_in_active_region ? ACTIVE_X_WIDTH'(h_counter_next) : '0;
-        active_y_next = v_in_active_region ? ACTIVE_Y_WIDTH'(v_counter_next) : '0;
+        active_x_next = active_video_next ? ACTIVE_X_WIDTH'(h_counter_next) : '0;
+        active_y_next = active_video_next ? ACTIVE_Y_WIDTH'(v_counter_next) : '0;
     end
 
     always_ff @(posedge clk) begin
