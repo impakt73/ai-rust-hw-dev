@@ -56,9 +56,13 @@ module system_controller (
     logic        mem_a_handshake;
     logic        mem_d_handshake;
     logic        cpu_reset_in_progress;
+    logic        cpu_reset_safe_state;
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    // CPU reset is safe once the core is no longer driving the memory request bus.
+    // That is true both in HALT and while cpu_booting is asserted.
+    assign cpu_reset_safe_state = cpu_halted || cpu_booting;
     assign cpu_reset_in_progress =
         cpu_reset_wait_halt || cpu_reset_pulse_pending || cpu_reset_wait_boot;
     assign mem_a_ready = !response_pending && !cpu_reset_in_progress;
@@ -97,7 +101,7 @@ module system_controller (
 
             if (cpu_reset_wait_halt) begin
                 req_cpu_halt <= 1'b1;
-                if (cpu_halted || cpu_booting) begin
+                if (cpu_reset_safe_state) begin
                     cpu_reset_wait_halt <= 1'b0;
                     cpu_reset_pulse_pending <= 1'b1;
                 end
@@ -111,6 +115,8 @@ module system_controller (
             end
 
             if (cpu_reset_wait_boot) begin
+                // Wait one cycle after the reset pulse so cpu_booting reflects the
+                // post-reset CPU state rather than a stale pre-reset value.
                 if (!cpu_reset_wait_boot_armed) begin
                     cpu_reset_wait_boot_armed <= 1'b1;
                 end else if (cpu_booting) begin
@@ -133,7 +139,7 @@ module system_controller (
 
                         REG_RESET: begin
                             if (mem_a_wdata[0]) begin
-                                if (cpu_halted || cpu_booting) begin
+                                if (cpu_reset_safe_state) begin
                                     cpu_reset_pulse_pending <= 1'b1;
                                 end else begin
                                     req_cpu_halt <= 1'b1;
