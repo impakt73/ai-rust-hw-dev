@@ -41,9 +41,8 @@ module system_controller (
     localparam logic [3:0] REG_BOOT   = 4'h8;  // Write-only: Boot address
     localparam logic [3:0] REG_HALT   = 4'hC;  // Read/write: Halt code
     
-    // Reset control values
-    localparam [31:0] RESET_SYSTEM = 32'h00000001;  // System reset
-    localparam [31:0] RESET_CPU    = 32'h00000002;  // CPU reset
+    // Reset control bit
+    localparam logic RESET_CPU_BIT = 1'b1;  // bit 0: 0 = system reset, 1 = CPU reset
     
     // ========================================================================
     // Internal Registers
@@ -101,10 +100,10 @@ module system_controller (
                         end
 
                         REG_RESET: begin
-                            if (mem_a_wdata == RESET_SYSTEM) begin
-                                sys_reset_pending <= 1'b1;
-                            end else if (mem_a_wdata == RESET_CPU) begin
+                            if (mem_a_wdata[0] == RESET_CPU_BIT) begin
                                 cpu_rst_n <= 1'b0;
+                            end else begin
+                                sys_reset_pending <= 1'b1;
                             end
                         end
 

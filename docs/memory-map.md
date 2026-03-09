@@ -146,7 +146,7 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 | Offset | Register | Access | Description |
 |--------|----------|--------|-------------|
 | 0x00   | STATUS   | RO     | Bit 0: cpu_booting, Bit 1: cpu_halted |
-| 0x04   | RESET    | WO     | Write 1: system reset, Write 2: CPU reset |
+| 0x04   | RESET    | WO     | Write-data bit 0 selects reset type: 0 = system reset, 1 = CPU reset |
 | 0x08   | BOOT     | WO     | Write boot address to start CPU |
 | 0x0C   | HALT     | RW     | Halt termination code (write requests CPU halt next cycle) |
 
