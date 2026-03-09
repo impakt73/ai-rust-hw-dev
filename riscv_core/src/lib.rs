@@ -214,6 +214,18 @@ pub struct SkidBufferWrapper;
 pub struct SquareWaveGeneratorWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/video_sync_test_wrappers.sv",
+    name = "video_sync_wrapper"
+)]
+pub struct VideoSyncWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/video_sync_test_wrappers.sv",
+    name = "video_sync_minimal_wrapper"
+)]
+pub struct VideoSyncMinimalWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sys_led_controller_wrapper.sv",
     name = "sys_led_controller_wrapper"
 )]
@@ -520,5 +532,12 @@ pub fn create_square_wave_generator_runtime() -> Result<VerilatorRuntime, Box<dy
     create_runtime(&[
         "primitives/square_wave_generator.sv",
         "wrappers/square_wave_generator_wrapper.sv",
+    ])
+}
+
+pub fn create_video_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/video_sync.sv",
+        "wrappers/video_sync_test_wrappers.sv",
     ])
 }
