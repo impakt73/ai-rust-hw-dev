@@ -7,7 +7,8 @@
 ///   0x04 - RESET  (WO): write-data bit 0 selects reset type
 ///                      bit 0 = 0 => system reset, bit 0 = 1 => CPU reset
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
-///   0x0C - HALT   (RW): termination code + CPU halt request pulse
+///   0x0C - HALT   (RW): termination code + CPU halt request held until
+///                      `cpu_halted` acknowledges the halt operation
 ///
 /// Reads respond immediately; BOOT, HALT, and CPU reset writes respond after the
 /// corresponding CPU state transition completes.
@@ -636,7 +637,10 @@ fn test_system_controller_reset_uses_only_bit_zero() {
     dut.cpu_booting = 0;
     clock_cycle!(dut);
     complete_pending_response(&mut dut);
-    assert_eq!(dut.cpu_rst_n, 1, "CPU reset should remain deasserted after boot");
+    assert_eq!(
+        dut.cpu_rst_n, 1,
+        "CPU reset should remain deasserted after boot"
+    );
 
     // 0x42 keeps bit 0 cleared while setting upper bits to prove only bit 0 matters.
     issue_write_register(&mut dut, REG_RESET, 0x42);
