@@ -347,7 +347,7 @@ fn test_system_controller_boot_sequence() {
     );
     finish_response_after_observation(&mut dut);
 
-    // After one more clock, should transition to S_IDLE (through S_CPU_BOOT)
+    // After one more clock, the controller should have finished the boot write handling.
     clock_cycle!(dut);
 
     // In S_IDLE, cpu_rst_n should be 1 (CPU released from reset)
@@ -636,7 +636,7 @@ fn test_system_controller_reset_uses_only_bit_zero() {
     dut.cpu_booting = 0;
     clock_cycle!(dut);
     complete_pending_response(&mut dut);
-    assert_eq!(dut.cpu_rst_n, 1, "CPU should be in S_IDLE");
+    assert_eq!(dut.cpu_rst_n, 1, "CPU reset should remain deasserted after boot");
 
     // 0x42 keeps bit 0 cleared while setting upper bits to prove only bit 0 matters.
     issue_write_register(&mut dut, REG_RESET, 0x42);
