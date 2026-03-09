@@ -4,7 +4,8 @@
 ///
 /// Register Map:
 ///   0x00 - STATUS (RO): bit 0 = cpu_booting, bit 1 = cpu_halted
-///   0x04 - RESET  (WO): write 1 = system reset, write 2 = CPU reset
+///   0x04 - RESET  (WO): write-data bit 0 selects reset type
+///                      bit 0 = 0 => system reset, bit 0 = 1 => CPU reset
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
 ///   0x0C - HALT   (RW): termination code + CPU halt request pulse
 ///
@@ -18,8 +19,8 @@ const REG_BOOT: u32 = 0x08;
 const REG_HALT: u32 = 0x0C;
 
 // Reset control values
-const RESET_SYSTEM: u32 = 1;
-const RESET_CPU: u32 = 2;
+const RESET_SYSTEM: u32 = 0;
+const RESET_CPU: u32 = 1;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -505,7 +506,7 @@ fn test_system_controller_cpu_reset_then_reboot() {
 }
 
 #[test]
-fn test_system_controller_invalid_reset_value_ignored() {
+fn test_system_controller_reset_uses_only_bit_zero() {
     let runtime =
         create_system_controller_runtime().expect("Failed to create system controller runtime");
     let mut dut = runtime
@@ -521,17 +522,24 @@ fn test_system_controller_invalid_reset_value_ignored() {
     clock_cycle!(dut);
     assert_eq!(dut.cpu_rst_n, 1, "CPU should be in S_IDLE");
 
-    // Write invalid value to RESET register (neither 1 nor 2)
-    write_register(&mut dut, REG_RESET, 0x42);
-    clock_cycle!(dut);
-
-    // Should still be in S_IDLE
-    assert_eq!(
-        dut.cpu_rst_n, 1,
-        "CPU should still be released - invalid reset value ignored"
-    );
+    // 0x42 keeps bit 0 cleared while setting upper bits to prove only bit 0 matters.
+    write_register_and_wait_for_response(&mut dut, REG_RESET, 0x42);
     assert_eq!(
         dut.sys_rst, 0,
-        "sys_rst should not be asserted for invalid reset value"
+        "sys_rst should remain low while the reset write response is pending"
+    );
+    finish_response_after_observation(&mut dut);
+    assert_eq!(
+        dut.sys_rst, 1,
+        "sys_rst should pulse when RESET bit 0 is cleared, regardless of upper bits"
+    );
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.sys_rst, 0,
+        "sys_rst pulse should deassert after one cycle"
+    );
+    assert_eq!(
+        dut.cpu_rst_n, 1,
+        "system reset write should not assert CPU reset"
     );
 }
