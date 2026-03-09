@@ -1,247 +1,239 @@
-# FPGA Resource Analysis Report
+# RV32F Resource Consumption Report for iCE40-HX8K
 
-This report analyzes the resource consumption of each RTL module in the RISC-V CPU design when synthesized for the Alchitry Cu v1 board (iCE40-HX8K FPGA).
+This report investigates why the RV32F implementation cannot currently be enabled on the Alchitry Cu v1 (`ice40_alchitry_cu`) target and identifies the F-extension blocks that dominate FPGA resource usage.
 
-## Target Device: Lattice iCE40-HX8K-CB132
+- **Target FPGA:** Lattice iCE40-HX8K-CB132
+- **Available logic cells:** 7,680
+- **Date:** 2026-03-09
+- **Primary conclusion:** the F extension is **logic-cell bound, not BRAM bound**. Enabling RV32F pushes the routed design from **5,580 / 7,680 LCs (72%)** to **14,573 / 7,680 LCs (189%)**, so the build fails in nextpnr with no logic cells remaining.
 
-### Available Resources:
-- **Logic Cells (LUTs):** 7,680
-- **Flip-Flops (DFFs):** 7,680  
-- **Block RAM (BRAM):** 32 blocks (4Kbit each = 16KB total)
+## Measurement Methodology
 
----
+Three concrete data sets were collected:
 
-## Executive Summary
+1. **Current shipped ice40 build (RV32F disabled)**
+   - Command: `cd rtl/fpga && make TARGET=ice40_alchitry_cu all utilization`
+   - Source of truth: `rtl/fpga/build/ice40_alchitry_cu/yosys.log` and `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log`
+2. **Experimental ice40 build with RV32F forced on**
+   - Command: Yosys `chparam -set ENABLE_F_EXT 1 ice40_alchitry_cu_top` followed by `nextpnr-ice40`
+   - Source of truth: `rtl/fpga/build/ice40_alchitry_cu/yosys_f_enabled.log` and `rtl/fpga/build/ice40_alchitry_cu/nextpnr_f_enabled.log`
+3. **Standalone per-module synthesis on iCE40 technology mapping**
+   - Command family: `cd rtl/fpga/resource_analysis && make synth-<module>`
+   - Source of truth: `rtl/fpga/resource_analysis/build/*.log`
 
-**The full CPU design exceeds available FPGA resources by a significant margin.**
+### Important Interpretation Rule
 
-### Top Resource Consumers:
+The standalone numbers are most useful for **ranking hotspots**.
 
-| Rank | Module | LUTs | % of Device | Issue | Status |
-|------|--------|------|-------------|-------|--------|
-| 1 | **ALU** (with div_unit) | ~~4,738~~ → 5,551 | ~~61.7%~~ → 72.3% | Single shared 64-bit multiplier + multi-cycle divider | ✅ **Hardware consolidated** |
-| 2 | **FPU** (full) | ~~4,535~~ → 4,077 | ~~59.0%~~ → 53.1% | Single shared FMA unit + 48-bit divider | ✅ **Hardware consolidated** |
-| 3 | **FPU_FMA** | 2,293 | 29.9% | Multiplier + Adder chain | Unchanged |
-| 4 | **FPU_Multiplier** | 1,574 | 20.5% | 24x24 bit multiplier | Now shared via FMA |
-| 5 | ~~**CSR File**~~ | ~~>7,680~~ → 193 | ~~>100%~~ → 2.5% | ~~4096x32-bit register array~~ | ✅ **FIXED!** |
+- `fpu` already contains the arithmetic core, converters, comparator/classifiers, and the shared 48-bit divider path, so **do not add `fpu` to its child modules**.
+- `fp_regfile` is instantiated **outside** `fpu` in `rtl/common/cpu/cpu.sv`, so `fp_regfile + fpu` is the best standalone approximation of the RV32F datapath cost before CPU-side decode/control/writeback overhead.
+- Child-module totals are therefore used for **attribution**, not exact addition.
 
-**Critical Finding:** The ALU + FPU alone consume ~125% of available LUTs, making the design impossible to fit on the iCE40-HX8K without disabling extensions.
+## Top-Level Impact on the HX8K Build
 
-### Hardware Consolidation Summary (2026-01-28)
+### Baseline vs. Experimental RV32F-Enabled Build
 
-**ALU Changes:**
-- Replaced 4 separate inline multiplications (MUL, MULH, MULHSU, MULHU) with a single shared 64×64 signed multiplier
-- Operand preparation logic selects sign-extension or zero-extension based on instruction type
-- Result selection extracts lower or upper 32 bits based on operation
-- **Trade-off:** Slight LUT increase due to 64-bit multiplier, but now a single hardware instance that can be time-multiplexed in pipelined designs
+| Build | Yosys SB_LUT4 | Yosys DFF | Yosys RAM | nextpnr LCs | nextpnr RAM | Status |
+|---|---:|---:|---:|---:|---:|---|
+| Current `ice40_alchitry_cu_top` (`ENABLE_F_EXT=0`) | 4,528 | 2,252 | 30 | 5,580 / 7,680 (72%) | 30 / 32 (93%) | Routes successfully |
+| Experimental `ENABLE_F_EXT=1` | 12,230 | 3,646 | 30 | 14,573 / 7,680 (189%) | 30 / 32 (93%) | Fails: no logic cells remaining |
+| **Delta when enabling RV32F** | **+7,702** | **+1,394** | **+0** | **+8,993 LCs** | **+0** | Logic is the blocker |
 
-**FPU Changes:**
-- Replaced 7 arithmetic units (4 FMA + 2 adders + 1 multiplier) with a single shared FMA unit
-- FPU_ADD routed as: `(fs1 × 1.0) + fs2`
-- FPU_SUB routed as: `(fs1 × 1.0) - fs2`
-- FPU_MUL routed as: `(fs1 × fs2) + 0.0`
-- FMA operations use direct inputs with appropriate negate signals
-- **Result:** 10% LUT reduction (4,535 → 4,077 LUTs) with single hardware instance
+### What This Means
 
----
+- **RV32F does not materially change BRAM usage** on this target. The build already uses 30/32 RAM blocks with RV32F disabled, and it still reports 30/32 with RV32F enabled.
+- The overrun is overwhelmingly in **logic cells / LUT fabric**.
+- The shipped F-disabled build still has timing margin after place-and-route: **41.40 MHz Fmax** against a **25 MHz** target clock.
+- Because the F-enabled build already reaches **189% LC utilization**, timing optimization alone cannot solve this problem.
 
-## Detailed Module Resource Summary
+## RV32F Module Inventory and Hierarchy
 
-| Module | LUTs | DFFs | BRAM | % of Device | Status |
-|--------|------|------|------|-------------|--------|
-| branch_unit | 82 | 264 | 0 | 1.1% | ✅ OK |
-| fpu_classifier | 33 | 255 | 0 | 0.4% | ✅ OK |
-| fpu_comparator | 97 | 259 | 0 | 1.3% | ✅ OK |
-| writeback_mux | 81 | 79 | 0 | 1.1% | ✅ OK |
-| mem_interface | 35 | 79 | 0 | 0.5% | ✅ OK |
-| fpu_sqrt | 32 | 266 | 0 | 0.4% | ✅ OK |
-| fpu_div_setup | 61 | 258 | 0 | 0.8% | ✅ OK |
-| fetch_buffer | 29 | 153 | 0 | 0.4% | ✅ OK |
-| decoder | 74 | 162 | 0 | 1.0% | ✅ OK |
-| decompress | 65 | 138 | 0 | 0.8% | ✅ OK |
-| fpu_float_to_int | 217 | 277 | 0 | 2.8% | ✅ OK |
-| fpu_int_to_float | 327 | 267 | 0 | 4.3% | ✅ OK |
-| regfile | 409 | 335 | 0 | 5.3% | ⚡ Medium |
-| fpu_div_assemble | 513 | 266 | 0 | 6.7% | ⚡ Medium |
-| div_unit | 550 | 385 | 0 | 7.2% | ⚡ Medium |
-| fp_regfile | 680 | 335 | 0 | 8.9% | ⚡ Medium |
-| fpu_fma | 2,293 | 268 | 0 | 29.9% | ⚠️ HIGH (self-contained with inlined adder/multiplier) |
-| fpu (full) | ~~4,535~~ → 4,077 | 442 | 0 | ~~59.0%~~ → 53.1% | 🟡 Improved (✅ consolidated) |
-| alu (with div) | ~~4,738~~ → 5,551 | 411 | 0 | ~~61.7%~~ → 72.3% | 🟡 Consolidated (single multiplier) |
-| csr_file | 193 | 231 | 0 | 2.5% | ✅ OK (FIXED!) |
+### F-extension integration points
 
-**Note:** `fpu_adder.sv` and `fpu_multiplier.sv` have been deleted. Their logic is now inlined in `fpu_fma.sv`.
+- `rtl/fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv`
+  - `ENABLE_F_EXT` defaults to `1'b0` for the HX8K build.
+- `rtl/common/cpu/cpu.sv`
+  - Instantiates `fp_regfile` and `fpu` when `ENABLE_F_EXT=1`.
+- `rtl/common/fpu/fpu.sv`
+  - Instantiates the arithmetic, conversion, comparison, and divide helper blocks.
 
----
+### FPU internal hierarchy
 
-## Root Cause Analysis
+| Module type | Instances inside `fpu` | Purpose |
+|---|---:|---|
+| `fpu_classifier` | 2 | Operand classification for `fs1` and `fs2` |
+| `fpu_comparator` | 1 | `FEQ.S` / `FLT.S` / `FLE.S` support |
+| `fpu_fma` | 1 | Shared arithmetic core for `FADD.S`, `FSUB.S`, `FMUL.S`, and all fused ops |
+| `fpu_sqrt` | 1 | `FSQRT.S` |
+| `fpu_int_to_float` | 2 | Signed and unsigned `FCVT.S.W*` paths |
+| `fpu_float_to_int` | 2 | Signed and unsigned `FCVT.W*.S` paths |
+| `fpu_div_setup` | 1 | `FDIV.S` special-case handling and operand preparation |
+| `div_unit` (`WIDTH=48`) | 1 | Shared mantissa divider for `FDIV.S` |
+| `fpu_div_assemble` | 1 | Re-normalizes divider output into IEEE-754 format |
 
-### 1. ALU Module (5,551 LUTs - 72.3%) - ✅ Hardware Consolidated
+## Per-Module Resource Breakdown
 
-**Previous Implementation:**
-- Four inline 32x32→64 bit multiplications (MUL, MULH, MULHSU, MULHU)
-- Synthesis created 4 separate multiplier instances
+### Top-level RV32F blocks synthesized standalone
 
-**Current Implementation (Consolidated):**
-- Single shared 64×64 signed multiplier with operand preparation MUXes
-- Operand extension logic selects sign/zero extension based on instruction
-- Result selection extracts appropriate 32-bit portion
+| Module | Standalone SB_LUT4 | % of HX8K | DFFs | Carry cells | Notes |
+|---|---:|---:|---:|---:|---|
+| `fpu` | 4,081 | 53.1% | 444 | 491 | Integrated floating-point execution block |
+| `fp_regfile` | 694 | 9.0% | 335 | 3 | Separate FP register file instantiated in `cpu.sv` |
 
-**Trade-off Analysis:**
-- LUT increase from 4,738 to 5,551 (+17%) due to larger 64-bit multiplier
-- However, now have **single hardware instance** that can be:
-  - Time-multiplexed in multi-cycle designs
-  - Shared with DSP blocks on FPGAs with hardware multipliers
-  - Pipelined for higher throughput
+**Key standalone estimate:** `fpu + fp_regfile = 4,775 LUT4`, or **62.2% of the entire device**, before accounting for the CPU-side decode/control/writeback logic that also becomes active when RV32F is enabled.
 
-**Remaining Recommendation:**
-- **Make M extension configurable** via `ENABLE_M_EXT` parameter (already implemented)
-- When disabled, eliminates the multiplier entirely (~5,000 LUT savings)
+### Internal `fpu` hotspot breakdown (standalone synthesis of module types)
 
-### 2. FPU Module (4,077 LUTs - 53.1%) - ✅ Hardware Consolidated
+| Module type | Instances in `fpu` | LUT4 per module | Approx. replicated subtotal | % of HX8K per module | Why it matters |
+|---|---:|---:|---:|---:|---|
+| `fpu_fma` | 1 | 2,300 | 2,300 | 29.9% | Dominant arithmetic block; shared by add/sub/mul/fused ops |
+| `div_unit` (`WIDTH=48`) | 1 | 553 | 553 | 7.2% | Shared mantissa divider used by `FDIV.S` |
+| `fpu_div_assemble` | 1 | 513 | 513 | 6.7% | Division result normalization and packing |
+| `fpu_int_to_float` | 2 | 327 | 654 | 4.3% | Two instances are used even though the module already has `is_signed` input |
+| `fpu_float_to_int` | 2 | 220 | 440 | 2.9% | Same duplication pattern as integer-to-float conversion |
+| `fpu_comparator` | 1 | 97 | 97 | 1.3% | Needed for ordered FP comparisons |
+| `fpu_div_setup` | 1 | 61 | 61 | 0.8% | Prepares divide operands and handles special cases |
+| `fpu_classifier` | 2 | 33 | 66 | 0.4% | Small, duplicated helper for NaN/Inf/Zero decode |
+| `fpu_sqrt` | 1 | 32 | 32 | 0.4% | Very small placeholder-style implementation |
 
-**Previous Implementation:**
-- 4 FMA units (fpu_fma) for FMADD/FMSUB/FNMSUB/FNMADD
-- 2 FPU adders (add + subtract)
-- 1 FPU multiplier  
-- 1 48-bit divider for FP division
-- Multiple conversion units
+### Hotspot Ranking
 
-**Current Implementation (Consolidated):**
-- Single shared FMA unit with input multiplexing
-- Routes all arithmetic operations through FMA:
-  - ADD: `(fs1 × 1.0) + fs2`
-  - SUB: `(fs1 × 1.0) - fs2`
-  - MUL: `(fs1 × fs2) + 0.0`
-  - MADD/MSUB/NMSUB/NMADD: Direct FMA with negate signals
+1. **`fpu_fma`** is the largest individual consumer by a wide margin.
+2. **The `FDIV.S` path** (`div_unit` + `fpu_div_assemble` + `fpu_div_setup`) is the next-largest functional cluster at roughly **1,127 LUT4** by standalone composition.
+3. **Converter duplication** (`2 × fpu_int_to_float` + `2 × fpu_float_to_int`) is another significant cluster at roughly **1,094 LUT4** by standalone composition.
+4. **`fp_regfile`** is a meaningful external cost at **694 LUT4**, and it is structurally difficult to map into iCE40 BRAM because the current CPU/FPU interface expects **3 asynchronous read ports**.
 
-**Result:**
-- 10% LUT reduction (4,535 → 4,077 LUTs)
-- Single hardware instance for all arithmetic operations
+## Root-Cause Observations
 
-**Remaining Recommendation:**
-- **Make F extension configurable** via `ENABLE_F_EXT` parameter
-- When disabled, eliminates FPU entirely (~4,000 LUT savings)
+### 1. The arithmetic core is fundamentally too large for HX8K in its current form
 
-### 3. CSR File (Fixed! Was: Synthesis Timeout - >100%)
+`fpu_fma` is a fully combinational multiply-align-add-normalize datapath. It is shared effectively, but even after that consolidation it still costs **2,300 LUT4** standalone.
 
-**Original Problem:** The CSR file declared a 4096x32-bit register array:
-```systemverilog
-logic [31:0] csr_registers [0:4095];  // 131,072 flip-flops!
+Because `fpu_fma` serves:
+- `FADD.S`
+- `FSUB.S`
+- `FMUL.S`
+- `FMADD.S`
+- `FMSUB.S`
+- `FNMSUB.S`
+- `FNMADD.S`
+
+there is no low-cost way to keep the current arithmetic instruction set while removing this block.
+
+### 2. The divide path is expensive enough to justify being optional on HX8K
+
+`fpu_div_setup` is small, but the shared **48-bit** `div_unit` plus `fpu_div_assemble` consume another **1,066 LUT4** standalone.
+
+That makes `FDIV.S` a good candidate for feature-gating or software emulation on resource-constrained targets.
+
+### 3. The conversion blocks are duplicated even though the modules are already parameterized by `is_signed`
+
+In `rtl/common/fpu/fpu.sv`, the design instantiates:
+- two `fpu_int_to_float` blocks
+- two `fpu_float_to_int` blocks
+
+but both module types already accept an `is_signed` input.
+
+That duplication is one of the clearest localized opportunities to reclaim LUTs without changing the external ISA surface.
+
+### 4. The FP register file is architecturally expensive on iCE40
+
+`rtl/common/fpu/fp_regfile.sv` explicitly documents why it stays LUT-based today:
+- depth is only 32 entries,
+- reads are asynchronous,
+- three simultaneous read ports are required for fused operations.
+
+That combination blocks straightforward iCE40 BRAM inference and makes the FP register file a persistent LUT consumer.
+
+## Actionable Resource-Reduction Suggestions
+
+The table below focuses on changes that directly target the measured hotspots.
+
+| Suggestion | Targeted blocks | Expected benefit | Development effort | Technical complexity | Rationale |
+|---|---|---|---|---|---|
+| **Share one signed/unsigned converter instance per direction** | `2 × fpu_int_to_float`, `2 × fpu_float_to_int` | Moderate | **Low** | **Low** | The converter modules already take `is_signed`; replacing the duplicated instances in `fpu.sv` with one instance per direction is a localized change and should remove a noticeable chunk of duplicated LUT logic. |
+| **Add an HX8K-specific reduced-F profile that omits `FDIV.S`** | `fpu_div_setup`, `div_unit`, `fpu_div_assemble` | High | **Low** | **Low-Medium** | The divide path is more than 1.1k LUT standalone and is cleanly isolated in the current hierarchy. It is the easiest large feature slice to disable while keeping the rest of the FPU structure intact. |
+| **Extend the reduced-F profile to drop `FCVT.*` on HX8K if software fallback is acceptable** | `fpu_int_to_float`, `fpu_float_to_int` | Moderate to High | **Low-Medium** | **Medium** | The conversion logic is already isolated and duplicated. If an HX8K profile can rely on software conversion sequences, this removes another sizable logic cluster. |
+| **Serialize or prefetch the third FP source operand for fused ops** | `fp_regfile` | Moderate | **Medium** | **Medium-High** | The present 3-read-port asynchronous FP register file costs 694 LUTs and blocks BRAM inference. Allowing an extra cycle for fused ops could reduce the read-port requirement and make a denser implementation practical. |
+| **Replace the current `FDIV.S` implementation with a slower, narrower, or multi-pass divider** | `div_unit`, `fpu_div_assemble` | Moderate | **Medium** | **High** | The existing divider uses a 48-bit non-restoring datapath. A higher-latency divider could trade cycles for less fabric, but it is a more invasive arithmetic redesign. |
+| **Re-architect `fpu_fma` into a multi-cycle or iterative arithmetic datapath** | `fpu_fma` | Very High | **High** | **High** | `fpu_fma` is the dominant area consumer. Any serious attempt to fit a meaningful arithmetic subset on HX8K eventually has to reduce this block, but it requires a substantial redesign of the current combinational datapath. |
+| **Rework the CPU/FPU interface to tolerate synchronous FP register reads and BRAM-style storage** | `fp_regfile`, CPU execute/decode timing | Moderate to High | **High** | **High** | This is the architectural fix hinted at in `fp_regfile.sv`, but it requires extra latency handling, hazard management, and likely changes to the multi-cycle CPU sequencing. |
+
+## Recommended Prioritization
+
+### Best near-term experiments
+
+1. **Remove converter duplication first**
+   - Lowest-risk localized optimization.
+   - Good candidate for an immediate measurable win.
+2. **Create an HX8K `F-lite` profile without `FDIV.S`**
+   - Biggest low-effort area reduction available from a cleanly isolated functional block.
+3. **If still over budget, also remove `FCVT.*` in the HX8K profile**
+   - This attacks another clearly isolated logic cluster before touching the arithmetic core.
+
+### If full RV32F on HX8K remains a hard requirement
+
+The current measurements strongly suggest that **feature trimming alone is unlikely to be enough** unless the arithmetic core itself is also redesigned. In practice, fitting “full” RV32F on HX8K likely requires at least one of:
+
+- a substantially smaller multi-cycle `fpu_fma`,
+- an architectural change to the FP register file interface,
+- or both.
+
+## Reproduction Commands
+
+### Baseline ice40 build
+
+```bash
+cd rtl/fpga
+make TARGET=ice40_alchitry_cu all utilization
 ```
 
-**Impact:** This required 131,072 flip-flops, but the iCE40-HX8K only has 7,680.
+### Standalone F-extension module analysis
 
-**Fix Applied:** Replaced with sparse implementation using individual registers for only the CSRs actually needed:
-- MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL
-- Performance counters: CYCLE, INSTRET (64-bit)
-- Read-only values: MVENDORID, MARCHID, MIMPID, MHARTID
-
-**Result:** 193 LUTs (2.5% of device) - synthesis completes in ~1 second!
-
-### 4. Register Files (409 + 680 = 1,089 LUTs)
-
-**Problem:** Both integer and FP register files use LUT-based implementation.
-
-**Recommendation:**
-1. **Use BRAM** for register files (saves ~1,000 LUTs)
-2. iCE40 has 32 BRAM blocks - use 2 for regfiles
-
----
-
-## Recommendations Summary
-
-### Fixes Applied ✅
-
-1. **CSR File** - Replaced 4096-entry array with sparse implementation
-   - Before: Synthesis timeout (>100% resources)
-   - After: 193 LUTs (2.5% of device)
-   - Status: **FIXED and tested**
-
-2. **ALU Multiplier Consolidation** - Single shared 64×64 multiplier
-   - Before: 4 separate inline multiplications
-   - After: Single multiplier with operand preparation logic
-   - LUT change: 4,738 → 5,551 (+17%, but now single hardware instance)
-   - Status: **CONSOLIDATED and tested**
-
-3. **FPU Hardware Consolidation** - Single shared FMA unit
-   - Before: 4 FMA + 2 adders + 1 multiplier (7 units)
-   - After: 1 FMA with input multiplexing
-   - LUT change: 4,535 → 4,077 (-10%)
-   - Status: **CONSOLIDATED and tested**
-
-### Immediate Fixes Needed (Easy)
-
-1. **Use BRAM for register files**
-   - Expected savings: ~1,000 LUTs
-
-### Architecture Changes (Medium)
-
-2. **Make M extension optional** via `ENABLE_M_EXT` parameter
-   - Expected savings: ~5,000 LUTs when disabled
-   - Note: Parameter already implemented in ALU
-
-3. **Make F extension optional** via `ENABLE_F_EXT` parameter
-   - Expected savings: ~4,000 LUTs when disabled
-
-### For Minimal FPGA Build (RV32I only)
-
-| Component | LUTs (Estimated) |
-|-----------|-----------------|
-| ALU (no M ext) | ~500 |
-| Decoder | 74 |
-| Regfile (BRAM) | ~100 |
-| CSR (minimal) | ~200 |
-| Control FSM | ~300 |
-| Memory interface | 35 |
-| Other | ~300 |
-| **Total** | **~1,500** |
-
-This would use ~20% of iCE40-HX8K resources, leaving room for peripherals and memory.
-
----
-
-## Proposed Configuration System
-
-```systemverilog
-module cpu #(
-    parameter bit ENABLE_M_EXT = 1'b0,  // Multiply/Divide extension
-    parameter bit ENABLE_F_EXT = 1'b0,  // Floating-point extension
-    parameter bit ENABLE_C_EXT = 1'b1,  // Compressed instructions
-    parameter bit ENABLE_A_EXT = 1'b0,  // Atomic extension
-    parameter bit USE_BRAM_REGFILE = 1'b1  // Use BRAM for registers
-) (
-    // ... ports
-);
+```bash
+cd rtl/fpga/resource_analysis
+make synth-fp_regfile \
+     synth-fpu \
+     synth-fpu_fma \
+     synth-fpu_sqrt \
+     synth-fpu_div_setup \
+     synth-fpu_div_assemble \
+     synth-fpu_float_to_int \
+     synth-fpu_int_to_float \
+     synth-fpu_classifier \
+     synth-fpu_comparator \
+     synth-div_unit
 ```
 
----
+### Experimental RV32F-enabled HX8K synthesis
 
-## Files Created
+```bash
+cd rtl/fpga
+yosys -p "read_verilog -sv ../common/cpu/alu.sv ../common/cpu/branch_unit.sv \
+  ../common/memory/bus.sv ../common/memory/bus_arbiter.sv ../common/cpu/csr_file.sv \
+  ../common/cpu/decoder.sv ../common/cpu/decompress.sv ../common/cpu/div_unit.sv \
+  ../common/primitives/ff_sync.sv ../common/primitives/phase_accumulator.sv \
+  ../common/primitives/activity_indicator.sv ../common/primitives/square_wave_generator.sv \
+  ../common/io/bus_bridge.sv ../common/io/host_bus_mux.sv ../common/cpu/fetch_buffer.sv \
+  ../common/fpu/fp_regfile.sv ../common/fpu/fpu.sv ../common/fpu/fpu_classifier.sv \
+  ../common/fpu/fpu_comparator.sv ../common/fpu/fpu_div_assemble.sv \
+  ../common/fpu/fpu_div_setup.sv ../common/fpu/fpu_float_to_int.sv ../common/fpu/fpu_fma.sv \
+  ../common/fpu/fpu_int_to_float.sv ../common/fpu/fpu_sqrt.sv ../common/io/host_bus_interface.sv \
+  ../common/io/host_bus_rx.sv ../common/io/host_bus_tx.sv ../common/io/sys_led_controller.sv \
+  ../common/cpu/mem_interface.sv ../common/cpu/mul_unit.sv ../common/memory/registered_bus.sv \
+  ../common/memory/sync_dpram.sv ../common/cpu/regfile.sv ../common/primitives/sync_fifo.sv \
+  ../common/primitives/reset_controller.sv ../common/io/uart.sv ../common/memory/sram.sv \
+  ../common/cpu/writeback_mux.sv ../common/cpu/cpu.sv ../common/peripherals/clock_peripheral.sv \
+  ../common/peripherals/led_controller_peripheral.sv ../common/peripherals/sram_peripheral.sv \
+  ../common/peripherals/system_controller_peripheral.sv ../common/top.sv \
+  common/fpga_common_top.sv ice40_alchitry_cu/ice40_alchitry_cu_top.sv; \
+  chparam -set ENABLE_F_EXT 1 ice40_alchitry_cu_top; \
+  hierarchy -top ice40_alchitry_cu_top; \
+  synth_ice40 -top ice40_alchitry_cu_top -json build/ice40_alchitry_cu/riscv_fpga_f_enabled.json"
 
-- `fpga/resource_analysis/synth_harness.sv` - Test harness for module synthesis
-- `fpga/resource_analysis/Makefile` - Build automation
-- `fpga/resource_analysis/generate_report.sh` - Report generator script
-- `fpga/RESOURCE_ANALYSIS_REPORT.md` - This report
-
----
-
-## Next Steps
-
-1. [x] Fix CSR file implementation (highest priority) - **DONE**
-2. [x] Consolidate ALU multipliers - **DONE** (single 64×64 shared multiplier)
-3. [x] Consolidate FPU hardware - **DONE** (single shared FMA unit)
-4. [x] ENABLE_M_EXT parameter in ALU - **Already implemented**
-5. [ ] Add ENABLE_F_EXT parameter to top module  
-6. [ ] Convert register files to use BRAM
-7. [ ] Re-synthesize full design with extensions disabled
-8. [ ] Verify design fits in iCE40-HX8K
-
-**Note:** The INSTRET counter is now properly implemented and increments on instruction completion.
-
----
-
-*Report generated: 2026-01-28*
-*Last updated: 2026-01-28 (Hardware consolidation: ALU multiplier + FPU FMA)*
-*Synthesis tool: Yosys 0.33*
-*Target: iCE40-HX8K-CB132 (Alchitry Cu v1)*
+nextpnr-ice40 --hx8k --package cb132 \
+  --json build/ice40_alchitry_cu/riscv_fpga_f_enabled.json \
+  --pcf ice40_alchitry_cu/ice40_alchitry_cu.pcf \
+  --asc build/ice40_alchitry_cu/riscv_fpga_f_enabled.asc \
+  --freq 25
+```
