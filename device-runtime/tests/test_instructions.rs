@@ -11,7 +11,8 @@ mod common;
 
 use common::{
     create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
-    tohost_termination, wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
+    tohost_termination, wait_for_cpu_halt, write_word_with_timeout, LONG_TIMEOUT, SHORT_TIMEOUT,
+    TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
@@ -475,6 +476,7 @@ fn test_cpu_jal_jalr_return_addresses() {
     let mut runtime = create_test_runtime();
     const RESULT_BASE_OFFSET: i32 = 0x100;
     const RESULT_BASE_ADDR: u32 = DRAM_BASE + RESULT_BASE_OFFSET as u32;
+    const SKIPPED_PATH_SENTINEL: u32 = 0xA5A5_5A5A;
     let mut instructions = vec![
         lui(9, DRAM_BASE),
         auipc(5, 0),
@@ -490,6 +492,12 @@ fn test_cpu_jal_jalr_return_addresses() {
     ];
     instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
 
+    write_word_with_timeout(
+        runtime.as_mut(),
+        RESULT_BASE_ADDR + 12,
+        SKIPPED_PATH_SENTINEL,
+        SHORT_TIMEOUT,
+    );
     load_and_boot(
         runtime.as_mut(),
         TEST_BOOT_PC,
@@ -511,10 +519,10 @@ fn test_cpu_jal_jalr_return_addresses() {
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 8, SHORT_TIMEOUT),
         TEST_BOOT_PC + 36
     );
-    // JALR should jump directly to RESULT_BASE_ADDR + 36, leaving this skipped-path store untouched.
+    // JALR should jump directly to RESULT_BASE_ADDR + 36, leaving this skipped-path sentinel untouched.
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 12, SHORT_TIMEOUT),
-        0
+        SKIPPED_PATH_SENTINEL
     );
 }
 

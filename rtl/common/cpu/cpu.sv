@@ -128,6 +128,7 @@ module cpu #(
     logic        is_ebreak;
     logic        is_fence;
     logic        is_csr;
+    logic        is_auipc;
     logic        is_lr;        // LR.W instruction (A extension)
     logic        is_sc;        // SC.W instruction (A extension)
     logic        is_amo;       // AMO instruction (A extension)
@@ -460,7 +461,7 @@ module cpu #(
             mem_to_reg_reg <= mem_to_reg;
             branch_reg <= branch;
             jump_reg <= jump;
-            is_auipc_reg <= (opcode == 7'b0010111);
+            is_auipc_reg <= is_auipc;
             is_ecall_reg <= is_ecall;
             is_ebreak_reg <= is_ebreak;
             is_fence_reg <= is_fence;
@@ -1033,6 +1034,7 @@ module cpu #(
         .is_ebreak(is_ebreak),
         .is_fence(is_fence),
         .is_csr(is_csr),
+        .is_auipc(is_auipc),
         .is_lr(is_lr),
         .is_sc(is_sc),
         .is_amo(is_amo),

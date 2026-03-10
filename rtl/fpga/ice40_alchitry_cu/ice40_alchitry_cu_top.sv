@@ -157,7 +157,7 @@ module ice40_alchitry_cu_top #(
             led_out_prev <= led_out;
 
             // Advance segment position on button press OR led_out change
-            if (|(io_button_sync2 & ~io_button_prev) || (led_out != led_out_prev)) begin
+            if ((|(io_button_sync2 & ~io_button_prev)) || (led_out != led_out_prev)) begin
                 seg_position_reg <= (seg_position_reg == 3'd5) ? 3'd0 : (seg_position_reg + 3'd1);
             end
         end
