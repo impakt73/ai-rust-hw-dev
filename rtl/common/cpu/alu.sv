@@ -209,6 +209,7 @@ module alu #(
                            (alu_op == ALU_MINU) ||
                            (alu_op == ALU_MAXU);
 
+    // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
     assign minmax_compare_lt = ((alu_op == ALU_MIN) || (alu_op == ALU_MAX)) ?
                                ($signed(a) < $signed(b)) :
                                (a < b);
@@ -223,6 +224,8 @@ module alu #(
             minmax_a_reg            <= 32'd0;
             minmax_b_reg            <= 32'd0;
         end else if (alu_start && is_minmax_op) begin
+            // MIN/MINU choose operand A when A < B.
+            // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
             minmax_select_a_reg     <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
                                        minmax_compare_lt :
                                        !minmax_compare_lt;
@@ -232,7 +235,9 @@ module alu #(
         end
     end
 
-    // ALU ready signal: waits for multi-cycle operations (div, mul, or staged min/max)
+    // ALU ready signal: waits for multi-cycle operations (div, mul, or staged min/max).
+    // MIN/MAX explicitly masks ready while alu_start is high so the start pulse cannot
+    // be mistaken for immediate completion on the compare cycle.
     assign alu_ready = is_div_op ? div_ready :
                        (is_mul_op ? mul_ready :
                        (is_minmax_op ? (minmax_result_valid_reg && !alu_start) : 1'b1));

@@ -328,6 +328,20 @@ fn test_alu_minmax_ready_is_staged() {
         "MIN result should remain ready until upstream logic consumes it"
     );
     assert_eq!(dut.result, 0xFFFF_FFFBu32);
+
+    dut.a = 10u32;
+    dut.b = 3u32;
+    dut.alu_op = ALU_MAXU as u8;
+    dut.alu_start = 1;
+    dut.eval();
+    assert_eq!(dut.alu_ready, 0, "MAXU should also stage the compare cycle");
+
+    clock_cycle!(dut);
+
+    dut.alu_start = 0;
+    dut.eval();
+    assert_eq!(dut.alu_ready, 1, "MAXU should be ready on the second cycle");
+    assert_eq!(dut.result, 10u32, "MAXU should select the larger operand");
 }
 
 #[test]
