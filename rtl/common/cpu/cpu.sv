@@ -128,6 +128,7 @@ module cpu #(
     logic        is_ebreak;
     logic        is_fence;
     logic        is_csr;
+    logic        is_auipc;
     logic        is_lr;        // LR.W instruction (A extension)
     logic        is_sc;        // SC.W instruction (A extension)
     logic        is_amo;       // AMO instruction (A extension)
@@ -180,7 +181,7 @@ module cpu #(
     logic [31:0] imm_i_reg, imm_s_reg, imm_b_reg, imm_u_reg, imm_j_reg;
     logic [4:0]  alu_op_reg;
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
-    logic        mem_to_reg_reg, branch_reg, jump_reg;
+    logic        mem_to_reg_reg, branch_reg, jump_reg, is_auipc_reg;
     
     // PC for the current instruction (captured in DECODE)
     logic [31:0] instr_pc_reg;
@@ -422,6 +423,7 @@ module cpu #(
             mem_to_reg_reg <= 1'b0;
             branch_reg <= 1'b0;
             jump_reg <= 1'b0;
+            is_auipc_reg <= 1'b0;
             is_ecall_reg <= 1'b0;
             is_ebreak_reg <= 1'b0;
             is_fence_reg <= 1'b0;
@@ -459,6 +461,7 @@ module cpu #(
             mem_to_reg_reg <= mem_to_reg;
             branch_reg <= branch;
             jump_reg <= jump;
+            is_auipc_reg <= is_auipc;
             is_ecall_reg <= is_ecall;
             is_ebreak_reg <= is_ebreak;
             is_fence_reg <= is_fence;
@@ -635,11 +638,11 @@ module cpu #(
         if (current_state == S_BRANCH) begin
             if (take_branch)
                 next_pc_value = branch_target_reg;  // Use pre-computed branch target
-        end else if (current_state == S_WRITEBACK) begin
-            if (opcode_reg == 7'b1101111)  // JAL
-                next_pc_value = jal_target_reg;     // Use pre-computed JAL target
-            else if (opcode_reg == 7'b1100111)  // JALR
+        end else if (current_state == S_WRITEBACK && jump_reg) begin
+            if (alu_src_reg)
                 next_pc_value = jalr_target_reg;    // Use pre-computed JALR target
+            else
+                next_pc_value = jal_target_reg;     // Use pre-computed JAL target
         end
     end
     
@@ -910,7 +913,7 @@ module cpu #(
                     
                     // Capture JALR target (a_reg + imm_i_reg) during EXECUTE
                     // This breaks the timing path by registering the target before WRITEBACK
-                    if (opcode_reg == 7'b1100111) begin  // JALR
+                    if (jump_reg && alu_src_reg) begin
                         jalr_target_write = 1'b1;
                     end
                 end
@@ -1031,6 +1034,7 @@ module cpu #(
         .is_ebreak(is_ebreak),
         .is_fence(is_fence),
         .is_csr(is_csr),
+        .is_auipc(is_auipc),
         .is_lr(is_lr),
         .is_sc(is_sc),
         .is_amo(is_amo),
@@ -1081,7 +1085,7 @@ module cpu #(
         // Default sources
         alu_a = a_reg;
         // For S-type stores (SW, FSW), use imm_s; for I-type (loads, etc.), use imm_i
-        alu_b = alu_src_reg ? ((opcode_reg == 7'b0100011 || opcode_reg == 7'b0100111) ? imm_s_reg : imm_i_reg) : b_reg;
+        alu_b = alu_src_reg ? ((mem_write_reg || is_fp_store_reg) ? imm_s_reg : imm_i_reg) : b_reg;
         
         // Special case for S_MEM_ADDR with AMO/LR/SC: address is just rs1 (no offset)
         if (current_state == S_MEM_ADDR && (is_amo_reg || is_lr_reg || is_sc_reg)) begin
@@ -1090,21 +1094,15 @@ module cpu #(
         end
         // Special cases in EXECUTE state
         else if (current_state == S_EXECUTE) begin
-            case (opcode_reg)
-                7'b0010111: begin // AUIPC
-                    // Use the PC captured for this instruction at decode time
-                    alu_a = instr_pc_reg;
-                    alu_b = imm_u_reg;
-                end
-                7'b1101111, 7'b1100111: begin // JAL, JALR
-                    // Compute PC+4 for return address using the instruction PC captured at decode
-                    alu_a = instr_pc_reg;
-                    alu_b = 32'd4;
-                end
-                default: begin
-                    // Use default
-                end
-            endcase
+            if (jump_reg) begin
+                // Compute PC+4 for return address using the instruction PC captured at decode
+                alu_a = instr_pc_reg;
+                alu_b = 32'd4;
+            end else if (is_auipc_reg) begin
+                // Use the PC captured for this instruction at decode time
+                alu_a = instr_pc_reg;
+                alu_b = imm_u_reg;
+            end
         end
         // Special case for S_ATOMIC_RMW: compute new value for AMO
         else if (current_state == S_ATOMIC_RMW) begin
