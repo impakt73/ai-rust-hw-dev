@@ -9,7 +9,9 @@
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
 ///   0x0C - HALT   (RW): termination code + CPU halt request pulse
 ///
-/// Control outputs are one-cycle pulses on register writes.
+/// BOOT, HALT, and system reset are request pulses on register writes.
+/// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst_n low,
+/// and only return a D-channel response once cpu_booting is observed after reset.
 use riscv_core::{create_system_controller_runtime, SystemController};
 
 // Register offsets
@@ -160,7 +162,7 @@ fn test_system_controller_ready_always_asserted() {
 
     reset_dut(&mut dut);
 
-    // Ready should always be 1 (single-cycle peripheral)
+    // Ready should stay 1 while the controller is idle.
     for _ in 0..10 {
         assert_eq!(dut.mem_a_ready, 1, "A channel should stay ready while idle");
         assert_eq!(
@@ -410,16 +412,84 @@ fn test_system_controller_cpu_reset() {
     reset_dut(&mut dut);
 
     // Trigger CPU reset
-    write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_CPU);
+    issue_write_register(&mut dut, REG_RESET, RESET_CPU);
     assert_eq!(
-        dut.cpu_rst_n, 0,
-        "cpu_rst_n should pulse low while the RESET_CPU response is pending"
+        dut.req_cpu_halt, 1,
+        "RESET_CPU should hold req_cpu_halt high while waiting for the CPU to halt"
     );
-    finish_response_after_observation(&mut dut);
-
     assert_eq!(
         dut.cpu_rst_n, 1,
-        "cpu_rst_n should return high after one-cycle reset pulse"
+        "cpu_rst_n should stay high until the CPU has halted"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "A channel should block new requests while CPU reset sequencing is active"
+    );
+    assert_eq!(
+        dut.mem_d_valid, 0,
+        "D response should not complete until the CPU reset sequence finishes"
+    );
+
+    dut.mem_a_addr = REG_STATUS;
+    dut.mem_a_we = 0;
+    dut.mem_a_valid = 1;
+    dut.eval();
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "system controller must reject new A-channel requests during CPU reset sequencing"
+    );
+    dut.mem_a_valid = 0;
+    dut.eval();
+
+    dut.cpu_halted = 1;
+    dut.eval();
+
+    let mut saw_reset_pulse = false;
+    for _ in 0..4 {
+        clock_cycle!(dut);
+        if dut.cpu_rst_n == 0 {
+            saw_reset_pulse = true;
+            break;
+        }
+    }
+
+    assert!(
+        saw_reset_pulse,
+        "cpu_rst_n should pulse low after cpu_halted goes high"
+    );
+    assert_eq!(
+        dut.req_cpu_halt, 0,
+        "req_cpu_halt should deassert once the reset pulse is issued"
+    );
+    assert_eq!(
+        dut.mem_d_valid, 0,
+        "response should remain pending until cpu_booting is observed after reset"
+    );
+
+    dut.cpu_halted = 0;
+    dut.cpu_booting = 1;
+    dut.eval();
+
+    for _ in 0..4 {
+        if dut.mem_d_valid != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "RESET_CPU should complete only after cpu_booting reasserts following reset"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "A channel should remain blocked until the reset completion response is consumed"
+    );
+
+    finish_response_after_observation(&mut dut);
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "A channel should accept new requests once the CPU reset response is consumed"
     );
 }
 
@@ -490,8 +560,32 @@ fn test_system_controller_cpu_reset_then_reboot() {
     reset_dut(&mut dut);
 
     // CPU reset
-    write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_CPU);
-    assert_eq!(dut.cpu_rst_n, 0, "CPU reset should pulse cpu_rst_n low");
+    issue_write_register(&mut dut, REG_RESET, RESET_CPU);
+    dut.cpu_halted = 1;
+    dut.eval();
+    for _ in 0..4 {
+        if dut.cpu_rst_n == 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+    assert_eq!(
+        dut.cpu_rst_n, 0,
+        "CPU reset should pulse cpu_rst_n low after halt"
+    );
+    dut.cpu_halted = 0;
+    dut.cpu_booting = 1;
+    dut.eval();
+    for _ in 0..4 {
+        if dut.mem_d_valid != 0 {
+            break;
+        }
+        clock_cycle!(dut);
+    }
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "CPU reset should respond after cpu_booting is observed"
+    );
     finish_response_after_observation(&mut dut);
     assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should deassert after pulse");
 
