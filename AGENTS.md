@@ -126,7 +126,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 │   │   ├── cpu/           # CPU core modules (cpu.sv, alu.sv, decoder.sv, etc.)
 │   │   ├── fpu/           # Floating-point unit modules
 │   │   ├── io/            # I/O modules (uart.sv, host_bus_interface.sv, etc.)
-│   │   ├── memory/        # Memory modules (bus.sv, sram.sv, etc.)
+│   │   ├── memory/        # Memory modules (registered_bus.sv, sram.sv, etc.)
 │   │   ├── peripherals/   # RTL peripherals (LED, clock, SRAM, system controller)
 │   │   ├── primitives/    # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
 │   │   └── wrappers/      # Test wrapper modules
@@ -155,7 +155,7 @@ cargo build                            # Build only
 cargo fmt                              # Format Rust code (mandatory before commit)
 cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings (run FIRST!)
 cargo clippy -- -D warnings            # Lint Rust code (mandatory before commit)
-find rtl/common -name '*.sv' -exec verilator --lint-only {} +  # Lint SystemVerilog
+find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +  # Lint SystemVerilog
 cargo clean                            # Clear Verilator cache (after RTL changes)
 ```
 
@@ -178,7 +178,7 @@ Before marking PR ready for review:
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
-5. ✅ SystemVerilog linted (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only {} +`
+5. ✅ SystemVerilog linted (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
 6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd rtl/fpga && make)`
 
 **rust-test-program Workspace:**
