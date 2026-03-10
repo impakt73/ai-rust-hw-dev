@@ -471,6 +471,53 @@ fn test_cpu_auipc() {
 }
 
 #[test]
+fn test_cpu_jal_jalr_return_addresses() {
+    let mut runtime = create_test_runtime();
+    const RESULT_BASE_OFFSET: i32 = 0x100;
+    const RESULT_BASE_ADDR: u32 = DRAM_BASE + RESULT_BASE_OFFSET as u32;
+    let mut instructions = vec![
+        lui(9, DRAM_BASE),
+        auipc(5, 0),
+        addi(5, 5, 32),
+        jal(1, 8),
+        addi(6, 0, 99),
+        sw(9, 1, RESULT_BASE_OFFSET),
+        jalr(2, 5, 0),
+        addi(6, 0, 77),
+        sw(9, 6, RESULT_BASE_OFFSET + 12),
+        sw(9, 2, RESULT_BASE_OFFSET + 4),
+        sw(9, 5, RESULT_BASE_OFFSET + 8),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR, SHORT_TIMEOUT),
+        TEST_BOOT_PC + 16
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 4, SHORT_TIMEOUT),
+        TEST_BOOT_PC + 28
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 8, SHORT_TIMEOUT),
+        TEST_BOOT_PC + 36
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 12, SHORT_TIMEOUT),
+        0
+    );
+}
+
+#[test]
 fn test_cpu_tohost_halt() {
     let mut runtime = create_test_runtime();
     let mut instructions = vec![addi(1, 0, 10), addi(2, 1, 5), add(3, 1, 2)];

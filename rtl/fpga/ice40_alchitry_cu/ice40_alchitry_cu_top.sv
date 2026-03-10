@@ -136,7 +136,7 @@ module ice40_alchitry_cu_top #(
     logic [4:0] io_button_sync1, io_button_sync2;
     logic [4:0] io_button_prev;
     logic [7:0] led_out_prev;
-    logic [7:0] button_counter;
+    logic [2:0] seg_position_reg;
     
     always_ff @(posedge sys_clk) begin
         if (!rst_n_core) begin
@@ -144,7 +144,7 @@ module ice40_alchitry_cu_top #(
             io_button_sync2 <= 5'b0;
             io_button_prev  <= 5'b0;
             led_out_prev    <= 8'b0;
-            button_counter  <= 8'b0;
+            seg_position_reg <= 3'b0;
         end else begin
             // 2-FF synchronizer for buttons
             io_button_sync1 <= io_button;
@@ -156,9 +156,9 @@ module ice40_alchitry_cu_top #(
             // Track previous led_out value for change detection
             led_out_prev <= led_out;
 
-            // Increment counter on button press OR led_out change
+            // Advance segment position on button press OR led_out change
             if (|(io_button_sync2 & ~io_button_prev) || (led_out != led_out_prev)) begin
-                button_counter <= button_counter + 8'd1;
+                seg_position_reg <= (seg_position_reg == 3'd5) ? 3'd0 : (seg_position_reg + 3'd1);
             end
         end
     end
@@ -186,18 +186,12 @@ module ice40_alchitry_cu_top #(
     assign io_sel = 4'b0000;
     
     // Rotating segment pattern - lights one outer segment at a time
-    // Use lower 3 bits of counter, wrap at 6 for the 6 outer segments
-    logic [2:0] seg_position;
     logic [7:0] seg_pattern;
     
-    // Calculate position (0-5) for the 6 outer segments
     always_comb begin
-        // Use modulo to wrap counter to 0-5 range for 6 outer segments
-        seg_position = 3'(button_counter % 8'd6);
-        
         // Generate pattern: only one segment lit (active-high internally)
         // Segments: a=0, b=1, c=2, d=3, e=4, f=5
-        case (seg_position)
+        case (seg_position_reg)
             3'd0: seg_pattern = 8'b00000001;  // a lit
             3'd1: seg_pattern = 8'b00000010;  // b lit
             3'd2: seg_pattern = 8'b00000100;  // c lit
