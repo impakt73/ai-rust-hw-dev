@@ -179,55 +179,107 @@ module alu #(
     // ALU ready signal: waits for multi-cycle operations (div or mul)
     assign alu_ready = is_div_op ? div_ready : (is_mul_op ? mul_ready : 1'b1);
 
+    logic [31:0] arith_result;
+    logic [31:0] bitwise_result;
+    logic [31:0] shift_result;
+    logic [31:0] minmax_result;
+    logic [31:0] muldiv_result;
+    logic        is_arith_op;
+    logic        is_bitwise_op;
+    logic        is_shift_op;
+    logic        is_minmax_op;
+
+    assign is_arith_op = (alu_op == ALU_ADD)  ||
+                         (alu_op == ALU_SUB)  ||
+                         (alu_op == ALU_SLT)  ||
+                         (alu_op == ALU_SLTU);
+
+    assign is_bitwise_op = (alu_op == ALU_AND) ||
+                           (alu_op == ALU_OR)  ||
+                           (alu_op == ALU_XOR);
+
+    assign is_shift_op = (alu_op == ALU_SLL) ||
+                         (alu_op == ALU_SRL) ||
+                         (alu_op == ALU_SRA);
+
+    assign is_minmax_op = (alu_op == ALU_MIN)  ||
+                          (alu_op == ALU_MAX)  ||
+                          (alu_op == ALU_MINU) ||
+                          (alu_op == ALU_MAXU);
+
+    always_comb begin
+        arith_result = 32'd0;
+
+        case (alu_op)
+            ALU_ADD:  arith_result = a + b;
+            ALU_SUB:  arith_result = a - b;
+            ALU_SLT:  arith_result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
+            ALU_SLTU: arith_result = (a < b) ? 32'd1 : 32'd0;
+            default:  arith_result = 32'd0;
+        endcase
+    end
+
+    always_comb begin
+        bitwise_result = 32'd0;
+
+        case (alu_op)
+            ALU_AND: bitwise_result = a & b;
+            ALU_OR:  bitwise_result = a | b;
+            ALU_XOR: bitwise_result = a ^ b;
+            default: bitwise_result = 32'd0;
+        endcase
+    end
+
+    always_comb begin
+        shift_result = 32'd0;
+
+        case (alu_op)
+            ALU_SLL: shift_result = a << b[4:0];
+            ALU_SRL: shift_result = a >> b[4:0];
+            ALU_SRA: shift_result = $signed(a) >>> b[4:0];
+            default: shift_result = 32'd0;
+        endcase
+    end
+
+    always_comb begin
+        minmax_result = 32'd0;
+
+        case (alu_op)
+            ALU_MIN:  minmax_result = ($signed(a) < $signed(b)) ? a : b;
+            ALU_MAX:  minmax_result = ($signed(a) > $signed(b)) ? a : b;
+            ALU_MINU: minmax_result = (a < b) ? a : b;
+            ALU_MAXU: minmax_result = (a > b) ? a : b;
+            default:  minmax_result = 32'd0;
+        endcase
+    end
+
+    always_comb begin
+        if (!ENABLE_M_EXT) begin
+            muldiv_result = 32'd0;
+        end else if (is_mul_op) begin
+            muldiv_result = mul_result;
+        end else if (is_div_op) begin
+            muldiv_result = div_result;
+        end else begin
+            muldiv_result = 32'd0;
+        end
+    end
+
     always_comb begin
         // Default initialization to avoid latches
         result = 32'd0;
-        
-        case (alu_op)
-            // RV32I operations
-            ALU_ADD:  result = a + b;
-            ALU_SUB:  result = a - b;
-            ALU_AND:  result = a & b;
-            ALU_OR:   result = a | b;
-            ALU_XOR:  result = a ^ b;
-            ALU_SLL:  result = a << b[4:0];
-            ALU_SRL:  result = a >> b[4:0];
-            ALU_SRA:  result = $signed(a) >>> b[4:0];
-            ALU_SLT:  result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
-            ALU_SLTU: result = (a < b) ? 32'd1 : 32'd0;
-            
-            // M Extension - Multiplication operations (using multi-cycle mul_unit)
-            ALU_MUL,
-            ALU_MULH,
-            ALU_MULHSU,
-            ALU_MULHU: begin
-                if (ENABLE_M_EXT) begin
-                    result = mul_result;  // Comes from multiplication unit
-                end else begin
-                    result = 32'd0;  // M extension disabled
-                end
-            end
-            
-            // M Extension - Division operations (multi-cycle via division unit)
-            ALU_DIV,
-            ALU_DIVU,
-            ALU_REM,
-            ALU_REMU: begin
-                if (ENABLE_M_EXT) begin
-                    result = div_result;  // Comes from division unit
-                end else begin
-                    result = 32'd0;  // M extension disabled
-                end
-            end
-            
-            // A Extension - MIN/MAX operations (for atomic instructions)
-            ALU_MIN:  result = ($signed(a) < $signed(b)) ? a : b;  // Signed minimum
-            ALU_MAX:  result = ($signed(a) > $signed(b)) ? a : b;  // Signed maximum
-            ALU_MINU: result = (a < b) ? a : b;  // Unsigned minimum
-            ALU_MAXU: result = (a > b) ? a : b;  // Unsigned maximum
-            
-            default:  result = 32'd0;
-        endcase
+
+        if (is_arith_op) begin
+            result = arith_result;
+        end else if (is_shift_op) begin
+            result = shift_result;
+        end else if (is_bitwise_op) begin
+            result = bitwise_result;
+        end else if (is_mul_op || is_div_op) begin
+            result = muldiv_result;
+        end else if (is_minmax_op) begin
+            result = minmax_result;
+        end
     end
 
     assign zero = (result == 32'd0);
