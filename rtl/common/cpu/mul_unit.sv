@@ -43,6 +43,8 @@ module mul_unit #(
                 direct_abs_multiplicand = multiplicand;
                 direct_abs_multiplier = multiplier;
                 direct_result_negative = 1'b0;
+                direct_product_abs = '0;
+                direct_final_product = '0;
 
                 if ((op_type == 2'b00) || (op_type == 2'b01) || (op_type == 2'b10)) begin
                     direct_abs_multiplicand = multiplicand[WIDTH-1] ? (~multiplicand + 1'b1) : multiplicand;
@@ -55,12 +57,14 @@ module mul_unit #(
                     direct_result_negative = multiplicand[WIDTH-1];
                 end
 
-                direct_product_abs = multiplicand_reg * multiplier_reg;
+                if (input_valid_reg) begin
+                    direct_product_abs = multiplicand_reg * multiplier_reg;
 
-                if (result_negative_reg && (direct_product_abs != '0)) begin
-                    direct_final_product = ~direct_product_abs + 1'b1;
-                end else begin
-                    direct_final_product = direct_product_abs;
+                    if (result_negative_reg && (direct_product_abs != '0)) begin
+                        direct_final_product = ~direct_product_abs + 1'b1;
+                    end else begin
+                        direct_final_product = direct_product_abs;
+                    end
                 end
             end
 
