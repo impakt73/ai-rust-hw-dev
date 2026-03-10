@@ -308,6 +308,8 @@ module cpu #(
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= decomp_is_valid;  // Capture decompressor validity
         end else if (current_state == S_DECODE) begin
+            // u_decoder captures instruction_valid on the same ir_write edge as ir_reg,
+            // then holds it stable through S_DECODE for this merge step.
             // AND with decoder validity - instruction must be valid from both
             // decompressor and decoder to be considered valid
             is_instruction_valid_reg <= is_instruction_valid_reg & instruction_valid;
@@ -377,7 +379,9 @@ module cpu #(
             jal_target_reg <= 32'h0;
             jalr_target_reg <= 32'h0;
         end else begin
-            // Capture B-type and JAL targets once the decoder's registered outputs are available
+            // Capture B-type and JAL targets once the decoder's registered outputs are available.
+            // instr_pc_reg and imm_*_reg are loaded on the same ir_write edge, so they
+            // remain aligned for the current instruction throughout S_DECODE.
             if (current_state == S_DECODE) begin
                 branch_target_reg <= (instr_pc_reg + imm_b_reg) & ~32'h1;  // Halfword aligned for RV32C
                 jal_target_reg <= (instr_pc_reg + imm_j_reg) & ~32'h1;     // Halfword aligned for RV32C

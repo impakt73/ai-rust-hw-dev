@@ -576,6 +576,8 @@ module decoder #(
         endcase
     end
 
+    // Hold the last decoded instruction between fetches so the multi-cycle CPU can
+    // consume a stable set of decoder outputs through DECODE/EXECUTE/WRITEBACK.
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             opcode <= 7'h0;
