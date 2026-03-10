@@ -28,6 +28,11 @@ module mul_unit #(
             logic [2*WIDTH-1:0] direct_product_abs;
             logic [2*WIDTH-1:0] direct_final_product;
             logic               direct_result_negative;
+            logic [WIDTH-1:0]   multiplicand_reg;
+            logic [WIDTH-1:0]   multiplier_reg;
+            logic               result_negative_reg;
+            logic [1:0]         product_op_type_reg;
+            logic               input_valid_reg;
             logic [2*WIDTH-1:0] product_reg;
             logic [1:0]         op_type_reg;
             logic               product_valid_reg;
@@ -50,9 +55,9 @@ module mul_unit #(
                     direct_result_negative = multiplicand[WIDTH-1];
                 end
 
-                direct_product_abs = direct_abs_multiplicand * direct_abs_multiplier;
+                direct_product_abs = multiplicand_reg * multiplier_reg;
 
-                if (direct_result_negative && (direct_product_abs != '0)) begin
+                if (result_negative_reg && (direct_product_abs != '0)) begin
                     direct_final_product = ~direct_product_abs + 1'b1;
                 end else begin
                     direct_final_product = direct_product_abs;
@@ -61,18 +66,31 @@ module mul_unit #(
 
             always_ff @(posedge clk) begin
                 if (!rst_n) begin
+                    multiplicand_reg <= '0;
+                    multiplier_reg <= '0;
+                    result_negative_reg <= 1'b0;
+                    product_op_type_reg <= '0;
+                    input_valid_reg <= 1'b0;
                     product_reg <= '0;
                     op_type_reg <= '0;
                     product_valid_reg <= 1'b0;
                     result_reg <= '0;
                     ready_reg <= 1'b0;
                 end else begin
-                    product_valid_reg <= start;
+                    input_valid_reg <= start;
+                    product_valid_reg <= input_valid_reg;
                     ready_reg <= product_valid_reg;
 
                     if (start) begin
+                        multiplicand_reg <= direct_abs_multiplicand;
+                        multiplier_reg <= direct_abs_multiplier;
+                        result_negative_reg <= direct_result_negative;
+                        product_op_type_reg <= op_type;
+                    end
+
+                    if (input_valid_reg) begin
                         product_reg <= direct_final_product;
-                        op_type_reg <= op_type;
+                        op_type_reg <= product_op_type_reg;
                     end
 
                     if (product_valid_reg) begin
