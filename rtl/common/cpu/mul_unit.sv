@@ -4,7 +4,8 @@
 // Supports: MUL, MULH, MULHSU, MULHU
 
 module mul_unit #(
-    parameter WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
+    parameter int WIDTH = 32,                // Bit width of operands (default 32-bit for RV32IM integer ops)
+    parameter bit USE_DIRECT_MULTIPLY = 1'b0 // When set, infer hardware multiplier via Verilog * operator
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -20,197 +21,219 @@ module mul_unit #(
     output logic             ready          // Result valid
 );
 
-    // ============================================================
-    // State Machine Definition
-    // ============================================================
-    typedef enum logic [1:0] {
-        MUL_IDLE = 2'b00,  // Waiting for start
-        MUL_INIT = 2'b01,  // Initialize registers and handle signs
-        MUL_ITER = 2'b10,  // Perform WIDTH iterations (shift-and-add)
-        MUL_DONE = 2'b11   // Result ready
-    } mul_state_t;
-    
-    mul_state_t state, next_state;
-    
-    // ============================================================
-    // Internal Registers
-    // ============================================================
-    
-    // Multiplication working registers
-    // product[2*WIDTH-1:WIDTH] = partial product (accumulator)
-    // product[WIDTH-1:0] = multiplier (shifted right each iteration)
-    logic [2*WIDTH-1:0] product;              // Combined accumulator and multiplier
-    logic [WIDTH-1:0]   mcand;                // Multiplicand (constant during iteration)
-    logic [$clog2(WIDTH)-1:0] iter_count;     // Iteration counter (0 to WIDTH-1)
-    
-    // Sign tracking for result correction
-    logic        result_negative;   // Final result should be negated
-    logic [1:0]  op_type_reg;       // Registered operation type
-    
-    // Intermediate values (combinational)
-    logic [WIDTH-1:0] abs_multiplicand;
-    logic [WIDTH-1:0] abs_multiplier;
-    logic [2*WIDTH-1:0] final_product;
-    
-    // For shift-and-add: add multiplicand to upper half if LSB of lower half is 1
-    logic [WIDTH:0] add_result;  // WIDTH+1 bits to capture carry
-    
-    // ============================================================
-    // State Register
-    // ============================================================
-    always_ff @(posedge clk) begin
-        if (!rst_n)
-            state <= MUL_IDLE;
-        else
-            state <= next_state;
-    end
-    
-    // ============================================================
-    // Next State Logic
-    // ============================================================
-    always_comb begin
-        next_state = state;
-        
-        case (state)
-            MUL_IDLE: begin
-                if (start)
-                    next_state = MUL_INIT;
+    generate
+        if (USE_DIRECT_MULTIPLY) begin : gen_direct_multiply
+            logic signed [2*WIDTH-1:0] direct_product_ss;
+            logic signed [2*WIDTH+1:0] direct_product_su;
+            logic        [2*WIDTH-1:0] direct_product_uu;
+
+            always_comb begin
+                direct_product_ss = $signed(multiplicand) * $signed(multiplier);
+                direct_product_su = $signed({multiplicand[WIDTH-1], multiplicand}) * $signed({1'b0, multiplier});
+                direct_product_uu = multiplicand * multiplier;
+
+                ready = 1'b1;
+
+                case (op_type)
+                    2'b00: result = direct_product_ss[WIDTH-1:0];
+                    2'b01: result = direct_product_ss[2*WIDTH-1:WIDTH];
+                    2'b10: result = direct_product_su[2*WIDTH-1:WIDTH];
+                    default: result = direct_product_uu[2*WIDTH-1:WIDTH];
+                endcase
             end
+        end else begin : gen_iterative_multiply
+            // ============================================================
+            // State Machine Definition
+            // ============================================================
+            typedef enum logic [1:0] {
+                MUL_IDLE = 2'b00,  // Waiting for start
+                MUL_INIT = 2'b01,  // Initialize registers and handle signs
+                MUL_ITER = 2'b10,  // Perform WIDTH iterations (shift-and-add)
+                MUL_DONE = 2'b11   // Result ready
+            } mul_state_t;
             
-            MUL_INIT: begin
-                next_state = MUL_ITER;
-            end
+            mul_state_t state, next_state;
             
-            MUL_ITER: begin
-                /* verilator lint_off WIDTHEXPAND */
-                if (iter_count == (WIDTH-1))  // After WIDTH iterations (0 to WIDTH-1)
-                /* verilator lint_on WIDTHEXPAND */
-                    next_state = MUL_DONE;
+            // ============================================================
+            // Internal Registers
+            // ============================================================
+            
+            // Multiplication working registers
+            // product[2*WIDTH-1:WIDTH] = partial product (accumulator)
+            // product[WIDTH-1:0] = multiplier (shifted right each iteration)
+            logic [2*WIDTH-1:0] product;              // Combined accumulator and multiplier
+            logic [WIDTH-1:0]   mcand;                // Multiplicand (constant during iteration)
+            logic [$clog2(WIDTH)-1:0] iter_count;     // Iteration counter (0 to WIDTH-1)
+            
+            // Sign tracking for result correction
+            logic        result_negative;   // Final result should be negated
+            logic [1:0]  op_type_reg;       // Registered operation type
+            
+            // Intermediate values (combinational)
+            logic [WIDTH-1:0] abs_multiplicand;
+            logic [WIDTH-1:0] abs_multiplier;
+            logic [2*WIDTH-1:0] final_product;
+            
+            // For shift-and-add: add multiplicand to upper half if LSB of lower half is 1
+            logic [WIDTH:0] add_result;  // WIDTH+1 bits to capture carry
+            
+            // ============================================================
+            // State Register
+            // ============================================================
+            always_ff @(posedge clk) begin
+                if (!rst_n)
+                    state <= MUL_IDLE;
                 else
-                    next_state = MUL_ITER;
+                    state <= next_state;
             end
             
-            MUL_DONE: begin
-                // Return to IDLE unconditionally
-                next_state = MUL_IDLE;
-            end
-            
-            default: next_state = MUL_IDLE;
-        endcase
-    end
-    
-    // ============================================================
-    // Combinational logic for absolute value conversion
-    // ============================================================
-    always_comb begin
-        // Default: pass through unchanged (for unsigned operations)
-        abs_multiplicand = multiplicand;
-        abs_multiplier = multiplier;
-        
-        // Compute absolute values when in INIT state for signed operations
-        if (state == MUL_INIT) begin
-            // Handle multiplicand (rs1) - signed for MUL, MULH, MULHSU
-            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-            if ((op_type == 2'b00) || (op_type == 2'b01) || (op_type == 2'b10)) begin
-                abs_multiplicand = multiplicand[WIDTH-1] ? (~multiplicand + 1'b1) : multiplicand;
-            end
-            
-            // Handle multiplier (rs2) - signed for MUL, MULH only (NOT for MULHSU)
-            if ((op_type == 2'b00) || (op_type == 2'b01)) begin
-                abs_multiplier = multiplier[WIDTH-1] ? (~multiplier + 1'b1) : multiplier;
-            end
-        end
-        
-        // Compute add result: upper half of product + multiplicand (with carry)
-        add_result = {1'b0, product[2*WIDTH-1:WIDTH]} + {1'b0, mcand};
-    end
-    
-    // ============================================================
-    // Datapath Registers
-    // ============================================================
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            product <= '0;
-            mcand <= '0;
-            iter_count <= '0;
-            result_negative <= 1'b0;
-            op_type_reg <= '0;
-        end else begin
-            case (state)
-                MUL_INIT: begin
-                    // Register the operation type for later use
-                    op_type_reg <= op_type;
+            // ============================================================
+            // Next State Logic
+            // ============================================================
+            always_comb begin
+                next_state = state;
+                
+                case (state)
+                    MUL_IDLE: begin
+                        if (start)
+                            next_state = MUL_INIT;
+                    end
                     
-                    // Determine if final result needs to be negated
+                    MUL_INIT: begin
+                        next_state = MUL_ITER;
+                    end
+                    
+                    MUL_ITER: begin
+                        /* verilator lint_off WIDTHEXPAND */
+                        if (iter_count == (WIDTH-1))  // After WIDTH iterations (0 to WIDTH-1)
+                        /* verilator lint_on WIDTHEXPAND */
+                            next_state = MUL_DONE;
+                        else
+                            next_state = MUL_ITER;
+                    end
+                    
+                    MUL_DONE: begin
+                        // Return to IDLE unconditionally
+                        next_state = MUL_IDLE;
+                    end
+                    
+                    default: next_state = MUL_IDLE;
+                endcase
+            end
+            
+            // ============================================================
+            // Combinational logic for absolute value conversion
+            // ============================================================
+            always_comb begin
+                // Default: pass through unchanged (for unsigned operations)
+                abs_multiplicand = multiplicand;
+                abs_multiplier = multiplier;
+                
+                // Compute absolute values when in INIT state for signed operations
+                if (state == MUL_INIT) begin
+                    // Handle multiplicand (rs1) - signed for MUL, MULH, MULHSU
                     // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-                    if ((op_type == 2'b00) || (op_type == 2'b01)) begin  // MUL or MULH
-                        result_negative <= multiplicand[WIDTH-1] ^ multiplier[WIDTH-1];
-                    end else if (op_type == 2'b10) begin  // MULHSU
-                        result_negative <= multiplicand[WIDTH-1];
-                    end else begin  // MULHU
-                        result_negative <= 1'b0;
+                    if ((op_type == 2'b00) || (op_type == 2'b01) || (op_type == 2'b10)) begin
+                        abs_multiplicand = multiplicand[WIDTH-1] ? (~multiplicand + 1'b1) : multiplicand;
                     end
                     
-                    // Initialize: product = {0, abs_multiplier}
-                    // Upper half is accumulator (starts at 0), lower half is multiplier
-                    product <= {{WIDTH{1'b0}}, abs_multiplier};
-                    mcand <= abs_multiplicand;
+                    // Handle multiplier (rs2) - signed for MUL, MULH only (NOT for MULHSU)
+                    if ((op_type == 2'b00) || (op_type == 2'b01)) begin
+                        abs_multiplier = multiplier[WIDTH-1] ? (~multiplier + 1'b1) : multiplier;
+                    end
+                end
+                
+                // Compute add result: upper half of product + multiplicand (with carry)
+                add_result = {1'b0, product[2*WIDTH-1:WIDTH]} + {1'b0, mcand};
+            end
+            
+            // ============================================================
+            // Datapath Registers
+            // ============================================================
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    product <= '0;
+                    mcand <= '0;
                     iter_count <= '0;
+                    result_negative <= 1'b0;
+                    op_type_reg <= '0;
+                end else begin
+                    case (state)
+                        MUL_INIT: begin
+                            // Register the operation type for later use
+                            op_type_reg <= op_type;
+                            
+                            // Determine if final result needs to be negated
+                            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
+                            if ((op_type == 2'b00) || (op_type == 2'b01)) begin  // MUL or MULH
+                                result_negative <= multiplicand[WIDTH-1] ^ multiplier[WIDTH-1];
+                            end else if (op_type == 2'b10) begin  // MULHSU
+                                result_negative <= multiplicand[WIDTH-1];
+                            end else begin  // MULHU
+                                result_negative <= 1'b0;
+                            end
+                            
+                            // Initialize: product = {0, abs_multiplier}
+                            // Upper half is accumulator (starts at 0), lower half is multiplier
+                            product <= {{WIDTH{1'b0}}, abs_multiplier};
+                            mcand <= abs_multiplicand;
+                            iter_count <= '0;
+                        end
+                        
+                        MUL_ITER: begin
+                            // Shift-and-Add Algorithm:
+                            // 1. If LSB of product (multiplier bit) is 1, add multiplicand to upper half
+                            // 2. Shift entire product right by 1 (carrying any add result)
+                            
+                            if (product[0]) begin
+                                // Add multiplicand to upper half, then shift right
+                                // add_result[WIDTH] is the carry bit, which becomes the new MSB
+                                product <= {add_result[WIDTH:0], product[WIDTH-1:1]};
+                            end else begin
+                                // Just shift right (no add needed)
+                                product <= {1'b0, product[2*WIDTH-1:1]};
+                            end
+                            
+                            iter_count <= iter_count + 1'b1;
+                        end
+                        
+                        default: begin
+                            // Hold values in other states
+                        end
+                    endcase
                 end
+            end
+            
+            // ============================================================
+            // Sign Correction (Combinational)
+            // ============================================================
+            always_comb begin
+                // Apply sign to product if necessary
+                if (result_negative && (product != '0)) begin
+                    final_product = ~product + 1'b1;  // Two's complement negation
+                end else begin
+                    final_product = product;
+                end
+            end
+            
+            // ============================================================
+            // Output Logic (Combinational)
+            // ============================================================
+            always_comb begin
+                ready = (state == MUL_DONE);
                 
-                MUL_ITER: begin
-                    // Shift-and-Add Algorithm:
-                    // 1. If LSB of product (multiplier bit) is 1, add multiplicand to upper half
-                    // 2. Shift entire product right by 1 (carrying any add result)
-                    
-                    if (product[0]) begin
-                        // Add multiplicand to upper half, then shift right
-                        // add_result[WIDTH] is the carry bit, which becomes the new MSB
-                        product <= {add_result[WIDTH:0], product[WIDTH-1:1]};
-                    end else begin
-                        // Just shift right (no add needed)
-                        product <= {1'b0, product[2*WIDTH-1:1]};
-                    end
-                    
-                    iter_count <= iter_count + 1'b1;
+                if (state == MUL_DONE) begin
+                    // Select lower or upper WIDTH bits based on operation type
+                    // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
+                    if (op_type_reg == 2'b00)  // MUL
+                        result = final_product[WIDTH-1:0];        // MUL: lower WIDTH bits
+                    else
+                        result = final_product[2*WIDTH-1:WIDTH];  // MULH/MULHSU/MULHU: upper WIDTH bits
+                end else begin
+                    result = '0;  // Default when not ready
                 end
-                
-                default: begin
-                    // Hold values in other states
-                end
-            endcase
+            end
         end
-    end
-    
-    // ============================================================
-    // Sign Correction (Combinational)
-    // ============================================================
-    always_comb begin
-        // Apply sign to product if necessary
-        if (result_negative && (product != '0)) begin
-            final_product = ~product + 1'b1;  // Two's complement negation
-        end else begin
-            final_product = product;
-        end
-    end
-    
-    // ============================================================
-    // Output Logic (Combinational)
-    // ============================================================
-    always_comb begin
-        ready = (state == MUL_DONE);
-        
-        if (state == MUL_DONE) begin
-            // Select lower or upper WIDTH bits based on operation type
-            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-            if (op_type_reg == 2'b00)  // MUL
-                result = final_product[WIDTH-1:0];        // MUL: lower WIDTH bits
-            else
-                result = final_product[2*WIDTH-1:WIDTH];  // MULH/MULHSU/MULHU: upper WIDTH bits
-        end else begin
-            result = '0;  // Default when not ready
-        end
-    end
+    endgenerate
 
 endmodule
-

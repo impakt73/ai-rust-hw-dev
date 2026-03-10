@@ -15,7 +15,8 @@
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+    parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    parameter bit USE_DIRECT_MULTIPLY = 1'b0  // Infer hardware multiplier via Verilog * operator
 ) (
     input  logic        clk,
     input  logic        rst_n,
@@ -1113,7 +1114,8 @@ module cpu #(
     
     // ALU instantiation (uses registered control signals)
     alu #(
-        .ENABLE_M_EXT(ENABLE_M_EXT)
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .USE_DIRECT_MULTIPLY(USE_DIRECT_MULTIPLY)
     ) u_alu (
         .clk(clk),              // NEW: Clock for division unit
         .rst_n(rst_n),          // NEW: Reset for division unit

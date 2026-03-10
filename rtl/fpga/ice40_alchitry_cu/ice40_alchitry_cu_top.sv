@@ -11,7 +11,8 @@
 
 module ice40_alchitry_cu_top #(
     parameter bit ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled by default for iCE40 resources)
-    parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
+    parameter bit ENABLE_F_EXT = 1'b0,  // RV32F extension: Floating-Point (disabled for iCE40 resources)
+    parameter bit USE_DIRECT_MULTIPLY = 1'b0  // Keep shift/add multiplier unless explicitly overridden
 ) (
     // Clock input (100 MHz on-board oscillator)
     input  logic       clk,
@@ -104,6 +105,7 @@ module ice40_alchitry_cu_top #(
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .USE_DIRECT_MULTIPLY(USE_DIRECT_MULTIPLY),
         .CLK_FREQ_HZ(25_000_000),
         .RESET_CYCLES(25_000_000)
     ) fpga_common_top_inst (

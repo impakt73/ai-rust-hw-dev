@@ -3,7 +3,8 @@
 
 module artix7_alchitry_au_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
-    parameter bit ENABLE_F_EXT = 1'b0
+    parameter bit ENABLE_F_EXT = 1'b0,
+    parameter bit USE_DIRECT_MULTIPLY = 1'b1
 ) (
     input  logic clk,
     input  logic rst_n_btn,
@@ -85,6 +86,7 @@ module artix7_alchitry_au_top #(
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .USE_DIRECT_MULTIPLY(USE_DIRECT_MULTIPLY),
         .CLK_FREQ_HZ(50_000_000),
         .RESET_CYCLES(50_000_000)
     ) fpga_common_top_inst (

@@ -4,7 +4,8 @@
 // Configurable M extension support for resource-constrained FPGAs
 
 module alu #(
-    parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit ENABLE_M_EXT = 1'b1,          // RV32M extension: Multiply/Divide (default: enabled)
+    parameter bit USE_DIRECT_MULTIPLY = 1'b0    // Infer hardware multiplier via Verilog * operator
 ) (
     input  logic        clk,          // Clock for division unit
     input  logic        rst_n,        // Reset for division unit
@@ -133,7 +134,8 @@ module alu #(
         if (ENABLE_M_EXT) begin : gen_multiplier
             // Instantiate multiplication unit with default 32-bit width for integer operations
             mul_unit #(
-                .WIDTH(32)
+                .WIDTH(32),
+                .USE_DIRECT_MULTIPLY(USE_DIRECT_MULTIPLY)
             ) u_mul (
                 .clk(clk),
                 .rst_n(rst_n),

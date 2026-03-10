@@ -1,6 +1,7 @@
 module fpga_common_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
+    parameter bit USE_DIRECT_MULTIPLY = 1'b0,
     parameter int CLK_FREQ_HZ = 25_000_000,
     parameter int RESET_CYCLES = 25_000_000
 ) (
@@ -33,6 +34,7 @@ module fpga_common_top #(
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .USE_DIRECT_MULTIPLY(USE_DIRECT_MULTIPLY),
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .RESET_CYCLES(RESET_CYCLES)
     ) cpu_inst (
