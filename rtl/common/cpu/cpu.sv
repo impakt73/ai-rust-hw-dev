@@ -308,8 +308,9 @@ module cpu #(
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= decomp_is_valid;  // Capture decompressor validity
         end else if (current_state == S_DECODE) begin
-            // u_decoder captures instruction_valid on the same ir_write edge as ir_reg,
-            // then holds it stable through S_DECODE for this merge step.
+            // The decoder's registered instruction_valid output is stable in S_DECODE
+            // after being latched on ir_write. This merge combines decompressor and
+            // decoder validity checks for the current instruction.
             // AND with decoder validity - instruction must be valid from both
             // decompressor and decoder to be considered valid
             is_instruction_valid_reg <= is_instruction_valid_reg & instruction_valid;
@@ -380,8 +381,8 @@ module cpu #(
             jalr_target_reg <= 32'h0;
         end else begin
             // Capture B-type and JAL targets once the decoder's registered outputs are available.
-            // instr_pc_reg and imm_*_reg are loaded on the same ir_write edge, so they
-            // remain aligned for the current instruction throughout S_DECODE.
+            // instr_pc_reg is loaded on ir_write, and imm_*_reg are the decoder's held outputs
+            // from that same fetch edge, so both stay aligned for the current instruction in S_DECODE.
             if (current_state == S_DECODE) begin
                 branch_target_reg <= (instr_pc_reg + imm_b_reg) & ~32'h1;  // Halfword aligned for RV32C
                 jal_target_reg <= (instr_pc_reg + imm_j_reg) & ~32'h1;     // Halfword aligned for RV32C
@@ -946,8 +947,8 @@ module cpu #(
     regfile u_regfile (
         .clk(clk),
         .we(reg_write_en & reg_write_reg & reg_write_x0_gate),  // Gated by FSM and x0 check
-        .rs1_addr(rs1_reg),  // From registered decoder outputs, BRAM samples on clock edge
-        .rs2_addr(rs2_reg),  // From registered decoder outputs, BRAM samples on clock edge
+        .rs1_addr(rs1_reg),  // From decoder's registered outputs, BRAM samples on next clock edge
+        .rs2_addr(rs2_reg),  // From decoder's registered outputs, BRAM samples on next clock edge
         .rd_addr(rd_reg),
         .rd_data(rd_data),
         .rs1_data(rs1_data),
