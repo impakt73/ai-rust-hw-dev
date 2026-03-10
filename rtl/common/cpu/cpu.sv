@@ -104,44 +104,6 @@ module cpu #(
     logic        current_insn_compressed; // Current instruction being executed is compressed
     logic [31:0] pc_increment;       // How much to increment PC (2 or 4 bytes)
     
-    // Decoder outputs (combinational - will be captured in registers)
-    logic [6:0]  opcode;
-    logic [4:0]  rd;
-    logic [4:0]  rs1;
-    logic [4:0]  rs2;
-    logic [2:0]  funct3;
-    logic [6:0]  funct7;
-    logic [31:0] imm_i;
-    logic [31:0] imm_s;
-    logic [31:0] imm_b;
-    logic [31:0] imm_u;
-    logic [31:0] imm_j;
-    logic [4:0]  alu_op;
-    logic        alu_src;
-    logic        reg_write;
-    logic        mem_write;
-    logic        mem_read;
-    logic        mem_to_reg;
-    logic        branch;
-    logic        jump;
-    logic        is_ecall;
-    logic        is_ebreak;
-    logic        is_fence;
-    logic        is_csr;
-    logic        is_auipc;
-    logic        is_lr;        // LR.W instruction (A extension)
-    logic        is_sc;        // SC.W instruction (A extension)
-    logic        is_amo;       // AMO instruction (A extension)
-    logic [4:0]  funct5;       // For atomic operation type
-    // F extension decoder outputs (combinational)
-    logic [4:0]  fpu_op;       // FPU operation selector
-    logic        fp_reg_write; // FP register write enable
-    logic        fp_to_int;    // FP result goes to integer register
-    logic        int_to_fp;    // Integer source goes to FP unit
-    logic        is_fp_load;   // FLW instruction
-    logic        is_fp_store;  // FSW instruction
-    logic        instruction_valid;  // Decoder detected valid instruction
-    
     // ============================================================
     // LR/SC Reservation Station (A Extension)
     // ============================================================
@@ -173,7 +135,7 @@ module cpu #(
     logic [31:0] mdr;          // Memory data register
     logic alu_out_write, fpu_out_write, mdr_write;
     
-    // Decoder Output Registers (all control signals stored)
+    // Decoder outputs (registered inside decoder.sv)
     logic [6:0]  opcode_reg;
     logic [4:0]  rd_reg, rs1_reg, rs2_reg;
     logic [2:0]  funct3_reg;
@@ -183,7 +145,7 @@ module cpu #(
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
     logic        mem_to_reg_reg, branch_reg, jump_reg, is_auipc_reg;
     
-    // PC for the current instruction (captured in DECODE)
+    // PC for the current instruction (captured when the instruction is fetched)
     logic [31:0] instr_pc_reg;
     
     // Pre-computed branch/jump target registers (for timing closure)
@@ -204,12 +166,12 @@ module cpu #(
     logic [4:0]  fpu_op_reg;
     logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
     logic        is_fp_load_reg, is_fp_store_reg;  // FP load/store flags
+    logic        instruction_valid;  // Decoder validity for the current instruction
     // Merged instruction validity register:
     // - Reset to 1 (assume valid on startup)
     // - Updated with decompressor validity when instruction fetched (ir_write)
-    // - ANDed with decoder validity when decoded (decode_reg_write)
+    // - ANDed with decoder validity during S_DECODE
     logic        is_instruction_valid_reg;
-    logic        decode_reg_write;
     
     // Debug trace data registers (capture operand values at instruction completion)
     logic [31:0] trace_rs1_data_reg;
@@ -313,8 +275,8 @@ module cpu #(
     logic [31:0] amo_write_data;
     assign amo_write_data = (funct5_reg == 5'b00001) ? b_reg : alu_result;  // funct5==00001 is AMOSWAP
     
-    // CSR address: use combinational imm_i in S_DECODE (for read), registered imm_i_reg in other states
-    assign csr_addr = (current_state == S_DECODE) ? imm_i[11:0] : imm_i_reg[11:0];
+    // CSR address comes directly from the decoder's registered immediate output.
+    assign csr_addr = imm_i_reg[11:0];
     
     // ============================================================
     // State Register (Flip-Flop Based FSM)
@@ -335,15 +297,20 @@ module cpu #(
     // is_instruction_valid_reg tracks instruction validity through the pipeline:
     // - Reset to 1 (assume valid on startup)
     // - Populated with decompressor validity when instruction fetched (ir_write)
-    // - ANDed with decoder validity when decoded (decode_reg_write)
+    // - ANDed with decoder validity during S_DECODE
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
+            instr_pc_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
         end else if (ir_write) begin
             ir_reg <= decomp_output;  // Use decompressed output
+            instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= decomp_is_valid;  // Capture decompressor validity
-        end else if (decode_reg_write) begin
+        end else if (current_state == S_DECODE) begin
+            // The decoder's registered instruction_valid output is stable in S_DECODE
+            // after being latched on ir_write. This merge combines decompressor and
+            // decoder validity checks for the current instruction.
             // AND with decoder validity - instruction must be valid from both
             // decompressor and decoder to be considered valid
             is_instruction_valid_reg <= is_instruction_valid_reg & instruction_valid;
@@ -401,90 +368,9 @@ module cpu #(
         end
     end
     
-    // Decoder Output Registers
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            opcode_reg <= 7'h0;
-            rd_reg <= 5'h0;
-            rs1_reg <= 5'h0;
-            rs2_reg <= 5'h0;
-            funct3_reg <= 3'h0;
-            funct7_reg <= 7'h0;
-            imm_i_reg <= 32'h0;
-            imm_s_reg <= 32'h0;
-            imm_b_reg <= 32'h0;
-            imm_u_reg <= 32'h0;
-            imm_j_reg <= 32'h0;
-            alu_op_reg <= 5'h0;
-            alu_src_reg <= 1'b0;
-            reg_write_reg <= 1'b0;
-            mem_write_reg <= 1'b0;
-            mem_read_reg <= 1'b0;
-            mem_to_reg_reg <= 1'b0;
-            branch_reg <= 1'b0;
-            jump_reg <= 1'b0;
-            is_auipc_reg <= 1'b0;
-            is_ecall_reg <= 1'b0;
-            is_ebreak_reg <= 1'b0;
-            is_fence_reg <= 1'b0;
-            is_csr_reg <= 1'b0;
-            is_lr_reg <= 1'b0;
-            is_sc_reg <= 1'b0;
-            is_amo_reg <= 1'b0;
-            funct5_reg <= 5'h0;
-            instr_pc_reg <= 32'h0;
-            // F extension registers
-            fpu_op_reg <= 5'h0;
-            fp_reg_write_reg <= 1'b0;
-            fp_to_int_reg <= 1'b0;
-            int_to_fp_reg <= 1'b0;
-            is_fp_load_reg <= 1'b0;
-            is_fp_store_reg <= 1'b0;
-            // Note: is_instruction_valid_reg is handled separately in ir_reg logic
-        end else if (decode_reg_write) begin
-            opcode_reg <= opcode;
-            rd_reg <= rd;
-            rs1_reg <= rs1;
-            rs2_reg <= rs2;
-            funct3_reg <= funct3;
-            funct7_reg <= funct7;
-            imm_i_reg <= imm_i;
-            imm_s_reg <= imm_s;
-            imm_b_reg <= imm_b;
-            imm_u_reg <= imm_u;
-            imm_j_reg <= imm_j;
-            alu_op_reg <= alu_op;
-            alu_src_reg <= alu_src;
-            reg_write_reg <= reg_write;
-            mem_write_reg <= mem_write;
-            mem_read_reg <= mem_read;
-            mem_to_reg_reg <= mem_to_reg;
-            branch_reg <= branch;
-            jump_reg <= jump;
-            is_auipc_reg <= is_auipc;
-            is_ecall_reg <= is_ecall;
-            is_ebreak_reg <= is_ebreak;
-            is_fence_reg <= is_fence;
-            is_csr_reg <= is_csr;
-            is_lr_reg <= is_lr;
-            is_sc_reg <= is_sc;
-            is_amo_reg <= is_amo;
-            funct5_reg <= funct5;
-            instr_pc_reg <= pc;  // Capture PC of this instruction
-            // F extension signals
-            fpu_op_reg <= fpu_op;
-            fp_reg_write_reg <= fp_reg_write;
-            fp_to_int_reg <= fp_to_int;
-            int_to_fp_reg <= int_to_fp;
-            is_fp_load_reg <= is_fp_load;
-            is_fp_store_reg <= is_fp_store;
-            // Note: is_instruction_valid_reg is updated separately in ir_reg logic
-        end
-    end
-    
     // Branch/Jump Target Registers
     // Pre-compute branch and jump targets during DECODE to break timing path
-    // For B-type and JAL: pc + immediate is computed when decode_reg_write is asserted
+    // For B-type and JAL: instr_pc_reg + immediate is computed during S_DECODE
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
@@ -494,14 +380,15 @@ module cpu #(
             jal_target_reg <= 32'h0;
             jalr_target_reg <= 32'h0;
         end else begin
-            // Capture B-type and JAL targets during DECODE
-            // These use combinational decoder outputs (pc, imm_b, imm_j) before they're registered
-            if (decode_reg_write) begin
-                branch_target_reg <= (pc + imm_b) & ~32'h1;  // Halfword aligned for RV32C
-                jal_target_reg <= (pc + imm_j) & ~32'h1;     // Halfword aligned for RV32C
+            // Capture B-type and JAL targets once the decoder's registered outputs are available.
+            // instr_pc_reg is loaded on ir_write, and imm_*_reg are the decoder's held outputs
+            // from that same fetch edge, so both stay aligned for the current instruction in S_DECODE.
+            if (current_state == S_DECODE) begin
+                branch_target_reg <= (instr_pc_reg + imm_b_reg) & ~32'h1;  // Halfword aligned for RV32C
+                jal_target_reg <= (instr_pc_reg + imm_j_reg) & ~32'h1;     // Halfword aligned for RV32C
             end
             // Capture JALR target during EXECUTE (a_reg + imm_i_reg)
-            // a_reg is stable after DECODE, imm_i_reg is registered
+            // a_reg is stable after DECODE, imm_i_reg comes directly from the decoder register
             if (jalr_target_write) begin
                 jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Halfword aligned for RV32C
             end
@@ -708,7 +595,7 @@ module cpu #(
                 // Check for invalid instruction using the merged validity register.
                 // is_instruction_valid_reg combines:
                 // 1. Decompressor validity (captured during ir_write in S_FETCH)
-                // 2. Decoder validity (ANDed during decode_reg_write in S_DECODE)
+                // 2. Decoder validity (ANDed during S_DECODE)
                 if (!is_instruction_valid_reg) begin
                     next_state = S_HALT;  // Invalid instruction - halt for debug
                 end else begin
@@ -855,7 +742,6 @@ module cpu #(
         pc_write = 1'b0;
         reg_write_en = 1'b0;
         fp_reg_write_en = 1'b0;
-        decode_reg_write = 1'b0;
         imem_req_internal = 1'b0;
         dmem_req_internal = 1'b0;
         instr_complete_internal = 1'b0;
@@ -873,7 +759,6 @@ module cpu #(
             S_DECODE: begin
                 // Decode instruction and present addresses to register file.
                 // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
-                decode_reg_write = 1'b1;
             end
             
             S_REG_READ: begin
@@ -1005,47 +890,50 @@ module cpu #(
         .take_branch(take_branch)
     );
     
-    // Decoder instantiation (decodes ir_reg)
+    // Decoder instantiation (registers decode outputs when a new instruction is fetched)
     decoder #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) u_decoder (
-        .instruction(ir_reg),
-        .opcode(opcode),
-        .rd(rd),
-        .rs1(rs1),
-        .rs2(rs2),
-        .funct3(funct3),
-        .funct7(funct7),
-        .imm_i(imm_i),
-        .imm_s(imm_s),
-        .imm_b(imm_b),
-        .imm_u(imm_u),
-        .imm_j(imm_j),
-        .alu_op(alu_op),
-        .alu_src(alu_src),
-        .reg_write(reg_write),
-        .mem_write(mem_write),
-        .mem_read(mem_read),
-        .mem_to_reg(mem_to_reg),
-        .branch(branch),
-        .jump(jump),
-        .is_ecall(is_ecall),
-        .is_ebreak(is_ebreak),
-        .is_fence(is_fence),
-        .is_csr(is_csr),
-        .is_auipc(is_auipc),
-        .is_lr(is_lr),
-        .is_sc(is_sc),
-        .is_amo(is_amo),
-        .funct5(funct5),
+        .clk(clk),
+        .rst_n(rst_n),
+        .decode_en(ir_write),
+        .instruction(decomp_output),
+        .opcode(opcode_reg),
+        .rd(rd_reg),
+        .rs1(rs1_reg),
+        .rs2(rs2_reg),
+        .funct3(funct3_reg),
+        .funct7(funct7_reg),
+        .imm_i(imm_i_reg),
+        .imm_s(imm_s_reg),
+        .imm_b(imm_b_reg),
+        .imm_u(imm_u_reg),
+        .imm_j(imm_j_reg),
+        .alu_op(alu_op_reg),
+        .alu_src(alu_src_reg),
+        .reg_write(reg_write_reg),
+        .mem_write(mem_write_reg),
+        .mem_read(mem_read_reg),
+        .mem_to_reg(mem_to_reg_reg),
+        .branch(branch_reg),
+        .jump(jump_reg),
+        .is_ecall(is_ecall_reg),
+        .is_ebreak(is_ebreak_reg),
+        .is_fence(is_fence_reg),
+        .is_csr(is_csr_reg),
+        .is_auipc(is_auipc_reg),
+        .is_lr(is_lr_reg),
+        .is_sc(is_sc_reg),
+        .is_amo(is_amo_reg),
+        .funct5(funct5_reg),
         // F extension outputs
-        .fpu_op(fpu_op),
-        .fp_reg_write(fp_reg_write),
-        .fp_to_int(fp_to_int),
-        .int_to_fp(int_to_fp),
-        .is_fp_load(is_fp_load),
-        .is_fp_store(is_fp_store),
+        .fpu_op(fpu_op_reg),
+        .fp_reg_write(fp_reg_write_reg),
+        .fp_to_int(fp_to_int_reg),
+        .int_to_fp(int_to_fp_reg),
+        .is_fp_load(is_fp_load_reg),
+        .is_fp_store(is_fp_store_reg),
         .instruction_valid(instruction_valid)
     );
     
@@ -1059,8 +947,8 @@ module cpu #(
     regfile u_regfile (
         .clk(clk),
         .we(reg_write_en & reg_write_reg & reg_write_x0_gate),  // Gated by FSM and x0 check
-        .rs1_addr(rs1),  // From decoder, BRAM samples on clock edge
-        .rs2_addr(rs2),  // From decoder, BRAM samples on clock edge
+        .rs1_addr(rs1_reg),  // From decoder's registered outputs, BRAM samples on next clock edge
+        .rs2_addr(rs2_reg),  // From decoder's registered outputs, BRAM samples on next clock edge
         .rd_addr(rd_reg),
         .rd_data(rd_data),
         .rs1_data(rs1_data),
@@ -1174,8 +1062,8 @@ module cpu #(
                 .clk(clk),
                 .rst_n(rst_n),
                 .we(fp_reg_write_en & fp_reg_write_reg),  // Gated by FSM
-                .rs1_addr(rs1),  // Use combinational decoder output for reads
-                .rs2_addr(rs2),  // Use combinational decoder output for reads
+                .rs1_addr(rs1_reg),  // Use registered decoder outputs for reads
+                .rs2_addr(rs2_reg),  // Use registered decoder outputs for reads
                 .rs3_addr(instruction[31:27]),  // rs3 field for fused multiply-add
                 .rd_addr(rd_reg),
                 .rd_data(fd_data),

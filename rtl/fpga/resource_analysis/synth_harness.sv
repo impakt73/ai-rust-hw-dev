@@ -128,8 +128,12 @@ module synth_harness (
     logic is_lr, is_sc, is_amo;
     logic [4:0] funct5, fpu_op;
     logic fp_reg_write, fp_to_int, int_to_fp, is_fp_load, is_fp_store;
+    logic instruction_valid;
     
     decoder u_decoder (
+        .clk(clk),
+        .rst_n(rst_n),
+        .decode_en(stim_sel[0]),
         .instruction(stim_reg[0]),
         .opcode(opcode),
         .rd(rd),
@@ -164,12 +168,14 @@ module synth_harness (
         .fp_to_int(fp_to_int),
         .int_to_fp(int_to_fp),
         .is_fp_load(is_fp_load),
-        .is_fp_store(is_fp_store)
+        .is_fp_store(is_fp_store),
+        .instruction_valid(instruction_valid)
     );
     
     always_ff @(posedge clk) begin
         result_reg <= imm_i ^ imm_s ^ imm_b ^ imm_u ^ imm_j ^ 
-                      {27'h0, alu_op} ^ {24'h0, alu_src, reg_write, mem_write, mem_read, mem_to_reg, branch, jump, is_ecall};
+                      {27'h0, alu_op} ^
+                      {23'h0, alu_src, reg_write, mem_write, mem_read, mem_to_reg, branch, jump, is_ecall, instruction_valid};
     end
 
 `elsif SYNTH_DECOMPRESS
