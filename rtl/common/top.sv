@@ -224,7 +224,7 @@ module top #(
     // ============================================================
     host_bus_mux cpu_host_bus_mux (
         .clk(clk),
-        .rst_n(cpu_combined_rst_n),
+        .rst_n(rst_n_internal),
 
         // CPU-side interface
         .cpu_mem_a_addr(cpu_mem_a_addr),

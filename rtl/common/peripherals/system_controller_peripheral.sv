@@ -52,9 +52,18 @@ module system_controller (
     logic        mem_a_handshake;
     logic        mem_d_handshake;
 
+    typedef enum logic [1:0] {
+        CPU_RESET_IDLE      = 2'b00,
+        CPU_RESET_WAIT_HALT = 2'b01,
+        CPU_RESET_PULSE     = 2'b10,
+        CPU_RESET_WAIT_BOOT = 2'b11
+    } cpu_reset_state_t;
+
+    cpu_reset_state_t cpu_reset_state;
+
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
-    assign mem_a_ready = !response_pending;
+    assign mem_a_ready = !response_pending && (cpu_reset_state == CPU_RESET_IDLE);
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
 
@@ -72,6 +81,7 @@ module system_controller (
             sys_reset_pending <= 1'b0;
             response_data <= 32'h00000000;
             response_pending <= 1'b0;
+            cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
             // Default inactive values every cycle; writes can pulse outputs high/low.
             sys_rst      <= sys_reset_pending;
@@ -84,51 +94,86 @@ module system_controller (
                 response_pending <= 1'b0;
             end
 
-            if (mem_a_handshake) begin
-                response_pending <= 1'b1;
-                response_data <= 32'h00000000;
+            case (cpu_reset_state)
+                CPU_RESET_IDLE: begin
+                    if (mem_a_handshake) begin
+                        response_data <= 32'h00000000;
 
-                if (mem_a_we) begin
-                    case (mem_a_addr[3:0])  // Use only register offset bits
-                        REG_BOOT: begin
-                            // BOOT writes are accepted independently of cpu_booting state.
-                            boot_addr_reg <= mem_a_wdata;
-                            cpu_boot      <= 1'b1;
-                        end
+                        if (mem_a_we) begin
+                            case (mem_a_addr[3:0])  // Use only register offset bits
+                                REG_BOOT: begin
+                                    // BOOT writes are accepted independently of cpu_booting state.
+                                    boot_addr_reg <= mem_a_wdata;
+                                    cpu_boot      <= 1'b1;
+                                    response_pending <= 1'b1;
+                                end
 
-                        REG_RESET: begin
-                            if (mem_a_wdata[0]) begin
-                                cpu_rst_n <= 1'b0;
-                            end else begin
-                                sys_reset_pending <= 1'b1;
-                            end
-                        end
+                                REG_RESET: begin
+                                    if (mem_a_wdata[0]) begin
+                                        req_cpu_halt <= 1'b1;
+                                        cpu_reset_state <= CPU_RESET_WAIT_HALT;
+                                    end else begin
+                                        sys_reset_pending <= 1'b1;
+                                        response_pending <= 1'b1;
+                                    end
+                                end
 
-                        REG_HALT: begin
-                            halt_reg      <= mem_a_wdata;
-                            req_cpu_halt  <= 1'b1;
-                        end
+                                REG_HALT: begin
+                                    halt_reg      <= mem_a_wdata;
+                                    req_cpu_halt  <= 1'b1;
+                                    response_pending <= 1'b1;
+                                end
 
-                        default: ;
-                    endcase
-                end else begin
-                    case (mem_a_addr[3:0])
-                        REG_STATUS: begin
-                            // Bit 0 = cpu_booting, Bit 1 = cpu_halted
-                            response_data <= {30'h0, cpu_halted, cpu_booting};
-                        end
+                                default: begin
+                                    response_pending <= 1'b1;
+                                end
+                            endcase
+                        end else begin
+                            response_pending <= 1'b1;
 
-                        REG_HALT: begin
-                            response_data <= halt_reg;
-                        end
+                            case (mem_a_addr[3:0])
+                                REG_STATUS: begin
+                                    // Bit 0 = cpu_booting, Bit 1 = cpu_halted
+                                    response_data <= {30'h0, cpu_halted, cpu_booting};
+                                end
 
-                        // RESET and BOOT registers are write-only, read as 0
-                        default: begin
-                            response_data <= 32'h00000000;
+                                REG_HALT: begin
+                                    response_data <= halt_reg;
+                                end
+
+                                // RESET and BOOT registers are write-only, read as 0
+                                default: begin
+                                    response_data <= 32'h00000000;
+                                end
+                            endcase
                         end
-                    endcase
+                    end
                 end
-            end
+
+                CPU_RESET_WAIT_HALT: begin
+                    req_cpu_halt <= 1'b1;
+                    if (cpu_halted) begin
+                        cpu_reset_state <= CPU_RESET_PULSE;
+                    end
+                end
+
+                CPU_RESET_PULSE: begin
+                    cpu_rst_n <= 1'b0;
+                    cpu_reset_state <= CPU_RESET_WAIT_BOOT;
+                end
+
+                CPU_RESET_WAIT_BOOT: begin
+                    if (cpu_booting) begin
+                        response_data <= 32'h00000000;
+                        response_pending <= 1'b1;
+                        cpu_reset_state <= CPU_RESET_IDLE;
+                    end
+                end
+
+                default: begin
+                    cpu_reset_state <= CPU_RESET_IDLE;
+                end
+            endcase
         end
     end
     

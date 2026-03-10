@@ -164,16 +164,21 @@ fn test_clock_peripheral_microseconds() {
 
     // Each A/D transaction itself advances the free-running counter, so validate
     // that the counter moved forward by at least the explicit delay cycles here.
+    // Use saturating_sub to express "advanced by at least one tick" without the
+    // clippy int-plus-one lint on `>= previous + 1`.
     clock_cycle!(dut);
     let us_1 = read_register(&mut dut, ELAPSED_US);
     assert!(
-        us_1 >= us_0 + 1,
+        us_1.saturating_sub(us_0) >= 1,
         "ELAPSED_US should advance after one clock cycle"
     );
 
     clock_cycle!(dut);
     let us_2 = read_register(&mut dut, ELAPSED_US);
-    assert!(us_2 >= us_1 + 1, "ELAPSED_US should keep advancing");
+    assert!(
+        us_2.saturating_sub(us_1) >= 1,
+        "ELAPSED_US should keep advancing"
+    );
 
     for _ in 0..8 {
         clock_cycle!(dut);

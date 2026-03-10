@@ -1,5 +1,6 @@
 use riscv_core::{create_cpu_runtime, Cpu};
 
+const S_BOOT: u8 = 0x0; // Matches cpu.sv S_BOOT encoding.
 const S_FETCH: u8 = 0x1;
 const S_HALT: u8 = 0xA;
 
@@ -14,7 +15,7 @@ macro_rules! clock_cycle {
     };
 }
 
-fn reset_and_boot_to_fetch(dut: &mut Cpu) {
+fn reset_to_boot(dut: &mut Cpu) {
     dut.rst_n = 0;
     dut.boot = 0;
     dut.req_halt = 0;
@@ -26,11 +27,57 @@ fn reset_and_boot_to_fetch(dut: &mut Cpu) {
     clock_cycle!(dut);
 
     dut.rst_n = 1;
+    dut.eval();
+}
+
+fn reset_and_boot_to_fetch(dut: &mut Cpu) {
+    reset_to_boot(dut);
+
     dut.boot = 1;
     dut.eval();
     clock_cycle!(dut);
     dut.boot = 0;
     dut.eval();
+}
+
+#[test]
+fn test_cpu_req_halt_in_boot_enters_halt_before_fetch() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    reset_to_boot(&mut dut);
+
+    assert_eq!(
+        dut.debug_fsm_state, S_BOOT,
+        "CPU should reset into BOOT state"
+    );
+    assert_eq!(
+        dut.mem_a_valid, 0,
+        "BOOT state should not issue fetch requests"
+    );
+
+    dut.req_halt = 1;
+    dut.eval();
+    assert_eq!(
+        dut.mem_a_valid, 0,
+        "req_halt in BOOT should keep instruction fetch requests disabled"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.debug_fsm_state, S_HALT,
+        "req_halt in BOOT should move CPU directly to HALT"
+    );
+    assert_eq!(
+        dut.halted, 1,
+        "CPU halted output should assert in HALT state"
+    );
+    assert_eq!(
+        dut.mem_a_valid, 0,
+        "CPU should still suppress fetch requests after halting from BOOT"
+    );
 }
 
 #[test]

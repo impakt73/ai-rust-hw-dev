@@ -85,7 +85,7 @@ pub const SYSCTRL_HALT_OFFSET: u32 = 0x0C;
 ///
 /// Only write-data bit 0 selects the reset type:
 /// - bit 0 = 0 => system reset
-/// - bit 0 = 1 => CPU reset
+/// - bit 0 = 1 => CPU reset (halts the CPU first, then pulses reset)
 pub const SYSCTRL_RESET_SYSTEM: u32 = 0x0000_0000;
 pub const SYSCTRL_RESET_CPU: u32 = 0x0000_0001;
 

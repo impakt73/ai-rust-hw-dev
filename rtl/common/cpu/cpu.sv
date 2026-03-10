@@ -646,7 +646,7 @@ module cpu #(
     always_ff @(posedge clk) begin
         if (!rst_n)
             pc <= 32'h0;
-        else if (current_state == S_BOOT && boot)
+        else if (current_state == S_BOOT && boot && !req_halt)
             pc <= boot_addr;
         else if (pc_write)
             pc <= next_pc_value;
@@ -669,7 +669,9 @@ module cpu #(
         
         case (current_state)
             S_BOOT: begin
-                if (boot)
+                if (req_halt)
+                    next_state = S_HALT;
+                else if (boot)
                     next_state = S_FETCH;
                 else
                     next_state = S_BOOT;
