@@ -30,6 +30,7 @@ module decoder #(
     output logic        is_ebreak,    // EBREAK instruction
     output logic        is_fence,     // FENCE instruction
     output logic        is_csr,       // CSR instruction
+    output logic        is_auipc,     // AUIPC instruction
     output logic        is_lr,        // LR.W instruction (A extension)
     output logic        is_sc,        // SC.W instruction (A extension)
     output logic        is_amo,       // AMO instruction (A extension)
@@ -160,6 +161,7 @@ module decoder #(
         is_ebreak = 1'b0;
         is_fence = 1'b0;
         is_csr = 1'b0;
+        is_auipc = 1'b0;
         is_lr = 1'b0;
         is_sc = 1'b0;
         is_amo = 1'b0;
@@ -295,6 +297,7 @@ module decoder #(
                 alu_op = ALU_ADD;
                 alu_src = 1'b1;
                 reg_write = 1'b1;
+                is_auipc = 1'b1;
             end
 
             OP_JAL: begin

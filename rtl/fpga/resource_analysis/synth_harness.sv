@@ -124,7 +124,7 @@ module synth_harness (
     logic [31:0] imm_i, imm_s, imm_b, imm_u, imm_j;
     logic [4:0] alu_op;
     logic alu_src, reg_write, mem_write, mem_read, mem_to_reg;
-    logic branch, jump, is_ecall, is_ebreak, is_fence, is_csr;
+    logic branch, jump, is_ecall, is_ebreak, is_fence, is_csr, is_auipc;
     logic is_lr, is_sc, is_amo;
     logic [4:0] funct5, fpu_op;
     logic fp_reg_write, fp_to_int, int_to_fp, is_fp_load, is_fp_store;
@@ -154,6 +154,7 @@ module synth_harness (
         .is_ebreak(is_ebreak),
         .is_fence(is_fence),
         .is_csr(is_csr),
+        .is_auipc(is_auipc),
         .is_lr(is_lr),
         .is_sc(is_sc),
         .is_amo(is_amo),
