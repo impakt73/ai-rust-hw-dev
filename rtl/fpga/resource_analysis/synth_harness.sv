@@ -515,7 +515,6 @@ module synth_harness (
         .is_amo(stim_reg[1][0]),
         .sc_success(stim_reg[1][1]),
         .fp_to_int(stim_reg[1][2]),
-        .pc(stim_reg[2]),
         .imm_u(stim_reg[3]),
         .alu_result(stim_reg[4]),
         .csr_rdata(stim_reg[5]),

@@ -346,6 +346,8 @@ jal_ret_addr_reg <= pc + 32'd4;     // pre-compute JAL return address
 
 Then `writeback_mux.sv` selects from registered values (no adders), removing the carry chains from the writeback mux's combinational depth. This approach is consistent with how `branch_target_reg`, `jal_target_reg`, and `jalr_target_reg` are already pre-computed in the existing design.
 
+**Implementation result (2026-03-10):** The optimization was implemented by updating `writeback_mux.sv` to reuse the already-registered `alu_result` for AUIPC and JAL/JALR writeback, instead of recomputing `pc + imm_u` and `pc + 32'd4` in the mux. Re-running the iCE40 flow on the same target improved routed Fmax from **42.09 MHz → 46.71 MHz** in `nextpnr` (**+4.62 MHz, +11.0%**) and from **41.04 MHz → 47.48 MHz** in `icetime` (**+6.44 MHz, +15.7%**).
+
 ---
 
 ### Tier 3: High Effort (Months — Architecture-Level)
