@@ -23,6 +23,12 @@ const ALU_DIVU: u32 = 0b01111;
 const ALU_REM: u32 = 0b10000;
 const ALU_REMU: u32 = 0b10001;
 
+// A Extension Operation Encodings
+const ALU_MIN: u32 = 0b10010;
+const ALU_MAX: u32 = 0b10011;
+const ALU_MINU: u32 = 0b10100;
+const ALU_MAXU: u32 = 0b10101;
+
 // Clock cycle macro for ALU tests
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -235,6 +241,50 @@ fn test_alu_compare_ops() {
             "SLTU failed: {} < {} should be {}",
             a, b, expected
         );
+    }
+}
+
+#[test]
+fn test_alu_minmax_ops() {
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+
+    let signed_cases = vec![
+        (0xFFFF_FFF6u32, 10u32),          // -10, 10
+        (10u32, 0xFFFF_FFF6u32),          // 10, -10
+        (0xFFFF_FFECu32, 0xFFFF_FFF6u32), // -20, -10
+        (25u32, 25u32),
+    ];
+
+    for (a, b) in signed_cases {
+        execute_alu_operation(&mut dut, a, b, ALU_MIN as u8);
+        assert_eq!(
+            dut.result,
+            std::cmp::min(a as i32, b as i32) as u32,
+            "MIN failed"
+        );
+
+        execute_alu_operation(&mut dut, a, b, ALU_MAX as u8);
+        assert_eq!(
+            dut.result,
+            std::cmp::max(a as i32, b as i32) as u32,
+            "MAX failed"
+        );
+    }
+
+    let unsigned_cases = vec![
+        (0u32, u32::MAX),
+        (u32::MAX, 1u32),
+        (123u32, 456u32),
+        (999u32, 999u32),
+    ];
+
+    for (a, b) in unsigned_cases {
+        execute_alu_operation(&mut dut, a, b, ALU_MINU as u8);
+        assert_eq!(dut.result, std::cmp::min(a, b), "MINU failed");
+
+        execute_alu_operation(&mut dut, a, b, ALU_MAXU as u8);
+        assert_eq!(dut.result, std::cmp::max(a, b), "MAXU failed");
     }
 }
 
