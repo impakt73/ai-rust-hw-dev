@@ -28,6 +28,9 @@ module mul_unit #(
             logic [2*WIDTH-1:0] direct_product_abs;
             logic [2*WIDTH-1:0] direct_final_product;
             logic               direct_result_negative;
+            logic [2*WIDTH-1:0] product_reg;
+            logic [1:0]         op_type_reg;
+            logic               product_valid_reg;
             logic [WIDTH-1:0]   result_reg;
             logic               ready_reg;
 
@@ -58,16 +61,25 @@ module mul_unit #(
 
             always_ff @(posedge clk) begin
                 if (!rst_n) begin
+                    product_reg <= '0;
+                    op_type_reg <= '0;
+                    product_valid_reg <= 1'b0;
                     result_reg <= '0;
                     ready_reg <= 1'b0;
                 end else begin
-                    ready_reg <= start;
+                    product_valid_reg <= start;
+                    ready_reg <= product_valid_reg;
 
                     if (start) begin
-                        if (op_type == 2'b00)
-                            result_reg <= direct_final_product[WIDTH-1:0];
+                        product_reg <= direct_final_product;
+                        op_type_reg <= op_type;
+                    end
+
+                    if (product_valid_reg) begin
+                        if (op_type_reg == 2'b00)
+                            result_reg <= product_reg[WIDTH-1:0];
                         else
-                            result_reg <= direct_final_product[2*WIDTH-1:WIDTH];
+                            result_reg <= product_reg[2*WIDTH-1:WIDTH];
                     end
                 end
             end
