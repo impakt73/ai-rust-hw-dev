@@ -856,7 +856,9 @@ module cpu #(
                 // Pulse alu_start only on first cycle in S_ATOMIC_RMW
                 alu_start = !alu_start_sent_rmw;
                 
-                dmem_req_internal = 1'b1;  // Request memory write
+                // Wait for the staged MIN/MAX ALU result before issuing the write request.
+                // This preserves the existing ready/valid contract for multi-cycle AMOs.
+                dmem_req_internal = alu_ready;
                 
                 if (alu_ready && dmem_ready_internal) begin
                     alu_out_write = 1'b1;  // Capture computed result for memory write
