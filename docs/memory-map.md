@@ -28,7 +28,7 @@ Address Range            | Device              | Type | Description
   addresses are reached remotely through the host bus interface. DRAM is part
   of this Rust peripheral range in this project.
 - **RTL peripherals** (`0x00000000 - 0x7FFFFFFF`):
-  Handled by the SystemVerilog `bus.sv` address decoder (top-bit split + top-nibble select),
+  Handled by the SystemVerilog `registered_bus.sv` address decoder (top-bit split + top-nibble select),
   synthesizable to FPGA.
   Decode is window-based on the top nibble (`addr[31:28]`), so accesses within a given
   256 MiB RTL window may intentionally mirror/alias at the peripheral level.

@@ -112,10 +112,6 @@ pub struct HostBusMux;
 #[verilog(src = "../rtl/common/io/host_bus_rx.sv", name = "host_bus_rx")]
 pub struct HostBusRx;
 
-// Define Bus Arbiter module
-#[verilog(src = "../rtl/common/memory/bus_arbiter.sv", name = "bus_arbiter")]
-pub struct BusArbiter;
-
 #[verilog(
     src = "../rtl/common/wrappers/registered_bus_wrapper.sv",
     name = "registered_bus_wrapper"
@@ -289,13 +285,11 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
     create_runtime(&[
         "top.sv",                                      // Top-level wrapper with RTL peripherals
         "primitives/reset_controller.sv",              // Power-on reset controller
-        "memory/bus.sv",                               // System bus for address decoding
         "cpu/cpu.sv",                                  // CPU core
         "memory/sync_dpram.sv",                        // BRAM-friendly simple dual-port RAM
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
-        "io/bus_bridge.sv",                            // CPU A/D channel to legacy bus adapter
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller
@@ -399,11 +393,6 @@ pub fn create_host_bus_mux_runtime() -> Result<VerilatorRuntime, Box<dyn std::er
 // Helper function to create a runtime for the Host RX Buffer (standalone testing)
 pub fn create_host_bus_rx_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["io/host_bus_rx.sv"])
-}
-
-// Helper function to create a runtime for the Bus Arbiter
-pub fn create_bus_arbiter_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["memory/bus_arbiter.sv"])
 }
 
 // Helper function to create a runtime for the Registered Bus

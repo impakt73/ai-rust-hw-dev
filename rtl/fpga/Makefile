@@ -13,8 +13,6 @@ BUILD_DIR = build
 RTL_SOURCES = \
 	$(RTL_DIR)/cpu/alu.sv \
 	$(RTL_DIR)/cpu/branch_unit.sv \
-	$(RTL_DIR)/memory/bus.sv \
-	$(RTL_DIR)/memory/bus_arbiter.sv \
 	$(RTL_DIR)/cpu/csr_file.sv \
 	$(RTL_DIR)/cpu/decoder.sv \
 	$(RTL_DIR)/cpu/decompress.sv \
@@ -23,7 +21,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
-	$(RTL_DIR)/io/bus_bridge.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/fpu/fp_regfile.sv \

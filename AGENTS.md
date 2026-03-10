@@ -126,7 +126,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 │   │   ├── cpu/           # CPU core modules (cpu.sv, alu.sv, decoder.sv, etc.)
 │   │   ├── fpu/           # Floating-point unit modules
 │   │   ├── io/            # I/O modules (uart.sv, host_bus_interface.sv, etc.)
-│   │   ├── memory/        # Memory modules (bus.sv, sram.sv, etc.)
+│   │   ├── memory/        # Memory modules (registered_bus.sv, sram.sv, etc.)
 │   │   ├── peripherals/   # RTL peripherals (LED, clock, SRAM, system controller)
 │   │   ├── primitives/    # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
 │   │   └── wrappers/      # Test wrapper modules
