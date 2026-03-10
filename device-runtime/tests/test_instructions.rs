@@ -1460,6 +1460,50 @@ fn test_cpu_amo_unsigned_min_max() {
     );
 }
 
+#[test]
+fn test_cpu_amo_min_max_signed_negative_values() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(1, DRAM_BASE),
+        addi(2, 0, -5),
+        sw(1, 2, 0), // mem[x1] = -5
+        addi(3, 0, 3),
+        amomin_w(4, 1, 3), // x4 = -5, mem[x1] stays -5
+        sw(1, 4, 0x100),
+        amomax_w(5, 1, 3), // x5 = -5, mem[x1] becomes 3
+        sw(1, 5, 0x104),
+        lw(6, 1, 0),
+        sw(1, 6, 0x108),
+    ];
+    instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x100, SHORT_TIMEOUT),
+        0xFFFF_FFFB,
+        "AMOMIN should return the original negative value"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x104, SHORT_TIMEOUT),
+        0xFFFF_FFFB,
+        "AMOMAX should return the original negative value before replacing it"
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 0x108, SHORT_TIMEOUT),
+        3,
+        "AMOMAX should replace the negative value with the larger positive operand"
+    );
+}
+
 // ============================================================================
 // Invalid Instruction Tests
 // ============================================================================

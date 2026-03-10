@@ -176,9 +176,6 @@ module alu #(
         end
     endgenerate
     
-    // ALU ready signal: waits for multi-cycle operations (div or mul)
-    assign alu_ready = is_div_op ? div_ready : (is_mul_op ? mul_ready : 1'b1);
-
     logic [31:0] arith_result;
     logic [31:0] bitwise_result;
     logic [31:0] shift_result;
@@ -188,6 +185,11 @@ module alu #(
     logic        is_bitwise_op;
     logic        is_shift_op;
     logic        is_minmax_op;
+    logic        minmax_compare_lt;
+    logic        minmax_select_a_reg;
+    logic        minmax_result_valid_reg;
+    logic [31:0] minmax_a_reg;
+    logic [31:0] minmax_b_reg;
 
     assign is_arith_op = (alu_op == ALU_ADD)  ||
                          (alu_op == ALU_SUB)  ||
@@ -206,6 +208,52 @@ module alu #(
                           (alu_op == ALU_MAX)  ||
                           (alu_op == ALU_MINU) ||
                           (alu_op == ALU_MAXU);
+
+    // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
+    assign minmax_compare_lt = ((alu_op == ALU_MIN) || (alu_op == ALU_MAX)) ?
+                               ($signed(a) < $signed(b)) :
+                               (a < b);
+
+    // Split MIN/MAX across two cycles to shorten the compare/select critical path.
+    // Cycle 1 registers the comparison result and operands.
+    // Cycle 2 selects the winning operand through a simple 32-bit mux.
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            minmax_select_a_reg     <= 1'b0;
+            minmax_result_valid_reg <= 1'b0;
+            minmax_a_reg            <= 32'd0;
+            minmax_b_reg            <= 32'd0;
+        end else if (alu_start) begin
+            if (is_minmax_op) begin
+                // MIN/MINU choose operand A when A < B.
+                // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
+                minmax_select_a_reg     <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
+                                           minmax_compare_lt :
+                                           !minmax_compare_lt;
+                minmax_result_valid_reg <= 1'b1;
+                minmax_a_reg            <= a;
+                minmax_b_reg            <= b;
+            end else begin
+                minmax_result_valid_reg <= 1'b0;
+            end
+        end
+    end
+
+    // ALU ready signal: waits for multi-cycle operations (div, mul, or staged min/max).
+    // MIN/MAX explicitly masks ready while alu_start is high so a stale completed flag
+    // from the previous MIN/MAX cannot be mistaken for immediate completion on the
+    // compare cycle of a new MIN/MAX start pulse.
+    always_comb begin
+        if (is_div_op) begin
+            alu_ready = div_ready;
+        end else if (is_mul_op) begin
+            alu_ready = mul_ready;
+        end else if (is_minmax_op) begin
+            alu_ready = minmax_result_valid_reg && !alu_start;
+        end else begin
+            alu_ready = 1'b1;
+        end
+    end
 
     always_comb begin
         arith_result = 32'd0;
@@ -242,15 +290,7 @@ module alu #(
     end
 
     always_comb begin
-        minmax_result = 32'd0;
-
-        case (alu_op)
-            ALU_MIN:  minmax_result = ($signed(a) < $signed(b)) ? a : b;
-            ALU_MAX:  minmax_result = ($signed(a) > $signed(b)) ? a : b;
-            ALU_MINU: minmax_result = (a < b) ? a : b;
-            ALU_MAXU: minmax_result = (a > b) ? a : b;
-            default:  minmax_result = 32'd0;
-        endcase
+        minmax_result = minmax_select_a_reg ? minmax_a_reg : minmax_b_reg;
     end
 
     always_comb begin

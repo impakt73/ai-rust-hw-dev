@@ -291,6 +291,60 @@ fn test_alu_minmax_ops() {
 }
 
 #[test]
+fn test_alu_minmax_ready_is_staged() {
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+
+    dut.rst_n = 0;
+    dut.alu_start = 0;
+    clock_cycle!(dut);
+
+    dut.rst_n = 1;
+    dut.a = 0xFFFF_FFFBu32; // -5
+    dut.b = 3u32;
+    dut.alu_op = ALU_MIN as u8;
+
+    dut.alu_start = 1;
+    dut.eval();
+    assert_eq!(
+        dut.alu_ready, 0,
+        "MIN should spend the first cycle comparing"
+    );
+
+    clock_cycle!(dut);
+
+    dut.alu_start = 0;
+    dut.eval();
+    assert_eq!(dut.alu_ready, 1, "MIN should be ready on the second cycle");
+    assert_eq!(
+        dut.result, 0xFFFF_FFFBu32,
+        "MIN should select the smaller operand"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.alu_ready, 1,
+        "MIN result should remain ready until upstream logic consumes it"
+    );
+    assert_eq!(dut.result, 0xFFFF_FFFBu32);
+
+    dut.a = 10u32;
+    dut.b = 3u32;
+    dut.alu_op = ALU_MAXU as u8;
+    dut.alu_start = 1;
+    dut.eval();
+    assert_eq!(dut.alu_ready, 0, "MAXU should also stage the compare cycle");
+
+    clock_cycle!(dut);
+
+    dut.alu_start = 0;
+    dut.eval();
+    assert_eq!(dut.alu_ready, 1, "MAXU should be ready on the second cycle");
+    assert_eq!(dut.result, 10u32, "MAXU should select the larger operand");
+}
+
+#[test]
 fn test_alu_zero_flag() {
     let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
