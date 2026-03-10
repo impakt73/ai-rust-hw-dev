@@ -210,11 +210,11 @@ make synth-fp_regfile \
 ```bash
 cd rtl/fpga
 yosys -p "read_verilog -sv ../common/cpu/alu.sv ../common/cpu/branch_unit.sv \
-  ../common/memory/bus.sv ../common/memory/bus_arbiter.sv ../common/cpu/csr_file.sv \
+  ../common/cpu/csr_file.sv \
   ../common/cpu/decoder.sv ../common/cpu/decompress.sv ../common/cpu/div_unit.sv \
   ../common/primitives/ff_sync.sv ../common/primitives/phase_accumulator.sv \
   ../common/primitives/activity_indicator.sv ../common/primitives/square_wave_generator.sv \
-  ../common/io/bus_bridge.sv ../common/io/host_bus_mux.sv ../common/cpu/fetch_buffer.sv \
+  ../common/io/host_bus_mux.sv ../common/cpu/fetch_buffer.sv \
   ../common/fpu/fp_regfile.sv ../common/fpu/fpu.sv ../common/fpu/fpu_classifier.sv \
   ../common/fpu/fpu_comparator.sv ../common/fpu/fpu_div_assemble.sv \
   ../common/fpu/fpu_div_setup.sv ../common/fpu/fpu_float_to_int.sv ../common/fpu/fpu_fma.sv \

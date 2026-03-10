@@ -866,7 +866,7 @@ The current iCE40 design achieves **34.91 MHz Fmax** at the 25 MHz target. For E
 | **Expected Fmax** | 34.91 MHz (achieved) | 60–80 MHz (est.) | 80–120 MHz (est.) | 80–120 MHz (est.) |
 | **Recommended target** | 25 MHz | 50 MHz | 50–100 MHz | 50 MHz (openFPGA clock) |
 
-The critical path identified in `rtl/fpga/SYNTHESIS_ANALYSIS.md`—through the 32-bit ALU carry chain then `host_bus_mux` and `bus.sv`—will be significantly shorter on ECP5, Artix-7, and Cyclone V due to faster carry chains and better routing resources.
+The critical path identified in `rtl/fpga/SYNTHESIS_ANALYSIS.md`—through the 32-bit ALU carry chain then `host_bus_mux` and `registered_bus.sv`—will be significantly shorter on ECP5, Artix-7, and Cyclone V due to faster carry chains and better routing resources.
 
 ### 8.2 UART Baud Rate Scaling
 
