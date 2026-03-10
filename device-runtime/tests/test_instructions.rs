@@ -511,6 +511,7 @@ fn test_cpu_jal_jalr_return_addresses() {
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 8, SHORT_TIMEOUT),
         TEST_BOOT_PC + 36
     );
+    // JALR should jump directly to RESULT_BASE_ADDR + 36, leaving this skipped-path store untouched.
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 12, SHORT_TIMEOUT),
         0
