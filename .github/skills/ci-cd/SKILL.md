@@ -88,7 +88,7 @@ cd ..
 
 #### 5. Lint SystemVerilog Files (if RTL was modified)
 ```bash
-find rtl/common -name '*.sv' -exec verilator --lint-only {} +
+find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +
 ```
 No lint errors should be reported.
 
@@ -212,7 +212,7 @@ git push
 2. Format code: `cargo fmt`
 3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
-5. Lint RTL (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only {} +`
+5. Lint RTL (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
 6. Verify FPGA synthesis (if SystemVerilog modified): `(cd rtl/fpga && make)`
 7. If you modified `rust-test-program/`:
    ```bash
