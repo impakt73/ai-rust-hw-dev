@@ -15,7 +15,6 @@ module writeback_mux (
     input  logic        fp_to_int,      // F extension: FP result goes to integer register
     
     // Data inputs
-    input  logic [31:0] pc,
     input  logic [31:0] imm_u,
     input  logic [31:0] alu_result,
     input  logic [31:0] csr_rdata,
@@ -41,11 +40,11 @@ module writeback_mux (
             // LUI - Load Upper Immediate
             rd_data = imm_u;
         end else if (opcode == 7'b0010111) begin
-            // AUIPC - Add Upper Immediate to PC
-            rd_data = pc + imm_u;
+            // AUIPC - Use pre-computed PC-relative result from EXECUTE
+            rd_data = alu_result;
         end else if (jump) begin
-            // JAL/JALR - Store return address (PC + 4)
-            rd_data = pc + 32'd4;
+            // JAL/JALR - Use pre-computed return address from EXECUTE
+            rd_data = alu_result;
         end else if (is_csr) begin
             // CSR instruction - Return old CSR value
             rd_data = csr_rdata;

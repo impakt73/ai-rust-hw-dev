@@ -1253,7 +1253,6 @@ module cpu #(
         .is_amo(is_amo_reg),        // A extension
         .sc_success(sc_success),    // A extension
         .fp_to_int(fp_to_int_reg),  // F extension
-        .pc(instr_pc_reg),
         .imm_u(imm_u_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
         .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)
