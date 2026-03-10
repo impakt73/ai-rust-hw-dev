@@ -23,7 +23,7 @@ const ALU_DIVU: u32 = 0b01111;
 const ALU_REM: u32 = 0b10000;
 const ALU_REMU: u32 = 0b10001;
 
-// A Extension Operation Encodings
+// A-Extension Operation Encodings
 const ALU_MIN: u32 = 0b10010;
 const ALU_MAX: u32 = 0b10011;
 const ALU_MINU: u32 = 0b10100;
@@ -250,6 +250,7 @@ fn test_alu_minmax_ops() {
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     let signed_cases = vec![
+        (0x8000_0000u32, 0u32),           // i32::MIN, 0
         (0xFFFF_FFF6u32, 10u32),          // -10, 10
         (10u32, 0xFFFF_FFF6u32),          // 10, -10
         (0xFFFF_FFECu32, 0xFFFF_FFF6u32), // -20, -10
@@ -275,6 +276,7 @@ fn test_alu_minmax_ops() {
     let unsigned_cases = vec![
         (0u32, u32::MAX),
         (u32::MAX, 1u32),
+        (u32::MAX, u32::MAX),
         (123u32, 456u32),
         (999u32, 999u32),
     ];

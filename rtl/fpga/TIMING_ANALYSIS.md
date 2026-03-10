@@ -11,7 +11,7 @@
 
 The RISC-V RV32I CPU design still meets the 25 MHz target frequency with substantial headroom. After implementing **Suggestion 2 (ALU result grouping)**, the latest iCE40-HX8K build reaches **47.30 MHz** (nextpnr) / **47.43 MHz** (icetime), leaving roughly **89–90% timing margin** over the 25 MHz target (21.08 ns critical path vs. 40.0 ns clock budget).
 
-Since the previous analysis, three optimizations have now been implemented and verified:
+Since the previous analysis, three major optimizations have now been implemented and verified:
 
 1. **Writeback Mux Adder Pre-computation** (former Critical Path #4): AUIPC and JAL/JALR return-address additions are now performed during the EXECUTE FSM state and stored into `alu_out_reg`. The `writeback_mux.sv` now selects the pre-computed `alu_result` for those cases, removing the inline carry chains from the writeback mux entirely.
 
@@ -292,9 +292,9 @@ The following suggestions are ordered within groups from lowest to highest imple
 
 #### ~~Suggestion 2 — Reduce ALU Result Mux Depth via Operation Grouping~~ (IMPLEMENTED ✅)
 
-**Addresses:** Critical Path #1 post-carry segment (5 LUT levels, ~9.2 ns), Critical Path #2 (near-critical cluster)  
-**Expected improvement:** ~2–3 ns reduction in post-carry delay; could push Fmax above 52 MHz  
-**Risk:** Low-moderate — requires ALU restructuring but no FSM changes  
+**Addresses:** Former Critical Path #1 post-carry segment and the near-critical ALU result-tail cluster  
+**Implementation summary:** `rtl/common/cpu/alu.sv` now groups ALU outputs into arithmetic, bitwise, shift, min/max, and mul/div buckets before the final `result` merge.  
+**Observed outcome:** Logic utilization dropped modestly, but timing was effectively neutral overall because the critical path moved into the MIN/MAX compare/select cone rather than disappearing.  
 **Files:** `rtl/common/cpu/alu.sv`
 
 **Measured result:** Implemented in `rtl/common/cpu/alu.sv` by splitting ALU outputs into `arith_result`, `bitwise_result`, `shift_result`, `minmax_result`, and `muldiv_result` groups before the final `result` merge. Full-chip iCE40 utilization dropped from **5,520 → 5,472 LCs** and **4,462 → 4,437 LUT4s**. Timing was effectively flat overall: **47.70 → 47.30 MHz** in nextpnr and **47.05 → 47.43 MHz** in icetime.
