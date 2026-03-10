@@ -23,24 +23,57 @@ module mul_unit #(
 
     generate
         if (USE_DIRECT_MULTIPLY) begin : gen_direct_multiply
-            logic signed [2*WIDTH-1:0] direct_product_ss;
-            logic signed [2*WIDTH+1:0] direct_product_su;
-            logic        [2*WIDTH-1:0] direct_product_uu;
+            logic [WIDTH-1:0] direct_abs_multiplicand;
+            logic [WIDTH-1:0] direct_abs_multiplier;
+            logic [2*WIDTH-1:0] direct_product_abs;
+            logic [2*WIDTH-1:0] direct_final_product;
+            logic               direct_result_negative;
+            logic [WIDTH-1:0]   result_reg;
+            logic               ready_reg;
 
             always_comb begin
-                direct_product_ss = $signed(multiplicand) * $signed(multiplier);
-                direct_product_su = $signed({multiplicand[WIDTH-1], multiplicand}) * $signed({1'b0, multiplier});
-                direct_product_uu = multiplicand * multiplier;
+                direct_abs_multiplicand = multiplicand;
+                direct_abs_multiplier = multiplier;
+                direct_result_negative = 1'b0;
 
-                ready = 1'b1;
+                if ((op_type == 2'b00) || (op_type == 2'b01) || (op_type == 2'b10)) begin
+                    direct_abs_multiplicand = multiplicand[WIDTH-1] ? (~multiplicand + 1'b1) : multiplicand;
+                end
 
-                case (op_type)
-                    2'b00: result = direct_product_ss[WIDTH-1:0];
-                    2'b01: result = direct_product_ss[2*WIDTH-1:WIDTH];
-                    2'b10: result = direct_product_su[2*WIDTH-1:WIDTH];
-                    default: result = direct_product_uu[2*WIDTH-1:WIDTH];
-                endcase
+                if ((op_type == 2'b00) || (op_type == 2'b01)) begin
+                    direct_abs_multiplier = multiplier[WIDTH-1] ? (~multiplier + 1'b1) : multiplier;
+                    direct_result_negative = multiplicand[WIDTH-1] ^ multiplier[WIDTH-1];
+                end else if (op_type == 2'b10) begin
+                    direct_result_negative = multiplicand[WIDTH-1];
+                end
+
+                direct_product_abs = direct_abs_multiplicand * direct_abs_multiplier;
+
+                if (direct_result_negative && (direct_product_abs != '0)) begin
+                    direct_final_product = ~direct_product_abs + 1'b1;
+                end else begin
+                    direct_final_product = direct_product_abs;
+                end
             end
+
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    result_reg <= '0;
+                    ready_reg <= 1'b0;
+                end else begin
+                    ready_reg <= start;
+
+                    if (start) begin
+                        if (op_type == 2'b00)
+                            result_reg <= direct_final_product[WIDTH-1:0];
+                        else
+                            result_reg <= direct_final_product[2*WIDTH-1:WIDTH];
+                    end
+                end
+            end
+
+            assign ready = ready_reg;
+            assign result = result_reg;
         end else begin : gen_iterative_multiply
             // ============================================================
             // State Machine Definition
