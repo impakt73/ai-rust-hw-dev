@@ -40,6 +40,13 @@ module system_controller (
     localparam logic [3:0] REG_RESET  = 4'h4;  // Write-only: Reset control
     localparam logic [3:0] REG_BOOT   = 4'h8;  // Write-only: Boot address
     localparam logic [3:0] REG_HALT   = 4'hC;  // Read/write: Halt code
+
+    typedef enum logic [1:0] {
+        CPU_RESET_IDLE,
+        CPU_RESET_WAIT_HALT,
+        CPU_RESET_PULSE,
+        CPU_RESET_WAIT_BOOT
+    } cpu_reset_state_t;
     
     // ========================================================================
     // Internal Registers
@@ -47,27 +54,53 @@ module system_controller (
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
     logic        sys_reset_pending;      // Delayed system reset pulse
-    logic        cpu_reset_wait_halt;    // Waiting for cpu_halted before reset pulse
-    logic        cpu_reset_pulse_pending;// Reset pulse scheduled for next cycle
-    logic        cpu_reset_wait_boot;    // Waiting for cpu_booting after reset pulse
-    logic        cpu_reset_wait_boot_armed; // Ignore stale cpu_booting for one cycle
+    logic        halt_response_pending;   // Hold HALT req_cpu_halt until response completes
     logic [31:0] response_data;
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
     logic        cpu_reset_in_progress;
-    logic        cpu_reset_safe_state;
+    logic        start_cpu_reset;
+    cpu_reset_state_t cpu_reset_state;
+    cpu_reset_state_t cpu_reset_state_next;
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
-    // CPU reset is safe once the core is no longer driving the memory request bus.
-    // That is true both in HALT and while cpu_booting is asserted.
-    assign cpu_reset_safe_state = cpu_halted || cpu_booting;
-    assign cpu_reset_in_progress =
-        cpu_reset_wait_halt || cpu_reset_pulse_pending || cpu_reset_wait_boot;
+    assign start_cpu_reset =
+        mem_a_handshake && mem_a_we && (mem_a_addr[3:0] == REG_RESET) && mem_a_wdata[0];
+    assign cpu_reset_in_progress = (cpu_reset_state != CPU_RESET_IDLE);
     assign mem_a_ready = !response_pending && !cpu_reset_in_progress;
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
+
+    always_comb begin
+        cpu_reset_state_next = cpu_reset_state;
+
+        case (cpu_reset_state)
+            CPU_RESET_IDLE: begin
+                if (start_cpu_reset)
+                    cpu_reset_state_next = CPU_RESET_WAIT_HALT;
+            end
+
+            CPU_RESET_WAIT_HALT: begin
+                if (cpu_halted)
+                    cpu_reset_state_next = CPU_RESET_PULSE;
+            end
+
+            CPU_RESET_PULSE: begin
+                cpu_reset_state_next = CPU_RESET_WAIT_BOOT;
+            end
+
+            CPU_RESET_WAIT_BOOT: begin
+                if (cpu_booting)
+                    cpu_reset_state_next = CPU_RESET_IDLE;
+            end
+
+            default: begin
+                cpu_reset_state_next = CPU_RESET_IDLE;
+            end
+        endcase
+    end
 
     // ========================================================================
     // Main Control Registers
@@ -81,48 +114,42 @@ module system_controller (
             halt_reg      <= 32'h00000000;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
-            cpu_reset_wait_halt <= 1'b0;
-            cpu_reset_pulse_pending <= 1'b0;
-            cpu_reset_wait_boot <= 1'b0;
-            cpu_reset_wait_boot_armed <= 1'b0;
+            halt_response_pending <= 1'b0;
             response_data <= 32'h00000000;
             response_pending <= 1'b0;
+            cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
-            // Default inactive values every cycle; writes/sequencers can pulse outputs.
+            // Default inactive values every cycle; writes/state machine can pulse outputs.
             sys_rst      <= sys_reset_pending;
             cpu_rst_n    <= 1'b1;
             cpu_boot     <= 1'b0;
             req_cpu_halt <= 1'b0;
             sys_reset_pending <= 1'b0;
+            cpu_reset_state <= cpu_reset_state_next;
+
+            case (cpu_reset_state)
+                CPU_RESET_WAIT_HALT: begin
+                    req_cpu_halt <= 1'b1;
+                end
+
+                CPU_RESET_PULSE: begin
+                    cpu_rst_n <= 1'b0;
+                end
+
+                default: begin
+                end
+            endcase
+
+            // HALT register writes are a separate short-lived request path: they
+            // must keep req_cpu_halt asserted only until their D-channel response
+            // is consumed, unlike RESET_CPU which is sequenced by cpu_reset_state.
+            if (halt_response_pending && !mem_d_handshake) begin
+                req_cpu_halt <= 1'b1;
+            end
 
             if (mem_d_handshake) begin
                 response_pending <= 1'b0;
-            end
-
-            if (cpu_reset_wait_halt) begin
-                req_cpu_halt <= 1'b1;
-                if (cpu_reset_safe_state) begin
-                    cpu_reset_wait_halt <= 1'b0;
-                    cpu_reset_pulse_pending <= 1'b1;
-                end
-            end
-
-            if (cpu_reset_pulse_pending) begin
-                cpu_rst_n <= 1'b0;
-                cpu_reset_pulse_pending <= 1'b0;
-                cpu_reset_wait_boot <= 1'b1;
-                cpu_reset_wait_boot_armed <= 1'b0;
-            end
-
-            if (cpu_reset_wait_boot) begin
-                // Wait one cycle after the reset pulse so cpu_booting reflects the
-                // post-reset CPU state rather than a stale pre-reset value.
-                if (!cpu_reset_wait_boot_armed) begin
-                    cpu_reset_wait_boot_armed <= 1'b1;
-                end else if (cpu_booting) begin
-                    cpu_reset_wait_boot <= 1'b0;
-                    cpu_reset_wait_boot_armed <= 1'b0;
-                end
+                halt_response_pending <= 1'b0;
             end
 
             if (mem_a_handshake) begin
@@ -139,12 +166,7 @@ module system_controller (
 
                         REG_RESET: begin
                             if (mem_a_wdata[0]) begin
-                                if (cpu_reset_safe_state) begin
-                                    cpu_reset_pulse_pending <= 1'b1;
-                                end else begin
-                                    req_cpu_halt <= 1'b1;
-                                    cpu_reset_wait_halt <= 1'b1;
-                                end
+                                req_cpu_halt <= 1'b1;
                             end else begin
                                 sys_reset_pending <= 1'b1;
                             end
@@ -153,6 +175,7 @@ module system_controller (
                         REG_HALT: begin
                             halt_reg      <= mem_a_wdata;
                             req_cpu_halt  <= 1'b1;
+                            halt_response_pending <= 1'b1;
                         end
 
                         default: ;

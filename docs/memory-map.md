@@ -150,7 +150,7 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 | 0x08   | BOOT     | WO     | Write boot address to start CPU |
 | 0x0C   | HALT     | RW     | Halt termination code (write requests CPU halt next cycle) |
 
-- CPU reset requests acknowledge immediately, then wait for the CPU to reach a safe halted/booting state before pulsing reset and temporarily blocking new requests until boot restarts.
+- CPU reset requests acknowledge immediately, then hold the CPU halt request until `cpu_halted`, pulse reset, and temporarily block new requests until boot restarts.
 - **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`
 
 ## DRAM (0x80000000 - 0x8FFFFFFF)

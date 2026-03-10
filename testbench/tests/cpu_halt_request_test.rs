@@ -1,5 +1,6 @@
 use riscv_core::{create_cpu_runtime, Cpu};
 
+const S_BOOT: u8 = 0x0;
 const S_FETCH: u8 = 0x1;
 const S_HALT: u8 = 0xA;
 
@@ -29,6 +30,22 @@ fn reset_and_boot_to_fetch(dut: &mut Cpu) {
     dut.boot = 1;
     dut.eval();
     clock_cycle!(dut);
+    dut.boot = 0;
+    dut.eval();
+}
+
+fn reset_to_boot_state(dut: &mut Cpu) {
+    dut.rst_n = 0;
+    dut.boot = 0;
+    dut.req_halt = 0;
+    dut.mem_a_ready = 0;
+    dut.mem_d_valid = 0;
+    dut.mem_d_rdata = 0;
+    dut.eval();
+    clock_cycle!(dut);
+    clock_cycle!(dut);
+
+    dut.rst_n = 1;
     dut.boot = 0;
     dut.eval();
 }
@@ -77,5 +94,43 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
     assert_eq!(
         dut.instr_complete, 0,
         "instr_complete must remain low while CPU stays halted"
+    );
+}
+
+#[test]
+fn test_cpu_req_halt_moves_boot_state_to_halt() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    reset_to_boot_state(&mut dut);
+
+    assert_eq!(
+        dut.debug_fsm_state, S_BOOT,
+        "CPU should remain in BOOT without boot"
+    );
+    assert_eq!(dut.is_booting, 1, "CPU should report booting while in BOOT");
+    assert_eq!(dut.halted, 0, "CPU should not start halted");
+
+    dut.req_halt = 1;
+    dut.eval();
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.debug_fsm_state, S_HALT,
+        "req_halt in BOOT should move CPU to HALT state"
+    );
+    assert_eq!(
+        dut.halted, 1,
+        "CPU halted output should assert in HALT state"
+    );
+    assert_eq!(
+        dut.is_booting, 0,
+        "CPU should no longer report booting once halted"
+    );
+    assert_eq!(
+        dut.mem_a_valid, 0,
+        "CPU should not issue memory requests while halted"
     );
 }

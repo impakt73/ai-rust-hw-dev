@@ -11,7 +11,7 @@
 ///
 /// BOOT and system-reset outputs pulse on accepted writes. CPU reset first
 /// requests a halt, waits for `cpu_halted`, then pulses reset and blocks new
-/// requests until `cpu_booting` goes high.
+/// requests until `cpu_booting` goes high again.
 use riscv_core::{create_system_controller_runtime, SystemController};
 
 // Register offsets
@@ -593,33 +593,55 @@ fn test_system_controller_cpu_reset_while_booting() {
 
     write_register_and_wait_for_response(&mut dut, REG_RESET, RESET_CPU);
     assert_eq!(
-        dut.req_cpu_halt, 0,
-        "CPU reset should not wait for a halt request when the CPU is already booting"
+        dut.req_cpu_halt, 1,
+        "CPU reset should drive req_cpu_halt even while the CPU is booting"
     );
     assert_eq!(
         dut.cpu_rst_n, 1,
-        "cpu_rst_n should stay deasserted until the controller emits the registered reset pulse"
+        "cpu_rst_n should stay deasserted until the CPU reports halted"
     );
     finish_response_after_observation(&mut dut);
     assert_eq!(
-        dut.cpu_rst_n, 0,
-        "cpu_rst_n should pulse low once the booting CPU reset sequence advances"
+        dut.cpu_rst_n, 1,
+        "controller should keep waiting for cpu_halted after acknowledging the request"
+    );
+    assert_eq!(
+        dut.req_cpu_halt, 1,
+        "req_cpu_halt should stay asserted until cpu_halted goes high"
     );
     assert_eq!(
         dut.mem_a_ready, 0,
-        "controller should still block new requests until the post-reset boot state is observed"
+        "controller should block new requests while the CPU reset sequence is active"
+    );
+
+    dut.cpu_booting = 0;
+    dut.cpu_halted = 1;
+    dut.eval();
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.cpu_rst_n, 1,
+        "reset pulse should not fire until after cpu_halted is observed"
     );
 
     clock_cycle!(dut);
     assert_eq!(
-        dut.mem_a_ready, 0,
-        "controller should ignore stale cpu_booting for one cycle after the reset pulse"
+        dut.cpu_rst_n, 0,
+        "cpu_rst_n should pulse low once the booting CPU has transitioned to HALT"
     );
+
+    clock_cycle!(dut);
     assert_eq!(
         dut.cpu_rst_n, 1,
         "cpu_rst_n should return high after the one-cycle reset pulse"
     );
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "controller should keep blocking requests until post-reset cpu_booting is observed"
+    );
 
+    dut.cpu_halted = 0;
+    dut.cpu_booting = 1;
+    dut.eval();
     clock_cycle!(dut);
     assert_eq!(
         dut.mem_a_ready, 1,

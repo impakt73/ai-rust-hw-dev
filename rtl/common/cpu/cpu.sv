@@ -669,7 +669,9 @@ module cpu #(
         
         case (current_state)
             S_BOOT: begin
-                if (boot)
+                if (req_halt)
+                    next_state = S_HALT;
+                else if (boot)
                     next_state = S_FETCH;
                 else
                     next_state = S_BOOT;
