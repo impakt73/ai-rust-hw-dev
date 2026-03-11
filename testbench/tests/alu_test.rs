@@ -343,7 +343,10 @@ fn test_alu_minmax_ready_is_staged() {
     dut.alu_op = ALU_MAXU as u8;
     dut.in_valid = 1;
     dut.eval();
-    assert_eq!(dut.in_ready, 1, "ALU should be ready to accept the next request");
+    assert_eq!(
+        dut.in_ready, 1,
+        "ALU should be ready to accept the next request"
+    );
 
     clock_cycle!(dut);
 
