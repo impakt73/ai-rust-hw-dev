@@ -6,15 +6,15 @@
 module alu #(
     parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
 ) (
-    input  logic        clk,          // Clock for division unit
-    input  logic        rst_n,        // Reset for division unit
+    input  logic        clk,
+    input  logic        rst_n,
     input  logic [31:0] a,
     input  logic [31:0] b,
     input  logic [4:0]  alu_op,
-    input  logic        alu_start,    // Start operation (pulse)
-    output logic [31:0] result,
-    output logic        zero,
-    output logic        alu_ready     // Operation complete
+    input  logic        in_valid,
+    output logic        in_ready,
+    output logic [31:0] out_data,
+    output logic        out_valid
 );
 
     // ALU Operation Encodings (RV32I)
@@ -54,7 +54,8 @@ module alu #(
     logic        div_rem_sel;
     logic [31:0] div_result;
     logic        div_ready;
-    logic        is_div_op;
+    logic        launch_is_div_op;
+    logic        launch_op;
     
     generate
         if (ENABLE_M_EXT) begin : gen_m_ext
@@ -67,54 +68,19 @@ module alu #(
                 .start(div_start),
                 .is_signed(div_is_signed),
                 .rem_sel(div_rem_sel),
-                .dividend(a),
-                .divisor(b),
+                .dividend(req_a_reg),
+                .divisor(req_b_reg),
                 .result(div_result),
                 .ready(div_ready)
             );
             
-            // Detect division operations
-            assign is_div_op = (alu_op == ALU_DIV)  || 
-                               (alu_op == ALU_DIVU) || 
-                               (alu_op == ALU_REM)  || 
-                               (alu_op == ALU_REMU);
-            
             // Start division when requested
-            assign div_start = alu_start && is_div_op;
-            
-            // Configure division unit based on operation
-            always_comb begin
-                case (alu_op)
-                    ALU_DIV: begin
-                        div_is_signed = 1'b1;
-                        div_rem_sel = 1'b0;  // Quotient
-                    end
-                    ALU_DIVU: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b0;  // Quotient
-                    end
-                    ALU_REM: begin
-                        div_is_signed = 1'b1;
-                        div_rem_sel = 1'b1;  // Remainder
-                    end
-                    ALU_REMU: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b1;  // Remainder
-                    end
-                    default: begin
-                        div_is_signed = 1'b0;
-                        div_rem_sel = 1'b0;
-                    end
-                endcase
-            end
+            assign div_start = launch_op && launch_is_div_op;
         end else begin : gen_no_m_ext
             // M extension disabled: No division unit
             assign div_result = 32'd0;
             assign div_ready = 1'b1;
-            assign is_div_op = 1'b0;
             assign div_start = 1'b0;
-            assign div_is_signed = 1'b0;
-            assign div_rem_sel = 1'b0;
         end
     endgenerate
     
@@ -127,7 +93,7 @@ module alu #(
     logic [1:0]  mul_op_type;
     logic [31:0] mul_result;
     logic        mul_ready;
-    logic        is_mul_op;
+    logic        launch_is_mul_op;
     
     generate
         if (ENABLE_M_EXT) begin : gen_multiplier
@@ -139,40 +105,19 @@ module alu #(
                 .rst_n(rst_n),
                 .start(mul_start),
                 .op_type(mul_op_type),
-                .multiplicand(a),
-                .multiplier(b),
+                .multiplicand(req_a_reg),
+                .multiplier(req_b_reg),
                 .result(mul_result),
                 .ready(mul_ready)
             );
             
-            // Detect multiplication operations
-            assign is_mul_op = (alu_op == ALU_MUL)    ||
-                               (alu_op == ALU_MULH)   ||
-                               (alu_op == ALU_MULHSU) ||
-                               (alu_op == ALU_MULHU);
-            
             // Start multiplication when requested
-            assign mul_start = alu_start && is_mul_op;
-            
-            // Map ALU operation to mul_unit op_type
-            // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
-            always_comb begin
-                case (alu_op)
-                    ALU_MUL:    mul_op_type = 2'b00;
-                    ALU_MULH:   mul_op_type = 2'b01;
-                    ALU_MULHSU: mul_op_type = 2'b10;
-                    ALU_MULHU:  mul_op_type = 2'b11;
-                    default:    mul_op_type = 2'b00;
-                endcase
-            end
-            
+            assign mul_start = launch_op && launch_is_mul_op;
         end else begin : gen_no_multiplier
             // M extension disabled: No multiplier
             assign mul_result = 32'd0;
             assign mul_ready = 1'b1;
-            assign is_mul_op = 1'b0;
             assign mul_start = 1'b0;
-            assign mul_op_type = 2'b00;
         end
     endgenerate
     
@@ -181,88 +126,73 @@ module alu #(
     logic [31:0] shift_result;
     logic [31:0] minmax_result;
     logic [31:0] muldiv_result;
-    logic        is_arith_op;
-    logic        is_bitwise_op;
-    logic        is_shift_op;
-    logic        is_minmax_op;
+    logic        launch_is_arith_op;
+    logic        launch_is_bitwise_op;
+    logic        launch_is_shift_op;
+    logic        launch_is_minmax_op;
     logic        minmax_compare_lt;
-    logic        minmax_select_a_reg;
-    logic        minmax_result_valid_reg;
-    logic [31:0] minmax_a_reg;
-    logic [31:0] minmax_b_reg;
+    logic        minmax_compare_lt_reg;
+    logic        minmax_compare_done_reg;
+    logic        pending_operation_reg;
+    logic [31:0] req_a_reg;
+    logic [31:0] req_b_reg;
+    logic [4:0]  req_op_reg;
+    logic        req_is_arith_reg;
+    logic        req_is_bitwise_reg;
+    logic        req_is_shift_reg;
+    logic        req_is_minmax_reg;
+    logic        req_is_mul_reg;
+    logic        req_is_div_reg;
+    logic [31:0] result_next;
 
-    assign is_arith_op = (alu_op == ALU_ADD)  ||
-                         (alu_op == ALU_SUB)  ||
-                         (alu_op == ALU_SLT)  ||
-                         (alu_op == ALU_SLTU);
+    assign launch_is_arith_op = (alu_op == ALU_ADD)  ||
+                                (alu_op == ALU_SUB)  ||
+                                (alu_op == ALU_SLT)  ||
+                                (alu_op == ALU_SLTU);
 
-    assign is_bitwise_op = (alu_op == ALU_AND) ||
-                           (alu_op == ALU_OR)  ||
-                           (alu_op == ALU_XOR);
+    assign launch_is_bitwise_op = (alu_op == ALU_AND) ||
+                                  (alu_op == ALU_OR)  ||
+                                  (alu_op == ALU_XOR);
 
-    assign is_shift_op = (alu_op == ALU_SLL) ||
-                         (alu_op == ALU_SRL) ||
-                         (alu_op == ALU_SRA);
+    assign launch_is_shift_op = (alu_op == ALU_SLL) ||
+                                (alu_op == ALU_SRL) ||
+                                (alu_op == ALU_SRA);
 
-    assign is_minmax_op = (alu_op == ALU_MIN)  ||
-                          (alu_op == ALU_MAX)  ||
-                          (alu_op == ALU_MINU) ||
-                          (alu_op == ALU_MAXU);
+    assign launch_is_minmax_op = (alu_op == ALU_MIN)  ||
+                                 (alu_op == ALU_MAX)  ||
+                                 (alu_op == ALU_MINU) ||
+                                 (alu_op == ALU_MAXU);
+
+    assign launch_is_mul_op = ENABLE_M_EXT &&
+                              ((alu_op == ALU_MUL)    ||
+                               (alu_op == ALU_MULH)   ||
+                               (alu_op == ALU_MULHSU) ||
+                               (alu_op == ALU_MULHU));
+
+    assign launch_is_div_op = ENABLE_M_EXT &&
+                              ((alu_op == ALU_DIV)  ||
+                               (alu_op == ALU_DIVU) ||
+                               (alu_op == ALU_REM)  ||
+                               (alu_op == ALU_REMU));
 
     // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
-    assign minmax_compare_lt = ((alu_op == ALU_MIN) || (alu_op == ALU_MAX)) ?
-                               ($signed(a) < $signed(b)) :
-                               (a < b);
+    assign minmax_compare_lt = ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MAX)) ?
+                               ($signed(req_a_reg) < $signed(req_b_reg)) :
+                               (req_a_reg < req_b_reg);
 
-    // Split MIN/MAX across two cycles to shorten the compare/select critical path.
-    // Cycle 1 registers the comparison result and operands.
-    // Cycle 2 selects the winning operand through a simple 32-bit mux.
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            minmax_select_a_reg     <= 1'b0;
-            minmax_result_valid_reg <= 1'b0;
-            minmax_a_reg            <= 32'd0;
-            minmax_b_reg            <= 32'd0;
-        end else if (alu_start) begin
-            if (is_minmax_op) begin
-                // MIN/MINU choose operand A when A < B.
-                // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
-                minmax_select_a_reg     <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
-                                           minmax_compare_lt :
-                                           !minmax_compare_lt;
-                minmax_result_valid_reg <= 1'b1;
-                minmax_a_reg            <= a;
-                minmax_b_reg            <= b;
-            end else begin
-                minmax_result_valid_reg <= 1'b0;
-            end
-        end
-    end
-
-    // ALU ready signal: waits for multi-cycle operations (div, mul, or staged min/max).
-    // MIN/MAX explicitly masks ready while alu_start is high so a stale completed flag
-    // from the previous MIN/MAX cannot be mistaken for immediate completion on the
-    // compare cycle of a new MIN/MAX start pulse.
-    always_comb begin
-        if (is_div_op) begin
-            alu_ready = div_ready;
-        end else if (is_mul_op) begin
-            alu_ready = mul_ready;
-        end else if (is_minmax_op) begin
-            alu_ready = minmax_result_valid_reg && !alu_start;
-        end else begin
-            alu_ready = 1'b1;
-        end
-    end
+    // Backpressure new requests while the ALU holds a latched request that has not
+    // yet produced a registered response.
+    assign in_ready = !pending_operation_reg;
+    assign launch_op = in_valid && in_ready;
 
     always_comb begin
         arith_result = 32'd0;
 
-        case (alu_op)
-            ALU_ADD:  arith_result = a + b;
-            ALU_SUB:  arith_result = a - b;
-            ALU_SLT:  arith_result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
-            ALU_SLTU: arith_result = (a < b) ? 32'd1 : 32'd0;
+        case (req_op_reg)
+            ALU_ADD:  arith_result = req_a_reg + req_b_reg;
+            ALU_SUB:  arith_result = req_a_reg - req_b_reg;
+            ALU_SLT:  arith_result = ($signed(req_a_reg) < $signed(req_b_reg)) ? 32'd1 : 32'd0;
+            ALU_SLTU: arith_result = (req_a_reg < req_b_reg) ? 32'd1 : 32'd0;
             default:  arith_result = 32'd0;
         endcase
     end
@@ -270,10 +200,10 @@ module alu #(
     always_comb begin
         bitwise_result = 32'd0;
 
-        case (alu_op)
-            ALU_AND: bitwise_result = a & b;
-            ALU_OR:  bitwise_result = a | b;
-            ALU_XOR: bitwise_result = a ^ b;
+        case (req_op_reg)
+            ALU_AND: bitwise_result = req_a_reg & req_b_reg;
+            ALU_OR:  bitwise_result = req_a_reg | req_b_reg;
+            ALU_XOR: bitwise_result = req_a_reg ^ req_b_reg;
             default: bitwise_result = 32'd0;
         endcase
     end
@@ -281,24 +211,27 @@ module alu #(
     always_comb begin
         shift_result = 32'd0;
 
-        case (alu_op)
-            ALU_SLL: shift_result = a << b[4:0];
-            ALU_SRL: shift_result = a >> b[4:0];
-            ALU_SRA: shift_result = $signed(a) >>> b[4:0];
+        case (req_op_reg)
+            ALU_SLL: shift_result = req_a_reg << req_b_reg[4:0];
+            ALU_SRL: shift_result = req_a_reg >> req_b_reg[4:0];
+            ALU_SRA: shift_result = $signed(req_a_reg) >>> req_b_reg[4:0];
             default: shift_result = 32'd0;
         endcase
     end
 
     always_comb begin
-        minmax_result = minmax_select_a_reg ? minmax_a_reg : minmax_b_reg;
+        if ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MINU))
+            minmax_result = minmax_compare_lt_reg ? req_a_reg : req_b_reg;
+        else
+            minmax_result = minmax_compare_lt_reg ? req_b_reg : req_a_reg;
     end
 
     always_comb begin
         if (!ENABLE_M_EXT) begin
             muldiv_result = 32'd0;
-        end else if (is_mul_op) begin
+        end else if (req_is_mul_reg) begin
             muldiv_result = mul_result;
-        end else if (is_div_op) begin
+        end else if (req_is_div_reg) begin
             muldiv_result = div_result;
         end else begin
             muldiv_result = 32'd0;
@@ -306,22 +239,100 @@ module alu #(
     end
 
     always_comb begin
-        // Default initialization to avoid latches
-        result = 32'd0;
+        result_next = 32'd0;
 
-        if (is_arith_op) begin
-            result = arith_result;
-        end else if (is_shift_op) begin
-            result = shift_result;
-        end else if (is_bitwise_op) begin
-            result = bitwise_result;
-        end else if (is_mul_op || is_div_op) begin
-            result = muldiv_result;
-        end else if (is_minmax_op) begin
-            result = minmax_result;
+        if (req_is_arith_reg) begin
+            result_next = arith_result;
+        end else if (req_is_shift_reg) begin
+            result_next = shift_result;
+        end else if (req_is_bitwise_reg) begin
+            result_next = bitwise_result;
+        end else if (req_is_mul_reg || req_is_div_reg) begin
+            result_next = muldiv_result;
+        end else if (req_is_minmax_reg) begin
+            result_next = minmax_result;
         end
     end
 
-    assign zero = (result == 32'd0);
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            pending_operation_reg <= 1'b0;
+            req_a_reg             <= 32'd0;
+            req_b_reg             <= 32'd0;
+            req_op_reg            <= 5'd0;
+            req_is_arith_reg      <= 1'b0;
+            req_is_bitwise_reg    <= 1'b0;
+            req_is_shift_reg      <= 1'b0;
+            req_is_minmax_reg     <= 1'b0;
+            req_is_mul_reg        <= 1'b0;
+            req_is_div_reg        <= 1'b0;
+            minmax_compare_lt_reg <= 1'b0;
+            minmax_compare_done_reg <= 1'b0;
+            div_is_signed         <= 1'b0;
+            div_rem_sel           <= 1'b0;
+            mul_op_type           <= 2'b00;
+            out_data              <= 32'd0;
+            out_valid             <= 1'b0;
+        end else begin
+            if (launch_op) begin
+                pending_operation_reg <= 1'b1;
+                req_a_reg             <= a;
+                req_b_reg             <= b;
+                req_op_reg            <= alu_op;
+                req_is_arith_reg      <= launch_is_arith_op;
+                req_is_bitwise_reg    <= launch_is_bitwise_op;
+                req_is_shift_reg      <= launch_is_shift_op;
+                req_is_minmax_reg     <= launch_is_minmax_op;
+                req_is_mul_reg        <= launch_is_mul_op;
+                req_is_div_reg        <= launch_is_div_op;
+                minmax_compare_done_reg <= 1'b0;
+                out_valid             <= 1'b0;
+                case (alu_op)
+                    ALU_DIV: begin
+                        div_is_signed <= 1'b1;
+                        div_rem_sel   <= 1'b0;
+                    end
+                    ALU_DIVU: begin
+                        div_is_signed <= 1'b0;
+                        div_rem_sel   <= 1'b0;
+                    end
+                    ALU_REM: begin
+                        div_is_signed <= 1'b1;
+                        div_rem_sel   <= 1'b1;
+                    end
+                    ALU_REMU: begin
+                        div_is_signed <= 1'b0;
+                        div_rem_sel   <= 1'b1;
+                    end
+                    default: begin
+                        div_is_signed <= 1'b0;
+                        div_rem_sel   <= 1'b0;
+                    end
+                endcase
+
+                case (alu_op)
+                    ALU_MUL:    mul_op_type <= 2'b00;
+                    ALU_MULH:   mul_op_type <= 2'b01;
+                    ALU_MULHSU: mul_op_type <= 2'b10;
+                    ALU_MULHU:  mul_op_type <= 2'b11;
+                    default:    mul_op_type <= 2'b00;
+                endcase
+            end else if (pending_operation_reg) begin
+                if (req_is_minmax_reg && !minmax_compare_done_reg) begin
+                    minmax_compare_lt_reg   <= minmax_compare_lt;
+                    minmax_compare_done_reg <= 1'b1;
+                end else if (req_is_minmax_reg && minmax_compare_done_reg) begin
+                    pending_operation_reg <= 1'b0;
+                    out_data              <= result_next;
+                    out_valid             <= 1'b1;
+                end else if ((req_is_mul_reg && mul_ready) || (req_is_div_reg && div_ready) ||
+                             (!req_is_mul_reg && !req_is_div_reg && !req_is_minmax_reg)) begin
+                    pending_operation_reg <= 1'b0;
+                    out_data              <= result_next;
+                    out_valid             <= 1'b1;
+                end
+            end
+        end
+    end
 
 endmodule
