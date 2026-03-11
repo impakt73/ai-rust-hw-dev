@@ -12,7 +12,7 @@ Use this skill whenever you need **resource utilization** or **max-frequency (Fm
 From the repository root:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd rtl/fpga
 make TARGET=<target> stats STATS_FORMAT=json
 ```
 
@@ -25,7 +25,7 @@ Supported targets:
 Examples:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd rtl/fpga
 make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
 make TARGET=ecp5_icepi_zero stats STATS_FORMAT=text
 ```
@@ -71,10 +71,10 @@ Generated artifacts:
 
 - Prefer `STATS_FORMAT=json` when answering with compact machine-readable data.
 - Prefer `STATS_FORMAT=text` when you need a short human-readable summary in the terminal.
-- If you already have up-to-date build artifacts and only need to reformat them, run:
+- If you already have up-to-date build artifacts and only need to reformat them, run this from `rtl/fpga`:
 
 ```bash
-cd /home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/fpga
+cd rtl/fpga
 python3 fpga_design_stats.py --target <target> --format json
 ```
 

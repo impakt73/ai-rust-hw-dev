@@ -117,8 +117,6 @@ ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
-STATS_JSON = $(BUILD_DIR)/$(PROJECT)_stats.json
-STATS_MD = $(BUILD_DIR)/$(PROJECT)_stats.md
 
 # Tools
 YOSYS = yosys
@@ -194,7 +192,7 @@ endif
 # Standardized design stats summary
 .PHONY: stats
 stats:
-	$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
+	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
 
 
 # Program FPGA

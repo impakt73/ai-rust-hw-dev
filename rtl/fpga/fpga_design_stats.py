@@ -93,10 +93,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_build(target: str) -> None:
-    command = ["make", f"TARGET={target}", "all"]
+    command = ["make", "-C", str(SCRIPT_DIR), f"TARGET={target}", "all"]
     result = subprocess.run(
         command,
-        cwd=SCRIPT_DIR,
         capture_output=True,
         text=True,
         check=False,
@@ -120,6 +119,8 @@ def load_text(path: Path) -> str:
 
 def parse_nextpnr_clocks(text: str) -> list[dict]:
     matches = []
+    # Matches nextpnr timing summaries such as:
+    # Max frequency for clock 'pll_clk_global': 64.69 MHz (PASS at 25.00 MHz)
     pattern = re.compile(
         r"Max frequency for clock\s+'([^']+)':\s+([0-9.]+)\s+MHz\s+\((PASS|FAIL)\s+at\s+([0-9.]+)\s+MHz\)"
     )
@@ -160,6 +161,10 @@ def parse_vivado_timing(text: str, preferred_clock_patterns: list[str]) -> dict 
             break
 
     clock_rows = []
+    # Matches Vivado Clock Summary rows in either table form:
+    # | clk_100mhz | {0.000 5.000} | 10.000 | 100.000 |
+    # or whitespace-delimited form:
+    # clk_100mhz {0.000 5.000} 10.000 100.000
     pipe_pattern = re.compile(
         r"^\|\s*([^|]+?)\s*\|\s*\{[^|]+\}\s*\|\s*([0-9.]+)\s*\|\s*([0-9.]+)\s*\|"
     )
@@ -230,6 +235,8 @@ def parse_nextpnr_resources(text: str) -> dict:
 
 def parse_vivado_resources(text: str) -> dict:
     resources = {}
+    # Matches Vivado utilization rows such as:
+    # | Slice LUTs | 4,200 | 20,800 | 20.19 |
     pattern = re.compile(
         r"^\|\s*([^|]+?)\s*\|\s*([0-9,]+)\s*\|\s*([0-9,]+)\s*\|\s*([0-9.]+)\s*\|",
         re.MULTILINE,
@@ -313,9 +320,8 @@ def collect_stats(target: str, build_dir: Path) -> dict:
 
     nextpnr_log = build_dir / "nextpnr.log"
     yosys_log = build_dir / "yosys.log"
-    icetime_report = build_dir / "riscv_fpga_timing.rpt"
-    vivado_timing = build_dir / "riscv_fpga_timing.rpt"
-    vivado_utilization = build_dir / "riscv_fpga_utilization.rpt"
+    timing_report = build_dir / "riscv_fpga_timing.rpt"
+    utilization_report = build_dir / "riscv_fpga_utilization.rpt"
 
     timing = None
     extra_timing = {}
@@ -330,20 +336,20 @@ def collect_stats(target: str, build_dir: Path) -> dict:
         )
         post_route_resources = parse_nextpnr_resources(nextpnr_text)
 
-    if target == "ice40_alchitry_cu" and icetime_report.exists():
-        icetime_text = load_text(icetime_report)
+    if target == "ice40_alchitry_cu" and timing_report.exists():
+        icetime_text = load_text(timing_report)
         icetime_frequency = parse_icetime_fmax(icetime_text)
         if icetime_frequency is not None:
             extra_timing["icetime_max_frequency_mhz"] = icetime_frequency
 
     if target == "artix7_alchitry_au":
-        if vivado_timing.exists():
-            vivado_timing_text = load_text(vivado_timing)
+        if timing_report.exists():
+            vivado_timing_text = load_text(timing_report)
             timing = parse_vivado_timing(
                 vivado_timing_text, config["preferred_clock_patterns"]
             )
-        if vivado_utilization.exists():
-            post_route_resources = parse_vivado_resources(load_text(vivado_utilization))
+        if utilization_report.exists():
+            post_route_resources = parse_vivado_resources(load_text(utilization_report))
 
     if yosys_log.exists():
         synthesis_cell_counts = parse_yosys_cell_counts(load_text(yosys_log))
@@ -386,6 +392,8 @@ def collect_stats(target: str, build_dir: Path) -> dict:
             "markdown": str(build_dir / "riscv_fpga_stats.md"),
         },
     }
+
+
 def render_text(stats: dict) -> str:
     lines = [
         f"Target: {stats['target']}",
@@ -502,13 +510,12 @@ def render_markdown(stats: dict) -> str:
 def main() -> None:
     args = parse_args()
     build_dir = Path(args.build_dir) if args.build_dir else SCRIPT_DIR / "build" / args.target
+    build_dir.mkdir(parents=True, exist_ok=True)
 
     if args.build:
         run_build(args.target)
 
     stats = collect_stats(args.target, build_dir)
-
-    build_dir.mkdir(parents=True, exist_ok=True)
     json_output = build_dir / "riscv_fpga_stats.json"
     markdown_output = build_dir / "riscv_fpga_stats.md"
     json_output.write_text(json.dumps(stats, indent=2, sort_keys=True) + "\n", encoding="utf-8")
