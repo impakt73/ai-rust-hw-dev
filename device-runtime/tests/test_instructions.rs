@@ -480,6 +480,7 @@ fn test_cpu_jal_jalr_return_addresses() {
     let mut instructions = vec![
         lui(9, DRAM_BASE),
         auipc(5, 0),
+        // Use an odd base so JALR must clear bit 0 after adding the non-zero immediate.
         addi(5, 5, 31),
         jal(1, 8),
         addi(6, 0, 99),

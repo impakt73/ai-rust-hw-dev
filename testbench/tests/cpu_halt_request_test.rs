@@ -2,12 +2,11 @@ use riscv_core::instruction::{beq, lw};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 const S_BOOT: u8 = 0x0; // Matches cpu.sv S_BOOT encoding.
+const S_FETCH: u8 = 0x1;
 const S_DECODE: u8 = 0x2;
 const S_EXECUTE: u8 = 0x3;
-const S_MEM_ADDR: u8 = 0x4;
 const S_MEM_READ: u8 = 0x5;
 const S_BRANCH: u8 = 0x8;
-const S_FETCH: u8 = 0x1;
 const S_HALT: u8 = 0xA;
 const S_REG_READ: u8 = 0xC;
 const S_REG_READ_WAIT: u8 = 0xD;
@@ -196,10 +195,6 @@ fn test_cpu_branch_target_uses_execute_stage() {
         dut.debug_fsm_state, S_EXECUTE,
         "branch target calculation should route through EXECUTE"
     );
-    assert_ne!(
-        dut.debug_fsm_state, S_MEM_ADDR,
-        "branch path should no longer use MEM_ADDR"
-    );
 
     clock_cycle!(dut);
     assert_eq!(
@@ -259,10 +254,6 @@ fn test_cpu_load_address_uses_execute_stage() {
     assert_eq!(
         dut.debug_fsm_state, S_EXECUTE,
         "load address calculation should route through EXECUTE"
-    );
-    assert_ne!(
-        dut.debug_fsm_state, S_MEM_ADDR,
-        "load path should no longer use MEM_ADDR"
     );
 
     clock_cycle!(dut);

@@ -154,8 +154,8 @@ module cpu #(
     logic [31:0] branch_target_reg;  // pc + imm_b (for B-type branches)
     logic [31:0] jal_target_reg;     // pc + imm_j (for JAL)
     logic [31:0] jalr_target_reg;    // a_reg + imm_i (for JALR, computed during EXECUTE)
-    logic        branch_target_write;
-    logic        jal_target_write;
+    logic        branch_target_write;  // Control signal to write branch_target_reg
+    logic        jal_target_write;     // Control signal to write jal_target_reg
     logic        jalr_target_write;
     
     // Completed instruction registers (captured at instruction completion for tracing)
@@ -204,7 +204,7 @@ module cpu #(
     logic        alu_out_valid;
     logic        alu_in_valid;
     logic        alu_in_ready;
-    logic        alu_req_sent_reg_read;  // Track jump link ALU request during register-read wait
+    logic        alu_req_sent_jump_link;  // Track jump-link ALU request during register-read wait
     logic        alu_req_sent;       // Track if the ALU request handshake completed (S_EXECUTE)
     logic        alu_req_sent_rmw;   // Track if the ALU request handshake completed (S_ATOMIC_RMW)
     
@@ -224,6 +224,9 @@ module cpu #(
     
     // Branch/Jump logic
     logic        take_branch;
+    logic        in_reg_read_pipeline;
+    logic        jump_link_precompute_active;
+    logic        execute_alu_add_op;
     
     // CSR signals
     logic [11:0] csr_addr;
@@ -259,6 +262,15 @@ module cpu #(
     assign dmem_ready_internal = mem_d_valid && mem_d_ready;
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    // High while the CPU is traversing the BRAM-backed register-file read pipeline.
+    assign in_reg_read_pipeline = (current_state == S_REG_READ) || (current_state == S_REG_READ_WAIT);
+    // High when a jump instruction is precomputing its return address (PC+4).
+    assign jump_link_precompute_active = in_reg_read_pipeline && jump_reg;
+    // High when the execute-stage ALU must behave as an adder for PC/address generation.
+    assign execute_alu_add_op = (current_state == S_EXECUTE) &&
+                                (branch_reg || jump_reg || is_auipc_reg ||
+                                 mem_read_reg || mem_write_reg || is_fp_load_reg ||
+                                 is_fp_store_reg || is_lr_reg || is_sc_reg || is_amo_reg);
     
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
@@ -424,11 +436,11 @@ module cpu #(
     // CPU is in the register-read pipeline.
     always_ff @(posedge clk) begin
         if (!rst_n)
-            alu_req_sent_reg_read <= 1'b0;
-        else if (!jump_reg || ((current_state != S_REG_READ) && (current_state != S_REG_READ_WAIT)))
-            alu_req_sent_reg_read <= 1'b0;
+            alu_req_sent_jump_link <= 1'b0;
+        else if (!jump_link_precompute_active)
+            alu_req_sent_jump_link <= 1'b0;
         else if (alu_in_valid && alu_in_ready)
-            alu_req_sent_reg_read <= 1'b1;
+            alu_req_sent_jump_link <= 1'b1;
     end
 
     // Track whether the ALU request valid/ready handshake has completed in S_EXECUTE.
@@ -615,7 +627,10 @@ module cpu #(
 
                         7'b1101111,  // JAL
                         7'b1100111: begin  // JALR
-                            if (alu_req_sent_reg_read && alu_out_valid)
+                            // Both jump instructions wait here until the early ALU PC+4 result is
+                            // captured into alu_out_reg. JAL still uses the register-read
+                            // pipeline so the link calculation can overlap that wait.
+                            if (alu_req_sent_jump_link && alu_out_valid)
                                 next_state = S_EXECUTE;
                             else
                                 next_state = S_REG_READ_WAIT;
@@ -785,7 +800,7 @@ module cpu #(
             
             S_REG_READ: begin
                 if (jump_reg)
-                    alu_in_valid = !alu_req_sent_reg_read;
+                    alu_in_valid = !alu_req_sent_jump_link;
             end
             
             // S_REG_READ_WAIT: Capture BRAM register file read data
@@ -804,8 +819,8 @@ module cpu #(
                     fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
                 end
                 if (jump_reg) begin
-                    alu_in_valid = !alu_req_sent_reg_read;
-                    if (alu_req_sent_reg_read && alu_out_valid)
+                    alu_in_valid = !alu_req_sent_jump_link;
+                    if (alu_req_sent_jump_link && alu_out_valid)
                         alu_out_write = 1'b1;
                 end
                 // FENCE completes here (after register read state)
@@ -823,13 +838,17 @@ module cpu #(
                     
                     if (alu_req_sent && alu_out_valid) begin
                         if (branch_reg)
+                            // B-type branch target produced by the execute-stage ALU.
                             branch_target_write = 1'b1;
                         else if (jump_reg) begin
                             if (alu_src_reg)
+                                // JALR target produced by the execute-stage ALU.
                                 jalr_target_write = 1'b1;
                             else
+                                // JAL target produced by the execute-stage ALU.
                                 jal_target_write = 1'b1;
                         end else begin
+                            // Normal ALU/data-address result written into alu_out_reg.
                             alu_out_write = 1'b1;
                         end
                     end
@@ -992,12 +1011,9 @@ module cpu #(
         
         // Use the ALU adder for jump link generation while the register file read
         // pipeline is in flight.
-        if (((current_state == S_REG_READ) || (current_state == S_REG_READ_WAIT)) && jump_reg) begin
+        if (jump_link_precompute_active) begin
             alu_op_mux = 5'b00000;  // ALU_ADD
-        end else if (current_state == S_EXECUTE &&
-                     (branch_reg || jump_reg || is_auipc_reg ||
-                      mem_read_reg || mem_write_reg || is_fp_load_reg ||
-                      is_fp_store_reg || is_lr_reg || is_sc_reg || is_amo_reg)) begin
+        end else if (execute_alu_add_op) begin
             alu_op_mux = 5'b00000;  // ALU_ADD
         end
     end
@@ -1009,7 +1025,7 @@ module cpu #(
         // For S-type stores (SW, FSW), use imm_s; for I-type (loads, etc.), use imm_i
         alu_b = alu_src_reg ? ((mem_write_reg || is_fp_store_reg) ? imm_s_reg : imm_i_reg) : b_reg;
         
-        if (((current_state == S_REG_READ) || (current_state == S_REG_READ_WAIT)) && jump_reg) begin
+        if (jump_link_precompute_active) begin
             // Compute PC+4 for the jump return address while waiting for the register-file read.
             alu_a = instr_pc_reg;
             alu_b = 32'd4;
