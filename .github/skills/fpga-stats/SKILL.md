@@ -6,6 +6,7 @@ description: Standard workflow for generating concise FPGA utilization and max-f
 # FPGA Design Stats Workflow
 
 Use this skill whenever you need **resource utilization** or **max-frequency (Fmax)** numbers for an FPGA target in this repository.
+The workflow requires **Python 3.10+**.
 
 ## Standard Command
 
@@ -44,6 +45,10 @@ The script standardizes the output by:
 2. Parsing the authoritative timing artifact for that target
 3. Parsing post-route resource utilization plus post-synthesis cell counts
 4. Writing normalized artifacts into `rtl/fpga/build/<target>/`
+
+`--build-dir` is only for re-parsing existing artifacts. Do not combine it with
+`--build`, because the synthesis flow writes to the standard `build/<target>/`
+directory.
 
 Generated artifacts:
 

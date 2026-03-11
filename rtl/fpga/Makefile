@@ -190,8 +190,13 @@ utilization: $(NETLIST)
 endif
 
 # Standardized design stats summary
+.PHONY: check-python
+check-python:
+	@$(PYTHON3) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA stats generation"; exit 1)
+
 .PHONY: stats
-stats:
+stats: check-python
 	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
 
 
@@ -248,7 +253,7 @@ endif
 	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
 
 .PHONY: check-tools
-check-tools:
+check-tools: check-python
 	@echo "Checking for required tools..."
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)

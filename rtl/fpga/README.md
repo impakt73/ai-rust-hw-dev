@@ -96,6 +96,7 @@ make TARGET=artix7_alchitry_au
 
 Use the standardized stats workflow whenever you need concise, machine-friendly
 resource utilization and max-frequency information for a supported FPGA target.
+The stats tooling requires **Python 3.10 or newer**.
 
 ```bash
 # From rtl/fpga/
@@ -121,6 +122,9 @@ If you already have up-to-date build artifacts and only need to reformat them:
 ```bash
 python3 fpga_design_stats.py --target ice40_alchitry_cu --format json
 ```
+
+The script rejects `--build-dir` together with `--build` because the build flow
+always writes to the target's standard `build/<target>/` output directory.
 
 ### Timing / Utilization Sources Used by the Stats Workflow
 

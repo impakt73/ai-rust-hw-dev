@@ -6,9 +6,19 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+
+MIN_PYTHON = (3, 10)
+
+if sys.version_info < MIN_PYTHON:
+    version = ".".join(str(part) for part in MIN_PYTHON)
+    sys.stderr.write(
+        f"ERROR: fpga_design_stats.py requires Python {version} or higher.\n"
+    )
+    raise SystemExit(1)
 
 TARGET_CONFIGS = {
     "ice40_alchitry_cu": {
@@ -89,7 +99,10 @@ def parse_args() -> argparse.Namespace:
         "--build-dir",
         help="Override the build directory. Defaults to rtl/fpga/build/<target>.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.build and args.build_dir:
+        parser.error("--build cannot be combined with --build-dir")
+    return args
 
 
 def run_build(target: str) -> None:
@@ -117,8 +130,8 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def parse_nextpnr_clocks(text: str) -> list[dict]:
-    matches = []
+def parse_nextpnr_clocks(text: str) -> List[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
     # Matches nextpnr timing summaries such as:
     # Max frequency for clock 'pll_clk_global': 64.69 MHz (PASS at 25.00 MHz)
     pattern = re.compile(
@@ -137,14 +150,16 @@ def parse_nextpnr_clocks(text: str) -> list[dict]:
     return matches
 
 
-def parse_icetime_fmax(text: str) -> float | None:
+def parse_icetime_fmax(text: str) -> Optional[float]:
     matches = re.findall(r"Total path delay:\s+[0-9.]+\s+ns\s+\(([0-9.]+)\s+MHz\)", text)
     if not matches:
         return None
     return float(matches[-1])
 
 
-def parse_vivado_timing(text: str, preferred_clock_patterns: list[str]) -> dict | None:
+def parse_vivado_timing(
+    text: str, preferred_clock_patterns: List[str]
+) -> Optional[Dict[str, Any]]:
     wns = None
     lines = text.splitlines()
     for index, line in enumerate(lines):
@@ -160,7 +175,7 @@ def parse_vivado_timing(text: str, preferred_clock_patterns: list[str]) -> dict 
         if wns is not None:
             break
 
-    clock_rows = []
+    clock_rows: List[Dict[str, float]] = []
     # Matches Vivado Clock Summary rows in either table form:
     # | clk_100mhz | {0.000 5.000} | 10.000 | 100.000 |
     # or whitespace-delimited form:
@@ -217,8 +232,8 @@ def parse_vivado_timing(text: str, preferred_clock_patterns: list[str]) -> dict 
     }
 
 
-def parse_nextpnr_resources(text: str) -> dict:
-    resources = {}
+def parse_nextpnr_resources(text: str) -> Dict[str, Dict[str, float]]:
+    resources: Dict[str, Dict[str, float]] = {}
     pattern = re.compile(
         r"^\s*(?:Info:\s*)?([A-Za-z0-9_./ +-]+):\s+([0-9]+)\s*/\s*([0-9]+)\s+([0-9.]+)%\s*$",
         re.MULTILINE,
@@ -233,8 +248,8 @@ def parse_nextpnr_resources(text: str) -> dict:
     return resources
 
 
-def parse_vivado_resources(text: str) -> dict:
-    resources = {}
+def parse_vivado_resources(text: str) -> Dict[str, Dict[str, float]]:
+    resources: Dict[str, Dict[str, float]] = {}
     # Matches Vivado utilization rows such as:
     # | Slice LUTs | 4,200 | 20,800 | 20.19 |
     pattern = re.compile(
@@ -255,7 +270,7 @@ def parse_vivado_resources(text: str) -> dict:
     return resources
 
 
-def parse_yosys_cell_counts(text: str) -> dict:
+def parse_yosys_cell_counts(text: str) -> Dict[str, int]:
     blocks = re.findall(
         r"Number of cells:\s+[0-9]+\s*\n((?:\s+\S+\s+[0-9]+\n)+)",
         text,
@@ -264,7 +279,7 @@ def parse_yosys_cell_counts(text: str) -> dict:
     if not blocks:
         return {}
 
-    cell_counts = {}
+    cell_counts: Dict[str, int] = {}
     for line in blocks[-1].splitlines():
         match = re.match(r"\s+(\S+)\s+([0-9]+)\s*$", line)
         if match is None:
@@ -273,7 +288,9 @@ def parse_yosys_cell_counts(text: str) -> dict:
     return cell_counts
 
 
-def select_clock(clocks: list[dict], preferred_clock_patterns: list[str]) -> dict | None:
+def select_clock(
+    clocks: List[Dict[str, Any]], preferred_clock_patterns: List[str]
+) -> Optional[Dict[str, Any]]:
     if not clocks:
         return None
 
@@ -286,14 +303,16 @@ def select_clock(clocks: list[dict], preferred_clock_patterns: list[str]) -> dic
     return min(clocks, key=lambda clock: clock["max_frequency_mhz"])
 
 
-def build_headline_resources(post_route_resources: dict, synthesis_cell_counts: dict) -> dict:
-    headline_resources = {}
+def build_headline_resources(
+    post_route_resources: Dict[str, Dict[str, float]],
+    synthesis_cell_counts: Dict[str, int],
+) -> Dict[str, Dict[str, Any]]:
+    headline_resources: Dict[str, Dict[str, Any]] = {}
     for category, aliases in HEADLINE_RESOURCE_ALIASES.items():
         selected_name = None
         selected_value = None
         for alias in aliases:
             if alias in post_route_resources:
-                selected_name = alias
                 selected_value = {
                     "name": alias,
                     **post_route_resources[alias],
@@ -303,19 +322,28 @@ def build_headline_resources(post_route_resources: dict, synthesis_cell_counts: 
         if selected_value is None:
             for alias in aliases:
                 if alias in synthesis_cell_counts:
-                    selected_name = alias
                     selected_value = {
                         "name": alias,
                         "used": synthesis_cell_counts[alias],
                         "source": "synthesis_cell_counts",
                     }
                     break
-        if selected_name is not None:
+        if selected_value is not None:
             headline_resources[category] = selected_value
     return headline_resources
 
 
-def collect_stats(target: str, build_dir: Path) -> dict:
+def collect_source_metadata(build_dir: Path, relative_paths: List[str]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "path": str(build_dir / relative_path),
+            "exists": (build_dir / relative_path).exists(),
+        }
+        for relative_path in relative_paths
+    ]
+
+
+def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
     config = TARGET_CONFIGS[target]
 
     nextpnr_log = build_dir / "nextpnr.log"
@@ -324,9 +352,13 @@ def collect_stats(target: str, build_dir: Path) -> dict:
     utilization_report = build_dir / "riscv_fpga_utilization.rpt"
 
     timing = None
-    extra_timing = {}
-    post_route_resources = {}
-    synthesis_cell_counts = {}
+    extra_timing: Dict[str, float] = {}
+    post_route_resources: Dict[str, Dict[str, float]] = {}
+    synthesis_cell_counts: Dict[str, int] = {}
+    source_artifacts = {
+        "timing": collect_source_metadata(build_dir, config["timing_sources"]),
+        "resources": collect_source_metadata(build_dir, config["resource_sources"]),
+    }
 
     if nextpnr_log.exists():
         nextpnr_text = load_text(nextpnr_log)
@@ -359,12 +391,18 @@ def collect_stats(target: str, build_dir: Path) -> dict:
     )
 
     if timing is None:
+        expected_timing = ", ".join(entry["path"] for entry in source_artifacts["timing"])
         raise ValueError(
-            f"Unable to parse timing information for target '{target}' from {build_dir}."
+            f"Unable to parse timing information for target '{target}' from {build_dir}. "
+            f"Expected one of: {expected_timing}"
         )
     if not post_route_resources and not synthesis_cell_counts:
+        expected_resources = ", ".join(
+            entry["path"] for entry in source_artifacts["resources"]
+        )
         raise ValueError(
-            f"Unable to parse utilization information for target '{target}' from {build_dir}."
+            f"Unable to parse utilization information for target '{target}' from {build_dir}. "
+            f"Expected one of: {expected_resources}"
         )
 
     target_frequency_mhz = timing.get(
@@ -387,6 +425,7 @@ def collect_stats(target: str, build_dir: Path) -> dict:
         "headline_resources": headline_resources,
         "post_route_resources": post_route_resources,
         "synthesis_cell_counts": synthesis_cell_counts,
+        "source_artifacts": source_artifacts,
         "artifacts": {
             "json": str(build_dir / "riscv_fpga_stats.json"),
             "markdown": str(build_dir / "riscv_fpga_stats.md"),
@@ -394,7 +433,7 @@ def collect_stats(target: str, build_dir: Path) -> dict:
     }
 
 
-def render_text(stats: dict) -> str:
+def render_text(stats: Dict[str, Any]) -> str:
     lines = [
         f"Target: {stats['target']}",
         f"Build dir: {stats['build_dir']}",
@@ -440,7 +479,7 @@ def render_text(stats: dict) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(stats: dict) -> str:
+def render_markdown(stats: Dict[str, Any]) -> str:
     lines = [
         f"# FPGA Design Stats - {stats['target']}",
         "",
@@ -510,10 +549,12 @@ def render_markdown(stats: dict) -> str:
 def main() -> None:
     args = parse_args()
     build_dir = Path(args.build_dir) if args.build_dir else SCRIPT_DIR / "build" / args.target
-    build_dir.mkdir(parents=True, exist_ok=True)
 
     if args.build:
         run_build(args.target)
+    elif not build_dir.exists():
+        sys.stderr.write(f"ERROR: Build directory does not exist: {build_dir}\n")
+        raise SystemExit(1)
 
     stats = collect_stats(args.target, build_dir)
     json_output = build_dir / "riscv_fpga_stats.json"
