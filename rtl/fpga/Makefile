@@ -233,12 +233,12 @@ endif
 	@echo "Prerequisites:"
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - vivado     : Xilinx Vivado batch/CLI tools"
-	@echo "  - openFPGALoader : Optional board programming tool"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
 	@echo "  - icestorm   : Bitstream generation tools"
-	@echo "  - openFPGALoader : Optional board programming tool"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 endif
 	@echo ""
 	@echo "Target selection:"
@@ -255,17 +255,17 @@ check-tools:
 	@echo "Checking for required tools..."
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
 ifeq ($(TARGET),ice40_alchitry_cu)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 endif
 endif
 	@echo "All required tools found!"

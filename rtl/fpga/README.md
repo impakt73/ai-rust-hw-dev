@@ -102,8 +102,8 @@ sudo make program
 sudo make program PROGRAM_MODE=flash
 
 # Or manually using openFPGALoader:
-sudo openFPGALoader -b ice40_generic -m build/ice40_alchitry_cu/riscv_fpga.bin
-sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin
+sudo openFPGALoader -b ice40_generic -m build/ice40_alchitry_cu/riscv_fpga.bin  # SRAM
+sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  # Flash
 ```
 
 ## Files
