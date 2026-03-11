@@ -7,6 +7,11 @@ fn clock_cycle(dut: &mut SramTestWrapper) {
     dut.eval();
 }
 
+fn advance_read_latency(dut: &mut SramTestWrapper) {
+    clock_cycle(dut);
+    clock_cycle(dut);
+}
+
 #[test]
 fn test_sram_word_write_and_read() {
     let runtime = create_sram_runtime().expect("Failed to create SRAM runtime");
@@ -19,7 +24,7 @@ fn test_sram_word_write_and_read() {
     dut.waddr = 0;
     dut.wdata = 0;
     dut.raddr = 3;
-    clock_cycle(&mut dut);
+    advance_read_latency(&mut dut);
     assert_eq!(dut.rdata, 0, "SRAM should initialize to zero");
 
     dut.we = 1;
@@ -30,7 +35,7 @@ fn test_sram_word_write_and_read() {
     clock_cycle(&mut dut);
 
     dut.we = 0;
-    clock_cycle(&mut dut);
+    advance_read_latency(&mut dut);
     assert_eq!(dut.rdata, 0xDEADBEEF, "full-word write should be readable");
 }
 
@@ -53,7 +58,7 @@ fn test_sram_halfword_write_mask() {
     clock_cycle(&mut dut);
 
     dut.we = 0;
-    clock_cycle(&mut dut);
+    advance_read_latency(&mut dut);
     assert_eq!(
         dut.rdata, 0x12345678,
         "lower halfword masked write should preserve upper halfword"
@@ -79,7 +84,7 @@ fn test_sram_byte_write_mask() {
     clock_cycle(&mut dut);
 
     dut.we = 0;
-    clock_cycle(&mut dut);
+    advance_read_latency(&mut dut);
     assert_eq!(
         dut.rdata, 0x11AA3344,
         "single-byte masked write should update only selected byte lane"
@@ -101,12 +106,13 @@ fn test_sram_read_during_write_same_addr_is_read_first() {
     dut.raddr = 2;
     clock_cycle(&mut dut);
 
-    // Same-cycle read/write to same address should return old data on this edge.
+    // Read-during-write to the same address should return the old data after the
+    // SRAM read pipeline latency.
     dut.wmask = 0xF;
     dut.waddr = 2;
     dut.wdata = 0x33334444;
     dut.raddr = 2;
-    clock_cycle(&mut dut);
+    advance_read_latency(&mut dut);
     assert_eq!(
         dut.rdata, 0x11112222,
         "read-during-write same address must return pre-write value (read-first)"
@@ -115,5 +121,8 @@ fn test_sram_read_during_write_same_addr_is_read_first() {
     // Next cycle returns the newly written value.
     dut.we = 0;
     clock_cycle(&mut dut);
-    assert_eq!(dut.rdata, 0x33334444, "next cycle should observe new value");
+    assert_eq!(
+        dut.rdata, 0x33334444,
+        "next cycle should observe new value once the pipeline advances again"
+    );
 }

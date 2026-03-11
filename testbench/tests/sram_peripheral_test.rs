@@ -100,8 +100,8 @@ fn test_sram_peripheral_aligned_access_uses_d_channel_completion() {
 
     let (read_data, read_wait) = read_access(&mut dut, 0, SIZE_WORD);
     assert_eq!(
-        read_wait, 1,
-        "aligned word reads should return one cycle after request acceptance"
+        read_wait, 2,
+        "aligned word reads should return two cycles after request acceptance"
     );
     assert_eq!(read_data, 0xDEAD_BEEF);
 }
@@ -131,8 +131,8 @@ fn test_sram_peripheral_unaligned_word_store_and_load() {
 
     let (unaligned_word, split_read_wait) = read_access(&mut dut, 1, SIZE_WORD);
     assert_eq!(
-        split_read_wait, 2,
-        "unaligned word read should use two SRAM read cycles before D completion"
+        split_read_wait, 3,
+        "unaligned word read should take three total cycles because the split access spans two SRAM words through the pipelined read path"
     );
     assert_eq!(unaligned_word, 0xAABB_CCDD);
 }
@@ -162,13 +162,13 @@ fn test_sram_peripheral_unaligned_halfword_store_and_load() {
 
     let (unaligned_halfword, split_halfword_read_wait) = read_access(&mut dut, 3, SIZE_HALFWORD);
     assert_eq!(
-        split_halfword_read_wait, 2,
-        "cross-boundary unaligned halfword read should use two SRAM read cycles"
+        split_halfword_read_wait, 3,
+        "cross-boundary unaligned halfword read should take three total cycles because the split access spans two SRAM words through the pipelined read path"
     );
     assert_eq!(unaligned_halfword, 0x0000_ABCD);
 
     let (intra_word_halfword, intra_word_wait) = read_access(&mut dut, 1, SIZE_HALFWORD);
-    assert_eq!(intra_word_wait, 1);
+    assert_eq!(intra_word_wait, 2);
     assert_eq!(intra_word_halfword, 0x0000_2233);
 }
 
