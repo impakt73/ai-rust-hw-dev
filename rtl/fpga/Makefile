@@ -117,6 +117,8 @@ ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
+STATS_JSON = $(BUILD_DIR)/$(PROJECT)_stats.json
+STATS_MD = $(BUILD_DIR)/$(PROJECT)_stats.md
 
 # Tools
 YOSYS = yosys
@@ -127,6 +129,9 @@ ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
+PYTHON3 = python3
+STATS_SCRIPT = ./fpga_design_stats.py
+STATS_FORMAT ?= text
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
@@ -186,6 +191,11 @@ utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
 endif
 
+# Standardized design stats summary
+.PHONY: stats
+stats:
+	$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
+
 
 # Program FPGA
 .PHONY: program
@@ -214,6 +224,7 @@ else
 endif
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
+	@echo "  stats        - Build and print standardized timing/utilization stats"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Show this help message"
@@ -232,6 +243,11 @@ endif
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
+	@echo ""
+	@echo "Stats output format:"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
 
 .PHONY: check-tools
 check-tools:

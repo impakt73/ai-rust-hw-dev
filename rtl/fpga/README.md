@@ -92,6 +92,53 @@ make TARGET=artix7_alchitry_au
 # - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
 ```
 
+### Generate Standardized FPGA Design Stats
+
+Use the standardized stats workflow whenever you need concise, machine-friendly
+resource utilization and max-frequency information for a supported FPGA target.
+
+```bash
+# From rtl/fpga/
+make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text
+make TARGET=ecp5_icepi_zero stats STATS_FORMAT=json
+make TARGET=artix7_alchitry_au stats STATS_FORMAT=markdown
+```
+
+This workflow:
+
+1. Runs the normal synthesis/place-and-route flow for the selected target
+2. Extracts the authoritative max-frequency result for that target
+3. Extracts post-route resource utilization plus post-synthesis cell counts
+4. Writes normalized artifacts to `build/<target>/`
+
+Generated files:
+
+- `build/<target>/riscv_fpga_stats.json`
+- `build/<target>/riscv_fpga_stats.md`
+
+If you already have up-to-date build artifacts and only need to reformat them:
+
+```bash
+python3 fpga_design_stats.py --target ice40_alchitry_cu --format json
+```
+
+### Timing / Utilization Sources Used by the Stats Workflow
+
+- **`ice40_alchitry_cu`**
+  - Routed Fmax: `build/ice40_alchitry_cu/nextpnr.log`
+  - Secondary timing cross-check: `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
+  - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
+  - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
+
+- **`ecp5_icepi_zero`**
+  - Routed Fmax: `build/ecp5_icepi_zero/nextpnr.log`
+  - Resource utilization: `build/ecp5_icepi_zero/nextpnr.log`
+  - Synthesis cell counts: `build/ecp5_icepi_zero/yosys.log`
+
+- **`artix7_alchitry_au`**
+  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Utilization report: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
+
 ### Program FPGA (Requires Hardware)
 
 ```bash
