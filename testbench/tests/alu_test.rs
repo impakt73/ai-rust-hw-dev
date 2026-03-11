@@ -169,11 +169,13 @@ fn test_alu_sub() {
 }
 
 #[test]
-fn test_alu_multicycle_ops_latch_inputs_after_handshake() {
+fn test_alu_operations_latch_inputs_after_handshake() {
     let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     for (a, b, alu_op, expected) in [
+        (5_u32, 3_u32, ALU_ADD as u8, 8_u32),
+        (0xFFFF_FFFBu32, 3_u32, ALU_MIN as u8, 0xFFFF_FFFBu32),
         (7_u32, 6_u32, ALU_MUL as u8, 42_u32),
         (100_u32, 9_u32, ALU_DIVU as u8, 11_u32),
     ] {
@@ -203,13 +205,10 @@ fn test_alu_multicycle_ops_latch_inputs_after_handshake() {
             clock_cycle!(dut);
         }
 
-        assert!(
-            saw_out_valid,
-            "Timed out waiting for latched multi-cycle result"
-        );
+        assert!(saw_out_valid, "Timed out waiting for latched ALU result");
         assert_eq!(
             dut.out_data, expected,
-            "Multi-cycle op should use latched inputs"
+            "ALU result should use latched inputs"
         );
     }
 }
@@ -354,7 +353,7 @@ fn test_alu_minmax_ops() {
 }
 
 #[test]
-fn test_alu_minmax_ready_is_staged() {
+fn test_alu_minmax_result_is_registered() {
     let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -380,15 +379,26 @@ fn test_alu_minmax_ready_is_staged() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MIN result should still be in the registered output stage"
+        "MIN result should still be pending on the first cycle after the request edge"
+    );
+    assert_eq!(
+        dut.in_ready, 0,
+        "ALU should hold off new requests while MIN is pending"
     );
 
     clock_cycle!(dut);
     dut.eval();
-    assert_eq!(dut.out_valid, 1, "MIN should be valid on the third cycle");
+    assert_eq!(
+        dut.out_valid, 1,
+        "MIN should be valid once the pending request reaches the response stage"
+    );
     assert_eq!(
         dut.out_data, 0xFFFF_FFFBu32,
         "MIN should select the smaller operand"
+    );
+    assert_eq!(
+        dut.in_ready, 1,
+        "ALU should be ready for another request after registering the MIN result"
     );
 
     clock_cycle!(dut);
@@ -415,12 +425,15 @@ fn test_alu_minmax_ready_is_staged() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MAXU result should still be in the registered output stage"
+        "MAXU should still be pending on the first cycle after the request edge"
     );
 
     clock_cycle!(dut);
     dut.eval();
-    assert_eq!(dut.out_valid, 1, "MAXU should be valid on the third cycle");
+    assert_eq!(
+        dut.out_valid, 1,
+        "MAXU should be valid once the pending request reaches the response stage"
+    );
     assert_eq!(dut.out_data, 10u32, "MAXU should select the larger operand");
 }
 
@@ -458,8 +471,19 @@ fn test_alu_single_cycle_result_is_registered() {
     dut.in_valid = 0;
     dut.eval();
     assert_eq!(
+        dut.out_valid, 0,
+        "ADD result should still be pending on the first cycle after the request edge"
+    );
+    assert_eq!(
+        dut.in_ready, 0,
+        "ALU should not accept a new request while ADD is pending"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
         dut.out_valid, 1,
-        "ADD result should become valid after the clock edge"
+        "ADD result should become valid once the pending request reaches the response stage"
     );
     assert_eq!(
         dut.out_data, 8,
