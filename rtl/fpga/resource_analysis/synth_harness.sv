@@ -49,11 +49,11 @@ module synth_harness (
     // ============================================================
     // ALU Module Test
     // ============================================================
-    logic [31:0] alu_result;
-    logic alu_zero, alu_ready;
-    logic alu_start;
+    logic [31:0] alu_out_data;
+    logic alu_in_ready, alu_out_valid;
+    logic alu_in_valid;
     
-    assign alu_start = stim_sel[4];
+    assign alu_in_valid = stim_sel[4];
     
     alu u_alu (
         .clk(clk),
@@ -61,14 +61,14 @@ module synth_harness (
         .a(stim_reg[0]),
         .b(stim_reg[1]),
         .alu_op(stim_sel[4:0]),
-        .alu_start(alu_start),
-        .result(alu_result),
-        .zero(alu_zero),
-        .alu_ready(alu_ready)
+        .in_valid(alu_in_valid),
+        .in_ready(alu_in_ready),
+        .out_data(alu_out_data),
+        .out_valid(alu_out_valid)
     );
     
     always_ff @(posedge clk) begin
-        result_reg <= alu_result ^ {31'h0, alu_zero} ^ {31'h0, alu_ready};
+        result_reg <= alu_out_data ^ {31'h0, alu_in_ready} ^ {31'h0, alu_out_valid};
     end
 
 `elsif SYNTH_BRANCH_UNIT

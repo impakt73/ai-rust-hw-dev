@@ -6,15 +6,15 @@
 module alu #(
     parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
 ) (
-    input  logic        clk,          // Clock for division unit
-    input  logic        rst_n,        // Reset for division unit
+    input  logic        clk,
+    input  logic        rst_n,
     input  logic [31:0] a,
     input  logic [31:0] b,
     input  logic [4:0]  alu_op,
-    input  logic        alu_start,    // Start operation (pulse)
-    output logic [31:0] result,
-    output logic        zero,
-    output logic        alu_ready     // Operation complete
+    input  logic        in_valid,
+    output logic        in_ready,
+    output logic [31:0] out_data,
+    output logic        out_valid
 );
 
     // ALU Operation Encodings (RV32I)
@@ -55,6 +55,7 @@ module alu #(
     logic [31:0] div_result;
     logic        div_ready;
     logic        is_div_op;
+    logic        launch_op;
     
     generate
         if (ENABLE_M_EXT) begin : gen_m_ext
@@ -80,7 +81,7 @@ module alu #(
                                (alu_op == ALU_REMU);
             
             // Start division when requested
-            assign div_start = alu_start && is_div_op;
+            assign div_start = launch_op && is_div_op;
             
             // Configure division unit based on operation
             always_comb begin
@@ -152,7 +153,7 @@ module alu #(
                                (alu_op == ALU_MULHU);
             
             // Start multiplication when requested
-            assign mul_start = alu_start && is_mul_op;
+            assign mul_start = launch_op && is_mul_op;
             
             // Map ALU operation to mul_unit op_type
             // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
@@ -187,9 +188,12 @@ module alu #(
     logic        is_minmax_op;
     logic        minmax_compare_lt;
     logic        minmax_select_a_reg;
-    logic        minmax_result_valid_reg;
+    logic        minmax_pending_reg;
     logic [31:0] minmax_a_reg;
     logic [31:0] minmax_b_reg;
+    logic        mul_inflight_reg;
+    logic        div_inflight_reg;
+    logic [31:0] result_next;
 
     assign is_arith_op = (alu_op == ALU_ADD)  ||
                          (alu_op == ALU_SUB)  ||
@@ -217,43 +221,11 @@ module alu #(
     // Split MIN/MAX across two cycles to shorten the compare/select critical path.
     // Cycle 1 registers the comparison result and operands.
     // Cycle 2 selects the winning operand through a simple 32-bit mux.
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            minmax_select_a_reg     <= 1'b0;
-            minmax_result_valid_reg <= 1'b0;
-            minmax_a_reg            <= 32'd0;
-            minmax_b_reg            <= 32'd0;
-        end else if (alu_start) begin
-            if (is_minmax_op) begin
-                // MIN/MINU choose operand A when A < B.
-                // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
-                minmax_select_a_reg     <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
-                                           minmax_compare_lt :
-                                           !minmax_compare_lt;
-                minmax_result_valid_reg <= 1'b1;
-                minmax_a_reg            <= a;
-                minmax_b_reg            <= b;
-            end else begin
-                minmax_result_valid_reg <= 1'b0;
-            end
-        end
-    end
-
-    // ALU ready signal: waits for multi-cycle operations (div, mul, or staged min/max).
-    // MIN/MAX explicitly masks ready while alu_start is high so a stale completed flag
-    // from the previous MIN/MAX cannot be mistaken for immediate completion on the
-    // compare cycle of a new MIN/MAX start pulse.
-    always_comb begin
-        if (is_div_op) begin
-            alu_ready = div_ready;
-        end else if (is_mul_op) begin
-            alu_ready = mul_ready;
-        end else if (is_minmax_op) begin
-            alu_ready = minmax_result_valid_reg && !alu_start;
-        end else begin
-            alu_ready = 1'b1;
-        end
-    end
+    // Backpressure new requests while a multi-cycle operation still owns the output path.
+    // Single-cycle ops do not need in-flight tracking because they accept the request and
+    // register out_data/out_valid on the same clock edge.
+    assign in_ready = !(div_inflight_reg || mul_inflight_reg || minmax_pending_reg);
+    assign launch_op = in_valid && in_ready;
 
     always_comb begin
         arith_result = 32'd0;
@@ -306,22 +278,66 @@ module alu #(
     end
 
     always_comb begin
-        // Default initialization to avoid latches
-        result = 32'd0;
+        result_next = 32'd0;
 
         if (is_arith_op) begin
-            result = arith_result;
+            result_next = arith_result;
         end else if (is_shift_op) begin
-            result = shift_result;
+            result_next = shift_result;
         end else if (is_bitwise_op) begin
-            result = bitwise_result;
+            result_next = bitwise_result;
         end else if (is_mul_op || is_div_op) begin
-            result = muldiv_result;
+            result_next = muldiv_result;
         end else if (is_minmax_op) begin
-            result = minmax_result;
+            result_next = minmax_result;
         end
     end
 
-    assign zero = (result == 32'd0);
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            minmax_select_a_reg <= 1'b0;
+            minmax_pending_reg  <= 1'b0;
+            minmax_a_reg        <= 32'd0;
+            minmax_b_reg        <= 32'd0;
+            mul_inflight_reg    <= 1'b0;
+            div_inflight_reg    <= 1'b0;
+            out_data            <= 32'd0;
+            out_valid           <= 1'b0;
+        end else begin
+            if (launch_op) begin
+                out_valid <= 1'b0;
+
+                if (is_minmax_op) begin
+                    // MIN/MINU choose operand A when A < B.
+                    // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
+                    minmax_select_a_reg <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
+                                           minmax_compare_lt :
+                                           !minmax_compare_lt;
+                    minmax_pending_reg <= 1'b1;
+                    minmax_a_reg       <= a;
+                    minmax_b_reg       <= b;
+                end else if (is_mul_op) begin
+                    mul_inflight_reg <= 1'b1;
+                end else if (is_div_op) begin
+                    div_inflight_reg <= 1'b1;
+                end else begin
+                    out_data  <= result_next;
+                    out_valid <= 1'b1;
+                end
+            end else if (minmax_pending_reg) begin
+                minmax_pending_reg <= 1'b0;
+                out_data           <= minmax_result;
+                out_valid          <= 1'b1;
+            end else if (mul_inflight_reg && mul_ready) begin
+                mul_inflight_reg <= 1'b0;
+                out_data         <= mul_result;
+                out_valid        <= 1'b1;
+            end else if (div_inflight_reg && div_ready) begin
+                div_inflight_reg <= 1'b0;
+                out_data         <= div_result;
+                out_valid        <= 1'b1;
+            end
+        end
+    end
 
 endmodule

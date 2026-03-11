@@ -198,12 +198,12 @@ module cpu #(
     // ALU signals
     logic [31:0] alu_a;
     logic [31:0] alu_b;
-    logic [31:0] alu_result;
-    logic        alu_zero;
-    logic        alu_start;       // NEW: Start ALU operation
-    logic        alu_ready;       // NEW: ALU operation complete
-    logic        alu_start_sent;  // NEW: Track if start pulse has been sent (S_EXECUTE)
-    logic        alu_start_sent_rmw;  // NEW: Track if start pulse has been sent (S_ATOMIC_RMW)
+    logic [31:0] alu_data;
+    logic        alu_out_valid;
+    logic        alu_in_valid;
+    logic        alu_ready;
+    logic        alu_req_sent;       // Track if the ALU request has been accepted (S_EXECUTE)
+    logic        alu_req_sent_rmw;   // Track if the ALU request has been accepted (S_ATOMIC_RMW)
     
     // FPU signals
     logic [31:0] fpu_fp_result;   // FP result from FPU
@@ -273,7 +273,7 @@ module cpu #(
     // A extension: AMO write data selection
     // AMOSWAP uses rs2 directly, others use ALU result
     logic [31:0] amo_write_data;
-    assign amo_write_data = (funct5_reg == 5'b00001) ? b_reg : alu_result;  // funct5==00001 is AMOSWAP
+    assign amo_write_data = (funct5_reg == 5'b00001) ? b_reg : alu_data;  // funct5==00001 is AMOSWAP
     
     // CSR address comes directly from the decoder's registered immediate output.
     assign csr_addr = imm_i_reg[11:0];
@@ -360,7 +360,15 @@ module cpu #(
             mdr <= 32'h0;
             csr_rdata_reg <= 32'h0;
         end else begin
-            if (alu_out_write) alu_out_reg <= alu_result;
+            if (alu_out_write) begin
+                // S_MEM_ADDR still needs the address register updated in a single state so the
+                // following MEM_READ/MEM_WRITE state can use it immediately. The ALU now
+                // registers its payload outputs, so the address add remains direct here.
+                if (current_state == S_MEM_ADDR)
+                    alu_out_reg <= alu_a + alu_b;
+                else
+                    alu_out_reg <= alu_data;
+            end
             if (ENABLE_F_EXT && fpu_out_write) fpu_out_reg <= fp_to_int_reg ? fpu_int_result : fpu_fp_result;
             else if (fpu_out_write) fpu_out_reg <= 32'd0;  // F extension disabled
             if (mdr_write) mdr <= formatted_load_data;
@@ -428,20 +436,20 @@ module cpu #(
     // Track if ALU start pulse has been sent (for multi-cycle operations)
     always_ff @(posedge clk) begin
         if (!rst_n)
-            alu_start_sent <= 1'b0;
+            alu_req_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
-            alu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
-        else if (alu_start)
-            alu_start_sent <= 1'b1;  // Mark as sent after pulsing
+            alu_req_sent <= 1'b0;  // Reset when leaving S_EXECUTE
+        else if (alu_in_valid && alu_ready)
+            alu_req_sent <= 1'b1;  // Mark as sent after handshake
     end
     
     always_ff @(posedge clk) begin
         if (!rst_n)
-            alu_start_sent_rmw <= 1'b0;
+            alu_req_sent_rmw <= 1'b0;
         else if (current_state != S_ATOMIC_RMW)
-            alu_start_sent_rmw <= 1'b0;  // Reset when leaving S_ATOMIC_RMW
-        else if (alu_start)
-            alu_start_sent_rmw <= 1'b1;  // Mark as sent after pulsing
+            alu_req_sent_rmw <= 1'b0;  // Reset when leaving S_ATOMIC_RMW
+        else if (alu_in_valid && alu_ready)
+            alu_req_sent_rmw <= 1'b1;  // Mark as sent after handshake
     end
     
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
@@ -654,7 +662,7 @@ module cpu #(
                         next_state = S_EXECUTE;  // Wait for multi-cycle FPU operation
                     end
                 // Integer ALU operations may be multi-cycle (e.g., division)
-                end else if (alu_ready) begin
+                end else if (alu_req_sent && alu_out_valid) begin
                     next_state = S_WRITEBACK;
                 end else begin
                     next_state = S_EXECUTE;  // Wait for multi-cycle ALU operation
@@ -708,7 +716,7 @@ module cpu #(
             
             S_ATOMIC_RMW: begin
                 // Wait for ALU ready and memory ready before writeback (unified interface)
-                if (alu_ready && dmem_ready_internal)
+                if (alu_req_sent_rmw && alu_out_valid && dmem_ready_internal)
                     next_state = S_WRITEBACK;
                 else
                     next_state = S_ATOMIC_RMW;
@@ -745,7 +753,7 @@ module cpu #(
         imem_req_internal = 1'b0;
         dmem_req_internal = 1'b0;
         instr_complete_internal = 1'b0;
-        alu_start = 1'b0;  // Default ALU start to inactive
+        alu_in_valid = 1'b0;  // Default ALU request to inactive
         fpu_start = 1'b0;  // Default FPU start to inactive
         jalr_target_write = 1'b0;  // Default JALR target write to inactive
         
@@ -789,10 +797,10 @@ module cpu #(
             S_EXECUTE: begin
                 // Integer ALU operations
                 if (!fp_reg_write_reg && !fp_to_int_reg) begin
-                    // Pulse alu_start only on first cycle in S_EXECUTE
-                    alu_start = !alu_start_sent;
+                    // Hold the request valid until the ALU accepts it.
+                    alu_in_valid = !alu_req_sent;
                     
-                    if (alu_ready) begin
+                    if (alu_req_sent && alu_out_valid) begin
                         alu_out_write = 1'b1;
                     end
                     
@@ -853,14 +861,13 @@ module cpu #(
             
             S_ATOMIC_RMW: begin
                 // Atomic read-modify-write phase for AMO instructions
-                // Pulse alu_start only on first cycle in S_ATOMIC_RMW
-                alu_start = !alu_start_sent_rmw;
+                // Hold the request valid until the ALU accepts it.
+                alu_in_valid = !alu_req_sent_rmw;
                 
-                // Wait for the staged MIN/MAX ALU result before issuing the write request.
-                // This preserves the existing ready/valid contract for multi-cycle AMOs.
-                dmem_req_internal = alu_ready;
+                // Wait for the ALU's registered result before issuing the write request.
+                dmem_req_internal = alu_req_sent_rmw && alu_out_valid;
                 
-                if (alu_ready && dmem_ready_internal) begin
+                if (alu_req_sent_rmw && alu_out_valid && dmem_ready_internal) begin
                     alu_out_write = 1'b1;  // Capture computed result for memory write
                 end
             end
@@ -1010,10 +1017,10 @@ module cpu #(
         .a(alu_a),
         .b(alu_b),
         .alu_op(alu_op_mux),    // Use muxed operation (not alu_op_reg directly)
-        .alu_start(alu_start),  // NEW: Start operation pulse
-        .result(alu_result),
-        .zero(alu_zero),
-        .alu_ready(alu_ready)   // NEW: Operation complete
+        .in_valid(alu_in_valid),
+        .in_ready(alu_ready),
+        .out_data(alu_data),
+        .out_valid(alu_out_valid)
     );
     
     // Memory Interface Module (uses registered control signals)
