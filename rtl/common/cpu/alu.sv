@@ -68,24 +68,24 @@ module alu #(
                 .start(div_start),
                 .is_signed(div_is_signed),
                 .rem_sel(div_rem_sel),
-                .dividend(a),
-                .divisor(b),
+                .dividend(req_a_reg),
+                .divisor(req_b_reg),
                 .result(div_result),
                 .ready(div_ready)
             );
             
             // Detect division operations
-            assign is_div_op = (alu_op == ALU_DIV)  || 
-                               (alu_op == ALU_DIVU) || 
-                               (alu_op == ALU_REM)  || 
-                               (alu_op == ALU_REMU);
+            assign is_div_op = (active_alu_op == ALU_DIV)  || 
+                               (active_alu_op == ALU_DIVU) || 
+                               (active_alu_op == ALU_REM)  || 
+                               (active_alu_op == ALU_REMU);
             
             // Start division when requested
             assign div_start = launch_op && is_div_op;
             
             // Configure division unit based on operation
             always_comb begin
-                case (alu_op)
+                case (active_alu_op)
                     ALU_DIV: begin
                         div_is_signed = 1'b1;
                         div_rem_sel = 1'b0;  // Quotient
@@ -140,17 +140,17 @@ module alu #(
                 .rst_n(rst_n),
                 .start(mul_start),
                 .op_type(mul_op_type),
-                .multiplicand(a),
-                .multiplier(b),
+                .multiplicand(req_a_reg),
+                .multiplier(req_b_reg),
                 .result(mul_result),
                 .ready(mul_ready)
             );
             
             // Detect multiplication operations
-            assign is_mul_op = (alu_op == ALU_MUL)    ||
-                               (alu_op == ALU_MULH)   ||
-                               (alu_op == ALU_MULHSU) ||
-                               (alu_op == ALU_MULHU);
+            assign is_mul_op = (active_alu_op == ALU_MUL)    ||
+                               (active_alu_op == ALU_MULH)   ||
+                               (active_alu_op == ALU_MULHSU) ||
+                               (active_alu_op == ALU_MULHU);
             
             // Start multiplication when requested
             assign mul_start = launch_op && is_mul_op;
@@ -158,7 +158,7 @@ module alu #(
             // Map ALU operation to mul_unit op_type
             // op_type: 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
             always_comb begin
-                case (alu_op)
+                case (active_alu_op)
                     ALU_MUL:    mul_op_type = 2'b00;
                     ALU_MULH:   mul_op_type = 2'b01;
                     ALU_MULHSU: mul_op_type = 2'b10;
@@ -189,34 +189,42 @@ module alu #(
     logic        minmax_compare_lt;
     logic        minmax_select_a_reg;
     logic        minmax_pending_reg;
-    logic [31:0] minmax_a_reg;
-    logic [31:0] minmax_b_reg;
     logic        mul_inflight_reg;
     logic        div_inflight_reg;
+    logic [31:0] req_a_reg;
+    logic [31:0] req_b_reg;
+    logic [4:0]  req_op_reg;
+    logic [31:0] active_a;
+    logic [31:0] active_b;
+    logic [4:0]  active_alu_op;
     logic [31:0] result_next;
 
-    assign is_arith_op = (alu_op == ALU_ADD)  ||
-                         (alu_op == ALU_SUB)  ||
-                         (alu_op == ALU_SLT)  ||
-                         (alu_op == ALU_SLTU);
+    assign active_a = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_a_reg : a;
+    assign active_b = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_b_reg : b;
+    assign active_alu_op = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_op_reg : alu_op;
 
-    assign is_bitwise_op = (alu_op == ALU_AND) ||
-                           (alu_op == ALU_OR)  ||
-                           (alu_op == ALU_XOR);
+    assign is_arith_op = (active_alu_op == ALU_ADD)  ||
+                         (active_alu_op == ALU_SUB)  ||
+                         (active_alu_op == ALU_SLT)  ||
+                         (active_alu_op == ALU_SLTU);
 
-    assign is_shift_op = (alu_op == ALU_SLL) ||
-                         (alu_op == ALU_SRL) ||
-                         (alu_op == ALU_SRA);
+    assign is_bitwise_op = (active_alu_op == ALU_AND) ||
+                           (active_alu_op == ALU_OR)  ||
+                           (active_alu_op == ALU_XOR);
 
-    assign is_minmax_op = (alu_op == ALU_MIN)  ||
-                          (alu_op == ALU_MAX)  ||
-                          (alu_op == ALU_MINU) ||
-                          (alu_op == ALU_MAXU);
+    assign is_shift_op = (active_alu_op == ALU_SLL) ||
+                         (active_alu_op == ALU_SRL) ||
+                         (active_alu_op == ALU_SRA);
+
+    assign is_minmax_op = (active_alu_op == ALU_MIN)  ||
+                          (active_alu_op == ALU_MAX)  ||
+                          (active_alu_op == ALU_MINU) ||
+                          (active_alu_op == ALU_MAXU);
 
     // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
-    assign minmax_compare_lt = ((alu_op == ALU_MIN) || (alu_op == ALU_MAX)) ?
-                               ($signed(a) < $signed(b)) :
-                               (a < b);
+    assign minmax_compare_lt = ((active_alu_op == ALU_MIN) || (active_alu_op == ALU_MAX)) ?
+                               ($signed(active_a) < $signed(active_b)) :
+                               (active_a < active_b);
 
     // Split MIN/MAX across two cycles to shorten the compare/select critical path.
     // Cycle 1 registers the comparison result and operands.
@@ -230,11 +238,11 @@ module alu #(
     always_comb begin
         arith_result = 32'd0;
 
-        case (alu_op)
-            ALU_ADD:  arith_result = a + b;
-            ALU_SUB:  arith_result = a - b;
-            ALU_SLT:  arith_result = ($signed(a) < $signed(b)) ? 32'd1 : 32'd0;
-            ALU_SLTU: arith_result = (a < b) ? 32'd1 : 32'd0;
+        case (active_alu_op)
+            ALU_ADD:  arith_result = active_a + active_b;
+            ALU_SUB:  arith_result = active_a - active_b;
+            ALU_SLT:  arith_result = ($signed(active_a) < $signed(active_b)) ? 32'd1 : 32'd0;
+            ALU_SLTU: arith_result = (active_a < active_b) ? 32'd1 : 32'd0;
             default:  arith_result = 32'd0;
         endcase
     end
@@ -242,10 +250,10 @@ module alu #(
     always_comb begin
         bitwise_result = 32'd0;
 
-        case (alu_op)
-            ALU_AND: bitwise_result = a & b;
-            ALU_OR:  bitwise_result = a | b;
-            ALU_XOR: bitwise_result = a ^ b;
+        case (active_alu_op)
+            ALU_AND: bitwise_result = active_a & active_b;
+            ALU_OR:  bitwise_result = active_a | active_b;
+            ALU_XOR: bitwise_result = active_a ^ active_b;
             default: bitwise_result = 32'd0;
         endcase
     end
@@ -253,16 +261,16 @@ module alu #(
     always_comb begin
         shift_result = 32'd0;
 
-        case (alu_op)
-            ALU_SLL: shift_result = a << b[4:0];
-            ALU_SRL: shift_result = a >> b[4:0];
-            ALU_SRA: shift_result = $signed(a) >>> b[4:0];
+        case (active_alu_op)
+            ALU_SLL: shift_result = active_a << active_b[4:0];
+            ALU_SRL: shift_result = active_a >> active_b[4:0];
+            ALU_SRA: shift_result = $signed(active_a) >>> active_b[4:0];
             default: shift_result = 32'd0;
         endcase
     end
 
     always_comb begin
-        minmax_result = minmax_select_a_reg ? minmax_a_reg : minmax_b_reg;
+        minmax_result = minmax_select_a_reg ? req_a_reg : req_b_reg;
     end
 
     always_comb begin
@@ -297,25 +305,27 @@ module alu #(
         if (!rst_n) begin
             minmax_select_a_reg <= 1'b0;
             minmax_pending_reg  <= 1'b0;
-            minmax_a_reg        <= 32'd0;
-            minmax_b_reg        <= 32'd0;
             mul_inflight_reg    <= 1'b0;
             div_inflight_reg    <= 1'b0;
+            req_a_reg           <= 32'd0;
+            req_b_reg           <= 32'd0;
+            req_op_reg          <= 5'd0;
             out_data            <= 32'd0;
             out_valid           <= 1'b0;
         end else begin
             if (launch_op) begin
+                req_a_reg  <= a;
+                req_b_reg  <= b;
+                req_op_reg <= alu_op;
                 out_valid <= 1'b0;
 
                 if (is_minmax_op) begin
                     // MIN/MINU choose operand A when A < B.
                     // MAX/MAXU choose operand A when A is not less than B (greater-or-equal).
-                    minmax_select_a_reg <= ((alu_op == ALU_MIN) || (alu_op == ALU_MINU)) ?
+                    minmax_select_a_reg <= ((active_alu_op == ALU_MIN) || (active_alu_op == ALU_MINU)) ?
                                            minmax_compare_lt :
                                            !minmax_compare_lt;
                     minmax_pending_reg <= 1'b1;
-                    minmax_a_reg       <= a;
-                    minmax_b_reg       <= b;
                 end else if (is_mul_op) begin
                     mul_inflight_reg <= 1'b1;
                 end else if (is_div_op) begin
@@ -326,15 +336,15 @@ module alu #(
                 end
             end else if (minmax_pending_reg) begin
                 minmax_pending_reg <= 1'b0;
-                out_data           <= minmax_result;
+                out_data           <= result_next;
                 out_valid          <= 1'b1;
             end else if (mul_inflight_reg && mul_ready) begin
                 mul_inflight_reg <= 1'b0;
-                out_data         <= mul_result;
+                out_data         <= result_next;
                 out_valid        <= 1'b1;
             end else if (div_inflight_reg && div_ready) begin
                 div_inflight_reg <= 1'b0;
-                out_data         <= div_result;
+                out_data         <= result_next;
                 out_valid        <= 1'b1;
             end
         end

@@ -69,16 +69,31 @@ fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
     dut.in_valid = 0;
 
     // Wait for out_valid (max 100 cycles for safety)
+    let mut saw_out_valid = false;
     for _ in 0..100 {
         dut.eval();
         if dut.out_valid == 1 {
+            saw_out_valid = true;
             break;
         }
         clock_cycle!(dut);
     }
 
+    assert!(
+        saw_out_valid,
+        "ALU operation timed out waiting for out_valid (op={alu_op:#04x}, a={a:#010x}, b={b:#010x})"
+    );
+
     // Final eval to get out_data.
     dut.eval();
+}
+
+fn reset_alu(dut: &mut Alu) {
+    dut.rst_n = 0;
+    dut.in_valid = 0;
+    clock_cycle!(dut);
+    dut.rst_n = 1;
+    clock_cycle!(dut);
 }
 
 fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
@@ -149,6 +164,52 @@ fn test_alu_sub() {
             dut.out_data, expected,
             "SUB failed: {} - {} = {} (expected {})",
             a, b, dut.out_data, expected
+        );
+    }
+}
+
+#[test]
+fn test_alu_multicycle_ops_latch_inputs_after_handshake() {
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+
+    for (a, b, alu_op, expected) in [
+        (7_u32, 6_u32, ALU_MUL as u8, 42_u32),
+        (100_u32, 9_u32, ALU_DIVU as u8, 11_u32),
+    ] {
+        reset_alu(&mut dut);
+        assert_eq!(dut.in_ready, 1, "ALU should accept a request after reset");
+
+        dut.a = a;
+        dut.b = b;
+        dut.alu_op = alu_op;
+        dut.in_valid = 1;
+        clock_cycle!(dut);
+        dut.in_valid = 0;
+
+        // Change inputs immediately after the request handshake; the result should still
+        // reflect the accepted request, not these later values.
+        dut.a = 3;
+        dut.b = 2;
+        dut.alu_op = ALU_ADD as u8;
+
+        let mut saw_out_valid = false;
+        for _ in 0..100 {
+            dut.eval();
+            if dut.out_valid == 1 {
+                saw_out_valid = true;
+                break;
+            }
+            clock_cycle!(dut);
+        }
+
+        assert!(
+            saw_out_valid,
+            "Timed out waiting for latched multi-cycle result"
+        );
+        assert_eq!(
+            dut.out_data, expected,
+            "Multi-cycle op should use latched inputs"
         );
     }
 }

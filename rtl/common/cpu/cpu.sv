@@ -201,9 +201,9 @@ module cpu #(
     logic [31:0] alu_data;
     logic        alu_out_valid;
     logic        alu_in_valid;
-    logic        alu_ready;
-    logic        alu_req_sent;       // Track if the ALU request has been accepted (S_EXECUTE)
-    logic        alu_req_sent_rmw;   // Track if the ALU request has been accepted (S_ATOMIC_RMW)
+    logic        alu_in_ready;
+    logic        alu_req_sent;       // Track if the ALU request handshake completed (S_EXECUTE)
+    logic        alu_req_sent_rmw;   // Track if the ALU request handshake completed (S_ATOMIC_RMW)
     
     // FPU signals
     logic [31:0] fpu_fp_result;   // FP result from FPU
@@ -433,23 +433,24 @@ module cpu #(
         end
     end
     
-    // Track if ALU start pulse has been sent (for multi-cycle operations)
+    // Track whether the ALU request valid/ready handshake has completed in S_EXECUTE.
     always_ff @(posedge clk) begin
         if (!rst_n)
             alu_req_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
             alu_req_sent <= 1'b0;  // Reset when leaving S_EXECUTE
-        else if (alu_in_valid && alu_ready)
-            alu_req_sent <= 1'b1;  // Mark as sent after handshake
+        else if (alu_in_valid && alu_in_ready)
+            alu_req_sent <= 1'b1;  // Mark as accepted after handshake
     end
     
+    // Track whether the ALU request valid/ready handshake has completed in S_ATOMIC_RMW.
     always_ff @(posedge clk) begin
         if (!rst_n)
             alu_req_sent_rmw <= 1'b0;
         else if (current_state != S_ATOMIC_RMW)
             alu_req_sent_rmw <= 1'b0;  // Reset when leaving S_ATOMIC_RMW
-        else if (alu_in_valid && alu_ready)
-            alu_req_sent_rmw <= 1'b1;  // Mark as sent after handshake
+        else if (alu_in_valid && alu_in_ready)
+            alu_req_sent_rmw <= 1'b1;  // Mark as accepted after handshake
     end
     
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
@@ -715,7 +716,7 @@ module cpu #(
             end
             
             S_ATOMIC_RMW: begin
-                // Wait for ALU ready and memory ready before writeback (unified interface)
+                // Wait for the ALU response and data-memory write completion before writeback.
                 if (alu_req_sent_rmw && alu_out_valid && dmem_ready_internal)
                     next_state = S_WRITEBACK;
                 else
@@ -1018,7 +1019,7 @@ module cpu #(
         .b(alu_b),
         .alu_op(alu_op_mux),    // Use muxed operation (not alu_op_reg directly)
         .in_valid(alu_in_valid),
-        .in_ready(alu_ready),
+        .in_ready(alu_in_ready),
         .out_data(alu_data),
         .out_valid(alu_out_valid)
     );
