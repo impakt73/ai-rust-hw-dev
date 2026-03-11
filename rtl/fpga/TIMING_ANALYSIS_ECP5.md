@@ -200,3 +200,48 @@ These numbers are far below the 20 ns system-clock budget and do not present an 
 4. If future ECP5 builds begin to stress arithmetic timing further, the currently unused **DSP blocks** remain available as an additional optimization lever.
 
 Overall, the ECP5 target remains in a healthy timing position, and the SRAM read-latency change improved routed timing while shifting the top critical path away from the SRAM peripheral.
+
+---
+
+## Addendum — Host-Bus Mux Registered-Output Change (2026-03-11)
+
+After the follow-up change that registers all outputs of `rtl/common/io/host_bus_mux.sv`, I rebuilt the ECP5 target and checked the final routed timing report in `rtl/fpga/build/ecp5_icepi_zero/nextpnr.log`.
+
+### Current Routed Timing
+
+- **Achieved routed Fmax:** **60.36 MHz**
+- **Critical path delay:** **16.6 ns**
+- **Breakdown:** **4.2 ns logic + 12.3 ns routing**
+
+### Current Critical Path
+
+The worst synchronous path has **moved** from the CPU control / ALU / host-bus request-capture path documented above.
+
+The current routed critical path is:
+
+```text
+rtl_registered_bus.pending_req_addr[29]
+  → registered_bus address decode / slave-select carry chain
+  → clock_periph.mem_a_handshake logic
+  → rtl_registered_bus.slave_response_pending logic
+  → sysctrl.response_pending / cpu_boot gating
+  → sysctrl.boot_addr_reg CE
+```
+
+In terms of RTL blocks, the path now runs primarily through:
+
+- `registered_bus.sv`
+- `clock_peripheral.sv`
+- `system_controller_peripheral.sv`
+- integration wiring in `top.sv` / `fpga_common_top.sv`
+
+### Comparison Against the Originally Documented Path
+
+| Item | Originally documented in this report | Current post-`host_bus_mux` result |
+|------|--------------------------------------|------------------------------------|
+| Routed Fmax | **65.02 MHz** | **60.36 MHz** |
+| Critical path delay | **15.4 ns** | **16.6 ns** |
+| Dominant path | CPU control / ALU → `cpu_host_bus_mux.pending_req_wdata` | Registered-bus decode / peripheral handshake → `sysctrl.boot_addr_reg` |
+| Did the path move? | n/a | **Yes** |
+
+So the answer is **yes**: after registering `host_bus_mux` outputs, the routed ECP5 critical path is no longer the CPU/ALU-to-host-bus-capture path described in the main body of this document. The new worst path has shifted into the **registered bus / peripheral handshake / system-controller boot gating** logic.
