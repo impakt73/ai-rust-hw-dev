@@ -149,8 +149,8 @@ always writes to the target's standard `build/<target>/` output directory.
 # Connect Alchitry Cu v1 board via USB
 sudo make program
 
-# Select flash explicitly instead of the default SRAM load:
-sudo make program PROGRAM_MODE=flash
+# Use SRAM explicitly if you want a volatile load instead of the default flash programming:
+sudo make program PROGRAM_MODE=sram
 
 # Or manually using openFPGALoader:
 sudo openFPGALoader -b ice40_generic -m build/ice40_alchitry_cu/riscv_fpga.bin  # SRAM
@@ -175,11 +175,12 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 - `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
-- `make program` - Program connected FPGA board (default: SRAM load)
+- `make program` - Program connected FPGA board (default: flash on Alchitry Cu, SRAM on other targets)
 - `make clean` - Remove build artifacts
 - `make check-tools` - Verify required tools are installed
 - `make help` - Show all available targets
-- `make program PROGRAM_MODE=flash` - Program the persistent configuration flash instead of SRAM
+- `make program PROGRAM_MODE=flash` - Program the persistent configuration flash
+- `make program PROGRAM_MODE=sram` - Program SRAM explicitly for a volatile load
 
 ## Hardware Requirements
 
@@ -283,7 +284,7 @@ sudo usermod -a -G dialout $USER
 # Log out and back in for changes to take effect
 ```
 
-`make program` loads the bitstream into SRAM by default. If you want the image to persist across power cycles, use `make program PROGRAM_MODE=flash`.
+For `TARGET=ice40_alchitry_cu`, `make program` now programs flash by default because SRAM programming has been unreliable on the Alchitry Cu. Use `make program PROGRAM_MODE=sram` if you want a volatile SRAM load instead. Other targets still default to SRAM programming.
 
 ### Simulation works but FPGA doesn't
 

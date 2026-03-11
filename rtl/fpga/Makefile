@@ -4,7 +4,6 @@
 # Project configuration
 PROJECT = riscv_fpga
 TARGET ?= ice40_alchitry_cu
-PROGRAM_MODE ?= sram
 
 # File paths
 RTL_DIR = ../common
@@ -60,6 +59,7 @@ DEVICE = hx8k
 PACKAGE = cb132
 FPGA_DIR = ice40_alchitry_cu
 TOP_MODULE = ice40_alchitry_cu_top
+DEFAULT_PROGRAM_MODE = flash
 CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
 SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
@@ -78,6 +78,7 @@ DEVICE = 25k
 PACKAGE = CABGA256
 FPGA_DIR = ecp5_icepi_zero
 TOP_MODULE = ecp5_icepi_zero_top
+DEFAULT_PROGRAM_MODE = sram
 CONSTRAINT = $(FPGA_DIR)/ecp5_icepi_zero.lpf
 SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
@@ -95,11 +96,14 @@ ifeq ($(TARGET),artix7_alchitry_au)
 PART = xc7a35tftg256-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
+DEFAULT_PROGRAM_MODE = sram
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
 VIVADO_TCL = $(FPGA_DIR)/vivado_build.tcl
 OPENFPGALOADER_BOARD = alchitry_au
 OUTPUT_EXT = bit
 endif
+
+PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
 
 ifdef OPENFPGALOADER_BOARD
 ifeq ($(PROGRAM_MODE),sram)
@@ -269,8 +273,13 @@ endif
 	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
 	@echo ""
 	@echo "Programming selection:"
-	@echo "  - make program PROGRAM_MODE=sram   (default)"
+	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
+ifneq ($(DEFAULT_PROGRAM_MODE),sram)
+	@echo "  - make program PROGRAM_MODE=sram"
+endif
+ifneq ($(DEFAULT_PROGRAM_MODE),flash)
 	@echo "  - make program PROGRAM_MODE=flash"
+endif
 
 .PHONY: check-tools
 check-tools: check-python
