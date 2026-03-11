@@ -194,14 +194,16 @@ module alu #(
     logic [31:0] req_a_reg;
     logic [31:0] req_b_reg;
     logic [4:0]  req_op_reg;
+    logic        use_latched_inputs;
     logic [31:0] active_a;
     logic [31:0] active_b;
     logic [4:0]  active_alu_op;
     logic [31:0] result_next;
 
-    assign active_a = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_a_reg : a;
-    assign active_b = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_b_reg : b;
-    assign active_alu_op = (div_inflight_reg || mul_inflight_reg || minmax_pending_reg) ? req_op_reg : alu_op;
+    assign use_latched_inputs = div_inflight_reg || mul_inflight_reg || minmax_pending_reg;
+    assign active_a = use_latched_inputs ? req_a_reg : a;
+    assign active_b = use_latched_inputs ? req_b_reg : b;
+    assign active_alu_op = use_latched_inputs ? req_op_reg : alu_op;
 
     assign is_arith_op = (active_alu_op == ALU_ADD)  ||
                          (active_alu_op == ALU_SUB)  ||
