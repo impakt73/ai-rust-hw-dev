@@ -8,7 +8,7 @@
 // Features:
 // - 12KB total memory (3072 x 32-bit words)
 // - Subword write masking based on bus size and address alignment
-// - Registered read output (1-cycle latency)
+// - Registered read output (2-cycle latency)
 
 module sram_peripheral (
     // Clock and reset
@@ -41,8 +41,10 @@ module sram_peripheral (
         S_IDLE,
         S_WRITE_RESP,
         S_WRITE_SPLIT_SECOND,
+        S_READ_WAIT,
         S_READ_RESP,
         S_READ_SPLIT_SECOND,
+        S_READ_SPLIT_CAPTURE,
         S_READ_SPLIT_RESP
     } state_t;
 
@@ -204,6 +206,14 @@ module sram_peripheral (
                 sram_raddr = req_word_addr + 1'b1;
             end
 
+            S_READ_SPLIT_CAPTURE: begin
+                sram_raddr = req_word_addr + 1'b1;
+            end
+
+            S_READ_SPLIT_RESP: begin
+                sram_raddr = req_word_addr + 1'b1;
+            end
+
             default: begin
                 sram_raddr = req_word_addr;
             end
@@ -288,7 +298,15 @@ module sram_peripheral (
                     state <= S_WRITE_RESP;
                 end
 
+                S_READ_WAIT: begin
+                    state <= S_READ_RESP;
+                end
+
                 S_READ_SPLIT_SECOND: begin
+                    state <= S_READ_SPLIT_CAPTURE;
+                end
+
+                S_READ_SPLIT_CAPTURE: begin
                     split_first_rdata <= sram_rdata;
                     state <= S_READ_SPLIT_RESP;
                 end
@@ -317,7 +335,7 @@ module sram_peripheral (
                         end else if (incoming_unaligned) begin
                             state <= S_READ_SPLIT_SECOND;
                         end else begin
-                            state <= S_READ_RESP;
+                            state <= S_READ_WAIT;
                         end
                     end
                 end

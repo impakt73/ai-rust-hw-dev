@@ -4,7 +4,7 @@
 // READ-DURING-WRITE BEHAVIOR:
 // - Read-first semantics are intentional for this module.
 // - When we=1 and waddr==raddr in the same clock edge, rdata captures the
-//   pre-write memory contents.
+//   pre-write memory contents two cycles later.
 //
 // BRAM INITIALIZATION NOTE:
 // - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
@@ -22,7 +22,8 @@ module sram #(
     output logic [31:0]           rdata
 );
 
-    logic [31:0] mem [0:DEPTH-1];
+    (* ram_style = "block" *) logic [31:0] mem [0:DEPTH-1];
+    logic [31:0] read_data_pipe;
     initial begin
         for (int i = 0; i < DEPTH; i = i + 1) begin
             mem[i] = 32'b0;
@@ -38,8 +39,9 @@ module sram #(
                 if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
             end
             // Read-first behavior: same-cycle read and write to same address returns
-            // the old memory contents.
-            rdata <= mem[raddr];
+            // the old memory contents after the internal output pipeline latency.
+            read_data_pipe <= mem[raddr];
+            rdata <= read_data_pipe;
         end
     end else begin : gen_bounded_range
         always_ff @(posedge clk) begin
@@ -50,12 +52,13 @@ module sram #(
                 if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
             end
             // Read-first behavior: same-cycle read and write to same address returns
-            // the old memory contents.
+            // the old memory contents after the internal output pipeline latency.
             if ({1'b0, raddr} < (ADDR_WIDTH+1)'(DEPTH)) begin
-                rdata <= mem[raddr];
+                read_data_pipe <= mem[raddr];
             end else begin
-                rdata <= 32'b0;
+                read_data_pipe <= 32'b0;
             end
+            rdata <= read_data_pipe;
         end
     end
 

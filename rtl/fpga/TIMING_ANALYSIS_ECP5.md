@@ -9,37 +9,54 @@
 
 ## Executive Summary
 
-The ECP5 iCE Pi Zero build meets its **50 MHz** timing target with comfortable margin after full place-and-route. The final routed result from `nextpnr-ecp5` reports an achieved **Fmax of 62.86 MHz**, corresponding to a **15.9 ns** clock period on a **20.0 ns** budget.
+The ECP5 iCE Pi Zero build continues to meet its **50 MHz** timing target with comfortable margin after full place-and-route. After changing the SRAM block to a **2-cycle registered read path** and updating the SRAM peripheral to match, the final routed result from `nextpnr-ecp5` reports an achieved **Fmax of 65.02 MHz**, corresponding to a **15.4 ns** clock period on a **20.0 ns** budget.
 
 This leaves approximately:
 
-- **4.09 ns positive timing margin**
-- **25.7% frequency headroom** above the 50 MHz target
+- **4.62 ns positive timing margin**
+- **30.0% frequency headroom** above the 50 MHz target
 
-One useful detail from the log is that the placer-only estimate was initially below target:
+Most importantly, the previous top critical path through the **SRAM peripheral readback path** is no longer the routed worst case. The routed critical path now lives in the **CPU control / ALU / host-bus request-data path**, which confirms that the SRAM latency change removed the path that was previously documented as the limiting ECP5 path.
 
-- **46.41 MHz** after simulated-annealing placement (**FAIL** at 50 MHz)
-- **62.86 MHz** after final routing/timing optimization (**PASS** at 50 MHz)
+One useful detail from the log is that the placer-only estimate still starts below target:
 
-That means the ECP5 implementation benefits substantially from the routed result, and the final signoff number to trust is the later **62.86 MHz PASS** report, not the earlier placement estimate.
+- **45.91 MHz** after simulated-annealing placement (**FAIL** at 50 MHz)
+- **65.02 MHz** after final routing/timing optimization (**PASS** at 50 MHz)
+
+That means the ECP5 implementation still benefits substantially from the routed result, and the final signoff number to trust is the later **65.02 MHz PASS** report, not the earlier placement estimate.
+
+### Impact of the SRAM 2-Cycle Read Change
+
+| Metric | Previous documented value | New measured value | Impact |
+|--------|---------------------------|--------------------|--------|
+| Achieved routed Fmax | 62.86 MHz | 65.02 MHz | **+2.16 MHz** |
+| Critical path delay | 15.9 ns | 15.4 ns | **-0.5 ns** |
+| TRELLIS_COMB | 9,971 | 10,007 | +36 |
+| TRELLIS_FF | 2,402 | 2,436 | +34 |
+| LUT4 | 8,487 | 8,523 | +36 |
+| PFUMX | 2,132 | 2,148 | +16 |
+| L6MUX21 | 1,100 | 1,126 | +26 |
+| DP16KD | 9 | 9 | no change |
+
+The SRAM change therefore traded a small amount of extra control/pipeline logic for a measurable post-route timing improvement, while keeping block RAM usage unchanged.
 
 ### Key Metrics
 
 | Metric | Value | Available | Utilization |
 |--------|-------|-----------|-------------|
-| **Total LUT4s** | 9,769 | 24,288 | **40%** |
-| **Logic LUTs** | 8,487 | 24,288 | 34% |
+| **Total LUT4s** | 9,805 | 24,288 | **40%** |
+| **Logic LUTs** | 8,523 | 24,288 | 35% |
 | **Carry LUTs** | 1,282 | 24,288 | 5% |
-| **TRELLIS_COMB** | 9,971 | 24,288 | **41%** |
-| **TRELLIS_FF** | 2,402 | 24,288 | 9% |
+| **TRELLIS_COMB** | 10,007 | 24,288 | **41%** |
+| **TRELLIS_FF** | 2,436 | 24,288 | 10% |
 | **Block RAM (DP16KD)** | 9 | 56 | 16% |
 | **DSP (MULT18X18D)** | 0 | 28 | 0% |
 | **I/O (TRELLIS_IO)** | 5 | 197 | 2% |
 | **PLL (EHXPLLL)** | 0 | 2 | 0% |
-| **Achieved Fmax** | 62.86 MHz | 50.00 MHz target | **PASS (+25.7%)** |
-| **Critical Path Delay** | 15.9 ns | 20.0 ns budget | **PASS (+4.1 ns slack)** |
-| **Async → Clock Max Delay** | 1.15 ns | 20.0 ns budget | PASS |
-| **Clock → Async Max Delay** | 3.06 ns | 20.0 ns budget | PASS |
+| **Achieved Fmax** | 65.02 MHz | 50.00 MHz target | **PASS (+30.0%)** |
+| **Critical Path Delay** | 15.4 ns | 20.0 ns budget | **PASS (+4.6 ns slack)** |
+| **Async → Clock Max Delay** | 2.48 ns | 20.0 ns budget | PASS |
+| **Clock → Async Max Delay** | 2.51 ns | 20.0 ns budget | PASS |
 
 ---
 
@@ -60,20 +77,20 @@ Unlike the iCE40 flow, the current Makefile does not generate a separate standal
 
 | Cell Type | Count | Description |
 |-----------|-------|-------------|
-| **LUT4** | 8,487 | 4-input lookup tables used for core logic |
-| **PFUMX** | 2,132 | ECP5 LUT-combining mux resources |
-| **L6MUX21** | 1,100 | Wider-function mux resources |
+| **LUT4** | 8,523 | 4-input lookup tables used for core logic |
+| **PFUMX** | 2,148 | ECP5 LUT-combining mux resources |
+| **L6MUX21** | 1,126 | Wider-function mux resources |
 | **CCU2C** | 641 | Carry-chain cells |
-| **TRELLIS_FF** | 2,402 | Flip-flops |
+| **TRELLIS_FF** | 2,436 | Flip-flops |
 | **DP16KD** | 9 | 18-kbit block RAMs |
-| **Total cells** | 14,771 | Post-synthesis mapped cells |
+| **Total cells** | 14,883 | Post-synthesis mapped cells |
 
 ### Placement / Routing Utilization (from nextpnr)
 
 | Resource | Used | Available | Utilization |
 |----------|------|-----------|-------------|
-| **TRELLIS_COMB** | 9,971 | 24,288 | 41% |
-| **TRELLIS_FF** | 2,402 | 24,288 | 9% |
+| **TRELLIS_COMB** | 10,007 | 24,288 | 41% |
+| **TRELLIS_FF** | 2,436 | 24,288 | 10% |
 | **DP16KD** | 9 | 56 | 16% |
 | **MULT18X18D** | 0 | 28 | 0% |
 | **TRELLIS_IO** | 5 | 197 | 2% |
@@ -88,51 +105,51 @@ Unlike the iCE40 flow, the current Makefile does not generate a separate standal
 
 ---
 
-## Critical Path #1 — SRAM Peripheral Readback into Registered Bus Response
+## Critical Path #1 — CPU Control / ALU Path into Host-Bus Request Capture
 
 **Clock domain:** `$glbnet$clk$TRELLIS_IO_IN` (posedge → posedge)  
-**Total delay:** **15.9 ns**  
-**Breakdown:** **8.2 ns logic + 7.7 ns routing**  
-**Achieved Fmax:** **62.86 MHz**  
-**RTL modules involved:** `sram_peripheral.sv`, `sram.sv`, `top.sv`, `fpga_common_top.sv`
+**Total delay:** **15.4 ns**  
+**Breakdown:** **5.8 ns logic + 9.6 ns routing**  
+**Achieved Fmax:** **65.02 MHz**  
+**RTL modules involved:** `cpu.sv`, `alu.sv`, `writeback_mux.sv`, `top.sv`, `fpga_common_top.sv`
 
 ### Path Narrative
 
-The final routed critical path does **not** run through the ALU or branch datapath. Instead, it starts at the SRAM peripheral's block RAM output and ends at the registered-bus response data register:
+The final routed critical path no longer starts at the SRAM peripheral block RAM output. Instead, it begins at a decoder/control register inside the CPU core, propagates through ALU/control selection logic, and ends at the host-bus request-data capture register:
 
 ```text
-sram_periph.sram_inst.mem.*.DOB13
-  → sram_periph read-data glue logic
-  → split/concat bus formatting in top-level interconnect
-  → rtl_registered_bus.pending_resp_rdata
+cpu_core.u_decoder.jump_reg
+  → decoder / ALU control-selection logic
+  → cpu_host_bus_mux request-data formatting
+  → cpu_host_bus_mux.pending_req_wdata
 ```
 
-In other words, the slowest synchronous path on ECP5 is currently the **SRAM read-response formatting and capture path** rather than the CPU execution core itself.
+In other words, the SRAM/peripheral read-response path is no longer the worst synchronous path on ECP5. The slowest path has shifted back into the CPU-side datapath/control fabric.
 
 ### Detailed Stage Breakdown
 
 | Stage | Start (ns) | End (ns) | Δ (ns) | Type | Description |
 |-------|-----------:|---------:|-------:|------|-------------|
-| BRAM data output launch | 0.0 | 5.8 | 5.8 | Logic | Launch from `sram_inst.mem.*.DOB13` |
-| BRAM output routing to SRAM read-data LUT | 5.8 | 7.7 | 1.9 | Routing | BRAM output reaches SRAM read-data logic |
-| SRAM read-data local logic | 7.7 | 9.0 | 1.3 | Logic + Routing | `rdata_*` LUT chain inside SRAM peripheral |
-| Interconnect / split-concat formatting | 9.0 | 14.7 | 5.7 | Logic + Routing | Bus formatting before response capture |
-| Final register route + setup | 14.7 | 15.9 | 1.2 | Routing + Setup | Capture in `pending_resp_rdata` FF |
+| Decoder/control register launch | 0.0 | 1.8 | 1.8 | Logic + Routing | Launch from `u_decoder.jump_reg` into downstream control logic |
+| Decoder-to-ALU control propagation | 1.8 | 7.4 | 5.6 | Logic + Routing | Control selection reaches ALU-side min/max and multiplier control logic |
+| Carry/control chain through ALU logic | 7.4 | 14.0 | 6.6 | Logic + Routing | Multi-level control/carry propagation inside the CPU datapath |
+| Host-bus mux formatting | 14.0 | 15.4 | 1.4 | Logic + Routing | Request data reaches `pending_req_wdata` capture |
+| Final setup | 15.4 | 15.4 | 0.0 | Setup | Capture in `pending_req_wdata` FF |
 
 ### Why This Path Is Slow
 
-1. **It launches from block RAM output.** BRAM read data already begins with a non-trivial output delay before the downstream logic starts.
-2. **The readback path crosses multiple integration boundaries.** The signal travels from the SRAM implementation through peripheral glue and into the registered bus response path.
-3. **Bus formatting adds mux depth.** The `split_concat_rdata` and `pending_resp_rdata` logic introduces additional muxing after the SRAM output is available.
-4. **Routing is still a major contributor.** Nearly half of the total delay (**7.7 ns of 15.9 ns**) is routing, which means physical distance between the SRAM logic and response register matters.
+1. **The path crosses multiple CPU sub-blocks.** It travels from decoder state into ALU-side control selection and then out through the host-bus mux.
+2. **There is still significant routing cost.** Routing now contributes **9.6 ns of 15.4 ns**, so physical locality remains a major factor.
+3. **The path mixes control and datapath logic.** Even though it is not a pure arithmetic critical path, it still accumulates mux and carry-chain depth before request capture.
+4. **The previous SRAM readback bottleneck is gone.** The SRAM change successfully removed that path from the top slot, revealing the next-most-critical CPU-side path.
 
 ### Practical Interpretation
 
 This is a healthy result for the ECP5 target:
 
 - The path still closes timing at 50 MHz with margin.
-- The bottleneck lives in the on-chip SRAM response path, not the main CPU arithmetic datapath.
-- Any future push beyond ~60 MHz will likely need optimization in the **SRAM-peripheral-to-registered-bus** glue logic first.
+- The SRAM/peripheral path is no longer the timing bottleneck.
+- Any future push materially beyond ~65 MHz will likely need optimization in the **CPU control / ALU / host-bus mux** path first.
 
 ---
 
@@ -142,8 +159,8 @@ The `nextpnr-ecp5` log reports two different timing summaries:
 
 | Flow Stage | Reported Fmax | Status |
 |------------|---------------|--------|
-| After placement refinement | 46.41 MHz | **FAIL** at 50 MHz |
-| After final routing | 62.86 MHz | **PASS** at 50 MHz |
+| After placement refinement | 45.91 MHz | **FAIL** at 50 MHz |
+| After final routing | 65.02 MHz | **PASS** at 50 MHz |
 
 This is important because it shows the ECP5 flow's **post-route timing is materially better than the post-placement estimate** for this design. Any future report or regression check should use the **final routed number** near the end of `nextpnr.log`.
 
@@ -155,8 +172,8 @@ The ECP5 build also reports comfortable margins on the asynchronous interface pa
 
 | Path Type | Max Delay | Notes |
 |-----------|-----------|-------|
-| **`<async>` → `posedge clk`** | 1.15 ns | USB RX / async inputs into synchronized logic |
-| **`posedge clk` → `<async>`** | 3.06 ns | Registered outputs to board pins such as LED |
+| **`<async>` → `posedge clk`** | 2.48 ns | USB RX / async inputs into synchronized logic |
+| **`posedge clk` → `<async>`** | 2.51 ns | Registered outputs to board pins such as LED |
 
 These numbers are far below the 20 ns system-clock budget and do not present an immediate timing concern.
 
@@ -166,18 +183,20 @@ These numbers are far below the 20 ns system-clock budget and do not present an 
 
 ### Summary
 
-- **Timing target met:** Yes, with **62.86 MHz** achieved vs. **50.00 MHz** required
-- **Critical path delay:** **15.9 ns**
-- **Dominant path:** SRAM peripheral read data into the registered-bus response register
+- **Timing target met:** Yes, with **65.02 MHz** achieved vs. **50.00 MHz** required
+- **Critical path delay:** **15.4 ns**
+- **Dominant path:** CPU control / ALU logic into host-bus request-data capture
+- **SRAM-path result:** Previous SRAM readback critical path resolved
 - **Resource pressure:** Low to moderate; no obvious ECP5 capacity bottlenecks
 
 ### Recommendations
 
 1. **No immediate timing work is required** for the current 50 MHz ECP5 target.
 2. If a higher target frequency is needed later, focus first on:
-   - SRAM read-data glue logic in `sram_peripheral.sv`
-   - bus formatting / response capture around `rtl_registered_bus`
-   - physical locality between SRAM output logic and the response register
-3. If future ECP5 builds begin to stress arithmetic timing, the currently unused **DSP blocks** are available as an additional optimization lever.
+   - CPU control-selection depth around `cpu.sv` / `alu.sv`
+   - request-data muxing and capture around the CPU host-bus mux
+   - physical locality of those CPU-side datapath/control registers
+3. The SRAM change appears worthwhile on ECP5: it preserved BRAM usage while improving routed timing and removing the previously documented SRAM bottleneck.
+4. If future ECP5 builds begin to stress arithmetic timing further, the currently unused **DSP blocks** remain available as an additional optimization lever.
 
-Overall, the ECP5 target is in a much healthier timing position than the constrained iCE40 build and has significant room for future feature growth.
+Overall, the ECP5 target remains in a healthy timing position, and the SRAM read-latency change improved routed timing while shifting the top critical path away from the SRAM peripheral.
