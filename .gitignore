@@ -30,6 +30,8 @@ obj_dir/
 # FPGA build artifacts
 fpga/build/
 rtl/fpga/build/
+rtl/fpga/vivado*.jou
+rtl/fpga/vivado*.log
 fpga/*.json
 fpga/*.asc
 fpga/*.bin

@@ -158,9 +158,12 @@ $(BUILD_DIR):
 # Synthesis with Yosys
 ifeq ($(TARGET),artix7_alchitry_au)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
-	$(VIVADO) -mode batch -source $(abspath $(VIVADO_TCL)) -tclargs \
+	$(VIVADO) -mode batch \
+		-journal "$(abspath $(BUILD_DIR)/vivado.jou)" \
+		-log "$(abspath $(BUILD_DIR)/vivado.log)" \
+		-source $(abspath $(VIVADO_TCL)) -tclargs \
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
-		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))") 2>&1 | tee $(BUILD_DIR)/vivado.log
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
