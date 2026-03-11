@@ -131,6 +131,8 @@ module alu #(
     logic        launch_is_shift_op;
     logic        launch_is_minmax_op;
     logic        minmax_compare_lt;
+    logic        minmax_compare_lt_reg;
+    logic        minmax_compare_done_reg;
     logic        pending_operation_reg;
     logic [31:0] req_a_reg;
     logic [31:0] req_b_reg;
@@ -219,9 +221,9 @@ module alu #(
 
     always_comb begin
         if ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MINU))
-            minmax_result = minmax_compare_lt ? req_a_reg : req_b_reg;
+            minmax_result = minmax_compare_lt_reg ? req_a_reg : req_b_reg;
         else
-            minmax_result = minmax_compare_lt ? req_b_reg : req_a_reg;
+            minmax_result = minmax_compare_lt_reg ? req_b_reg : req_a_reg;
     end
 
     always_comb begin
@@ -264,6 +266,8 @@ module alu #(
             req_is_minmax_reg     <= 1'b0;
             req_is_mul_reg        <= 1'b0;
             req_is_div_reg        <= 1'b0;
+            minmax_compare_lt_reg <= 1'b0;
+            minmax_compare_done_reg <= 1'b0;
             div_is_signed         <= 1'b0;
             div_rem_sel           <= 1'b0;
             mul_op_type           <= 2'b00;
@@ -281,6 +285,7 @@ module alu #(
                 req_is_minmax_reg     <= launch_is_minmax_op;
                 req_is_mul_reg        <= launch_is_mul_op;
                 req_is_div_reg        <= launch_is_div_op;
+                minmax_compare_done_reg <= 1'b0;
                 out_valid             <= 1'b0;
                 case (alu_op)
                     ALU_DIV: begin
@@ -313,8 +318,15 @@ module alu #(
                     default:    mul_op_type <= 2'b00;
                 endcase
             end else if (pending_operation_reg) begin
-                if ((req_is_mul_reg && mul_ready) || (req_is_div_reg && div_ready) ||
-                    (!req_is_mul_reg && !req_is_div_reg)) begin
+                if (req_is_minmax_reg && !minmax_compare_done_reg) begin
+                    minmax_compare_lt_reg   <= minmax_compare_lt;
+                    minmax_compare_done_reg <= 1'b1;
+                end else if (req_is_minmax_reg && minmax_compare_done_reg) begin
+                    pending_operation_reg <= 1'b0;
+                    out_data              <= result_next;
+                    out_valid             <= 1'b1;
+                end else if ((req_is_mul_reg && mul_ready) || (req_is_div_reg && div_ready) ||
+                             (!req_is_mul_reg && !req_is_div_reg && !req_is_minmax_reg)) begin
                     pending_operation_reg <= 1'b0;
                     out_data              <= result_next;
                     out_valid             <= 1'b1;

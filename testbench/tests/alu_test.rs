@@ -379,7 +379,7 @@ fn test_alu_minmax_result_is_registered() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MIN result should still be pending on the first cycle after the request edge"
+        "MIN should spend the second cycle registering the compare result"
     );
     assert_eq!(
         dut.in_ready, 0,
@@ -389,8 +389,19 @@ fn test_alu_minmax_result_is_registered() {
     clock_cycle!(dut);
     dut.eval();
     assert_eq!(
+        dut.out_valid, 0,
+        "MIN result should still be pending while the selected operand is staged"
+    );
+    assert_eq!(
+        dut.in_ready, 0,
+        "ALU should remain busy until the MIN select stage completes"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
         dut.out_valid, 1,
-        "MIN should be valid once the pending request reaches the response stage"
+        "MIN should be valid after the compare and select stages complete"
     );
     assert_eq!(
         dut.out_data, 0xFFFF_FFFBu32,
@@ -425,14 +436,21 @@ fn test_alu_minmax_result_is_registered() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MAXU should still be pending on the first cycle after the request edge"
+        "MAXU should spend the second cycle registering the compare result"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.out_valid, 0,
+        "MAXU result should still be pending while the selected operand is staged"
     );
 
     clock_cycle!(dut);
     dut.eval();
     assert_eq!(
         dut.out_valid, 1,
-        "MAXU should be valid once the pending request reaches the response stage"
+        "MAXU should be valid after the compare and select stages complete"
     );
     assert_eq!(dut.out_data, 10u32, "MAXU should select the larger operand");
 }
