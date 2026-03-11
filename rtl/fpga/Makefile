@@ -139,6 +139,9 @@ ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
+PYTHON3 = python3
+STATS_SCRIPT = ./fpga_design_stats.py
+STATS_FORMAT ?= text
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
@@ -201,6 +204,16 @@ utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
 endif
 
+# Standardized design stats summary
+.PHONY: check-python
+check-python:
+	@$(PYTHON3) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA stats generation"; exit 1)
+
+.PHONY: stats
+stats: check-python
+	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
+
 
 # Program FPGA
 .PHONY: program
@@ -229,6 +242,7 @@ else
 endif
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
+	@echo "  stats        - Build and print standardized timing/utilization stats"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Show this help message"
@@ -249,12 +263,17 @@ endif
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
 	@echo ""
+	@echo "Stats output format:"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
+	@echo ""
 	@echo "Programming selection:"
 	@echo "  - make program PROGRAM_MODE=sram   (default)"
 	@echo "  - make program PROGRAM_MODE=flash"
 
 .PHONY: check-tools
-check-tools:
+check-tools: check-python
 	@echo "Checking for required tools..."
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)
