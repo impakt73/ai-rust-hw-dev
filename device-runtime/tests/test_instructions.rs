@@ -480,11 +480,11 @@ fn test_cpu_jal_jalr_return_addresses() {
     let mut instructions = vec![
         lui(9, DRAM_BASE),
         auipc(5, 0),
-        addi(5, 5, 32),
+        addi(5, 5, 31),
         jal(1, 8),
         addi(6, 0, 99),
         sw(9, 1, RESULT_BASE_OFFSET),
-        jalr(2, 5, 0),
+        jalr(2, 5, 1),
         addi(6, 0, 77),
         sw(9, 6, RESULT_BASE_OFFSET + 12),
         sw(9, 2, RESULT_BASE_OFFSET + 4),
@@ -517,9 +517,10 @@ fn test_cpu_jal_jalr_return_addresses() {
     );
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 8, SHORT_TIMEOUT),
-        TEST_BOOT_PC + 36
+        TEST_BOOT_PC + 35
     );
-    // JALR should jump directly to RESULT_BASE_ADDR + 36, leaving this skipped-path sentinel untouched.
+    // JALR should add the odd base plus immediate, clear bit 0, and jump to TEST_BOOT_PC + 36,
+    // leaving this skipped-path sentinel untouched.
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), RESULT_BASE_ADDR + 12, SHORT_TIMEOUT),
         SKIPPED_PATH_SENTINEL
