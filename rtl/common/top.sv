@@ -74,6 +74,8 @@ module top #(
 
     assign rst_n_out = rst_n_internal;
 
+    localparam int MEM_A_CHANNEL_WIDTH = 67;
+
     // ============================================================
     // CPU <-> host_bus_mux Memory Channel Signals
     // ============================================================
@@ -86,6 +88,17 @@ module top #(
     logic [31:0] cpu_mem_d_rdata;
     logic        cpu_mem_d_valid;
     logic        cpu_mem_d_ready;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] cpu_a_skid_in_data;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] cpu_a_skid_out_data;
+    logic [31:0]                    cpu_mux_mem_a_addr;
+    logic [31:0]                    cpu_mux_mem_a_wdata;
+    logic                           cpu_mux_mem_a_we;
+    logic [1:0]                     cpu_mux_mem_a_size;
+    logic                           cpu_mux_mem_a_valid;
+    logic                           cpu_mux_mem_a_ready;
+    logic [31:0]                    cpu_mux_mem_d_rdata;
+    logic                           cpu_mux_mem_d_valid;
+    logic                           cpu_mux_mem_d_ready;
     
     // ============================================================
     // LED Controller Interface Signals
@@ -161,6 +174,17 @@ module top #(
     logic [31:0] cpu_to_arb_d_rdata;
     logic        cpu_to_arb_d_valid;
     logic        cpu_to_arb_d_ready;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] sys_a_skid_in_data;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] sys_a_skid_out_data;
+    logic [31:0]                    mux_sys_mem_a_addr;
+    logic [31:0]                    mux_sys_mem_a_wdata;
+    logic                           mux_sys_mem_a_we;
+    logic [1:0]                     mux_sys_mem_a_size;
+    logic                           mux_sys_mem_a_valid;
+    logic                           mux_sys_mem_a_ready;
+    logic [31:0]                    mux_sys_mem_d_rdata;
+    logic                           mux_sys_mem_d_valid;
+    logic                           mux_sys_mem_d_ready;
 
     // ============================================================
     // CPU→External Interface Signals (non-RTL peripheral accesses)
@@ -174,6 +198,17 @@ module top #(
     logic [31:0] cpu_to_ext_d_rdata;
     logic        cpu_to_ext_d_valid;
     logic        cpu_to_ext_d_ready;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] host_a_skid_in_data;
+    logic [MEM_A_CHANNEL_WIDTH-1:0] host_a_skid_out_data;
+    logic [31:0]                    mux_host_mem_a_addr;
+    logic [31:0]                    mux_host_mem_a_wdata;
+    logic                           mux_host_mem_a_we;
+    logic [1:0]                     mux_host_mem_a_size;
+    logic                           mux_host_mem_a_valid;
+    logic                           mux_host_mem_a_ready;
+    logic [31:0]                    mux_host_mem_d_rdata;
+    logic                           mux_host_mem_d_valid;
+    logic                           mux_host_mem_d_ready;
     
     // ============================================================
     // registered_bus Master/Slave Wiring
@@ -218,6 +253,123 @@ module top #(
     // CPU is reset when either the internal reset or system controller requests it
     logic cpu_combined_rst_n;
     assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
+
+    assign cpu_a_skid_in_data = {
+        cpu_mem_a_addr,
+        cpu_mem_a_wdata,
+        cpu_mem_a_we,
+        cpu_mem_a_size
+    };
+    assign {
+        cpu_mux_mem_a_addr,
+        cpu_mux_mem_a_wdata,
+        cpu_mux_mem_a_we,
+        cpu_mux_mem_a_size
+    } = cpu_a_skid_out_data;
+
+    assign sys_a_skid_in_data = {
+        mux_sys_mem_a_addr,
+        mux_sys_mem_a_wdata,
+        mux_sys_mem_a_we,
+        mux_sys_mem_a_size
+    };
+    assign {
+        cpu_to_arb_a_addr,
+        cpu_to_arb_a_wdata,
+        cpu_to_arb_a_we,
+        cpu_to_arb_a_size
+    } = sys_a_skid_out_data;
+
+    assign host_a_skid_in_data = {
+        mux_host_mem_a_addr,
+        mux_host_mem_a_wdata,
+        mux_host_mem_a_we,
+        mux_host_mem_a_size
+    };
+    assign {
+        cpu_to_ext_a_addr,
+        cpu_to_ext_a_wdata,
+        cpu_to_ext_a_we,
+        cpu_to_ext_a_size
+    } = host_a_skid_out_data;
+
+    skid_buffer #(
+        .WIDTH(MEM_A_CHANNEL_WIDTH)
+    ) cpu_a_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(cpu_mem_a_valid),
+        .in_data(cpu_a_skid_in_data),
+        .in_ready(cpu_mem_a_ready),
+        .out_valid(cpu_mux_mem_a_valid),
+        .out_data(cpu_a_skid_out_data),
+        .out_ready(cpu_mux_mem_a_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(32)
+    ) cpu_d_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(cpu_mux_mem_d_valid),
+        .in_data(cpu_mux_mem_d_rdata),
+        .in_ready(cpu_mux_mem_d_ready),
+        .out_valid(cpu_mem_d_valid),
+        .out_data(cpu_mem_d_rdata),
+        .out_ready(cpu_mem_d_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(MEM_A_CHANNEL_WIDTH)
+    ) sys_a_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(mux_sys_mem_a_valid),
+        .in_data(sys_a_skid_in_data),
+        .in_ready(mux_sys_mem_a_ready),
+        .out_valid(cpu_to_arb_a_valid),
+        .out_data(sys_a_skid_out_data),
+        .out_ready(cpu_to_arb_a_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(32)
+    ) sys_d_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(cpu_to_arb_d_valid),
+        .in_data(cpu_to_arb_d_rdata),
+        .in_ready(cpu_to_arb_d_ready),
+        .out_valid(mux_sys_mem_d_valid),
+        .out_data(mux_sys_mem_d_rdata),
+        .out_ready(mux_sys_mem_d_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(MEM_A_CHANNEL_WIDTH)
+    ) host_a_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(mux_host_mem_a_valid),
+        .in_data(host_a_skid_in_data),
+        .in_ready(mux_host_mem_a_ready),
+        .out_valid(cpu_to_ext_a_valid),
+        .out_data(host_a_skid_out_data),
+        .out_ready(cpu_to_ext_a_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(32)
+    ) host_d_skid_buffer (
+        .clk(clk),
+        .rst_n(rst_n_internal),
+        .in_valid(cpu_to_ext_d_valid),
+        .in_data(cpu_to_ext_d_rdata),
+        .in_ready(cpu_to_ext_d_ready),
+        .out_valid(mux_host_mem_d_valid),
+        .out_data(mux_host_mem_d_rdata),
+        .out_ready(mux_host_mem_d_ready)
+    );
     
     // ============================================================
     // CPU Host-Bus Multiplexer
@@ -227,37 +379,37 @@ module top #(
         .rst_n(rst_n_internal),
 
         // CPU-side interface
-        .cpu_mem_a_addr(cpu_mem_a_addr),
-        .cpu_mem_a_wdata(cpu_mem_a_wdata),
-        .cpu_mem_a_we(cpu_mem_a_we),
-        .cpu_mem_a_size(cpu_mem_a_size),
-        .cpu_mem_a_valid(cpu_mem_a_valid),
-        .cpu_mem_a_ready(cpu_mem_a_ready),
-        .cpu_mem_d_rdata(cpu_mem_d_rdata),
-        .cpu_mem_d_valid(cpu_mem_d_valid),
-        .cpu_mem_d_ready(cpu_mem_d_ready),
+        .cpu_mem_a_addr(cpu_mux_mem_a_addr),
+        .cpu_mem_a_wdata(cpu_mux_mem_a_wdata),
+        .cpu_mem_a_we(cpu_mux_mem_a_we),
+        .cpu_mem_a_size(cpu_mux_mem_a_size),
+        .cpu_mem_a_valid(cpu_mux_mem_a_valid),
+        .cpu_mem_a_ready(cpu_mux_mem_a_ready),
+        .cpu_mem_d_rdata(cpu_mux_mem_d_rdata),
+        .cpu_mem_d_valid(cpu_mux_mem_d_valid),
+        .cpu_mem_d_ready(cpu_mux_mem_d_ready),
         
         // System bus path (RTL peripherals)
-        .sys_mem_a_addr(cpu_to_arb_a_addr),
-        .sys_mem_a_wdata(cpu_to_arb_a_wdata),
-        .sys_mem_a_we(cpu_to_arb_a_we),
-        .sys_mem_a_size(cpu_to_arb_a_size),
-        .sys_mem_a_valid(cpu_to_arb_a_valid),
-        .sys_mem_a_ready(cpu_to_arb_a_ready),
-        .sys_mem_d_rdata(cpu_to_arb_d_rdata),
-        .sys_mem_d_valid(cpu_to_arb_d_valid),
-        .sys_mem_d_ready(cpu_to_arb_d_ready),
+        .sys_mem_a_addr(mux_sys_mem_a_addr),
+        .sys_mem_a_wdata(mux_sys_mem_a_wdata),
+        .sys_mem_a_we(mux_sys_mem_a_we),
+        .sys_mem_a_size(mux_sys_mem_a_size),
+        .sys_mem_a_valid(mux_sys_mem_a_valid),
+        .sys_mem_a_ready(mux_sys_mem_a_ready),
+        .sys_mem_d_rdata(mux_sys_mem_d_rdata),
+        .sys_mem_d_valid(mux_sys_mem_d_valid),
+        .sys_mem_d_ready(mux_sys_mem_d_ready),
         
         // Host bus path (external memory / Rust peripherals)
-        .host_mem_a_addr(cpu_to_ext_a_addr),
-        .host_mem_a_wdata(cpu_to_ext_a_wdata),
-        .host_mem_a_we(cpu_to_ext_a_we),
-        .host_mem_a_size(cpu_to_ext_a_size),
-        .host_mem_a_valid(cpu_to_ext_a_valid),
-        .host_mem_a_ready(cpu_to_ext_a_ready),
-        .host_mem_d_rdata(cpu_to_ext_d_rdata),
-        .host_mem_d_valid(cpu_to_ext_d_valid),
-        .host_mem_d_ready(cpu_to_ext_d_ready)
+        .host_mem_a_addr(mux_host_mem_a_addr),
+        .host_mem_a_wdata(mux_host_mem_a_wdata),
+        .host_mem_a_we(mux_host_mem_a_we),
+        .host_mem_a_size(mux_host_mem_a_size),
+        .host_mem_a_valid(mux_host_mem_a_valid),
+        .host_mem_a_ready(mux_host_mem_a_ready),
+        .host_mem_d_rdata(mux_host_mem_d_rdata),
+        .host_mem_d_valid(mux_host_mem_d_valid),
+        .host_mem_d_ready(mux_host_mem_d_ready)
     );
 
     assign registered_master_mem_a_addr[31:0] = host_mem_a_addr;

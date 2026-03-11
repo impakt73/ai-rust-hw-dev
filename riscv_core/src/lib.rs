@@ -288,6 +288,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "cpu/cpu.sv",                                  // CPU core
         "memory/sync_dpram.sv",                        // BRAM-friendly simple dual-port RAM
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
+        "primitives/skid_buffer.sv",                   // Ready/valid isolation buffers
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
