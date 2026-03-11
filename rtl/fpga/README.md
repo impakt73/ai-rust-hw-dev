@@ -98,8 +98,12 @@ make TARGET=artix7_alchitry_au
 # Connect Alchitry Cu v1 board via USB
 sudo make program
 
-# Or manually using iceprog:
-sudo iceprog build/riscv_fpga.bin
+# Select flash explicitly instead of the default SRAM load:
+sudo make program PROGRAM_MODE=flash
+
+# Or manually using openFPGALoader:
+sudo openFPGALoader -b ice40_generic -m build/ice40_alchitry_cu/riscv_fpga.bin
+sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin
 ```
 
 ## Files
@@ -120,10 +124,11 @@ sudo iceprog build/riscv_fpga.bin
 - `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
-- `make program` - Program connected FPGA board
+- `make program` - Program connected FPGA board (default: SRAM load)
 - `make clean` - Remove build artifacts
 - `make check-tools` - Verify required tools are installed
 - `make help` - Show all available targets
+- `make program PROGRAM_MODE=flash` - Program the persistent configuration flash instead of SRAM
 
 ## Hardware Requirements
 
@@ -131,7 +136,7 @@ sudo iceprog build/riscv_fpga.bin
 - **Resources Used**: 4,399 SB_LUT4s, 7,306 total mapped cells, 30 BRAMs
 - **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
-- **Programming**: USB cable for iceprog
+- **Programming**: USB cable for openFPGALoader (the Alchitry Cu works with `-b ice40_generic`)
 
 ## Artix-7 (Alchitry Au) Toolchain Notes
 
@@ -226,6 +231,8 @@ lsusb | grep 0403:6010
 sudo usermod -a -G dialout $USER
 # Log out and back in for changes to take effect
 ```
+
+`make program` loads the bitstream into SRAM by default. If you want the image to persist across power cycles, use `make program PROGRAM_MODE=flash`.
 
 ### Simulation works but FPGA doesn't
 

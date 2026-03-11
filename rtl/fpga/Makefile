@@ -4,6 +4,7 @@
 # Project configuration
 PROJECT = riscv_fpga
 TARGET ?= ice40_alchitry_cu
+PROGRAM_MODE ?= sram
 
 # File paths
 RTL_DIR = ../common
@@ -68,7 +69,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--asc $(PNR_OUT) \
 		--freq 25
 PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
-PROGRAM_CMD = $(ICEPROG) $(BIN)
+OPENFPGALOADER_BOARD = ice40_generic
 OUTPUT_EXT = bin
 endif
 
@@ -86,7 +87,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--textcfg $(PNR_OUT) \
 		--freq 50
 PACK_CMD = $(ECPPACK) $(PNR_OUT) $(BIN)
-PROGRAM_CMD = $(OPENFPGALOADER) -b icepi_zero $(BIN)
+OPENFPGALOADER_BOARD = icepi_zero
 OUTPUT_EXT = bit
 endif
 
@@ -96,8 +97,20 @@ FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
 VIVADO_TCL = $(FPGA_DIR)/vivado_build.tcl
-PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
+OPENFPGALOADER_BOARD = alchitry_au
 OUTPUT_EXT = bit
+endif
+
+ifdef OPENFPGALOADER_BOARD
+ifeq ($(PROGRAM_MODE),sram)
+OPENFPGALOADER_PROGRAM_FLAG = -m
+else ifeq ($(PROGRAM_MODE),flash)
+OPENFPGALOADER_PROGRAM_FLAG = -f
+else
+$(error Unsupported PROGRAM_MODE value '$(PROGRAM_MODE)'. Set PROGRAM_MODE=sram or PROGRAM_MODE=flash)
+endif
+
+PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROGRAM_FLAG) $(BIN)
 endif
 
 ifndef FPGA_DIR
@@ -122,7 +135,6 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
 ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
@@ -225,13 +237,18 @@ ifeq ($(TARGET),artix7_alchitry_au)
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
-	@echo "  - icestorm   : Bitstream generation and programming"
+	@echo "  - icestorm   : Bitstream generation tools"
+	@echo "  - openFPGALoader : Optional board programming tool"
 endif
 	@echo ""
 	@echo "Target selection:"
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
+	@echo ""
+	@echo "Programming selection:"
+	@echo "  - make program PROGRAM_MODE=sram   (default)"
+	@echo "  - make program PROGRAM_MODE=flash"
 
 .PHONY: check-tools
 check-tools:
@@ -244,7 +261,7 @@ else
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
 ifeq ($(TARGET),ice40_alchitry_cu)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (optional for programming)"; exit 0)
 endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
