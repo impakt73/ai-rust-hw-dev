@@ -56,6 +56,17 @@ fn test_low_address_routes_to_system_path_and_holds_response() {
     );
     assert_eq!(dut.host_mem_a_valid, 0, "host path must remain idle");
     assert_eq!(dut.sys_mem_a_addr, 0x5000_0010);
+    assert_eq!(
+        dut.cpu_mem_a_ready, 0,
+        "registered outputs should block new CPU A traffic once the request is buffered"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.sys_mem_a_valid, 1,
+        "system request should remain registered until the downstream handshake"
+    );
 
     dut.sys_mem_a_ready = 1;
     clock_cycle!(dut);
@@ -114,6 +125,16 @@ fn test_high_address_routes_to_host_path() {
     assert_eq!(
         dut.host_mem_a_valid, 1,
         "high address should route to host path"
+    );
+    assert_eq!(dut.host_mem_a_addr, 0x9000_0020);
+    assert_eq!(dut.host_mem_a_wdata, 0x5566_7788);
+    assert_eq!(dut.host_mem_a_we, 1);
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.host_mem_a_valid, 1,
+        "host request should remain registered until the downstream handshake"
     );
     assert_eq!(dut.host_mem_a_addr, 0x9000_0020);
     assert_eq!(dut.host_mem_a_wdata, 0x5566_7788);

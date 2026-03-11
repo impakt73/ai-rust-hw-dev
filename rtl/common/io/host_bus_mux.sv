@@ -58,6 +58,36 @@ module host_bus_mux (
     logic [31:0] pending_resp_rdata;
     logic        pending_resp_valid;
 
+    logic [31:0] next_pending_req_addr;
+    logic [31:0] next_pending_req_wdata;
+    logic        next_pending_req_we;
+    logic [1:0]  next_pending_req_size;
+    logic        next_pending_req_valid;
+
+    logic        next_pending_route_host;
+    logic        next_waiting_for_resp;
+
+    logic [31:0] next_pending_resp_rdata;
+    logic        next_pending_resp_valid;
+
+    logic        next_cpu_mem_a_ready;
+    logic [31:0] next_cpu_mem_d_rdata;
+    logic        next_cpu_mem_d_valid;
+
+    logic [31:0] next_sys_mem_a_addr;
+    logic [31:0] next_sys_mem_a_wdata;
+    logic        next_sys_mem_a_we;
+    logic [1:0]  next_sys_mem_a_size;
+    logic        next_sys_mem_a_valid;
+    logic        next_sys_mem_d_ready;
+
+    logic [31:0] next_host_mem_a_addr;
+    logic [31:0] next_host_mem_a_wdata;
+    logic        next_host_mem_a_we;
+    logic [1:0]  next_host_mem_a_size;
+    logic        next_host_mem_a_valid;
+    logic        next_host_mem_d_ready;
+
     logic cpu_a_handshake;
     logic cpu_d_handshake;
     logic sys_a_handshake;
@@ -72,40 +102,68 @@ module host_bus_mux (
     assign sys_d_handshake = waiting_for_resp && !pending_route_host && sys_mem_d_valid && sys_mem_d_ready;
     assign host_d_handshake = waiting_for_resp && pending_route_host && host_mem_d_valid && host_mem_d_ready;
 
-    assign cpu_mem_a_ready = !pending_req_valid && !waiting_for_resp && !pending_resp_valid;
-    assign cpu_mem_d_rdata = pending_resp_rdata;
-    assign cpu_mem_d_valid = pending_resp_valid;
-
     always_comb begin
-        sys_mem_a_addr = pending_req_addr;
-        sys_mem_a_wdata = pending_req_wdata;
-        sys_mem_a_we = pending_req_we;
-        sys_mem_a_size = pending_req_size;
-        sys_mem_a_valid = 1'b0;
-        sys_mem_d_ready = 1'b0;
+        next_pending_req_addr = pending_req_addr;
+        next_pending_req_wdata = pending_req_wdata;
+        next_pending_req_we = pending_req_we;
+        next_pending_req_size = pending_req_size;
+        next_pending_req_valid = pending_req_valid;
 
-        host_mem_a_addr = pending_req_addr;
-        host_mem_a_wdata = pending_req_wdata;
-        host_mem_a_we = pending_req_we;
-        host_mem_a_size = pending_req_size;
-        host_mem_a_valid = 1'b0;
-        host_mem_d_ready = 1'b0;
+        next_pending_route_host = pending_route_host;
+        next_waiting_for_resp = waiting_for_resp;
 
-        if (pending_req_valid) begin
-            if (pending_req_addr[31]) begin
-                host_mem_a_valid = 1'b1;
-            end else begin
-                sys_mem_a_valid = 1'b1;
-            end
+        next_pending_resp_rdata = pending_resp_rdata;
+        next_pending_resp_valid = pending_resp_valid;
+
+        if (cpu_a_handshake) begin
+            next_pending_req_addr = cpu_mem_a_addr;
+            next_pending_req_wdata = cpu_mem_a_wdata;
+            next_pending_req_we = cpu_mem_a_we;
+            next_pending_req_size = cpu_mem_a_size;
+            next_pending_req_valid = 1'b1;
         end
 
-        if (waiting_for_resp && !pending_resp_valid) begin
-            if (pending_route_host) begin
-                host_mem_d_ready = 1'b1;
-            end else begin
-                sys_mem_d_ready = 1'b1;
-            end
+        if (sys_a_handshake) begin
+            next_pending_req_valid = 1'b0;
+            next_pending_route_host = 1'b0;
+            next_waiting_for_resp = 1'b1;
+        end else if (host_a_handshake) begin
+            next_pending_req_valid = 1'b0;
+            next_pending_route_host = 1'b1;
+            next_waiting_for_resp = 1'b1;
         end
+
+        if (sys_d_handshake) begin
+            next_pending_resp_rdata = sys_mem_d_rdata;
+            next_pending_resp_valid = 1'b1;
+            next_waiting_for_resp = 1'b0;
+        end else if (host_d_handshake) begin
+            next_pending_resp_rdata = host_mem_d_rdata;
+            next_pending_resp_valid = 1'b1;
+            next_waiting_for_resp = 1'b0;
+        end
+
+        if (cpu_d_handshake) begin
+            next_pending_resp_valid = 1'b0;
+        end
+
+        next_cpu_mem_a_ready = !next_pending_req_valid && !next_waiting_for_resp && !next_pending_resp_valid;
+        next_cpu_mem_d_rdata = next_pending_resp_rdata;
+        next_cpu_mem_d_valid = next_pending_resp_valid;
+
+        next_sys_mem_a_addr = next_pending_req_addr;
+        next_sys_mem_a_wdata = next_pending_req_wdata;
+        next_sys_mem_a_we = next_pending_req_we;
+        next_sys_mem_a_size = next_pending_req_size;
+        next_sys_mem_a_valid = next_pending_req_valid && !next_pending_req_addr[31];
+        next_sys_mem_d_ready = next_waiting_for_resp && !next_pending_resp_valid && !next_pending_route_host;
+
+        next_host_mem_a_addr = next_pending_req_addr;
+        next_host_mem_a_wdata = next_pending_req_wdata;
+        next_host_mem_a_we = next_pending_req_we;
+        next_host_mem_a_size = next_pending_req_size;
+        next_host_mem_a_valid = next_pending_req_valid && next_pending_req_addr[31];
+        next_host_mem_d_ready = next_waiting_for_resp && !next_pending_resp_valid && next_pending_route_host;
     end
 
     always_ff @(posedge clk) begin
@@ -119,38 +177,52 @@ module host_bus_mux (
             waiting_for_resp <= 1'b0;
             pending_resp_rdata <= 32'h0;
             pending_resp_valid <= 1'b0;
+
+            cpu_mem_a_ready <= 1'b1;
+            cpu_mem_d_rdata <= 32'h0;
+            cpu_mem_d_valid <= 1'b0;
+
+            sys_mem_a_addr <= 32'h0;
+            sys_mem_a_wdata <= 32'h0;
+            sys_mem_a_we <= 1'b0;
+            sys_mem_a_size <= 2'b00;
+            sys_mem_a_valid <= 1'b0;
+            sys_mem_d_ready <= 1'b0;
+
+            host_mem_a_addr <= 32'h0;
+            host_mem_a_wdata <= 32'h0;
+            host_mem_a_we <= 1'b0;
+            host_mem_a_size <= 2'b00;
+            host_mem_a_valid <= 1'b0;
+            host_mem_d_ready <= 1'b0;
         end else begin
-            if (cpu_a_handshake) begin
-                pending_req_addr <= cpu_mem_a_addr;
-                pending_req_wdata <= cpu_mem_a_wdata;
-                pending_req_we <= cpu_mem_a_we;
-                pending_req_size <= cpu_mem_a_size;
-                pending_req_valid <= 1'b1;
-            end
+            pending_req_addr <= next_pending_req_addr;
+            pending_req_wdata <= next_pending_req_wdata;
+            pending_req_we <= next_pending_req_we;
+            pending_req_size <= next_pending_req_size;
+            pending_req_valid <= next_pending_req_valid;
+            pending_route_host <= next_pending_route_host;
+            waiting_for_resp <= next_waiting_for_resp;
+            pending_resp_rdata <= next_pending_resp_rdata;
+            pending_resp_valid <= next_pending_resp_valid;
 
-            if (sys_a_handshake) begin
-                pending_req_valid <= 1'b0;
-                pending_route_host <= 1'b0;
-                waiting_for_resp <= 1'b1;
-            end else if (host_a_handshake) begin
-                pending_req_valid <= 1'b0;
-                pending_route_host <= 1'b1;
-                waiting_for_resp <= 1'b1;
-            end
+            cpu_mem_a_ready <= next_cpu_mem_a_ready;
+            cpu_mem_d_rdata <= next_cpu_mem_d_rdata;
+            cpu_mem_d_valid <= next_cpu_mem_d_valid;
 
-            if (sys_d_handshake) begin
-                pending_resp_rdata <= sys_mem_d_rdata;
-                pending_resp_valid <= 1'b1;
-                waiting_for_resp <= 1'b0;
-            end else if (host_d_handshake) begin
-                pending_resp_rdata <= host_mem_d_rdata;
-                pending_resp_valid <= 1'b1;
-                waiting_for_resp <= 1'b0;
-            end
+            sys_mem_a_addr <= next_sys_mem_a_addr;
+            sys_mem_a_wdata <= next_sys_mem_a_wdata;
+            sys_mem_a_we <= next_sys_mem_a_we;
+            sys_mem_a_size <= next_sys_mem_a_size;
+            sys_mem_a_valid <= next_sys_mem_a_valid;
+            sys_mem_d_ready <= next_sys_mem_d_ready;
 
-            if (cpu_d_handshake) begin
-                pending_resp_valid <= 1'b0;
-            end
+            host_mem_a_addr <= next_host_mem_a_addr;
+            host_mem_a_wdata <= next_host_mem_a_wdata;
+            host_mem_a_we <= next_host_mem_a_we;
+            host_mem_a_size <= next_host_mem_a_size;
+            host_mem_a_valid <= next_host_mem_a_valid;
+            host_mem_d_ready <= next_host_mem_d_ready;
         end
     end
 endmodule
