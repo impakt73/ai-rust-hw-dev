@@ -4,9 +4,7 @@
 # - Cut asynchronous input-originated timing paths broadly.
 # - Cut asynchronous outputs that have no board-level capture clock requirement.
 
-# 100 MHz on-board oscillator.
-# Assume the open-source timing flow correctly propagates this through the PLL
-# to the 25 MHz system clock domain used by the design.
+# 100 MHz on-board oscillator drives the full design directly.
 create_clock -name clk_100mhz -period 10.000 [get_ports clk]
 
 # Active-low pushbutton reset is asynchronous to the design clocks.

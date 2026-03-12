@@ -69,7 +69,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--json $(NETLIST) \
 		--pcf $(CONSTRAINT) \
 		--asc $(PNR_OUT) \
-		--freq 25
+		--freq 100
 PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
 OPENFPGALOADER_BOARD = ice40_generic
 OUTPUT_EXT = bin

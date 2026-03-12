@@ -22,8 +22,8 @@ if sys.version_info < MIN_PYTHON:
 
 TARGET_CONFIGS = {
     "ice40_alchitry_cu": {
-        "target_frequency_mhz": 25.0,
-        "preferred_clock_patterns": ["pll_clk_global", "pll_clk", "clk"],
+        "target_frequency_mhz": 100.0,
+        "preferred_clock_patterns": ["clk", "sys_clk", "pll_clk_global", "pll_clk"],
         "timing_sources": ["nextpnr.log", "riscv_fpga_timing.rpt"],
         "resource_sources": ["nextpnr.log", "yosys.log"],
     },

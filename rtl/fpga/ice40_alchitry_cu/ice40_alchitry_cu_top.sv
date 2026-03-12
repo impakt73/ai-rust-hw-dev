@@ -43,14 +43,11 @@ module ice40_alchitry_cu_top #(
     localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
 
     // ============================================================
-    // PLL Configuration - Generate 25 MHz from 100 MHz input
+    // Clocking
     // ============================================================
-    // Using iCE40 PLL to divide 100 MHz input to 25 MHz for timing closure
-    // PLL parameters calculated for: 100 MHz input -> 25 MHz output
-    // DIVR = 0, DIVF = 7, DIVQ = 5 gives: 100 * (7+1) / (2^5) = 100 * 8 / 32 = 25 MHz
-    
-    logic pll_clk_global; // PLL output on global clock network (25 MHz)
-    logic pll_locked;     // PLL lock indicator
+    // The Alchitry Cu already provides a 100 MHz board clock on `clk`,
+    // so run the full design directly from that input.
+    logic sys_clk;
     logic rst_n_btn_sync2;
     logic rst_n_btn_debounced;
     // Keep synchronizer reset deasserted so it can safely sample the async button
@@ -73,37 +70,7 @@ module ice40_alchitry_cu_top #(
         .din(rst_n_btn_sync2),
         .dout(rst_n_btn_debounced)
     );
-    
-    SB_PLL40_CORE #(
-        .FEEDBACK_PATH("SIMPLE"),
-        .DIVR(4'b0000),        // DIVR = 0
-        .DIVF(7'b0000111),     // DIVF = 7
-        .DIVQ(3'b101),         // DIVQ = 5 (divide by 32)
-        .FILTER_RANGE(3'b001)  // Filter range for 100 MHz input
-    ) pll_inst (
-        .REFERENCECLK(clk),
-        .PLLOUTCORE(),         // Unused - use global network instead
-        .PLLOUTGLOBAL(pll_clk_global),  // Drive system clock via global clock network
-        .LOCK(pll_locked),
-        .BYPASS(1'b0),
-        .RESETB(rst_n_btn_debounced)
-    );
-    
-    // Use PLL global clock output for all internal logic
-    // This reduces clock skew and improves timing closure
-    logic sys_clk;
-    assign sys_clk = pll_clk_global;
-    
-    // Synchronize PLL lock to system clock domain (2-FF synchronizer)
-    logic pll_locked_sync2;
-    ff_sync #(
-        .WIDTH(1)
-    ) pll_locked_sync_inst (
-        .clk(sys_clk),
-        .rst_n(1'b1),
-        .din(pll_locked),
-        .dout(pll_locked_sync2)
-    );
+    assign sys_clk = clk;
     
     // LED controller output
     logic [7:0]  led_out;
@@ -115,11 +82,11 @@ module ice40_alchitry_cu_top #(
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
-        .CLK_FREQ_HZ(25_000_000),
-        .RESET_CYCLES(25_000_000)
+        .CLK_FREQ_HZ(100_000_000),
+        .RESET_CYCLES(100_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst_n(pll_locked_sync2),
+        .rst_n(rst_n_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(led_out),
@@ -159,7 +126,7 @@ module ice40_alchitry_cu_top #(
 
     for (genvar button_idx = 0; button_idx < 5; button_idx++) begin : gen_io_button_debouncer
         debouncer #(
-            .CLK_FREQ_HZ(25_000_000),
+            .CLK_FREQ_HZ(100_000_000),
             .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
         ) io_button_debouncer_inst (
             .clk(sys_clk),

@@ -7,16 +7,17 @@ Currently supported targets:
 - **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
 - **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T-FTG256-1)
 
-## Status: ✅ Successfully Synthesized
+## Status: ⚠️ 100 MHz target currently misses timing on HX8K
 
 The FPGA design is configured to run on the iCE40-HX8K within resource constraints:
 
 - **Extensions**: M (multiply/divide) disabled by default; F (floating-point) disabled
 - **ISA supported**: RV32I base instruction set + C (compressed) + A (atomic) + Zicsr
 - **Resource usage**: 4,399 SB_LUT4s and 7,306 total mapped cells after disabling M by default
-- **Clock frequency**: 25 MHz (via PLL), latest build achieves 39.50 MHz max
+- **Clock frequency**: 100 MHz direct from the board oscillator; current routed Fmax is 65.87 MHz
 - **Communication**: CPU communicates with host over USB serial (UART) using the host bus protocol
 - **External memory**: DRAM accesses are forwarded to the host computer over UART
+- **Timing report**: See `ice40_alchitry_cu/timing_100mhz_report.md` for the current bottleneck analysis
 
 ## What's Included
 
@@ -28,7 +29,7 @@ The FPGA implementation includes:
 - ✅ **SRAM Peripheral**: 12KB on-chip SRAM mapped at 0x70000000
 - ✅ **System Controller**: CPU boot and reset control mapped at 0x20000000
 - ✅ **UART Host Interface**: USB serial communication for host-initiated and CPU-initiated bus requests
-- ✅ **PLL Clock Generation**: 100 MHz input → 25 MHz system clock for timing closure
+- ✅ **Direct 100 MHz Clocking**: Uses the board oscillator directly as the system clock
 
 ## Quick Start
 
@@ -188,7 +189,7 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 
 - **Board**: Alchitry Cu v1 (Lattice iCE40-HX8K-CB132)
 - **Resources Used**: 4,399 SB_LUT4s, 7,306 total mapped cells, 30 BRAMs
-- **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
+- **Clock**: 100 MHz board oscillator used directly as the system clock
 - **Peripherals**: 8 LEDs on main board
 - **Programming**: USB cable for openFPGALoader (the Alchitry Cu works with `-b ice40_generic`)
 
@@ -234,14 +235,14 @@ The main iCE40 FPGA design (`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`) does n
 # Initialize
 lui  x10, 0x50000      # LED controller base (0x50000000)
 addi x11, x0, 0xAA     # Initial pattern 0xAA (10101010)
-lui  x13, 0x017D8      # Delay count upper bits
-addi x13, x13, -1984   # Delay = 25,000,000 cycles (1 second at 25 MHz)
+lui  x13, 0x05F5E      # Delay count upper bits
+addi x13, x13, 256     # Delay = 100,000,000 cycles (1 second at 100 MHz)
 
 # Main loop
 sw   x11, 0(x10)       # Write pattern to LED
 addi x12, x0, 0        # counter = 0
 
-# Delay loop (count to 25M)
+# Delay loop (count to 100M)
 delay:
     addi x12, x12, 1   # counter++
     bne  x12, x13, delay
@@ -256,16 +257,16 @@ jal  x0, main_loop     # Repeat
 
 **Expected behavior:**
 - Pattern alternates: 0xAA (10101010) ↔ 0x55 (01010101)
-- Updates every 1 second (25M cycles at 25 MHz)
+- Updates every 1 second (100M cycles at 100 MHz)
 
 ## Troubleshooting
 
 ### "Timing not met" error
 
-The design uses a PLL to generate 25 MHz from the 100 MHz input clock, which ensures timing closure. If you need a different frequency, update:
+The design now runs directly from the 100 MHz board clock. If timing is not met or you need a different frequency, update:
 
-1. **PLL parameters**: Edit `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` PLL configuration (DIVR, DIVF, DIVQ)
-2. **Makefile**: Change `--freq 25` to match your target frequency
+1. **Top-level clocking**: Edit `ice40_alchitry_cu/ice40_alchitry_cu_top.sv`
+2. **Makefile**: Change `--freq 100` to match your target frequency
 3. **Test program**: Update delay loop count in your program to match the new cycle count
 
 ### "Insufficient resources" error
@@ -313,7 +314,7 @@ The FPGA design loads programs at runtime via the host UART interface. To run yo
 
 To modify the system clock frequency:
 
-1. Update PLL parameters in `ice40_alchitry_cu/ice40_alchitry_cu_top.sv` (DIVR, DIVF, DIVQ)
+1. Update the clock source or derived system frequency in `ice40_alchitry_cu/ice40_alchitry_cu_top.sv`
 2. Change `--freq` in `Makefile` to match your target frequency
 3. Re-run synthesis and check timing
 
