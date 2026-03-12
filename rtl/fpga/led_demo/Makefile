@@ -14,8 +14,8 @@ BUILD_DIR = build
 
 # Source files - minimal design only
 SOURCES = \
-	../../common/primitives/debouncer.sv \
 	../../common/primitives/ff_sync.sv \
+	../../common/primitives/debouncer.sv \
 	$(FPGA_DIR)/led_pattern_top.sv
 
 # Constraint file
