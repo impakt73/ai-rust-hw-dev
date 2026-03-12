@@ -96,12 +96,13 @@ module cpu #(
     // RV32C Fetch Buffer and Decompressor Signals
     // ============================================================
     // Fetch buffer outputs
-    logic [31:0] decomp_output;      // Decompressed 32-bit instruction
-    logic        decomp_is_valid;    // Decompressed instruction is valid
+    logic [31:0] fetched_instruction; // Instruction from fetch buffer (decompressed if needed)
+    logic        fetched_valid;       // Fetch buffer instruction validity
     
     // Instruction width tracking (from fetch buffer)
-    logic        current_insn_compressed; // Current instruction being executed is compressed
+    logic        pc_inc_4;           // High when current instruction advances PC by 4 bytes
     logic [31:0] pc_increment;       // How much to increment PC (2 or 4 bytes)
+    logic        invalidate_fetch_buffer; // Flush buffered half-word after control flow changes
     
     // ============================================================
     // LR/SC Reservation Station (A Extension)
@@ -303,9 +304,9 @@ module cpu #(
             instr_pc_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
         end else if (ir_write) begin
-            ir_reg <= decomp_output;  // Use decompressed output
+            ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
-            is_instruction_valid_reg <= decomp_is_valid;  // Capture decompressor validity
+            is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE) begin
             // The decoder's registered instruction_valid output is stable in S_DECODE
             // after being latched on ir_write. This merge combines decompressor and
@@ -490,6 +491,9 @@ module cpu #(
     // RV32C Fetch Buffer and Decompressor Module Instantiation
     // ============================================================
     
+    assign invalidate_fetch_buffer = pc_write &&
+                                     ((current_state == S_BRANCH) || (current_state == S_WRITEBACK));
+
     // Instantiate fetch buffer module
     // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
     fetch_buffer u_fetch_buffer (
@@ -499,13 +503,10 @@ module cpu #(
         .imem_ready(imem_ready_internal), // Routed from D-channel handshake
         .pc(pc),
         .ir_write(ir_write),
-        .pc_write(pc_write),
-        .is_branch(current_state == S_BRANCH),
-        .is_writeback(current_state == S_WRITEBACK),
-        .decomp_output(decomp_output),
-        .decomp_is_valid(decomp_is_valid),
-        .current_insn_compressed(current_insn_compressed),
-        .pc_increment(pc_increment)
+        .invalidate_buffer(invalidate_fetch_buffer),
+        .instruction(fetched_instruction),
+        .valid(fetched_valid),
+        .pc_inc_4(pc_inc_4)
     );
     
     // ============================================================
@@ -529,6 +530,8 @@ module cpu #(
                 next_pc_value = jal_target_reg;     // Use pre-computed JAL target
         end
     end
+
+    assign pc_increment = pc_inc_4 ? 32'd4 : 32'd2;
     
     always_ff @(posedge clk) begin
         if (!rst_n)
@@ -896,7 +899,7 @@ module cpu #(
         .clk(clk),
         .rst_n(rst_n),
         .decode_en(ir_write),
-        .instruction(decomp_output),
+        .instruction(fetched_instruction),
         .opcode(opcode_reg),
         .rd(rd_reg),
         .rs1(rs1_reg),

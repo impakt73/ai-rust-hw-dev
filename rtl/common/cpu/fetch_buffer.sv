@@ -15,18 +15,15 @@ module fetch_buffer (
     input  logic [31:0] pc,              // Current PC value
     
     // Control signals
-    input  logic        ir_write,        // Write instruction to IR
-    input  logic        pc_write,        // PC is being written (control flow change)
-    input  logic        is_branch,       // Current state is S_BRANCH
-    input  logic        is_writeback,    // Current state is S_WRITEBACK
+    input  logic        ir_write,          // Write instruction to IR
+    input  logic        invalidate_buffer, // Clear buffered half-word after control flow changes
     
-    // Decompressed instruction output
-    output logic [31:0] decomp_output,   // Decompressed 32-bit instruction
-    output logic        decomp_is_valid, // Decompressed instruction is valid
+    // Instruction output
+    output logic [31:0] instruction, // 32-bit instruction (decompressed if needed)
+    output logic        valid,       // Instruction is valid
     
     // Instruction tracking
-    output logic        current_insn_compressed, // Current executing instruction is compressed
-    output logic [31:0] pc_increment      // PC increment value (2 or 4 bytes)
+    output logic        pc_inc_4 // High for 4-byte instruction, low for 2-byte instruction
 );
 
     // ============================================================
@@ -40,10 +37,11 @@ module fetch_buffer (
     logic [15:0] buffered_half_next; // Next value for buffered_half
     
     // Assembled instruction (16-bit or 32-bit)
-    logic [31:0] assembled_insn;               // Assembled instruction before decompression
-    logic [15:0] current_half;                 // Current half-word from memory
-    logic        insn_is_compressed;           // Current assembled instruction is compressed
-    logic        decomp_is_compressed_internal; // Mirrors decompressor compression detect for observability
+    logic [31:0] assembled_insn;             // Assembled instruction before decompression
+    logic [15:0] current_half;               // Current half-word from memory
+    logic        insn_is_compressed;         // Current assembled instruction is compressed
+    logic        current_insn_compressed;    // Current executing instruction is compressed
+    logic        decomp_is_compressed_internal; // Decompressor compression detect
     
     // ============================================================
     // Buffer Registers
@@ -58,7 +56,7 @@ module fetch_buffer (
             buffer_valid <= buffer_valid_next;
             // Track whether current instruction being executed is compressed
             if (ir_write)
-                current_insn_compressed <= insn_is_compressed;
+                current_insn_compressed <= decomp_is_compressed_internal;
         end
     end
     
@@ -104,9 +102,9 @@ module fetch_buffer (
     decompress u_decompress (
         .insn_16(assembled_insn[15:0]),
         .insn_32_in(assembled_insn),
-        .insn_32(decomp_output),
+        .insn_32(instruction),
         .is_compressed(decomp_is_compressed_internal),
-        .is_valid(decomp_is_valid)
+        .is_valid(valid)
     );
     
     // ============================================================
@@ -146,7 +144,7 @@ module fetch_buffer (
         
         // Invalidate buffer on control flow changes (jumps/branches)
         // This happens when PC is written with a new value
-        if (pc_write && (is_branch || is_writeback)) begin
+        if (invalidate_buffer) begin
             buffer_valid_next = 1'b0;
         end
     end
@@ -157,10 +155,7 @@ module fetch_buffer (
     
     // PC increment based on instruction width
     always_comb begin
-        if (current_insn_compressed)
-            pc_increment = 32'd2;  // Compressed instruction: increment by 2 bytes
-        else
-            pc_increment = 32'd4;  // Standard instruction: increment by 4 bytes
+        pc_inc_4 = !current_insn_compressed;
     end
 
 endmodule
