@@ -61,6 +61,7 @@ FPGA_DIR = ice40_alchitry_cu
 TOP_MODULE = ice40_alchitry_cu_top
 DEFAULT_PROGRAM_MODE = flash
 CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
+SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
 SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -80,6 +81,7 @@ FPGA_DIR = ecp5_icepi_zero
 TOP_MODULE = ecp5_icepi_zero_top
 DEFAULT_PROGRAM_MODE = sram
 CONSTRAINT = $(FPGA_DIR)/ecp5_icepi_zero.lpf
+SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
 SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -151,6 +153,10 @@ ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
 endif
 
+ifneq ($(TARGET),artix7_alchitry_au)
+HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc" && echo 1 || echo 0)
+endif
+
 # Default target
 .PHONY: all
 all: $(BIN) timing
@@ -170,11 +176,16 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
-	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
-			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
+	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
-$(PNR_OUT): $(NETLIST) $(CONSTRAINT)
-	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+$(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
+	bash -e -o pipefail -c 'if [ "$(HAS_NEXTPNR_SDC)" = "1" ]; then \
+			sdc_arg="--sdc $(abspath $(SDC_CONSTRAINT))"; \
+		else \
+			echo "INFO: $(NEXTPNR) does not support --sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
+			sdc_arg=""; \
+		fi; \
+		$(PNR_CMD) $${sdc_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
