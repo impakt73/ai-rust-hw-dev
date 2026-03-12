@@ -92,14 +92,69 @@ make TARGET=artix7_alchitry_au
 # - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
 ```
 
+### Generate Standardized FPGA Design Stats
+
+Use the standardized stats workflow whenever you need concise, machine-friendly
+resource utilization and max-frequency information for a supported FPGA target.
+The stats tooling requires **Python 3.10 or newer**.
+
+```bash
+# From rtl/fpga/
+make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text
+make TARGET=ecp5_icepi_zero stats STATS_FORMAT=json
+make TARGET=artix7_alchitry_au stats STATS_FORMAT=markdown
+```
+
+This workflow:
+
+1. Runs the normal synthesis/place-and-route flow for the selected target
+2. Extracts the authoritative max-frequency result for that target
+3. Extracts post-route resource utilization plus post-synthesis cell counts
+4. Writes normalized artifacts to `build/<target>/`
+
+Generated files:
+
+- `build/<target>/riscv_fpga_stats.json`
+- `build/<target>/riscv_fpga_stats.md`
+
+If you already have up-to-date build artifacts and only need to reformat them:
+
+```bash
+python3 fpga_design_stats.py --target ice40_alchitry_cu --format json
+```
+
+The script rejects `--build-dir` together with `--build` because the build flow
+always writes to the target's standard `build/<target>/` output directory.
+
+### Timing / Utilization Sources Used by the Stats Workflow
+
+- **`ice40_alchitry_cu`**
+  - Routed Fmax: `build/ice40_alchitry_cu/nextpnr.log`
+  - Secondary timing cross-check: `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
+  - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
+  - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
+
+- **`ecp5_icepi_zero`**
+  - Routed Fmax: `build/ecp5_icepi_zero/nextpnr.log`
+  - Resource utilization: `build/ecp5_icepi_zero/nextpnr.log`
+  - Synthesis cell counts: `build/ecp5_icepi_zero/yosys.log`
+
+- **`artix7_alchitry_au`**
+  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Utilization report: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
+
 ### Program FPGA (Requires Hardware)
 
 ```bash
 # Connect Alchitry Cu v1 board via USB
 sudo make program
 
-# Or manually using iceprog:
-sudo iceprog build/riscv_fpga.bin
+# Use SRAM explicitly if you want a volatile load instead of the default flash programming:
+sudo make program PROGRAM_MODE=sram
+
+# Or manually using openFPGALoader:
+sudo openFPGALoader -b ice40_generic -m build/ice40_alchitry_cu/riscv_fpga.bin  # SRAM
+sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  # Flash
 ```
 
 ## Files
@@ -107,9 +162,11 @@ sudo iceprog build/riscv_fpga.bin
 - **`common/fpga_common_top.sv`**: Shared FPGA top logic (CPU + host UART + reset-button synchronization)
 - **`ice40_alchitry_cu/ice40_alchitry_cu_top.sv`**: iCE40 top-level FPGA wrapper module
 - **`ice40_alchitry_cu/ice40_alchitry_cu.pcf`**: iCE40 pin constraint file for Alchitry Cu v1 board
+- **`ice40_alchitry_cu/timing_async.sdc`**: iCE40 asynchronous external I/O timing exceptions
 - **`ecp5_icepi_zero/ecp5_icepi_zero_top.sv`**: ECP5 top-level FPGA wrapper for iCE Pi Zero
 - **`../common/fpu/*.sv`**: Shared floating-point unit implementation sources (always included for synthesis; `ENABLE_F_EXT` remains disabled by default)
 - **`ecp5_icepi_zero/ecp5_icepi_zero.lpf`**: ECP5 LPF constraint file for iCE Pi Zero
+- **`ecp5_icepi_zero/timing_async.sdc`**: ECP5 asynchronous external I/O timing exceptions
 - **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
 - **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
 - **`Makefile`**: Build automation for synthesis workflow
@@ -120,10 +177,12 @@ sudo iceprog build/riscv_fpga.bin
 - `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
-- `make program` - Program connected FPGA board
+- `make program` - Program connected FPGA board (default: flash on Alchitry Cu, SRAM on other targets)
 - `make clean` - Remove build artifacts
 - `make check-tools` - Verify required tools are installed
 - `make help` - Show all available targets
+- `make program PROGRAM_MODE=flash` - Program the persistent configuration flash
+- `make program PROGRAM_MODE=sram` - Program SRAM explicitly for a volatile load
 
 ## Hardware Requirements
 
@@ -131,11 +190,13 @@ sudo iceprog build/riscv_fpga.bin
 - **Resources Used**: 4,399 SB_LUT4s, 7,306 total mapped cells, 30 BRAMs
 - **Clock**: 100 MHz input → 25 MHz system clock (via PLL)
 - **Peripherals**: 8 LEDs on main board
-- **Programming**: USB cable for iceprog
+- **Programming**: USB cable for openFPGALoader (the Alchitry Cu works with `-b ice40_generic`)
 
 ## Artix-7 (Alchitry Au) Toolchain Notes
 
 The Artix-7 target now uses the proprietary Vivado CLI flow in batch mode. The flow is encapsulated in `artix7_alchitry_au/vivado_build.tcl`, which reads all RTL/XDC inputs, runs synthesis/place/route, and emits the bitstream plus reports into `build/artix7_alchitry_au/`.
+
+The Yosys-based targets keep board pin constraints in PCF/LPF files and store asynchronous external-I/O timing exceptions in target-specific `.sdc` files. The Makefile now feeds those SDC files into the nextpnr phase when the installed nextpnr build supports `--sdc`; otherwise the files remain checked-in timing-intent artifacts alongside the existing open-source flow.
 
 By default the Makefile expects `vivado` to be available in your `PATH`. If needed, override the executable path:
 
@@ -226,6 +287,8 @@ lsusb | grep 0403:6010
 sudo usermod -a -G dialout $USER
 # Log out and back in for changes to take effect
 ```
+
+For `TARGET=ice40_alchitry_cu`, `make program` now programs flash by default because SRAM programming has been unreliable on the Alchitry Cu. Use `make program PROGRAM_MODE=sram` if you want a volatile SRAM load instead. Other targets still default to SRAM programming.
 
 ### Simulation works but FPGA doesn't
 

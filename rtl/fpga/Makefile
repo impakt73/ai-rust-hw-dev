@@ -59,7 +59,9 @@ DEVICE = hx8k
 PACKAGE = cb132
 FPGA_DIR = ice40_alchitry_cu
 TOP_MODULE = ice40_alchitry_cu_top
+DEFAULT_PROGRAM_MODE = flash
 CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
+SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
 SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -68,7 +70,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--asc $(PNR_OUT) \
 		--freq 25
 PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
-PROGRAM_CMD = $(ICEPROG) $(BIN)
+OPENFPGALOADER_BOARD = ice40_generic
 OUTPUT_EXT = bin
 endif
 
@@ -77,7 +79,9 @@ DEVICE = 25k
 PACKAGE = CABGA256
 FPGA_DIR = ecp5_icepi_zero
 TOP_MODULE = ecp5_icepi_zero_top
+DEFAULT_PROGRAM_MODE = sram
 CONSTRAINT = $(FPGA_DIR)/ecp5_icepi_zero.lpf
+SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
 SYNTH_CMD = synth_ecp5 -top $(TOP_MODULE) -json $(NETLIST)
 PNR_OUT = $(BUILD_DIR)/$(PROJECT).config
 PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
@@ -86,7 +90,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--textcfg $(PNR_OUT) \
 		--freq 50
 PACK_CMD = $(ECPPACK) $(PNR_OUT) $(BIN)
-PROGRAM_CMD = $(OPENFPGALOADER) -b icepi_zero $(BIN)
+OPENFPGALOADER_BOARD = icepi_zero
 OUTPUT_EXT = bit
 endif
 
@@ -94,10 +98,25 @@ ifeq ($(TARGET),artix7_alchitry_au)
 PART = xc7a35tftg256-1
 FPGA_DIR = artix7_alchitry_au
 TOP_MODULE = artix7_alchitry_au_top
+DEFAULT_PROGRAM_MODE = sram
 CONSTRAINT = $(FPGA_DIR)/alchitry_au.xdc
 VIVADO_TCL = $(FPGA_DIR)/vivado_build.tcl
-PROGRAM_CMD = $(OPENFPGALOADER) -b alchitry_au $(BIN)
+OPENFPGALOADER_BOARD = alchitry_au
 OUTPUT_EXT = bit
+endif
+
+PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
+
+ifdef OPENFPGALOADER_BOARD
+ifeq ($(PROGRAM_MODE),sram)
+OPENFPGALOADER_PROGRAM_FLAG = -m
+else ifeq ($(PROGRAM_MODE),flash)
+OPENFPGALOADER_PROGRAM_FLAG = -f
+else
+$(error Unsupported PROGRAM_MODE value '$(PROGRAM_MODE)'. Set PROGRAM_MODE=sram or PROGRAM_MODE=flash)
+endif
+
+PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROGRAM_FLAG) $(BIN)
 endif
 
 ifndef FPGA_DIR
@@ -122,14 +141,20 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
 ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
+PYTHON3 = python3
+STATS_SCRIPT = ./fpga_design_stats.py
+STATS_FORMAT ?= text
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
+endif
+
+ifneq ($(TARGET),artix7_alchitry_au)
+HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc" && echo 1 || echo 0)
 endif
 
 # Default target
@@ -143,16 +168,24 @@ $(BUILD_DIR):
 # Synthesis with Yosys
 ifeq ($(TARGET),artix7_alchitry_au)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
-	$(VIVADO) -mode batch -source $(abspath $(VIVADO_TCL)) -tclargs \
+	$(VIVADO) -mode batch \
+		-journal "$(abspath $(BUILD_DIR)/vivado.jou)" \
+		-log "$(abspath $(BUILD_DIR)/vivado.log)" \
+		-source $(abspath $(VIVADO_TCL)) -tclargs \
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
-		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))") 2>&1 | tee $(BUILD_DIR)/vivado.log
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
-	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); \
-			     $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
+	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
-$(PNR_OUT): $(NETLIST) $(CONSTRAINT)
-	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+$(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
+	bash -e -o pipefail -c 'if [ "$(HAS_NEXTPNR_SDC)" = "1" ]; then \
+			sdc_arg="--sdc $(abspath $(SDC_CONSTRAINT))"; \
+		else \
+			echo "INFO: $(NEXTPNR) does not support --sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
+			sdc_arg=""; \
+		fi; \
+		$(PNR_CMD) $${sdc_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
@@ -186,6 +219,16 @@ utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
 endif
 
+# Standardized design stats summary
+.PHONY: check-python
+check-python:
+	@$(PYTHON3) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA stats generation"; exit 1)
+
+.PHONY: stats
+stats: check-python
+	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
+
 
 # Program FPGA
 .PHONY: program
@@ -214,6 +257,7 @@ else
 endif
 	@echo "  timing       - Generate timing report"
 	@echo "  utilization  - Show resource utilization"
+	@echo "  stats        - Build and print standardized timing/utilization stats"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Show this help message"
@@ -221,34 +265,49 @@ endif
 	@echo "Prerequisites:"
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - vivado     : Xilinx Vivado batch/CLI tools"
-	@echo "  - openFPGALoader : Optional board programming tool"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
-	@echo "  - icestorm   : Bitstream generation and programming"
+	@echo "  - icestorm   : Bitstream generation tools"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 endif
 	@echo ""
 	@echo "Target selection:"
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
+	@echo ""
+	@echo "Stats output format:"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json"
+	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
+	@echo ""
+	@echo "Programming selection:"
+	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
+ifneq ($(DEFAULT_PROGRAM_MODE),sram)
+	@echo "  - make program PROGRAM_MODE=sram"
+endif
+ifneq ($(DEFAULT_PROGRAM_MODE),flash)
+	@echo "  - make program PROGRAM_MODE=flash"
+endif
 
 .PHONY: check-tools
-check-tools:
+check-tools: check-python
 	@echo "Checking for required tools..."
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
 ifeq ($(TARGET),ice40_alchitry_cu)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "ERROR: openFPGALoader not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 endif
 endif
 	@echo "All required tools found!"

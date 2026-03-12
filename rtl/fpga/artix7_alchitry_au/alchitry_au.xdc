@@ -48,3 +48,12 @@ set_property PACKAGE_PIN P15 [get_ports usb_rx]
 set_property IOSTANDARD LVCMOS33 [get_ports usb_rx]
 set_property PACKAGE_PIN P16 [get_ports usb_tx]
 set_property IOSTANDARD LVCMOS33 [get_ports usb_tx]
+
+# Timing exceptions for asynchronous external I/O.
+# Cut async input-originated timing paths broadly, and cut async outputs
+# that have no synchronous board-level capture requirement.
+set_false_path -from [get_ports rst_n_btn]
+
+set_false_path -from [get_ports usb_rx]
+
+set_false_path -to [get_ports {usb_tx led[*]}]
