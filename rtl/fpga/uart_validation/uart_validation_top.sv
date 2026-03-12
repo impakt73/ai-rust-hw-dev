@@ -24,6 +24,7 @@ module uart_validation_top #(
     input  logic       usb_rx,
     output logic       usb_tx
 );
+    localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
 
     // ============================================================
     // PLL Configuration - Generate 25 MHz from 100 MHz input
@@ -63,6 +64,7 @@ module uart_validation_top #(
     );
 
     logic rst_n_btn_sync2;
+    logic rst_n_btn_debounced;
     ff_sync #(
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
@@ -72,8 +74,18 @@ module uart_validation_top #(
         .dout(rst_n_btn_sync2)
     );
 
+    debouncer #(
+        .CLK_FREQ_HZ(CLK_FREQ_HZ),
+        .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+    ) rst_n_btn_debouncer_inst (
+        .clk(sys_clk),
+        .rst_n(rst_n_btn_sync2),
+        .din(rst_n_btn_sync2),
+        .dout(rst_n_btn_debounced)
+    );
+
     logic rst_n;
-    assign rst_n = pll_locked_sync2 & rst_n_btn_sync2;
+    assign rst_n = pll_locked_sync2 & rst_n_btn_debounced;
 
     // ============================================================
     // UART + FIFO Signals

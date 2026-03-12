@@ -14,6 +14,7 @@ module led_pattern_top (
     // LED outputs (8 LEDs on Alchitry Cu main board)
     output logic [7:0] led
 );
+    localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
 
     // ============================================================
     // Parameters
@@ -25,16 +26,29 @@ module led_pattern_top (
     localparam int COUNTER_WIDTH = $clog2(SHIFT_COUNT + 1);  // 27 bits for 100M
 
     // ============================================================
-    // Reset Synchronizer (2-FF for metastability protection)
+    // Reset synchronizer plus debouncer
     // ============================================================
-    logic rst_n_sync1, rst_n_sync2;
+    logic rst_n_sync2;
     logic rst_n;
-    
-    always_ff @(posedge clk) begin
-        rst_n_sync1 <= rst_n_btn;
-        rst_n_sync2 <= rst_n_sync1;
-    end
-    assign rst_n = rst_n_sync2;
+
+    ff_sync #(
+        .WIDTH(1)
+    ) rst_n_btn_sync_inst (
+        .clk(clk),
+        .rst_n(1'b1),
+        .din(rst_n_btn),
+        .dout(rst_n_sync2)
+    );
+
+    debouncer #(
+        .CLK_FREQ_HZ(CLOCK_FREQ),
+        .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+    ) rst_n_btn_debouncer_inst (
+        .clk(clk),
+        .rst_n(rst_n_sync2),
+        .din(rst_n_sync2),
+        .dout(rst_n)
+    );
 
     // ============================================================
     // Second Counter

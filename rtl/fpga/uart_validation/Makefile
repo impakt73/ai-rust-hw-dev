@@ -15,8 +15,10 @@ BUILD_DIR = build
 
 # Source files
 RTL_SOURCES = \
+	$(RTL_DIR)/primitives/debouncer.sv \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
+	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \
 	$(RTL_DIR)/io/uart.sv
 

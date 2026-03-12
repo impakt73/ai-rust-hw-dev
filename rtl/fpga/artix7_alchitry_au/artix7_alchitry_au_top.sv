@@ -12,7 +12,10 @@ module artix7_alchitry_au_top #(
     input  logic usb_rx,
     output logic usb_tx
 );
+    localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
+
     logic rst_n_btn_sync2;
+    logic rst_n_btn_debounced;
     // Keep synchronizer reset deasserted so it can safely sample the async button
     // even while downstream reset is asserted.
     ff_sync #(
@@ -22,6 +25,16 @@ module artix7_alchitry_au_top #(
         .rst_n(1'b1),
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
+    );
+
+    debouncer #(
+        .CLK_FREQ_HZ(100_000_000),
+        .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+    ) rst_n_btn_debouncer_inst (
+        .clk(clk),
+        .rst_n(rst_n_btn_sync2),
+        .din(rst_n_btn_sync2),
+        .dout(rst_n_btn_debounced)
     );
 
     // Alchitry Au: 100 MHz input -> 50 MHz system clock
@@ -54,7 +67,7 @@ module artix7_alchitry_au_top #(
         .DRDY(),
         .DWE(1'b0),
         .PWRDWN(1'b0),
-        .RST(~rst_n_btn_sync2),
+        .RST(~rst_n_btn_debounced),
         .CLKFBOUT(pll_clk_fb),
         .CLKOUT0(pll_clk_out),
         .CLKOUT1(),

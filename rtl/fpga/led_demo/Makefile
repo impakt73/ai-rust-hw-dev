@@ -13,7 +13,10 @@ FPGA_DIR = .
 BUILD_DIR = build
 
 # Source files - minimal design only
-SOURCES = $(FPGA_DIR)/led_pattern_top.sv
+SOURCES = \
+	../../common/primitives/debouncer.sv \
+	../../common/primitives/ff_sync.sv \
+	$(FPGA_DIR)/led_pattern_top.sv
 
 # Constraint file
 PCF = $(FPGA_DIR)/alchitry_cu.pcf
