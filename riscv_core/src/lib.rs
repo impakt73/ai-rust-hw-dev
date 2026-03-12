@@ -32,6 +32,10 @@ pub struct RegFile;
 #[verilog(src = "../rtl/common/cpu/decompress.sv", name = "decompress")]
 pub struct Decompress;
 
+// Define FetchBuffer module
+#[verilog(src = "../rtl/common/cpu/fetch_buffer.sv", name = "fetch_buffer")]
+pub struct FetchBuffer;
+
 // Define FP RegFile module
 #[verilog(src = "../rtl/common/fpu/fp_regfile.sv", name = "fp_regfile")]
 pub struct FpRegFile;
@@ -338,6 +342,11 @@ pub fn create_regfile_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::
 // Helper function to create a runtime for the Decompressor
 pub fn create_decompress_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["cpu/decompress.sv"])
+}
+
+// Helper function to create a runtime for the Fetch Buffer
+pub fn create_fetch_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["cpu/fetch_buffer.sv", "cpu/decompress.sv"])
 }
 
 // Helper function to create a runtime for the FP RegFile

@@ -20,9 +20,9 @@ module fetch_buffer (
     input  logic        is_branch,       // Current state is S_BRANCH
     input  logic        is_writeback,    // Current state is S_WRITEBACK
     
-    // Decompressor interface
-    output logic [31:0] decomp_input,    // Assembled instruction for decompressor
-    input  logic        decomp_is_compressed, // From decompressor: instruction is compressed
+    // Decompressed instruction output
+    output logic [31:0] decomp_output,   // Decompressed 32-bit instruction
+    output logic        decomp_is_valid, // Decompressed instruction is valid
     
     // Instruction tracking
     output logic        current_insn_compressed, // Current executing instruction is compressed
@@ -40,9 +40,9 @@ module fetch_buffer (
     logic [15:0] buffered_half_next; // Next value for buffered_half
     
     // Assembled instruction (16-bit or 32-bit)
-    logic [31:0] assembled_insn;     // Assembled instruction before decompression
-    logic [15:0] current_half;       // Current half-word from memory
-    logic        insn_is_compressed; // Current assembled instruction is compressed
+    logic [31:0] assembled_insn;         // Assembled instruction before decompression
+    logic [15:0] current_half;           // Current half-word from memory
+    logic        insn_is_compressed;     // Current assembled instruction is compressed
     
     // ============================================================
     // Buffer Registers
@@ -57,7 +57,7 @@ module fetch_buffer (
             buffer_valid <= buffer_valid_next;
             // Track whether current instruction being executed is compressed
             if (ir_write)
-                current_insn_compressed <= decomp_is_compressed;
+                current_insn_compressed <= insn_is_compressed;
         end
     end
     
@@ -95,9 +95,18 @@ module fetch_buffer (
             end
         end
         
-        // Output assembled instruction for decompressor
-        decomp_input = assembled_insn;
     end
+
+    // ============================================================
+    // Decompressor
+    // ============================================================
+    decompress u_decompress (
+        .insn_16(assembled_insn[15:0]),
+        .insn_32_in(assembled_insn),
+        .insn_32(decomp_output),
+        .is_compressed(),
+        .is_valid(decomp_is_valid)
+    );
     
     // ============================================================
     // Fetch Buffer State Machine

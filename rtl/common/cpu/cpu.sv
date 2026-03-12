@@ -95,11 +95,9 @@ module cpu #(
     // ============================================================
     // RV32C Fetch Buffer and Decompressor Signals
     // ============================================================
-    // Decompressor signals
-    logic [31:0] decomp_input_32;    // Full assembled instruction (input to decompressor)
+    // Fetch buffer outputs
     logic [31:0] decomp_output;      // Decompressed 32-bit instruction
-    logic        decomp_is_compressed; // Decompressor detected compressed instruction
-    logic        decomp_is_valid;    // Decompressor output is valid
+    logic        decomp_is_valid;    // Decompressed instruction is valid
     
     // Instruction width tracking (from fetch buffer)
     logic        current_insn_compressed; // Current instruction being executed is compressed
@@ -489,7 +487,7 @@ module cpu #(
     end
     
     // ============================================================
-    // RV32C Fetch Buffer and Decompressor Module Instantiations
+    // RV32C Fetch Buffer and Decompressor Module Instantiation
     // ============================================================
     
     // Instantiate fetch buffer module
@@ -504,21 +502,10 @@ module cpu #(
         .pc_write(pc_write),
         .is_branch(current_state == S_BRANCH),
         .is_writeback(current_state == S_WRITEBACK),
-        .decomp_input(decomp_input_32),
-        .decomp_is_compressed(decomp_is_compressed),
+        .decomp_output(decomp_output),
+        .decomp_is_valid(decomp_is_valid),
         .current_insn_compressed(current_insn_compressed),
         .pc_increment(pc_increment)
-    );
-    
-    // Instantiate decompressor module
-    // The decompressor looks at bits [15:0] to determine if compressed
-    // and either decompresses or passes through the full 32 bits
-    decompress decomp_inst (
-        .insn_16(decomp_input_32[15:0]),
-        .insn_32_in(decomp_input_32),
-        .insn_32(decomp_output),
-        .is_compressed(decomp_is_compressed),
-        .is_valid(decomp_is_valid)
     );
     
     // ============================================================
