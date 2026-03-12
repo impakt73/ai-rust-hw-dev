@@ -53,7 +53,6 @@ module uart_validation_top #(
     // ============================================================
     logic pll_locked_sync2;
     ff_sync #(
-        .STAGES(2),
         .WIDTH(1)
     ) pll_locked_sync_inst (
         .clk(sys_clk),
@@ -64,7 +63,6 @@ module uart_validation_top #(
 
     logic rst_n_btn_sync2;
     ff_sync #(
-        .STAGES(2),
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(sys_clk),

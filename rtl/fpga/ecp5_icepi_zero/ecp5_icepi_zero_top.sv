@@ -18,7 +18,6 @@ module ecp5_icepi_zero_top #(
     // Keep synchronizer reset deasserted so it can safely sample the async button
     // even while downstream reset is asserted.
     ff_sync #(
-        .STAGES(2),
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(sys_clk),

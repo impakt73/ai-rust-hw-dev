@@ -22,7 +22,7 @@
 module async_fifo #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 8,
-    parameter int SYNC_STAGES = 2
+    parameter int SYNC_STAGES = 3
 ) (
     input  logic             wr_clk,
     input  logic             rd_clk,
