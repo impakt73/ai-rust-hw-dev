@@ -1,3 +1,4 @@
+`default_nettype none
 // Memory Interface Module
 // Handles memory operation sizing and load data formatting
 // Supports atomic operations (A extension)
@@ -76,3 +77,4 @@ module mem_interface (
     end
 
 endmodule
+`default_nettype wire

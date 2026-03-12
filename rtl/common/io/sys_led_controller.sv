@@ -1,3 +1,4 @@
+`default_nettype none
 // System LED Controller
 // Generates registered system LED status from CPU state, activity handshakes, and com_err.
 //
@@ -116,3 +117,4 @@ module sys_led_controller #(
     end
 
 endmodule
+`default_nettype wire

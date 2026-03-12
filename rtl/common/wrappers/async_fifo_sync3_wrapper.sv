@@ -1,3 +1,4 @@
+`default_nettype none
 module async_fifo_sync3_wrapper (
     input  logic       wr_clk,
     input  logic       rd_clk,
@@ -29,3 +30,4 @@ module async_fifo_sync3_wrapper (
     );
 
 endmodule
+`default_nettype wire

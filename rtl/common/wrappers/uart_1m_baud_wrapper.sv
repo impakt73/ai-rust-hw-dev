@@ -1,3 +1,4 @@
+`default_nettype none
 module uart_1m_baud_wrapper (
     input  logic       clk,
     input  logic       rst_n,
@@ -30,3 +31,4 @@ module uart_1m_baud_wrapper (
         .rx_in(rx_in)
     );
 endmodule
+`default_nettype wire

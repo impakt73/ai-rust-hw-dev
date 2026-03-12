@@ -1,3 +1,4 @@
+`default_nettype none
 module sram_test_wrapper (
     input  logic        clk,
     input  logic        we,
@@ -19,3 +20,4 @@ module sram_test_wrapper (
         .rdata(rdata)
     );
 endmodule
+`default_nettype wire

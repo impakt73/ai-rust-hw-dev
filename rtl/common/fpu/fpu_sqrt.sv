@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Square Root Module
 // Simplified square root implementation
 
@@ -58,3 +59,4 @@ module fpu_sqrt (
     end
 
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // Activity Indicator
 // Emits a single registered square-wave cycle when activity is triggered.
 //
@@ -78,3 +79,4 @@ module activity_indicator #(
     end
 
 endmodule
+`default_nettype wire

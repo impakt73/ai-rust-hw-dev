@@ -1,3 +1,4 @@
+`default_nettype none
 module video_sync_wrapper (
     input  logic clk,
     input  logic rst_n,
@@ -71,3 +72,4 @@ module video_sync_minimal_wrapper (
     );
 
 endmodule
+`default_nettype wire

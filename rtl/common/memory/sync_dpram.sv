@@ -1,3 +1,4 @@
+`default_nettype none
 // Synchronous Simple Dual-Port RAM Module
 // One write port, one read port, separate clocks
 // Designed to infer to iCE40 Block RAM on FPGA
@@ -61,3 +62,4 @@ module sync_dpram #(
     end
 
 endmodule
+`default_nettype wire

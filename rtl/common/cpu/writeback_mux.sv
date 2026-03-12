@@ -1,3 +1,4 @@
+`default_nettype none
 // Writeback Multiplexer Module
 // Selects the appropriate data to write back to the register file
 // Supports atomic operations (A extension) and FP operations (F extension)
@@ -58,3 +59,4 @@ module writeback_mux (
     end
 
 endmodule
+`default_nettype wire

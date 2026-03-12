@@ -1,3 +1,4 @@
+`default_nettype none
 // LED Controller Peripheral
 // Simple 8-bit LED output controller
 // Memory-mapped at 0x50000000 in RTL peripheral address space
@@ -88,3 +89,4 @@ module led_controller_peripheral (
     end
 
 endmodule
+`default_nettype wire

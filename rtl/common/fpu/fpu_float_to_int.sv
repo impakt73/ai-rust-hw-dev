@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Float to Integer Converter
 // Converts IEEE 754 single-precision float to 32-bit integer
 
@@ -72,3 +73,4 @@ module fpu_float_to_int (
     end
 
 endmodule
+`default_nettype wire

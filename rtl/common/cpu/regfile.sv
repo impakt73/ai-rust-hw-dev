@@ -1,3 +1,4 @@
+`default_nettype none
 // Register File Module
 // 32x32-bit register file for RISC-V RV32I
 //
@@ -68,3 +69,4 @@ module regfile (
     );
 
 endmodule
+`default_nettype wire

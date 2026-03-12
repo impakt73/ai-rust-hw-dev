@@ -1,3 +1,4 @@
+`default_nettype none
 // Synchronous FIFO Module
 // Generic FIFO with configurable data width and depth
 // Uses sync_dpram storage with ready/valid handshakes on both sides
@@ -164,3 +165,4 @@ module sync_fifo #(
     end
 
 endmodule
+`default_nettype wire

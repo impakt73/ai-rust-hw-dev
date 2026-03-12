@@ -1,3 +1,4 @@
+`default_nettype none
 module debouncer_wrapper (
     input  logic clk,
     input  logic rst_n,
@@ -16,3 +17,4 @@ module debouncer_wrapper (
     );
 
 endmodule
+`default_nettype wire

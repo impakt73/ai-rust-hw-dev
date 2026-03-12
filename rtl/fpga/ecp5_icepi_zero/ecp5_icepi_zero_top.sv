@@ -1,3 +1,4 @@
+`default_nettype none
 // FPGA Top-Level Module for iCE Pi Zero (ECP5-25F)
 // Wraps RISC-V CPU with host communication via USB serial
 
@@ -45,3 +46,4 @@ module ecp5_icepi_zero_top #(
     assign led = sys_led_out[0];
 
 endmodule
+`default_nettype wire

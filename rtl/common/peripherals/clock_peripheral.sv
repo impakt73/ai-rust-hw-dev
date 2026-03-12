@@ -1,3 +1,4 @@
+`default_nettype none
 // Clock Peripheral
 // Provides elapsed time counters since reset
 // Memory-mapped at 0x60000000 in RTL peripheral address space
@@ -247,3 +248,4 @@ module clock_peripheral #(
     end
 
 endmodule
+`default_nettype wire

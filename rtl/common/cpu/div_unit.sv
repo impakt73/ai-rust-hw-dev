@@ -1,3 +1,4 @@
+`default_nettype none
 // Division Unit Module
 // Hardware-synthesizable division using Non-Restoring Algorithm
 // Parameterizable width for signed and unsigned division and remainder
@@ -269,3 +270,4 @@ module div_unit #(
     end
 
 endmodule
+`default_nettype wire

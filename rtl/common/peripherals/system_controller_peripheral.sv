@@ -1,3 +1,4 @@
+`default_nettype none
 // System Controller Peripheral
 // Controls CPU boot process, system reset, and CPU reset
 // Provides CPU status monitoring via memory-mapped registers
@@ -185,3 +186,4 @@ module system_controller (
     assign unused_size = mem_a_size;
 
 endmodule
+`default_nettype wire

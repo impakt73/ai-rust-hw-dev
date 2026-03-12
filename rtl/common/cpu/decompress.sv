@@ -1,3 +1,4 @@
+`default_nettype none
 // RV32C Instruction Decompressor
 // Expands 16-bit compressed instructions to 32-bit standard RISC-V instructions
 // Pure combinational logic (no clock, no state)
@@ -428,3 +429,4 @@ module decompress (
     endtask
 
 endmodule
+`default_nettype wire

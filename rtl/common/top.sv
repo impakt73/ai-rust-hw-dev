@@ -1,3 +1,4 @@
+`default_nettype none
 // Top-Level Module
 // Wraps the RISC-V CPU core with RTL peripherals
 // Uses registered_bus to route RTL peripheral requests
@@ -569,3 +570,4 @@ module top #(
     );
 
 endmodule
+`default_nettype wire

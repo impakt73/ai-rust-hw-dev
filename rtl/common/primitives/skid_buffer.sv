@@ -1,3 +1,4 @@
+`default_nettype none
 // Full skid buffer (2-entry)
 // Breaks combinational paths by registering out_valid/out_data and in_ready.
 //
@@ -108,3 +109,4 @@ module skid_buffer #(
     assign in_ready  = in_ready_current;
 
 endmodule
+`default_nettype wire

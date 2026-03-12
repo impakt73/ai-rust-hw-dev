@@ -1,3 +1,4 @@
+`default_nettype none
 // RV32C Fetch Buffer Module
 // Manages instruction fetch buffering for compressed (16-bit) and standard (32-bit) instructions
 // Handles half-word alignment and buffer state across instruction boundaries
@@ -153,3 +154,4 @@ module fetch_buffer (
     end
 
 endmodule
+`default_nettype wire

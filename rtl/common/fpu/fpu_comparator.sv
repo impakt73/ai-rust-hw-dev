@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Comparator Module
 // Implements floating-point less-than comparison
 
@@ -45,3 +46,4 @@ module fpu_comparator (
     end
 
 endmodule
+`default_nettype wire

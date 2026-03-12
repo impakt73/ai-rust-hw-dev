@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Division Assemble Module
 // Assembles the final result after division completes
 
@@ -85,3 +86,4 @@ module fpu_div_assemble (
     end
 
 endmodule
+`default_nettype wire

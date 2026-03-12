@@ -1,3 +1,4 @@
+`default_nettype none
 // Reset Controller Module
 // Generates a power-on reset signal that remains asserted (low) for a
 // configurable number of clock cycles after the input reset is deasserted.
@@ -59,3 +60,4 @@ module reset_controller #(
     end
 
 endmodule
+`default_nettype wire

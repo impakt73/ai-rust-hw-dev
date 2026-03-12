@@ -1,3 +1,4 @@
+`default_nettype none
 // Pure RTL Floating Point Unit (FPU) Module - Refactored for Yosys Compatibility
 // Implements RISC-V RV32F single-precision floating point operations
 // IEEE 754-2008 compliant using modular design (no functions)
@@ -501,3 +502,4 @@ module fpu (
     end
 
 endmodule
+`default_nettype wire

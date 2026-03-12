@@ -1,3 +1,4 @@
+`default_nettype none
 module fpga_common_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
@@ -79,3 +80,4 @@ module fpga_common_top #(
     );
 
 endmodule
+`default_nettype wire

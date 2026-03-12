@@ -1,3 +1,4 @@
+`default_nettype none
 module skid_buffer_wrapper (
     input  logic       clk,
     input  logic       rst_n,
@@ -23,3 +24,4 @@ module skid_buffer_wrapper (
     );
 
 endmodule
+`default_nettype wire

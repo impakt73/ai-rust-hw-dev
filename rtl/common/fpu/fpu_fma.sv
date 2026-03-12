@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Fused Multiply-Add Module
 // Implements (a * b) +/- c with sign control
 // Self-contained implementation with inlined multiplier and adder logic
@@ -247,3 +248,4 @@ module fpu_fma (
     assign flags = mul_flags | add_flags;
 
 endmodule
+`default_nettype wire

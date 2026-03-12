@@ -1,3 +1,4 @@
+`default_nettype none
 // UART Core Module
 // Simple 8N1 UART (8 data bits, no parity, 1 stop bit) without FIFOs
 // Uses ready/valid handshake interface for TX and RX
@@ -355,3 +356,4 @@ module uart #(
     end
 
 endmodule
+`default_nettype wire

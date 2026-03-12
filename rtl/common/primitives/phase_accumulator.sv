@@ -1,3 +1,4 @@
+`default_nettype none
 // Phase Accumulator
 // Generates a high-precision tick pulse using fractional phase accumulation.
 //
@@ -57,3 +58,4 @@ module phase_accumulator #(
     end
 
 endmodule
+`default_nettype wire

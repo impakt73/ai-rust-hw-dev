@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Division Setup Module
 // Handles special cases and sets up division parameters
 
@@ -66,3 +67,4 @@ module fpu_div_setup (
     end
 
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // Host Bus Interface Module
 // Routes host bus transactions between system bus, RX parser, and TX serializer.
 // Supports burst-native metadata framing and beat-stream execution.
@@ -440,3 +441,4 @@ module host_bus_interface (
 `endif
 
 endmodule
+`default_nettype wire
