@@ -15,7 +15,6 @@ module artix7_alchitry_au_top #(
     // Keep synchronizer reset deasserted so it can safely sample the async button
     // even while downstream reset is asserted.
     ff_sync #(
-        .STAGES(2),
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(clk),
@@ -72,7 +71,6 @@ module artix7_alchitry_au_top #(
 
     logic pll_locked_sync2;
     ff_sync #(
-        .STAGES(2),
         .WIDTH(1)
     ) pll_locked_sync_inst (
         .clk(sys_clk),

@@ -22,6 +22,15 @@ module ff_sync #(
     output logic [WIDTH-1:0] dout
 );
 
+    // Vivado
+    (* IOB = "false" *)
+    (* ASYNC_REG = "TRUE" *)
+    (* SHREG_EXTRACT = "NO" *)
+
+    // Quartus
+    (* useioff = 0 *)
+    (* PRESERVE *)
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION \"FORCED IF ASYNCHRONOUS\"" *)
     logic [WIDTH-1:0] sync_regs [0:STAGES-1];
 
     always_ff @(posedge clk) begin

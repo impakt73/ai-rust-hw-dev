@@ -167,7 +167,6 @@ module uart #(
     // RX input synchronizer (3-FF for metastability)
     logic rx_sync_1;
     ff_sync #(
-        .STAGES(3),
         .WIDTH(1),
         .RESET_VALUE(1'b1)
     ) rx_sync_inst (
