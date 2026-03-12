@@ -225,9 +225,9 @@ module synth_harness (
     // ============================================================
     // Fetch Buffer Test
     // ============================================================
-    logic [31:0] decomp_input;
-    logic current_insn_compressed;
-    logic [31:0] pc_increment;
+    logic [31:0] instruction;
+    logic        valid;
+    logic        pc_inc_2;
     
     fetch_buffer u_fetch_buffer (
         .clk(clk),
@@ -236,17 +236,16 @@ module synth_harness (
         .imem_ready(stim_sel[0]),
         .pc(stim_reg[1]),
         .ir_write(stim_sel[1]),
-        .pc_write(stim_sel[2]),
-        .is_branch(stim_sel[3]),
-        .is_writeback(stim_sel[4]),
-        .decomp_input(decomp_input),
-        .decomp_is_compressed(stim_sel[0]),  // Loop back for test
-        .current_insn_compressed(current_insn_compressed),
-        .pc_increment(pc_increment)
+        .invalidate_buffer(stim_sel[2]),
+        .instruction(instruction),
+        .valid(valid),
+        .pc_inc_2(pc_inc_2)
     );
     
     always_ff @(posedge clk) begin
-        result_reg <= decomp_input ^ pc_increment ^ {31'h0, current_insn_compressed};
+        // Fold the fetch buffer outputs into one observable register so synthesis
+        // keeps the instruction path, width tracking, and validity bit.
+        result_reg <= instruction ^ {30'h0, pc_inc_2, valid};
     end
 
 `elsif SYNTH_FP_REGFILE
