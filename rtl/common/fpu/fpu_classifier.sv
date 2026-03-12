@@ -1,3 +1,4 @@
+`default_nettype none
 // FPU Value Classifier Module
 // Provides classification signals for floating-point values
 
@@ -20,3 +21,4 @@ module fpu_classifier (
     end
 
 endmodule
+`default_nettype wire

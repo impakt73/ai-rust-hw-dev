@@ -1,3 +1,4 @@
+`default_nettype none
 // FPGA Top-Level Module for Alchitry Au (Artix-7 XC7A35T)
 // Wraps RISC-V CPU with host communication via USB serial
 
@@ -98,3 +99,4 @@ module artix7_alchitry_au_top #(
     assign led = sys_led_out;
 
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // Asynchronous FIFO Module
 // Generic FIFO with configurable data width and depth for clock domain crossing
 // Uses Gray-coded pointers synchronized with ff_sync and sync_dpram for storage
@@ -207,3 +208,4 @@ module async_fifo #(
     end
 
 endmodule
+`default_nettype wire

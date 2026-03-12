@@ -1,3 +1,4 @@
+`default_nettype none
 // CSR (Control and Status Register) File Module
 // Implements RISC-V CSR register file and operations
 // Includes support for F extension FCSR/FRM/FFLAGS
@@ -229,3 +230,4 @@ module csr_file (
     end
 
 endmodule
+`default_nettype wire

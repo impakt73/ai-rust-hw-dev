@@ -1,3 +1,4 @@
+`default_nettype none
 // Host TX Buffer Module
 // Serializes burst-native metadata framing and payload beat stream to host TX byte stream.
 
@@ -260,3 +261,4 @@ module host_bus_tx (
     assign tx_data = tx_byte;
 
 endmodule
+`default_nettype wire

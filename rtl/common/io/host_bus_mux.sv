@@ -1,3 +1,4 @@
+`default_nettype none
 // Host Bus Mux
 // Routes CPU memory transactions to either:
 // - System bus path (RTL peripherals, addr[31] == 0)
@@ -154,3 +155,4 @@ module host_bus_mux (
         end
     end
 endmodule
+`default_nettype wire

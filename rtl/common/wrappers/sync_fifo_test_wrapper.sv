@@ -1,3 +1,4 @@
+`default_nettype none
 module sync_fifo_test_wrapper (
     input  logic       clk,
     input  logic       rst_n,
@@ -26,3 +27,4 @@ module sync_fifo_test_wrapper (
     );
 
 endmodule
+`default_nettype wire

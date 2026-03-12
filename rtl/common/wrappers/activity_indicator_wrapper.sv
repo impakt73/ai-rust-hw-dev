@@ -1,3 +1,4 @@
+`default_nettype none
 module activity_indicator_wrapper (
     input  logic clk,
     input  logic rst_n,
@@ -16,3 +17,4 @@ module activity_indicator_wrapper (
     );
 
 endmodule
+`default_nettype wire

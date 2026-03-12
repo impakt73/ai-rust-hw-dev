@@ -1,3 +1,4 @@
+`default_nettype none
 module registered_bus_wrapper (
     input  logic        clk,
     input  logic        rst_n,
@@ -162,3 +163,4 @@ module registered_bus_wrapper (
     );
 
 endmodule
+`default_nettype wire

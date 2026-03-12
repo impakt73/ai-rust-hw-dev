@@ -1,3 +1,4 @@
+`default_nettype none
 // Video Sync Generator
 // Generates registered video timing outputs for raster-style interfaces such as
 // VGA or DVI.
@@ -163,3 +164,4 @@ module video_sync #(
     end
 
 endmodule
+`default_nettype wire

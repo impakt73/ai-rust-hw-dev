@@ -1,3 +1,4 @@
+`default_nettype none
 // Branch Decision Unit
 // Evaluates branch conditions for RISC-V branch instructions
 // All comparisons are performed directly on registered operands to break
@@ -31,3 +32,4 @@ module branch_unit (
     end
 
 endmodule
+`default_nettype wire

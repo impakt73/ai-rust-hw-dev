@@ -1,3 +1,4 @@
+`default_nettype none
 // SRAM Peripheral
 // 12KB memory-mapped SRAM peripheral with subword write masking
 // Memory-mapped at 0x70000000 in RTL peripheral address space
@@ -348,3 +349,4 @@ module sram_peripheral (
     end
 
 endmodule
+`default_nettype wire

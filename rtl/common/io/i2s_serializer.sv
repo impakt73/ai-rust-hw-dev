@@ -1,3 +1,4 @@
+`default_nettype none
 // I2S serializer for single-channel sample beats.
 //
 // Clocking note:
@@ -87,3 +88,4 @@ module i2s_serializer #(
     end
 
 endmodule
+`default_nettype wire

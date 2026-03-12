@@ -1,3 +1,4 @@
+`default_nettype none
 // Multiplication Unit Module
 // Hardware-synthesizable multiplication using Shift-and-Add Algorithm
 // Parameterizable width for all RISC-V M-extension multiply operations
@@ -214,3 +215,4 @@ module mul_unit #(
 
 endmodule
 
+`default_nettype wire

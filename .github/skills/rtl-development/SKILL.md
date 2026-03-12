@@ -161,6 +161,20 @@ The multi-cycle design adds handshaking signals:
 - Keep reset ports active-low as `rst_n`.
 - For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (!rst_n)`.
 
+### `default_nettype` Guards (MANDATORY)
+
+Every `.sv` file **must** begin with `` `default_nettype none `` and end with `` `default_nettype wire ``:
+
+```systemverilog
+`default_nettype none
+// … file content …
+`default_nettype wire
+```
+
+- The opening `` `default_nettype none `` turns implicit net declarations into compile errors, catching undeclared signals before they silently become 1-bit wires.
+- The closing `` `default_nettype wire `` restores the default so the guard does not bleed into other files included after this one.
+- All project `.sv` files already carry these guards. Any new file added under `rtl/` must include them.
+
 ### Linting
 ```bash
 # Lint SystemVerilog files before committing (RTL files are in subdirectories)

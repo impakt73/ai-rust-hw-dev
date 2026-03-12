@@ -1,3 +1,4 @@
+`default_nettype none
 // Synthesis Test Harness for Module Resource Analysis
 // This module wraps individual RTL modules to prevent optimization
 // during synthesis, allowing accurate resource measurement.
@@ -547,3 +548,4 @@ module synth_harness (
     assign led = result_reg[7:0];
 
 endmodule
+`default_nettype wire

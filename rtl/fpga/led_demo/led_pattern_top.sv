@@ -1,3 +1,4 @@
+`default_nettype none
 // LED Pattern Demo Top Module for Alchitry Cu v1
 // Minimal design that displays an alternating pattern on 8-bit LED output
 // Pattern shifts by one position every second
@@ -78,3 +79,4 @@ module led_pattern_top (
     assign led = led_pattern;
 
 endmodule
+`default_nettype wire

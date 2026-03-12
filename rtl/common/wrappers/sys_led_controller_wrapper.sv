@@ -1,3 +1,4 @@
+`default_nettype none
 module sys_led_controller_wrapper (
     input  logic       clk,
     input  logic       rst_n,
@@ -27,3 +28,4 @@ module sys_led_controller_wrapper (
     );
 
 endmodule
+`default_nettype wire

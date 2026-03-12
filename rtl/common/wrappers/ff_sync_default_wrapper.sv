@@ -1,3 +1,4 @@
+`default_nettype none
 module ff_sync_default_wrapper (
     input  logic clk,
     input  logic rst_n,
@@ -13,3 +14,4 @@ module ff_sync_default_wrapper (
     );
 
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 module i2s_serializer_equal_width_wrapper (
     input  logic       clk,
     input  logic       rst_n,
@@ -72,3 +73,4 @@ module i2s_serializer_truncate_wrapper (
         .i2s_sd(i2s_sd)
     );
 endmodule
+`default_nettype wire

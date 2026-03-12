@@ -1,3 +1,4 @@
+`default_nettype none
 // FPGA Top-Level Module for Alchitry Cu v1
 // Wraps RISC-V CPU with host communication via USB serial
 // Board: Alchitry Cu v1 (iCE40-HX8K-CB132)
@@ -204,3 +205,4 @@ module ice40_alchitry_cu_top #(
     assign io_seg = ~seg_pattern;
 
 endmodule
+`default_nettype wire

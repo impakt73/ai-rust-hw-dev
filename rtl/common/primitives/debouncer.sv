@@ -1,3 +1,4 @@
+`default_nettype none
 // Debouncer
 // Filters glitchy synchronized inputs and only updates the output after the
 // input remains stable for a configurable time window.
@@ -63,3 +64,4 @@ module debouncer #(
     end
 
 endmodule
+`default_nettype wire

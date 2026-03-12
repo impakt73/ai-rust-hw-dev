@@ -1,3 +1,4 @@
+`default_nettype none
 // ALU Module - Arithmetic Logic Unit
 // Implements RISC-V RV32I ALU operations
 // Multi-cycle support for multiplication and division operations
@@ -336,3 +337,4 @@ module alu #(
     end
 
 endmodule
+`default_nettype wire

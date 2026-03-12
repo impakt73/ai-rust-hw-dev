@@ -1,3 +1,4 @@
+`default_nettype none
 // Square Wave Generator
 // Generates a registered square wave by toggling output after a configurable
 // half-period count.
@@ -56,3 +57,4 @@ module square_wave_generator #(
     end
 
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // Flip-Flop Synchronizer
 // Synchronizes asynchronous signals into the local clock domain.
 //
@@ -49,3 +50,4 @@ module ff_sync #(
     assign dout = sync_regs[STAGES-1];
 
 endmodule
+`default_nettype wire

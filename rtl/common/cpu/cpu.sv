@@ -1,3 +1,4 @@
+`default_nettype none
 // CPU Core Module
 // Multi-cycle RISC-V RV32IMC processor with variable-latency memory support
 // Configurable extension support for resource-constrained FPGA targets
@@ -1237,3 +1238,4 @@ module cpu #(
     assign is_booting = (current_state == S_BOOT);
 
 endmodule
+`default_nettype wire

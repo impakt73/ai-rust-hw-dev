@@ -1,3 +1,4 @@
+`default_nettype none
 // Single-clock SRAM with 32-bit words and byte write masking.
 // Designed to infer block RAM on FPGA targets.
 //
@@ -63,3 +64,4 @@ module sram #(
     end
 
 endmodule
+`default_nettype wire

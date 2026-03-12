@@ -1,3 +1,4 @@
+`default_nettype none
 module registered_bus #(
     parameter int unsigned NUM_MASTERS = 1,
     parameter int unsigned NUM_SLAVES = 2,
@@ -233,3 +234,4 @@ module registered_bus #(
         end
     end
 endmodule
+`default_nettype wire

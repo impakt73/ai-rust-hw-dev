@@ -1,3 +1,4 @@
+`default_nettype none
 module sram_peripheral_test_wrapper (
     input  logic        clk,
     input  logic        rst_n,
@@ -25,3 +26,4 @@ module sram_peripheral_test_wrapper (
         .mem_d_ready(mem_d_ready)
     );
 endmodule
+`default_nettype wire

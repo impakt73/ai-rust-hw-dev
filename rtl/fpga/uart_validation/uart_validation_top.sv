@@ -1,3 +1,4 @@
+`default_nettype none
 // UART Validation Top Module for Alchitry Cu v1
 // Validation modes:
 //   0: External serial pin loopback (usb_rx -> usb_tx)
@@ -165,3 +166,4 @@ module uart_validation_top #(
     endgenerate
 
 endmodule
+`default_nettype wire

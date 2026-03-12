@@ -1,3 +1,4 @@
+`default_nettype none
 // Instruction Decoder Module
 // Decodes RISC-V RV32IMACF instructions
 // Configurable extension support for resource-constrained FPGA targets
@@ -655,3 +656,4 @@ module decoder #(
     end
 
 endmodule
+`default_nettype wire

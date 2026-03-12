@@ -1,3 +1,4 @@
+`default_nettype none
 // Floating Point Register File Module
 // 32x32-bit FP register file for RISC-V RV32F extension
 // Unlike integer x0, all FP registers (f0-f31) are writable
@@ -94,3 +95,4 @@ module fp_regfile #(
     endgenerate
 
 endmodule
+`default_nettype wire

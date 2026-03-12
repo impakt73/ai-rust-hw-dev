@@ -1,3 +1,4 @@
+`default_nettype none
 // Host RX Buffer Module
 // Parses burst-native 8-byte metadata framing from host RX byte stream.
 // Emits decoded packets as a beat stream with ready/valid handshaking.
@@ -241,3 +242,4 @@ module host_bus_rx (
     end
 
 endmodule
+`default_nettype wire
