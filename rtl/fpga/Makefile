@@ -153,6 +153,10 @@ ifeq ($(TARGET),ecp5_icepi_zero)
 NEXTPNR = nextpnr-ecp5
 endif
 
+ifneq ($(TARGET),artix7_alchitry_au)
+HAS_YOSYS_READ_SDC := $(shell $(YOSYS) -Q -p "help" 2>/dev/null | grep -q "^[[:space:]]*read_sdc\\b" && echo 1 || echo 0)
+endif
+
 # Default target
 .PHONY: all
 all: $(BIN) timing
@@ -172,11 +176,13 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) $(SDC_CONSTRAINT) | $(BUILD_DIR)
-	bash -e -o pipefail -c 'if $(YOSYS) -Q -p "help read_sdc" 2>/dev/null | grep -q "No such command or cell type"; then \
-			echo "INFO: $(YOSYS) does not support read_sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
-			timing_cmd=""; \
-		else \
+	bash -e -o pipefail -c 'if [ "$(HAS_YOSYS_READ_SDC)" = "1" ]; then \
 			timing_cmd="read_sdc $(abspath $(SDC_CONSTRAINT)); "; \
+		else \
+			if [ -f "$(SDC_CONSTRAINT)" ]; then \
+				echo "INFO: $(YOSYS) does not support read_sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
+			fi; \
+			timing_cmd=""; \
 		fi; \
 		$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $${timing_cmd}$(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
