@@ -2,6 +2,7 @@ use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 const S_FETCH: u8 = 0x1;
+const WORD_BYTES: usize = 4;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -20,17 +21,16 @@ fn write_u16(program: &mut [u8], addr: usize, value: u16) {
 }
 
 fn write_u32(program: &mut [u8], addr: usize, value: u32) {
-    program[addr] = (value & 0x0000_00ff) as u8;
-    program[addr + 1] = ((value >> 8) & 0x0000_00ff) as u8;
-    program[addr + 2] = ((value >> 16) & 0x0000_00ff) as u8;
-    program[addr + 3] = ((value >> 24) & 0x0000_00ff) as u8;
+    for byte_index in 0..WORD_BYTES {
+        program[addr + byte_index] = ((value >> (byte_index * 8)) & 0x0000_00ff) as u8;
+    }
 }
 
 fn read_u32(program: &[u8], addr: u32) -> u32 {
     let addr = addr as usize;
     let mut value = 0_u32;
 
-    for byte_index in 0..4 {
+    for byte_index in 0..WORD_BYTES {
         let byte = program.get(addr + byte_index).copied().unwrap_or(0);
         value |= u32::from(byte) << (byte_index * 8);
     }
