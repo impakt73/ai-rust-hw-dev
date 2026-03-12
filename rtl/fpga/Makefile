@@ -154,7 +154,7 @@ NEXTPNR = nextpnr-ecp5
 endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
-HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc\\b" && echo 1 || echo 0)
+HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc" && echo 1 || echo 0)
 endif
 
 # Default target
