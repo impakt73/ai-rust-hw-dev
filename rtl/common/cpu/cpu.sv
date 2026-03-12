@@ -148,13 +148,15 @@ module cpu #(
     // PC for the current instruction (captured when the instruction is fetched)
     logic [31:0] instr_pc_reg;
     
-    // Pre-computed branch/jump target registers (for timing closure)
-    // These are registered during DECODE/EXECUTE to avoid long combinational paths
-    // from the adder to next_pc_value in the same cycle
-    logic [31:0] branch_target_reg;  // pc + imm_b (for B-type branches)
-    logic [31:0] jal_target_reg;     // pc + imm_j (for JAL)
-    logic [31:0] jalr_target_reg;    // a_reg + imm_i (for JALR, computed during EXECUTE)
-    logic        jalr_target_write;  // Control signal to write jalr_target_reg
+    // Pre-computed control-flow target/link registers (for timing closure)
+    // control_target_reg holds the redirect target for branches, JAL, and JALR.
+    // link_addr_reg holds the return address written by JAL/JALR.
+    logic [31:0] control_target_reg;
+    logic [31:0] link_addr_reg;
+    logic        control_target_write;
+    logic        link_addr_write;
+    logic [31:0] control_target_next;
+    logic        control_flow_redirect;
     
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
@@ -376,30 +378,22 @@ module cpu #(
         end
     end
     
-    // Branch/Jump Target Registers
-    // Pre-compute branch and jump targets during DECODE to break timing path
+    // Control-Flow Target/Link Registers
+    // Pre-compute branch and jump targets during DECODE/EXECUTE to break timing path
     // For B-type and JAL: instr_pc_reg + immediate is computed during S_DECODE
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
+    // link_addr_reg mirrors the sequential fall-through PC for JAL/JALR.
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            branch_target_reg <= 32'h0;
-            jal_target_reg <= 32'h0;
-            jalr_target_reg <= 32'h0;
+            control_target_reg <= 32'h0;
+            link_addr_reg <= 32'h0;
         end else begin
-            // Capture B-type and JAL targets once the decoder's registered outputs are available.
-            // instr_pc_reg is loaded on ir_write, and imm_*_reg are the decoder's held outputs
-            // from that same fetch edge, so both stay aligned for the current instruction in S_DECODE.
-            if (current_state == S_DECODE) begin
-                branch_target_reg <= (instr_pc_reg + imm_b_reg) & ~32'h1;  // Halfword aligned for RV32C
-                jal_target_reg <= (instr_pc_reg + imm_j_reg) & ~32'h1;     // Halfword aligned for RV32C
-            end
-            // Capture JALR target during EXECUTE (a_reg + imm_i_reg)
-            // a_reg is stable after DECODE, imm_i_reg comes directly from the decoder register
-            if (jalr_target_write) begin
-                jalr_target_reg <= (a_reg + imm_i_reg) & ~32'h1;  // Halfword aligned for RV32C
-            end
+            if (control_target_write)
+                control_target_reg <= control_target_next;
+            if (link_addr_write)
+                link_addr_reg <= instr_pc_reg + pc_increment;
         end
     end
 
@@ -491,8 +485,9 @@ module cpu #(
     // RV32C Fetch Buffer Module Instantiation (with integrated decompressor)
     // ============================================================
     
-    assign invalidate_fetch_buffer = pc_write &&
-                                     ((current_state == S_BRANCH) || (current_state == S_WRITEBACK));
+    assign control_flow_redirect = (current_state == S_WRITEBACK && jump_reg) ||
+                                   (current_state == S_BRANCH && take_branch);
+    assign invalidate_fetch_buffer = pc_write && control_flow_redirect;
 
     // Instantiate fetch buffer module
     // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
@@ -520,15 +515,8 @@ module cpu #(
     always_comb begin
         next_pc_value = pc + pc_increment;  // Sequential: increment by 2 or 4 bytes
         
-        if (current_state == S_BRANCH) begin
-            if (take_branch)
-                next_pc_value = branch_target_reg;  // Use pre-computed branch target
-        end else if (current_state == S_WRITEBACK && jump_reg) begin
-            if (alu_src_reg)
-                next_pc_value = jalr_target_reg;    // Use pre-computed JALR target
-            else
-                next_pc_value = jal_target_reg;     // Use pre-computed JAL target
-        end
+        if (control_flow_redirect)
+            next_pc_value = control_target_reg;
     end
 
     assign pc_increment = pc_inc_2 ? 32'd2 : 32'd4;
@@ -747,7 +735,8 @@ module cpu #(
         instr_complete_internal = 1'b0;
         alu_in_valid = 1'b0;  // Default ALU request to inactive
         fpu_start = 1'b0;  // Default FPU start to inactive
-        jalr_target_write = 1'b0;  // Default JALR target write to inactive
+        control_target_write = 1'b0;
+        link_addr_write = 1'b0;
         
         case (current_state)
             S_FETCH: begin
@@ -759,6 +748,8 @@ module cpu #(
             S_DECODE: begin
                 // Decode instruction and present addresses to register file.
                 // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
+                if (branch_reg || (jump_reg && !alu_src_reg))
+                    control_target_write = 1'b1;
             end
             
             S_REG_READ: begin
@@ -796,10 +787,11 @@ module cpu #(
                         alu_out_write = 1'b1;
                     end
                     
-                    // Capture JALR target (a_reg + imm_i_reg) during EXECUTE
-                    // This breaks the timing path by registering the target before WRITEBACK
-                    if (jump_reg && alu_src_reg) begin
-                        jalr_target_write = 1'b1;
+                    if (jump_reg) begin
+                        link_addr_write = 1'b1;
+                        // Capture JALR target (a_reg + imm_i_reg) during EXECUTE.
+                        if (alu_src_reg)
+                            control_target_write = 1'b1;
                     end
                 end
                 // FP operations (may be multi-cycle, e.g., division)
@@ -969,6 +961,19 @@ module cpu #(
         end
     end
     
+    always_comb begin
+        control_target_next = control_target_reg;
+
+        if (current_state == S_DECODE) begin
+            if (branch_reg)
+                control_target_next = (instr_pc_reg + imm_b_reg) & ~32'h1;
+            else if (jump_reg && !alu_src_reg)
+                control_target_next = (instr_pc_reg + imm_j_reg) & ~32'h1;
+        end else if (current_state == S_EXECUTE && jump_reg && alu_src_reg) begin
+            control_target_next = (a_reg + imm_i_reg) & ~32'h1;
+        end
+    end
+
     // ALU source selection (multi-cycle: uses registered operands and control)
     always_comb begin
         // Default sources
@@ -983,11 +988,7 @@ module cpu #(
         end
         // Special cases in EXECUTE state
         else if (current_state == S_EXECUTE) begin
-            if (jump_reg) begin
-                // Compute PC+4 for return address using the instruction PC captured at decode
-                alu_a = instr_pc_reg;
-                alu_b = 32'd4;
-            end else if (is_auipc_reg) begin
+            if (is_auipc_reg) begin
                 // Use the PC captured for this instruction at decode time
                 alu_a = instr_pc_reg;
                 alu_b = imm_u_reg;
@@ -1143,6 +1144,7 @@ module cpu #(
         .sc_success(sc_success),    // A extension
         .fp_to_int(fp_to_int_reg),  // F extension
         .imm_u(imm_u_reg),
+        .link_addr(link_addr_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
         .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)
         .formatted_load_data(mdr),  // Use MDR (memory data register)
