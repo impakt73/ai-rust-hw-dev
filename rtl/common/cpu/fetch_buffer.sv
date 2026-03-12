@@ -40,9 +40,10 @@ module fetch_buffer (
     logic [15:0] buffered_half_next; // Next value for buffered_half
     
     // Assembled instruction (16-bit or 32-bit)
-    logic [31:0] assembled_insn;         // Assembled instruction before decompression
-    logic [15:0] current_half;           // Current half-word from memory
-    logic        insn_is_compressed;     // Current assembled instruction is compressed
+    logic [31:0] assembled_insn;               // Assembled instruction before decompression
+    logic [15:0] current_half;                 // Current half-word from memory
+    logic        insn_is_compressed;           // Current assembled instruction is compressed
+    logic        decomp_is_compressed_internal; // Mirrors decompressor compression detect for observability
     
     // ============================================================
     // Buffer Registers
@@ -104,7 +105,7 @@ module fetch_buffer (
         .insn_16(assembled_insn[15:0]),
         .insn_32_in(assembled_insn),
         .insn_32(decomp_output),
-        .is_compressed(),
+        .is_compressed(decomp_is_compressed_internal),
         .is_valid(decomp_is_valid)
     );
     
