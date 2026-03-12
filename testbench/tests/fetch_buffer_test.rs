@@ -55,7 +55,7 @@ fn test_fetch_buffer_decompresses_compressed_instruction() {
     dut.imem_ready = 0;
     dut.eval();
 
-    assert_eq!(dut.pc_inc_4, 0);
+    assert_eq!(dut.pc_inc_2, 1);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_fetch_buffer_passes_through_32bit_instruction() {
     dut.imem_ready = 0;
     dut.eval();
 
-    assert_eq!(dut.pc_inc_4, 1);
+    assert_eq!(dut.pc_inc_2, 0);
 }
 
 #[test]

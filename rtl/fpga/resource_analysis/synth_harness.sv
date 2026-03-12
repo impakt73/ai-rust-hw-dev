@@ -227,7 +227,7 @@ module synth_harness (
     // ============================================================
     logic [31:0] instruction;
     logic        valid;
-    logic        pc_inc_4;
+    logic        pc_inc_2;
     
     fetch_buffer u_fetch_buffer (
         .clk(clk),
@@ -239,13 +239,13 @@ module synth_harness (
         .invalidate_buffer(stim_sel[2]),
         .instruction(instruction),
         .valid(valid),
-        .pc_inc_4(pc_inc_4)
+        .pc_inc_2(pc_inc_2)
     );
     
     always_ff @(posedge clk) begin
         // Fold the fetch buffer outputs into one observable register so synthesis
         // keeps the instruction path, width tracking, and validity bit.
-        result_reg <= instruction ^ {30'h0, pc_inc_4, valid};
+        result_reg <= instruction ^ {30'h0, pc_inc_2, valid};
     end
 
 `elsif SYNTH_FP_REGFILE

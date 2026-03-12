@@ -93,14 +93,14 @@ module cpu #(
     logic instr_complete_internal;
     
     // ============================================================
-    // RV32C Fetch Buffer and Decompressor Signals
+    // RV32C Fetch Buffer Signals
     // ============================================================
     // Fetch buffer outputs
     logic [31:0] fetched_instruction; // Instruction from fetch buffer (decompressed if needed)
     logic        fetched_valid;       // Fetch buffer instruction validity
     
     // Instruction width tracking (from fetch buffer)
-    logic        pc_inc_4;           // High when current instruction advances PC by 4 bytes
+    logic        pc_inc_2;           // High when current instruction advances PC by 2 bytes
     logic [31:0] pc_increment;       // How much to increment PC (2 or 4 bytes)
     logic        invalidate_fetch_buffer; // Flush buffered half-word after control flow changes
     
@@ -488,7 +488,7 @@ module cpu #(
     end
     
     // ============================================================
-    // RV32C Fetch Buffer and Decompressor Module Instantiation
+    // RV32C Fetch Buffer Module Instantiation (with integrated decompressor)
     // ============================================================
     
     assign invalidate_fetch_buffer = pc_write &&
@@ -506,7 +506,7 @@ module cpu #(
         .invalidate_buffer(invalidate_fetch_buffer),
         .instruction(fetched_instruction),
         .valid(fetched_valid),
-        .pc_inc_4(pc_inc_4)
+        .pc_inc_2(pc_inc_2)
     );
     
     // ============================================================
@@ -531,7 +531,7 @@ module cpu #(
         end
     end
 
-    assign pc_increment = pc_inc_4 ? 32'd4 : 32'd2;
+    assign pc_increment = pc_inc_2 ? 32'd2 : 32'd4;
     
     always_ff @(posedge clk) begin
         if (!rst_n)

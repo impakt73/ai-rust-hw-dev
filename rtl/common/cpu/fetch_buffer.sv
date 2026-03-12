@@ -23,7 +23,7 @@ module fetch_buffer (
     output logic        valid,       // Instruction is valid
     
     // Instruction tracking
-    output logic        pc_inc_4 // High for 4-byte instruction, low for 2-byte instruction
+    output logic        pc_inc_2 // High for 2-byte instruction, low for 4-byte instruction
 );
 
     // ============================================================
@@ -143,7 +143,7 @@ module fetch_buffer (
         end
         
         // Invalidate buffer on control flow changes (jumps/branches)
-        // This happens when PC is written with a new value
+        // This happens when the CPU asserts invalidate_buffer on a control-flow change
         if (invalidate_buffer) begin
             buffer_valid_next = 1'b0;
         end
@@ -153,9 +153,9 @@ module fetch_buffer (
     // PC Increment Calculation
     // ============================================================
     
-    // PC increment based on instruction width
+    // PC increment flag based on instruction width
     always_comb begin
-        pc_inc_4 = !current_insn_compressed;
+        pc_inc_2 = current_insn_compressed;
     end
 
 endmodule
