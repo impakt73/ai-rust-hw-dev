@@ -23,7 +23,11 @@ module debouncer #(
 );
 
     localparam longint unsigned STABLE_CYCLES =
+        // Add 1_000_000-1 before dividing to round up so the debounce interval
+        // never resolves shorter than the requested STABLE_TIME_US.
         ((64'(CLK_FREQ_HZ) * 64'(STABLE_TIME_US)) + 64'd999_999) / 64'd1_000_000;
+    // $clog2(1) is 0, but the counter still needs a representable storage bit
+    // for the single-cycle debounce case.
     localparam int unsigned COUNTER_WIDTH = (STABLE_CYCLES <= 1) ? 1 : $clog2(STABLE_CYCLES);
     localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_MAX = COUNTER_WIDTH'(STABLE_CYCLES - 1);
 

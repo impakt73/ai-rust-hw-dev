@@ -1,5 +1,14 @@
 use riscv_core::{create_debouncer_runtime, DebouncerWrapper};
 
+const WRAPPER_CLK_FREQ_HZ: u64 = 1_000_000;
+const WRAPPER_STABLE_TIME_US: u64 = 3;
+const WRAPPER_STABLE_CYCLES: usize =
+    (((WRAPPER_CLK_FREQ_HZ as u128) * (WRAPPER_STABLE_TIME_US as u128) + 999_999u128)
+        / 1_000_000u128) as usize;
+const DEBOUNCER_SYNC_PIPELINE_CYCLES: usize = 2;
+const EXPECTED_TRANSITION_DELAY_CYCLES: usize =
+    DEBOUNCER_SYNC_PIPELINE_CYCLES + WRAPPER_STABLE_CYCLES - 1;
+
 fn clock_cycle(dut: &mut DebouncerWrapper) {
     dut.clk = 0;
     dut.eval();
@@ -67,7 +76,13 @@ fn test_debouncer_accepts_only_stable_level_changes() {
     dut.rst_n = 1;
 
     dut.noisy_in = 1;
-    for expected in [0u8, 0, 0, 0, 1] {
+    for expected in (0..=EXPECTED_TRANSITION_DELAY_CYCLES).map(|cycle_idx| {
+        if cycle_idx < EXPECTED_TRANSITION_DELAY_CYCLES {
+            0
+        } else {
+            1
+        }
+    }) {
         clock_cycle(&mut dut);
         assert_eq!(
             dut.debounced_out, expected,
@@ -76,7 +91,13 @@ fn test_debouncer_accepts_only_stable_level_changes() {
     }
 
     dut.noisy_in = 0;
-    for expected in [1u8, 1, 1, 1, 0] {
+    for expected in (0..=EXPECTED_TRANSITION_DELAY_CYCLES).map(|cycle_idx| {
+        if cycle_idx < EXPECTED_TRANSITION_DELAY_CYCLES {
+            1
+        } else {
+            0
+        }
+    }) {
         clock_cycle(&mut dut);
         assert_eq!(
             dut.debounced_out, expected,
