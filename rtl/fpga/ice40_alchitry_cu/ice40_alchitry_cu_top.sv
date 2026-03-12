@@ -40,6 +40,7 @@ module ice40_alchitry_cu_top #(
     output logic [3:0]  io_sel,   // Digit selection (active low: 0=enabled)
     output logic [7:0]  io_seg    // Segment outputs (active low: 0=lit)
 );
+    localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
 
     // ============================================================
     // PLL Configuration - Generate 25 MHz from 100 MHz input
@@ -51,6 +52,7 @@ module ice40_alchitry_cu_top #(
     logic pll_clk_global; // PLL output on global clock network (25 MHz)
     logic pll_locked;     // PLL lock indicator
     logic rst_n_btn_sync2;
+    logic rst_n_btn_debounced;
     // Keep synchronizer reset deasserted so it can safely sample the async button
     // even while downstream reset is asserted.
     ff_sync #(
@@ -60,6 +62,16 @@ module ice40_alchitry_cu_top #(
         .rst_n(1'b1),
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
+    );
+
+    debouncer #(
+        .CLK_FREQ_HZ(100_000_000),
+        .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+    ) rst_n_btn_debouncer_inst (
+        .clk(clk),
+        .rst_n(rst_n_btn_sync2),
+        .din(rst_n_btn_sync2),
+        .dout(rst_n_btn_debounced)
     );
     
     SB_PLL40_CORE #(
@@ -74,7 +86,7 @@ module ice40_alchitry_cu_top #(
         .PLLOUTGLOBAL(pll_clk_global),  // Drive system clock via global clock network
         .LOCK(pll_locked),
         .BYPASS(1'b0),
-        .RESETB(rst_n_btn_sync2)
+        .RESETB(rst_n_btn_debounced)
     );
     
     // Use PLL global clock output for all internal logic
@@ -129,34 +141,48 @@ module ice40_alchitry_cu_top #(
     // ============================================================
     // Button Counter Logic (also increments on led_out changes)
     // ============================================================
-    // Synchronize buttons to system clock domain (2-FF synchronizer)
-    // Note: This is a simple demo implementation without debouncing.
-    // For production use, add a debounce timer (~10-20ms stable period).
-    logic [4:0] io_button_sync1, io_button_sync2;
+    // Synchronize and debounce buttons before edge detection.
+    logic [4:0] io_button_sync2;
+    logic [4:0] io_button_debounced;
     logic [4:0] io_button_prev;
     logic [7:0] led_out_prev;
     logic [2:0] seg_position_reg;
-    
+
+    ff_sync #(
+        .WIDTH(5)
+    ) io_button_sync_inst (
+        .clk(sys_clk),
+        .rst_n(rst_n_core),
+        .din(io_button),
+        .dout(io_button_sync2)
+    );
+
+    for (genvar button_idx = 0; button_idx < 5; button_idx++) begin : gen_io_button_debouncer
+        debouncer #(
+            .CLK_FREQ_HZ(25_000_000),
+            .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+        ) io_button_debouncer_inst (
+            .clk(sys_clk),
+            .rst_n(rst_n_core),
+            .din(io_button_sync2[button_idx]),
+            .dout(io_button_debounced[button_idx])
+        );
+    end
+
     always_ff @(posedge sys_clk) begin
         if (!rst_n_core) begin
-            io_button_sync1 <= 5'b0;
-            io_button_sync2 <= 5'b0;
             io_button_prev  <= 5'b0;
             led_out_prev    <= 8'b0;
             seg_position_reg <= 3'b0;
         end else begin
-            // 2-FF synchronizer for buttons
-            io_button_sync1 <= io_button;
-            io_button_sync2 <= io_button_sync1;
-            
             // Edge detection: increment on any rising edge of any button
-            io_button_prev <= io_button_sync2;
+            io_button_prev <= io_button_debounced;
             
             // Track previous led_out value for change detection
             led_out_prev <= led_out;
 
             // Advance segment position on button press OR led_out change
-            if ((|(io_button_sync2 & ~io_button_prev)) || (led_out != led_out_prev)) begin
+            if ((|(io_button_debounced & ~io_button_prev)) || (led_out != led_out_prev)) begin
                 seg_position_reg <= (seg_position_reg == 3'd5) ? 3'd0 : (seg_position_reg + 3'd1);
             end
         end

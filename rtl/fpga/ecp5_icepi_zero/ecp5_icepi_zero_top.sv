@@ -12,10 +12,13 @@ module ecp5_icepi_zero_top #(
     input  logic usb_rx,
     output logic usb_tx
 );
+    localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;
+
     // iCE Pi Zero board clock is 50 MHz
     logic sys_clk;
     assign sys_clk = clk;
     logic rst_n_btn_sync2;
+    logic rst_n_btn_debounced;
     // Keep synchronizer reset deasserted so it can safely sample the async button
     // even while downstream reset is asserted.
     ff_sync #(
@@ -26,6 +29,17 @@ module ecp5_icepi_zero_top #(
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
     );
+
+    debouncer #(
+        .CLK_FREQ_HZ(50_000_000),
+        .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
+    ) rst_n_btn_debouncer_inst (
+        .clk(sys_clk),
+        .rst_n(rst_n_btn_sync2),
+        .din(rst_n_btn_sync2),
+        .dout(rst_n_btn_debounced)
+    );
+
     logic [7:0] sys_led_out;
 
     fpga_common_top #(
@@ -35,7 +49,7 @@ module ecp5_icepi_zero_top #(
         .RESET_CYCLES(50_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst_n(rst_n_btn_sync2),
+        .rst_n(rst_n_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),

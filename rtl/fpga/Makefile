@@ -17,6 +17,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/decoder.sv \
 	$(RTL_DIR)/cpu/decompress.sv \
 	$(RTL_DIR)/cpu/div_unit.sv \
+	$(RTL_DIR)/primitives/debouncer.sv \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
