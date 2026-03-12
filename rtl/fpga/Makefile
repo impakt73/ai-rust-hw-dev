@@ -154,7 +154,7 @@ NEXTPNR = nextpnr-ecp5
 endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
-HAS_YOSYS_READ_SDC := $(shell $(YOSYS) -Q -p "help" 2>/dev/null | grep -q "^[[:space:]]*read_sdc\\b" && echo 1 || echo 0)
+HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc\\b" && echo 1 || echo 0)
 endif
 
 # Default target
@@ -175,19 +175,17 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
-$(NETLIST): $(ALL_SOURCES) $(SDC_CONSTRAINT) | $(BUILD_DIR)
-	bash -e -o pipefail -c 'if [ "$(HAS_YOSYS_READ_SDC)" = "1" ]; then \
-			timing_cmd="read_sdc $(abspath $(SDC_CONSTRAINT)); "; \
-		else \
-			if [ -f "$(SDC_CONSTRAINT)" ]; then \
-				echo "INFO: $(YOSYS) does not support read_sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
-			fi; \
-			timing_cmd=""; \
-		fi; \
-		$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $${timing_cmd}$(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
+$(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
+	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
-$(PNR_OUT): $(NETLIST) $(CONSTRAINT)
-	bash -e -o pipefail -c '$(PNR_CMD) 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+$(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
+	bash -e -o pipefail -c 'if [ "$(HAS_NEXTPNR_SDC)" = "1" ]; then \
+			sdc_arg="--sdc $(abspath $(SDC_CONSTRAINT))"; \
+		else \
+			echo "INFO: $(NEXTPNR) does not support --sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
+			sdc_arg=""; \
+		fi; \
+		$(PNR_CMD) $${sdc_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
