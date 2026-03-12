@@ -5,9 +5,7 @@ const WRAPPER_STABLE_TIME_US: u64 = 3;
 const WRAPPER_STABLE_CYCLES: usize =
     (((WRAPPER_CLK_FREQ_HZ as u128) * (WRAPPER_STABLE_TIME_US as u128) + 999_999u128)
         / 1_000_000u128) as usize;
-const DEBOUNCER_SYNC_PIPELINE_CYCLES: usize = 2;
-const EXPECTED_TRANSITION_DELAY_CYCLES: usize =
-    DEBOUNCER_SYNC_PIPELINE_CYCLES + WRAPPER_STABLE_CYCLES - 1;
+const EXPECTED_TRANSITION_DELAY_CYCLES: usize = WRAPPER_STABLE_CYCLES - 1;
 
 fn clock_cycle(dut: &mut DebouncerWrapper) {
     dut.clk = 0;

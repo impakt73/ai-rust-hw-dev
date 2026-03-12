@@ -1,6 +1,6 @@
 // Debouncer
-// Filters glitchy asynchronous inputs and only updates the output after the
-// synchronized input remains stable for a configurable time window.
+// Filters glitchy synchronized inputs and only updates the output after the
+// input remains stable for a configurable time window.
 //
 // Parameters:
 //   CLK_FREQ_HZ    - Input clock frequency in Hz
@@ -9,7 +9,7 @@
 // Interface:
 //   clk  - System clock
 //   rst_n - Synchronous active-low reset
-//   din  - Noisy asynchronous input signal
+//   din  - Synchronized input signal
 //   dout - Debounced output signal
 
 module debouncer #(
@@ -31,7 +31,6 @@ module debouncer #(
     localparam int unsigned COUNTER_WIDTH = (STABLE_CYCLES <= 1) ? 1 : $clog2(STABLE_CYCLES);
     localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_MAX = COUNTER_WIDTH'(STABLE_CYCLES - 1);
 
-    logic [1:0] sync_regs;
     logic [COUNTER_WIDTH-1:0] stable_counter;
 
     // Parameter validation (simulation only)
@@ -49,18 +48,14 @@ module debouncer #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            sync_regs <= '0;
             stable_counter <= '0;
             dout <= 1'b0;
         end else begin
-            sync_regs[0] <= din;
-            sync_regs[1] <= sync_regs[0];
-
-            if (sync_regs[1] == dout) begin
+            if (din == dout) begin
                 stable_counter <= '0;
             end else if (stable_counter == STABLE_COUNT_MAX) begin
                 stable_counter <= '0;
-                dout <= sync_regs[1];
+                dout <= din;
             end else begin
                 stable_counter <= stable_counter + 1'b1;
             end
