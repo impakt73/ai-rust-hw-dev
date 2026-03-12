@@ -1,5 +1,13 @@
 # Alchitry Au (Artix-7 XC7A35T) XDC constraints
 
+set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+set_property BITSTREAM.CONFIG.CONFIGRATE 33 [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property CFGBVS VCCO [current_design]
+set_property BITSTREAM.CONFIG.SPI_32BIT_ADDR NO [current_design]
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 1 [current_design]
+set_property BITSTREAM.CONFIG.SPI_FALL_EDGE YES [current_design]
+
 # Clock: 100 MHz on-board oscillator
 create_clock -name clk_100mhz -period 10.000 [get_ports clk]
 set_property PACKAGE_PIN N14 [get_ports clk]
