@@ -145,8 +145,9 @@ module cpu #(
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
     logic        mem_to_reg_reg, branch_reg, jump_reg, is_auipc_reg;
     
-    // PC for the current instruction and its sequential fall-through address
-    // (captured when the instruction is fetched)
+    // PC for the current instruction (captured when the instruction is fetched)
+    // and its sequential fall-through address (captured during decode once the
+    // fetch buffer's instruction-width tracking is stable for the current instruction).
     logic [31:0] instr_pc_reg;
     logic [31:0] instr_pc_next_reg;
     
@@ -155,6 +156,7 @@ module cpu #(
     logic [31:0] control_target_reg;
     logic        control_target_write;
     logic [31:0] control_target_next;
+    logic        control_flow_redirect;
     
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
@@ -307,9 +309,9 @@ module cpu #(
         end else if (ir_write) begin
             ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
-            instr_pc_next_reg <= pc + pc_increment;  // Capture sequential fall-through PC
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE) begin
+            instr_pc_next_reg <= instr_pc_reg + pc_increment;  // Capture sequential fall-through PC
             // The decoder's registered instruction_valid output is stable in S_DECODE
             // after being latched on ir_write. This merge combines decompressor and
             // decoder validity checks for the current instruction.
@@ -481,9 +483,9 @@ module cpu #(
     // RV32C Fetch Buffer Module Instantiation (with integrated decompressor)
     // ============================================================
     
-    assign invalidate_fetch_buffer = pc_write &&
-                                     (((current_state == S_BRANCH) && take_branch) ||
-                                      ((current_state == S_WRITEBACK) && jump_reg));
+    assign control_flow_redirect = (current_state == S_BRANCH && take_branch) ||
+                                   (current_state == S_WRITEBACK && jump_reg);
+    assign invalidate_fetch_buffer = pc_write && control_flow_redirect;
 
     // Instantiate fetch buffer module
     // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
@@ -510,9 +512,12 @@ module cpu #(
     
     always_comb begin
         next_pc_value = instr_pc_next_reg;  // Sequential fall-through for current instruction
-        
-        if ((current_state == S_BRANCH && take_branch) ||
-            (current_state == S_WRITEBACK && jump_reg))
+
+        if (current_state == S_BOOT)
+            next_pc_value = (boot && !req_halt) ? boot_addr : pc;
+        else if (current_state == S_HALT)
+            next_pc_value = pc;
+        else if (control_flow_redirect)
             next_pc_value = control_target_reg;
     end
 
@@ -521,8 +526,6 @@ module cpu #(
     always_ff @(posedge clk) begin
         if (!rst_n)
             pc <= 32'h0;
-        else if (current_state == S_BOOT && boot && !req_halt)
-            pc <= boot_addr;
         else if (pc_write)
             pc <= next_pc_value;
     end
@@ -735,6 +738,9 @@ module cpu #(
         control_target_write = 1'b0;
         
         case (current_state)
+            S_BOOT:
+                pc_write = boot && !req_halt;
+
             S_FETCH: begin
                 imem_req_internal = !req_halt;
                 if (imem_ready_internal)
