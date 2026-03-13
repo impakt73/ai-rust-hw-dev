@@ -2,6 +2,10 @@ use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 const S_FETCH: u8 = 0x1;
+const S_EXECUTE: u8 = 0x3;
+const S_BRANCH: u8 = 0x8;
+const S_REG_READ: u8 = 0xC;
+const S_REG_READ_WAIT: u8 = 0xD;
 const WORD_BYTES: usize = 4;
 
 macro_rules! clock_cycle {
@@ -131,6 +135,75 @@ fn test_cpu_branch_taken_redirects_with_unified_target_register() {
     assert_eq!(
         dut.debug_current_pc, 8,
         "Taken branch should redirect the next fetch to the branch target"
+    );
+}
+
+#[test]
+fn test_cpu_branch_uses_execute_stage_before_branch_completion() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 16];
+    write_u32(&mut program, 0x0, beq(0, 0, 8));
+    write_u32(&mut program, 0x4, addi(2, 0, 99));
+    write_u32(&mut program, 0x8, addi(3, 0, 7));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    let mut observed_states = Vec::new();
+
+    for _ in 0..8 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        observed_states.push(dut.debug_fsm_state);
+
+        if dut.instr_complete != 0 {
+            break;
+        }
+    }
+
+    assert!(
+        observed_states.windows(4).any(|window| {
+            window == [S_REG_READ, S_REG_READ_WAIT, S_EXECUTE, S_BRANCH]
+        }),
+        "branch should flow through REG_READ -> REG_READ_WAIT -> EXECUTE -> BRANCH, observed {observed_states:?}"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 8,
+        "taken branch should still redirect to the branch target after the extra execute cycle"
+    );
+}
+
+#[test]
+fn test_cpu_branch_not_taken_falls_through_after_registered_compare() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 20];
+    write_u32(&mut program, 0x0, addi(1, 0, 1));
+    write_u32(&mut program, 0x4, beq(1, 0, 8));
+    write_u32(&mut program, 0x8, addi(2, 0, 99));
+    write_u32(&mut program, 0xc, addi(3, 0, 7));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+
+    assert_eq!(dut.debug_pc, 4, "Branch should complete at the branch PC");
+    assert_eq!(
+        dut.debug_instruction,
+        beq(1, 0, 8),
+        "Completed instruction should be the not-taken branch"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 8,
+        "Not-taken branch should fall through to the next sequential instruction"
     );
 }
 

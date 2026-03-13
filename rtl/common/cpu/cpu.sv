@@ -615,7 +615,7 @@ module cpu #(
                             next_state = S_MEM_ADDR;
                         
                         7'b1100011:  // Branch
-                            next_state = S_BRANCH;
+                            next_state = S_EXECUTE;
                         
                         7'b1110011: begin  // SYSTEM
                             if (is_ecall_reg || is_ebreak_reg)
@@ -633,9 +633,11 @@ module cpu #(
             end
             
             S_EXECUTE: begin
+                if (branch_reg) begin
+                    next_state = S_BRANCH;
                 // FP computational operations may be multi-cycle (e.g., FP division)
                 // But FP loads/stores go through memory states (not handled here)
-                if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
+                end else if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
                     // FP operations - wait for FPU ready
                     if (fpu_ready) begin
                         next_state = S_WRITEBACK;
@@ -781,8 +783,11 @@ module cpu #(
             end
             
             S_EXECUTE: begin
+                if (branch_reg) begin
+                    // Branch compare result is registered inside branch_unit during EXECUTE.
+                end
                 // Integer ALU operations
-                if (!fp_reg_write_reg && !fp_to_int_reg) begin
+                else if (!fp_reg_write_reg && !fp_to_int_reg) begin
                     // Hold the request valid until the ALU accepts it.
                     alu_in_valid = !alu_req_sent;
                     
@@ -874,8 +879,10 @@ module cpu #(
     // Module Instantiations
     // ============================================================
     
-    // Branch Decision Unit (uses registered signals for multi-cycle operation)
+    // Branch Decision Unit (registers the branch-taken result for the branch stage)
     branch_unit u_branch_unit (
+        .clk(clk),
+        .rst_n(rst_n),
         .branch(branch_reg),
         .funct3(funct3_reg),
         .rs1_data(a_reg),

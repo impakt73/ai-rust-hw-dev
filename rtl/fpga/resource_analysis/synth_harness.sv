@@ -79,11 +79,12 @@ module synth_harness (
     logic take_branch;
     
     branch_unit u_branch (
+        .clk(clk),
+        .rst_n(rst_n),
         .branch(stim_sel[0]),
         .funct3(stim_sel[3:1]),
         .rs1_data(stim_reg[0]),
         .rs2_data(stim_reg[1]),
-        .alu_zero(stim_sel[4]),
         .take_branch(take_branch)
     );
     
