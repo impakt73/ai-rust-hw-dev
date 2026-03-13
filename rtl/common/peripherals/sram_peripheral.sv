@@ -283,6 +283,7 @@ module sram_peripheral (
             case (state)
                 S_WRITE_SPLIT_SECOND: begin
                     state <= S_WRITE_RESP;
+                    mem_d_rdata_r <= 32'h0;
                     mem_d_valid_r <= 1'b1;
                 end
 
@@ -340,6 +341,7 @@ module sram_peripheral (
                                 state <= S_WRITE_SPLIT_SECOND;
                             end else begin
                                 state <= S_WRITE_RESP;
+                                mem_d_rdata_r <= 32'h0;
                                 mem_d_valid_r <= 1'b1;
                             end
                         end else if (incoming_unaligned) begin

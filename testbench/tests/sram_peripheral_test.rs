@@ -43,6 +43,11 @@ fn write_access(dut: &mut SramPeripheralTestWrapper, addr: u32, wdata: u32, size
         wait_cycles += 1;
     }
 
+    assert_eq!(
+        dut.mem_d_rdata, 0,
+        "write responses should return a zero payload on the D channel"
+    );
+
     dut.mem_d_ready = 1;
     dut.eval();
     clock_cycle(dut);
