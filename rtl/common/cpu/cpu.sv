@@ -1047,7 +1047,10 @@ module cpu #(
     );
     
     // CSR File Module (uses registered signals)
-    csr_file u_csr_file (
+    csr_file #(
+        .ENABLE_M_EXT(ENABLE_M_EXT),
+        .ENABLE_F_EXT(ENABLE_F_EXT)
+    ) u_csr_file (
         .clk(clk),
         .rst_n(rst_n),
         .is_csr(is_csr_reg & (current_state == S_CSR)),  // Gated by FSM

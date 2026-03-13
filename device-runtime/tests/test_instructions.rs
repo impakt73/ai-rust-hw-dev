@@ -17,6 +17,9 @@ use common::{
 use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
+
+// create_test_runtime() uses the default top-level config, which enables both M and F.
+const DEFAULT_MISA: u32 = 0x4000_1125;
 const SRAM_BASE_ADDR: u32 = SRAM_BASE;
 
 // ============================================================================
@@ -644,15 +647,15 @@ fn test_cpu_csr_set_clear() {
 
     let mut instructions = vec![
         addi(1, 0, 0b1010),
-        csrrw(0, 1, 0x301),
+        csrrw(0, 1, 0x302),
         addi(2, 0, 0b0101),
-        csrrs(3, 2, 0x301),
+        csrrs(3, 2, 0x302),
         lui(8, DRAM_BASE),
         sw(8, 3, 0),
         addi(4, 0, 0b1000),
-        csrrc(5, 4, 0x301),
+        csrrc(5, 4, 0x302),
         sw(8, 5, 4),
-        csrrw(6, 0, 0x301),
+        csrrw(6, 0, 0x302),
         sw(8, 6, 8),
     ];
     instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
@@ -677,6 +680,53 @@ fn test_cpu_csr_set_clear() {
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), 0x8000_0008, SHORT_TIMEOUT),
         0b0111
+    );
+}
+
+#[test]
+fn test_cpu_misa_is_read_only() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        addi(1, 0, 0b1010),
+        csrrw(2, 1, 0x301),
+        lui(8, DRAM_BASE),
+        sw(8, 2, 0),
+        addi(2, 0, 0b0101),
+        csrrs(3, 2, 0x301),
+        sw(8, 3, 4),
+        addi(4, 0, 0b1000),
+        csrrc(5, 4, 0x301),
+        sw(8, 5, 8),
+        csrrw(6, 0, 0x301),
+        sw(8, 6, 12),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
+        DEFAULT_MISA
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0004, SHORT_TIMEOUT),
+        DEFAULT_MISA
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_0008, SHORT_TIMEOUT),
+        DEFAULT_MISA
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), 0x8000_000C, SHORT_TIMEOUT),
+        DEFAULT_MISA
     );
 }
 

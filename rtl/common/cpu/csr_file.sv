@@ -6,7 +6,10 @@
 // OPTIMIZED: Uses BRAM-backed sparse CSR storage (via sync_dpram) instead of
 // discrete flip-flop registers for writable machine-level CSRs.
 
-module csr_file (
+module csr_file #(
+    parameter bit ENABLE_M_EXT = 1'b1,
+    parameter bit ENABLE_F_EXT = 1'b1
+) (
     input  logic        clk,
     input  logic        rst_n,
     
@@ -42,7 +45,7 @@ module csr_file (
     
     // Machine-level CSRs (0x300-0x3FF)
     localparam CSR_MSTATUS   = 12'h300;  // Machine status
-    localparam CSR_MISA      = 12'h301;  // Machine ISA (writable for test compatibility)
+    localparam CSR_MISA      = 12'h301;  // Machine ISA (read-only, derived from enabled extensions)
     localparam CSR_MEDELEG   = 12'h302;  // Machine exception delegation
     localparam CSR_MIDELEG   = 12'h303;  // Machine interrupt delegation
     localparam CSR_MIE       = 12'h304;  // Machine interrupt enable
@@ -65,27 +68,27 @@ module csr_file (
     localparam int CSR_MEM_ADDR_WIDTH = 8;  // 256 entries (matches sync_dpram BRAM-friendly config)
 
     localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MSTATUS  = 8'd0;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MISA     = 8'd1;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEDELEG  = 8'd2;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIDELEG  = 8'd3;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIE      = 8'd4;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVEC    = 8'd5;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MSCRATCH = 8'd6;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEPC     = 8'd7;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MCAUSE   = 8'd8;
-    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVAL    = 8'd9;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEDELEG  = 8'd1;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIDELEG  = 8'd2;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MIE      = 8'd3;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVEC    = 8'd4;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MSCRATCH = 8'd5;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEPC     = 8'd6;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MCAUSE   = 8'd7;
+    localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVAL    = 8'd8;
+    localparam logic [31:0] CSR_MISA_CONST = 32'h4000_0105 |  // Base RV32IAC: MXL[31:30]=01, I[8], A[0], C[2]
+                                             (ENABLE_M_EXT ? 32'h0000_1000 : 32'h0) |
+                                             (ENABLE_F_EXT ? 32'h0000_0020 : 32'h0);
 
     logic [CSR_MEM_ADDR_WIDTH-1:0] csr_mem_addr;
     logic [CSR_MEM_ADDR_WIDTH-1:0] csr_mem_waddr;
     logic [31:0] csr_mem_rdata;
     logic [31:0] csr_mem_wdata;
     logic        csr_mem_we;
-    logic        csr_init_pending;
 
     function automatic logic [CSR_MEM_ADDR_WIDTH-1:0] csr_addr_to_index(input logic [11:0] addr);
         case (addr)
             CSR_MSTATUS:   csr_addr_to_index = CSR_IDX_MSTATUS;
-            CSR_MISA:      csr_addr_to_index = CSR_IDX_MISA;
             CSR_MEDELEG:   csr_addr_to_index = CSR_IDX_MEDELEG;
             CSR_MIDELEG:   csr_addr_to_index = CSR_IDX_MIDELEG;
             CSR_MIE:       csr_addr_to_index = CSR_IDX_MIE;
@@ -100,7 +103,7 @@ module csr_file (
 
     function automatic logic is_writable_csr_addr(input logic [11:0] addr);
         case (addr)
-            CSR_MSTATUS, CSR_MISA, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
+            CSR_MSTATUS, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
             CSR_MTVEC, CSR_MSCRATCH, CSR_MEPC, CSR_MCAUSE, CSR_MTVAL:
                 is_writable_csr_addr = 1'b1;
             default:
@@ -127,7 +130,8 @@ module csr_file (
             CSR_FCSR:      csr_rdata = fcsr;
             
             // Machine-level CSRs
-            CSR_MSTATUS, CSR_MISA, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
+            CSR_MISA:      csr_rdata = CSR_MISA_CONST;
+            CSR_MSTATUS, CSR_MEDELEG, CSR_MIDELEG, CSR_MIE,
             CSR_MTVEC, CSR_MSCRATCH, CSR_MEPC, CSR_MCAUSE, CSR_MTVAL:
                             csr_rdata = csr_mem_rdata;
             CSR_MIP:       csr_rdata = 32'h0;  // No interrupts pending (simplified)
@@ -182,17 +186,9 @@ module csr_file (
         endcase
     end
     
-    always_comb begin
-        if (csr_init_pending) begin
-            csr_mem_we = 1'b1;
-            csr_mem_waddr = CSR_IDX_MISA;
-            csr_mem_wdata = 32'h40001125;  // RV32IMACF: MXL=01, I=8, M=12, A=0, C=2, F=5
-        end else begin
-            csr_mem_we = is_csr && csr_write_en && is_writable_csr_addr(csr_addr);
-            csr_mem_waddr = csr_mem_addr;
-            csr_mem_wdata = csr_wdata;
-        end
-    end
+    assign csr_mem_we = is_csr && csr_write_en && is_writable_csr_addr(csr_addr);
+    assign csr_mem_waddr = csr_mem_addr;
+    assign csr_mem_wdata = csr_wdata;
 
     sync_dpram #(
         .DATA_WIDTH(32),
@@ -212,10 +208,7 @@ module csr_file (
         if (!rst_n) begin
             csr_cycle    <= 32'h0;
             csr_instret  <= 32'h0;
-            csr_init_pending <= 1'b1;
         end else begin
-            csr_init_pending <= 1'b0;
-
             // Cycle counter always increments
             csr_cycle <= csr_cycle + 32'd1;
             
