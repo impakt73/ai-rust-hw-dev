@@ -250,7 +250,11 @@ else
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
 	@echo "  $(BIN)       - Generate bitstream (target-specific packer)"
 endif
-	@echo "  timing       - Generate timing report"
+ifeq ($(TARGET),artix7_alchitry_au)
+	@echo "  timing       - Generate timing report (written to $(TIMING))"
+else
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
+endif
 	@echo "  utilization  - Show resource utilization"
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 	@echo "  program      - Program FPGA with bitstream"

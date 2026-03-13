@@ -25,7 +25,6 @@ PCF = $(FPGA_DIR)/alchitry_cu.pcf
 JSON = $(BUILD_DIR)/$(PROJECT).json
 ASC = $(BUILD_DIR)/$(PROJECT).asc
 BIN = $(BUILD_DIR)/$(PROJECT).bin
-TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
@@ -100,7 +99,7 @@ help:
 	@echo "Targets:"
 	@echo "  all (synth)  - Run synthesis only with Yosys (default)"
 	@echo "  bitstream    - Full flow: synthesis + place/route + bitstream"
-	@echo "  timing       - Generate timing report"
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
 	@echo "  utilization  - Show resource utilization from synthesis"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"

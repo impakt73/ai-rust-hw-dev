@@ -345,7 +345,6 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
     utilization_report = build_dir / "riscv_fpga_utilization.rpt"
 
     timing = None
-    extra_timing: Dict[str, float] = {}
     post_route_resources: Dict[str, Dict[str, float]] = {}
     synthesis_cell_counts: Dict[str, int] = {}
     source_artifacts = {
@@ -408,7 +407,6 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
             ((max_frequency_mhz - target_frequency_mhz) / target_frequency_mhz) * 100.0
         ),
         "timing": timing,
-        "extra_timing": extra_timing,
         "headline_resources": headline_resources,
         "post_route_resources": post_route_resources,
         "synthesis_cell_counts": synthesis_cell_counts,
@@ -431,11 +429,6 @@ def render_text(stats: Dict[str, Any]) -> str:
         ),
         f"Timing source: {stats['timing']['source_file']} ({stats['timing']['clock_name']})",
     ]
-
-    if stats["extra_timing"]:
-        for key, value in stats["extra_timing"].items():
-            label = key.replace("_", " ")
-            lines.append(f"{label}: {value:.2f} MHz")
 
     if stats["headline_resources"]:
         lines.append("Headline resources:")

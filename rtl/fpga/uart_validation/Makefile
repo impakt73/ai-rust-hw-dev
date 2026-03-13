@@ -34,7 +34,6 @@ PCF = ../ice40_alchitry_cu/ice40_alchitry_cu.pcf
 JSON = $(BUILD_DIR)/$(PROJECT).json
 ASC = $(BUILD_DIR)/$(PROJECT).asc
 BIN = $(BUILD_DIR)/$(PROJECT).bin
-TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
@@ -98,7 +97,7 @@ help:
 	@echo "Targets:"
 	@echo "  all          - Synthesize and generate bitstream (default)"
 	@echo "                 set VALIDATION_MODE=0|1|2 to select loopback mode"
-	@echo "  timing       - Generate timing report"
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
 	@echo "  utilization  - Show resource utilization"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
