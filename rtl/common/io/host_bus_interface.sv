@@ -355,7 +355,6 @@ module host_bus_interface (
 
                         if (rx_pkt_we) begin
                             host_write_data <= rx_pkt_data;
-                            host_read_first_beat <= 1'b0;
                             host_state <= HOST_WRITE_A;
                         end else begin
                             host_read_first_beat <= 1'b1;

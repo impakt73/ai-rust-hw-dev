@@ -13,13 +13,14 @@ The current `ice40_alchitry_cu` build still closes timing comfortably, and the
 previous top host-bus read-response critical path has now been shortened enough
 that it is **no longer the top synchronous path** in the routed design.
 
-- **Current routed Fmax (nextpnr):** **73.86 MHz**
+- **Current post-fix routed Fmax (nextpnr):** **73.21 MHz**
 - **Timing status:** **PASS**
-- **Timing margin vs. 25 MHz target:** **+48.86 MHz** (**+195.4%**)
+- **Timing margin vs. 25 MHz target:** **+48.21 MHz** (**+192.8%**)
 
 ### Verified Before/After Comparison
 
-Both data points below were generated with:
+Both data points below were generated with the same command, once before this
+change and once after it:
 
 ```bash
 cd rtl/fpga
@@ -28,9 +29,9 @@ make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
 
 | Metric | Before fix | After fix | Delta |
 | --- | ---: | ---: | ---: |
-| Routed Fmax | 70.45 MHz | 73.86 MHz | **+3.41 MHz** |
-| Timing margin vs. 25 MHz | 45.45 MHz | 48.86 MHz | **+3.41 MHz** |
-| Logic cells (`ICESTORM_LC`) | 5661 | 5554 | **-107** |
+| Routed Fmax | 70.45 MHz | 73.21 MHz | **+2.76 MHz** |
+| Timing margin vs. 25 MHz | 45.45 MHz | 48.21 MHz | **+2.76 MHz** |
+| Logic cells (`ICESTORM_LC`) | 5661 | 5570 | **-91** |
 | BRAM (`ICESTORM_RAM`) | 30 | 30 | 0 |
 | Global buffers (`SB_GB`) | 8 | 8 | 0 |
 
@@ -44,14 +45,18 @@ That removes the host read burst-length compare from the
 `HOST_READ_TX -> host_bus_tx -> host_beats_remaining` control cone that the
 previous report identified as the dominant synchronous path.
 
+Although the RTL adds one state bit, the post-route logic-cell count still
+drops overall because Yosys/nextpnr can eliminate much more of the previous
+wide compare and reconvergent control logic than the new flag costs.
+
 The design still has the same two structural constraints that may limit future
 timing work:
 
 - **BRAM:** 30 / 32 blocks (**93%**)
 - **Global buffers:** 8 / 8 (**100%**)
 
-Those constraints still matter because the new worst synchronous path remains
-mostly **routing-dominated**.
+Those constraints still matter because the new worst synchronous path still
+contains significant routing cost even after the host-bus cone was shortened.
 
 ---
 
@@ -87,10 +92,10 @@ Cell counts from Yosys:
 
 ---
 
-## Resolved Path — Host Read Response Start/Count Control
+## Former Critical Path #1 — Host Read Response Start/Count Control (Resolved)
 
-**Status:** resolved as the top synchronous path  
-**Fix location:** `rtl/common/io/host_bus_interface.sv`
+**Status:** resolved and no longer the top synchronous path  
+**Measured improvement:** **+2.76 MHz Fmax**, **-91 logic cells**
 
 ### RTL Path Narrative
 
@@ -167,39 +172,39 @@ path.
 
 After this change, the old `host_req_burst_len_m1 -> HOST_READ_TX ->
 host_bus_tx -> host_beats_remaining` cone no longer appears as the top detailed
-`pll_clk_global` path in `nextpnr.log`. The current top synchronous path is now
-in the registered-bus/peripheral response-pending control network, starting at
-`led_ctrl.response_pending` and ending at
-`sram_periph.mem_d_valid_r...CEN`.
+`pll_clk_global` path in `nextpnr.log`. In the final post-fix build, the
+current top synchronous path has moved back into the CPU ALU's min/max compare
+logic.
 
 ---
 
-## Critical Path #1 — Registered-Bus Peripheral Response-Pending Control
+## Critical Path #1 — CPU ALU Min/Max Compare
 
 **Domain:** `pll_clk_global` (posedge → posedge)  
-**Primary source:** `led_ctrl.response_pending` register  
-**Primary destination:** `sram_periph.mem_d_valid_r` clock-enable logic  
-**Delay:** **13.9 ns total** (`nextpnr` detailed path)  
-**Breakdown:** **4.9 ns logic + 9.0 ns routing** (`nextpnr`)
+**Primary source:** `u_alu.req_b_reg` register  
+**Primary destination:** `u_alu.result_next` input logic  
+**Delay:** **13.4 ns total** (`nextpnr` detailed path)  
+**Breakdown:** **7.1 ns logic + 6.3 ns routing** (`nextpnr`)
 
 ### RTL Path Narrative
 
-The current top synchronous path is no longer in `host_bus_interface`. It now
-starts from one peripheral response-pending register, traverses the
-`registered_bus` / peripheral response-selection logic, and lands on the
-enable for the SRAM peripheral response-valid register.
+The current top synchronous path is no longer in `host_bus_interface`. In the
+final routed build it starts in the ALU operand register and traverses the
+`minmax_compare_lt` carry-chain / LUT network before landing in the ALU result
+selection logic.
 
 At a high level, the path is:
 
 ```text
-led_ctrl.response_pending[DFF]
-  -> registered_bus / peripheral response mux logic
-  -> slave_response_pending reconvergence
-  -> sram_periph.mem_d_valid_r clock enable[DFF]
+u_alu.req_b_reg[DFF]
+  -> minmax_compare_lt carry-chain compare logic
+  -> ALU result select / reconstruction
+  -> u_alu.result_next input[DFF]
 ```
 
-Like the previous path, this one is still routing-heavy, which is consistent
-with the device's high BRAM and fully consumed global-buffer utilization.
+This path is more logic-heavy than the previous host-bus path, which is
+consistent with the detailed `nextpnr` report showing a long compare chain in
+`rtl/common/cpu/alu.sv`.
 
 ---
 
