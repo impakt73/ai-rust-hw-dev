@@ -50,7 +50,7 @@ SystemVerilog sources
    icepack
         │  riscv_fpga.bin
         ▼
-   iceprog / icetime
+   iceprog
 ```
 
 **Key iCE40-specific artefacts:**
@@ -63,7 +63,7 @@ SystemVerilog sources
 | P&R tool | `nextpnr-ice40 --hx8k` |
 | Bitstream pack | `icepack` → `.bin` |
 | Programmer | `iceprog` or `openFPGALoader` |
-| Timing analysis | `icetime` |
+| Timing analysis | `nextpnr-ice40` |
 
 All RTL under `rtl/common/` is **fully vendor-neutral** SystemVerilog and requires no changes for new targets. The only iCE40-specific code is in `rtl/fpga/fpga_top.sv` (PLL instantiation) and `rtl/fpga/ice40hx8k.pcf` (pin constraints).
 

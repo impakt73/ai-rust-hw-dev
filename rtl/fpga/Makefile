@@ -142,7 +142,6 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
@@ -201,12 +200,7 @@ timing: $(BIN)
 	@echo "Timing report written to $(TIMING)"
 else
 timing: $(PNR_OUT)
-ifeq ($(TARGET),ice40_alchitry_cu)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
-	@echo "Timing report written to $(TIMING)"
-else
-	@echo "Timing report generation is only implemented for TARGET=ice40_alchitry_cu"
-endif
+	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
 endif
 
 # Resource utilization report

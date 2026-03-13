@@ -42,7 +42,6 @@ YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
 ICEPROG = iceprog
-ICETIME = icetime
 
 # Default target
 .PHONY: all
@@ -74,8 +73,7 @@ $(BIN): $(ASC)
 # Timing analysis
 .PHONY: timing
 timing: $(ASC)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(ASC)
-	@echo "Timing report written to $(TIMING)"
+	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
 
 # Resource utilization report
 .PHONY: utilization

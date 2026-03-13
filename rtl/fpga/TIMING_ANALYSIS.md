@@ -2,14 +2,14 @@
 
 **Date:** 2026-03-10 (updated)  
 **Target Device:** Lattice iCE40-HX8K-CB132 (Alchitry Cu v1)  
-**Synthesis Tools:** Yosys 0.33, nextpnr-ice40, icetime  
+**Synthesis Tools:** Yosys 0.33, nextpnr-ice40  
 **Design Configuration:** RV32I CPU (M/F extensions disabled for iCE40 resources), dual-banked BRAM register file
 
 ---
 
 ## Executive Summary
 
-The RISC-V RV32I CPU design still meets the 25 MHz target frequency with substantial headroom. After implementing a **two-cycle staged atomic MIN/MAX datapath** in `rtl/common/cpu/alu.sv` and reusing the existing `alu_ready` / memory ready-valid handshake in `cpu.sv`, the latest iCE40-HX8K build reaches **55.20 MHz** (nextpnr) / **53.50 MHz** (icetime), leaving roughly **114–121% timing margin** over the 25 MHz target (18.12–18.69 ns critical path vs. 40.0 ns clock budget).
+The RISC-V RV32I CPU design still meets the 25 MHz target frequency with substantial headroom. After implementing a **two-cycle staged atomic MIN/MAX datapath** in `rtl/common/cpu/alu.sv` and reusing the existing `alu_ready` / memory ready-valid handshake in `cpu.sv`, the latest iCE40-HX8K build reaches **55.20 MHz** (nextpnr), leaving roughly **121% timing margin** over the 25 MHz target (18.12 ns critical path vs. 40.0 ns clock budget).
 
 Since the previous analysis, four major optimizations have now been implemented and verified:
 
@@ -27,7 +27,6 @@ Measured full-chip impact of the staged MIN/MAX change on the iCE40 target:
 - **SB_LUT4 cells:** 4,437 → **4,270** (**−167 LUT4s**, −3.8%)
 - **SB_CARRY cells:** 814 → **783** (**−31 carries**, −3.8%)
 - **Fmax (nextpnr):** 47.30 MHz → **55.20 MHz** (**+7.90 MHz**, +16.7%)
-- **Fmax (icetime):** 47.43 MHz → **53.50 MHz** (**+6.07 MHz**, +12.8%)
 
 The staged MIN/MAX datapath therefore produced a **meaningful utilization reduction** and a **clear timing improvement**. The dominant path still lives in the A-extension MIN/MAX network, but the compare and value-select work are no longer collapsed into one cycle, so the remaining path is materially shorter.
 
@@ -46,8 +45,7 @@ The design still faces two impending **resource saturation** constraints that wi
 | **Global Buffers (SB_GB)** | 8 | 8 | **100% ⚠️** |
 | **PLLs (ICESTORM_PLL)** | 1 | 2 | 50% |
 | **Achieved Fmax (nextpnr)** | 55.20 MHz | 25 MHz target | **PASS (+121%)** |
-| **Achieved Fmax (icetime)** | 53.50 MHz | 25 MHz target | **PASS (+114%)** |
-| **Critical Path Delay** | 18.69 ns | 40.0 ns budget | PASS |
+| **Critical Path Delay** | 18.12 ns | 40.0 ns budget | PASS |
 
 ### Cell Type Breakdown (from Yosys)
 
@@ -65,23 +63,22 @@ The design still faces two impending **resource saturation** constraints that wi
 | Date | Optimization | Fmax Before | Fmax After | Improvement |
 |------|-------------|-------------|------------|-------------|
 | 2026-03-10 | Pre-compute AUIPC/JAL adders in EXECUTE; remove inline adders from `writeback_mux.sv` | 42.09 MHz | 47.70 MHz | +5.61 MHz (+13.3%) |
-| 2026-03-10 | Replace `button_counter % 8'd6` modulo with registered rollover counter in `ice40_alchitry_cu_top.sv` | 41.04 MHz (icetime worst case) | 47.05 MHz (icetime) | +6.01 MHz (+14.6%) |
-| 2026-03-10 | Group ALU result selection into arithmetic / bitwise / shift / minmax / muldiv buckets in `alu.sv` | 47.70 MHz (nextpnr), 47.05 MHz (icetime) | 47.30 MHz (nextpnr), 47.43 MHz (icetime) | −0.40 MHz routed, +0.38 MHz icetime |
-| 2026-03-10 | Break atomic MIN/MAX into compare and select cycles in `alu.sv`; wait for `alu_ready` before AMO write request in `cpu.sv` | 47.30 MHz (nextpnr), 47.43 MHz (icetime) | 55.20 MHz (nextpnr), 53.50 MHz (icetime) | +7.90 MHz routed, +6.07 MHz icetime |
+| 2026-03-10 | Replace `button_counter % 8'd6` modulo with registered rollover counter in `ice40_alchitry_cu_top.sv` | 41.04 MHz | 47.05 MHz | +6.01 MHz (+14.6%) |
+| 2026-03-10 | Group ALU result selection into arithmetic / bitwise / shift / minmax / muldiv buckets in `alu.sv` | 47.70 MHz | 47.30 MHz | −0.40 MHz |
+| 2026-03-10 | Break atomic MIN/MAX into compare and select cycles in `alu.sv`; wait for `alu_ready` before AMO write request in `cpu.sv` | 47.30 MHz | 55.20 MHz | +7.90 MHz |
 
 ---
 
 ## Critical Path #1 — Staged Atomic MIN/MAX Compare Chain + Residual Result Tail (Primary)
 
 **Clock domain:** `pll_clk_global` (posedge → posedge)  
-**Total delay:** 18.12 ns (8.5 ns logic + 9.7 ns routing) — nextpnr; 18.69 ns — icetime  
-**Achieved Fmax:** 55.20 MHz (nextpnr), 53.50 MHz (icetime)  
-**Logic levels (icetime):** 41  
+**Total delay:** 18.12 ns (8.5 ns logic + 9.7 ns routing) — nextpnr  
+**Achieved Fmax:** 55.20 MHz (nextpnr)  
 **RTL modules involved:** `cpu.sv`, `alu.sv`
 
 ### Path Narrative
 
-This is the dominant registered-clock critical path identified by both nextpnr and icetime after implementing the two-cycle MIN/MAX staging. The launch point has shifted into the FSM / ALU-control side of the datapath (`current_state` in nextpnr, `alu_start_sent` in icetime), then flows through atomic-state operand conditioning, traverses the full-width MIN/MAX compare carry chain in `alu.sv`, and finally passes through the reduced `alu_result` tail before terminating at `alu_out_reg`.
+This is the dominant registered-clock critical path identified by nextpnr after implementing the two-cycle MIN/MAX staging. The launch point has shifted into the FSM / ALU-control side of the datapath (`current_state`), then flows through atomic-state operand conditioning, traverses the full-width MIN/MAX compare carry chain in `alu.sv`, and finally passes through the reduced `alu_result` tail before terminating at `alu_out_reg`.
 
 The key qualitative change versus the previous analysis is that the **compare** and **value selection** work are no longer collapsed into a single cycle. The worst endpoint is still tied to the MIN/MAX network, but the second-cycle winner-select mux is now simpler and the overall routed delay is lower by roughly 2.4 ns.
 
@@ -119,12 +116,12 @@ current_state / alu_start_sent[DFF] (cpu.sv)
 ## ~~Critical Path #2 — Seven-Segment Display Modulo Arithmetic~~ (RESOLVED)
 
 **Status:** ✅ **ELIMINATED** by replacing `button_counter % 8'd6` with a registered rollover counter.  
-**Previous worst-case:** 24.37 ns (icetime), 35 logic levels  
+**Previous worst-case:** 35 logic levels  
 **Current contribution:** ~5.4 ns (clock-to-async output via `seg_position_reg → io_seg` decode, within budget)
 
 ### What Changed
 
-The `seg_position = 3'(button_counter % 8'd6)` combinational expression in `ice40_alchitry_cu_top.sv` was the icetime worst-case path due to hardware modulo-6 synthesis (Yosys generates iterative subtraction/comparison circuits for non-power-of-2 divisors). This produced 35 logic levels and 24.37 ns of combinational depth.
+The `seg_position = 3'(button_counter % 8'd6)` combinational expression in `ice40_alchitry_cu_top.sv` was the worst-case path due to hardware modulo-6 synthesis (Yosys generates iterative subtraction/comparison circuits for non-power-of-2 divisors). This produced 35 logic levels of combinational depth.
 
 The fix replaced it with a dedicated registered counter:
 
@@ -167,7 +164,7 @@ Unlike the previous near-critical paths (which were caused by inline adders in `
 
 ### Path Narrative
 
-The CPU's multi-cycle FSM still provides the launch flip-flops for Critical Path #1, but the worst endpoint now originates from the **execute/atomic-control side** (`current_state` in nextpnr, `alu_start_sent` in icetime) rather than a decode flag such as `is_lr_reg`. The path still spends several nanoseconds crossing from control logic into the ALU operand network before the carry chain begins.
+The CPU's multi-cycle FSM still provides the launch flip-flops for Critical Path #1, but the worst endpoint now originates from the **execute/atomic-control side** (`current_state`) rather than a decode flag such as `is_lr_reg`. The path still spends several nanoseconds crossing from control logic into the ALU operand network before the carry chain begins.
 
 The decode/control complexity increases with each instruction class supported. With the A extension enabled (atomic instructions adding `is_lr_reg`, `is_sc_reg`, `is_amo_reg`), the FSM/control region still carries significant fanout. The staging change improved the ALU itself, but it did not physically co-locate the control and ALU regions.
 
@@ -286,7 +283,7 @@ The following suggestions are ordered within groups from lowest to highest imple
 #### ~~Suggestion 1 — Replace Modulo-6 with a Registered Rollover Counter~~ (IMPLEMENTED ✅)
 
 **Addresses:** Former Critical Path #2 (Seven-Segment Display Modulo Arithmetic)  
-**Result:** Eliminated the 35-level, 24.37 ns icetime critical path. Replaced with a 3-bit registered rollover counter (`seg_position_reg`) that increments on button press or LED output change. The synchronous critical path stayed in the ALU/writeback network and has since been reduced further to **18.69 ns** by the staged atomic MIN/MAX work.
+**Result:** Eliminated the 35-level worst-case critical path. Replaced with a 3-bit registered rollover counter (`seg_position_reg`) that increments on button press or LED output change. The synchronous critical path stayed in the ALU/writeback network and has since been reduced further to **18.12 ns** by the staged atomic MIN/MAX work.
 
 ---
 
@@ -297,7 +294,7 @@ The following suggestions are ordered within groups from lowest to highest imple
 **Observed outcome:** Logic utilization dropped modestly, but timing was effectively neutral overall because the critical path moved into the MIN/MAX compare/select cone rather than disappearing.  
 **Files:** `rtl/common/cpu/alu.sv`
 
-**Measured result:** Implemented in `rtl/common/cpu/alu.sv` by splitting ALU outputs into `arith_result`, `bitwise_result`, `shift_result`, `minmax_result`, and `muldiv_result` groups before the final `result` merge. Full-chip iCE40 utilization dropped from **5,520 → 5,472 LCs** and **4,462 → 4,437 LUT4s**. Timing was effectively flat overall: **47.70 → 47.30 MHz** in nextpnr and **47.05 → 47.43 MHz** in icetime.
+**Measured result:** Implemented in `rtl/common/cpu/alu.sv` by splitting ALU outputs into `arith_result`, `bitwise_result`, `shift_result`, `minmax_result`, and `muldiv_result` groups before the final `result` merge. Full-chip iCE40 utilization dropped from **5,520 → 5,472 LCs** and **4,462 → 4,437 LUT4s**. Timing was effectively flat overall: **47.70 → 47.30 MHz** in nextpnr.
 
 The original post-carry result mux in `alu.sv` selected among ADD/SUB/SLT/SLTU/AND/OR/XOR/SLL/SRL/SRA results in a flat priority-encoded tree. With 10+ operation outputs, that generated 4–5 LUT levels after the carry chain — more expensive than the carry chain itself in absolute path contribution.
 
@@ -341,7 +338,7 @@ The implementation achieved the intended structural cleanup, but the new measure
 **Implementation summary:** `rtl/common/cpu/alu.sv` now captures the signed/unsigned MIN/MAX comparison and operands on the first cycle, then selects the winner on the second cycle. `rtl/common/cpu/cpu.sv` now waits for `alu_ready` before issuing the AMO write request so the existing upstream ready/valid protocol remains correct.  
 **Files:** `rtl/common/cpu/alu.sv`, `rtl/common/cpu/cpu.sv`
 
-**Measured result:** Relative to the previous grouped-ALU build, full-chip iCE40 utilization dropped from **5,472 → 5,334 LCs**, **4,437 → 4,270 LUT4s**, and **814 → 783 SB_CARRY** cells. Timing improved from **47.30 → 55.20 MHz** in nextpnr and **47.43 → 53.50 MHz** in icetime, with the reported critical path falling from **21.08 ns → 18.69 ns**.
+**Measured result:** Relative to the previous grouped-ALU build, full-chip iCE40 utilization dropped from **5,472 → 5,334 LCs**, **4,437 → 4,270 LUT4s**, and **814 → 783 SB_CARRY** cells. Timing improved from **47.30 → 55.20 MHz** in nextpnr, with the reported critical path falling from **21.08 ns → 18.12 ns**.
 
 This change delivered the first clear improvement on the MIN/MAX hotspot itself. The path is still dominated by the staged atomic MIN/MAX network, but the carry-chain work is now separated from the value-select mux and the AMO write request is naturally back-pressured through `alu_ready`.
 
@@ -431,56 +428,12 @@ Critical path for 'pll_clk_global' (posedge -> posedge):
   Total:  18.1 ns
 ```
 
-### icetime Timing Summary (ASC-Level Static Timing)
-
-```
-Total number of logic levels: 41
-Total path delay: 18.69 ns (53.50 MHz)
-
-Critical path (icetime):
-  Source: alu_start_sent / execute-control state (cpu_core, cpu.sv)
-  → atomic-state operand conditioning
-  → MIN/MAX compare/carry chain
-  → reduced staged-result routing/select LUTs
-  → alu_out_reg / cpu_to_arb_a_wdata endpoint
-  Total: 18.693 ns
-```
-
-### Slack Histogram (pll_clk_global, 25 MHz target = 40 ns period)
-
-The slack histogram below shows the distribution of timing endpoints relative to the 40 ns target period. The tightest endpoints are now just under **21.9 ns** of slack (endpoints at ~18.1 ns total delay). Compared to the previous analysis state, the histogram has shifted materially rightward, matching the timing improvement from staging atomic MIN/MAX.
-
-```
-Slack range (ps)    Endpoint count (legend: * = 26 endpoints, + = [1,26))
-[ 21883,  22728)    |+
-[ 22728,  23573)    |+
-[ 23573,  24418)    |*+
-[ 24418,  25263)    |**+
-[ 25263,  26108)    |**+
-[ 26108,  26953)    |***+
-[ 26953,  27798)    |***+
-[ 27798,  28643)    |***+
-[ 28643,  29488)    |*************+
-[ 29488,  30333)    |****************+
-[ 30333,  31178)    |********************+
-[ 31178,  32023)    |******************+
-[ 32023,  32868)    |***********************+
-[ 32868,  33713)    |*********************************+
-[ 33713,  34558)    |************************************************************ (most endpoints)
-[ 34558,  35403)    |**************+
-[ 35403,  36248)    |******************+
-[ 36248,  37093)    |******************************+
-[ 37093,  37938)    |***********************************************+
-[ 37938,  38783)    |*****************************************+
-```
-
 ### Comparison: Previous vs. Current Analysis
 
 | Metric | Previous | Current | Change |
 |--------|---------|---------|--------|
 | Fmax (nextpnr) | 47.30 MHz | **55.20 MHz** | +7.90 MHz (+16.7%) |
-| Fmax (icetime) | 47.43 MHz | **53.50 MHz** | +6.07 MHz (+12.8%) |
-| Critical path delay | 21.08 ns | **18.69 ns** | −2.39 ns (−11.3%) |
+| Critical path delay | 21.08 ns | **18.12 ns** | −2.96 ns (−14.0%) |
 | Critical path routing | 12.1 ns (57%) | **9.7 ns (54%)** | −2.4 ns |
 | ICESTORM_LC count | 5,472 (71%) | **5,334 (69%)** | −138 LCs (−2.5%) |
 | SB_LUT4 count | 4,437 | **4,270** | −167 |
