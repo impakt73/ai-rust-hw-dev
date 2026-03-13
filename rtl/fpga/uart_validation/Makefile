@@ -41,7 +41,7 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
+OPENFPGALOADER = openFPGALoader
 
 # Default target
 .PHONY: all
@@ -83,7 +83,7 @@ utilization: $(JSON)
 # Program FPGA
 .PHONY: program
 program: $(BIN)
-	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
+	bash -e -o pipefail -c '$(OPENFPGALOADER) -b ice40_generic -f $(BIN)'
 
 # Clean build artifacts
 .PHONY: clean
@@ -110,5 +110,5 @@ check-tools:
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: nextpnr-ice40 not found"; exit 1)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 	@echo "All required tools found!"

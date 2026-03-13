@@ -32,7 +32,7 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
+OPENFPGALOADER = openFPGALoader
 
 # Default target - synthesis only (no place and route)
 .PHONY: all
@@ -85,7 +85,7 @@ utilization: $(JSON)
 # Program FPGA (optional)
 .PHONY: program
 program: $(BIN)
-	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
+	bash -e -o pipefail -c '$(OPENFPGALOADER) -b ice40_generic -f $(BIN)'
 
 # Clean build artifacts
 .PHONY: clean
@@ -114,7 +114,8 @@ help:
 	@echo "Prerequisites:"
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route (for bitstream target)"
-	@echo "  - icestorm   : Bitstream generation and programming"
+	@echo "  - icepack    : Bitstream generation"
+	@echo "  - openFPGALoader : Board programming tool (for program target)"
 
 .PHONY: check-tools
 check-tools:

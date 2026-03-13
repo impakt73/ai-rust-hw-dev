@@ -35,7 +35,6 @@ jobs:
         yosys --version
         nextpnr-ice40 --version
         nextpnr-ecp5 --version
-        iceprog --help 2>&1 | head -1
     
     - name: Install Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
