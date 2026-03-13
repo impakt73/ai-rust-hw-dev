@@ -76,7 +76,7 @@ module csr_file #(
     localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MEPC     = 8'd6;
     localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MCAUSE   = 8'd7;
     localparam logic [CSR_MEM_ADDR_WIDTH-1:0] CSR_IDX_MTVAL    = 8'd8;
-    localparam logic [31:0] CSR_MISA_CONST = 32'h4000_0105 |
+    localparam logic [31:0] CSR_MISA_CONST = 32'h4000_0105 |  // Base RV32IAC: MXL[31:30]=01, I[8], A[0], C[2]
                                              (ENABLE_M_EXT ? 32'h0000_1000 : 32'h0) |
                                              (ENABLE_F_EXT ? 32'h0000_0020 : 32'h0);
 

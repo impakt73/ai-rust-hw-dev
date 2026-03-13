@@ -18,6 +18,7 @@ use riscv_core::instruction::*;
 use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
+// create_test_runtime() uses the default top-level config, which enables both M and F.
 const DEFAULT_MISA: u32 = 0x4000_1125;
 const SRAM_BASE_ADDR: u32 = SRAM_BASE;
 
