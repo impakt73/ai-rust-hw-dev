@@ -33,14 +33,14 @@
 module fp_regfile #(
     parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,        // Active-low reset
-    input  logic        we,           // Write enable
-    input  logic [4:0]  rs1_addr,     // FP source register 1 address
-    input  logic [4:0]  rs2_addr,     // FP source register 2 address
-    input  logic [4:0]  rs3_addr,     // FP source register 3 address (for FMADD, etc.)
-    input  logic [4:0]  rd_addr,      // FP destination register address
-    input  logic [31:0] rd_data,      // Write data
+    input wire logic        clk,
+    input wire logic        rst_n,        // Active-low reset
+    input wire logic        we,           // Write enable
+    input wire logic [4:0]  rs1_addr,     // FP source register 1 address
+    input wire logic [4:0]  rs2_addr,     // FP source register 2 address
+    input wire logic [4:0]  rs3_addr,     // FP source register 3 address (for FMADD, etc.)
+    input wire logic [4:0]  rd_addr,      // FP destination register address
+    input wire logic [31:0] rd_data,      // Write data
     output logic [31:0] rs1_data,     // Read data 1
     output logic [31:0] rs2_data,     // Read data 2
     output logic [31:0] rs3_data      // Read data 3

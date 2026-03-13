@@ -20,21 +20,21 @@ module top #(
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8      // Number of cycles to hold reset after release
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
     
     // Host TX Interface (to External Host)
     // Serialized bus transactions sent to host
     output logic [7:0]  host_tx_data,
     output logic        host_tx_valid,
-    input  logic        host_tx_ready,
+    input wire logic        host_tx_ready,
     
     // Host RX Interface (from External Host)
     // Serialized bus transaction responses from host
-    input  logic [7:0]  host_rx_data,
-    input  logic        host_rx_valid,
+    input wire logic [7:0]  host_rx_data,
+    input wire logic        host_rx_valid,
     output logic        host_rx_ready,
-    input  logic        com_err,
+    input wire logic        com_err,
     
     // LED peripheral outputs
     output logic [7:0]  led_out,

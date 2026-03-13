@@ -1,8 +1,8 @@
 `default_nettype none
 module debouncer_wrapper (
-    input  logic clk,
-    input  logic rst_n,
-    input  logic noisy_in,
+    input wire logic clk,
+    input wire logic rst_n,
+    input wire logic noisy_in,
     output logic debounced_out
 );
 

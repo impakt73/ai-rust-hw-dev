@@ -3,8 +3,8 @@
 // Converts IEEE 754 single-precision float to 32-bit integer
 
 module fpu_float_to_int (
-    input  logic [31:0] val,
-    input  logic        is_signed,
+    input wire logic [31:0] val,
+    input wire logic        is_signed,
     output logic [31:0] result,
     output logic        invalid
 );

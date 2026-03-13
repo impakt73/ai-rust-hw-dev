@@ -1,7 +1,7 @@
 `default_nettype none
 module square_wave_generator_wrapper (
-    input  logic clk,
-    input  logic rst_n,
+    input wire logic clk,
+    input wire logic rst_n,
     output logic square_wave
 );
 

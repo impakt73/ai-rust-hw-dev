@@ -12,16 +12,16 @@ module uart_validation_top #(
     parameter int FIFO_DEPTH = 8
 ) (
     // Clock input (100 MHz on-board oscillator)
-    input  logic       clk,
+    input wire logic       clk,
 
     // Reset button (active low)
-    input  logic       rst_n_btn,
+    input wire logic       rst_n_btn,
 
     // LED outputs (8 LEDs on Alchitry Cu main board)
     output logic [7:0] led,
 
     // USB Serial
-    input  logic       usb_rx,
+    input wire logic       usb_rx,
     output logic       usb_tx
 );
     localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;

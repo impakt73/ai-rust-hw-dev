@@ -5,9 +5,9 @@ module fpga_common_top #(
     parameter int CLK_FREQ_HZ = 25_000_000,
     parameter int RESET_CYCLES = 25_000_000
 ) (
-    input  logic       sys_clk,
-    input  logic       rst_n,
-    input  logic       usb_rx,
+    input wire logic       sys_clk,
+    input wire logic       rst_n,
+    input wire logic       usb_rx,
     output logic       usb_tx,
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,

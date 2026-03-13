@@ -4,27 +4,27 @@
 
 module host_bus_tx (
     // Clock and reset
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // TX Interface (to External Host)
     output logic [7:0]  tx_data,
     output logic        tx_valid,
-    input  logic        tx_ready,
+    input wire logic        tx_ready,
 
     // Packet Beat Stream Input
-    input  logic        packet_valid,
+    input wire logic        packet_valid,
     output logic        packet_ready,
-    input  logic        packet_start,
-    input  logic        packet_last,
-    input  logic        packet_req,
-    input  logic        packet_we,
-    input  logic [1:0]  packet_size,
-    input  logic        packet_src_fixed,
-    input  logic        packet_dst_fixed,
-    input  logic [15:0] packet_burst_len_m1,
-    input  logic [31:0] packet_base_addr,
-    input  logic [31:0] packet_data
+    input wire logic        packet_start,
+    input wire logic        packet_last,
+    input wire logic        packet_req,
+    input wire logic        packet_we,
+    input wire logic [1:0]  packet_size,
+    input wire logic        packet_src_fixed,
+    input wire logic        packet_dst_fixed,
+    input wire logic [15:0] packet_burst_len_m1,
+    input wire logic [31:0] packet_base_addr,
+    input wire logic [31:0] packet_data
 );
 
     typedef enum logic [3:0] {

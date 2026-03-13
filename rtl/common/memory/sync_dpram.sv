@@ -17,16 +17,16 @@ module sync_dpram #(
     parameter int DATA_WIDTH = 32,
     parameter int ADDR_WIDTH = 8   // 256 entries by default
 ) (
-    input  logic                    wclk,
-    input  logic                    rclk,
+    input wire logic                    wclk,
+    input wire logic                    rclk,
     
     // Write port
-    input  logic                    we,
-    input  logic [ADDR_WIDTH-1:0]   waddr,
-    input  logic [DATA_WIDTH-1:0]   wdata,
+    input wire logic                    we,
+    input wire logic [ADDR_WIDTH-1:0]   waddr,
+    input wire logic [DATA_WIDTH-1:0]   wdata,
     
     // Read port
-    input  logic [ADDR_WIDTH-1:0]   raddr,
+    input wire logic [ADDR_WIDTH-1:0]   raddr,
     output logic [DATA_WIDTH-1:0]   rdata
 );
 

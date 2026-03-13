@@ -16,8 +16,8 @@
 module reset_controller #(
     parameter RESET_CYCLES = 8  // Number of cycles to hold reset (default: 8)
 ) (
-    input  logic clk,           // System clock
-    input  logic rst_n_in,      // Input reset (active low, typically from PLL lock)
+    input wire logic clk,           // System clock
+    input wire logic rst_n_in,      // Input reset (active low, typically from PLL lock)
     output logic rst_n_out      // Output reset (active low, registered: 0 = reset asserted)
 );
 

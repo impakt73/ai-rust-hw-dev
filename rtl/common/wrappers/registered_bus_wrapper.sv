@@ -1,37 +1,37 @@
 `default_nettype none
 module registered_bus_wrapper (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // Master 0 A channel
-    input  logic [31:0] master0_mem_a_addr,
-    input  logic [31:0] master0_mem_a_wdata,
-    input  logic        master0_mem_a_we,
-    input  logic [1:0]  master0_mem_a_size,
-    input  logic        master0_mem_a_valid,
+    input wire logic [31:0] master0_mem_a_addr,
+    input wire logic [31:0] master0_mem_a_wdata,
+    input wire logic        master0_mem_a_we,
+    input wire logic [1:0]  master0_mem_a_size,
+    input wire logic        master0_mem_a_valid,
     output logic        master0_mem_a_ready,
 
     // Master 0 D channel
     output logic [31:0] master0_mem_d_rdata,
     output logic        master0_mem_d_valid,
-    input  logic        master0_mem_d_ready,
+    input wire logic        master0_mem_d_ready,
 
     // Master 1 A channel
-    input  logic [31:0] master1_mem_a_addr,
-    input  logic [31:0] master1_mem_a_wdata,
-    input  logic        master1_mem_a_we,
-    input  logic [1:0]  master1_mem_a_size,
-    input  logic        master1_mem_a_valid,
+    input wire logic [31:0] master1_mem_a_addr,
+    input wire logic [31:0] master1_mem_a_wdata,
+    input wire logic        master1_mem_a_we,
+    input wire logic [1:0]  master1_mem_a_size,
+    input wire logic        master1_mem_a_valid,
     output logic        master1_mem_a_ready,
 
     // Master 1 D channel
     output logic [31:0] master1_mem_d_rdata,
     output logic        master1_mem_d_valid,
-    input  logic        master1_mem_d_ready,
+    input wire logic        master1_mem_d_ready,
 
     // Slave 0 configuration
-    input  logic [31:0] slave0_base_addr,
-    input  logic [31:0] slave0_addr_size,
+    input wire logic [31:0] slave0_base_addr,
+    input wire logic [31:0] slave0_addr_size,
 
     // Slave 0 A channel
     output logic [31:0] slave0_mem_a_addr,
@@ -39,16 +39,16 @@ module registered_bus_wrapper (
     output logic        slave0_mem_a_we,
     output logic [1:0]  slave0_mem_a_size,
     output logic        slave0_mem_a_valid,
-    input  logic        slave0_mem_a_ready,
+    input wire logic        slave0_mem_a_ready,
 
     // Slave 0 D channel
-    input  logic [31:0] slave0_mem_d_rdata,
-    input  logic        slave0_mem_d_valid,
+    input wire logic [31:0] slave0_mem_d_rdata,
+    input wire logic        slave0_mem_d_valid,
     output logic        slave0_mem_d_ready,
 
     // Slave 1 configuration
-    input  logic [31:0] slave1_base_addr,
-    input  logic [31:0] slave1_addr_size,
+    input wire logic [31:0] slave1_base_addr,
+    input wire logic [31:0] slave1_addr_size,
 
     // Slave 1 A channel
     output logic [31:0] slave1_mem_a_addr,
@@ -56,11 +56,11 @@ module registered_bus_wrapper (
     output logic        slave1_mem_a_we,
     output logic [1:0]  slave1_mem_a_size,
     output logic        slave1_mem_a_valid,
-    input  logic        slave1_mem_a_ready,
+    input wire logic        slave1_mem_a_ready,
 
     // Slave 1 D channel
-    input  logic [31:0] slave1_mem_d_rdata,
-    input  logic        slave1_mem_d_valid,
+    input wire logic [31:0] slave1_mem_d_rdata,
+    input wire logic        slave1_mem_d_valid,
     output logic        slave1_mem_d_ready
 );
 

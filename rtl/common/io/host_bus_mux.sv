@@ -8,20 +8,20 @@
 // interface. Internally, one request and one response can be buffered.
 
 module host_bus_mux (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // CPU-side interface
-    input  logic [31:0] cpu_mem_a_addr,
-    input  logic [31:0] cpu_mem_a_wdata,
-    input  logic        cpu_mem_a_we,
-    input  logic [1:0]  cpu_mem_a_size,
-    input  logic        cpu_mem_a_valid,
+    input wire logic [31:0] cpu_mem_a_addr,
+    input wire logic [31:0] cpu_mem_a_wdata,
+    input wire logic        cpu_mem_a_we,
+    input wire logic [1:0]  cpu_mem_a_size,
+    input wire logic        cpu_mem_a_valid,
     output logic        cpu_mem_a_ready,
 
     output logic [31:0] cpu_mem_d_rdata,
     output logic        cpu_mem_d_valid,
-    input  logic        cpu_mem_d_ready,
+    input wire logic        cpu_mem_d_ready,
 
     // System bus path (RTL peripherals)
     output logic [31:0] sys_mem_a_addr,
@@ -29,10 +29,10 @@ module host_bus_mux (
     output logic        sys_mem_a_we,
     output logic [1:0]  sys_mem_a_size,
     output logic        sys_mem_a_valid,
-    input  logic        sys_mem_a_ready,
+    input wire logic        sys_mem_a_ready,
 
-    input  logic [31:0] sys_mem_d_rdata,
-    input  logic        sys_mem_d_valid,
+    input wire logic [31:0] sys_mem_d_rdata,
+    input wire logic        sys_mem_d_valid,
     output logic        sys_mem_d_ready,
 
     // Host bus interface path (external memory)
@@ -41,10 +41,10 @@ module host_bus_mux (
     output logic        host_mem_a_we,
     output logic [1:0]  host_mem_a_size,
     output logic        host_mem_a_valid,
-    input  logic        host_mem_a_ready,
+    input wire logic        host_mem_a_ready,
 
-    input  logic [31:0] host_mem_d_rdata,
-    input  logic        host_mem_d_valid,
+    input wire logic [31:0] host_mem_d_rdata,
+    input wire logic        host_mem_d_valid,
     output logic        host_mem_d_ready
 );
     logic [31:0] pending_req_addr;

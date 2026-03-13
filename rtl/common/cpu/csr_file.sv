@@ -10,19 +10,19 @@ module csr_file #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b1
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
     
     // Control signals
-    input  logic        is_csr,
-    input  logic        instr_complete,  // Signal when instruction completes
-    input  logic [2:0]  funct3,
-    input  logic [4:0]  rs1,
+    input wire logic        is_csr,
+    input wire logic        instr_complete,  // Signal when instruction completes
+    input wire logic [2:0]  funct3,
+    input wire logic [4:0]  rs1,
     
     // Data signals
-    input  logic [11:0] csr_addr,
-    input  logic [31:0] rs1_data,
-    input  logic [31:0] fcsr,        // F extension: FCSR value from top module
+    input wire logic [11:0] csr_addr,
+    input wire logic [31:0] rs1_data,
+    input wire logic [31:0] fcsr,        // F extension: FCSR value from top module
     
     // Output
     output logic [31:0] csr_rdata

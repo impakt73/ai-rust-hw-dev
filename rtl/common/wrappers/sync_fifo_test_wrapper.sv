@@ -1,12 +1,12 @@
 `default_nettype none
 module sync_fifo_test_wrapper (
-    input  logic       clk,
-    input  logic       rst_n,
-    input  logic       wr_valid,
+    input wire logic       clk,
+    input wire logic       rst_n,
+    input wire logic       wr_valid,
     output logic       wr_ready,
-    input  logic [7:0] wdata,
+    input wire logic [7:0] wdata,
     output logic       rd_valid,
-    input  logic       rd_ready,
+    input wire logic       rd_ready,
     output logic [7:0] rdata,
     output logic [2:0] count
 );

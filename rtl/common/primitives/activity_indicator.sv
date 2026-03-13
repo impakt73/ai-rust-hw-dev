@@ -16,9 +16,9 @@ module activity_indicator #(
     parameter int unsigned CLK_FREQ_HZ = 100_000_000,
     parameter int unsigned INDICATOR_FREQ_MILLIHERTZ = 1_000
 ) (
-    input  logic clk,
-    input  logic rst_n,
-    input  logic activity,
+    input wire logic clk,
+    input wire logic rst_n,
+    input wire logic activity,
     output logic indicator
 );
 

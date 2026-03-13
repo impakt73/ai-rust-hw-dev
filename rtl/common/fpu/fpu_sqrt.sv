@@ -3,7 +3,7 @@
 // Simplified square root implementation
 
 module fpu_sqrt (
-    input  logic [31:0] a,
+    input wire logic [31:0] a,
     output logic [31:0] result,
     output logic [4:0]  flags
 );

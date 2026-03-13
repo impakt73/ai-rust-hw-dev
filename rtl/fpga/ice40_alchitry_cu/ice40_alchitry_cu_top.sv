@@ -15,26 +15,26 @@ module ice40_alchitry_cu_top #(
     parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
 ) (
     // Clock input (100 MHz on-board oscillator)
-    input  logic       clk,
+    input wire logic       clk,
     
     // Reset button (active low)
-    input  logic       rst_n_btn,
+    input wire logic       rst_n_btn,
     
     // LED outputs (8 LEDs on Alchitry Cu main board)
     output logic [7:0] led,
     
     // USB Serial
-    input  logic       usb_rx,
+    input wire logic       usb_rx,
     output logic       usb_tx,
     
     // IO Shield - LEDs (24 LEDs in 3 groups of 8)
     output logic [23:0] io_led,
     
     // IO Shield - DIP Switches (24 switches in 3 groups of 8)
-    input  logic [23:0] io_dip,
+    input wire logic [23:0] io_dip,
     
     // IO Shield - Buttons (5 buttons, directly active high)
-    input  logic [4:0]  io_button,
+    input wire logic [4:0]  io_button,
     
     // IO Shield - Seven-Segment Display (active low signals)
     output logic [3:0]  io_sel,   // Digit selection (active low: 0=enabled)

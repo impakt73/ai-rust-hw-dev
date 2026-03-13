@@ -5,20 +5,20 @@
 
 module host_bus_interface (
     // Clock and reset
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // CPU slave interface (CPU->Host path)
-    input  logic [31:0] mem_a_addr,
-    input  logic [31:0] mem_a_wdata,
-    input  logic        mem_a_we,
-    input  logic [1:0]  mem_a_size,
-    input  logic        mem_a_valid,
+    input wire logic [31:0] mem_a_addr,
+    input wire logic [31:0] mem_a_wdata,
+    input wire logic        mem_a_we,
+    input wire logic [1:0]  mem_a_size,
+    input wire logic        mem_a_valid,
     output logic        mem_a_ready,
 
     output logic [31:0] mem_d_rdata,
     output logic        mem_d_valid,
-    input  logic        mem_d_ready,
+    input wire logic        mem_d_ready,
 
     // Host-initiated master interface (Host->RTL path)
     output logic [31:0] host_mem_a_addr,
@@ -26,20 +26,20 @@ module host_bus_interface (
     output logic        host_mem_a_we,
     output logic [1:0]  host_mem_a_size,
     output logic        host_mem_a_valid,
-    input  logic        host_mem_a_ready,
+    input wire logic        host_mem_a_ready,
 
-    input  logic [31:0] host_mem_d_rdata,
-    input  logic        host_mem_d_valid,
+    input wire logic [31:0] host_mem_d_rdata,
+    input wire logic        host_mem_d_valid,
     output logic        host_mem_d_ready,
 
     // Host TX Interface (to External Host)
     output logic [7:0]  tx_data,
     output logic        tx_valid,
-    input  logic        tx_ready,
+    input wire logic        tx_ready,
 
     // Host RX Interface (from External Host)
-    input  logic [7:0]  rx_data,
-    input  logic        rx_valid,
+    input wire logic [7:0]  rx_data,
+    input wire logic        rx_valid,
     output logic        rx_ready
 );
 

@@ -17,18 +17,18 @@
 module skid_buffer #(
     parameter int WIDTH = 8
 ) (
-    input  logic             clk,
-    input  logic             rst_n,
+    input wire logic             clk,
+    input wire logic             rst_n,
 
     // Input side
-    input  logic             in_valid,
-    input  logic [WIDTH-1:0] in_data,
+    input wire logic             in_valid,
+    input wire logic [WIDTH-1:0] in_data,
     output logic             in_ready,
 
     // Output side
     output logic             out_valid,
     output logic [WIDTH-1:0] out_data,
-    input  logic             out_ready
+    input wire logic             out_ready
 );
 
     logic [WIDTH-1:0] out_data_current;

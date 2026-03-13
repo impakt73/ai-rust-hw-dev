@@ -25,18 +25,18 @@ module async_fifo #(
     parameter int DEPTH = 8,
     parameter int SYNC_STAGES = 3
 ) (
-    input  logic             wr_clk,
-    input  logic             rd_clk,
-    input  logic             rst_n,
+    input wire logic             wr_clk,
+    input wire logic             rd_clk,
+    input wire logic             rst_n,
 
     // Write interface (wr_clk domain)
-    input  logic             wr_valid,
+    input wire logic             wr_valid,
     output logic             wr_ready,
-    input  logic [WIDTH-1:0] wdata,
+    input wire logic [WIDTH-1:0] wdata,
 
     // Read interface (rd_clk domain)
     output logic             rd_valid,
-    input  logic             rd_ready,
+    input wire logic             rd_ready,
     output logic [WIDTH-1:0] rdata,
 
     // Status outputs

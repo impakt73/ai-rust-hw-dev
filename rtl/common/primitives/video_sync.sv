@@ -38,8 +38,8 @@ module video_sync #(
     parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
     parameter bit VSYNC_ACTIVE_HIGH = 1'b0
 ) (
-    input  logic clk,
-    input  logic rst_n,
+    input wire logic clk,
+    input wire logic rst_n,
     output logic hsync,
     output logic vsync,
     output logic active_video,

@@ -28,15 +28,15 @@
 module sys_led_controller #(
     parameter int unsigned CLK_FREQ_HZ = 50_000_000
 ) (
-    input  logic       clk,
-    input  logic       rst_n,
-    input  logic       cpu_booting,
-    input  logic       cpu_halted,
-    input  logic       instr_complete,
-    input  logic       sys_bus_handshake,
-    input  logic       host_bus_rx_handshake,
-    input  logic       host_bus_tx_handshake,
-    input  logic       com_err,
+    input wire logic       clk,
+    input wire logic       rst_n,
+    input wire logic       cpu_booting,
+    input wire logic       cpu_halted,
+    input wire logic       instr_complete,
+    input wire logic       sys_bus_handshake,
+    input wire logic       host_bus_rx_handshake,
+    input wire logic       host_bus_tx_handshake,
+    input wire logic       com_err,
     output logic [7:0] sys_led
 );
 

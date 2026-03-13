@@ -1,13 +1,13 @@
 `default_nettype none
 module skid_buffer_wrapper (
-    input  logic       clk,
-    input  logic       rst_n,
-    input  logic       in_valid,
-    input  logic [7:0] in_data,
+    input wire logic       clk,
+    input wire logic       rst_n,
+    input wire logic       in_valid,
+    input wire logic [7:0] in_data,
     output logic       in_ready,
     output logic       out_valid,
     output logic [7:0] out_data,
-    input  logic       out_ready
+    input wire logic       out_ready
 );
 
     skid_buffer #(

@@ -5,12 +5,12 @@
 // the timing path through the ALU.
 
 module branch_unit (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        branch,
-    input  logic [2:0]  funct3,
-    input  logic [31:0] rs1_data,
-    input  logic [31:0] rs2_data,
+    input wire logic        clk,
+    input wire logic        rst_n,
+    input wire logic        branch,
+    input wire logic [2:0]  funct3,
+    input wire logic [31:0] rs1_data,
+    input wire logic [31:0] rs2_data,
     
     output logic        take_branch
 );

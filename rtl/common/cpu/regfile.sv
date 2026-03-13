@@ -26,12 +26,12 @@
 //   - No special read logic needed since x0 is initialized to 0 and never written
 
 module regfile (
-    input  logic        clk,
-    input  logic        we,           // Write enable (already gated for x0 in CPU)
-    input  logic [4:0]  rs1_addr,     // Read address 1
-    input  logic [4:0]  rs2_addr,     // Read address 2
-    input  logic [4:0]  rd_addr,      // Write address
-    input  logic [31:0] rd_data,      // Write data
+    input wire logic        clk,
+    input wire logic        we,           // Write enable (already gated for x0 in CPU)
+    input wire logic [4:0]  rs1_addr,     // Read address 1
+    input wire logic [4:0]  rs2_addr,     // Read address 2
+    input wire logic [4:0]  rd_addr,      // Write address
+    input wire logic [31:0] rd_data,      // Write data
     output logic [31:0] rs1_data,     // Read data 1
     output logic [31:0] rs2_data      // Read data 2
 );

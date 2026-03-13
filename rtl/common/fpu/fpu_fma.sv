@@ -4,11 +4,11 @@
 // Self-contained implementation with inlined multiplier and adder logic
 
 module fpu_fma (
-    input  logic [31:0] a,
-    input  logic [31:0] b,
-    input  logic [31:0] c,
-    input  logic        negate_product,   // If 1, negate (a*b)
-    input  logic        negate_addend,    // If 1, subtract c instead of add
+    input wire logic [31:0] a,
+    input wire logic [31:0] b,
+    input wire logic [31:0] c,
+    input wire logic        negate_product,   // If 1, negate (a*b)
+    input wire logic        negate_addend,    // If 1, subtract c instead of add
     output logic [31:0] result,
     output logic [4:0]  flags
 );

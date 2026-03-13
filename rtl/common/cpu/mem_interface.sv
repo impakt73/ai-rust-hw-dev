@@ -5,21 +5,21 @@
 
 module mem_interface (
     // Control signals
-    input  logic [2:0]  funct3,
-    input  logic        mem_write,
-    input  logic        mem_read,
-    input  logic        is_atomic_rmw,  // A extension: in S_ATOMIC_RMW state
-    input  logic        is_mem_write_state, // In S_MEM_WRITE state
-    input  logic        is_sc,          // A extension: SC.W instruction
-    input  logic        sc_success,     // A extension: SC success flag
-    input  logic        is_fp_store,    // F extension: FSW instruction
+    input wire logic [2:0]  funct3,
+    input wire logic        mem_write,
+    input wire logic        mem_read,
+    input wire logic        is_atomic_rmw,  // A extension: in S_ATOMIC_RMW state
+    input wire logic        is_mem_write_state, // In S_MEM_WRITE state
+    input wire logic        is_sc,          // A extension: SC.W instruction
+    input wire logic        sc_success,     // A extension: SC success flag
+    input wire logic        is_fp_store,    // F extension: FSW instruction
     
     // Data signals
-    input  logic [31:0] alu_result,
-    input  logic [31:0] rs2_data,
-    input  logic [31:0] fs2_data,       // F extension: FP store data
-    input  logic [31:0] dmem_rdata,
-    input  logic [31:0] amo_wdata,      // A extension: computed AMO write data (direct from ALU)
+    input wire logic [31:0] alu_result,
+    input wire logic [31:0] rs2_data,
+    input wire logic [31:0] fs2_data,       // F extension: FP store data
+    input wire logic [31:0] dmem_rdata,
+    input wire logic [31:0] amo_wdata,      // A extension: computed AMO write data (direct from ALU)
     
     // Memory interface outputs
     output logic [31:0] dmem_addr,

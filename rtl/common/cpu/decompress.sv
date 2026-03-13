@@ -8,8 +8,8 @@
 /* verilator lint_off WIDTHEXPAND */
 
 module decompress (
-    input  logic [15:0] insn_16,        // 16-bit instruction input (lower half for detection)
-    input  logic [31:0] insn_32_in,     // Full 32-bit input (for non-compressed passthrough)
+    input wire logic [15:0] insn_16,        // 16-bit instruction input (lower half for detection)
+    input wire logic [31:0] insn_32_in,     // Full 32-bit input (for non-compressed passthrough)
     output logic [31:0] insn_32,        // 32-bit expanded instruction
     output logic        is_compressed,  // 1 if input was compressed
     output logic        is_valid        // 1 if valid instruction

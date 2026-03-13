@@ -6,10 +6,10 @@ module ecp5_icepi_zero_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0
 ) (
-    input  logic clk,
-    input  logic rst_n_btn,
+    input wire logic clk,
+    input wire logic rst_n_btn,
     output logic led,
-    input  logic usb_rx,
+    input wire logic usb_rx,
     output logic usb_tx
 );
     localparam int unsigned BUTTON_DEBOUNCE_US = 10_000;

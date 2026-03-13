@@ -22,17 +22,17 @@ module sync_fifo #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 8
 ) (
-    input  logic             clk,
-    input  logic             rst_n,
+    input wire logic             clk,
+    input wire logic             rst_n,
     
     // Write interface
-    input  logic             wr_valid,
+    input wire logic             wr_valid,
     output logic             wr_ready,
-    input  logic [WIDTH-1:0] wdata,
+    input wire logic [WIDTH-1:0] wdata,
     
     // Read interface
     output logic             rd_valid,
-    input  logic             rd_ready,
+    input wire logic             rd_ready,
     output logic [WIDTH-1:0] rdata,
     
     // Occupancy output

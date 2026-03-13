@@ -7,15 +7,15 @@
 // compatibility with Yosys synthesis (even v0.61 has function limitations)
 
 module fpu (
-    input  logic        clk,          // Clock for multi-cycle division
-    input  logic        rst_n,        // Reset for multi-cycle division
-    input  logic        fpu_start,    // Start FPU operation (pulse)
-    input  logic [31:0] fs1,
-    input  logic [31:0] fs2,
-    input  logic [31:0] fs3,
-    input  logic [31:0] int_src,
-    input  logic [4:0]  fpu_op,
-    input  logic [2:0]  rm,
+    input wire logic        clk,          // Clock for multi-cycle division
+    input wire logic        rst_n,        // Reset for multi-cycle division
+    input wire logic        fpu_start,    // Start FPU operation (pulse)
+    input wire logic [31:0] fs1,
+    input wire logic [31:0] fs2,
+    input wire logic [31:0] fs3,
+    input wire logic [31:0] int_src,
+    input wire logic [4:0]  fpu_op,
+    input wire logic [2:0]  rm,
     output logic [31:0] fp_result,
     output logic [31:0] int_result,
     output logic [4:0]  fflags,

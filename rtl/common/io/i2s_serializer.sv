@@ -11,10 +11,10 @@ module i2s_serializer #(
     parameter int INPUT_SAMPLE_WIDTH = 16,
     parameter int OUTPUT_SAMPLE_WIDTH = 16
 ) (
-    input  logic                          clk,
-    input  logic                          rst_n,
-    input  logic [INPUT_SAMPLE_WIDTH-1:0] sample_data,
-    input  logic                          sample_valid,
+    input wire logic                          clk,
+    input wire logic                          rst_n,
+    input wire logic [INPUT_SAMPLE_WIDTH-1:0] sample_data,
+    input wire logic                          sample_valid,
     output logic                          sample_ready,
     output logic                          i2s_bclk,
     output logic                          i2s_lrclk,

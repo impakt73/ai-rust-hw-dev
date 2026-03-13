@@ -7,10 +7,10 @@ module decoder #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        decode_en,
-    input  logic [31:0] instruction,
+    input wire logic        clk,
+    input wire logic        rst_n,
+    input wire logic        decode_en,
+    input wire logic [31:0] instruction,
     output logic [6:0]  opcode,
     output logic [4:0]  rd,
     output logic [4:0]  rs1,
