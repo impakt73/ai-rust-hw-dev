@@ -9,73 +9,86 @@
 
 ## Executive Summary
 
-The current `ice40_alchitry_cu` build closes timing comfortably.
+The current `ice40_alchitry_cu` build closes timing comfortably, but the fresh reports make it clear that the design is now limited by a **host-bus control path**, not by the CPU execute datapath.
 
-- **Routed Fmax (nextpnr):** **62.42 MHz**
+- **Normalized routed Fmax (`riscv_fpga_stats.json`):** **70.45 MHz**
+- **Detailed worst synchronous path (`nextpnr.log`):** **15.1 ns** = **66.12 MHz**
 - **Timing status:** **PASS**
-- **Timing margin vs. 25 MHz target:** **+37.42 MHz** (**+149.7%**)
+- **Conservative timing margin vs. 25 MHz target:** **+41.12 MHz** (**+164.5%**)
 
-The most important conclusion from the fresh reports is that the design's worst path is **no longer in the CPU ALU**. The dominant synchronous path now lives in the **host bus interface / host TX formatting control logic**, specifically in the logic that decides whether a read response beat is the **first beat of a burst** and whether `host_beats_remaining` should be decremented or held.
+Only **two synchronous critical-path reports** appear in the final `nextpnr` output:
 
-That path is not limited by one single arithmetic operator. It is long because it combines:
+1. the real system bottleneck in `host_bus_interface.sv`, and
+2. a much shorter debouncer counter path in the raw input clock domain.
 
-1. a **16-bit carry-chain compare**,
-2. multiple layers of **packet-control muxing**,
-3. reconvergence through the `host_bus_tx` handshake logic, and
-4. **two very long routed hops** across the iCE40 fabric.
+The remaining top reported paths are boundary paths:
 
-The design still has two structural constraints that will make future timing closure harder even though this build passes:
+- asynchronous input pad to synchronizer,
+- asynchronous input pad to synchronizer, and
+- synchronous internal logic to output pad.
 
-- **BRAM:** 30 / 32 blocks (**93%**)
+That matters because the design already shows strong **routing pressure**:
+
+- **BRAM:** 30 / 32 (**93%**)
 - **Global buffers:** 8 / 8 (**100%**)
 
-Those constraints matter because the worst synchronous path is already **routing-dominated**.
+Those utilization numbers line up with what the critical-path reports show: the worst path is **routing-dominated control logic** with long cross-device hops after the compare/control cone is built.
 
 ---
 
 ## Authoritative Artifacts Used
 
-This report is based on the generated build artifacts in:
+This report is based on the fresh build artifacts in:
 
 - `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log`
-- `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
+- `rtl/fpga/build/ice40_alchitry_cu/yosys.log`
 - `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.json`
 - `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.md`
 
-Key summarized resource numbers from `riscv_fpga_stats.*`:
+For the iCE40 target, the **authoritative timing source is `nextpnr.log`**. The normalized stats artifacts are still useful for compact summaries, but the final detailed path dumps in `nextpnr.log` are the right source for path-level root-cause analysis.
+
+### Resource Summary
 
 | Metric | Value | Available | Utilization |
 | --- | ---: | ---: | ---: |
-| Logic cells (`ICESTORM_LC`) | 5604 | 7680 | 72% |
+| Logic cells (`ICESTORM_LC`) | 5661 | 7680 | 73% |
 | BRAM (`ICESTORM_RAM`) | 30 | 32 | 93% |
 | Global buffers (`SB_GB`) | 8 | 8 | 100% |
 | IOs (`SB_IO`) | 77 | 256 | 30% |
 | PLLs (`ICESTORM_PLL`) | 1 | 2 | 50% |
 
-Cell counts from Yosys:
+### Post-Synthesis Cell Counts
 
 | Cell | Count |
 | --- | ---: |
-| `SB_LUT4` | 4540 |
-| `SB_CARRY` | 912 |
-| `SB_DFF` | 315 |
-| `SB_DFFESR` | 1663 |
-| `SB_DFFSR` | 451 |
+| `SB_LUT4` | 4569 |
+| `SB_CARRY` | 943 |
+| `SB_DFF` | 351 |
+| `SB_DFFE` | 72 |
+| `SB_DFFESR` | 1624 |
+| `SB_DFFESS` | 2 |
+| `SB_DFFSR` | 421 |
+| `SB_DFFSS` | 12 |
 | `SB_RAM40_4K` | 30 |
+
+### Note on the Fmax Numbers
+
+The normalized stats output reports **70.45 MHz**, while the final detailed synchronous path section of `nextpnr.log` reports a **15.1 ns** worst path, equivalent to **66.12 MHz**. For optimization work, the **66.12 MHz figure is the more useful one**, because it is tied directly to the concrete source/destination pair and routed delay breakdown of the actual worst path.
 
 ---
 
-## Critical Path #1 — Host Read Response Start/Count Control
+## Critical Path #1 — Host Read-Response Burst Control to Host Address Update
 
+**Timing relevance:** **Primary synchronous bottleneck**  
 **Domain:** `pll_clk_global` (posedge → posedge)  
-**Primary source:** `host_req_burst_len_m1` register in `host_bus_interface.sv`  
-**Primary destination:** `host_beats_remaining` clock-enable logic in `host_bus_interface.sv`  
-**Delay:** **16.5 ns total** (`nextpnr` detailed path)  
-**Breakdown:** **6.1 ns logic + 10.5 ns routing** (`nextpnr`)
+**Source:** `host_req_burst_len_m1` register in `host_bus_interface.sv`  
+**Destination:** `host_curr_addr` clock-enable path in `host_bus_interface.sv`  
+**Delay:** **15.1 ns total**  
+**Breakdown:** **6.1 ns logic + 9.1 ns routing**
 
 ### RTL Path Narrative
 
-The worst registered path starts from the stored host burst length metadata and fans into the `HOST_READ_TX` combinational formatter:
+The longest path starts in the stored host-burst metadata and flows into the read-response formatter in `rtl/common/io/host_bus_interface.sv`:
 
 ```systemverilog
 tx_pkt_start = (host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1));
@@ -83,77 +96,160 @@ tx_pkt_last  = (host_beats_remaining == 17'd1);
 tx_pkt_src_fixed = host_req_src_fixed;
 ```
 
-This logic lives in `rtl/common/io/host_bus_interface.sv` and feeds the `host_bus_tx` instance. The timing reports show that the path then propagates through `host_bus_tx` control around `packet_start` / `packet_ready` / `beat_bytes_reg`, reconverges into `host_state` / `host_req_src_fixed` dependent logic, and finally lands on the **clock-enable** controlling updates to `host_beats_remaining`.
+That control then reconverges with the logic that conditionally advances the host address after a response beat is accepted:
+
+```systemverilog
+if (!host_req_src_fixed) begin
+    host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
+end
+```
 
 At a high level, the path is:
 
 ```text
 host_req_burst_len_m1[DFF]
-  -> "burst_len + 1" compare / start-of-burst detection
-  -> tx packet control muxing in HOST_READ_TX
-  -> host_bus_tx packet acceptance / beat formatting control
-  -> host_state + host_req_src_fixed reconvergence
-  -> host_beats_remaining clock enable[DFF]
+  -> burst_len+1 / equality compare for tx_pkt_start
+  -> HOST_READ_TX packet-control muxing
+  -> tx handshake acceptance logic
+  -> host_req_src_fixed / host_state reconvergence
+  -> host_curr_addr clock-enable logic[DFF]
 ```
-
-### Detailed Stage Breakdown
-
-The report makes the structure of the path very clear:
-
-| Stage | Delay contribution | What it means |
-| --- | ---: | --- |
-| Launch from `host_req_burst_len_m1` flop | 0.64 ns | Registered burst metadata starts the path |
-| Carry-chain segment on `cpu_cap_we...` synthesized compare logic | ~2.8 ns by 16-bit point | Yosys mapped the equality / increment logic into a long carry chain |
-| Post-compare LUT reconstruction | ~4.3 ns additional | The carry output is re-encoded back into control terms |
-| `tx_buf.beat_bytes_reg` / `host_state` control reconvergence | ~4.8 ns additional | Packet formatting and host state logic both sit on the same control cone |
-| Long route: `host_req_src_fixed...` from `(7,7)` to `(27,7)` | **2.5 ns** | First major cross-chip route |
-| Long return route back to `host_beats_remaining` enable at `(4,8)` | **2.8 ns** | Second major cross-chip route |
-| Setup at destination | 0.1 ns | Final register requirement |
 
 ### Why This Path Is Slow
 
-1. **A wide equality test is rebuilt combinationally every cycle.**  
-   `tx_pkt_start` checks whether `host_beats_remaining` is equal to `host_req_burst_len_m1 + 1`. That means the design performs a width extension, an increment, and a full-width equality test inside the hot combinational path instead of reusing a registered "first beat" flag.
+1. **The "first beat" decision is recomputed combinationally.**  
+   `tx_pkt_start` is derived from a full-width compare against `host_req_burst_len_m1 + 1`, so the design pays for an increment and equality test in the hottest control cone instead of reusing a predecoded flag.
 
-2. **The compare result is not consumed locally.**  
-   Instead of terminating near the compare, the result continues through the host TX packet-control logic, then returns into host-side sequencing. That reconvergence is what turns a reasonable arithmetic path into a control path with deep fan-in.
+2. **The result does not terminate locally.**  
+   The compare output keeps traveling through TX packet formatting and acceptance logic before coming back into host-side state/update control. That reconvergence is what turns a modest arithmetic check into the dominant routed control path.
 
-3. **The path crosses module boundaries with handshake logic in the middle.**  
-   `host_bus_interface` computes packet metadata, but `host_bus_tx` decides packet acceptance based on `packet_start` and TX state. That creates a combinational interface boundary on the hottest path.
+3. **The path crosses a module boundary through handshake logic.**  
+   `host_bus_interface` computes packet metadata, but `host_bus_tx` contributes the ready/accept behavior that feeds back into the address-update decision. That makes the cone deeper and harder to place compactly.
 
-4. **Routing dominates logic.**  
-   `nextpnr` reports **10.5 ns routing vs. 6.1 ns logic**. The biggest single penalties are the two long routes on `host_req_src_fixed`-derived logic, not the carry chain alone.
+4. **Routing is the biggest penalty.**  
+   The path is **more routing-limited than logic-limited**: 9.1 ns of the 15.1 ns total is routing. The detailed `nextpnr` dump shows a late long hop from roughly `(26,28)` through `(14,31)` into `(13,32)`, which is exactly the kind of cross-device control route that hurts HX8K timing.
 
 ### Actionable Fixes
 
-The most effective fixes are control-structure changes, not generic LUT shaving:
+1. **Precompute and register a "first read beat" flag** when the request is accepted, instead of recomputing  
+   `host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1)` inside `HOST_READ_TX`.
 
-1. **Precompute and register the "first read-response beat" condition.**  
-   Add a dedicated flag when entering `HOST_READ_TX` instead of recomputing  
-   `host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1)` combinationally.
+2. **Break the control cone at the read-response boundary.**  
+   Register the metadata that `host_bus_tx` needs (`start`, `last`, and any fixed-address attributes) before the TX handshake stage.
 
-2. **Register packet metadata at the `HOST_READ_D -> HOST_READ_TX` boundary.**  
-   Move `tx_pkt_start`, `tx_pkt_last`, and any read-response metadata needed by `host_bus_tx` into local registers so the host-state counter logic no longer feeds directly through the TX formatter in one cycle.
+3. **Decouple address-update enable from packet-start formatting.**  
+   The `host_curr_addr` update decision should not have to wait on the same combinational logic that decides whether the outgoing packet is the first beat.
 
-3. **Decouple the `host_beats_remaining` decrement-enable from `tx_pkt_start`.**  
-   Right now "is this the first beat?" and "should the beat counter update?" are entangled by control reconvergence. Splitting those concerns should cut both LUT depth and routing distance.
-
-4. **Keep the read-response control cone physically local.**  
-   The two multi-nanosecond routes show that nextpnr placed producer and consumer logic far apart. Any RTL restructuring that keeps `host_req_src_fixed`, `host_state`, and the beat-counter update in one local control island should help more than micro-optimizing the carry chain.
+4. **Keep the read-response bookkeeping physically local.**  
+   Any RTL refactor that clusters `host_beats_remaining`, `host_req_src_fixed`, `host_state`, and the `host_curr_addr` enable path should reduce the long routed hop more effectively than micro-optimizing individual LUTs.
 
 ---
 
-## Critical Path #2 — Asynchronous Button Input to System-Clock Synchronizer
+## Critical Path #2 — Reset Debouncer Terminal Count to Debounced Output Enable
 
+**Timing relevance:** **Real synchronous path, but not the main system limiter**  
+**Domain:** `clk$SB_IO_IN` (posedge → posedge)  
+**Source:** `stable_counter` in `rst_n_btn_debouncer_inst`  
+**Destination:** `dout` clock-enable path in `rst_n_btn_debouncer_inst`  
+**Delay:** **6.5 ns total**  
+**Breakdown:** **2.3 ns logic + 4.2 ns routing**
+
+### RTL Path Narrative
+
+This path is inside `rtl/common/primitives/debouncer.sv`, which is instantiated for the reset button in `ice40_alchitry_cu_top.sv`:
+
+```systemverilog
+else if (stable_counter == STABLE_COUNT_MAX) begin
+    stable_counter <= '0;
+    dout <= din;
+end else begin
+    stable_counter <= stable_counter + 1'b1;
+end
+```
+
+The path is the classic synchronous terminal-count problem:
+
+```text
+stable_counter[DFF]
+  -> equality compare against STABLE_COUNT_MAX
+  -> output-update enable generation
+  -> dout clock-enable[DFF]
+```
+
+### Why This Path Is Slow
+
+1. **The compare is wide enough to matter.**  
+   The debouncer uses a multi-bit counter to enforce the requested stable time, so the terminal-count detect is not free.
+
+2. **It is still routing-heavy.**  
+   Even this relatively small path spends more time in routing than logic, which is consistent with the overall placement pressure on the HX8K target.
+
+3. **It is isolated from the main CPU clock domain.**  
+   This is a real synchronous path, but it lives in the raw board-clock domain of the reset debouncer. It is not the performance limit of the CPU subsystem.
+
+### Actionable Fixes
+
+1. **Use a saturating or down-counter formulation** so the terminal condition becomes simpler.
+2. **Register the terminal-count result** before it drives the `dout` enable if this path ever becomes relevant.
+3. **Reduce debounce counter width** only if board-level debounce requirements allow it.
+
+---
+
+## Critical Path #3 — Reset Button Pad to First Synchronizer Stage
+
+**Timing relevance:** **Not a system Fmax bottleneck; top async input path**  
+**Domain:** `<async> -> posedge clk$SB_IO_IN`  
+**Source:** `rst_n_btn` input pad  
+**Destination:** first stage of `rst_n_btn_sync_inst`  
+**Delay:** **1.7 ns total**  
+**Breakdown:** **0.5 ns logic + 1.3 ns routing**
+
+### RTL Path Narrative
+
+The raw reset button is synchronized directly in `rtl/fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv`:
+
+```systemverilog
+ff_sync #(
+    .WIDTH(1)
+) rst_n_btn_sync_inst (
+    .clk(clk),
+    .rst_n(1'b1),
+    .din(rst_n_btn),
+    .dout(rst_n_btn_sync2)
+);
+```
+
+### Why This Path Is Long
+
+1. **Almost all of the delay is pad routing.**  
+   There is essentially no meaningful logic here.
+
+2. **This is the correct structure for an asynchronous input.**  
+   The pad feeds the synchronizer directly, which is exactly what should happen for metastability containment.
+
+3. **It is not timing-critical for system performance.**  
+   This path only appears because it is the longest async-to-clocked path in that domain after the synchronous reports are listed.
+
+### Actionable Fixes
+
+1. No immediate RTL change is recommended.
+2. If the path ever grows, **keep the first synchronizer flop physically close to the pad**.
+3. Continue to avoid any logic in front of the synchronizer.
+
+---
+
+## Critical Path #4 — IO Button Pad to System-Clock Synchronizer
+
+**Timing relevance:** **Not a system Fmax bottleneck; top async input path into `pll_clk_global`**  
 **Domain:** `<async> -> posedge pll_clk_global`  
-**Source:** `io_button[2]` input pad  
+**Source:** `io_button[1]` input pad  
 **Destination:** first stage of `io_button_sync_inst`  
-**Delay:** **3.24 ns** (`nextpnr` headline) / **3.5 ns** (`nextpnr` detailed report)  
-**Breakdown:** **0.5 ns logic + 3.0 ns routing**
+**Delay:** **2.9 ns total**  
+**Breakdown:** **0.5 ns logic + 2.4 ns routing**
 
-### Path Narrative
+### RTL Path Narrative
 
-This is the longest asynchronous input path reported into the main 25 MHz system domain. The path goes directly from the physical `io_button[2]` pad to the first synchronizer stage instantiated in `ice40_alchitry_cu_top.sv`:
+The five IO-shield buttons are synchronized before they enter the rest of the system logic:
 
 ```systemverilog
 ff_sync #(
@@ -168,39 +264,31 @@ ff_sync #(
 
 ### Why This Path Is Long
 
-1. **It is overwhelmingly a routing path.**  
-   Nearly the entire delay is pad-to-flop routing, not logic.
-
-2. **The IO pad and synchronizer are physically separated.**  
-   On a small device like the HX8K, a few long span wires are enough to dominate an async path.
-
-3. **The button bus shares a wide synchronizer instance.**  
-   The five-bit synchronizer is convenient RTL, but the placer does not necessarily keep every synchronizer bit adjacent to its corresponding pad.
+1. **The path is pad-to-flop routing dominated.**
+2. **The source pad and synchronizer are not adjacent.**  
+   The detailed route spans roughly `(33,10)` to `(31,26)`, which is still harmless at 25 MHz but explains why this is the top async path into the system domain.
+3. **The shared 5-bit synchronizer is convenient RTL, but placement is still per-bit physical routing.**
 
 ### Actionable Fixes
 
-1. **Keep the first synchronizer stage near the IO pads.**  
-   If this path ever becomes problematic, separate button synchronizers per bit could give the placer more freedom to keep each first-stage flop close to its pad.
-
-2. **Do not add logic in front of the synchronizer.**  
-   The current structure is good: raw pad directly into `ff_sync`. Preserving that property keeps metastability handling clean.
-
-3. **If board-level latency matters, consider pin-local buffering only after synchronization.**  
-   Any debouncing or edge detection should stay after the synchronizer, which is already the case.
+1. If this ever matters, **split the button synchronizers per bit** so the placer has more freedom to keep each first-stage flop close to its pad.
+2. Preserve the current direct pad-to-synchronizer structure.
+3. Add placement guidance only if future builds show these input paths becoming materially worse.
 
 ---
 
-## Critical Path #3 — System-Clock Register to LED Output Pad
+## Critical Path #5 — LED Fanout from Internal Logic to Output Pad
 
+**Timing relevance:** **Not a system Fmax bottleneck; top registered-to-output boundary path**  
 **Domain:** `posedge pll_clk_global -> <async>`  
-**Source:** LED control logic in `fpga_common_top_inst.cpu_inst.led_ctrl`  
-**Destination:** `io_led[6]` output pad  
-**Delay:** **3.92 ns** (`nextpnr` headline) / **4.19 ns** (`nextpnr` detailed report)  
-**Breakdown:** **0.5 ns logic + 3.7 ns routing**
+**Source:** LED-control logic in `fpga_common_top_inst.cpu_inst.led_ctrl`  
+**Destination:** `io_led[*]` output pad  
+**Delay:** **4.7 ns total**  
+**Breakdown:** **0.5 ns logic + 4.2 ns routing**
 
-### Path Narrative
+### RTL Path Narrative
 
-The longest registered-to-output path is the fanout from the internal LED register to one of the replicated IO-shield LED outputs. In `ice40_alchitry_cu_top.sv`, the same 8-bit value is driven onto all three LED banks:
+The top-level wrapper replicates one internal 8-bit LED value onto three 8-bit IO-shield banks:
 
 ```systemverilog
 assign io_led[7:0]   = led_out;
@@ -208,76 +296,39 @@ assign io_led[15:8]  = led_out;
 assign io_led[23:16] = led_out;
 ```
 
+The timing dump identifies one of those replicated sinks as the longest output route. This is a fanout problem, not a logic-depth problem.
+
 ### Why This Path Is Long
 
-1. **One source drives many physical pads.**  
-   Replicating `led_out` across 24 outputs forces some destinations to be physically far from the LED-control source logic.
-
-2. **Again, routing dominates.**  
-   There is essentially no meaningful combinational logic here; this is mostly a net-length problem.
-
-3. **This path is benign for the 25 MHz target, but it is still the top output path.**  
-   It is useful as a placement signal: if future features add more IO replication, output routing delay will rise first.
+1. **A single internal source fans out to many distant pads.**
+2. **Routing dominates the delay.**  
+   The detailed path shows a long cross-device route from around `(6,14)` to `(33,28)`.
+3. **The path is benign at the current target frequency.**  
+   It is included because it is the top output-boundary path, not because it threatens 25 MHz closure.
 
 ### Actionable Fixes
 
-1. **Register LED-bank outputs locally if more fanout is added.**  
-   If the IO shield logic grows, inserting a small output register bank near the pads would shorten long pad routes.
-
-2. **Preserve direct assignments for now.**  
-   At under 4.2 ns, this path is not a timing risk at 25 MHz and does not justify extra area today.
-
----
-
-## Critical Path #4 — Asynchronous Reset Button to UART-Clock Synchronizer
-
-**Domain:** `<async> -> posedge clk$SB_IO_IN`  
-**Source:** `rst_n_btn` input pad  
-**Destination:** first stage of `rst_n_btn_sync_inst`  
-**Delay:** **1.68 ns** (`nextpnr` headline) / **1.75 ns** (`nextpnr` detailed report)
-
-### Path Narrative
-
-The reset button input is synchronized in the raw board clock domain before it is used to control the PLL/reset chain:
-
-```systemverilog
-ff_sync #(
-    .WIDTH(1)
-) rst_n_btn_sync_inst (
-    .clk(clk),
-    .rst_n(1'b1),
-    .din(rst_n_btn),
-    .dout(rst_n_btn_sync2)
-);
-```
-
-This is a healthy path with ample margin and very little logic. It is included here only because it is one of the top reported cross-domain paths in the design.
-
-### Actionable Fixes
-
-No immediate change is recommended. The structure is already correct: asynchronous input directly into a synchronizer with no pre-logic.
+1. **Register or duplicate LED fanout drivers** closer to the output banks if additional fanout is added later.
+2. Keep the current simple direct assignments unless the IO wrapper grows further.
+3. Treat this path as a placement/fanout signal, not as an immediate optimization priority.
 
 ---
 
 ## Structural Timing Pressure
 
-Even though the current build passes comfortably, the reports show two structural limits that will shape future work.
+Even though the current build passes comfortably, the fresh reports still show two structural limits that will matter for future work.
 
 ### 1. Global-buffer saturation
 
-`nextpnr.log` reports:
+The routed design uses **all 8 global buffers** on the HX8K.
 
-- `SB_GB: 8 / 8`
-- promoted high-fanout nets including:
-  - reset control (`fanout 1199`)
-  - CPU register-write control (`fanout 565`)
-  - decoder/ALU control enables (`fanout 67-86`)
-
-This matters because once all global buffers are consumed, any additional high-fanout control must use ordinary fabric routing. That increases wire delay and makes long control reconvergence paths like Critical Path #1 harder to place.
+That matters because once `SB_GB` is fully consumed, any new high-fanout control has to use ordinary fabric routing. The worst host-bus path is already routing-limited, so additional high-fanout control would make long reconvergent paths even more fragile.
 
 ### 2. BRAM saturation
 
-At **30 / 32 BRAMs**, there is very little memory headroom for architectural changes that might otherwise help timing, such as larger buffering or more local staging storage. The routed design still fits, but future optimizations will need to be selective.
+The design uses **30 / 32 BRAMs**.
+
+That leaves very little freedom for architectural timing fixes that rely on extra buffering or replicated local storage. Timing work on this target will need to focus on **control decomposition and placement-friendly RTL**, not on broad structural buffering.
 
 ---
 
@@ -285,21 +336,23 @@ At **30 / 32 BRAMs**, there is very little memory headroom for architectural cha
 
 If more timing margin is needed on the iCE40 target, the best next steps are:
 
-1. **Register the host read-response "first beat" / "last beat" metadata**
-2. **Break the combinational boundary between `host_bus_interface` and `host_bus_tx` on the read-response path**
-3. **Localize `host_state`, `host_req_src_fixed`, and `host_beats_remaining` control to reduce the two long routed hops**
-4. **Avoid introducing any new high-fanout control nets while `SB_GB` remains 100% utilized**
+1. **Register the host read-response first/last-beat metadata**
+2. **Break the combinational control boundary on the `HOST_READ_TX` path**
+3. **Localize `host_beats_remaining`, `host_req_src_fixed`, `host_state`, and `host_curr_addr` update control**
+4. **Avoid introducing new high-fanout control nets while `SB_GB` remains fully utilized**
+5. **Only then consider secondary cleanup on the reset debouncer terminal-count path**
 
-That ordering is important: the reports indicate the design is currently **routing-limited control logic**, not arithmetic-limited datapath logic.
+That priority order follows directly from the report data: the current design is limited by a **routed host-control cone**, not by arithmetic datapath logic or wrapper IO logic.
 
 ---
 
 ## Bottom Line
 
-The current iCE40 build is healthy and comfortably exceeds the 25 MHz requirement, but the dominant critical path has moved into the **host bus control plane**:
+The current iCE40 build is healthy and comfortably exceeds the 25 MHz requirement, but the dominant timing constraint is now clearly the **host read-response control plane**:
 
-- **not** CPU execute/ALU logic,
-- **not** the seven-segment display,
-- **not** the writeback network.
+- **not** the CPU ALU,
+- **not** the seven-segment wrapper,
+- **not** the LED output network,
+- and **not** the asynchronous input synchronizers.
 
-The longest path is now the **host read-response start/count decision path**, and the best future optimization is to **replace recomputed wide burst-control comparisons with registered local flags** so the TX formatter and beat counter do not have to share one long combinational cone.
+The most valuable future timing improvement would be to **replace recomputed burst-boundary decisions with registered local flags** so the host TX formatter and the host address-update path no longer share one long routed combinational cone.
