@@ -9,27 +9,54 @@
 
 ## Executive Summary
 
-The current `ice40_alchitry_cu` build closes timing comfortably.
+The current `ice40_alchitry_cu` build still closes timing comfortably, and the
+previous top host-bus read-response critical path has now been shortened enough
+that it is **no longer the top synchronous path** in the routed design.
 
-- **Routed Fmax (nextpnr):** **62.42 MHz**
+- **Current post-fix routed Fmax (nextpnr):** **73.21 MHz**
 - **Timing status:** **PASS**
-- **Timing margin vs. 25 MHz target:** **+37.42 MHz** (**+149.7%**)
+- **Timing margin vs. 25 MHz target:** **+48.21 MHz** (**+192.8%**)
 
-The most important conclusion from the fresh reports is that the design's worst path is **no longer in the CPU ALU**. The dominant synchronous path now lives in the **host bus interface / host TX formatting control logic**, specifically in the logic that decides whether a read response beat is the **first beat of a burst** and whether `host_beats_remaining` should be decremented or held.
+### Verified Before/After Comparison
 
-That path is not limited by one single arithmetic operator. It is long because it combines:
+Both data points below were generated with the same command, once before this
+change and once after it:
 
-1. a **16-bit carry-chain compare**,
-2. multiple layers of **packet-control muxing**,
-3. reconvergence through the `host_bus_tx` handshake logic, and
-4. **two very long routed hops** across the iCE40 fabric.
+```bash
+cd rtl/fpga
+make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
+```
 
-The design still has two structural constraints that will make future timing closure harder even though this build passes:
+| Metric | Before fix | After fix | Delta |
+| --- | ---: | ---: | ---: |
+| Routed Fmax | 70.45 MHz | 73.21 MHz | **+2.76 MHz** |
+| Timing margin vs. 25 MHz | 45.45 MHz | 48.21 MHz | **+2.76 MHz** |
+| Logic cells (`ICESTORM_LC`) | 5661 | 5570 | **-91** |
+| BRAM (`ICESTORM_RAM`) | 30 | 30 | 0 |
+| Global buffers (`SB_GB`) | 8 | 8 | 0 |
+
+The implemented RTL change was intentionally small: `host_bus_interface.sv`
+now registers the **"first read-response beat"** condition in a dedicated
+1-bit flag instead of recomputing
+`host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1)` inside the
+`HOST_READ_TX` combinational formatter every cycle.
+
+That removes the host read burst-length compare from the
+`HOST_READ_TX -> host_bus_tx -> host_beats_remaining` control cone that the
+previous report identified as the dominant synchronous path.
+
+Although the RTL adds one state bit, the post-route logic-cell count still
+drops overall because Yosys/nextpnr can eliminate much more of the previous
+wide compare and reconvergent control logic than the new flag costs.
+
+The design still has the same two structural constraints that may limit future
+timing work:
 
 - **BRAM:** 30 / 32 blocks (**93%**)
 - **Global buffers:** 8 / 8 (**100%**)
 
-Those constraints matter because the worst synchronous path is already **routing-dominated**.
+Those constraints still matter because the new worst synchronous path still
+contains significant routing cost even after the host-bus cone was shortened.
 
 ---
 
@@ -65,17 +92,15 @@ Cell counts from Yosys:
 
 ---
 
-## Critical Path #1 — Host Read Response Start/Count Control
+## Former Critical Path #1 — Host Read Response Start/Count Control (Resolved)
 
-**Domain:** `pll_clk_global` (posedge → posedge)  
-**Primary source:** `host_req_burst_len_m1` register in `host_bus_interface.sv`  
-**Primary destination:** `host_beats_remaining` clock-enable logic in `host_bus_interface.sv`  
-**Delay:** **16.5 ns total** (`nextpnr` detailed path)  
-**Breakdown:** **6.1 ns logic + 10.5 ns routing** (`nextpnr`)
+**Status:** resolved and no longer the top synchronous path  
+**Measured improvement:** **+2.76 MHz Fmax**, **-91 logic cells**
 
 ### RTL Path Narrative
 
-The worst registered path starts from the stored host burst length metadata and fans into the `HOST_READ_TX` combinational formatter:
+The former worst registered path started from the stored host burst length
+metadata and fanned into the `HOST_READ_TX` combinational formatter:
 
 ```systemverilog
 tx_pkt_start = (host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1));
@@ -83,7 +108,11 @@ tx_pkt_last  = (host_beats_remaining == 17'd1);
 tx_pkt_src_fixed = host_req_src_fixed;
 ```
 
-This logic lives in `rtl/common/io/host_bus_interface.sv` and feeds the `host_bus_tx` instance. The timing reports show that the path then propagates through `host_bus_tx` control around `packet_start` / `packet_ready` / `beat_bytes_reg`, reconverges into `host_state` / `host_req_src_fixed` dependent logic, and finally lands on the **clock-enable** controlling updates to `host_beats_remaining`.
+That logic fed the `host_bus_tx` instance. The timing reports showed that the
+path then propagated through `host_bus_tx` control around `packet_start` /
+`packet_ready` / `beat_bytes_reg`, reconverged into host-side sequencing, and
+finally landed on the **clock-enable** controlling updates to
+`host_beats_remaining`.
 
 At a high level, the path is:
 
@@ -124,22 +153,58 @@ The report makes the structure of the path very clear:
 4. **Routing dominates logic.**  
    `nextpnr` reports **10.5 ns routing vs. 6.1 ns logic**. The biggest single penalties are the two long routes on `host_req_src_fixed`-derived logic, not the carry chain alone.
 
-### Actionable Fixes
+### Implemented Fix
 
-The most effective fixes are control-structure changes, not generic LUT shaving:
+The first actionable fix from the original analysis was enough:
 
 1. **Precompute and register the "first read-response beat" condition.**  
-   Add a dedicated flag when entering `HOST_READ_TX` instead of recomputing  
-   `host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1)` combinationally.
+   `host_bus_interface.sv` now uses a dedicated `host_read_first_beat` flag
+   that is:
+   - set when a host read burst is accepted,
+   - consumed as `tx_pkt_start` in `HOST_READ_TX`, and
+   - cleared on the first successful TX beat handshake.
 
-2. **Register packet metadata at the `HOST_READ_D -> HOST_READ_TX` boundary.**  
-   Move `tx_pkt_start`, `tx_pkt_last`, and any read-response metadata needed by `host_bus_tx` into local registers so the host-state counter logic no longer feeds directly through the TX formatter in one cycle.
+This preserves the existing protocol semantics for `host_bus_tx` while
+removing the burst-length increment/equality compare from the hottest control
+path.
 
-3. **Decouple the `host_beats_remaining` decrement-enable from `tx_pkt_start`.**  
-   Right now "is this the first beat?" and "should the beat counter update?" are entangled by control reconvergence. Splitting those concerns should cut both LUT depth and routing distance.
+### Result
 
-4. **Keep the read-response control cone physically local.**  
-   The two multi-nanosecond routes show that nextpnr placed producer and consumer logic far apart. Any RTL restructuring that keeps `host_req_src_fixed`, `host_state`, and the beat-counter update in one local control island should help more than micro-optimizing the carry chain.
+After this change, the old `host_req_burst_len_m1 -> HOST_READ_TX ->
+host_bus_tx -> host_beats_remaining` cone no longer appears as the top detailed
+`pll_clk_global` path in `nextpnr.log`. In the final post-fix build, the
+current top synchronous path has moved back into the CPU ALU's min/max compare
+logic.
+
+---
+
+## Critical Path #1 — CPU ALU Min/Max Compare
+
+**Domain:** `pll_clk_global` (posedge → posedge)  
+**Primary source:** `u_alu.req_b_reg` register  
+**Primary destination:** `u_alu.result_next` input logic  
+**Delay:** **13.4 ns total** (`nextpnr` detailed path)  
+**Breakdown:** **7.1 ns logic + 6.3 ns routing** (`nextpnr`)
+
+### RTL Path Narrative
+
+The current top synchronous path is no longer in `host_bus_interface`. In the
+final routed build it starts in the ALU operand register and traverses the
+`minmax_compare_lt` carry-chain / LUT network before landing in the ALU result
+selection logic.
+
+At a high level, the path is:
+
+```text
+u_alu.req_b_reg[DFF]
+  -> minmax_compare_lt carry-chain compare logic
+  -> ALU result select / reconstruction
+  -> u_alu.result_next input[DFF]
+```
+
+This path is more logic-heavy than the previous host-bus path, which is
+consistent with the detailed `nextpnr` report showing a long compare chain in
+`rtl/common/cpu/alu.sv`.
 
 ---
 
