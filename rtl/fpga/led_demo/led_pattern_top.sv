@@ -6,10 +6,10 @@
 
 module led_pattern_top (
     // Clock input (100 MHz on-board oscillator)
-    input  logic       clk,
+    input wire logic       clk,
     
     // Reset button (active low)
-    input  logic       rst_n_btn,
+    input wire logic       rst_n_btn,
     
     // LED outputs (8 LEDs on Alchitry Cu main board)
     output logic [7:0] led

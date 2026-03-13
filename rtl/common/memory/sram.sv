@@ -31,12 +31,12 @@ module sram #(
     parameter int ADDR_WIDTH = 8,
     parameter int DEPTH      = (1 << ADDR_WIDTH)
 ) (
-    input  logic                  clk,
-    input  logic                  we,
-    input  logic [3:0]            wmask,
-    input  logic [ADDR_WIDTH-1:0] waddr,
-    input  logic [31:0]           wdata,
-    input  logic [ADDR_WIDTH-1:0] raddr,
+    input wire logic                  clk,
+    input wire logic                  we,
+    input wire logic [3:0]            wmask,
+    input wire logic [ADDR_WIDTH-1:0] waddr,
+    input wire logic [31:0]           wdata,
+    input wire logic [ADDR_WIDTH-1:0] raddr,
     output logic [31:0]           rdata
 );
 

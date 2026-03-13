@@ -4,19 +4,19 @@
 // Handles half-word alignment and buffer state across instruction boundaries
 
 module fetch_buffer (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
     
     // Memory interface
-    input  logic [31:0] imem_data,       // Data from instruction memory
-    input  logic        imem_ready,      // Memory has valid data
+    input wire logic [31:0] imem_data,       // Data from instruction memory
+    input wire logic        imem_ready,      // Memory has valid data
     
     // Program counter
-    input  logic [31:0] pc,              // Current PC value
+    input wire logic [31:0] pc,              // Current PC value
     
     // Control signals
-    input  logic        ir_write,          // Write instruction to IR
-    input  logic        invalidate_buffer, // Clear buffered half-word after control flow changes
+    input wire logic        ir_write,          // Write instruction to IR
+    input wire logic        invalidate_buffer, // Clear buffered half-word after control flow changes
     
     // Instruction output
     output logic [31:0] instruction, // 32-bit instruction (decompressed if needed)

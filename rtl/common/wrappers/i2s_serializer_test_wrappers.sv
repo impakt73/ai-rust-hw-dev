@@ -1,9 +1,9 @@
 `default_nettype none
 module i2s_serializer_equal_width_wrapper (
-    input  logic       clk,
-    input  logic       rst_n,
-    input  logic [7:0] sample_data,
-    input  logic       sample_valid,
+    input wire logic       clk,
+    input wire logic       rst_n,
+    input wire logic [7:0] sample_data,
+    input wire logic       sample_valid,
     output logic       sample_ready,
     output logic       i2s_bclk,
     output logic       i2s_lrclk,
@@ -25,10 +25,10 @@ module i2s_serializer_equal_width_wrapper (
 endmodule
 
 module i2s_serializer_expand_wrapper (
-    input  logic       clk,
-    input  logic       rst_n,
-    input  logic [7:0] sample_data,
-    input  logic       sample_valid,
+    input wire logic       clk,
+    input wire logic       rst_n,
+    input wire logic [7:0] sample_data,
+    input wire logic       sample_valid,
     output logic       sample_ready,
     output logic       i2s_bclk,
     output logic       i2s_lrclk,
@@ -50,10 +50,10 @@ module i2s_serializer_expand_wrapper (
 endmodule
 
 module i2s_serializer_truncate_wrapper (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic [11:0] sample_data,
-    input  logic        sample_valid,
+    input wire logic        clk,
+    input wire logic        rst_n,
+    input wire logic [11:0] sample_data,
+    input wire logic        sample_valid,
     output logic        sample_ready,
     output logic        i2s_bclk,
     output logic        i2s_lrclk,

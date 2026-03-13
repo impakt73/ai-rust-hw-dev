@@ -1,8 +1,8 @@
 `default_nettype none
 module activity_indicator_wrapper (
-    input  logic clk,
-    input  logic rst_n,
-    input  logic activity,
+    input wire logic clk,
+    input wire logic rst_n,
+    input wire logic activity,
     output logic indicator
 );
 

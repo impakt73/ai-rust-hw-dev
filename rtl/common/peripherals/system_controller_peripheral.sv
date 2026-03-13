@@ -5,21 +5,21 @@
 
 module system_controller (
     // Clock and reset
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // Address channel
-    input  logic [31:0] mem_a_addr,
-    input  logic [31:0] mem_a_wdata,
-    input  logic        mem_a_we,
-    input  logic [1:0]  mem_a_size,
-    input  logic        mem_a_valid,
+    input wire logic [31:0] mem_a_addr,
+    input wire logic [31:0] mem_a_wdata,
+    input wire logic        mem_a_we,
+    input wire logic [1:0]  mem_a_size,
+    input wire logic        mem_a_valid,
     output logic        mem_a_ready,
 
     // Data channel
     output logic [31:0] mem_d_rdata,
     output logic        mem_d_valid,
-    input  logic        mem_d_ready,
+    input wire logic        mem_d_ready,
 
     // System control outputs
     output logic        sys_rst,       // System reset output
@@ -30,8 +30,8 @@ module system_controller (
     output logic [31:0] halted_value,  // Latched halt value register
     
     // CPU status inputs
-    input  logic        cpu_halted,    // From CPU halted signal
-    input  logic        cpu_booting    // From CPU is_booting signal
+    input wire logic        cpu_halted,    // From CPU halted signal
+    input wire logic        cpu_booting    // From CPU is_booting signal
 );
 
     // ========================================================================

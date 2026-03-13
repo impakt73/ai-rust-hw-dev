@@ -5,12 +5,12 @@
 
 module host_bus_rx (
     // Clock and reset
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
 
     // RX Interface (from External Host)
-    input  logic [7:0]  rx_data,
-    input  logic        rx_valid,
+    input wire logic [7:0]  rx_data,
+    input wire logic        rx_valid,
     output logic        rx_ready,
 
     // Decoded Packet Beat Stream
@@ -25,7 +25,7 @@ module host_bus_rx (
     output logic [15:0] packet_burst_len_m1,
     output logic [31:0] packet_base_addr,
     output logic [31:0] packet_data,
-    input  logic        packet_ready
+    input wire logic        packet_ready
 );
 
     typedef enum logic [3:0] {

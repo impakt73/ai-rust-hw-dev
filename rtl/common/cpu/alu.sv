@@ -7,12 +7,12 @@
 module alu #(
     parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic [31:0] a,
-    input  logic [31:0] b,
-    input  logic [4:0]  alu_op,
-    input  logic        in_valid,
+    input wire logic        clk,
+    input wire logic        rst_n,
+    input wire logic [31:0] a,
+    input wire logic [31:0] b,
+    input wire logic [4:0]  alu_op,
+    input wire logic        in_valid,
     output logic        in_ready,
     output logic [31:0] out_data,
     output logic        out_valid

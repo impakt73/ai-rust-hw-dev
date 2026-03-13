@@ -1,8 +1,8 @@
 `default_nettype none
 module ff_sync_default_wrapper (
-    input  logic clk,
-    input  logic rst_n,
-    input  logic din,
+    input wire logic clk,
+    input wire logic rst_n,
+    input wire logic din,
     output logic dout
 );
 

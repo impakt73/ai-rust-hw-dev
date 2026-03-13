@@ -1,7 +1,7 @@
 `default_nettype none
 module video_sync_wrapper (
-    input  logic clk,
-    input  logic rst_n,
+    input wire logic clk,
+    input wire logic rst_n,
     output logic hsync,
     output logic vsync,
     output logic active_video,
@@ -37,8 +37,8 @@ module video_sync_wrapper (
 endmodule
 
 module video_sync_minimal_wrapper (
-    input  logic clk,
-    input  logic rst_n,
+    input wire logic clk,
+    input wire logic rst_n,
     output logic hsync,
     output logic vsync,
     output logic active_video,

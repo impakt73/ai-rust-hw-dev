@@ -5,23 +5,23 @@
 
 module writeback_mux (
     // Control signals
-    input  logic [6:0]  opcode,
-    input  logic        jump,
-    input  logic        is_csr,
-    input  logic        mem_to_reg,
-    input  logic        is_lr,          // A extension: LR.W instruction
-    input  logic        is_sc,          // A extension: SC.W instruction
-    input  logic        is_amo,         // A extension: AMO instruction
-    input  logic        sc_success,     // A extension: SC success flag
-    input  logic        fp_to_int,      // F extension: FP result goes to integer register
+    input wire logic [6:0]  opcode,
+    input wire logic        jump,
+    input wire logic        is_csr,
+    input wire logic        mem_to_reg,
+    input wire logic        is_lr,          // A extension: LR.W instruction
+    input wire logic        is_sc,          // A extension: SC.W instruction
+    input wire logic        is_amo,         // A extension: AMO instruction
+    input wire logic        sc_success,     // A extension: SC success flag
+    input wire logic        fp_to_int,      // F extension: FP result goes to integer register
     
     // Data inputs
-    input  logic [31:0] imm_u,
-    input  logic [31:0] instr_pc_next,
-    input  logic [31:0] alu_result,
-    input  logic [31:0] csr_rdata,
-    input  logic [31:0] formatted_load_data,
-    input  logic [31:0] fpu_result,     // F extension: FP-to-int result
+    input wire logic [31:0] imm_u,
+    input wire logic [31:0] instr_pc_next,
+    input wire logic [31:0] alu_result,
+    input wire logic [31:0] csr_rdata,
+    input wire logic [31:0] formatted_load_data,
+    input wire logic [31:0] fpu_result,     // F extension: FP-to-int result
     
     // Output
     output logic [31:0] rd_data

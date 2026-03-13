@@ -3,8 +3,8 @@
 // Implements floating-point less-than comparison
 
 module fpu_comparator (
-    input  logic [31:0] a,
-    input  logic [31:0] b,
+    input wire logic [31:0] a,
+    input wire logic [31:0] b,
     output logic        less_than
 );
 

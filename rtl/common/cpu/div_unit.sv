@@ -6,17 +6,17 @@
 module div_unit #(
     parameter int WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
     
     // Control interface
-    input  logic        start,        // Start division (pulse)
-    input  logic        is_signed,    // 1=signed (DIV/REM), 0=unsigned (DIVU/REMU)
-    input  logic        rem_sel,      // 1=remainder, 0=quotient
+    input wire logic        start,        // Start division (pulse)
+    input wire logic        is_signed,    // 1=signed (DIV/REM), 0=unsigned (DIVU/REMU)
+    input wire logic        rem_sel,      // 1=remainder, 0=quotient
     
     // Data interface
-    input  logic [WIDTH-1:0] dividend,     // Dividend (A)
-    input  logic [WIDTH-1:0] divisor,      // Divisor (B)
+    input wire logic [WIDTH-1:0] dividend,     // Dividend (A)
+    input wire logic [WIDTH-1:0] divisor,      // Divisor (B)
     output logic [WIDTH-1:0] result,       // Quotient or Remainder
     output logic             ready         // Result valid
 );

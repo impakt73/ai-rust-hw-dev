@@ -3,7 +3,7 @@
 // Provides classification signals for floating-point values
 
 module fpu_classifier (
-    input  logic [31:0] val,
+    input wire logic [31:0] val,
     output logic        is_nan,
     output logic        is_snan,
     output logic        is_inf,

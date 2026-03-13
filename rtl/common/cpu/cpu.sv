@@ -18,11 +18,11 @@ module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
-    input  logic        boot,
-    input  logic        req_halt,
-    input  logic [31:0] boot_addr,
+    input wire logic        clk,
+    input wire logic        rst_n,
+    input wire logic        boot,
+    input wire logic        req_halt,
+    input wire logic [31:0] boot_addr,
     
     // Memory address channel (A)
     output logic [31:0] mem_a_addr,    // Memory address
@@ -30,11 +30,11 @@ module cpu #(
     output logic        mem_a_we,      // Write enable
     output logic [1:0]  mem_a_size,    // Operation size: 00=byte, 01=halfword, 10=word
     output logic        mem_a_valid,   // Address channel valid
-    input  logic        mem_a_ready,   // Address channel ready
+    input wire logic        mem_a_ready,   // Address channel ready
     
     // Memory data channel (D)
-    input  logic [31:0] mem_d_rdata,   // Read data / write response payload
-    input  logic        mem_d_valid,   // Data channel valid
+    input wire logic [31:0] mem_d_rdata,   // Read data / write response payload
+    input wire logic        mem_d_valid,   // Data channel valid
     output logic        mem_d_ready,   // Data channel ready
     
     // System control signals

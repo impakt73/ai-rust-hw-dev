@@ -23,24 +23,24 @@ module uart #(
     parameter int BAUD_RATE = 1_000_000
 ) (
     // Clock and reset
-    input  logic       clk,
-    input  logic       rst_n,
+    input wire logic       clk,
+    input wire logic       rst_n,
     
     // TX interface (ready/valid handshake)
-    input  logic [7:0] tx_data,    // Data to transmit
-    input  logic       tx_valid,   // Producer has data ready
+    input wire logic [7:0] tx_data,    // Data to transmit
+    input wire logic       tx_valid,   // Producer has data ready
     output logic       tx_ready,   // Module can accept data
     
     // RX interface (ready/valid handshake)
     output logic [7:0] rx_data,    // Received data
     output logic       rx_valid,   // Module has data ready
-    input  logic       rx_ready,   // Consumer can accept data
+    input wire logic       rx_ready,   // Consumer can accept data
     output logic       rx_error,   // Error flag (framing error or overrun), sticky until cleared
-    input  logic       rx_error_clr, // Clear rx_error flag when asserted
+    input wire logic       rx_error_clr, // Clear rx_error flag when asserted
     
     // External UART pins
     output logic       tx_out,     // Serial transmit output (idle high)
-    input  logic       rx_in       // Serial receive input
+    input wire logic       rx_in       // Serial receive input
 );
 
     // ============================================================

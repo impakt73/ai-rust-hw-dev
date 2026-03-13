@@ -5,27 +5,27 @@ module registered_bus #(
     localparam int unsigned MASTER_IDX_W = (NUM_MASTERS <= 1) ? 1 : $clog2(NUM_MASTERS),
     localparam int unsigned SLAVE_IDX_W = (NUM_SLAVES <= 1) ? 1 : $clog2(NUM_SLAVES)
 ) (
-    input  logic                                 clk,
-    input  logic                                 rst_n,
+    input wire logic                                 clk,
+    input wire logic                                 rst_n,
 
     // Master A channels (input)
-    input  logic [NUM_MASTERS*32-1:0]            master_mem_a_addr,
-    input  logic [NUM_MASTERS*32-1:0]            master_mem_a_wdata,
-    input  logic [NUM_MASTERS-1:0]               master_mem_a_we,
-    input  logic [NUM_MASTERS*2-1:0]             master_mem_a_size,
-    input  logic [NUM_MASTERS-1:0]               master_mem_a_valid,
+    input wire logic [NUM_MASTERS*32-1:0]            master_mem_a_addr,
+    input wire logic [NUM_MASTERS*32-1:0]            master_mem_a_wdata,
+    input wire logic [NUM_MASTERS-1:0]               master_mem_a_we,
+    input wire logic [NUM_MASTERS*2-1:0]             master_mem_a_size,
+    input wire logic [NUM_MASTERS-1:0]               master_mem_a_valid,
     output logic [NUM_MASTERS-1:0]               master_mem_a_ready,
 
     // Master D channels (output/input)
     output logic [NUM_MASTERS*32-1:0]            master_mem_d_rdata,
     output logic [NUM_MASTERS-1:0]               master_mem_d_valid,
-    input  logic [NUM_MASTERS-1:0]               master_mem_d_ready,
+    input wire logic [NUM_MASTERS-1:0]               master_mem_d_ready,
 
     // Slave address map.
     // Decode matches top nibble (addr[31:28]) against slave_base_addr[i][31:28].
     // slave_addr_size is used as an enable: zero disables a slave entry.
-    input  logic [NUM_SLAVES*32-1:0]             slave_base_addr,
-    input  logic [NUM_SLAVES*32-1:0]             slave_addr_size,
+    input wire logic [NUM_SLAVES*32-1:0]             slave_base_addr,
+    input wire logic [NUM_SLAVES*32-1:0]             slave_addr_size,
 
     // Slave A channels (output/input)
     output logic [NUM_SLAVES*32-1:0]             slave_mem_a_addr,
@@ -33,11 +33,11 @@ module registered_bus #(
     output logic [NUM_SLAVES-1:0]                slave_mem_a_we,
     output logic [NUM_SLAVES*2-1:0]              slave_mem_a_size,
     output logic [NUM_SLAVES-1:0]                slave_mem_a_valid,
-    input  logic [NUM_SLAVES-1:0]                slave_mem_a_ready,
+    input wire logic [NUM_SLAVES-1:0]                slave_mem_a_ready,
 
     // Slave D channels (input/output)
-    input  logic [NUM_SLAVES*32-1:0]             slave_mem_d_rdata,
-    input  logic [NUM_SLAVES-1:0]                slave_mem_d_valid,
+    input wire logic [NUM_SLAVES*32-1:0]             slave_mem_d_rdata,
+    input wire logic [NUM_SLAVES-1:0]                slave_mem_d_valid,
     output logic [NUM_SLAVES-1:0]                slave_mem_d_ready
 );
 

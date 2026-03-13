@@ -7,16 +7,16 @@
 module mul_unit #(
     parameter WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
 ) (
-    input  logic        clk,
-    input  logic        rst_n,
+    input wire logic        clk,
+    input wire logic        rst_n,
     
     // Control interface
-    input  logic        start,        // Start multiplication (pulse)
-    input  logic [1:0]  op_type,      // 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
+    input wire logic        start,        // Start multiplication (pulse)
+    input wire logic [1:0]  op_type,      // 00=MUL, 01=MULH, 10=MULHSU, 11=MULHU
     
     // Data interface
-    input  logic [WIDTH-1:0] multiplicand,  // First operand (rs1)
-    input  logic [WIDTH-1:0] multiplier,    // Second operand (rs2)
+    input wire logic [WIDTH-1:0] multiplicand,  // First operand (rs1)
+    input wire logic [WIDTH-1:0] multiplier,    // Second operand (rs2)
     output logic [WIDTH-1:0] result,        // Lower 32-bits for MUL, upper 32-bits for MULH*
     output logic             ready          // Result valid
 );

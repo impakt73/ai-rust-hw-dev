@@ -3,9 +3,9 @@
 // Assembles the final result after division completes
 
 module fpu_div_assemble (
-    input  logic [31:0] a,
-    input  logic [31:0] b,
-    input  logic [47:0] quotient_raw,
+    input wire logic [31:0] a,
+    input wire logic [31:0] b,
+    input wire logic [47:0] quotient_raw,
     output logic [31:0] result,
     output logic [4:0]  flags
 );

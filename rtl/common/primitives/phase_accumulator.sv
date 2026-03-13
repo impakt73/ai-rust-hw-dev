@@ -17,8 +17,8 @@ module phase_accumulator #(
     parameter int unsigned CLK_FREQ_HZ = 100_000_000,
     parameter int unsigned TICK_FREQ_HZ = 115_200
 ) (
-    input  logic clk,
-    input  logic rst_n,
+    input wire logic clk,
+    input wire logic rst_n,
     output logic tick
 );
 

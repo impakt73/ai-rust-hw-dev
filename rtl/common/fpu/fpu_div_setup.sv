@@ -3,8 +3,8 @@
 // Handles special cases and sets up division parameters
 
 module fpu_div_setup (
-    input  logic [31:0] a,
-    input  logic [31:0] b,
+    input wire logic [31:0] a,
+    input wire logic [31:0] b,
     output logic [47:0] dividend,
     output logic [47:0] divisor,
     output logic        needs_div,

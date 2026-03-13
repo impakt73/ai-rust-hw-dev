@@ -7,8 +7,8 @@
 // module to synthesize.
 
 module synth_harness (
-    input  logic        clk,
-    input  logic        rst_n_btn,
+    input wire logic        clk,
+    input wire logic        rst_n_btn,
     output logic [7:0]  led
 );
 

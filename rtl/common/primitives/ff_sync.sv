@@ -17,9 +17,9 @@ module ff_sync #(
     parameter int WIDTH  = 1,
     parameter logic [WIDTH-1:0] RESET_VALUE = '0
 ) (
-    input  logic             clk,
-    input  logic             rst_n,
-    input  logic [WIDTH-1:0] din,
+    input wire logic             clk,
+    input wire logic             rst_n,
+    input wire logic [WIDTH-1:0] din,
     output logic [WIDTH-1:0] dout
 );
 
