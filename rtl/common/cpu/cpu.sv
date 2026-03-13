@@ -635,9 +635,9 @@ module cpu #(
             S_EXECUTE: begin
                 if (branch_reg) begin
                     next_state = S_BRANCH;
-                // FP computational operations may be multi-cycle (e.g., FP division)
-                // But FP loads/stores go through memory states (not handled here)
                 end else if ((fp_reg_write_reg || fp_to_int_reg) && !is_fp_load_reg) begin
+                    // FP computational operations may be multi-cycle (e.g., FP division)
+                    // But FP loads/stores go through memory states (not handled here)
                     // FP operations - wait for FPU ready
                     if (fpu_ready) begin
                         next_state = S_WRITEBACK;
@@ -784,7 +784,7 @@ module cpu #(
             
             S_EXECUTE: begin
                 if (branch_reg) begin
-                    // Branch compare result is registered inside branch_unit during EXECUTE.
+                    // Wait one cycle for branch_unit to register the branch comparison result.
                 end
                 // Integer ALU operations
                 else if (!fp_reg_write_reg && !fp_to_int_reg) begin

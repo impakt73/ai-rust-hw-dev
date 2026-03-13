@@ -19,7 +19,8 @@ module branch_unit (
 
     // Branch decision logic
     // Note: All comparisons are done directly on registered operands (rs1_data, rs2_data)
-    // and then registered locally to break the path into the CPU branch stage.
+    // during the CPU's S_EXECUTE state and then registered locally to break the
+    // path into the following S_BRANCH stage.
     always_comb begin
         take_branch_next = 1'b0;
         if (branch) begin
