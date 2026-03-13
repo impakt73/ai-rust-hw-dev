@@ -145,18 +145,16 @@ module cpu #(
     logic        alu_src_reg, reg_write_reg, mem_write_reg, mem_read_reg;
     logic        mem_to_reg_reg, branch_reg, jump_reg, is_auipc_reg;
     
-    // PC for the current instruction (captured when the instruction is fetched)
+    // PC for the current instruction and its sequential fall-through address
+    // (captured when the instruction is fetched)
     logic [31:0] instr_pc_reg;
+    logic [31:0] instr_pc_next_reg;
     
-    // Pre-computed control-flow target/link registers (for timing closure)
+    // Pre-computed control-flow target register (for timing closure)
     // control_target_reg holds the redirect target for branches, JAL, and JALR.
-    // link_addr_reg holds the return address written by JAL/JALR.
     logic [31:0] control_target_reg;
-    logic [31:0] link_addr_reg;
     logic        control_target_write;
-    logic        link_addr_write;
     logic [31:0] control_target_next;
-    logic        control_flow_redirect;
     
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
@@ -304,10 +302,12 @@ module cpu #(
         if (!rst_n) begin
             ir_reg <= 32'h0;
             instr_pc_reg <= 32'h0;
+            instr_pc_next_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
         end else if (ir_write) begin
             ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
+            instr_pc_next_reg <= pc + pc_increment;  // Capture sequential fall-through PC
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE) begin
             // The decoder's registered instruction_valid output is stable in S_DECODE
@@ -378,22 +378,18 @@ module cpu #(
         end
     end
     
-    // Control-Flow Target/Link Registers
+    // Control-Flow Target Register
     // Pre-compute branch and jump targets during DECODE/EXECUTE to break timing path
     // For B-type and JAL: instr_pc_reg + immediate is computed during S_DECODE
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
-    // link_addr_reg mirrors the sequential fall-through PC for JAL/JALR.
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (!rst_n)
             control_target_reg <= 32'h0;
-            link_addr_reg <= 32'h0;
-        end else begin
+        else begin
             if (control_target_write)
                 control_target_reg <= control_target_next;
-            if (link_addr_write)
-                link_addr_reg <= instr_pc_reg + pc_increment;
         end
     end
 
@@ -485,9 +481,9 @@ module cpu #(
     // RV32C Fetch Buffer Module Instantiation (with integrated decompressor)
     // ============================================================
     
-    assign control_flow_redirect = (current_state == S_WRITEBACK && jump_reg) ||
-                                   (current_state == S_BRANCH && take_branch);
-    assign invalidate_fetch_buffer = pc_write && control_flow_redirect;
+    assign invalidate_fetch_buffer = pc_write &&
+                                     (((current_state == S_BRANCH) && take_branch) ||
+                                      ((current_state == S_WRITEBACK) && jump_reg));
 
     // Instantiate fetch buffer module
     // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
@@ -513,9 +509,10 @@ module cpu #(
     logic [31:0] next_pc_value;
     
     always_comb begin
-        next_pc_value = pc + pc_increment;  // Sequential: increment by 2 or 4 bytes
+        next_pc_value = instr_pc_next_reg;  // Sequential fall-through for current instruction
         
-        if (control_flow_redirect)
+        if ((current_state == S_BRANCH && take_branch) ||
+            (current_state == S_WRITEBACK && jump_reg))
             next_pc_value = control_target_reg;
     end
 
@@ -736,7 +733,6 @@ module cpu #(
         alu_in_valid = 1'b0;  // Default ALU request to inactive
         fpu_start = 1'b0;  // Default FPU start to inactive
         control_target_write = 1'b0;
-        link_addr_write = 1'b0;
         
         case (current_state)
             S_FETCH: begin
@@ -787,12 +783,9 @@ module cpu #(
                         alu_out_write = 1'b1;
                     end
                     
-                    if (jump_reg) begin
-                        link_addr_write = 1'b1;
-                        // Capture JALR target (a_reg + imm_i_reg) during EXECUTE.
-                        if (alu_src_reg)
-                            control_target_write = 1'b1;
-                    end
+                    // Capture JALR target (a_reg + imm_i_reg) during EXECUTE.
+                    if (jump_reg && alu_src_reg)
+                        control_target_write = 1'b1;
                 end
                 // FP operations (may be multi-cycle, e.g., division)
                 else begin
@@ -1144,7 +1137,7 @@ module cpu #(
         .sc_success(sc_success),    // A extension
         .fp_to_int(fp_to_int_reg),  // F extension
         .imm_u(imm_u_reg),
-        .link_addr(link_addr_reg),
+        .instr_pc_next(instr_pc_next_reg),
         .alu_result(alu_out_reg),  // Use registered ALU output
         .csr_rdata(csr_rdata_reg),  // Use registered CSR read data (old value)
         .formatted_load_data(mdr),  // Use MDR (memory data register)

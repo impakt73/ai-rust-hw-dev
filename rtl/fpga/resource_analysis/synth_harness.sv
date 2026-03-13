@@ -522,6 +522,7 @@ module synth_harness (
         .sc_success(stim_reg[1][1]),
         .fp_to_int(stim_reg[1][2]),
         .imm_u(stim_reg[3]),
+        .instr_pc_next(stim_reg[2]),
         .alu_result(stim_reg[4]),
         .csr_rdata(stim_reg[5]),
         .formatted_load_data(stim_reg[6]),

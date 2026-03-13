@@ -83,12 +83,17 @@ fn step_with_memory(dut: &mut Cpu, program: &[u8], pending_response: &mut Option
     clock_cycle!(dut);
 }
 
-fn wait_for_instr_complete(dut: &mut Cpu, program: &[u8]) {
-    let mut pending_response = None;
+fn wait_for_instr_complete(dut: &mut Cpu, program: &[u8], pending_response: &mut Option<u32>) {
+    let mut instr_complete_seen = false;
 
     for _ in 0..32 {
-        step_with_memory(dut, program, &mut pending_response);
+        step_with_memory(dut, program, pending_response);
+
         if dut.instr_complete != 0 {
+            instr_complete_seen = true;
+        }
+
+        if instr_complete_seen && pending_response.is_none() {
             return;
         }
     }
@@ -114,7 +119,8 @@ fn test_cpu_branch_taken_redirects_with_unified_target_register() {
     reset_to_fetch(&mut dut);
     assert_eq!(dut.debug_fsm_state, S_FETCH, "CPU should boot into FETCH");
 
-    wait_for_instr_complete(&mut dut, &program);
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
 
     assert_eq!(dut.debug_pc, 0, "Branch should complete at the branch PC");
     assert_eq!(
@@ -142,7 +148,8 @@ fn test_cpu_c_jal_writes_halfword_link_address() {
 
     reset_to_fetch(&mut dut);
 
-    wait_for_instr_complete(&mut dut, &program);
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
 
     assert_eq!(dut.debug_pc, 0, "C.JAL should complete at PC 0");
     assert_eq!(
@@ -175,8 +182,9 @@ fn test_cpu_jalr_masks_target_and_uses_fallthrough_link_address() {
 
     reset_to_fetch(&mut dut);
 
-    wait_for_instr_complete(&mut dut, &program);
-    wait_for_instr_complete(&mut dut, &program);
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
 
     assert_eq!(dut.debug_pc, 4, "JALR should complete at its own PC");
     assert_eq!(

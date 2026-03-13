@@ -154,8 +154,13 @@ module fetch_buffer (
     // ============================================================
     
     // PC increment flag based on instruction width
+    // During ir_write, expose the width of the instruction being fetched so the CPU
+    // can capture both instr_pc_reg and its fall-through PC in the same cycle.
     always_comb begin
-        pc_inc_2 = current_insn_compressed;
+        if (ir_write)
+            pc_inc_2 = decomp_is_compressed_internal;
+        else
+            pc_inc_2 = current_insn_compressed;
     end
 
 endmodule

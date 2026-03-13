@@ -17,7 +17,7 @@ module writeback_mux (
     
     // Data inputs
     input  logic [31:0] imm_u,
-    input  logic [31:0] link_addr,
+    input  logic [31:0] instr_pc_next,
     input  logic [31:0] alu_result,
     input  logic [31:0] csr_rdata,
     input  logic [31:0] formatted_load_data,
@@ -46,7 +46,7 @@ module writeback_mux (
             rd_data = alu_result;
         end else if (jump) begin
             // JAL/JALR - Use the registered fall-through return address
-            rd_data = link_addr;
+            rd_data = instr_pc_next;
         end else if (is_csr) begin
             // CSR instruction - Return old CSR value
             rd_data = csr_rdata;
