@@ -32,7 +32,9 @@ type SimCore = Simulator<fn(&InstructionTrace)>;
 /// Timeout for host-initiated requests (1 second)
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Timeout for simulator runtime initialization handshake.
-const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
+/// This includes cold-start Verilator model compilation during the first
+/// simulator-backed test after RTL changes invalidate the cached build.
+const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(60);
 /// Timeout for reset command completion.
 const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
