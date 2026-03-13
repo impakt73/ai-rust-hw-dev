@@ -14,7 +14,9 @@ The current `ice40_alchitry_cu` build closes timing comfortably, but the fresh r
 - **Normalized routed Fmax (`riscv_fpga_stats.json`):** **70.45 MHz**
 - **Detailed worst synchronous path (`nextpnr.log`):** **15.1 ns** = **66.12 MHz**
 - **Timing status:** **PASS**
-- **Conservative timing margin vs. 25 MHz target:** **+41.12 MHz** (**+164.5%**)
+- **Worst-case timing margin vs. 25 MHz target (from the detailed path report):** **+41.12 MHz** (**+164.5%**)
+
+The two Fmax numbers come from different summaries inside the flow output; for optimization work, use the **66.12 MHz** value because it is tied directly to the final detailed post-route worst-path report described later in this document.
 
 Only **two synchronous critical-path reports** appear in the final `nextpnr` output:
 
@@ -45,7 +47,7 @@ This report is based on the fresh build artifacts in:
 - `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.json`
 - `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.md`
 
-For the iCE40 target, the **authoritative timing source is `nextpnr.log`**. The normalized stats artifacts are still useful for compact summaries, but the final detailed path dumps in `nextpnr.log` are the right source for path-level root-cause analysis.
+For the iCE40 target, the **authoritative timing source is `nextpnr.log`** because it contains the actual post-route timing analysis, including the concrete launch/sink points, routed delay totals, and logic-versus-routing breakdown for each reported path. The normalized stats artifacts are still useful for compact summaries, but the final detailed path dumps in `nextpnr.log` are the right source for path-level root-cause analysis.
 
 ### Resource Summary
 
@@ -127,7 +129,7 @@ host_req_burst_len_m1[DFF]
    `host_bus_interface` computes packet metadata, but `host_bus_tx` contributes the ready/accept behavior that feeds back into the address-update decision. That makes the cone deeper and harder to place compactly.
 
 4. **Routing is the biggest penalty.**  
-   The path is **more routing-limited than logic-limited**: 9.1 ns of the 15.1 ns total is routing. The detailed `nextpnr` dump shows a late long hop from roughly `(26,28)` through `(14,31)` into `(13,32)`, which is exactly the kind of cross-device control route that hurts HX8K timing.
+   The path is **more routing-limited than logic-limited**: 9.1 ns of the 15.1 ns total is routing. The detailed `nextpnr` dump shows a late long hop from roughly `(26,28)` through `(14,31)` into `(13,32)` in the HX8K's roughly 33x33-tile placement grid, which makes it a materially cross-device control route rather than a local neighbor connection.
 
 ### Actionable Fixes
 
@@ -148,7 +150,7 @@ host_req_burst_len_m1[DFF]
 ## Critical Path #2 — Reset Debouncer Terminal Count to Debounced Output Enable
 
 **Timing relevance:** **Real synchronous path, but not the main system limiter**  
-**Domain:** `clk$SB_IO_IN` (posedge → posedge)  
+**Domain:** `clk$SB_IO_IN` (posedge → posedge, the raw board-clock domain used by the reset-button synchronizer/debouncer chain)  
 **Source:** `stable_counter` in `rst_n_btn_debouncer_inst`  
 **Destination:** `dout` clock-enable path in `rst_n_btn_debouncer_inst`  
 **Delay:** **6.5 ns total**  
@@ -266,7 +268,7 @@ ff_sync #(
 
 1. **The path is pad-to-flop routing dominated.**
 2. **The source pad and synchronizer are not adjacent.**  
-   The detailed route spans roughly `(33,10)` to `(31,26)`, which is still harmless at 25 MHz but explains why this is the top async path into the system domain.
+   The detailed route spans roughly `(33,10)` to `(31,26)` in nextpnr's physical HX8K fabric coordinate system. On a device with an approximately 33x33-tile placement grid, that is a meaningful vertical span even though it is still harmless at 25 MHz.
 3. **The shared 5-bit synchronizer is convenient RTL, but placement is still per-bit physical routing.**
 
 ### Actionable Fixes
