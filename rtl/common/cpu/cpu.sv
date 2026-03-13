@@ -164,6 +164,7 @@ module cpu #(
     logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
     logic        is_lr_reg, is_sc_reg, is_amo_reg;  // A extension registers
     logic [4:0]  funct5_reg;  // A extension - atomic operation type
+    logic        sc_success_reg;  // Latched on SC.W completion to preserve success/failure for writeback
     // F extension registers
     logic [4:0]  fpu_op_reg;
     logic        fp_reg_write_reg, fp_to_int_reg, int_to_fp_reg;
@@ -462,6 +463,7 @@ module cpu #(
         if (!rst_n) begin
             reservation_valid <= 1'b0;
             reservation_addr <= 32'h0;
+            sc_success_reg <= 1'b0;
         end else begin
             // Set reservation on LR.W completion (in S_MEM_READ with dmem_ready_internal)
             if (is_lr_reg && current_state == S_MEM_READ && dmem_ready_internal) begin
@@ -470,6 +472,7 @@ module cpu #(
             end
             // Clear reservation on SC.W (any SC, regardless of success)
             else if (is_sc_reg && current_state == S_MEM_WRITE && dmem_ready_internal) begin
+                sc_success_reg <= sc_success;
                 reservation_valid <= 1'b0;
             end
             // Clear reservation on any write to the reserved address (except SC.W writes)
@@ -514,9 +517,7 @@ module cpu #(
         next_pc_value = instr_pc_next_reg;  // Sequential fall-through for current instruction
 
         if (current_state == S_BOOT)
-            next_pc_value = (boot && !req_halt) ? boot_addr : pc;
-        else if (current_state == S_HALT)
-            next_pc_value = pc;
+            next_pc_value = boot_addr;
         else if (control_flow_redirect)
             next_pc_value = control_target_reg;
     end
@@ -1140,7 +1141,7 @@ module cpu #(
         .is_lr(is_lr_reg),          // A extension
         .is_sc(is_sc_reg),          // A extension
         .is_amo(is_amo_reg),        // A extension
-        .sc_success(sc_success),    // A extension
+        .sc_success(sc_success_reg), // A extension
         .fp_to_int(fp_to_int_reg),  // F extension
         .imm_u(imm_u_reg),
         .instr_pc_next(instr_pc_next_reg),

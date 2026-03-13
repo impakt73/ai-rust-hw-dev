@@ -59,7 +59,7 @@ fn reset_to_fetch(dut: &mut Cpu) {
 }
 
 fn step_with_memory(dut: &mut Cpu, program: &[u8], pending_response: &mut Option<u32>) {
-    dut.mem_a_ready = 1;
+    dut.mem_a_ready = if pending_response.is_some() { 0 } else { 1 };
     dut.mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
     dut.mem_d_rdata = pending_response.unwrap_or(0);
     dut.eval();
