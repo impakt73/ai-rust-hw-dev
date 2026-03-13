@@ -43,6 +43,11 @@ fn write_access(dut: &mut SramPeripheralTestWrapper, addr: u32, wdata: u32, size
         wait_cycles += 1;
     }
 
+    assert_eq!(
+        dut.mem_d_rdata, 0,
+        "write responses should return a zero payload on the D channel"
+    );
+
     dut.mem_d_ready = 1;
     dut.eval();
     clock_cycle(dut);
@@ -100,8 +105,8 @@ fn test_sram_peripheral_aligned_access_uses_d_channel_completion() {
 
     let (read_data, read_wait) = read_access(&mut dut, 0, SIZE_WORD);
     assert_eq!(
-        read_wait, 2,
-        "aligned word reads should return two cycles after request acceptance"
+        read_wait, 3,
+        "aligned word reads should return three cycles after request acceptance when the D-channel output is registered"
     );
     assert_eq!(read_data, 0xDEAD_BEEF);
 }
@@ -131,8 +136,8 @@ fn test_sram_peripheral_unaligned_word_store_and_load() {
 
     let (unaligned_word, split_read_wait) = read_access(&mut dut, 1, SIZE_WORD);
     assert_eq!(
-        split_read_wait, 3,
-        "unaligned word read should take three total cycles because the split access spans two SRAM words through the pipelined read path"
+        split_read_wait, 4,
+        "unaligned word read should take four total cycles because the split access spans two SRAM words and the D-channel output is registered"
     );
     assert_eq!(unaligned_word, 0xAABB_CCDD);
 }
@@ -162,13 +167,13 @@ fn test_sram_peripheral_unaligned_halfword_store_and_load() {
 
     let (unaligned_halfword, split_halfword_read_wait) = read_access(&mut dut, 3, SIZE_HALFWORD);
     assert_eq!(
-        split_halfword_read_wait, 3,
-        "cross-boundary unaligned halfword read should take three total cycles because the split access spans two SRAM words through the pipelined read path"
+        split_halfword_read_wait, 4,
+        "cross-boundary unaligned halfword read should take four total cycles because the split access spans two SRAM words and the D-channel output is registered"
     );
     assert_eq!(unaligned_halfword, 0x0000_ABCD);
 
     let (intra_word_halfword, intra_word_wait) = read_access(&mut dut, 1, SIZE_HALFWORD);
-    assert_eq!(intra_word_wait, 2);
+    assert_eq!(intra_word_wait, 3);
     assert_eq!(intra_word_halfword, 0x0000_2233);
 }
 
@@ -189,4 +194,86 @@ fn test_sram_peripheral_access_beyond_8kb() {
 
     assert_eq!(base_word, 0x1111_2222);
     assert_eq!(beyond_8kb_word, 0x3333_4444);
+}
+
+#[test]
+fn test_sram_peripheral_read_response_holds_stable_under_backpressure() {
+    let runtime =
+        create_sram_peripheral_runtime().expect("Failed to create SRAM peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<SramPeripheralTestWrapper>()
+        .expect("Failed to create SRAM peripheral model");
+    reset(&mut dut);
+
+    write_access(&mut dut, 0, 0xCAFE_BABE, SIZE_WORD);
+
+    dut.mem_a_addr = 0;
+    dut.mem_a_size = SIZE_WORD;
+    dut.mem_a_we = 0;
+    dut.mem_a_valid = 1;
+    dut.mem_d_ready = 0;
+    dut.eval();
+    assert_eq!(dut.mem_a_ready, 1, "SRAM should accept the read request");
+
+    clock_cycle(&mut dut);
+    dut.mem_a_valid = 0;
+    dut.eval();
+
+    let mut wait_cycles = 0;
+    while dut.mem_d_valid == 0 {
+        clock_cycle(&mut dut);
+        wait_cycles += 1;
+    }
+
+    assert_eq!(
+        wait_cycles + 1,
+        3,
+        "aligned read response should arrive after the registered D-channel latency"
+    );
+
+    let held_rdata = dut.mem_d_rdata;
+    assert_eq!(held_rdata, 0xCAFE_BABE);
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "A-channel should stay stalled while D response is pending"
+    );
+
+    clock_cycle(&mut dut);
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "D valid should remain asserted under backpressure"
+    );
+    assert_eq!(
+        dut.mem_d_rdata, held_rdata,
+        "D data should remain stable under backpressure"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 0,
+        "A-channel should remain stalled until D handshake"
+    );
+
+    clock_cycle(&mut dut);
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "D valid should still be asserted before handshake"
+    );
+    assert_eq!(
+        dut.mem_d_rdata, held_rdata,
+        "D data should still be stable before handshake"
+    );
+
+    dut.mem_d_ready = 1;
+    dut.eval();
+    clock_cycle(&mut dut);
+    dut.mem_d_ready = 0;
+    dut.eval();
+
+    assert_eq!(
+        dut.mem_d_valid, 0,
+        "D valid should clear after the response is accepted"
+    );
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "A-channel should reopen once the response is accepted"
+    );
 }

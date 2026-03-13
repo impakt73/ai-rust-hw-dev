@@ -79,6 +79,8 @@ module sram_peripheral (
     logic [63:0]           split_concat_rdata;
     logic [63:0]           split_shifted_rdata;
     logic [31:0]           split_extracted_rdata;
+    logic [31:0]           mem_d_rdata_r;
+    logic                  mem_d_valid_r;
 
     logic                  mem_a_handshake;
     logic                  mem_d_handshake;
@@ -95,10 +97,8 @@ module sram_peripheral (
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
 
     assign mem_a_ready = (state == S_IDLE);
-    assign mem_d_valid =
-        (state == S_WRITE_RESP) ||
-        (state == S_READ_RESP) ||
-        (state == S_READ_SPLIT_RESP);
+    assign mem_d_rdata = mem_d_rdata_r;
+    assign mem_d_valid = mem_d_valid_r;
 
     // ============================================================
     // Write Data Alignment
@@ -272,31 +272,19 @@ module sram_peripheral (
         endcase
     end
 
-    always_comb begin
-        mem_d_rdata = 32'h0;
-
-        case (state)
-            S_READ_RESP: mem_d_rdata = extracted_rdata;
-            S_READ_SPLIT_RESP: mem_d_rdata = split_extracted_rdata;
-            default: mem_d_rdata = 32'h0;
-        endcase
-    end
-
     // ============================================================
-    // State / Request Tracking
+    // State / Request Tracking / Registered D Channel
     // ============================================================
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             state <= S_IDLE;
-            req_word_addr <= '0;
-            req_size <= 2'b00;
-            req_offset <= 2'b00;
-            req_wdata <= 32'h0;
-            split_first_rdata <= 32'h0;
+            mem_d_valid_r <= 1'b0;
         end else begin
             case (state)
                 S_WRITE_SPLIT_SECOND: begin
                     state <= S_WRITE_RESP;
+                    mem_d_rdata_r <= 32'h0;
+                    mem_d_valid_r <= 1'b1;
                 end
 
                 S_READ_WAIT: begin
@@ -312,10 +300,31 @@ module sram_peripheral (
                     state <= S_READ_SPLIT_RESP;
                 end
 
-                S_WRITE_RESP,
-                S_READ_RESP,
-                S_READ_SPLIT_RESP: begin
+                S_WRITE_RESP: begin
                     if (mem_d_handshake) begin
+                        mem_d_valid_r <= 1'b0;
+                        state <= S_IDLE;
+                    end
+                end
+
+                S_READ_RESP: begin
+                    // Latch the SRAM read result into the registered D-channel
+                    // outputs, then hold it stable until the response is accepted.
+                    if (!mem_d_valid_r) begin
+                        mem_d_rdata_r <= extracted_rdata;
+                        mem_d_valid_r <= 1'b1;
+                    end else if (mem_d_handshake) begin
+                        mem_d_valid_r <= 1'b0;
+                        state <= S_IDLE;
+                    end
+                end
+
+                S_READ_SPLIT_RESP: begin
+                    if (!mem_d_valid_r) begin
+                        mem_d_rdata_r <= split_extracted_rdata;
+                        mem_d_valid_r <= 1'b1;
+                    end else if (mem_d_handshake) begin
+                        mem_d_valid_r <= 1'b0;
                         state <= S_IDLE;
                     end
                 end
@@ -332,6 +341,8 @@ module sram_peripheral (
                                 state <= S_WRITE_SPLIT_SECOND;
                             end else begin
                                 state <= S_WRITE_RESP;
+                                mem_d_rdata_r <= 32'h0;
+                                mem_d_valid_r <= 1'b1;
                             end
                         end else if (incoming_unaligned) begin
                             state <= S_READ_SPLIT_SECOND;
