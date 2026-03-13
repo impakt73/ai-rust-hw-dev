@@ -14,8 +14,8 @@
 // via the host_bus_interface module for communication with a host (simulation or FPGA).
 
 module top #(
-    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    parameter ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
     // System Clock Frequency (used by Clock Peripheral)
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8      // Number of cycles to hold reset after release

@@ -7,8 +7,8 @@
 // discrete flip-flop registers for writable machine-level CSRs.
 
 module csr_file #(
-    parameter bit ENABLE_M_EXT = 1'b1,
-    parameter bit ENABLE_F_EXT = 1'b1
+    parameter ENABLE_M_EXT = 1'b1,
+    parameter ENABLE_F_EXT = 1'b1
 ) (
     input  logic        clk,
     input  logic        rst_n,

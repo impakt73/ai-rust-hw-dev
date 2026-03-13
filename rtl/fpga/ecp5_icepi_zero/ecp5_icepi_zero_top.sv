@@ -3,8 +3,8 @@
 // Wraps RISC-V CPU with host communication via USB serial
 
 module ecp5_icepi_zero_top #(
-    parameter bit ENABLE_M_EXT = 1'b1,
-    parameter bit ENABLE_F_EXT = 1'b0
+    parameter ENABLE_M_EXT = 1'b1,
+    parameter ENABLE_F_EXT = 1'b0
 ) (
     input  logic clk,
     input  logic rst_n_btn,

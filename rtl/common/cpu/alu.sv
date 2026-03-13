@@ -5,7 +5,7 @@
 // Configurable M extension support for resource-constrained FPGAs
 
 module alu #(
-    parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
 ) (
     input  logic        clk,
     input  logic        rst_n,

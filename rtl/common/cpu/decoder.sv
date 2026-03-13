@@ -4,8 +4,8 @@
 // Configurable extension support for resource-constrained FPGA targets
 
 module decoder #(
-    parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
-    parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
+    parameter ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
+    parameter ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
 ) (
     input  logic        clk,
     input  logic        rst_n,

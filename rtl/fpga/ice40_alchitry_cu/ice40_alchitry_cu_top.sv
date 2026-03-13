@@ -11,8 +11,8 @@
 // - CPU's internal UART is looped back for self-test
 
 module ice40_alchitry_cu_top #(
-    parameter bit ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled by default for iCE40 resources)
-    parameter bit ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
+    parameter ENABLE_M_EXT = 1'b0,  // RV32M extension: Multiply/Divide (disabled by default for iCE40 resources)
+    parameter ENABLE_F_EXT = 1'b0   // RV32F extension: Floating-Point (disabled for iCE40 resources)
 ) (
     // Clock input (100 MHz on-board oscillator)
     input  logic       clk,

@@ -31,7 +31,7 @@
 // Estimated LUT usage: ~680 LUTs (8.9% of iCE40-HX8K)
 
 module fp_regfile #(
-    parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
+    parameter REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
 ) (
     input  logic        clk,
     input  logic        rst_n,        // Active-low reset

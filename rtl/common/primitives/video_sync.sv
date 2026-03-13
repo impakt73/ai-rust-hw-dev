@@ -35,8 +35,8 @@ module video_sync #(
     parameter int unsigned V_FRONT_PORCH = 10,
     parameter int unsigned V_SYNC_WIDTH = 2,
     parameter int unsigned V_BACK_PORCH = 33,
-    parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
-    parameter bit VSYNC_ACTIVE_HIGH = 1'b0
+    parameter HSYNC_ACTIVE_HIGH = 1'b0,
+    parameter VSYNC_ACTIVE_HIGH = 1'b0
 ) (
     input  logic clk,
     input  logic rst_n,
