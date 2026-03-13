@@ -114,6 +114,7 @@ module host_bus_interface (
     logic [16:0] host_beats_remaining;
     logic [31:0] host_write_data;
     logic [31:0] host_read_data;
+    logic        host_read_first_beat;
 
     logic host_a_handshake;
     logic host_d_handshake;
@@ -239,7 +240,7 @@ module host_bus_interface (
 
             HOST_READ_TX: begin
                 tx_pkt_valid        = 1'b1;
-                tx_pkt_start        = (host_beats_remaining == ({1'b0, host_req_burst_len_m1} + 17'd1));
+                tx_pkt_start        = host_read_first_beat;
                 tx_pkt_last         = (host_beats_remaining == 17'd1);
                 tx_pkt_req          = 1'b0;
                 tx_pkt_we           = 1'b0;
@@ -305,6 +306,7 @@ module host_bus_interface (
             host_beats_remaining <= 17'd0;
             host_write_data      <= 32'h0000_0000;
             host_read_data       <= 32'h0000_0000;
+            host_read_first_beat <= 1'b0;
         end else begin
             // Capture CPU request (single outstanding)
             if (cpu_a_handshake) begin
@@ -353,8 +355,10 @@ module host_bus_interface (
 
                         if (rx_pkt_we) begin
                             host_write_data <= rx_pkt_data;
+                            host_read_first_beat <= 1'b0;
                             host_state <= HOST_WRITE_A;
                         end else begin
+                            host_read_first_beat <= 1'b1;
                             host_state <= HOST_READ_A;
                         end
                     end
@@ -408,6 +412,9 @@ module host_bus_interface (
 
                 HOST_READ_TX: begin
                     if (tx_pkt_valid && tx_pkt_ready) begin
+                        if (host_read_first_beat) begin
+                            host_read_first_beat <= 1'b0;
+                        end
                         if (host_beats_remaining == 17'd1) begin
                             host_state <= HOST_IDLE;
                         end else begin
