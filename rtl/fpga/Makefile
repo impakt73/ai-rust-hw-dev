@@ -142,7 +142,6 @@ UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICETIME = icetime
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
@@ -201,12 +200,7 @@ timing: $(BIN)
 	@echo "Timing report written to $(TIMING)"
 else
 timing: $(PNR_OUT)
-ifeq ($(TARGET),ice40_alchitry_cu)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(PNR_OUT)
-	@echo "Timing report written to $(TIMING)"
-else
-	@echo "Timing report generation is only implemented for TARGET=ice40_alchitry_cu"
-endif
+	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
 endif
 
 # Resource utilization report
@@ -256,7 +250,11 @@ else
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
 	@echo "  $(BIN)       - Generate bitstream (target-specific packer)"
 endif
-	@echo "  timing       - Generate timing report"
+ifeq ($(TARGET),artix7_alchitry_au)
+	@echo "  timing       - Generate timing report (written to $(TIMING))"
+else
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
+endif
 	@echo "  utilization  - Show resource utilization"
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 	@echo "  program      - Program FPGA with bitstream"

@@ -25,15 +25,13 @@ PCF = $(FPGA_DIR)/alchitry_cu.pcf
 JSON = $(BUILD_DIR)/$(PROJECT).json
 ASC = $(BUILD_DIR)/$(PROJECT).asc
 BIN = $(BUILD_DIR)/$(PROJECT).bin
-TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
-ICETIME = icetime
+OPENFPGALOADER = openFPGALoader
 
 # Default target - synthesis only (no place and route)
 .PHONY: all
@@ -71,8 +69,7 @@ bitstream: $(BIN)
 # Timing analysis
 .PHONY: timing
 timing: $(ASC)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(ASC)
-	@echo "Timing report written to $(TIMING)"
+	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
 
 # Resource utilization report
 .PHONY: utilization
@@ -87,7 +84,7 @@ utilization: $(JSON)
 # Program FPGA (optional)
 .PHONY: program
 program: $(BIN)
-	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
+	bash -e -o pipefail -c '$(OPENFPGALOADER) -b ice40_generic -f $(BIN)'
 
 # Clean build artifacts
 .PHONY: clean
@@ -102,7 +99,7 @@ help:
 	@echo "Targets:"
 	@echo "  all (synth)  - Run synthesis only with Yosys (default)"
 	@echo "  bitstream    - Full flow: synthesis + place/route + bitstream"
-	@echo "  timing       - Generate timing report"
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
 	@echo "  utilization  - Show resource utilization from synthesis"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
@@ -116,7 +113,8 @@ help:
 	@echo "Prerequisites:"
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route (for bitstream target)"
-	@echo "  - icestorm   : Bitstream generation and programming"
+	@echo "  - icepack    : Bitstream generation"
+	@echo "  - openFPGALoader : Board programming tool (for program target)"
 
 .PHONY: check-tools
 check-tools:

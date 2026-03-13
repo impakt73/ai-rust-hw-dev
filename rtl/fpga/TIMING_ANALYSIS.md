@@ -12,7 +12,6 @@
 The current `ice40_alchitry_cu` build closes timing comfortably.
 
 - **Routed Fmax (nextpnr):** **62.42 MHz**
-- **Cross-check Fmax (icetime):** **61.88 MHz**
 - **Timing status:** **PASS**
 - **Timing margin vs. 25 MHz target:** **+37.42 MHz** (**+149.7%**)
 
@@ -71,9 +70,7 @@ Cell counts from Yosys:
 **Domain:** `pll_clk_global` (posedge → posedge)  
 **Primary source:** `host_req_burst_len_m1` register in `host_bus_interface.sv`  
 **Primary destination:** `host_beats_remaining` clock-enable logic in `host_bus_interface.sv`  
-**Delay:** **16.16 ns** (`icetime`) / **16.5 ns total** (`nextpnr` detailed path)  
-**Equivalent Fmax:** **61.88 MHz** (`icetime`)  
-**Logic levels:** **25** (`icetime`)  
+**Delay:** **16.5 ns total** (`nextpnr` detailed path)  
 **Breakdown:** **6.1 ns logic + 10.5 ns routing** (`nextpnr`)
 
 ### RTL Path Narrative
@@ -101,7 +98,7 @@ host_req_burst_len_m1[DFF]
 
 ### Detailed Stage Breakdown
 
-The `icetime` report makes the structure of the path very clear:
+The report makes the structure of the path very clear:
 
 | Stage | Delay contribution | What it means |
 | --- | ---: | --- |

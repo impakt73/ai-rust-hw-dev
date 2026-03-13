@@ -24,7 +24,7 @@ TARGET_CONFIGS = {
     "ice40_alchitry_cu": {
         "target_frequency_mhz": 25.0,
         "preferred_clock_patterns": ["pll_clk_global", "pll_clk", "clk"],
-        "timing_sources": ["nextpnr.log", "riscv_fpga_timing.rpt"],
+        "timing_sources": ["nextpnr.log"],
         "resource_sources": ["nextpnr.log", "yosys.log"],
     },
     "ecp5_icepi_zero": {
@@ -148,13 +148,6 @@ def parse_nextpnr_clocks(text: str) -> List[Dict[str, Any]]:
             }
         )
     return matches
-
-
-def parse_icetime_fmax(text: str) -> Optional[float]:
-    matches = re.findall(r"Total path delay:\s+[0-9.]+\s+ns\s+\(([0-9.]+)\s+MHz\)", text)
-    if not matches:
-        return None
-    return float(matches[-1])
 
 
 def parse_vivado_timing(
@@ -352,7 +345,6 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
     utilization_report = build_dir / "riscv_fpga_utilization.rpt"
 
     timing = None
-    extra_timing: Dict[str, float] = {}
     post_route_resources: Dict[str, Dict[str, float]] = {}
     synthesis_cell_counts: Dict[str, int] = {}
     source_artifacts = {
@@ -367,12 +359,6 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
             config["preferred_clock_patterns"],
         )
         post_route_resources = parse_nextpnr_resources(nextpnr_text)
-
-    if target == "ice40_alchitry_cu" and timing_report.exists():
-        icetime_text = load_text(timing_report)
-        icetime_frequency = parse_icetime_fmax(icetime_text)
-        if icetime_frequency is not None:
-            extra_timing["icetime_max_frequency_mhz"] = icetime_frequency
 
     if target == "artix7_alchitry_au":
         if timing_report.exists():
@@ -421,7 +407,6 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
             ((max_frequency_mhz - target_frequency_mhz) / target_frequency_mhz) * 100.0
         ),
         "timing": timing,
-        "extra_timing": extra_timing,
         "headline_resources": headline_resources,
         "post_route_resources": post_route_resources,
         "synthesis_cell_counts": synthesis_cell_counts,
@@ -444,11 +429,6 @@ def render_text(stats: Dict[str, Any]) -> str:
         ),
         f"Timing source: {stats['timing']['source_file']} ({stats['timing']['clock_name']})",
     ]
-
-    if stats["extra_timing"]:
-        for key, value in stats["extra_timing"].items():
-            label = key.replace("_", " ")
-            lines.append(f"{label}: {value:.2f} MHz")
 
     if stats["headline_resources"]:
         lines.append("Headline resources:")

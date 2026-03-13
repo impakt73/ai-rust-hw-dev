@@ -130,7 +130,6 @@ always writes to the target's standard `build/<target>/` output directory.
 
 - **`ice40_alchitry_cu`**
   - Routed Fmax: `build/ice40_alchitry_cu/nextpnr.log`
-  - Secondary timing cross-check: `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
   - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
   - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
 

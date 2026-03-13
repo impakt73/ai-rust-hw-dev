@@ -34,15 +34,13 @@ PCF = ../ice40_alchitry_cu/ice40_alchitry_cu.pcf
 JSON = $(BUILD_DIR)/$(PROJECT).json
 ASC = $(BUILD_DIR)/$(PROJECT).asc
 BIN = $(BUILD_DIR)/$(PROJECT).bin
-TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
 ICEPACK = icepack
-ICEPROG = iceprog
-ICETIME = icetime
+OPENFPGALOADER = openFPGALoader
 
 # Default target
 .PHONY: all
@@ -74,8 +72,7 @@ $(BIN): $(ASC)
 # Timing analysis
 .PHONY: timing
 timing: $(ASC)
-	$(ICETIME) -d $(DEVICE) -t -r $(TIMING) $(ASC)
-	@echo "Timing report written to $(TIMING)"
+	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
 
 # Resource utilization report
 .PHONY: utilization
@@ -85,7 +82,7 @@ utilization: $(JSON)
 # Program FPGA
 .PHONY: program
 program: $(BIN)
-	bash -e -o pipefail -c '$(ICEPROG) $(BIN)'
+	bash -e -o pipefail -c '$(OPENFPGALOADER) -b ice40_generic -f $(BIN)'
 
 # Clean build artifacts
 .PHONY: clean
@@ -100,7 +97,7 @@ help:
 	@echo "Targets:"
 	@echo "  all          - Synthesize and generate bitstream (default)"
 	@echo "                 set VALIDATION_MODE=0|1|2 to select loopback mode"
-	@echo "  timing       - Generate timing report"
+	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
 	@echo "  utilization  - Show resource utilization"
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
@@ -112,5 +109,5 @@ check-tools:
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: nextpnr-ice40 not found"; exit 1)
 	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(ICEPROG) > /dev/null || (echo "ERROR: iceprog not found (optional for programming)"; exit 0)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 	@echo "All required tools found!"

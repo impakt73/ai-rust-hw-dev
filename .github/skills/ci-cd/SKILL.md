@@ -323,7 +323,7 @@ cat rtl/fpga/build/yosys.log | grep -i error
 cat rtl/fpga/build/nextpnr.log | grep -i error
 
 # Check timing report
-cat rtl/fpga/build/riscv_fpga_timing.rpt
+cat rtl/fpga/build/ice40_alchitry_cu/nextpnr.log | grep -i "max frequency"
 ```
 
 **Common fixes:**

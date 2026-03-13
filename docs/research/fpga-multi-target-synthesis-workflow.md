@@ -50,7 +50,7 @@ SystemVerilog sources
    icepack
         │  riscv_fpga.bin
         ▼
-   iceprog / icetime
+   openFPGALoader
 ```
 
 **Key iCE40-specific artefacts:**
@@ -62,8 +62,8 @@ SystemVerilog sources
 | Synthesis command | `synth_ice40` |
 | P&R tool | `nextpnr-ice40 --hx8k` |
 | Bitstream pack | `icepack` → `.bin` |
-| Programmer | `iceprog` or `openFPGALoader` |
-| Timing analysis | `icetime` |
+| Programmer | `openFPGALoader` |
+| Timing analysis | `nextpnr-ice40` |
 
 All RTL under `rtl/common/` is **fully vendor-neutral** SystemVerilog and requires no changes for new targets. The only iCE40-specific code is in `rtl/fpga/fpga_top.sv` (PLL instantiation) and `rtl/fpga/ice40hx8k.pcf` (pin constraints).
 
@@ -636,7 +636,7 @@ ifeq ($(TARGET), ice40hx8k)
   PNR_CMD       = nextpnr-ice40 --$(DEVICE) --package $(PACKAGE) \
                     --json $(JSON) --pcf $(CONSTRAINT) --asc $(ASC) --freq $(TARGET_FREQ)
   PACK_CMD      = icepack $(ASC) $(BIN)
-  PROGRAM_CMD   = iceprog $(BIN)
+  PROGRAM_CMD   = openFPGALoader -b ice40_generic -f $(BIN)
   TARGET_FREQ   = 25
   OUTPUT_EXT    = bin
 endif
