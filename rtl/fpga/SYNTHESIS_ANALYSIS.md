@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-01 (Updated with BRAM Register File Optimization)  
 **Target Device:** Lattice iCE40-HX8K-CB132 (Alchitry Cu v1)  
-**Synthesis Tools:** Yosys 0.33, nextpnr-ice40, icetime  
+**Synthesis Tools:** Yosys 0.33, nextpnr-ice40  
 **Design:** RISC-V RV32I CPU with UART peripherals (M and F extensions disabled)
 
 ---
@@ -154,7 +154,7 @@ This path was optimized by:
 1. **Pre-computing branch/jump targets** in dedicated registers during DECODE/EXECUTE
 2. **Computing branch equality directly** in branch_unit instead of using ALU's zero flag
 
-**Detailed Critical Path (from icetime):**
+**Detailed Critical Path (from nextpnr):**
 
 | Stage | Time (ns) | Cumulative | Component |
 |-------|-----------|------------|-----------|
@@ -165,7 +165,7 @@ This path was optimized by:
 | Result formatting | 7.00 | 22.65 | LUT cascade + routing |
 | UART FIFO write | 3.78 | 26.43 | Register setup |
 
-**Total Critical Path:** ~26.43 ns (icetime) / 26.88 ns (nextpnr)
+**Total Critical Path:** ~26.88 ns (nextpnr)
 
 ### Critical Path Bottlenecks
 
@@ -356,8 +356,7 @@ The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 | `fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv` | iCE40 target top-level wrapper |
 | `fpga/Makefile` | Build automation |
 | `fpga/build/yosys.log` | Synthesis output |
-| `fpga/build/nextpnr.log` | Place & route output |
-| `fpga/build/riscv_fpga_timing.rpt` | Timing analysis |
+| `fpga/build/nextpnr.log` | Place & route output and timing analysis |
 | `rtl/sync_dpram.sv` | Inference-based simple dual-port RAM |
 | `rtl/regfile.sv` | Dual-banked BRAM register file |
 | `rtl/cpu.sv` | CPU with S_REG_READ state for BRAM latency |
