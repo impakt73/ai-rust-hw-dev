@@ -289,6 +289,8 @@ module sram_peripheral (
             case (state)
                 S_WRITE_SPLIT_SECOND: begin
                     state <= S_WRITE_RESP;
+                    // Write responses return no payload, so keep the registered
+                    // D-channel data at zero while the acknowledgement is pending.
                     mem_d_rdata_r <= 32'h0;
                     mem_d_valid_r <= 1'b1;
                 end
@@ -315,6 +317,8 @@ module sram_peripheral (
                 end
 
                 S_READ_RESP: begin
+                    // Latch the SRAM read result into the registered D-channel
+                    // outputs, then hold it stable until the response is accepted.
                     if (!mem_d_valid_r) begin
                         mem_d_rdata_r <= extracted_rdata;
                         mem_d_valid_r <= 1'b1;
@@ -348,6 +352,8 @@ module sram_peripheral (
                                 state <= S_WRITE_SPLIT_SECOND;
                             end else begin
                                 state <= S_WRITE_RESP;
+                                // Write responses return no payload, so keep the
+                                // registered D-channel data at zero.
                                 mem_d_rdata_r <= 32'h0;
                                 mem_d_valid_r <= 1'b1;
                             end
