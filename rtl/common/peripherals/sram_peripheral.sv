@@ -278,20 +278,11 @@ module sram_peripheral (
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             state <= S_IDLE;
-            req_word_addr <= '0;
-            req_size <= 2'b00;
-            req_offset <= 2'b00;
-            req_wdata <= 32'h0;
-            split_first_rdata <= 32'h0;
-            mem_d_rdata_r <= 32'h0;
             mem_d_valid_r <= 1'b0;
         end else begin
             case (state)
                 S_WRITE_SPLIT_SECOND: begin
                     state <= S_WRITE_RESP;
-                    // Write responses return no payload, so keep the registered
-                    // D-channel data at zero while the acknowledgement is pending.
-                    mem_d_rdata_r <= 32'h0;
                     mem_d_valid_r <= 1'b1;
                 end
 
@@ -311,7 +302,6 @@ module sram_peripheral (
                 S_WRITE_RESP: begin
                     if (mem_d_handshake) begin
                         mem_d_valid_r <= 1'b0;
-                        mem_d_rdata_r <= 32'h0;
                         state <= S_IDLE;
                     end
                 end
@@ -324,7 +314,6 @@ module sram_peripheral (
                         mem_d_valid_r <= 1'b1;
                     end else if (mem_d_handshake) begin
                         mem_d_valid_r <= 1'b0;
-                        mem_d_rdata_r <= 32'h0;
                         state <= S_IDLE;
                     end
                 end
@@ -335,7 +324,6 @@ module sram_peripheral (
                         mem_d_valid_r <= 1'b1;
                     end else if (mem_d_handshake) begin
                         mem_d_valid_r <= 1'b0;
-                        mem_d_rdata_r <= 32'h0;
                         state <= S_IDLE;
                     end
                 end
@@ -352,9 +340,6 @@ module sram_peripheral (
                                 state <= S_WRITE_SPLIT_SECOND;
                             end else begin
                                 state <= S_WRITE_RESP;
-                                // Write responses return no payload, so keep the
-                                // registered D-channel data at zero.
-                                mem_d_rdata_r <= 32'h0;
                                 mem_d_valid_r <= 1'b1;
                             end
                         end else if (incoming_unaligned) begin
