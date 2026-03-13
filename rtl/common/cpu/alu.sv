@@ -132,6 +132,8 @@ module alu #(
     logic        launch_is_shift_op;
     logic        launch_is_minmax_op;
     logic        minmax_compare_lt;
+    logic        minmax_compare_unsigned_lt;
+    logic        minmax_compare_signed_lt;
     logic        minmax_compare_lt_reg;
     logic        minmax_compare_done_reg;
     logic        pending_operation_reg;
@@ -142,6 +144,8 @@ module alu #(
     logic        req_is_bitwise_reg;
     logic        req_is_shift_reg;
     logic        req_is_minmax_reg;
+    logic        req_minmax_is_signed_reg;
+    logic        req_minmax_select_a_when_lt_reg;
     logic        req_is_mul_reg;
     logic        req_is_div_reg;
     logic [31:0] result_next;
@@ -176,10 +180,15 @@ module alu #(
                                (alu_op == ALU_REM)  ||
                                (alu_op == ALU_REMU));
 
-    // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
-    assign minmax_compare_lt = ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MAX)) ?
-                               ($signed(req_a_reg) < $signed(req_b_reg)) :
-                               (req_a_reg < req_b_reg);
+    assign minmax_compare_unsigned_lt = req_a_reg < req_b_reg;
+    // For signed MIN/MAX, opposite signs decide the result immediately; when the
+    // signs match, the unsigned magnitude compare is equivalent to signed <.
+    assign minmax_compare_signed_lt = (req_a_reg[31] ^ req_b_reg[31]) ?
+                                      req_a_reg[31] :
+                                      minmax_compare_unsigned_lt;
+    assign minmax_compare_lt = req_minmax_is_signed_reg ?
+                               minmax_compare_signed_lt :
+                               minmax_compare_unsigned_lt;
 
     // Backpressure new requests while the ALU holds a latched request that has not
     // yet produced a registered response.
@@ -221,7 +230,7 @@ module alu #(
     end
 
     always_comb begin
-        if ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MINU))
+        if (req_minmax_select_a_when_lt_reg)
             minmax_result = minmax_compare_lt_reg ? req_a_reg : req_b_reg;
         else
             minmax_result = minmax_compare_lt_reg ? req_b_reg : req_a_reg;
@@ -250,9 +259,8 @@ module alu #(
             result_next = bitwise_result;
         end else if (req_is_mul_reg || req_is_div_reg) begin
             result_next = muldiv_result;
-        end else if (req_is_minmax_reg) begin
-            result_next = minmax_result;
         end
+        // MIN/MAX completes through the dedicated minmax_result -> out_data path.
     end
 
     always_ff @(posedge clk) begin
@@ -265,6 +273,8 @@ module alu #(
             req_is_bitwise_reg    <= 1'b0;
             req_is_shift_reg      <= 1'b0;
             req_is_minmax_reg     <= 1'b0;
+            req_minmax_is_signed_reg <= 1'b0;
+            req_minmax_select_a_when_lt_reg <= 1'b0;
             req_is_mul_reg        <= 1'b0;
             req_is_div_reg        <= 1'b0;
             minmax_compare_lt_reg <= 1'b0;
@@ -284,6 +294,8 @@ module alu #(
                 req_is_bitwise_reg    <= launch_is_bitwise_op;
                 req_is_shift_reg      <= launch_is_shift_op;
                 req_is_minmax_reg     <= launch_is_minmax_op;
+                req_minmax_is_signed_reg <= (alu_op == ALU_MIN) || (alu_op == ALU_MAX);
+                req_minmax_select_a_when_lt_reg <= (alu_op == ALU_MIN) || (alu_op == ALU_MINU);
                 req_is_mul_reg        <= launch_is_mul_op;
                 req_is_div_reg        <= launch_is_div_op;
                 minmax_compare_done_reg <= 1'b0;
@@ -324,7 +336,7 @@ module alu #(
                     minmax_compare_done_reg <= 1'b1;
                 end else if (req_is_minmax_reg && minmax_compare_done_reg) begin
                     pending_operation_reg <= 1'b0;
-                    out_data              <= result_next;
+                    out_data              <= minmax_result;
                     out_valid             <= 1'b1;
                 end else if ((req_is_mul_reg && mul_ready) || (req_is_div_reg && div_ready) ||
                              (!req_is_mul_reg && !req_is_div_reg && !req_is_minmax_reg)) begin

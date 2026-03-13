@@ -27,6 +27,27 @@ dominant timing limiter is now firmly inside the CPU datapath:
 That ordering is intentional: the report prioritizes **synchronous paths first**,
 because those are the paths that determine clock-closing headroom for the FPGA.
 
+### Implemented fix and measured result
+
+The top ALU MIN/MAX path has now been tightened in `rtl/common/cpu/alu.sv` by:
+
+1. **Bypassing the shared `result_next` mux for completed MIN/MAX operations**
+2. **Predecoding MIN/MAX signedness and winner-select mode at launch time**
+
+Using the standard FPGA stats workflow (`make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json`):
+
+| Metric | Before fix | After fix | Delta |
+| --- | ---: | ---: | ---: |
+| Skill-generated routed `pll_clk_global` Fmax | **73.21 MHz** | **75.59 MHz** | **+2.38 MHz** |
+| Logic cells (`ICESTORM_LC`) | 5570 | 5557 | -13 |
+| BRAM (`ICESTORM_RAM`) | 30 | 30 | 0 |
+| Global buffers (`SB_GB`) | 8 | 8 | 0 |
+
+The authoritative final detailed timing section in the fresh `nextpnr.log`
+still shows the ALU compare cone as the top synchronous path, but with a
+slightly shorter **~13.3 ns** total delay (about **75.23 MHz** from the final
+path dump) and without the old shared late-result reconvergence.
+
 ### Final Timing Snapshot
 
 The final post-route timing section reports:
@@ -189,12 +210,21 @@ u_alu.req_b_reg[DFF]
    logic that must sit after the carry chain.
 
 3. **Localize the MIN/MAX output path instead of feeding the shared mux late.**  
-   A dedicated registered MIN/MAX result path would reduce reconvergence at
-   `result_next`.
+    A dedicated registered MIN/MAX result path would reduce reconvergence at
+    `result_next`.
 
 4. **Avoid adding new control fan-in to this cone.**  
-   Because this is already the critical path, future ALU feature growth should
-   not reuse the same final select structure without rechecking timing.
+    Because this is already the critical path, future ALU feature growth should
+    not reuse the same final select structure without rechecking timing.
+
+### Implemented optimization
+
+The current RTL now applies two of the suggestions above:
+
+- **Suggestion #2:** signed-vs-unsigned MIN/MAX handling is predecoded at launch,
+  so the hot compare path no longer re-derives that choice from `req_op_reg`
+- **Suggestion #3:** completed MIN/MAX results bypass the shared `result_next`
+  mux and drive `out_data` directly
 
 ---
 
