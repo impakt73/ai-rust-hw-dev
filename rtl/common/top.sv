@@ -64,6 +64,19 @@ module top #(
     // Reset Controller
     // ============================================================
     logic rst_n_internal;
+    logic bus_reset_root_rst_n;
+    logic cpu_reset_root_rst_n;
+    logic peripheral_reset_root_rst_n;
+    logic system_reset_root_rst_n;
+    logic host_bus_mux_rst_n;
+    logic registered_bus_rst_n;
+    logic host_bus_if_rst_n;
+    logic cpu_base_rst_n;
+    logic led_ctrl_rst_n;
+    logic clock_periph_rst_n;
+    logic sram_periph_rst_n;
+    logic sysctrl_rst_n;
+    logic sys_led_ctrl_rst_n;
 
     reset_controller #(
         .RESET_CYCLES(RESET_CYCLES)
@@ -73,7 +86,25 @@ module top #(
         .rst_n_out(rst_n_internal)
     );
 
-    assign rst_n_out = rst_n_internal;
+    always_ff @(posedge clk) begin
+        bus_reset_root_rst_n <= rst_n_internal;
+        cpu_reset_root_rst_n <= rst_n_internal;
+        peripheral_reset_root_rst_n <= rst_n_internal;
+        system_reset_root_rst_n <= rst_n_internal;
+    end
+
+    always_ff @(posedge clk) begin
+        host_bus_mux_rst_n   <= bus_reset_root_rst_n;
+        registered_bus_rst_n <= bus_reset_root_rst_n;
+        host_bus_if_rst_n    <= bus_reset_root_rst_n;
+        cpu_base_rst_n       <= cpu_reset_root_rst_n;
+        led_ctrl_rst_n       <= peripheral_reset_root_rst_n;
+        clock_periph_rst_n   <= peripheral_reset_root_rst_n;
+        sram_periph_rst_n    <= peripheral_reset_root_rst_n;
+        sysctrl_rst_n        <= system_reset_root_rst_n;
+        sys_led_ctrl_rst_n   <= system_reset_root_rst_n;
+        rst_n_out            <= system_reset_root_rst_n;
+    end
 
     // ============================================================
     // CPU <-> host_bus_mux Memory Channel Signals
@@ -218,14 +249,14 @@ module top #(
     // ============================================================
     // CPU is reset when either the internal reset or system controller requests it
     logic cpu_combined_rst_n;
-    assign cpu_combined_rst_n = rst_n_internal & sysctrl_cpu_rst_n;
+    assign cpu_combined_rst_n = cpu_base_rst_n & sysctrl_cpu_rst_n;
     
     // ============================================================
     // CPU Host-Bus Multiplexer
     // ============================================================
     host_bus_mux cpu_host_bus_mux (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(host_bus_mux_rst_n),
 
         // CPU-side interface
         .cpu_mem_a_addr(cpu_mem_a_addr),
@@ -342,7 +373,7 @@ module top #(
         .NUM_SLAVES(4)
     ) rtl_registered_bus (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(registered_bus_rst_n),
 
         .master_mem_a_addr(registered_master_mem_a_addr),
         .master_mem_a_wdata(registered_master_mem_a_wdata),
@@ -378,7 +409,7 @@ module top #(
     // - Master interface: Sends Host-initiated requests to arbiter (currently unused)
     host_bus_interface host_bus_if (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(host_bus_if_rst_n),
         
         // CPU Slave Interface (from host_bus_mux CPU external path)
         .mem_a_addr(cpu_to_ext_a_addr),
@@ -466,7 +497,7 @@ module top #(
     // ============================================================
     led_controller_peripheral led_ctrl (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(led_ctrl_rst_n),
 
         .mem_a_addr(led_mem_a_addr),
         .mem_a_wdata(led_mem_a_wdata),
@@ -488,7 +519,7 @@ module top #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ)
     ) clock_periph (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(clock_periph_rst_n),
 
         .mem_a_addr(clock_mem_a_addr),
         .mem_a_wdata(clock_mem_a_wdata),
@@ -506,7 +537,7 @@ module top #(
     // ============================================================
     sram_peripheral sram_periph (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(sram_periph_rst_n),
 
         .mem_a_addr(sram_mem_a_addr),
         .mem_a_wdata(sram_mem_a_wdata),
@@ -524,7 +555,7 @@ module top #(
     // ============================================================
     system_controller sysctrl (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(sysctrl_rst_n),
 
         .mem_a_addr(sysctrl_mem_a_addr),
         .mem_a_wdata(sysctrl_mem_a_wdata),
@@ -558,7 +589,7 @@ module top #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ)
     ) sys_led_ctrl (
         .clk(clk),
-        .rst_n(rst_n_internal),
+        .rst_n(sys_led_ctrl_rst_n),
         .cpu_booting(cpu_is_booting),
         .cpu_halted(cpu_halted_internal),
         .instr_complete(instr_complete),
