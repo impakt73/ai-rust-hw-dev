@@ -272,7 +272,6 @@ module alu #(
             div_is_signed         <= 1'b0;
             div_rem_sel           <= 1'b0;
             mul_op_type           <= 2'b00;
-            out_data              <= 32'd0;
             out_valid             <= 1'b0;
         end else begin
             if (launch_op) begin

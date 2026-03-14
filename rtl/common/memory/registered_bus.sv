@@ -189,18 +189,10 @@ module registered_bus #(
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             pending_req_valid <= 1'b0;
-            pending_req_master_idx <= '0;
-            pending_req_addr <= 32'h0;
-            pending_req_wdata <= 32'h0;
-            pending_req_we <= 1'b0;
-            pending_req_size <= 2'b00;
 
             pending_resp_valid <= 1'b0;
-            pending_resp_master_idx <= '0;
-            pending_resp_rdata <= 32'h0;
 
             slave_response_pending <= '0;
-            slave_response_master_idx <= '0;
         end else begin
             if (master_req_accept) begin
                 pending_req_valid <= 1'b1;

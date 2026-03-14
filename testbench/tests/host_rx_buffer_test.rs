@@ -72,14 +72,6 @@ fn test_reset_state() {
     assert_eq!(dut.packet_valid, 0);
     assert_eq!(dut.packet_start, 0);
     assert_eq!(dut.packet_last, 0);
-    assert_eq!(dut.packet_req, 0);
-    assert_eq!(dut.packet_we, 0);
-    assert_eq!(dut.packet_size, 0);
-    assert_eq!(dut.packet_src_fixed, 0);
-    assert_eq!(dut.packet_dst_fixed, 0);
-    assert_eq!(dut.packet_burst_len_m1, 0);
-    assert_eq!(dut.packet_base_addr, 0);
-    assert_eq!(dut.packet_data, 0);
     assert_eq!(dut.rx_ready, 1);
 }
 

@@ -177,7 +177,6 @@ module async_fifo #(
         if (!rst_n) begin
             rd_ptr_bin  <= '0;
             rd_ptr_gray <= '0;
-            out_data    <= '0;
             out_valid   <= 1'b0;
             load_pending_stage1 <= 1'b0;
             load_pending_stage2 <= 1'b0;

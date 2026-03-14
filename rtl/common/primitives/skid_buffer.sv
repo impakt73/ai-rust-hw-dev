@@ -90,9 +90,7 @@ module skid_buffer #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            out_data_current  <= '0;
             out_valid_current <= 1'b0;
-            skid_data_current <= '0;
             skid_valid_current <= 1'b0;
             in_ready_current  <= 1'b1;
         end else begin

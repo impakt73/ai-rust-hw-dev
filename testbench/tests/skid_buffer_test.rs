@@ -33,7 +33,6 @@ fn test_skid_buffer_reset_state() {
     clock_cycle(&mut dut);
 
     assert_eq!(dut.out_valid, 0, "out_valid should clear during reset");
-    assert_eq!(dut.out_data, 0, "out_data should clear during reset");
     assert_eq!(dut.in_ready, 1, "in_ready should be asserted after reset");
 }
 
