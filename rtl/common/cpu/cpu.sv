@@ -277,7 +277,6 @@ module cpu #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            imem_data_staging_reg <= 32'h0;
             imem_data_staging_valid <= 1'b0;
         end else begin
             if (imem_data_staging_write) begin
