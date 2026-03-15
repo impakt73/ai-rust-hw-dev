@@ -1,7 +1,7 @@
 `default_nettype none
 module sys_led_controller_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       cpu_booting,
     input wire logic       cpu_halted,
     input wire logic       instr_complete,
@@ -16,7 +16,7 @@ module sys_led_controller_wrapper (
         .CLK_FREQ_HZ(16)
     ) u_sys_led_controller (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .cpu_booting(cpu_booting),
         .cpu_halted(cpu_halted),
         .instr_complete(instr_complete),

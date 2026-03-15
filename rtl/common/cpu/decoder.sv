@@ -8,7 +8,7 @@ module decoder #(
     parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic        decode_en,
     input wire logic [31:0] instruction,
     output logic [6:0]  opcode,
@@ -580,7 +580,7 @@ module decoder #(
     // Hold the last decoded instruction between fetches so the multi-cycle CPU can
     // consume a stable set of decoder outputs through DECODE/EXECUTE/WRITEBACK.
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             opcode <= 7'h0;
             rd <= 5'h0;
             rs1 <= 5'h0;

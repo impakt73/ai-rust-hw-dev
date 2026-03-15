@@ -22,7 +22,7 @@ module artix7_alchitry_au_top #(
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
     );
@@ -32,7 +32,7 @@ module artix7_alchitry_au_top #(
         .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
     ) rst_n_btn_debouncer_inst (
         .clk(clk),
-        .rst_n(rst_n_btn_sync2),
+        .rst(~rst_n_btn_sync2),
         .din(rst_n_btn_sync2),
         .dout(rst_n_btn_debounced)
     );
@@ -88,7 +88,7 @@ module artix7_alchitry_au_top #(
         .WIDTH(1)
     ) pll_locked_sync_inst (
         .clk(sys_clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(pll_locked),
         .dout(pll_locked_sync2)
     );
@@ -101,12 +101,12 @@ module artix7_alchitry_au_top #(
         .RESET_CYCLES(50_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst_n(pll_locked_sync2),
+        .rst(~pll_locked_sync2),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),
         .sys_led_out(sys_led_out),
-        .rst_n_core()
+        .rst_core()
     );
 
     assign led = sys_led_out;

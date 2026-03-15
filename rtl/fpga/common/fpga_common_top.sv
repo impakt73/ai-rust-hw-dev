@@ -6,12 +6,12 @@ module fpga_common_top #(
     parameter int RESET_CYCLES = 25_000_000
 ) (
     input wire logic       sys_clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       usb_rx,
     output logic       usb_tx,
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,
-    output logic       rst_n_core
+    output logic       rst_core
 );
     logic [7:0] host_tx_data;
     logic       host_tx_valid;
@@ -38,7 +38,7 @@ module fpga_common_top #(
         .RESET_CYCLES(RESET_CYCLES)
     ) cpu_inst (
         .clk(sys_clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .host_tx_data(host_tx_data),
         .host_tx_valid(host_tx_valid),
         .host_tx_ready(host_tx_ready),
@@ -58,7 +58,7 @@ module fpga_common_top #(
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
-        .rst_n_out(rst_n_core)
+        .rst_out(rst_core)
     );
 
     uart #(
@@ -66,7 +66,7 @@ module fpga_common_top #(
         .BAUD_RATE(1_000_000)
     ) host_uart_inst (
         .clk(sys_clk),
-        .rst_n(rst_n_core),
+        .rst(rst_core),
         .tx_data(host_tx_data),
         .tx_valid(host_tx_valid),
         .tx_ready(host_tx_ready),

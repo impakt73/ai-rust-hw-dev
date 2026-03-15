@@ -17,7 +17,7 @@ fn test_activity_indicator_stays_low_during_reset() {
         .create_model_simple::<ActivityIndicatorWrapper>()
         .expect("Failed to create activity_indicator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.activity = 0;
     for _ in 0..4 {
         clock_cycle(&mut dut);
@@ -36,10 +36,10 @@ fn test_activity_indicator_emits_single_cycle_per_trigger() {
         .create_model_simple::<ActivityIndicatorWrapper>()
         .expect("Failed to create activity_indicator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.activity = 0;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     dut.activity = 1;
     clock_cycle(&mut dut);
@@ -64,10 +64,10 @@ fn test_activity_indicator_ignores_retrigger_while_busy() {
         .create_model_simple::<ActivityIndicatorWrapper>()
         .expect("Failed to create activity_indicator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.activity = 0;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     dut.activity = 1;
     clock_cycle(&mut dut);

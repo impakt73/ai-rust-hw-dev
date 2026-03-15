@@ -14,13 +14,13 @@ module synth_harness (
 
     // Reset synchronizer
     logic rst_n_sync1, rst_n_sync2;
-    logic rst_n;
+    logic rst;
     
     always_ff @(posedge clk) begin
         rst_n_sync1 <= rst_n_btn;
         rst_n_sync2 <= rst_n_sync1;
     end
-    assign rst_n = rst_n_sync2;
+    assign rst = ~rst_n_sync2;
 
     // Input stimulus registers to prevent input optimization
     logic [31:0] stim_reg [0:7];
@@ -28,7 +28,7 @@ module synth_harness (
     
     // Register the inputs to prevent constant propagation
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             for (int i = 0; i < 8; i++) begin
                 stim_reg[i] <= 32'h0;
             end
@@ -58,7 +58,7 @@ module synth_harness (
     
     alu u_alu (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .a(stim_reg[0]),
         .b(stim_reg[1]),
         .alu_op(stim_sel[4:0]),
@@ -80,7 +80,7 @@ module synth_harness (
     
     branch_unit u_branch (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .branch(stim_sel[0]),
         .funct3(stim_sel[3:1]),
         .rs1_data(stim_reg[0]),
@@ -100,7 +100,7 @@ module synth_harness (
     
     csr_file u_csr (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .is_csr(stim_sel[0]),
         .instr_complete(stim_sel[1]),
         .funct3(stim_sel[3:1]),
@@ -134,7 +134,7 @@ module synth_harness (
     
     decoder u_decoder (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .decode_en(stim_sel[0]),
         .instruction(stim_reg[0]),
         .opcode(opcode),
@@ -208,7 +208,7 @@ module synth_harness (
     
     div_unit #(.WIDTH(32)) u_div (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .start(stim_sel[0]),
         .is_signed(stim_sel[1]),
         .rem_sel(stim_sel[2]),
@@ -232,7 +232,7 @@ module synth_harness (
     
     fetch_buffer u_fetch_buffer (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .imem_data(stim_reg[0]),
         .imem_ready(stim_sel[0]),
         .pc(stim_reg[1]),
@@ -257,7 +257,7 @@ module synth_harness (
     
     fp_regfile u_fp_regfile (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .we(stim_sel[0]),
         .rs1_addr(stim_sel[4:0]),
         .rs2_addr(stim_reg[0][4:0]),
@@ -283,7 +283,7 @@ module synth_harness (
     
     fpu u_fpu (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .fpu_start(stim_sel[0]),
         .fs1(stim_reg[0]),
         .fs2(stim_reg[1]),
@@ -538,7 +538,7 @@ module synth_harness (
 `else
     // Default: just a counter
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             result_reg <= 32'h0;
         else
             result_reg <= result_reg + 1'b1;

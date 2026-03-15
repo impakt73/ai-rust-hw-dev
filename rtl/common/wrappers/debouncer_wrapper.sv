@@ -1,7 +1,7 @@
 `default_nettype none
 module debouncer_wrapper (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     input wire logic noisy_in,
     output logic debounced_out
 );
@@ -11,7 +11,7 @@ module debouncer_wrapper (
         .STABLE_TIME_US(3)
     ) u_debouncer (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .din(noisy_in),
         .dout(debounced_out)
     );

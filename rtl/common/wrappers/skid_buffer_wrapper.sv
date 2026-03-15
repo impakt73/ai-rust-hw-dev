@@ -1,7 +1,7 @@
 `default_nettype none
 module skid_buffer_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       in_valid,
     input wire logic [7:0] in_data,
     output logic       in_ready,
@@ -14,7 +14,7 @@ module skid_buffer_wrapper (
         .WIDTH(8)
     ) u_skid_buffer (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .in_valid(in_valid),
         .in_data(in_data),
         .in_ready(in_ready),

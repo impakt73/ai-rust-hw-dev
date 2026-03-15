@@ -6,7 +6,7 @@
 module system_controller (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // Address channel
     input wire logic [31:0] mem_a_addr,
@@ -23,7 +23,7 @@ module system_controller (
 
     // System control outputs
     output logic        sys_rst,       // System reset output
-    output logic        cpu_rst_n,     // CPU reset output (active low)
+    output logic        cpu_rst,       // CPU reset output (active high)
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
     output logic        req_cpu_halt,  // Pulse to request CPU halt
@@ -72,9 +72,9 @@ module system_controller (
     // Main Control Registers
     // ========================================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             sys_rst       <= 1'b0;
-            cpu_rst_n     <= 1'b1;
+            cpu_rst       <= 1'b0;
             cpu_boot      <= 1'b0;
             boot_addr_reg <= 32'h00000000;
             halt_reg      <= 32'h00000000;
@@ -85,7 +85,7 @@ module system_controller (
         end else begin
             // Default inactive values every cycle; writes can pulse outputs high/low.
             sys_rst      <= sys_reset_pending;
-            cpu_rst_n    <= 1'b1;
+            cpu_rst      <= 1'b0;
             cpu_boot     <= 1'b0;
             req_cpu_halt <= 1'b0;
             sys_reset_pending <= 1'b0;
@@ -158,7 +158,7 @@ module system_controller (
                 end
 
                 CPU_RESET_PULSE: begin
-                    cpu_rst_n <= 1'b0;
+                    cpu_rst <= 1'b1;
                     cpu_reset_state <= CPU_RESET_WAIT_BOOT;
                 end
 

@@ -1,7 +1,7 @@
 `default_nettype none
 module uart_1m_baud_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic [7:0] tx_data,
     input wire logic       tx_valid,
     output logic       tx_ready,
@@ -18,7 +18,7 @@ module uart_1m_baud_wrapper (
         .BAUD_RATE(1_000_000)
     ) uart_1m_inst (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .tx_data(tx_data),
         .tx_valid(tx_valid),
         .tx_ready(tx_ready),

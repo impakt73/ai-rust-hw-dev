@@ -59,7 +59,7 @@ module ice40_alchitry_cu_top #(
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
     );
@@ -69,7 +69,7 @@ module ice40_alchitry_cu_top #(
         .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
     ) rst_n_btn_debouncer_inst (
         .clk(clk),
-        .rst_n(rst_n_btn_sync2),
+        .rst(~rst_n_btn_sync2),
         .din(rst_n_btn_sync2),
         .dout(rst_n_btn_debounced)
     );
@@ -100,7 +100,7 @@ module ice40_alchitry_cu_top #(
         .WIDTH(1)
     ) pll_locked_sync_inst (
         .clk(sys_clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(pll_locked),
         .dout(pll_locked_sync2)
     );
@@ -110,7 +110,7 @@ module ice40_alchitry_cu_top #(
     
     // System LED output (from system controller)
     logic [7:0]  sys_led_out;
-    logic rst_n_core;
+    logic rst_core;
     
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -119,12 +119,12 @@ module ice40_alchitry_cu_top #(
         .RESET_CYCLES(25_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst_n(pll_locked_sync2),
+        .rst(~pll_locked_sync2),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(led_out),
         .sys_led_out(sys_led_out),
-        .rst_n_core(rst_n_core)
+        .rst_core(rst_core)
     );
     
     // ============================================================
@@ -152,7 +152,7 @@ module ice40_alchitry_cu_top #(
         .WIDTH(5)
     ) io_button_sync_inst (
         .clk(sys_clk),
-        .rst_n(rst_n_core),
+        .rst(rst_core),
         .din(io_button),
         .dout(io_button_sync2)
     );
@@ -163,14 +163,14 @@ module ice40_alchitry_cu_top #(
             .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
         ) io_button_debouncer_inst (
             .clk(sys_clk),
-            .rst_n(rst_n_core),
+            .rst(rst_core),
             .din(io_button_sync2[button_idx]),
             .dout(io_button_debounced[button_idx])
         );
     end
 
     always_ff @(posedge sys_clk) begin
-        if (!rst_n_core) begin
+        if (rst_core) begin
             io_button_prev  <= 5'b0;
             led_out_prev    <= 8'b0;
             seg_position_reg <= 3'b0;

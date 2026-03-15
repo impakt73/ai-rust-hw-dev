@@ -1,7 +1,7 @@
 `default_nettype none
 module i2s_serializer_equal_width_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic [7:0] sample_data,
     input wire logic       sample_valid,
     output logic       sample_ready,
@@ -14,7 +14,7 @@ module i2s_serializer_equal_width_wrapper (
         .OUTPUT_SAMPLE_WIDTH(8)
     ) dut (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .sample_data(sample_data),
         .sample_valid(sample_valid),
         .sample_ready(sample_ready),
@@ -26,7 +26,7 @@ endmodule
 
 module i2s_serializer_expand_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic [7:0] sample_data,
     input wire logic       sample_valid,
     output logic       sample_ready,
@@ -39,7 +39,7 @@ module i2s_serializer_expand_wrapper (
         .OUTPUT_SAMPLE_WIDTH(12)
     ) dut (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .sample_data(sample_data),
         .sample_valid(sample_valid),
         .sample_ready(sample_ready),
@@ -51,7 +51,7 @@ endmodule
 
 module i2s_serializer_truncate_wrapper (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic [11:0] sample_data,
     input wire logic        sample_valid,
     output logic        sample_ready,
@@ -64,7 +64,7 @@ module i2s_serializer_truncate_wrapper (
         .OUTPUT_SAMPLE_WIDTH(8)
     ) dut (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .sample_data(sample_data),
         .sample_valid(sample_valid),
         .sample_ready(sample_ready),

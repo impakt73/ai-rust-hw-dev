@@ -16,7 +16,7 @@ macro_rules! clock_cycle {
 }
 
 fn reset_to_boot(dut: &mut Cpu) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.boot = 0;
     dut.req_halt = 0;
     dut.mem_a_ready = 0;
@@ -26,7 +26,7 @@ fn reset_to_boot(dut: &mut Cpu) {
     clock_cycle!(dut);
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 }
 

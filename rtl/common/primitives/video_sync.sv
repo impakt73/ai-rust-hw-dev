@@ -17,7 +17,7 @@
 //
 // Interface:
 //   clk          - Pixel clock
-//   rst_n        - Synchronous active-low reset
+//   rst        - Synchronous active-high reset
 //   hsync        - Registered horizontal sync output
 //   vsync        - Registered vertical sync output
 //   active_video - Registered active-region qualifier
@@ -39,7 +39,7 @@ module video_sync #(
     parameter bit VSYNC_ACTIVE_HIGH = 1'b0
 ) (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic hsync,
     output logic vsync,
     output logic active_video,
@@ -140,7 +140,7 @@ module video_sync #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             h_counter <= H_LAST;
             v_counter <= V_LAST;
             hsync <= ~HSYNC_ACTIVE_HIGH;

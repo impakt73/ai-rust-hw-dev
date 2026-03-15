@@ -14,7 +14,7 @@
 module sram_peripheral (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // Address channel
     input wire logic [31:0] mem_a_addr,
@@ -276,7 +276,7 @@ module sram_peripheral (
     // State / Request Tracking / Registered D Channel
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             state <= S_IDLE;
             mem_d_valid_r <= 1'b0;
         end else begin

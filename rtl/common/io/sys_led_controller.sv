@@ -7,7 +7,7 @@
 //
 // Interface:
 //   clk                 - System clock
-//   rst_n               - Synchronous active-low reset
+//   rst               - Synchronous active-high reset
 //   cpu_booting         - High while CPU is in boot state
 //   cpu_halted          - High while CPU is halted
 //   instr_complete      - CPU instruction completion pulse
@@ -29,7 +29,7 @@ module sys_led_controller #(
     parameter int unsigned CLK_FREQ_HZ = 50_000_000
 ) (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       cpu_booting,
     input wire logic       cpu_halted,
     input wire logic       instr_complete,
@@ -58,7 +58,7 @@ module sys_led_controller #(
         .WAVE_FREQ_MILLIHERTZ(1000)
     ) boot_blink_generator (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .square_wave(boot_blink_wave)
     );
 
@@ -67,7 +67,7 @@ module sys_led_controller #(
         .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) instr_complete_activity (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .activity(instr_complete),
         .indicator(instr_complete_indicator)
     );
@@ -77,7 +77,7 @@ module sys_led_controller #(
         .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) sys_bus_activity (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .activity(sys_bus_handshake),
         .indicator(sys_bus_indicator)
     );
@@ -87,7 +87,7 @@ module sys_led_controller #(
         .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) host_bus_rx_activity (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .activity(host_bus_rx_handshake),
         .indicator(host_bus_rx_indicator)
     );
@@ -97,13 +97,13 @@ module sys_led_controller #(
         .INDICATOR_FREQ_MILLIHERTZ(8000)
     ) host_bus_tx_activity (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .activity(host_bus_tx_handshake),
         .indicator(host_bus_tx_indicator)
     );
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             sys_led <= 8'hFF;
         end else begin
             sys_led <= 8'h00;

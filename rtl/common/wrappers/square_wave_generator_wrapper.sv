@@ -1,7 +1,7 @@
 `default_nettype none
 module square_wave_generator_wrapper (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic square_wave
 );
 
@@ -10,7 +10,7 @@ module square_wave_generator_wrapper (
         .WAVE_FREQ_MILLIHERTZ(25_000)
     ) u_square_wave_generator (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .square_wave(square_wave)
     );
 

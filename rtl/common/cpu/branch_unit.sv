@@ -6,7 +6,7 @@
 
 module branch_unit (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic        branch,
     input wire logic [2:0]  funct3,
     input wire logic [31:0] rs1_data,
@@ -37,7 +37,7 @@ module branch_unit (
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             take_branch <= 1'b0;
         else
             take_branch <= take_branch_next;

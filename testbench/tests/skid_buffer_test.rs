@@ -10,12 +10,12 @@ fn clock_cycle(dut: &mut SkidBufferWrapper) {
 }
 
 fn reset_dut(dut: &mut SkidBufferWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     dut.in_data = 0;
     dut.out_ready = 0;
     clock_cycle(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle(dut);
 }
 
@@ -26,7 +26,7 @@ fn test_skid_buffer_reset_state() {
         .create_model_simple::<SkidBufferWrapper>()
         .expect("Failed to create skid_buffer model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     dut.in_data = 0;
     dut.out_ready = 0;

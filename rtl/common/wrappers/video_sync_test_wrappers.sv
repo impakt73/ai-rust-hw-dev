@@ -1,7 +1,7 @@
 `default_nettype none
 module video_sync_wrapper (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic hsync,
     output logic vsync,
     output logic active_video,
@@ -24,7 +24,7 @@ module video_sync_wrapper (
         .VSYNC_ACTIVE_HIGH(1'b0)
     ) u_video_sync (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .hsync(hsync),
         .vsync(vsync),
         .active_video(active_video),
@@ -38,7 +38,7 @@ endmodule
 
 module video_sync_minimal_wrapper (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic hsync,
     output logic vsync,
     output logic active_video,
@@ -61,7 +61,7 @@ module video_sync_minimal_wrapper (
         .VSYNC_ACTIVE_HIGH(1'b1)
     ) u_video_sync (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .hsync(hsync),
         .vsync(vsync),
         .active_video(active_video),

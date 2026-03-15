@@ -9,7 +9,7 @@
 
 module host_bus_mux (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // CPU-side interface
     input wire logic [31:0] cpu_mem_a_addr,
@@ -110,7 +110,7 @@ module host_bus_mux (
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             pending_req_valid <= 1'b0;
             pending_route_host <= 1'b0;
             waiting_for_resp <= 1'b0;

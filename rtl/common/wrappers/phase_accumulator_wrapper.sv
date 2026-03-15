@@ -1,7 +1,7 @@
 `default_nettype none
 module phase_accumulator_wrapper (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic tick
 );
 
@@ -11,7 +11,7 @@ module phase_accumulator_wrapper (
         .TICK_FREQ_HZ(33)
     ) u_phase_accumulator (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .tick(tick)
     );
 

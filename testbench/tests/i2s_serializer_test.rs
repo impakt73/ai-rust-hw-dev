@@ -18,11 +18,11 @@ macro_rules! clock_cycle {
 
 macro_rules! reset_dut {
     ($dut:expr) => {
-        $dut.rst_n = 0;
+        $dut.rst = 1;
         $dut.sample_valid = 0;
         $dut.sample_data = 0;
         clock_cycle!($dut);
-        $dut.rst_n = 1;
+        $dut.rst = 0;
         $dut.eval();
     };
 }

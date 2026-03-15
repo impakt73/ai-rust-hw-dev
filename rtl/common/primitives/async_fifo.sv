@@ -11,7 +11,7 @@
 // Interface:
 //   wr_clk   - Write-domain clock
 //   rd_clk   - Read-domain clock
-//   rst_n    - Synchronous active-low reset for both domains
+//   rst    - Synchronous active-high reset for both domains
 //   wr_valid - Write data is valid this wr_clk cycle
 //   wr_ready - FIFO can accept write data this wr_clk cycle
 //   wdata    - Data to write when wr_valid && wr_ready
@@ -27,7 +27,7 @@ module async_fifo #(
 ) (
     input wire logic             wr_clk,
     input wire logic             rd_clk,
-    input wire logic             rst_n,
+    input wire logic             rst,
 
     // Write interface (wr_clk domain)
     input wire logic             wr_valid,
@@ -133,7 +133,7 @@ module async_fifo #(
         .WIDTH(PTR_WIDTH)
     ) u_wr_ptr_sync (
         .clk(rd_clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .din(wr_ptr_gray),
         .dout(wr_ptr_gray_sync_rd)
     );
@@ -143,7 +143,7 @@ module async_fifo #(
         .WIDTH(PTR_WIDTH)
     ) u_rd_ptr_sync (
         .clk(wr_clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .din(rd_ptr_gray),
         .dout(rd_ptr_gray_sync_wr)
     );
@@ -162,7 +162,7 @@ module async_fifo #(
     );
 
     always_ff @(posedge wr_clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             wr_ptr_bin  <= '0;
             wr_ptr_gray <= '0;
             full        <= 1'b0;
@@ -174,7 +174,7 @@ module async_fifo #(
     end
 
     always_ff @(posedge rd_clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             rd_ptr_bin  <= '0;
             rd_ptr_gray <= '0;
             out_valid   <= 1'b0;

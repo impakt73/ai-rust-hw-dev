@@ -21,7 +21,7 @@ fn test_ff_sync_default_reset_state() {
         .create_model_simple::<FfSyncDefaultWrapper>()
         .unwrap();
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.din = 1;
     clock_cycle!(dut);
 
@@ -35,11 +35,11 @@ fn test_ff_sync_default_three_stage_delay() {
         .create_model_simple::<FfSyncDefaultWrapper>()
         .unwrap();
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.din = 0;
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.din = 1;
 
     clock_cycle!(dut);
@@ -58,11 +58,11 @@ fn test_ff_sync_parameterized_two_stage_and_width() {
         .expect("Failed to create parameterized ff_sync runtime");
     let mut dut = runtime.create_model_simple::<FfSyncParamWrapper>().unwrap();
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.din = 0;
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.din = 0b1010;
 
     clock_cycle!(dut);

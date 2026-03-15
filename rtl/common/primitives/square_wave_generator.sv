@@ -9,7 +9,7 @@
 //
 // Interface:
 //   clk         - System clock
-//   rst_n       - Synchronous active-low reset
+//   rst       - Synchronous active-high reset
 //   square_wave - Registered square wave output
 
 module square_wave_generator #(
@@ -17,7 +17,7 @@ module square_wave_generator #(
     parameter int unsigned WAVE_FREQ_MILLIHERTZ = 1_000
 ) (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic square_wave
 );
 
@@ -45,7 +45,7 @@ module square_wave_generator #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             counter <= '0;
             square_wave <= 1'b0;
         end else if (counter == HALF_PERIOD_COUNT_MAX) begin

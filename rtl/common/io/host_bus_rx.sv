@@ -6,7 +6,7 @@
 module host_bus_rx (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // RX Interface (from External Host)
     input wire logic [7:0]  rx_data,
@@ -98,7 +98,7 @@ module host_bus_rx (
     assign rx_ready = !out_valid_reg;
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             state <= STATE_IDLE;
 
             beat_bytes_reg      <= 3'd1;

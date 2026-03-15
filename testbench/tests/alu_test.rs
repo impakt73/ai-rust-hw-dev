@@ -50,12 +50,12 @@ fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
     dut.alu_op = alu_op;
 
     // Reset state
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     clock_cycle!(dut);
 
     // Release reset
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 
     assert_eq!(
@@ -89,10 +89,10 @@ fn execute_alu_operation(dut: &mut Alu, a: u32, b: u32, alu_op: u8) {
 }
 
 fn reset_alu(dut: &mut Alu) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 }
 
@@ -357,11 +357,11 @@ fn test_alu_minmax_result_is_registered() {
     let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.a = 0xFFFF_FFFBu32; // -5
     dut.b = 3u32;
     dut.alu_op = ALU_MIN as u8;
@@ -461,11 +461,11 @@ fn test_alu_single_cycle_result_is_registered() {
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.in_valid = 0;
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.a = 5;
     dut.b = 3;
     dut.alu_op = ALU_ADD as u8;

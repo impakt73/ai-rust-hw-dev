@@ -1,7 +1,7 @@
 `default_nettype none
 module sram_peripheral_test_wrapper (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic [31:0] mem_a_addr,
     input wire logic [31:0] mem_a_wdata,
     input wire logic        mem_a_we,
@@ -14,7 +14,7 @@ module sram_peripheral_test_wrapper (
 );
     sram_peripheral u_sram_peripheral (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .mem_a_addr(mem_a_addr),
         .mem_a_wdata(mem_a_wdata),
         .mem_a_we(mem_a_we),

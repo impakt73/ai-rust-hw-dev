@@ -17,7 +17,7 @@ fn test_square_wave_stays_low_during_reset() {
         .create_model_simple::<SquareWaveGeneratorWrapper>()
         .expect("Failed to create square_wave_generator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     for _ in 0..4 {
         clock_cycle(&mut dut);
         assert_eq!(
@@ -35,9 +35,9 @@ fn test_square_wave_toggles_every_half_period() {
         .create_model_simple::<SquareWaveGeneratorWrapper>()
         .expect("Failed to create square_wave_generator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     let expected = [0u8, 1, 1, 0, 0, 1, 1, 0];
     for expected_value in expected {

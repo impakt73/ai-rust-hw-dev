@@ -5,7 +5,7 @@
 module host_bus_tx (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // TX Interface (to External Host)
     output logic [7:0]  tx_data,
@@ -152,7 +152,7 @@ module host_bus_tx (
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             state <= STATE_IDLE;
 
             payload_enabled_reg <= 1'b0;
@@ -213,7 +213,7 @@ module host_bus_tx (
 
 `ifdef ASSERT_ON
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             // no-op
         end else begin
             if (state == STATE_IDLE && packet_valid && packet_ready && packet_start &&

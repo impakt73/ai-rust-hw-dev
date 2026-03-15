@@ -8,7 +8,7 @@ module alu #(
     parameter bit ENABLE_M_EXT = 1'b1  // RV32M extension: Multiply/Divide (default: enabled)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic [31:0] a,
     input wire logic [31:0] b,
     input wire logic [4:0]  alu_op,
@@ -65,7 +65,7 @@ module alu #(
                 .WIDTH(32)
             ) u_div (
                 .clk(clk),
-                .rst_n(rst_n),
+                .rst(rst),
                 .start(div_start),
                 .is_signed(div_is_signed),
                 .rem_sel(div_rem_sel),
@@ -103,7 +103,7 @@ module alu #(
                 .WIDTH(32)
             ) u_mul (
                 .clk(clk),
-                .rst_n(rst_n),
+                .rst(rst),
                 .start(mul_start),
                 .op_type(mul_op_type),
                 .multiplicand(req_a_reg),
@@ -256,7 +256,7 @@ module alu #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             pending_operation_reg <= 1'b0;
             req_a_reg             <= 32'd0;
             req_b_reg             <= 32'd0;

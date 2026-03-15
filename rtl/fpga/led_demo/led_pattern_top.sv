@@ -29,13 +29,14 @@ module led_pattern_top (
     // Reset synchronizer plus debouncer
     // ============================================================
     logic rst_n_sync2;
-    logic rst_n;
+    logic rst_n_debounced;
+    logic rst;
 
     ff_sync #(
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(rst_n_btn),
         .dout(rst_n_sync2)
     );
@@ -45,10 +46,12 @@ module led_pattern_top (
         .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
     ) rst_n_btn_debouncer_inst (
         .clk(clk),
-        .rst_n(rst_n_sync2),
+        .rst(~rst_n_sync2),
         .din(rst_n_sync2),
-        .dout(rst_n)
+        .dout(rst_n_debounced)
     );
+
+    assign rst = ~rst_n_debounced;
 
     // ============================================================
     // Second Counter
@@ -60,7 +63,7 @@ module led_pattern_top (
     localparam logic [COUNTER_WIDTH-1:0] COUNTER_MAX = COUNTER_WIDTH'(SHIFT_COUNT - 1);
     
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             counter <= '0;
         end else if (counter >= COUNTER_MAX) begin
             counter <= '0;
@@ -79,7 +82,7 @@ module led_pattern_top (
     logic [7:0] led_pattern;
     
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             led_pattern <= 8'hAA;  // Alternating pattern: 10101010
         end else if (shift_pulse) begin
             // Rotate left by 1 bit

@@ -8,7 +8,7 @@ module mul_unit #(
     parameter WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     
     // Control interface
     input wire logic        start,        // Start multiplication (pulse)
@@ -60,7 +60,7 @@ module mul_unit #(
     // State Register
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             state <= MUL_IDLE;
         else
             state <= next_state;
@@ -130,7 +130,7 @@ module mul_unit #(
     // Datapath Registers
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             product <= '0;
             mcand <= '0;
             iter_count <= '0;

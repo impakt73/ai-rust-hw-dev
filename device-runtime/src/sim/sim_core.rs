@@ -476,8 +476,8 @@ where
         self.cpu.host_rx_data = 0;
         self.cpu.com_err = 0;
 
-        // Drive reset low
-        self.cpu.rst_n = 0;
+        // Drive reset high (active-high reset)
+        self.cpu.rst = 1;
         self.cpu.clk = 0;
         self.cpu.eval();
         self.dump_vcd(); // Capture initial state with reset asserted, clk=0
@@ -493,7 +493,7 @@ where
         self.dump_vcd(); // Capture state after falling edge during reset
 
         // Release reset (still at clk=0)
-        self.cpu.rst_n = 1;
+        self.cpu.rst = 0;
         self.cpu.eval();
         self.dump_vcd(); // Capture state with reset released
 
@@ -516,11 +516,11 @@ where
 
         // Boot the CPU via host bus requests to the system controller peripheral
         // First, run clock cycles until the internal reset controller has completed
-        // (rst_n_out goes high). The reset controller holds internal reset for
-        // RESET_CYCLES (default 8) after external rst_n goes high.
+        // (rst_out goes low). The reset controller holds internal reset for
+        // RESET_CYCLES (default 8) after external rst goes low.
         for cycle in 0..BOOT_TIMEOUT_CYCLES {
             self.boot_clock_cycle();
-            if self.cpu.rst_n_out != 0 {
+            if self.cpu.rst_out == 0 {
                 break;
             }
             if cycle == BOOT_TIMEOUT_CYCLES - 1 {

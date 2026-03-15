@@ -23,10 +23,10 @@ fn test_fp_regfile_write_read() {
 
     // Reset the FP register file
     dut.clk = 0;
-    dut.rst_n = 0; // Assert reset
+    dut.rst = 1; // Assert reset
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1; // Deassert reset
+    dut.rst = 0; // Deassert reset
     dut.eval();
 
     // Write IEEE 754 value 1.0 (0x3F800000) to register f1
@@ -78,10 +78,10 @@ fn test_fp_regfile_f0_writable() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Unlike integer x0, FP f0 is writable
@@ -110,10 +110,10 @@ fn test_fp_regfile_three_port_read() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Write to three different registers
@@ -152,10 +152,10 @@ fn test_fp_regfile_write_enable() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Write value to f10
@@ -193,10 +193,10 @@ fn test_fp_regfile_all_registers() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Write random values to all 32 FP registers (including f0)
@@ -236,10 +236,10 @@ fn test_fp_regfile_reset() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Write non-zero values to several registers
@@ -251,10 +251,10 @@ fn test_fp_regfile_reset() {
     }
 
     // Assert reset again
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Verify all registers are reset to +0.0 (0x00000000)
@@ -277,10 +277,10 @@ fn test_fp_regfile_overwrite() {
 
     // Reset
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.we = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 
     // Write initial value to f15
