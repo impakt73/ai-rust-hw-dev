@@ -141,6 +141,63 @@ fn test_cpu_branch_taken_redirects_with_unified_target_register() {
 }
 
 #[test]
+fn test_cpu_fetch_stages_d_channel_response_before_decode() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 8];
+    write_u32(&mut program, 0x0, addi(1, 0, 42));
+
+    reset_to_fetch(&mut dut);
+    assert_eq!(dut.debug_fsm_state, S_FETCH, "CPU should boot into FETCH");
+
+    let mut pending_response = None;
+
+    step_with_memory(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_fsm_state, S_FETCH,
+        "Fetch request acceptance should keep the CPU in FETCH while waiting for the response"
+    );
+    assert!(
+        pending_response.is_some(),
+        "Instruction fetch should queue a response after the address handshake"
+    );
+
+    step_with_memory(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_fsm_state, S_FETCH,
+        "The D-channel handshake should only populate the staging register and keep the CPU in FETCH"
+    );
+    assert!(
+        pending_response.is_none(),
+        "The pending response should be consumed once the D-channel handshake completes"
+    );
+
+    dut.mem_a_ready = 1;
+    dut.mem_d_valid = 0;
+    dut.mem_d_rdata = 0;
+    dut.eval();
+    assert_eq!(
+        dut.mem_a_valid, 0,
+        "The CPU must not launch another instruction fetch while the staged response is waiting to be consumed"
+    );
+
+    clock_cycle!(dut);
+
+    assert_eq!(
+        dut.debug_fsm_state, S_DECODE,
+        "After consuming the staged fetch response, the CPU should advance to DECODE"
+    );
+    assert_eq!(
+        dut.debug_current_instruction,
+        addi(1, 0, 42),
+        "The staged fetch response should populate the instruction register before decode"
+    );
+}
+
+#[test]
 fn test_cpu_branch_uses_execute_stage_before_branch_completion() {
     let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut dut = runtime
@@ -157,7 +214,7 @@ fn test_cpu_branch_uses_execute_stage_before_branch_completion() {
     let mut pending_response = None;
     let mut observed_states = Vec::new();
 
-    for _ in 0..8 {
+    for _ in 0..10 {
         step_with_memory(&mut dut, &program, &mut pending_response);
         observed_states.push(dut.debug_fsm_state);
 
