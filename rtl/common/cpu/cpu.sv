@@ -247,19 +247,24 @@ module cpu #(
     logic        mem_req_inflight;     // Address request accepted, waiting for data response
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    logic [31:0] imem_data_staging_reg; // Staged instruction fetch response data
+    logic        imem_data_staging_valid; // Staged instruction fetch response is available
+    logic        imem_data_staging_write;
     
     // Memory ready signal routing
-    // In S_FETCH: imem_ready_internal indicates instruction response handshake
+    // In S_FETCH: imem_ready_internal indicates a staged instruction response is
+    // available for the fetch buffer/decompressor.
     // In S_MEM_READ/S_MEM_WRITE/S_ATOMIC_RMW: dmem_ready_internal indicates
     // data response handshake.
-    logic        imem_ready_internal;  // Instruction memory response handshake
+    logic        imem_ready_internal;  // Instruction memory response available from staging
     logic        dmem_ready_internal;  // Data memory response handshake
     
     // Response completes on D-channel valid/ready handshake
-    assign imem_ready_internal = mem_d_valid && mem_d_ready;
+    assign imem_ready_internal = imem_data_staging_valid;
     assign dmem_ready_internal = mem_d_valid && mem_d_ready;
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    assign imem_data_staging_write = (current_state == S_FETCH) && mem_d_handshake;
     
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
@@ -268,6 +273,19 @@ module cpu #(
             mem_req_inflight <= 1'b0;
         else
             mem_req_inflight <= (mem_req_inflight || mem_a_handshake) && !mem_d_handshake;
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            imem_data_staging_valid <= 1'b0;
+        end else begin
+            if (imem_data_staging_write) begin
+                imem_data_staging_reg <= mem_d_rdata;
+                imem_data_staging_valid <= 1'b1;
+            end else if (ir_write) begin
+                imem_data_staging_valid <= 1'b0;
+            end
+        end
     end
     
     // A extension: SC success/failure logic
@@ -492,12 +510,13 @@ module cpu #(
     assign invalidate_fetch_buffer = pc_write && control_flow_redirect;
 
     // Instantiate fetch buffer module
-    // Note: Uses mem_d_rdata and imem_ready_internal for instruction fetch
+    // Note: Uses staged fetch response data so the D-channel payload is registered
+    // before the fetch buffer and decompressor consume it.
     fetch_buffer u_fetch_buffer (
         .clk(clk),
         .rst_n(rst_n),
-        .imem_data(mem_d_rdata),         // Memory read data from D channel
-        .imem_ready(imem_ready_internal), // Routed from D-channel handshake
+        .imem_data(imem_data_staging_reg), // Staged memory read data from D channel
+        .imem_ready(imem_ready_internal),  // Staged fetch response available
         .pc(pc),
         .ir_write(ir_write),
         .invalidate_buffer(invalidate_fetch_buffer),
@@ -560,7 +579,8 @@ module cpu #(
             S_FETCH: begin
                 if (req_halt)
                     next_state = S_HALT;
-                // Wait for instruction memory ready (unified interface)
+                // Wait for the staged instruction response to be consumed by the
+                // fetch buffer/decompressor path before leaving FETCH.
                 else if (imem_ready_internal)
                     next_state = S_DECODE;
                 else
@@ -754,7 +774,7 @@ module cpu #(
                 pc_write = boot && !req_halt;
 
             S_FETCH: begin
-                imem_req_internal = !req_halt;
+                imem_req_internal = !req_halt && !imem_data_staging_valid;
                 if (imem_ready_internal)
                     ir_write = 1'b1;
             end
