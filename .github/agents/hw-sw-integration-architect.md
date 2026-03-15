@@ -91,7 +91,7 @@ to check alu_a and alu_b..."*
 - Use `always_ff` for sequential logic with non-blocking assignments (`<=`)
 - Use `always_comb` for combinational logic with blocking assignments (`=`)
 - Prefer `logic` over `wire`/`reg`
-- Default to synchronous active-high reset (`rst`) for internal RTL modules. iCE40 reset resources are active-high, so this avoids extra inversion LUTs and timing delay. Use active-low resets only for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary. Until the repo-wide reset migration is complete, some legacy module boundaries may still expose `rst_n`; preserve those interfaces unless the task explicitly includes converting them.
+- Default to synchronous active-high reset (`rst`) for internal RTL modules. iCE40 reset resources are active-high, so this avoids extra inversion LUTs and timing delay. Use active-low resets only for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary.
 - When a datapath payload register is protected by a separate `valid`, `pending`, or equivalent control flag, reset the control flag but not the payload register itself; write or refresh the payload whenever new data is captured, typically in the same branch where you assert the flag, and require consumers to ignore the payload while the flag is low
 - Avoid adding payload-only registers to the reset path unless software-visible behavior truly depends on their reset value, because extra reset fanout increases FPGA routing congestion
 
