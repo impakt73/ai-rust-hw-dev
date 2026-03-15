@@ -361,10 +361,11 @@ genuine control signal gains lower-skew routing.
 3. **General RTL guidance**  
    For datapath registers whose contents are only meaningful when accompanied
    by a separate `valid`, `pending`, or equivalent control bit, prefer
-   resetting the control bit only.  Initialize the payload register when that
-   control bit goes high instead of forcing the payload through the global
-   reset network.  This reduces reset-path fanout and routing congestion on
-   resource-constrained FPGA targets.
+   resetting the control bit only.  Write or refresh the payload whenever new
+   data is captured, typically in the same branch where the control bit is
+   asserted, instead of forcing the payload through the global reset network.
+   This reduces reset-path fanout and routing congestion on resource-constrained
+   FPGA targets.
 
 4. **BRAM pressure (30/32 = 93%)**  
    The design is close to the ICESTORM_RAM ceiling.  Future additions using

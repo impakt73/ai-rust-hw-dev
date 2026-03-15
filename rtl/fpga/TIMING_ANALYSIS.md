@@ -419,9 +419,9 @@ routing, which makes long control cones harder to close.
 
 One practical RTL rule that helps here is to avoid resetting datapath-only
 payload registers when a separate `valid`/`pending` flag already guarantees the
-payload is ignored while invalid. Reset the control flag, initialize the
-payload when the flag asserts, and keep unnecessary payload buses off the reset
-network.
+payload is ignored while invalid. Reset the control flag, write or refresh the
+payload whenever new data is captured (typically in the same branch where the
+flag is asserted), and keep unnecessary payload buses off the reset network.
 
 ### 2. BRAM saturation
 

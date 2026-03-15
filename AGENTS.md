@@ -63,7 +63,7 @@ What files do you need to modify?
 - **Use synchronous resets only** across project RTL modules.
 - Keep reset ports active-low (`rst_n`) unless the module interface requires otherwise.
 - For sequential logic, use `always_ff @(posedge clk)` (or domain clock) and handle reset inside the block with `if (!rst_n)`.
-- **Do not reset datapath-only payload registers when a separate valid/pending flag already guarantees the payload is ignored while invalid.** Instead, clear the valid flag on reset and initialize the payload register only when that valid flag is asserted.
+- **Do not reset datapath-only payload registers when a separate `valid`/`pending` flag already guarantees the payload is ignored while invalid.** Instead, clear the control flag on reset and write or refresh the payload whenever new data is captured (typically in the same branch where the `valid`/`pending` flag is asserted).
 - This avoids unnecessary reset-path fanout and routing congestion on real FPGA hardware while preserving correct behavior, because no consumer should read the payload when its valid flag is low.
 
 ### Debugging Methodology
