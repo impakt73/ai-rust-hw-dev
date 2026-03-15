@@ -20,4 +20,4 @@ The intended lifecycle for documentation in this repository follows this pattern
 2. **Planning Phase**: Research documents are synthesized into implementation plans in `plans/` (research docs are deleted at this step)
 3. **Implementation Phase**: Plans are executed and turned into code in the project (implementation plans are deleted at this step)
 
-Persistent reference material that should live alongside the codebase long-term (for example FPGA analysis reports and reproduction guides) belongs in a stable subfolder such as `fpga/` rather than the transient `research/` → `plans/` workflow above.
+Persistent reference material that should live alongside the codebase long-term (for example FPGA analysis reports and reproduction guides) belongs in a stable subfolder such as `docs/fpga/` rather than the transient `research/` → `plans/` workflow above.
