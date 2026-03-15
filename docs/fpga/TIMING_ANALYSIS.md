@@ -19,7 +19,7 @@ removed the old routed bottleneck from the top spot.
 
 ### Implemented Fix
 
-- **File:** `rtl/common/memory/registered_bus.sv:83-85,171-179,187-194,196-236`
+- **File:** `rtl/common/memory/registered_bus.sv:83-85,171-179,187-236`
 - **Change:** Added `slave_response_pop` and now drive `slave_mem_d_ready` from
   that registered pulse instead of directly from the same-cycle combinational
   response-arbitration cone.

@@ -423,7 +423,7 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
     );
     assert_eq!(
         dut.slave0_mem_d_ready, 0,
-        "slave0 ready pop should wait one cycle after the prior master response completes"
+        "slave0 ready pop should still be low in the cycle where the unmapped response is consumed"
     );
 
     clock_cycle!(dut);
