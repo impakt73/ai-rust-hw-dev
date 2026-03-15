@@ -160,6 +160,8 @@ The multi-cycle design adds handshaking signals:
 - Use **synchronous resets only** in project RTL modules.
 - Keep reset ports active-low as `rst_n`.
 - For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (!rst_n)`.
+- When a datapath payload register has a separate `valid`, `pending`, or similar control bit, reset the control bit rather than the payload register itself. Write or refresh the payload whenever you capture new data, typically in the same branch where you set/assert the control bit, and downstream logic must ignore the payload whenever that control bit is low.
+- Avoiding resets on payload-only registers reduces reset fanout and routing congestion on FPGA hardware without changing functional behavior.
 
 ### `default_nettype` Guards (MANDATORY)
 

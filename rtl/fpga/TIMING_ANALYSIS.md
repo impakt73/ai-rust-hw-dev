@@ -417,6 +417,12 @@ placement constraints.
 that cannot use a dedicated global route will need to live on ordinary fabric
 routing, which makes long control cones harder to close.
 
+One practical RTL rule that helps here is to avoid resetting datapath-only
+payload registers when a separate `valid`/`pending` flag already guarantees the
+payload is ignored while invalid. Reset the control flag, write or refresh the
+payload whenever new data is captured (typically in the same branch where the
+flag is asserted), and keep unnecessary payload buses off the reset network.
+
 ### 2. BRAM saturation
 
 `ICESTORM_RAM` usage is **30 / 32**. The design still fits, but there is very

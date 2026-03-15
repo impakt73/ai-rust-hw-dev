@@ -91,7 +91,9 @@ to check alu_a and alu_b..."*
 - Use `always_ff` for sequential logic with non-blocking assignments (`<=`)
 - Use `always_comb` for combinational logic with blocking assignments (`=`)
 - Prefer `logic` over `wire`/`reg`
-- Default to asynchronous active-low reset (`rst_n`) unless specified otherwise
+- Default to synchronous active-low reset (`rst_n`) unless the surrounding module interface requires otherwise
+- When a datapath payload register is protected by a separate `valid`, `pending`, or equivalent control flag, reset the control flag but not the payload register itself; write or refresh the payload whenever new data is captured, typically in the same branch where you assert the flag, and require consumers to ignore the payload while the flag is low
+- Avoid adding payload-only registers to the reset path unless software-visible behavior truly depends on their reset value, because extra reset fanout increases FPGA routing congestion
 
 **Signal Naming:**
 - Use `snake_case` consistently
