@@ -82,6 +82,7 @@ module registered_bus #(
 
     logic [NUM_SLAVES-1:0]                       slave_response_pending;
     logic [NUM_SLAVES*MASTER_IDX_W-1:0]         slave_response_master_idx;
+    logic [NUM_SLAVES-1:0]                       slave_response_pop;
 
     logic [MASTER_IDX_W-1:0]                     selected_master_idx;
     logic                                        selected_master_valid;
@@ -167,9 +168,15 @@ module registered_bus #(
             slave_mem_a_valid[decoded_slave_idx] = 1'b1;
         end
 
-        if (!pending_resp_valid && selected_resp_slave_valid) begin
-            slave_mem_d_ready[selected_resp_slave_idx] = 1'b1;
-        end
+        // Delay the slave-side pop/ready acknowledgement until the cycle after
+        // the response is captured. This breaks the long same-cycle
+        // response-arbitration -> slave-ready feedback path while keeping the
+        // captured response data/master routing unchanged.
+        //
+        // Slaves must already hold D valid/data stable until ready is
+        // observed, so capturing the response here and pulsing ready from a
+        // register on the following cycle preserves correctness.
+        slave_mem_d_ready = slave_response_pop;
 
         if (pending_resp_valid) begin
             master_mem_d_rdata_int[pending_resp_master_idx] = pending_resp_rdata;
@@ -193,7 +200,10 @@ module registered_bus #(
             pending_resp_valid <= 1'b0;
 
             slave_response_pending <= '0;
+            slave_response_pop <= '0;
         end else begin
+            slave_response_pop <= '0;
+
             if (master_req_accept) begin
                 pending_req_valid <= 1'b1;
                 pending_req_master_idx <= selected_master_idx;
@@ -220,6 +230,7 @@ module registered_bus #(
                     slave_response_master_idx[(selected_resp_slave_idx*MASTER_IDX_W) +: MASTER_IDX_W];
                 pending_resp_rdata <= slave_mem_d_rdata_int[selected_resp_slave_idx];
                 slave_response_pending[selected_resp_slave_idx] <= 1'b0;
+                slave_response_pop[selected_resp_slave_idx] <= 1'b1;
             end else if (master_resp_accept) begin
                 pending_resp_valid <= 1'b0;
             end

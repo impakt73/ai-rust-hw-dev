@@ -422,8 +422,8 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
         "master1 synthesized response should clear after handshake"
     );
     assert_eq!(
-        dut.slave0_mem_d_ready, 1,
-        "slave0 response should still be pending after the unmapped response is consumed"
+        dut.slave0_mem_d_ready, 0,
+        "slave0 ready pop should wait one cycle after the prior master response completes"
     );
 
     clock_cycle!(dut);
@@ -433,6 +433,10 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
     assert_eq!(
         dut.master0_mem_d_valid, 1,
         "slave0 response should be delivered after the unmapped response completes"
+    );
+    assert_eq!(
+        dut.slave0_mem_d_ready, 1,
+        "slave0 should receive a one-cycle ready pop when the bus captures its response"
     );
     assert_eq!(
         dut.master0_mem_d_rdata, 0x1234_5678,
