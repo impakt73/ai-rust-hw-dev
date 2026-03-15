@@ -107,7 +107,11 @@ Possible explanations (require netlist-level investigation to confirm):
 **Assessment:** Appropriate use of a global buffer slot given the observed
 fanout.  Further investigation with `yosys … show -format dot` or by reading
 the JSON netlist is needed before deciding whether RTL restructuring could
-reduce this fanout.
+reduce this fanout.  As a general RTL guideline, datapath payload registers
+that are guarded by a separate valid/pending bit should usually keep the
+control bit on the reset path but leave the payload register itself
+unreset; consumers must ignore the payload while invalid, and removing that
+payload reset term helps avoid exactly this kind of reset-fanout growth.
 
 ---
 
@@ -145,7 +149,10 @@ nextpnr classifies as `[reset]`.
 without a global buffer is feasible on a less-congested device.  On the
 HX8K at 72% LUT utilisation the tool promotes it to reduce routing pressure.
 Elimination would require non-trivial restructuring of `sram_peripheral.sv`
-(e.g. separating the BRAM output pipeline from the reset path).  Deferred.
+(e.g. separating the BRAM output pipeline from the reset path).  This is a
+good example of the broader rule that payload-only datapath registers should
+not be reset when a separate valid/control signal already guarantees the
+value is ignored until rewritten.  Deferred.
 
 ---
 
@@ -344,18 +351,27 @@ genuine control signal gains lower-skew routing.
    The remaining SRAM global buffer slot is driven by the BRAM RDATA path
    through the `sram_peripheral.sv` state machine.  Potential mitigations:  
    a. Add an output register stage in `sram_peripheral.sv` to break the BRAM
-      RDATA path before it reaches registers with synchronous resets.  
+       RDATA path before it reaches registers with synchronous resets.  
    b. Change `split_first_rdata` from a synchronously-reset register to one
-      that captures on a gated clock-enable only (removing the `if (!rst_n)`
-      reset branch for this specific register).  
+       that captures on a gated clock-enable only (removing the `if (!rst_n)`
+       reset branch for this specific register, while keeping the associated
+       control/valid state reset so the payload is ignored until recaptured).  
    Both require careful functional verification.
 
-3. **BRAM pressure (30/32 = 93%)**  
+3. **General RTL guidance**  
+   For datapath registers whose contents are only meaningful when accompanied
+   by a separate `valid`, `pending`, or equivalent control bit, prefer
+   resetting the control bit only.  Initialize the payload register when that
+   control bit goes high instead of forcing the payload through the global
+   reset network.  This reduces reset-path fanout and routing congestion on
+   resource-constrained FPGA targets.
+
+4. **BRAM pressure (30/32 = 93%)**  
    The design is close to the ICESTORM_RAM ceiling.  Future additions using
    BRAM (e.g. larger SRAM, deeper FIFO, additional CSR BRAM) will trigger
    resource overflow.  Monitor BRAM usage with each significant RTL change.
 
-4. **LUT pressure (72%)**  
+5. **LUT pressure (72%)**  
    Comfortable headroom remains for the current feature set (M and F
    extensions disabled on iCE40).  Enabling M or F extensions is not
    possible on HX8K due to combined LUT + BRAM constraints.
