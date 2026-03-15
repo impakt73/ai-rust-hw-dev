@@ -158,8 +158,10 @@ The multi-cycle design adds handshaking signals:
 
 ### Reset Conventions
 - Use **synchronous resets only** in project RTL modules.
-- Keep reset ports active-low as `rst_n`.
-- For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (!rst_n)`.
+- Default to active-high reset ports as `rst` for internal RTL modules. On iCE40 hardware this avoids the extra inversion LUTs and timing penalty that come from mapping active-low resets onto active-high fabric reset controls.
+- For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (rst)`.
+- Reserve active-low resets for special cases, usually external board or device signals that already arrive active-low. Convert those signals to the internal active-high convention as close to the boundary as practical.
+- Until the repo-wide reset migration lands, some legacy module interfaces may still be named `rst_n`; preserve those boundaries unless the task explicitly includes converting them.
 - When a datapath payload register has a separate `valid`, `pending`, or similar control bit, reset the control bit rather than the payload register itself. Write or refresh the payload whenever you capture new data, typically in the same branch where you set/assert the control bit, and downstream logic must ignore the payload whenever that control bit is low.
 - Avoiding resets on payload-only registers reduces reset fanout and routing congestion on FPGA hardware without changing functional behavior.
 

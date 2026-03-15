@@ -67,8 +67,11 @@ global routing directly.
 The `reset_controller` module generates `rst_n_out` after waiting
 `RESET_CYCLES` (25 000 000 cycles = 1 s) for the PLL to lock.  Every
 synchronous flip-flop in the design is reset by this signal.  The
-`_SB_LUT4_I3_O` suffix reflects a one-LUT inversion: the RTL uses
-active-low `rst_n`, but iCE40 `SB_DFFSR.R` is active-high.
+`_SB_LUT4_I3_O` suffix reflects a one-LUT inversion: the current RTL uses
+active-low `rst_n`, but iCE40 `SB_DFFSR.R` is active-high.  Project guidance
+now prefers active-high internal resets by default and reserves active-low
+reset signals for external board-level exceptions, specifically to avoid this
+kind of extra inversion and delay.
 
 **Assessment:** Correct and mandatory use.  The 1199-fanout reset must be
 on the global network to avoid enormous routing congestion and clock-enable

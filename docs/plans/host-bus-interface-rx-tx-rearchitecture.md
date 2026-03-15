@@ -163,7 +163,7 @@ Total:                  ~878 lines, interleaved control flow
 module host_bus_rx (
     // Clock and reset
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     
     // ============================================================
     // RX Byte Stream Interface (from UART/transport)
@@ -226,7 +226,7 @@ module host_bus_rx (
 module host_bus_tx (
     // Clock and reset
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     
     // ============================================================
     // TX Byte Stream Interface (to UART/transport)
@@ -349,8 +349,8 @@ assign tx.host_resp_size  = rx.req_size;  // Echo from original request
 logic cpu_transaction_complete;
 assign cpu_transaction_complete = req && ready;  // Single-cycle pulse
 
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
+always_ff @(posedge clk) begin
+    if (rst) begin
         rx.resp_consumed <= 1'b0;
     end else begin
         // Consume RX response when CPU transaction completes
@@ -366,8 +366,8 @@ assign bus_master_handshake_complete = host_bus_req && host_bus_ready;
 
 logic host_resp_pending;
 
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
+always_ff @(posedge clk) begin
+    if (rst) begin
         host_resp_pending    <= 1'b0;
         rx.req_consumed      <= 1'b0;
         tx.host_resp_valid   <= 1'b0;

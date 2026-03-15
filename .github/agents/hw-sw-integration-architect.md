@@ -91,7 +91,7 @@ to check alu_a and alu_b..."*
 - Use `always_ff` for sequential logic with non-blocking assignments (`<=`)
 - Use `always_comb` for combinational logic with blocking assignments (`=`)
 - Prefer `logic` over `wire`/`reg`
-- Default to synchronous active-low reset (`rst_n`) unless the surrounding module interface requires otherwise
+- Default to synchronous active-high reset (`rst`) for internal RTL modules. iCE40 reset resources are active-high, so this avoids extra inversion LUTs and timing delay. Use active-low resets only for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary. Until the repo-wide reset migration is complete, some legacy module boundaries may still expose `rst_n`; preserve those interfaces unless the task explicitly includes converting them.
 - When a datapath payload register is protected by a separate `valid`, `pending`, or equivalent control flag, reset the control flag but not the payload register itself; write or refresh the payload whenever new data is captured, typically in the same branch where you assert the flag, and require consumers to ignore the payload while the flag is low
 - Avoid adding payload-only registers to the reset path unless software-visible behavior truly depends on their reset value, because extra reset fanout increases FPGA routing congestion
 
@@ -296,9 +296,9 @@ fn test_cpu_fence_i() {
     imem.insert(0, 0x0000100F);
     
     // Reset and initialize
-    core.rst_n = false;
+    core.rst = true;
     clock_cycle!(core);
-    core.rst_n = true;
+    core.rst = false;
     
     // Execute FENCE.I (2 cycles: FETCH -> DECODE)
     for _ in 0..2 {
@@ -341,8 +341,8 @@ Store operations set `dmem_addr` in S_MEM_ADDR but tests sample it before `eval(
 **3. RTL Fix:**
 ```systemverilog
 // In cpu.sv - ensure dmem_addr is stable during S_MEM_WRITE
-always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
+always_ff @(posedge clk) begin
+    if (rst) begin
         dmem_addr_reg <= 32'h0;
     end else if (state == S_MEM_ADDR) begin
         dmem_addr_reg <= alu_result;  // Capture in MEM_ADDR state

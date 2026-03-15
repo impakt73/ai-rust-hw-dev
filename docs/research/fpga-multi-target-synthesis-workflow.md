@@ -186,7 +186,7 @@ LOCATE COMP "clk" SITE "P3";
 IOBUF PORT "clk" IO_TYPE=LVCMOS33;
 FREQUENCY PORT "clk" 50.000000 MHZ;
 
-# Reset button (active low)
+# Reset button (external active-low input; invert to internal active-high reset)
 LOCATE COMP "rst_n_btn" SITE "T1";
 IOBUF PORT "rst_n_btn" IO_TYPE=LVCMOS33;
 

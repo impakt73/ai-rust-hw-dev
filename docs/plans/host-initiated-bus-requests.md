@@ -88,7 +88,7 @@ A new RTL module that handles incoming host data buffering. This module will be 
 module host_rx_buffer (
     // Clock and reset
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     
     // RX Interface (from External Host)
     input  logic [7:0]  rx_data,
@@ -168,7 +168,7 @@ The module should only lower `rx_ready` when **both** storage locations contain 
 module host_rx_buffer (
     // Clock and reset
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     
     // RX Interface (from External Host)
     input  logic [7:0]  rx_data,
@@ -284,8 +284,8 @@ module host_rx_buffer (
     // ============================================================
     // State Register
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    always_ff @(posedge clk) begin
+        if (rst) begin
             state <= STATE_IDLE;
         end else begin
             state <= next_state;
@@ -431,8 +431,8 @@ module host_rx_buffer (
     // ============================================================
     // Data Capture Logic
     // ============================================================
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    always_ff @(posedge clk) begin
+        if (rst) begin
             resp_valid_reg <= 1'b0;
             resp_we_reg    <= 1'b0;
             resp_size_reg  <= 2'b00;
@@ -584,7 +584,7 @@ New Host-initiated flow:
 // Instantiate the new RX buffer module
 host_rx_buffer rx_buf (
     .clk(clk),
-    .rst_n(rst_n),
+    .rst(rst),
     
     // RX interface from host
     .rx_data(rx_data),

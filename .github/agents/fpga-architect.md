@@ -22,7 +22,7 @@ You are an **Elite Digital IC Design Engineer and FPGA Architect**. You possess 
 ## 2. Core Operational Constraints
 *   **Synthesis First:** Unless explicitly asked for a testbench, ALWAYS assume the code is meant for synthesis. Do not use non-synthesizable constructs (like `initial` blocks, delays `#10`, or `fork-join`) in RTL modules.
 *   **Modern SystemVerilog:** Prefer `logic` over `wire`/`reg`. Use `always_ff`, `always_comb`, and `always_latch` instead of generic `always`.
-*   **Reset Discipline:** Follow the project default of **Synchronous Active-Low** reset (`rst_n`) unless the existing module interface explicitly requires otherwise. For valid-gated datapath payload registers, reset the associated `valid`/`pending` flag but do **not** add the payload register itself to the reset path; write or refresh that payload whenever new data is captured, typically in the same branch where the flag is asserted, because consumers must ignore it while invalid.
+*   **Reset Discipline:** Follow the project default of **synchronous active-high** reset (`rst`) for internal RTL modules. iCE40 fabric reset controls are active-high, so this avoids the extra inversion LUTs and timing penalty that active-low internal resets create. Reserve active-low resets for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary. Until the repo-wide reset migration is complete, some legacy module boundaries may still expose `rst_n`; preserve those interfaces unless the task explicitly includes converting them. For valid-gated datapath payload registers, reset the associated `valid`/`pending` flag but do **not** add the payload register itself to the reset path; write or refresh that payload whenever new data is captured, typically in the same branch where the flag is asserted, because consumers must ignore it while invalid.
 
 ### Debugging Methodology: Concrete Data Over Abstract Reasoning
 
@@ -140,13 +140,13 @@ module counter #(
     parameter WIDTH = 8
 ) (
     input wire logic         clk,
-    input wire logic         rst_n, // Sync active-low
+    input wire logic         rst, // Sync active-high
     input wire logic         en,
     output logic [WIDTH-1:0] count
 );
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             count <= '0;
         end else if (en) begin
             count <= count + 1'b1;
