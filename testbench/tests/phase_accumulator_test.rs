@@ -17,7 +17,7 @@ fn test_phase_accumulator_tick_stays_low_during_reset() {
         .create_model_simple::<PhaseAccumulatorWrapper>()
         .expect("Failed to create phase_accumulator model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     for _ in 0..4 {
         clock_cycle(&mut dut);
         assert_eq!(dut.tick, 0, "tick must stay low while reset is asserted");
@@ -41,9 +41,9 @@ fn test_phase_accumulator_tick_count() {
     let phase_increment = ((TICK_FREQ_HZ * phase_modulus) + (CLK_FREQ_HZ / 2)) / CLK_FREQ_HZ; // Round to nearest
     let expected_ticks = (TEST_CYCLES * phase_increment) >> PHASE_WIDTH;
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     let mut tick_count = 0u64;
     for _ in 0..TEST_CYCLES {

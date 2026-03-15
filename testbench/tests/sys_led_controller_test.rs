@@ -19,7 +19,7 @@ fn clock_cycle(dut: &mut SysLedControllerWrapper) {
 }
 
 fn reset_dut(dut: &mut SysLedControllerWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.cpu_booting = 0;
     dut.cpu_halted = 0;
     dut.instr_complete = 0;
@@ -52,7 +52,7 @@ fn test_sys_led_halted_sets_bit0() {
         .expect("Failed to create sys_led_controller model");
 
     reset_dut(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.cpu_booting = 0;
     dut.cpu_halted = 1;
     clock_cycle(&mut dut);
@@ -72,7 +72,7 @@ fn test_sys_led_booting_blinks_bit0() {
         .expect("Failed to create sys_led_controller model");
 
     reset_dut(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.cpu_booting = 1;
     dut.cpu_halted = 0;
 
@@ -104,7 +104,7 @@ fn test_sys_led_activity_indicators_and_com_err() {
         .expect("Failed to create sys_led_controller model");
 
     reset_dut(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.com_err = 1;
 
     dut.instr_complete = 1;

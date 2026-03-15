@@ -6,7 +6,7 @@ module registered_bus #(
     localparam int unsigned SLAVE_IDX_W = (NUM_SLAVES <= 1) ? 1 : $clog2(NUM_SLAVES)
 ) (
     input wire logic                                 clk,
-    input wire logic                                 rst_n,
+    input wire logic                                 rst,
 
     // Master A channels (input)
     input wire logic [NUM_MASTERS*32-1:0]            master_mem_a_addr,
@@ -187,7 +187,7 @@ module registered_bus #(
     assign master_resp_accept = pending_resp_valid && master_mem_d_ready[pending_resp_master_idx];
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             pending_req_valid <= 1'b0;
 
             pending_resp_valid <= 1'b0;

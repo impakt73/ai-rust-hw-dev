@@ -1,7 +1,7 @@
 `default_nettype none
 module sync_fifo_test_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       wr_valid,
     output logic       wr_ready,
     input wire logic [7:0] wdata,
@@ -16,7 +16,7 @@ module sync_fifo_test_wrapper (
         .DEPTH(4)
     ) u_sync_fifo (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .wr_valid(wr_valid),
         .wr_ready(wr_ready),
         .wdata(wdata),

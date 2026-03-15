@@ -8,7 +8,7 @@
 
 module fpu (
     input wire logic        clk,          // Clock for multi-cycle division
-    input wire logic        rst_n,        // Reset for multi-cycle division
+    input wire logic        rst,        // Reset for multi-cycle division
     input wire logic        fpu_start,    // Start FPU operation (pulse)
     input wire logic [31:0] fs1,
     input wire logic [31:0] fs2,
@@ -273,7 +273,7 @@ module fpu (
         .WIDTH(48)
     ) u_div (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .start(div_start),
         .is_signed(1'b0),        // Always unsigned for FP mantissa
         .rem_sel(1'b0),          // Always quotient for FP division
@@ -302,7 +302,7 @@ module fpu (
     
     // Division state machine
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             div_fs1_reg <= 32'h0;
             div_fs2_reg <= 32'h0;
             div_in_progress <= 1'b0;

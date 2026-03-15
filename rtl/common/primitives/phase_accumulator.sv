@@ -9,7 +9,7 @@
 //
 // Interface:
 //   clk   - System clock
-//   rst_n - Synchronous active-low reset
+//   rst - Synchronous active-high reset
 //   tick  - One-cycle pulse at the configured average frequency
 
 module phase_accumulator #(
@@ -18,7 +18,7 @@ module phase_accumulator #(
     parameter int unsigned TICK_FREQ_HZ = 115_200
 ) (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     output logic tick
 );
 
@@ -48,7 +48,7 @@ module phase_accumulator #(
     assign phase_sum = {1'b0, phase_acc} + {1'b0, PHASE_INCREMENT[PHASE_WIDTH-1:0]};
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             phase_acc <= '0;
             tick <= 1'b0;
         end else begin

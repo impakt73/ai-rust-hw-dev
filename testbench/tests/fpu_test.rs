@@ -75,12 +75,12 @@ fn execute_fpu_operation(
     dut.rm = rm;
 
     // Reset state
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.fpu_start = 0;
     clock_cycle!(dut);
 
     // Release reset
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 
     // Pulse fpu_start for one cycle

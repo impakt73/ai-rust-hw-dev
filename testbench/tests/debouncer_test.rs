@@ -23,7 +23,7 @@ fn test_debouncer_stays_low_during_reset() {
         .create_model_simple::<DebouncerWrapper>()
         .expect("Failed to create debouncer model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.noisy_in = 1;
 
     for _ in 0..4 {
@@ -42,10 +42,10 @@ fn test_debouncer_rejects_short_glitches() {
         .create_model_simple::<DebouncerWrapper>()
         .expect("Failed to create debouncer model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.noisy_in = 0;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     dut.noisy_in = 1;
     clock_cycle(&mut dut);
@@ -68,10 +68,10 @@ fn test_debouncer_accepts_only_stable_level_changes() {
         .create_model_simple::<DebouncerWrapper>()
         .expect("Failed to create debouncer model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.noisy_in = 0;
     clock_cycle(&mut dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
 
     dut.noisy_in = 1;
     for expected in (0..=EXPECTED_TRANSITION_DELAY_CYCLES).map(|cycle_idx| {

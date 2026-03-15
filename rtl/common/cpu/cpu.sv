@@ -19,7 +19,7 @@ module cpu #(
     parameter bit ENABLE_F_EXT = 1'b1   // RV32F extension: Floating-Point (default: enabled)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     input wire logic        boot,
     input wire logic        req_halt,
     input wire logic [31:0] boot_addr,
@@ -269,14 +269,14 @@ module cpu #(
     // Track whether an address-channel request has been accepted and is awaiting
     // a data-channel response.
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             mem_req_inflight <= 1'b0;
         else
             mem_req_inflight <= (mem_req_inflight || mem_a_handshake) && !mem_d_handshake;
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             imem_data_staging_valid <= 1'b0;
         end else begin
             if (imem_data_staging_write) begin
@@ -304,7 +304,7 @@ module cpu #(
     // State Register (Flip-Flop Based FSM)
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             current_state <= S_BOOT;
         else
             current_state <= next_state;
@@ -321,7 +321,7 @@ module cpu #(
     // - Populated with decompressor validity when instruction fetched (ir_write)
     // - ANDed with decoder validity during S_DECODE_WAIT
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             ir_reg <= 32'h0;
             instr_pc_reg <= 32'h0;
             instr_pc_next_reg <= 32'h0;
@@ -343,7 +343,7 @@ module cpu #(
     
     // Operand Registers (Integer)
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             a_reg <= 32'h0;
             b_reg <= 32'h0;
         end else begin
@@ -358,7 +358,7 @@ module cpu #(
     generate
         if (ENABLE_F_EXT) begin : gen_fp_operand_regs
             always_ff @(posedge clk) begin
-                if (!rst_n) begin
+                if (rst) begin
                     fa_reg <= 32'h0;
                     fb_reg <= 32'h0;
                     fc_reg <= 32'h0;
@@ -378,7 +378,7 @@ module cpu #(
     
     // Result Registers
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             alu_out_reg <= 32'h0;
             fpu_out_reg <= 32'h0;
             mdr <= 32'h0;
@@ -407,7 +407,7 @@ module cpu #(
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             control_target_reg <= 32'h0;
         else begin
             if (control_target_write)
@@ -422,7 +422,7 @@ module cpu #(
     // Capture happens on cycle N when instr_complete_internal goes high
     // Output port sees delayed version on cycle N+1 after values have settled
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             instr_complete <= 1'b0;
         else
             instr_complete <= instr_complete_internal;
@@ -430,7 +430,7 @@ module cpu #(
     
     // Capture completed instruction info when instruction finishes
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             completed_pc_reg <= 32'h0;
             completed_instr_reg <= 32'h0;
             trace_rs1_data_reg <= 32'h0;
@@ -447,7 +447,7 @@ module cpu #(
     
     // Track whether the ALU request valid/ready handshake has completed in S_EXECUTE.
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             alu_req_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
             alu_req_sent <= 1'b0;  // Reset when leaving S_EXECUTE
@@ -457,7 +457,7 @@ module cpu #(
     
     // Track whether the ALU request valid/ready handshake has completed in S_ATOMIC_RMW.
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             alu_req_sent_rmw <= 1'b0;
         else if (current_state != S_ATOMIC_RMW)
             alu_req_sent_rmw <= 1'b0;  // Reset when leaving S_ATOMIC_RMW
@@ -467,7 +467,7 @@ module cpu #(
     
     // Track if FPU start pulse has been sent (for multi-cycle FP operations)
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             fpu_start_sent <= 1'b0;
         else if (current_state != S_EXECUTE)
             fpu_start_sent <= 1'b0;  // Reset when leaving S_EXECUTE
@@ -479,7 +479,7 @@ module cpu #(
     // LR/SC Reservation Tracking (A Extension)
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             reservation_valid <= 1'b0;
             reservation_addr <= 32'h0;
             sc_success_reg <= 1'b0;
@@ -514,7 +514,7 @@ module cpu #(
     // before the fetch buffer and decompressor consume it.
     fetch_buffer u_fetch_buffer (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .imem_data(imem_data_staging_reg), // Staged memory read data from D channel
         .imem_ready(imem_ready_internal),  // Staged fetch response available
         .pc(pc),
@@ -545,7 +545,7 @@ module cpu #(
     assign pc_increment = pc_inc_2 ? 32'd2 : 32'd4;
     
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             pc <= 32'h0;
         else if (pc_write)
             pc <= next_pc_value;
@@ -915,7 +915,7 @@ module cpu #(
     // Branch Decision Unit (registers the branch-taken result for the branch stage)
     branch_unit u_branch_unit (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .branch(branch_reg),
         .funct3(funct3_reg),
         .rs1_data(a_reg),
@@ -929,7 +929,7 @@ module cpu #(
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) u_decoder (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .decode_en(current_state == S_DECODE),
         .instruction(ir_reg),
         .opcode(opcode_reg),
@@ -1046,7 +1046,7 @@ module cpu #(
         .ENABLE_M_EXT(ENABLE_M_EXT)
     ) u_alu (
         .clk(clk),              // NEW: Clock for division unit
-        .rst_n(rst_n),          // NEW: Reset for division unit
+        .rst(rst),          // NEW: Reset for division unit
         .a(alu_a),
         .b(alu_b),
         .alu_op(alu_op_mux),    // Use muxed operation (not alu_op_reg directly)
@@ -1085,7 +1085,7 @@ module cpu #(
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) u_csr_file (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .is_csr(is_csr_reg & (current_state == S_CSR)),  // Gated by FSM
         .instr_complete(instr_complete_internal),         // Instruction completion signal
         .funct3(funct3_reg),
@@ -1105,7 +1105,7 @@ module cpu #(
             // FP Register File Module
             fp_regfile u_fp_regfile (
                 .clk(clk),
-                .rst_n(rst_n),
+                .rst(rst),
                 .we(fp_reg_write_en & fp_reg_write_reg),  // Gated by FSM
                 .rs1_addr(rs1_reg),  // Use registered decoder outputs for reads
                 .rs2_addr(rs2_reg),  // Use registered decoder outputs for reads
@@ -1125,7 +1125,7 @@ module cpu #(
             // FPU Module
             fpu u_fpu (
                 .clk(clk),                              // NEW: Clock for multi-cycle division
-                .rst_n(rst_n),                          // NEW: Reset for multi-cycle division
+                .rst(rst),                          // NEW: Reset for multi-cycle division
                 .fpu_start(fpu_start),                  // NEW: Start FPU operation
                 .fs1(int_to_fp_reg ? a_reg : fa_reg),   // Source 1: integer or FP
                 .fs2(fb_reg),                           // Source 2: always FP
@@ -1143,7 +1143,7 @@ module cpu #(
             // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
             // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
             always_ff @(posedge clk) begin
-                if (!rst_n) begin
+                if (rst) begin
                     fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
                 end else begin
                     // Accumulate exception flags when FP instruction completes

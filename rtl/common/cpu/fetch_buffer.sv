@@ -5,7 +5,7 @@
 
 module fetch_buffer (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     
     // Memory interface
     input wire logic [31:0] imem_data,       // Data from instruction memory
@@ -47,7 +47,7 @@ module fetch_buffer (
     // Buffer Registers
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             buffer_valid <= 1'b0;
             current_insn_compressed <= 1'b0;
         end else begin

@@ -34,7 +34,7 @@ module fp_regfile #(
     parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,        // Active-low reset
+    input wire logic        rst,        // Active-low reset
     input wire logic        we,           // Write enable
     input wire logic [4:0]  rs1_addr,     // FP source register 1 address
     input wire logic [4:0]  rs2_addr,     // FP source register 2 address
@@ -64,7 +64,7 @@ module fp_regfile #(
 
     // Write operation (synchronous)
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             // Reset all FP registers to +0.0 (0x00000000)
             for (int i = 0; i < 32; i++) begin
                 fp_registers[i] <= 32'h00000000;

@@ -10,7 +10,7 @@
 ///   0x0C - HALT   (RW): termination code + CPU halt request pulse
 ///
 /// BOOT, HALT, and system reset are request pulses on register writes.
-/// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst_n low,
+/// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst high,
 /// and only return a D-channel response once cpu_booting is observed after reset.
 use riscv_core::{create_system_controller_runtime, SystemController};
 
@@ -36,7 +36,7 @@ macro_rules! clock_cycle {
 }
 
 fn reset_dut(dut: &mut SystemController) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.clk = 0;
     dut.mem_a_valid = 0;
     dut.mem_a_we = 0;
@@ -49,7 +49,7 @@ fn reset_dut(dut: &mut SystemController) {
     dut.eval();
     clock_cycle!(dut);
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 }
 
@@ -285,10 +285,10 @@ fn test_system_controller_initial_state_after_reset() {
 
     reset_dut(&mut dut);
 
-    // After reset, cpu_rst_n should be deasserted (inactive high)
+    // After reset, cpu_rst should be deasserted (inactive low, active-high signal)
     assert_eq!(
-        dut.cpu_rst_n, 1,
-        "cpu_rst_n should be high (inactive) after reset"
+        dut.cpu_rst, 0,
+        "cpu_rst should be low (inactive) after reset"
     );
 
     // sys_rst should be 0 (no system reset)
@@ -322,10 +322,10 @@ fn test_system_controller_boot_sequence() {
     // After one more clock, should transition to S_IDLE (through S_CPU_BOOT)
     clock_cycle!(dut);
 
-    // In S_IDLE, cpu_rst_n should be 1 (CPU released from reset)
+    // In S_IDLE, cpu_rst should be 0 (CPU released from reset, active-high)
     assert_eq!(
-        dut.cpu_rst_n, 1,
-        "cpu_rst_n should be high (CPU released) after boot complete"
+        dut.cpu_rst, 0,
+        "cpu_rst should be low (CPU released) after boot complete"
     );
 }
 
@@ -418,8 +418,8 @@ fn test_system_controller_cpu_reset() {
         "RESET_CPU should hold req_cpu_halt high while waiting for the CPU to halt"
     );
     assert_eq!(
-        dut.cpu_rst_n, 1,
-        "cpu_rst_n should stay high until the CPU has halted"
+        dut.cpu_rst, 0,
+        "cpu_rst should stay low (inactive) until the CPU has halted"
     );
     assert_eq!(
         dut.mem_a_ready, 0,
@@ -447,7 +447,7 @@ fn test_system_controller_cpu_reset() {
     let mut saw_reset_pulse = false;
     for _ in 0..4 {
         clock_cycle!(dut);
-        if dut.cpu_rst_n == 0 {
+        if dut.cpu_rst == 1 {
             saw_reset_pulse = true;
             break;
         }
@@ -455,7 +455,7 @@ fn test_system_controller_cpu_reset() {
 
     assert!(
         saw_reset_pulse,
-        "cpu_rst_n should pulse low after cpu_halted goes high"
+        "cpu_rst should pulse high after cpu_halted goes high"
     );
     assert_eq!(
         dut.req_cpu_halt, 0,
@@ -535,16 +535,16 @@ fn test_system_controller_reset_clears_state() {
     reset_dut(&mut dut);
 
     // Apply external reset
-    dut.rst_n = 0;
+    dut.rst = 1;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
     clock_cycle!(dut);
 
     // Outputs should return to defaults after external reset
     assert_eq!(
-        dut.cpu_rst_n, 1,
-        "After external reset, cpu_rst_n should be high (inactive)"
+        dut.cpu_rst, 0,
+        "After external reset, cpu_rst should be low (inactive)"
     );
     assert_eq!(dut.sys_rst, 0, "sys_rst should be low after external reset");
 }
@@ -564,14 +564,14 @@ fn test_system_controller_cpu_reset_then_reboot() {
     dut.cpu_halted = 1;
     dut.eval();
     for _ in 0..4 {
-        if dut.cpu_rst_n == 0 {
+        if dut.cpu_rst == 1 {
             break;
         }
         clock_cycle!(dut);
     }
     assert_eq!(
-        dut.cpu_rst_n, 0,
-        "CPU reset should pulse cpu_rst_n low after halt"
+        dut.cpu_rst, 1,
+        "CPU reset should pulse cpu_rst high after halt"
     );
     dut.cpu_halted = 0;
     dut.cpu_booting = 1;
@@ -587,7 +587,7 @@ fn test_system_controller_cpu_reset_then_reboot() {
         "CPU reset should respond after cpu_booting is observed"
     );
     finish_response_after_observation(&mut dut);
-    assert_eq!(dut.cpu_rst_n, 1, "cpu_rst_n should deassert after pulse");
+    assert_eq!(dut.cpu_rst, 0, "cpu_rst should deassert after pulse");
 
     // Second boot with different address
     write_register(&mut dut, REG_BOOT, 0xA000_0000);
@@ -596,7 +596,7 @@ fn test_system_controller_cpu_reset_then_reboot() {
         dut.cpu_boot_addr, 0xA000_0000,
         "Boot address should be updated on reboot"
     );
-    assert_eq!(dut.cpu_rst_n, 1, "CPU should be released after reboot");
+    assert_eq!(dut.cpu_rst, 0, "CPU should be released after reboot");
 }
 
 #[test]
@@ -614,7 +614,7 @@ fn test_system_controller_reset_uses_only_bit_zero() {
     dut.eval();
     write_register(&mut dut, REG_BOOT, 0x8000_0000);
     clock_cycle!(dut);
-    assert_eq!(dut.cpu_rst_n, 1, "CPU should be in S_IDLE");
+    assert_eq!(dut.cpu_rst, 0, "CPU should be in S_IDLE (not in reset)");
 
     // 0x42 keeps bit 0 cleared while setting upper bits to prove only bit 0 matters.
     write_register_and_wait_for_response(&mut dut, REG_RESET, 0x42);
@@ -633,7 +633,7 @@ fn test_system_controller_reset_uses_only_bit_zero() {
         "sys_rst pulse should deassert after one cycle"
     );
     assert_eq!(
-        dut.cpu_rst_n, 1,
+        dut.cpu_rst, 0,
         "system reset write should not assert CPU reset"
     );
 }

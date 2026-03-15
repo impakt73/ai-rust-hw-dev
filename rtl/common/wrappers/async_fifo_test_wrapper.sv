@@ -2,7 +2,7 @@
 module async_fifo_test_wrapper (
     input wire logic       wr_clk,
     input wire logic       rd_clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic       wr_valid,
     output logic       wr_ready,
     input wire logic [7:0] wdata,
@@ -19,7 +19,7 @@ module async_fifo_test_wrapper (
     ) u_async_fifo (
         .wr_clk(wr_clk),
         .rd_clk(rd_clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .wr_valid(wr_valid),
         .wr_ready(wr_ready),
         .wdata(wdata),

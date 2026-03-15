@@ -34,14 +34,14 @@ fn tick_sync3(dut: &mut AsyncFifoSync3Wrapper, wr_rise: bool, rd_rise: bool) {
 }
 
 fn reset_fifo(dut: &mut AsyncFifoTestWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.wr_valid = 0;
     dut.rd_ready = 0;
     dut.wdata = 0;
     for _ in 0..3 {
         tick(dut, true, true);
     }
-    dut.rst_n = 1;
+    dut.rst = 0;
     for _ in 0..2 {
         tick(dut, true, true);
     }
@@ -65,14 +65,14 @@ fn test_async_fifo_sync_stage_parameterization() {
         .create_model_simple::<AsyncFifoSync3Wrapper>()
         .expect("Failed to create async_fifo sync3 model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.wr_valid = 0;
     dut.rd_ready = 0;
     dut.wdata = 0;
     for _ in 0..3 {
         tick_sync3(&mut dut, true, true);
     }
-    dut.rst_n = 1;
+    dut.rst = 0;
     tick_sync3(&mut dut, true, true);
 
     dut.wdata = 0x5A;

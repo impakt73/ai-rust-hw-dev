@@ -9,7 +9,7 @@
 //
 // Interface:
 //   clk  - System clock
-//   rst_n - Synchronous active-low reset
+//   rst - Synchronous active-high reset
 //   din  - Synchronized input signal
 //   dout - Debounced output signal
 
@@ -18,7 +18,7 @@ module debouncer #(
     parameter int unsigned STABLE_TIME_US = 1_000
 ) (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     input wire logic din,
     output logic dout
 );
@@ -48,7 +48,7 @@ module debouncer #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             stable_counter <= '0;
             dout <= 1'b0;
         end else begin

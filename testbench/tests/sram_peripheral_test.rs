@@ -17,10 +17,10 @@ fn reset(dut: &mut SramPeripheralTestWrapper) {
     dut.mem_a_wdata = 0;
     dut.mem_a_size = SIZE_WORD;
     dut.mem_d_ready = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     clock_cycle(dut);
     clock_cycle(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 }
 

@@ -8,7 +8,7 @@
 //
 // Interface:
 //   clk   - Destination clock domain
-//   rst_n - Synchronous active-low reset
+//   rst - Synchronous active-high reset
 //   din   - Asynchronous input signal
 //   dout  - Synchronized output signal
 
@@ -18,7 +18,7 @@ module ff_sync #(
     parameter logic [WIDTH-1:0] RESET_VALUE = '0
 ) (
     input wire logic             clk,
-    input wire logic             rst_n,
+    input wire logic             rst,
     input wire logic [WIDTH-1:0] din,
     output logic [WIDTH-1:0] dout
 );
@@ -35,7 +35,7 @@ module ff_sync #(
     logic [WIDTH-1:0] sync_regs [0:STAGES-1];
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             for (int i = 0; i < STAGES; i++) begin
                 sync_regs[i] <= WIDTH'(RESET_VALUE);
             end

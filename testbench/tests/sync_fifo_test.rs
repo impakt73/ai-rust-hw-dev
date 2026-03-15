@@ -14,13 +14,13 @@ fn tick(dut: &mut SyncFifoTestWrapper) {
 }
 
 fn reset_fifo(dut: &mut SyncFifoTestWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.wr_valid = 0;
     dut.rd_ready = 0;
     dut.wdata = 0;
     tick(dut);
     tick(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     tick(dut);
 }
 

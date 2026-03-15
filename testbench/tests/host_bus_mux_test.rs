@@ -12,7 +12,7 @@ macro_rules! clock_cycle {
 }
 
 fn reset_module(dut: &mut HostBusMux) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.cpu_mem_a_addr = 0;
     dut.cpu_mem_a_wdata = 0;
     dut.cpu_mem_a_we = 0;
@@ -26,7 +26,7 @@ fn reset_module(dut: &mut HostBusMux) {
     dut.host_mem_d_rdata = 0;
     dut.host_mem_d_valid = 0;
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 }
 

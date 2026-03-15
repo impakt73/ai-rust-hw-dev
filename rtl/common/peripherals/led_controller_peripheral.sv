@@ -6,7 +6,7 @@
 module led_controller_peripheral (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // Address channel
     input wire logic [31:0] mem_a_addr,
@@ -43,7 +43,7 @@ module led_controller_peripheral (
 
     // Register file with reset
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             led_out_reg <= 8'h00;  // All LEDs off on reset
             response_pending <= 1'b0;
         end else begin

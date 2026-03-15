@@ -17,19 +17,19 @@ macro_rules! clock_cycle {
 }
 
 fn reset_default_wrapper(dut: &mut VideoSyncWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     for _ in 0..3 {
         clock_cycle!(dut);
     }
-    dut.rst_n = 1;
+    dut.rst = 0;
 }
 
 fn reset_minimal_wrapper(dut: &mut VideoSyncMinimalWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     for _ in 0..3 {
         clock_cycle!(dut);
     }
-    dut.rst_n = 1;
+    dut.rst = 0;
 }
 
 fn advance_default_wrapper(dut: &mut VideoSyncWrapper, cycles: usize) {
@@ -45,7 +45,7 @@ fn test_video_sync_holds_registered_defaults_during_reset() {
         .create_model_simple::<VideoSyncWrapper>()
         .expect("Failed to create video_sync model");
 
-    dut.rst_n = 0;
+    dut.rst = 1;
     for _ in 0..3 {
         clock_cycle!(&mut dut);
         assert_eq!(dut.hsync, 1, "hsync must stay inactive during reset");

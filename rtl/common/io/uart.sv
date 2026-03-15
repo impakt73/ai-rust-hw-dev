@@ -24,7 +24,7 @@ module uart #(
 ) (
     // Clock and reset
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     
     // TX interface (ready/valid handshake)
     input wire logic [7:0] tx_data,    // Data to transmit
@@ -68,7 +68,7 @@ module uart #(
         .TICK_FREQ_HZ(BAUD_RATE * 16)
     ) baud_tick_gen (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .tick(tick_16x)
     );
     
@@ -97,7 +97,7 @@ module uart #(
     assign tx_ready = (tx_state == TX_IDLE) || (tx_state == TX_STOP_BIT && tx_baud_tick);
     
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             tx_state <= TX_IDLE;
             tx_out <= 1'b1;  // Idle high
             tx_shift_reg <= 8'h00;
@@ -172,7 +172,7 @@ module uart #(
         .RESET_VALUE(1'b1)
     ) rx_sync_inst (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .din(rx_in),
         .dout(rx_sync_1)
     );
@@ -181,7 +181,7 @@ module uart #(
     // Prevents false start bit detection when line is held low
     logic rx_sync_prev;
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             rx_sync_prev <= 1'b1;  // Idle high
         else
             rx_sync_prev <= rx_sync_1;
@@ -235,7 +235,7 @@ module uart #(
     end
     
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             rx_state <= RX_IDLE;
             rx_data <= 8'h00;
             rx_valid <= 1'b0;

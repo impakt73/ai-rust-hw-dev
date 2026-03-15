@@ -91,7 +91,7 @@ fn clear_slave_responses(dut: &mut RegisteredBusWrapper) {
 }
 
 fn reset_dut(dut: &mut RegisteredBusWrapper) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     set_master_d_ready(dut, 0, 0);
     set_master_d_ready(dut, 1, 0);
     set_slave_a_ready(dut, 0, 1);
@@ -101,7 +101,7 @@ fn reset_dut(dut: &mut RegisteredBusWrapper) {
     configure_ranges(dut);
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 }
 

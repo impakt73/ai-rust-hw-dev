@@ -21,13 +21,13 @@ macro_rules! clock_cycle {
 
 /// Helper function to apply reset to the UART
 fn reset_uart(dut: &mut Uart) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.tx_valid = 0;
     dut.rx_ready = 0;
     dut.rx_error_clr = 0;
     dut.rx_in = 1; // RX line idle high
     clock_cycle!(dut);
-    dut.rst_n = 1;
+    dut.rst = 0;
     clock_cycle!(dut);
 }
 
@@ -1335,13 +1335,13 @@ fn test_uart_bidirectional_end_to_end_at_1m_baud() {
         .expect("Failed to create UART B model");
 
     let reset_uart_1m = |dut: &mut Uart1MBaud| {
-        dut.rst_n = 0;
+        dut.rst = 1;
         dut.tx_valid = 0;
         dut.rx_ready = 0;
         dut.rx_error_clr = 0;
         dut.rx_in = 1;
         clock_cycle!(dut);
-        dut.rst_n = 1;
+        dut.rst = 0;
         clock_cycle!(dut);
     };
 

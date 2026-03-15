@@ -7,7 +7,7 @@
 //
 // Interface:
 //   clk       - System clock
-//   rst_n     - Synchronous active-low reset
+//   rst     - Synchronous active-high reset
 //   in_valid  - Input valid from upstream producer
 //   in_data   - Input payload from upstream producer
 //   in_ready  - Input ready back to upstream producer
@@ -18,7 +18,7 @@ module skid_buffer #(
     parameter int WIDTH = 8
 ) (
     input wire logic             clk,
-    input wire logic             rst_n,
+    input wire logic             rst,
 
     // Input side
     input wire logic             in_valid,
@@ -89,7 +89,7 @@ module skid_buffer #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             out_valid_current <= 1'b0;
             skid_valid_current <= 1'b0;
             in_ready_current  <= 1'b1;

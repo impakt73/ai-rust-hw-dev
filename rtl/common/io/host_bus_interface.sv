@@ -6,7 +6,7 @@
 module host_bus_interface (
     // Clock and reset
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // CPU slave interface (CPU->Host path)
     input wire logic [31:0] mem_a_addr,
@@ -126,7 +126,7 @@ module host_bus_interface (
     // ============================================================
     host_bus_rx rx_buf (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .rx_data(rx_data),
         .rx_valid(rx_valid),
         .rx_ready(rx_ready),
@@ -146,7 +146,7 @@ module host_bus_interface (
 
     host_bus_tx tx_buf (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .tx_data(tx_data),
         .tx_valid(tx_valid),
         .tx_ready(tx_ready),
@@ -284,7 +284,7 @@ module host_bus_interface (
     // Sequential control
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
             cpu_resp_valid  <= 1'b0;
@@ -428,7 +428,7 @@ module host_bus_interface (
 
 `ifdef ASSERT_ON
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             // no-op
         end else if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin
             assert (rx_pkt_start)

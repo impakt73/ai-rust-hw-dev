@@ -12,7 +12,7 @@ module i2s_serializer #(
     parameter int OUTPUT_SAMPLE_WIDTH = 16
 ) (
     input wire logic                          clk,
-    input wire logic                          rst_n,
+    input wire logic                          rst,
     input wire logic [INPUT_SAMPLE_WIDTH-1:0] sample_data,
     input wire logic                          sample_valid,
     output logic                          sample_ready,
@@ -54,7 +54,7 @@ module i2s_serializer #(
     endgenerate
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             shift_reg <= '0;
             bit_index <= '0;
             reload_pending <= 1'b1;

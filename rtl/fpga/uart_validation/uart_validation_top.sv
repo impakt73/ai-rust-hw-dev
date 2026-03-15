@@ -58,7 +58,7 @@ module uart_validation_top #(
         .WIDTH(1)
     ) pll_locked_sync_inst (
         .clk(sys_clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(pll_locked),
         .dout(pll_locked_sync2)
     );
@@ -69,7 +69,7 @@ module uart_validation_top #(
         .WIDTH(1)
     ) rst_n_btn_sync_inst (
         .clk(sys_clk),
-        .rst_n(1'b1),
+        .rst(1'b0),
         .din(rst_n_btn),
         .dout(rst_n_btn_sync2)
     );
@@ -79,13 +79,13 @@ module uart_validation_top #(
         .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
     ) rst_n_btn_debouncer_inst (
         .clk(sys_clk),
-        .rst_n(rst_n_btn_sync2),
+        .rst(~rst_n_btn_sync2),
         .din(rst_n_btn_sync2),
         .dout(rst_n_btn_debounced)
     );
 
-    logic rst_n;
-    assign rst_n = pll_locked_sync2 & rst_n_btn_debounced;
+    logic rst;
+    assign rst = ~pll_locked_sync2 | ~rst_n_btn_debounced;
 
     // ============================================================
     // UART + FIFO Signals
@@ -118,7 +118,7 @@ module uart_validation_top #(
                 .BAUD_RATE(BAUD_RATE)
             ) uart_inst (
                 .clk(sys_clk),
-                .rst_n(rst_n),
+                .rst(rst),
                 .tx_data(uart_tx_data),
                 .tx_valid(uart_tx_valid),
                 .tx_ready(uart_tx_ready),
@@ -155,7 +155,7 @@ module uart_validation_top #(
                     .DEPTH(FIFO_DEPTH)
                 ) fifo_inst (
                     .clk(sys_clk),
-                    .rst_n(rst_n),
+                    .rst(rst),
                     .wr_valid(fifo_wr_valid),
                     .wr_ready(fifo_wr_ready),
                     .wdata(uart_rx_data),

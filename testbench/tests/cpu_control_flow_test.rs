@@ -45,7 +45,7 @@ fn read_u32(program: &[u8], addr: u32) -> u32 {
 }
 
 fn reset_to_fetch(dut: &mut Cpu) {
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.boot = 0;
     dut.req_halt = 0;
     dut.mem_a_ready = 1;
@@ -55,7 +55,7 @@ fn reset_to_fetch(dut: &mut Cpu) {
     clock_cycle!(dut);
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.boot = 1;
     dut.eval();
     clock_cycle!(dut);

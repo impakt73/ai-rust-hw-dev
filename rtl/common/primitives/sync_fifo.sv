@@ -9,7 +9,7 @@
 //
 // Interface:
 //   clk      - System clock
-//   rst_n    - Synchronous active-low reset
+//   rst    - Synchronous active-high reset
 //   wr_valid - Write data is valid this cycle
 //   wr_ready - FIFO can accept write data this cycle
 //   wdata    - Data to write when wr_valid && wr_ready
@@ -23,7 +23,7 @@ module sync_fifo #(
     parameter int DEPTH = 8
 ) (
     input wire logic             clk,
-    input wire logic             rst_n,
+    input wire logic             rst,
     
     // Write interface
     input wire logic             wr_valid,
@@ -105,7 +105,7 @@ module sync_fifo #(
     
     // FIFO management logic
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             wr_ptr <= '0;
             rd_ptr <= '0;
             out_valid <= 1'b0;

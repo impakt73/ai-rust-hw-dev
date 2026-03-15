@@ -1,24 +1,24 @@
 `default_nettype none
 // Reset Controller Module
-// Generates a power-on reset signal that remains asserted (low) for a
+// Generates a power-on reset signal that remains asserted (high) for a
 // configurable number of clock cycles after the input reset is deasserted.
 //
 // Usage:
-//   - Connect rst_n_in to PLL lock signal (or other stable reset source)
-//   - Use rst_n_out (active low) directly for downstream modules
+//   - Connect rst_in to an active-high reset source (e.g. ~pll_locked)
+//   - Use rst_out (active high) directly for downstream modules
 //
 // Behavior:
-//   - When rst_n_in is low, the counter resets and rst_n_out is held low (reset asserted)
-//   - When rst_n_in goes high, the counter starts counting
-//   - rst_n_out remains low until the counter reaches RESET_CYCLES
-//   - rst_n_out is registered to avoid timing issues
+//   - When rst_in is high, the counter resets and rst_out is held high (reset asserted)
+//   - When rst_in goes low, the counter starts counting
+//   - rst_out remains high until the counter reaches RESET_CYCLES
+//   - rst_out is registered to avoid timing issues
 
 module reset_controller #(
     parameter RESET_CYCLES = 8  // Number of cycles to hold reset (default: 8)
 ) (
-    input wire logic clk,           // System clock
-    input wire logic rst_n_in,      // Input reset (active low, typically from PLL lock)
-    output logic rst_n_out      // Output reset (active low, registered: 0 = reset asserted)
+    input wire logic clk,       // System clock
+    input wire logic rst_in,    // Input reset (active high)
+    output logic rst_out        // Output reset (active high, registered: 1 = reset asserted)
 );
 
     // Calculate counter width based on RESET_CYCLES parameter
@@ -36,7 +36,7 @@ module reset_controller #(
     
     // Counter logic
     always_ff @(posedge clk) begin
-        if (!rst_n_in) begin
+        if (rst_in) begin
             // Input reset asserted - clear counter
             counter <= '0;
         end else if (!reset_complete) begin
@@ -47,15 +47,14 @@ module reset_controller #(
     end
     
     // Registered output reset signal
-    // Output is low (reset asserted) until counter reaches RESET_CYCLES
-    // Using active-low output to match standard reset conventions
+    // Output is high (reset asserted) until counter reaches RESET_CYCLES
     always_ff @(posedge clk) begin
-        if (!rst_n_in) begin
-            // Input reset asserted - output reset asserted (low)
-            rst_n_out <= 1'b0;
+        if (rst_in) begin
+            // Input reset asserted - output reset asserted (high)
+            rst_out <= 1'b1;
         end else begin
-            // Output follows reset_complete (high when reset done)
-            rst_n_out <= reset_complete;
+            // Output is de-asserted once reset_complete (low when done)
+            rst_out <= ~reset_complete;
         end
     end
 

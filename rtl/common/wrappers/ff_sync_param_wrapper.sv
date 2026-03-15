@@ -1,7 +1,7 @@
 `default_nettype none
 module ff_sync_param_wrapper (
     input wire logic       clk,
-    input wire logic       rst_n,
+    input wire logic       rst,
     input wire logic [3:0] din,
     output logic [3:0] dout
 );
@@ -11,7 +11,7 @@ module ff_sync_param_wrapper (
         .WIDTH(4)
     ) u_ff_sync (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .din(din),
         .dout(dout)
     );

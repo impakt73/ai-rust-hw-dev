@@ -8,7 +8,7 @@
 //
 // Interface:
 //   clk       - System clock
-//   rst_n     - Synchronous active-low reset
+//   rst     - Synchronous active-high reset
 //   activity  - High level triggers one indicator cycle when idle
 //   indicator - Registered indicator output
 
@@ -17,7 +17,7 @@ module activity_indicator #(
     parameter int unsigned INDICATOR_FREQ_MILLIHERTZ = 1_000
 ) (
     input wire logic clk,
-    input wire logic rst_n,
+    input wire logic rst,
     input wire logic activity,
     output logic indicator
 );
@@ -48,7 +48,7 @@ module activity_indicator #(
     end
 
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             counter <= '0;
             pulse_active <= 1'b0;
             high_half <= 1'b0;

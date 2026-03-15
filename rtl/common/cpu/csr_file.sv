@@ -11,7 +11,7 @@ module csr_file #(
     parameter bit ENABLE_F_EXT = 1'b1
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     
     // Control signals
     input wire logic        is_csr,
@@ -205,7 +205,7 @@ module csr_file #(
 
     // CSR updates
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             csr_cycle    <= 32'h0;
             csr_instret  <= 32'h0;
         end else begin

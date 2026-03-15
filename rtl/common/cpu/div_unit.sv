@@ -7,7 +7,7 @@ module div_unit #(
     parameter int WIDTH = 32  // Bit width of operands (default 32-bit for RV32IM integer ops)
 ) (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
     
     // Control interface
     input wire logic        start,        // Start division (pulse)
@@ -67,7 +67,7 @@ module div_unit #(
     // State Register
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n)
+        if (rst)
             state <= DIV_IDLE;
         else
             state <= next_state;
@@ -140,7 +140,7 @@ module div_unit #(
     // Datapath Registers
     // ============================================================
     always_ff @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             P <= '0;
             D <= '0;
             Q <= '0;

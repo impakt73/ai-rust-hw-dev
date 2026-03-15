@@ -1,7 +1,7 @@
 `default_nettype none
 module registered_bus_wrapper (
     input wire logic        clk,
-    input wire logic        rst_n,
+    input wire logic        rst,
 
     // Master 0 A channel
     input wire logic [31:0] master0_mem_a_addr,
@@ -139,7 +139,7 @@ module registered_bus_wrapper (
         .NUM_SLAVES(2)
     ) u_registered_bus (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .master_mem_a_addr(master_mem_a_addr),
         .master_mem_a_wdata(master_mem_a_wdata),
         .master_mem_a_we(master_mem_a_we),

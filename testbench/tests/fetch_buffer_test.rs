@@ -18,7 +18,7 @@ macro_rules! clock_cycle {
 
 fn reset_dut(dut: &mut FetchBuffer) {
     dut.clk = 0;
-    dut.rst_n = 0;
+    dut.rst = 1;
     dut.imem_data = 0;
     dut.imem_ready = 0;
     dut.pc = 0;
@@ -27,7 +27,7 @@ fn reset_dut(dut: &mut FetchBuffer) {
     dut.eval();
     clock_cycle!(dut);
 
-    dut.rst_n = 1;
+    dut.rst = 0;
     dut.eval();
 }
 
