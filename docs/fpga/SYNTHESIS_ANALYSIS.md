@@ -353,13 +353,13 @@ The RISC-V CPU design is a successful fit for the iCE40-HX8K FPGA with:
 
 | File | Purpose |
 |------|---------|
-| `fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv` | iCE40 target top-level wrapper |
-| `fpga/Makefile` | Build automation |
-| `fpga/build/yosys.log` | Synthesis output |
-| `fpga/build/nextpnr.log` | Place & route output and timing analysis |
-| `rtl/sync_dpram.sv` | Inference-based simple dual-port RAM |
-| `rtl/regfile.sv` | Dual-banked BRAM register file |
-| `rtl/cpu.sv` | CPU with S_REG_READ state for BRAM latency |
+| `rtl/fpga/ice40_alchitry_cu/ice40_alchitry_cu_top.sv` | iCE40 target top-level wrapper |
+| `rtl/fpga/Makefile` | Build automation |
+| `rtl/fpga/build/yosys.log` | Synthesis output |
+| `rtl/fpga/build/nextpnr.log` | Place & route output and timing analysis |
+| `rtl/common/memory/sync_dpram.sv` | Inference-based simple dual-port RAM |
+| `rtl/common/cpu/regfile.sv` | Dual-banked BRAM register file |
+| `rtl/common/cpu/cpu.sv` | CPU with S_REG_READ state for BRAM latency |
 
 ---
 
