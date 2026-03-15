@@ -11,8 +11,8 @@
 // pipelining is added.
 //
 // REGISTER FILE: Uses dual-banked BRAM with 2-cycle read latency.
-// The S_REG_READ and S_REG_READ_WAIT states provide time for BRAM reads to
-// complete after S_DECODE.
+// The S_DECODE_WAIT, S_REG_READ, and S_REG_READ_WAIT states provide time for
+// decode outputs to register and BRAM reads to complete after S_DECODE.
 
 module cpu #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
@@ -67,9 +67,10 @@ module cpu #(
     typedef enum logic [3:0] {
         S_BOOT       = 4'b0000,  // After reset, wait for boot signal
         S_FETCH      = 4'b0001,  // Fetch instruction (wait for D-channel response)
-        S_DECODE     = 4'b0010,  // Decode instruction, start register file read
+        S_DECODE     = 4'b0010,  // Decode instruction into registered control signals
         S_REG_READ   = 4'b1100,  // Launch BRAM register file read pipeline
         S_REG_READ_WAIT = 4'b1101,  // Capture BRAM register file read data
+        S_DECODE_WAIT = 4'b1110,  // Let decoded addresses/control settle before BRAM read
         S_EXECUTE    = 4'b0011,  // ALU operation
         S_MEM_ADDR   = 4'b0100,  // Calculate memory address
         S_MEM_READ   = 4'b0101,  // Load from memory (wait for D-channel response)
@@ -173,7 +174,7 @@ module cpu #(
     // Merged instruction validity register:
     // - Reset to 1 (assume valid on startup)
     // - Updated with decompressor validity when instruction fetched (ir_write)
-    // - ANDed with decoder validity during S_DECODE
+    // - ANDed with decoder validity during S_DECODE_WAIT
     logic        is_instruction_valid_reg;
     
     // Debug trace data registers (capture operand values at instruction completion)
@@ -300,7 +301,7 @@ module cpu #(
     // is_instruction_valid_reg tracks instruction validity through the pipeline:
     // - Reset to 1 (assume valid on startup)
     // - Populated with decompressor validity when instruction fetched (ir_write)
-    // - ANDed with decoder validity during S_DECODE
+    // - ANDed with decoder validity during S_DECODE_WAIT
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             ir_reg <= 32'h0;
@@ -311,10 +312,10 @@ module cpu #(
             ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
-        end else if (current_state == S_DECODE) begin
+        end else if (current_state == S_DECODE_WAIT) begin
             instr_pc_next_reg <= instr_pc_reg + pc_increment;  // Capture sequential fall-through PC
-            // The decoder's registered instruction_valid output is stable in S_DECODE
-            // after being latched on ir_write. This merge combines decompressor and
+            // The decoder's registered instruction_valid output is stable in
+            // S_DECODE_WAIT after being latched in S_DECODE. This merge combines decompressor and
             // decoder validity checks for the current instruction.
             // AND with decoder validity - instruction must be valid from both
             // decompressor and decoder to be considered valid
@@ -382,8 +383,8 @@ module cpu #(
     end
     
     // Control-Flow Target Register
-    // Pre-compute branch and jump targets during DECODE/EXECUTE to break timing path
-    // For B-type and JAL: instr_pc_reg + immediate is computed during S_DECODE
+    // Pre-compute branch and jump targets during DECODE_WAIT/EXECUTE to break timing path
+    // For B-type and JAL: instr_pc_reg + immediate is computed during S_DECODE_WAIT
     // For JALR: a_reg + imm_i is computed during EXECUTE (after a_reg is stable)
     // Note: Halfword alignment (~32'h1) is used because RV32C compressed instructions
     // can be 2-byte aligned. For non-compressed RV32I-only, this would be ~32'h3.
@@ -567,7 +568,12 @@ module cpu #(
             end
             
             S_DECODE: begin
-                // Decode instruction and start register file read.
+                // Decode instruction into the registered decoder outputs, then allow one
+                // setup cycle before launching the BRAM read pipeline.
+                next_state = S_DECODE_WAIT;
+            end
+
+            S_DECODE_WAIT: begin
                 // Always transition through S_REG_READ and S_REG_READ_WAIT to cover the
                 // two-cycle BRAM read latency.
                 next_state = S_REG_READ;
@@ -584,7 +590,7 @@ module cpu #(
                 // Check for invalid instruction using the merged validity register.
                 // is_instruction_valid_reg combines:
                 // 1. Decompressor validity (captured during ir_write in S_FETCH)
-                // 2. Decoder validity (ANDed during S_DECODE)
+                // 2. Decoder validity (ANDed during S_DECODE_WAIT)
                 if (!is_instruction_valid_reg) begin
                     next_state = S_HALT;  // Invalid instruction - halt for debug
                 end else begin
@@ -751,7 +757,11 @@ module cpu #(
             end
             
             S_DECODE: begin
-                // Decode instruction and present addresses to register file.
+                // Decode the registered instruction in its own cycle.
+            end
+
+            S_DECODE_WAIT: begin
+                // Present decoded addresses to the register file.
                 // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
                 if (branch_reg || (jump_reg && !alu_src_reg))
                     control_target_write = 1'b1;
@@ -890,15 +900,15 @@ module cpu #(
         .take_branch(take_branch)
     );
     
-    // Decoder instantiation (registers decode outputs when a new instruction is fetched)
+    // Decoder instantiation (registers decode outputs during S_DECODE)
     decoder #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT)
     ) u_decoder (
         .clk(clk),
         .rst_n(rst_n),
-        .decode_en(ir_write),
-        .instruction(fetched_instruction),
+        .decode_en(current_state == S_DECODE),
+        .instruction(instruction),
         .opcode(opcode_reg),
         .rd(rd_reg),
         .rs1(rs1_reg),
@@ -971,7 +981,7 @@ module cpu #(
     always_comb begin
         control_target_next = control_target_reg;
 
-        if (current_state == S_DECODE) begin
+        if (current_state == S_DECODE_WAIT) begin
             if (branch_reg)
                 control_target_next = (instr_pc_reg + imm_b_reg) & ~32'h1;
             else if (jump_reg && !alu_src_reg)

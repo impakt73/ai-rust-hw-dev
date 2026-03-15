@@ -2,10 +2,12 @@ use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 const S_FETCH: u8 = 0x1;
+const S_DECODE: u8 = 0x2;
 const S_EXECUTE: u8 = 0x3;
 const S_BRANCH: u8 = 0x8;
 const S_REG_READ: u8 = 0xC;
 const S_REG_READ_WAIT: u8 = 0xD;
+const S_DECODE_WAIT: u8 = 0xE;
 const WORD_BYTES: usize = 4;
 
 macro_rules! clock_cycle {
@@ -165,10 +167,18 @@ fn test_cpu_branch_uses_execute_stage_before_branch_completion() {
     }
 
     assert!(
-        observed_states.windows(4).any(|window| {
-            window == [S_REG_READ, S_REG_READ_WAIT, S_EXECUTE, S_BRANCH]
+        observed_states.windows(6).any(|window| {
+            window
+                == [
+                    S_DECODE,
+                    S_DECODE_WAIT,
+                    S_REG_READ,
+                    S_REG_READ_WAIT,
+                    S_EXECUTE,
+                    S_BRANCH,
+                ]
         }),
-        "branch should flow through REG_READ -> REG_READ_WAIT -> EXECUTE -> BRANCH, observed {observed_states:?}"
+        "branch should flow through DECODE -> DECODE_WAIT -> REG_READ -> REG_READ_WAIT -> EXECUTE -> BRANCH, observed {observed_states:?}"
     );
     assert_eq!(
         dut.debug_current_pc, 8,
