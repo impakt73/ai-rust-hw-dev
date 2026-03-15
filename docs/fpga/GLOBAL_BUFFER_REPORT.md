@@ -343,7 +343,7 @@ genuine control signal gains lower-skew routing.
 
 1. **Slot 3 — `a_reg_write`-derived 565-fanout reset bus (cpu.sv)**  
    Trace this net in the post-synthesis JSON netlist
-   (`build/ice40_alchitry_cu/riscv_fpga.json`) to identify its precise RTL
+   (`rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.json`) to identify its precise RTL
    origin.  A 565-fanout reset signal from a register-write enable is
    architecturally unexpected and may indicate an unintended Yosys
    optimisation.  If the fanout can be reduced through RTL restructuring

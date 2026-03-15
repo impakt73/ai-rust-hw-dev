@@ -2,7 +2,7 @@
 
 This guide documents the exact process used to regenerate:
 
-- `fpga/FPGA_TOP_RESOURCE_BREAKDOWN.md`
+- `docs/fpga/FPGA_TOP_RESOURCE_BREAKDOWN.md`
 
 It is written so future updates can be reproduced consistently after new RTL merges.
 
@@ -199,7 +199,7 @@ Use:
 - `build/<target>/hier_stat.json` for hierarchical module-area attribution
 - `build/<target>/nextpnr.log` for packed utilization and Fmax
 
-Populate sections in `fpga/FPGA_TOP_RESOURCE_BREAKDOWN.md`:
+Populate sections in `docs/fpga/FPGA_TOP_RESOURCE_BREAKDOWN.md`:
 
 1. ICE40 summary table
 2. ICE40 hierarchy tables (board top, `fpga_common_top`, `top`, `cpu`, ALU)
