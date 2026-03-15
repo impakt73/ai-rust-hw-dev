@@ -156,8 +156,8 @@ The new module should contain at least these registers:
 
 - `d_word_reg[31:0]`: raw D-channel instruction payload captured on response handshake.
 - `d_word_valid`: marks `d_word_reg` as containing a response not yet consumed by the internal FSM.
-- `stage_instruction_reg[31:0]`: staging register for the decompressed/aligned instruction coming out of `fetch_buffer`.
-- `stage_valid_reg`: staging register for the fetch-buffer validity result.
+- `staged_instruction_reg[31:0]`: staging register for the decompressed/aligned instruction coming out of `fetch_buffer`.
+- `staged_valid_reg`: staging register for the fetch-buffer validity result.
 - `instruction_reg[31:0]`: final registered output instruction.
 - `valid_reg`: final registered output valid.
 - `pc_inc_2_reg`: final registered width flag.
