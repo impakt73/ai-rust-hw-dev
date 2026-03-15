@@ -1,0 +1,160 @@
+---
+name: analyze-critical-paths
+description: Workflow for generating a fresh FPGA timing-analysis document from authoritative routed build artifacts, with synchronous-path prioritization, RTL grounding, and actionable optimization guidance.
+---
+
+# Critical Path Analysis Workflow
+
+Use this skill when you need a **fresh post-route timing-analysis document** for a supported FPGA target in this repository.
+
+## Supported Targets
+
+- `ice40_alchitry_cu`
+- `ecp5_icepi_zero`
+- `artix7_alchitry_au`
+
+## Non-Negotiable First Step
+
+**Always generate fresh artifacts before analyzing timing. Never copy forward prior conclusions from older reports.**
+
+From the repository root:
+
+```bash
+cd rtl/fpga
+make TARGET=<target> stats STATS_FORMAT=json
+```
+
+This workflow rebuilds the target and writes normalized artifacts into:
+
+```text
+rtl/fpga/build/<target>/
+```
+
+You may also use:
+
+```bash
+cd rtl/fpga
+python3 fpga_design_stats.py --target <target> --build --format json
+```
+
+## Authoritative Timing Sources
+
+Use the **final routed timing output** as the source of truth for top critical paths.
+
+- **`ice40_alchitry_cu`**
+  - Critical paths: `build/ice40_alchitry_cu/nextpnr.log`
+  - Cross-check stats: `build/ice40_alchitry_cu/riscv_fpga_stats.json`
+- **`ecp5_icepi_zero`**
+  - Critical paths: `build/ecp5_icepi_zero/nextpnr.log`
+  - Cross-check stats: `build/ecp5_icepi_zero/riscv_fpga_stats.json`
+- **`artix7_alchitry_au`**
+  - Critical paths: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Cross-check stats/utilization: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
+
+### Important Rule for iCE40 and ECP5
+
+For `ice40_alchitry_cu` and `ecp5_icepi_zero`, the authoritative source is the **final detailed timing section near the end of `nextpnr.log`**.
+
+- Do **not** use earlier placement-only estimates as the top-path ranking
+- Do **not** rely on intermediate summaries when the final routed section is present
+- Do **not** treat old timing-analysis docs as evidence without re-reading the fresh raw log
+
+## Required Analysis Method
+
+### 1. Rank synchronous paths first
+
+Prioritize true routed **synchronous** paths in the ranking:
+
+- register -> register
+- register -> output only when relevant to a constrained design boundary
+- input -> register only when clearly part of the reported constrained timing set
+
+If async crossings also appear in the tool output, keep them separate unless they are explicitly the real routed bottleneck and architecturally significant. The top-ranked paths should normally be the synchronous ones that determine clock-closing headroom.
+
+### 2. Cross-check normalized artifacts against raw logs
+
+Use both:
+
+- raw routed timing output
+- normalized stats artifacts (`riscv_fpga_stats.json` / `.md` when available)
+
+The raw log/report is authoritative for detailed path content. The normalized artifacts are for summary and consistency checks. If there is any mismatch, **call it out explicitly and trust the raw routed timing source**.
+
+### 3. Tie each routed path back to RTL
+
+For each top path, map the routed path back to real code:
+
+- identify launch and capture registers/cells
+- explain the intermediate logic cone in plain language
+- connect that cone to actual RTL modules/signals
+- cite specific RTL files and line ranges whenever possible
+
+Avoid vague descriptions like “ALU logic” or “control path” without file/line grounding.
+
+### 4. Classify logic vs routing dominance
+
+For every path, state whether it is:
+
+- **logic-dominated**
+- **routing-dominated**
+- **mixed**
+
+Use the tool-reported delay breakdown when available, and explain the likely reason:
+- logic depth / carry chain / mux fan-in / reconvergent control
+- long net delay / high fanout / poor locality / cross-region travel
+
+### 5. Give actionable optimization suggestions
+
+Suggestions must be concrete and path-specific, for example:
+
+- split a named combinational cone with a register boundary
+- reduce fan-in at a named result mux
+- register a named control signal earlier
+- isolate sign/control handling from a wide compare
+- simplify or localize a named enable path
+- reduce high-fanout routing pressure
+- restructure a specific RTL block that sits on the path
+
+Do **not** give generic advice like “optimize logic” or “improve routing.”
+
+## Required Output Structure
+
+A good timing-analysis document should include:
+
+1. **Title, date, target, and build command**
+2. **Fresh-build confirmation**
+3. **Authoritative artifacts used**
+4. **Executive summary**
+5. **Critical path ranking**, with synchronous paths first
+6. For each important path:
+   - domain / path class
+   - total delay or frequency/slack implication
+   - logic vs routing breakdown
+   - startpoint and endpoint
+   - RTL path narrative
+   - specific RTL files/lines
+   - actionable optimization suggestions
+7. **Cross-check note** comparing normalized stats artifacts vs raw routed log/report
+8. **Clear conclusion** on the highest-value next optimizations
+
+## Forbidden Shortcuts
+
+- ❌ Do not analyze stale artifacts as if they were freshly generated
+- ❌ Do not copy previous document text without re-validating the new routed report
+- ❌ Do not rank paths from placement-only estimates ahead of final routed paths
+- ❌ Do not let async paths dominate the ranking without clear justification
+- ❌ Do not omit RTL file/line references when the path can be traced back to code
+- ❌ Do not present normalized stats as a substitute for the raw detailed timing section
+
+## Quality Bar
+
+A strong critical-path analysis in this repository is:
+
+- based on a **fresh build**
+- anchored to the **final routed timing source**
+- ranked with **synchronous critical paths first**
+- tied back to **actual RTL files and lines**
+- explicit about **logic vs routing dominance**
+- validated against **normalized stats artifacts**
+- free of **stale copy-forward analysis**
+- finished with **specific, actionable optimization guidance**
