@@ -234,7 +234,7 @@ module cpu #(
     parameter HART_ID = 0  // Unique hart identifier
 ) (
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     // ... existing ports ...
 );
     
@@ -252,7 +252,7 @@ module mem_arbiter #(
     parameter NUM_HARTS = 2
 ) (
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     
     // Hart interfaces (per-hart arrays)
     input  logic [NUM_HARTS-1:0][31:0] hart_imem_addr,
@@ -292,7 +292,7 @@ module multi_core_top #(
     parameter NUM_HARTS = 2
 ) (
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        rst,
     input  logic [31:0] boot_addr,
     
     // Shared memory interface
@@ -330,7 +330,7 @@ module multi_core_top #(
         for (genvar i = 0; i < NUM_HARTS; i++) begin : hart_gen
             top #(.HART_ID(i)) hart_inst (
                 .clk(clk),
-                .rst_n(rst_n),
+                .rst(rst),
                 .boot_addr(boot_addr),
                 .imem_addr(hart_imem_addr[i]),
                 .imem_data(hart_imem_data[i]),
@@ -353,7 +353,7 @@ module multi_core_top #(
     // Memory arbiter
     mem_arbiter #(.NUM_HARTS(NUM_HARTS)) arbiter_inst (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst(rst),
         .hart_imem_addr(hart_imem_addr),
         .hart_imem_data(hart_imem_data),
         .hart_imem_req(hart_imem_req),

@@ -209,7 +209,7 @@ make TARGET=artix7_alchitry_au \
 | Signal | Pin | Description |
 |--------|-----|-------------|
 | clk | P7 | 100 MHz on-board oscillator |
-| rst_n | P8 | Active-low reset button |
+| rst_n | P8 | Active-low reset button (external-board exception; convert to active-high reset inside RTL) |
 | led[0] | J11 | LED 0 (LSB) |
 | led[1] | K11 | LED 1 |
 | led[2] | K12 | LED 2 |
