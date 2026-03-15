@@ -8,7 +8,7 @@ The goal is to remove the direct `fetch_buffer` integration from `cpu.sv` and re
 
 1. waits for a D-channel instruction response,
 2. captures the returned word into an internal register,
-3. feeds that registered word through `fetch_buffer`,
+3. passes that registered word through `fetch_buffer`,
 4. registers the final instruction outputs, and
 5. presents a stable external fetch result back to the CPU.
 
@@ -55,11 +55,11 @@ Today `cpu.sv` directly instantiates `fetch_buffer` and couples it tightly to th
 
 Relevant existing behavior:
 
-- `cpu.sv:489-505` instantiates `fetch_buffer` directly.
-- `cpu.sv:559-566` leaves `S_FETCH` as soon as the D-channel response handshakes.
-- `cpu.sv:747-750` asserts `ir_write` directly on that handshake.
-- `cpu.sv:314-315` computes `instr_pc_next_reg` from the registered width information one state later.
-- `fetch_buffer.sv:119-149` only advances or invalidates internal halfword state when `ir_write` or `invalidate_buffer` is asserted.
+- `cpu.sv` instantiates `fetch_buffer` directly in the fetch-path wiring block.
+- `cpu.sv` leaves `S_FETCH` as soon as the D-channel response handshakes.
+- `cpu.sv` asserts `ir_write` directly on that handshake.
+- `cpu.sv` computes `instr_pc_next_reg` from the registered width information one state later.
+- `fetch_buffer.sv` only advances or invalidates internal halfword state when `ir_write` or `invalidate_buffer` is asserted.
 
 The new module must preserve those architectural behaviors while decoupling the timing.
 
@@ -305,8 +305,8 @@ Add:
 
 Required conventions:
 
-- begin with `` `default_nettype none ``
-- end with `` `default_nettype wire ``
+- begin with `\`default_nettype none`
+- end with `\`default_nettype wire`
 - use synchronous reset style (`always_ff @(posedge clk)` with `if (!rst_n)` inside)
 
 ### 9.2 `cpu.sv`
