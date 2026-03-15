@@ -45,7 +45,6 @@ module led_controller_peripheral (
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             led_out_reg <= 8'h00;  // All LEDs off on reset
-            response_data <= 32'h0;
             response_pending <= 1'b0;
         end else begin
             if (mem_d_handshake) begin

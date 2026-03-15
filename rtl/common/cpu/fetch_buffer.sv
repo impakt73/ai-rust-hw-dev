@@ -48,7 +48,6 @@ module fetch_buffer (
     // ============================================================
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            buffered_half <= 16'h0;
             buffer_valid <= 1'b0;
             current_insn_compressed <= 1'b0;
         end else begin

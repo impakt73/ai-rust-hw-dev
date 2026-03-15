@@ -223,7 +223,6 @@ module clock_peripheral #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            response_data <= 32'h0;
             response_pending <= 1'b0;
         end else begin
             if (mem_d_handshake) begin

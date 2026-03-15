@@ -155,18 +155,9 @@ module host_bus_tx (
         if (!rst_n) begin
             state <= STATE_IDLE;
 
-            packet_type_reg         <= 4'h0;
-            packet_we_reg           <= 1'b0;
-            packet_size_reg         <= 2'b00;
-            packet_src_fixed_reg    <= 1'b0;
-            packet_dst_fixed_reg    <= 1'b0;
-            packet_burst_len_m1_reg <= 16'h0000;
-            packet_base_addr_reg    <= 32'h0000_0000;
-
             payload_enabled_reg <= 1'b0;
             beat_bytes_reg      <= 3'd1;
             beats_remaining_reg <= 17'd0;
-            beat_data_reg       <= 32'h0000_0000;
         end else begin
             state <= next_state;
 

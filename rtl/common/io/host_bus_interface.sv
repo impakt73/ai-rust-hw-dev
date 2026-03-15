@@ -285,13 +285,8 @@ module host_bus_interface (
     // ============================================================
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            cpu_cap_addr    <= 32'h0000_0000;
-            cpu_cap_wdata   <= 32'h0000_0000;
-            cpu_cap_we      <= 1'b0;
-            cpu_cap_size    <= 2'b00;
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
-            cpu_resp_data   <= 32'h0000_0000;
             cpu_resp_valid  <= 1'b0;
 
             host_state           <= HOST_IDLE;

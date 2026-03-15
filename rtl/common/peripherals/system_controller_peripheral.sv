@@ -80,7 +80,6 @@ module system_controller (
             halt_reg      <= 32'h00000000;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
-            response_data <= 32'h00000000;
             response_pending <= 1'b0;
             cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
