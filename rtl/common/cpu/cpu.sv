@@ -314,9 +314,9 @@ module cpu #(
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE_WAIT) begin
             instr_pc_next_reg <= instr_pc_reg + pc_increment;  // Capture sequential fall-through PC
-            // The decoder's registered instruction_valid output is stable in
-            // S_DECODE_WAIT after being latched in S_DECODE. This merge combines decompressor and
-            // decoder validity checks for the current instruction.
+            // The decoder's registered instruction_valid output becomes stable in
+            // S_DECODE_WAIT after being registered on the S_DECODE clock edge. This merge combines
+            // decompressor and decoder validity checks for the current instruction.
             // AND with decoder validity - instruction must be valid from both
             // decompressor and decoder to be considered valid
             is_instruction_valid_reg <= is_instruction_valid_reg & instruction_valid;
@@ -569,11 +569,14 @@ module cpu #(
             
             S_DECODE: begin
                 // Decode instruction into the registered decoder outputs, then allow one
-                // setup cycle before launching the BRAM read pipeline.
+                // setup cycle for the registered decode outputs before launching the
+                // BRAM read pipeline.
                 next_state = S_DECODE_WAIT;
             end
 
             S_DECODE_WAIT: begin
+                // Give decode outputs one full cycle to drive regfile/CSR addresses and
+                // register decode-dependent validity/branch targets before the BRAM read starts.
                 // Always transition through S_REG_READ and S_REG_READ_WAIT to cover the
                 // two-cycle BRAM read latency.
                 next_state = S_REG_READ;
@@ -908,7 +911,7 @@ module cpu #(
         .clk(clk),
         .rst_n(rst_n),
         .decode_en(current_state == S_DECODE),
-        .instruction(instruction),
+        .instruction(ir_reg),
         .opcode(opcode_reg),
         .rd(rd_reg),
         .rs1(rs1_reg),
