@@ -14,4 +14,4 @@ set_false_path -from [get_ports rst_n_btn]
 set_false_path -from [get_ports usb_rx]
 
 # These outputs are asynchronous off-chip endpoints with no synchronous capture clock.
-set_false_path -to [get_ports {usb_tx led}]
+set_false_path -to [get_ports {usb_tx led[*]}]

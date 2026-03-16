@@ -8,7 +8,7 @@ module ecp5_icepi_zero_top #(
 ) (
     input wire logic clk,
     input wire logic rst_n_btn,
-    output logic led,
+    output logic [4:0] led,
     input wire logic usb_rx,
     output logic usb_tx
 );
@@ -57,7 +57,7 @@ module ecp5_icepi_zero_top #(
         .rst_core()
     );
 
-    assign led = sys_led_out[0];
+    assign led = sys_led_out[4:0];
 
 endmodule
 `default_nettype wire
