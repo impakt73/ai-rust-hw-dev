@@ -126,20 +126,21 @@ python3 fpga_design_stats.py --target ice40_alchitry_cu --format json
 The script rejects `--build-dir` together with `--build` because the build flow
 always writes to the target's standard `build/<target>/` output directory.
 
-For the open-source iCE40 and ECP5 targets, the build now requires a `nextpnr`
-version that supports `--report`, because the routed flow writes
-`build/<target>/riscv_fpga_timing.rpt` as the authoritative multi-path timing
-report.
+For the open-source iCE40 and ECP5 targets, the build uses `nextpnr --report`
+when available to write `build/<target>/riscv_fpga_timing.rpt` as the preferred
+multi-path timing report. If the installed nextpnr does not support
+`--report`, the build still succeeds and the routed Fmax / top-path data remain
+available in `build/<target>/nextpnr.log`.
 
 ### Timing / Utilization Sources Used by the Stats Workflow
 
 - **`ice40_alchitry_cu`**
-  - Routed timing report: `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
+  - Routed timing report: prefer `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`; fall back to `build/ice40_alchitry_cu/nextpnr.log`
   - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
   - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
 
 - **`ecp5_icepi_zero`**
-  - Routed timing report: `build/ecp5_icepi_zero/riscv_fpga_timing.rpt`
+  - Routed timing report: prefer `build/ecp5_icepi_zero/riscv_fpga_timing.rpt`; fall back to `build/ecp5_icepi_zero/nextpnr.log`
   - Resource utilization: `build/ecp5_icepi_zero/nextpnr.log`
   - Synthesis cell counts: `build/ecp5_icepi_zero/yosys.log`
 
