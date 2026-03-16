@@ -75,8 +75,6 @@ module host_bus_interface (
     logic [31:0] tx_pkt_base_addr;
     logic [31:0] tx_pkt_data;
 
-    localparam int TX_PACKET_WIDTH = 88;
-
     logic        tx_issue_valid;
     logic        tx_issue_ready;
     logic        tx_issue_start;
@@ -89,8 +87,17 @@ module host_bus_interface (
     logic [15:0] tx_issue_burst_len_m1;
     logic [31:0] tx_issue_base_addr;
     logic [31:0] tx_issue_data;
-    logic [TX_PACKET_WIDTH-1:0] tx_issue_bus;
-    logic [TX_PACKET_WIDTH-1:0] tx_pkt_bus;
+    logic        tx_slice_valid;
+    logic        tx_slice_start;
+    logic        tx_slice_last;
+    logic        tx_slice_req;
+    logic        tx_slice_we;
+    logic [1:0]  tx_slice_size;
+    logic        tx_slice_src_fixed;
+    logic        tx_slice_dst_fixed;
+    logic [15:0] tx_slice_burst_len_m1;
+    logic [31:0] tx_slice_base_addr;
+    logic [31:0] tx_slice_data;
 
     // ============================================================
     // CPU request/response tracking
@@ -160,6 +167,7 @@ module host_bus_interface (
     logic [31:0] host_stride_ext;
     logic [31:0] host_next_addr_advance;
     logic tx_issue_handshake;
+    logic tx_output_handshake;
 
     assign host_in_idle       = (host_state == HOST_IDLE);
     assign host_in_write_a    = (host_state == HOST_WRITE_A);
@@ -185,30 +193,18 @@ module host_bus_interface (
     assign host_stride_ext       = {{29{1'b0}}, host_stride};
     assign host_next_addr_advance = host_next_addr + host_stride_ext;
     assign tx_issue_handshake    = tx_issue_valid && tx_issue_ready;
-    assign tx_issue_bus = {
-        tx_issue_start,
-        tx_issue_last,
-        tx_issue_req,
-        tx_issue_we,
-        tx_issue_size,
-        tx_issue_src_fixed,
-        tx_issue_dst_fixed,
-        tx_issue_burst_len_m1,
-        tx_issue_base_addr,
-        tx_issue_data
-    };
-    assign {
-        tx_pkt_start,
-        tx_pkt_last,
-        tx_pkt_req,
-        tx_pkt_we,
-        tx_pkt_size,
-        tx_pkt_src_fixed,
-        tx_pkt_dst_fixed,
-        tx_pkt_burst_len_m1,
-        tx_pkt_base_addr,
-        tx_pkt_data
-    } = tx_pkt_bus;
+    assign tx_output_handshake   = tx_pkt_valid && tx_pkt_ready;
+    assign tx_pkt_valid          = tx_slice_valid;
+    assign tx_pkt_start          = tx_slice_valid ? tx_slice_start : tx_issue_start;
+    assign tx_pkt_last           = tx_slice_last;
+    assign tx_pkt_req            = tx_slice_req;
+    assign tx_pkt_we             = tx_slice_we;
+    assign tx_pkt_size           = tx_slice_size;
+    assign tx_pkt_src_fixed      = tx_slice_src_fixed;
+    assign tx_pkt_dst_fixed      = tx_slice_dst_fixed;
+    assign tx_pkt_burst_len_m1   = tx_slice_burst_len_m1;
+    assign tx_pkt_base_addr      = tx_slice_base_addr;
+    assign tx_pkt_data           = tx_slice_data;
 
     // ============================================================
     // RX/TX submodules
@@ -231,19 +227,6 @@ module host_bus_interface (
         .packet_base_addr(rx_pkt_base_addr),
         .packet_data(rx_pkt_data),
         .packet_ready(rx_pkt_ready)
-    );
-
-    skid_buffer #(
-        .WIDTH(TX_PACKET_WIDTH)
-    ) tx_pkt_skid (
-        .clk(clk),
-        .rst(rst),
-        .in_valid(tx_issue_valid),
-        .in_data(tx_issue_bus),
-        .in_ready(tx_issue_ready),
-        .out_valid(tx_pkt_valid),
-        .out_data(tx_pkt_bus),
-        .out_ready(tx_pkt_ready)
     );
 
     host_bus_tx tx_buf (
@@ -340,6 +323,8 @@ module host_bus_interface (
         end
     end
 
+    assign tx_issue_ready = !tx_slice_valid && tx_pkt_ready;
+
     // ============================================================
     // Bus master drive (host-initiated request execution)
     // ============================================================
@@ -358,12 +343,29 @@ module host_bus_interface (
             cpu_req_pending <= 1'b0;
             cpu_wait_resp   <= 1'b0;
             cpu_resp_valid  <= 1'b0;
+            tx_slice_valid  <= 1'b0;
 
             host_state           <= HOST_IDLE;
             host_beats_remaining <= 17'd0;
             host_read_first_beat <= 1'b0;
             host_addr_fixed      <= 1'b0;
         end else begin
+            if (tx_issue_handshake) begin
+                tx_slice_valid          <= 1'b1;
+                tx_slice_start          <= tx_issue_start;
+                tx_slice_last           <= tx_issue_last;
+                tx_slice_req            <= tx_issue_req;
+                tx_slice_we             <= tx_issue_we;
+                tx_slice_size           <= tx_issue_size;
+                tx_slice_src_fixed      <= tx_issue_src_fixed;
+                tx_slice_dst_fixed      <= tx_issue_dst_fixed;
+                tx_slice_burst_len_m1   <= tx_issue_burst_len_m1;
+                tx_slice_base_addr      <= tx_issue_base_addr;
+                tx_slice_data           <= tx_issue_data;
+            end else if (tx_output_handshake) begin
+                tx_slice_valid <= 1'b0;
+            end
+
             // Capture CPU request (single outstanding)
             if (cpu_a_handshake) begin
                 cpu_cap_addr    <= mem_a_addr;
@@ -374,7 +376,7 @@ module host_bus_interface (
             end
 
             // CPU request accepted by TX
-            if (cpu_req_pending && tx_issue_handshake && tx_issue_req) begin
+            if (cpu_req_pending && tx_output_handshake && tx_pkt_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
             end
@@ -449,7 +451,7 @@ module host_bus_interface (
                 end
 
                 HOST_WRITE_RESP: begin
-                    if (tx_issue_handshake) begin
+                    if (tx_output_handshake) begin
                         host_state <= HOST_IDLE;
                     end
                 end
@@ -468,7 +470,7 @@ module host_bus_interface (
                 end
 
                 HOST_READ_TX: begin
-                    if (tx_issue_handshake) begin
+                    if (tx_output_handshake) begin
                         if (host_read_first_beat) begin
                             host_read_first_beat <= 1'b0;
                         end

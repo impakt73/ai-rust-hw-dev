@@ -552,3 +552,92 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
         ]
     );
 }
+
+#[test]
+fn test_stalled_tx_keeps_multi_beat_host_response_ahead_of_cpu_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Host -> FPGA read request, burst_len=2, incrementing source.
+    send_rx_packet(&mut dut, &[0x28, 0x00, 0x01, 0x00, 0x00, 0x10, 0x00, 0x50]);
+
+    let read_responses = [0xA1A2_A3A4, 0xB1B2_B3B4];
+    let mut read_response_index = 0usize;
+    let mut pending_response: Option<u32> = None;
+    let mut tx_packet = Vec::new();
+    let mut issue_cpu_request = false;
+    let mut clear_cpu_request = false;
+    let mut release_tx_stall = false;
+    let mut data_handshakes = 0usize;
+
+    for _ in 0..MAX_COLLECTION_CYCLES {
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
+        dut.tx_ready = if release_tx_stall { 1 } else { 0 };
+        if clear_cpu_request {
+            dut.mem_a_valid = 0;
+        }
+        dut.eval();
+
+        if dut.host_mem_a_valid != 0 {
+            let response_word = *read_responses
+                .get(read_response_index)
+                .expect("unexpected extra host read beat");
+            read_response_index += 1;
+            dut.host_mem_a_ready = 1;
+            pending_response = Some(response_word);
+        }
+
+        if !issue_cpu_request && read_response_index >= 1 && dut.tx_valid != 0 {
+            dut.mem_a_addr = 0x1234_5678;
+            dut.mem_a_wdata = 0;
+            dut.mem_a_we = 0;
+            dut.mem_a_size = 0b10;
+            dut.mem_a_valid = 1;
+            issue_cpu_request = true;
+            clear_cpu_request = true;
+        }
+
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
+        dut.eval();
+
+        if release_tx_stall && dut.tx_valid != 0 {
+            dut.tx_ready = 1;
+            dut.eval();
+            tx_packet.push(dut.tx_data);
+        }
+
+        let d_handshake = pending_response.is_some() && dut.host_mem_d_ready != 0;
+        clock_cycle!(dut);
+        if d_handshake {
+            pending_response = None;
+            data_handshakes += 1;
+            if data_handshakes == 2 {
+                release_tx_stall = true;
+            }
+        }
+
+        if clear_cpu_request {
+            dut.mem_a_valid = 0;
+            clear_cpu_request = false;
+        }
+
+        if tx_packet.len() == 24 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        tx_packet,
+        vec![
+            0x38, 0x00, 0x01, 0x00, 0x00, 0x10, 0x00, 0x50, 0xA4, 0xA3, 0xA2, 0xA1, 0xB4, 0xB3,
+            0xB2, 0xB1, 0x08, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12,
+        ]
+    );
+}
