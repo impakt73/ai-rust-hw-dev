@@ -192,6 +192,7 @@ module host_bus_interface (
                            (rx_pkt_size == 2'b01) ? 3'd2 : 3'd4;
     assign host_stride_ext       = {{29{1'b0}}, host_stride};
     assign host_next_addr_advance = host_next_addr + host_stride_ext;
+    assign tx_issue_ready        = !tx_slice_valid && tx_pkt_ready;
     assign tx_issue_handshake    = tx_issue_valid && tx_issue_ready;
     assign tx_output_handshake   = tx_pkt_valid && tx_pkt_ready;
     assign tx_pkt_valid          = tx_slice_valid;
@@ -322,8 +323,6 @@ module host_bus_interface (
             tx_issue_data         = cpu_cap_wdata;
         end
     end
-
-    assign tx_issue_ready = !tx_slice_valid && tx_pkt_ready;
 
     // ============================================================
     // Bus master drive (host-initiated request execution)
