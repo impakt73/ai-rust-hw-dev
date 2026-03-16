@@ -113,6 +113,58 @@ fn collect_tx_bytes_with_bus_model(
     out
 }
 
+fn collect_host_read_tx(
+    dut: &mut HostBusInterface,
+    expected_len: usize,
+    response_words: &[u32],
+) -> (Vec<u32>, Vec<u8>) {
+    let mut seen_addrs = Vec::new();
+    let mut tx_packet = Vec::new();
+    let mut pending_response: Option<u32> = None;
+    let mut response_index = 0usize;
+
+    for _ in 0..2000 {
+        dut.tx_ready = 0;
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
+
+        dut.eval();
+
+        if dut.host_mem_a_valid != 0 {
+            let response_word = *response_words
+                .get(response_index)
+                .expect("unexpected extra host read beat");
+            seen_addrs.push(dut.host_mem_a_addr);
+            response_index += 1;
+            dut.host_mem_a_ready = 1;
+            pending_response = Some(response_word);
+        }
+
+        dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
+        dut.host_mem_d_rdata = pending_response.unwrap_or(0);
+        dut.eval();
+
+        if dut.tx_valid != 0 {
+            dut.tx_ready = 1;
+            dut.eval();
+            tx_packet.push(dut.tx_data);
+        }
+
+        let d_handshake = pending_response.is_some() && dut.host_mem_d_ready != 0;
+        clock_cycle!(dut);
+        if d_handshake {
+            pending_response = None;
+        }
+
+        if tx_packet.len() == expected_len {
+            break;
+        }
+    }
+
+    (seen_addrs, tx_packet)
+}
+
 #[test]
 fn test_reset_state() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
@@ -295,6 +347,67 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
 }
 
 #[test]
+fn test_host_read_burst_src_fixed_keeps_bus_address() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Host -> FPGA read request, burst_len=2, src_fixed=1
+    send_rx_packet(&mut dut, &[0x2A, 0x00, 0x01, 0x00, 0x00, 0x20, 0x00, 0x60]);
+
+    let (seen_addrs, tx_packet) = collect_host_read_tx(&mut dut, 16, &[0x0102_0304, 0xAABB_CCDD]);
+
+    assert_eq!(seen_addrs, vec![0x6000_2000, 0x6000_2000]);
+    assert_eq!(tx_packet.len(), 16);
+    assert_eq!(
+        &tx_packet[0..8],
+        &[0x3A, 0x00, 0x01, 0x00, 0x00, 0x20, 0x00, 0x60]
+    );
+    assert_eq!(&tx_packet[8..12], &[0x04, 0x03, 0x02, 0x01]);
+    assert_eq!(&tx_packet[12..16], &[0xDD, 0xCC, 0xBB, 0xAA]);
+}
+
+#[test]
+fn test_host_read_burst_byte_and_halfword_stride_increment_addresses() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    reset_module(&mut dut);
+
+    // Host -> FPGA read request, 3 byte-sized beats
+    send_rx_packet(&mut dut, &[0x20, 0x00, 0x02, 0x00, 0x00, 0x30, 0x00, 0x60]);
+    let (byte_addrs, byte_tx_packet) =
+        collect_host_read_tx(&mut dut, 11, &[0x0000_0011, 0x0000_0022, 0x0000_0033]);
+
+    assert_eq!(byte_addrs, vec![0x6000_3000, 0x6000_3001, 0x6000_3002]);
+    assert_eq!(
+        byte_tx_packet,
+        vec![0x30, 0x00, 0x02, 0x00, 0x00, 0x30, 0x00, 0x60, 0x11, 0x22, 0x33]
+    );
+
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+    reset_module(&mut dut);
+
+    // Host -> FPGA read request, 2 halfword-sized beats
+    send_rx_packet(&mut dut, &[0x24, 0x00, 0x01, 0x00, 0x40, 0x30, 0x00, 0x60]);
+    let (halfword_addrs, halfword_tx_packet) =
+        collect_host_read_tx(&mut dut, 12, &[0x0000_1234, 0x0000_ABCD]);
+
+    assert_eq!(halfword_addrs, vec![0x6000_3040, 0x6000_3042]);
+    assert_eq!(
+        halfword_tx_packet,
+        vec![0x34, 0x00, 0x01, 0x00, 0x40, 0x30, 0x00, 0x60, 0x34, 0x12, 0xCD, 0xAB,]
+    );
+}
+
+#[test]
 fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
     let mut dut = runtime
@@ -359,5 +472,84 @@ fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
     assert_eq!(
         dut.mem_a_ready, 1,
         "A channel should reopen after response is consumed"
+    );
+}
+
+#[test]
+fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Host -> FPGA single-beat write request
+    send_rx_packet(
+        &mut dut,
+        &[
+            0x28, 0x01, 0x00, 0x00, 0x00, 0x40, 0x00, 0x60, 0x44, 0x33, 0x22, 0x11,
+        ],
+    );
+
+    let mut tx_packet = Vec::new();
+    let mut host_a_seen = false;
+    let mut cpu_request_issued = false;
+    let mut clear_cpu_request = false;
+
+    for _ in 0..500 {
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = 0;
+        dut.host_mem_d_rdata = 0;
+        dut.tx_ready = 0;
+        dut.mem_a_valid = if clear_cpu_request {
+            0
+        } else {
+            dut.mem_a_valid
+        };
+        dut.eval();
+
+        if dut.host_mem_a_valid != 0 && !host_a_seen {
+            dut.host_mem_a_ready = 1;
+            host_a_seen = true;
+        }
+
+        if host_a_seen && !cpu_request_issued && dut.host_mem_d_ready != 0 {
+            dut.host_mem_d_valid = 1;
+            dut.mem_a_addr = 0x1234_5678;
+            dut.mem_a_wdata = 0xDEAD_BEEF;
+            dut.mem_a_we = 1;
+            dut.mem_a_size = 0b10;
+            dut.mem_a_valid = 1;
+            cpu_request_issued = true;
+            clear_cpu_request = true;
+        }
+
+        dut.eval();
+
+        if dut.tx_valid != 0 {
+            dut.tx_ready = 1;
+            dut.eval();
+            tx_packet.push(dut.tx_data);
+        }
+
+        clock_cycle!(dut);
+
+        if clear_cpu_request {
+            dut.mem_a_valid = 0;
+            clear_cpu_request = false;
+        }
+
+        if tx_packet.len() == 20 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        tx_packet,
+        vec![
+            0x38, 0x01, 0x00, 0x00, 0x00, 0x40, 0x00, 0x60, 0x08, 0x01, 0x00, 0x00, 0x78, 0x56,
+            0x34, 0x12, 0xEF, 0xBE, 0xAD, 0xDE,
+        ]
     );
 }

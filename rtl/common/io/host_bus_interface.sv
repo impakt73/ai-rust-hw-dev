@@ -75,6 +75,23 @@ module host_bus_interface (
     logic [31:0] tx_pkt_base_addr;
     logic [31:0] tx_pkt_data;
 
+    localparam int TX_PACKET_WIDTH = 88;
+
+    logic        tx_issue_valid;
+    logic        tx_issue_ready;
+    logic        tx_issue_start;
+    logic        tx_issue_last;
+    logic        tx_issue_req;
+    logic        tx_issue_we;
+    logic [1:0]  tx_issue_size;
+    logic        tx_issue_src_fixed;
+    logic        tx_issue_dst_fixed;
+    logic [15:0] tx_issue_burst_len_m1;
+    logic [31:0] tx_issue_base_addr;
+    logic [31:0] tx_issue_data;
+    logic [TX_PACKET_WIDTH-1:0] tx_issue_bus;
+    logic [TX_PACKET_WIDTH-1:0] tx_pkt_bus;
+
     // ============================================================
     // CPU request/response tracking
     // ============================================================
@@ -110,16 +127,84 @@ module host_bus_interface (
     logic [15:0] host_req_burst_len_m1;
     logic [31:0] host_req_base_addr;
     logic [31:0] host_curr_addr;
+    logic [31:0] host_next_addr;
     logic [2:0]  host_stride;
     logic [16:0] host_beats_remaining;
     logic [31:0] host_write_data;
     logic [31:0] host_read_data;
     logic        host_read_first_beat;
+    logic        host_addr_fixed;
 
     logic host_a_handshake;
     logic host_d_handshake;
     assign host_a_handshake = host_mem_a_valid && host_mem_a_ready;
     assign host_d_handshake = host_mem_d_valid && host_mem_d_ready;
+
+    logic host_in_idle;
+    logic host_in_write_a;
+    logic host_in_write_d;
+    logic host_in_write_wait;
+    logic host_in_write_resp;
+    logic host_in_read_a;
+    logic host_in_read_d;
+    logic host_in_read_tx;
+    logic host_mem_a_phase;
+    logic host_mem_d_phase;
+    logic host_last_beat;
+    logic accept_cpu_resp;
+    logic accept_host_req_start;
+    logic accept_host_write_payload;
+    logic [2:0]  rx_pkt_stride;
+    logic [31:0] host_stride_ext;
+    logic [31:0] host_next_addr_advance;
+    logic tx_issue_handshake;
+
+    assign host_in_idle       = (host_state == HOST_IDLE);
+    assign host_in_write_a    = (host_state == HOST_WRITE_A);
+    assign host_in_write_d    = (host_state == HOST_WRITE_D);
+    assign host_in_write_wait = (host_state == HOST_WRITE_WAIT);
+    assign host_in_write_resp = (host_state == HOST_WRITE_RESP);
+    assign host_in_read_a     = (host_state == HOST_READ_A);
+    assign host_in_read_d     = (host_state == HOST_READ_D);
+    assign host_in_read_tx    = (host_state == HOST_READ_TX);
+
+    assign host_mem_a_phase = host_in_write_a || host_in_read_a;
+    assign host_mem_d_phase = host_in_write_d || host_in_read_d;
+    assign host_last_beat   = (host_beats_remaining == 17'd1);
+
+    assign accept_cpu_resp          = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req;
+    assign accept_host_req_start    = host_in_idle && rx_pkt_valid && rx_pkt_req && rx_pkt_start;
+    assign accept_host_write_payload = host_in_write_wait && rx_pkt_valid && rx_pkt_req && !rx_pkt_start;
+
+    assign rx_pkt_stride = (rx_pkt_size == 2'b00) ? 3'd1 :
+                           (rx_pkt_size == 2'b01) ? 3'd2 : 3'd4;
+    assign host_stride_ext       = {{29{1'b0}}, host_stride};
+    assign host_next_addr_advance = host_next_addr + host_stride_ext;
+    assign tx_issue_handshake    = tx_issue_valid && tx_issue_ready;
+    assign tx_issue_bus = {
+        tx_issue_start,
+        tx_issue_last,
+        tx_issue_req,
+        tx_issue_we,
+        tx_issue_size,
+        tx_issue_src_fixed,
+        tx_issue_dst_fixed,
+        tx_issue_burst_len_m1,
+        tx_issue_base_addr,
+        tx_issue_data
+    };
+    assign {
+        tx_pkt_start,
+        tx_pkt_last,
+        tx_pkt_req,
+        tx_pkt_we,
+        tx_pkt_size,
+        tx_pkt_src_fixed,
+        tx_pkt_dst_fixed,
+        tx_pkt_burst_len_m1,
+        tx_pkt_base_addr,
+        tx_pkt_data
+    } = tx_pkt_bus;
 
     // ============================================================
     // RX/TX submodules
@@ -142,6 +227,19 @@ module host_bus_interface (
         .packet_base_addr(rx_pkt_base_addr),
         .packet_data(rx_pkt_data),
         .packet_ready(rx_pkt_ready)
+    );
+
+    skid_buffer #(
+        .WIDTH(TX_PACKET_WIDTH)
+    ) tx_pkt_skid (
+        .clk(clk),
+        .rst(rst),
+        .in_valid(tx_issue_valid),
+        .in_data(tx_issue_bus),
+        .in_ready(tx_issue_ready),
+        .out_valid(tx_pkt_valid),
+        .out_data(tx_pkt_bus),
+        .out_ready(tx_pkt_ready)
     );
 
     host_bus_tx tx_buf (
@@ -182,29 +280,10 @@ module host_bus_interface (
     always_comb begin
         rx_pkt_ready = 1'b0;
 
-        // CPU response path (host response to CPU-originated request)
-        if (cpu_wait_resp && rx_pkt_valid && !rx_pkt_req) begin
+        if (accept_cpu_resp) begin
             rx_pkt_ready = 1'b1;
-        end else begin
-            case (host_state)
-                HOST_IDLE: begin
-                    // Accept host request start beat (or metadata-only read request)
-                    if (rx_pkt_valid && rx_pkt_req && rx_pkt_start) begin
-                        rx_pkt_ready = 1'b1;
-                    end
-                end
-
-                HOST_WRITE_WAIT: begin
-                    // Accept next write payload beat from host RX
-                    if (rx_pkt_valid && rx_pkt_req && !rx_pkt_start) begin
-                        rx_pkt_ready = 1'b1;
-                    end
-                end
-
-                default: begin
-                    rx_pkt_ready = 1'b0;
-                end
-            endcase
+        end else if (accept_host_req_start || accept_host_write_payload) begin
+            rx_pkt_ready = 1'b1;
         end
     end
 
@@ -212,62 +291,49 @@ module host_bus_interface (
     // TX arbitration (host responses have priority over CPU requests)
     // ============================================================
     always_comb begin
-        tx_pkt_valid        = 1'b0;
-        tx_pkt_start        = 1'b0;
-        tx_pkt_last         = 1'b0;
-        tx_pkt_req          = 1'b0;
-        tx_pkt_we           = 1'b0;
-        tx_pkt_size         = 2'b00;
-        tx_pkt_src_fixed    = 1'b0;
-        tx_pkt_dst_fixed    = 1'b0;
-        tx_pkt_burst_len_m1 = 16'h0000;
-        tx_pkt_base_addr    = 32'h0000_0000;
-        tx_pkt_data         = 32'h0000_0000;
+        tx_issue_valid        = 1'b0;
+        tx_issue_start        = 1'b0;
+        tx_issue_last         = 1'b0;
+        tx_issue_req          = 1'b0;
+        tx_issue_we           = 1'b0;
+        tx_issue_size         = 2'b00;
+        tx_issue_src_fixed    = 1'b0;
+        tx_issue_dst_fixed    = 1'b0;
+        tx_issue_burst_len_m1 = 16'h0000;
+        tx_issue_base_addr    = 32'h0000_0000;
+        tx_issue_data         = 32'h0000_0000;
 
-        case (host_state)
-            HOST_WRITE_RESP: begin
-                tx_pkt_valid        = 1'b1;
-                tx_pkt_start        = 1'b1;
-                tx_pkt_last         = 1'b1;
-                tx_pkt_req          = 1'b0;
-                tx_pkt_we           = 1'b1;
-                tx_pkt_size         = host_req_size;
-                tx_pkt_src_fixed    = host_req_src_fixed;
-                tx_pkt_dst_fixed    = host_req_dst_fixed;
-                tx_pkt_burst_len_m1 = host_req_burst_len_m1;
-                tx_pkt_base_addr    = host_req_base_addr;
-            end
-
-            HOST_READ_TX: begin
-                tx_pkt_valid        = 1'b1;
-                tx_pkt_start        = host_read_first_beat;
-                tx_pkt_last         = (host_beats_remaining == 17'd1);
-                tx_pkt_req          = 1'b0;
-                tx_pkt_we           = 1'b0;
-                tx_pkt_size         = host_req_size;
-                tx_pkt_src_fixed    = host_req_src_fixed;
-                tx_pkt_dst_fixed    = host_req_dst_fixed;
-                tx_pkt_burst_len_m1 = host_req_burst_len_m1;
-                tx_pkt_base_addr    = host_req_base_addr;
-                tx_pkt_data         = host_read_data;
-            end
-
-            default: begin
-                if (cpu_req_pending) begin
-                    tx_pkt_valid        = 1'b1;
-                    tx_pkt_start        = 1'b1;
-                    tx_pkt_last         = 1'b1;
-                    tx_pkt_req          = 1'b1;
-                    tx_pkt_we           = cpu_cap_we;
-                    tx_pkt_size         = cpu_cap_size;
-                    tx_pkt_src_fixed    = 1'b0;
-                    tx_pkt_dst_fixed    = 1'b0;
-                    tx_pkt_burst_len_m1 = 16'h0000;
-                    tx_pkt_base_addr    = cpu_cap_addr;
-                    tx_pkt_data         = cpu_cap_wdata;
-                end
-            end
-        endcase
+        if (host_in_write_resp) begin
+            tx_issue_valid        = 1'b1;
+            tx_issue_start        = 1'b1;
+            tx_issue_last         = 1'b1;
+            tx_issue_we           = 1'b1;
+            tx_issue_size         = host_req_size;
+            tx_issue_src_fixed    = host_req_src_fixed;
+            tx_issue_dst_fixed    = host_req_dst_fixed;
+            tx_issue_burst_len_m1 = host_req_burst_len_m1;
+            tx_issue_base_addr    = host_req_base_addr;
+        end else if (host_in_read_tx) begin
+            tx_issue_valid        = 1'b1;
+            tx_issue_start        = host_read_first_beat;
+            tx_issue_last         = host_last_beat;
+            tx_issue_size         = host_req_size;
+            tx_issue_src_fixed    = host_req_src_fixed;
+            tx_issue_dst_fixed    = host_req_dst_fixed;
+            tx_issue_burst_len_m1 = host_req_burst_len_m1;
+            tx_issue_base_addr    = host_req_base_addr;
+            tx_issue_data         = host_read_data;
+        end else if (cpu_req_pending) begin
+            tx_issue_valid        = 1'b1;
+            tx_issue_start        = 1'b1;
+            tx_issue_last         = 1'b1;
+            tx_issue_req          = 1'b1;
+            tx_issue_we           = cpu_cap_we;
+            tx_issue_size         = cpu_cap_size;
+            tx_issue_burst_len_m1 = 16'h0000;
+            tx_issue_base_addr    = cpu_cap_addr;
+            tx_issue_data         = cpu_cap_wdata;
+        end
     end
 
     // ============================================================
@@ -277,8 +343,8 @@ module host_bus_interface (
     assign host_mem_a_wdata = host_write_data;
     assign host_mem_a_we    = host_req_we;
     assign host_mem_a_size  = host_req_size;
-    assign host_mem_a_valid = (host_state == HOST_WRITE_A) || (host_state == HOST_READ_A);
-    assign host_mem_d_ready = (host_state == HOST_WRITE_D) || (host_state == HOST_READ_D);
+    assign host_mem_a_valid = host_mem_a_phase;
+    assign host_mem_d_ready = host_mem_d_phase;
 
     // ============================================================
     // Sequential control
@@ -290,18 +356,9 @@ module host_bus_interface (
             cpu_resp_valid  <= 1'b0;
 
             host_state           <= HOST_IDLE;
-            host_req_we          <= 1'b0;
-            host_req_size        <= 2'b00;
-            host_req_src_fixed   <= 1'b0;
-            host_req_dst_fixed   <= 1'b0;
-            host_req_burst_len_m1<= 16'h0000;
-            host_req_base_addr   <= 32'h0000_0000;
-            host_curr_addr       <= 32'h0000_0000;
-            host_stride          <= 3'd1;
             host_beats_remaining <= 17'd0;
-            host_write_data      <= 32'h0000_0000;
-            host_read_data       <= 32'h0000_0000;
             host_read_first_beat <= 1'b0;
+            host_addr_fixed      <= 1'b0;
         end else begin
             // Capture CPU request (single outstanding)
             if (cpu_a_handshake) begin
@@ -313,7 +370,7 @@ module host_bus_interface (
             end
 
             // CPU request accepted by TX
-            if (cpu_req_pending && tx_pkt_valid && tx_pkt_ready && tx_pkt_req) begin
+            if (cpu_req_pending && tx_issue_handshake && tx_issue_req) begin
                 cpu_req_pending <= 1'b0;
                 cpu_wait_resp   <= 1'b1;
             end
@@ -324,15 +381,15 @@ module host_bus_interface (
             end
 
             // CPU response captured from RX
-            if (cpu_wait_resp && rx_pkt_valid && rx_pkt_ready && !rx_pkt_req) begin
+            if (accept_cpu_resp && rx_pkt_ready) begin
                 cpu_wait_resp <= 1'b0;
-                cpu_resp_data <= rx_pkt_data;
+                cpu_resp_data  <= rx_pkt_data;
                 cpu_resp_valid <= 1'b1;
             end
 
-            case (host_state)
+            unique case (host_state)
                 HOST_IDLE: begin
-                    if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && rx_pkt_start) begin
+                    if (accept_host_req_start && rx_pkt_ready) begin
                         host_req_we           <= rx_pkt_we;
                         host_req_size         <= rx_pkt_size;
                         host_req_src_fixed    <= rx_pkt_src_fixed;
@@ -340,13 +397,14 @@ module host_bus_interface (
                         host_req_burst_len_m1 <= rx_pkt_burst_len_m1;
                         host_req_base_addr    <= rx_pkt_base_addr;
                         host_curr_addr        <= rx_pkt_base_addr;
+                        host_addr_fixed       <= rx_pkt_we ? rx_pkt_dst_fixed : rx_pkt_src_fixed;
                         host_beats_remaining  <= {1'b0, rx_pkt_burst_len_m1} + 17'd1;
-
-                        case (rx_pkt_size)
-                            2'b00: host_stride <= 3'd1;
-                            2'b01: host_stride <= 3'd2;
-                            default: host_stride <= 3'd4;
-                        endcase
+                        host_stride           <= rx_pkt_stride;
+                        if (rx_pkt_we ? !rx_pkt_dst_fixed : !rx_pkt_src_fixed) begin
+                            host_next_addr <= rx_pkt_base_addr + {{29{1'b0}}, rx_pkt_stride};
+                        end else begin
+                            host_next_addr <= rx_pkt_base_addr;
+                        end
 
                         if (rx_pkt_we) begin
                             host_write_data <= rx_pkt_data;
@@ -366,12 +424,13 @@ module host_bus_interface (
 
                 HOST_WRITE_D: begin
                     if (host_d_handshake) begin
-                        if (host_beats_remaining == 17'd1) begin
+                        if (host_last_beat) begin
                             host_state <= HOST_WRITE_RESP;
                         end else begin
                             host_beats_remaining <= host_beats_remaining - 17'd1;
-                            if (!host_req_dst_fixed) begin
-                                host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
+                            if (!host_addr_fixed) begin
+                                host_curr_addr <= host_next_addr;
+                                host_next_addr <= host_next_addr_advance;
                             end
                             host_state <= HOST_WRITE_WAIT;
                         end
@@ -379,14 +438,14 @@ module host_bus_interface (
                 end
 
                 HOST_WRITE_WAIT: begin
-                    if (rx_pkt_valid && rx_pkt_ready && rx_pkt_req && !rx_pkt_start) begin
+                    if (accept_host_write_payload && rx_pkt_ready) begin
                         host_write_data <= rx_pkt_data;
                         host_state <= HOST_WRITE_A;
                     end
                 end
 
                 HOST_WRITE_RESP: begin
-                    if (tx_pkt_valid && tx_pkt_ready) begin
+                    if (tx_issue_handshake) begin
                         host_state <= HOST_IDLE;
                     end
                 end
@@ -405,16 +464,17 @@ module host_bus_interface (
                 end
 
                 HOST_READ_TX: begin
-                    if (tx_pkt_valid && tx_pkt_ready) begin
+                    if (tx_issue_handshake) begin
                         if (host_read_first_beat) begin
                             host_read_first_beat <= 1'b0;
                         end
-                        if (host_beats_remaining == 17'd1) begin
+                        if (host_last_beat) begin
                             host_state <= HOST_IDLE;
                         end else begin
                             host_beats_remaining <= host_beats_remaining - 17'd1;
-                            if (!host_req_src_fixed) begin
-                                host_curr_addr <= host_curr_addr + {{29{1'b0}}, host_stride};
+                            if (!host_addr_fixed) begin
+                                host_curr_addr <= host_next_addr;
+                                host_next_addr <= host_next_addr_advance;
                             end
                             host_state <= HOST_READ_A;
                         end
