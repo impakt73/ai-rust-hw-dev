@@ -110,7 +110,12 @@ module ice40_alchitry_cu_top #(
     
     // System LED output (from system controller)
     logic [7:0]  sys_led_out;
+    logic fpga_common_rst;
     logic rst_core;
+
+    always_ff @(posedge sys_clk) begin
+        fpga_common_rst <= ~pll_locked_sync2;
+    end
     
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -119,7 +124,7 @@ module ice40_alchitry_cu_top #(
         .RESET_CYCLES(25_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst(~pll_locked_sync2),
+        .rst(fpga_common_rst),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(led_out),

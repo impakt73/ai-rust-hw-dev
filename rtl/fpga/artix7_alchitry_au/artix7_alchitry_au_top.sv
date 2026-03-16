@@ -84,6 +84,7 @@ module artix7_alchitry_au_top #(
     );
 
     logic pll_locked_sync2;
+    logic fpga_common_rst;
     ff_sync #(
         .WIDTH(1)
     ) pll_locked_sync_inst (
@@ -93,6 +94,10 @@ module artix7_alchitry_au_top #(
         .dout(pll_locked_sync2)
     );
 
+    always_ff @(posedge sys_clk) begin
+        fpga_common_rst <= ~pll_locked_sync2;
+    end
+
     logic [7:0] sys_led_out;
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -101,7 +106,7 @@ module artix7_alchitry_au_top #(
         .RESET_CYCLES(50_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst(~pll_locked_sync2),
+        .rst(fpga_common_rst),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),

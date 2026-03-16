@@ -41,6 +41,11 @@ module ecp5_icepi_zero_top #(
     );
 
     logic [7:0] sys_led_out;
+    logic fpga_common_rst;
+
+    always_ff @(posedge sys_clk) begin
+        fpga_common_rst <= ~rst_n_btn_debounced;
+    end
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -49,7 +54,7 @@ module ecp5_icepi_zero_top #(
         .RESET_CYCLES(50_000_000)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst(~rst_n_btn_debounced),
+        .rst(fpga_common_rst),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),
