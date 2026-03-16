@@ -4,6 +4,7 @@
 use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
 const MAX_RESPONSE_WAIT_CYCLES: usize = 10;
+const MAX_COLLECTION_CYCLES: usize = 2000;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -72,7 +73,7 @@ fn collect_tx_bytes_with_bus_model(
     let mut out = Vec::new();
     let mut pending_response: Option<u32> = None;
 
-    for _ in 0..2000 {
+    for _ in 0..MAX_COLLECTION_CYCLES {
         dut.tx_ready = 0;
         dut.host_mem_a_ready = 0;
         dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
@@ -123,7 +124,7 @@ fn collect_host_read_tx(
     let mut pending_response: Option<u32> = None;
     let mut response_index = 0usize;
 
-    for _ in 0..2000 {
+    for _ in 0..MAX_COLLECTION_CYCLES {
         dut.tx_ready = 0;
         dut.host_mem_a_ready = 0;
         dut.host_mem_d_valid = if pending_response.is_some() { 1 } else { 0 };
@@ -502,11 +503,9 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
         dut.host_mem_d_valid = 0;
         dut.host_mem_d_rdata = 0;
         dut.tx_ready = 0;
-        dut.mem_a_valid = if clear_cpu_request {
-            0
-        } else {
-            dut.mem_a_valid
-        };
+        if clear_cpu_request {
+            dut.mem_a_valid = 0;
+        }
         dut.eval();
 
         if dut.host_mem_a_valid != 0 && !host_a_seen {

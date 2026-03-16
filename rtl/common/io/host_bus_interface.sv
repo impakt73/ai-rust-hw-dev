@@ -154,6 +154,8 @@ module host_bus_interface (
     logic accept_cpu_resp;
     logic accept_host_req_start;
     logic accept_host_write_payload;
+    logic rx_pkt_addr_fixed;
+    logic rx_pkt_addr_increments;
     logic [2:0]  rx_pkt_stride;
     logic [31:0] host_stride_ext;
     logic [31:0] host_next_addr_advance;
@@ -175,6 +177,8 @@ module host_bus_interface (
     assign accept_cpu_resp          = cpu_wait_resp && rx_pkt_valid && !rx_pkt_req;
     assign accept_host_req_start    = host_in_idle && rx_pkt_valid && rx_pkt_req && rx_pkt_start;
     assign accept_host_write_payload = host_in_write_wait && rx_pkt_valid && rx_pkt_req && !rx_pkt_start;
+    assign rx_pkt_addr_fixed        = rx_pkt_we ? rx_pkt_dst_fixed : rx_pkt_src_fixed;
+    assign rx_pkt_addr_increments   = !rx_pkt_addr_fixed;
 
     assign rx_pkt_stride = (rx_pkt_size == 2'b00) ? 3'd1 :
                            (rx_pkt_size == 2'b01) ? 3'd2 : 3'd4;
@@ -387,7 +391,7 @@ module host_bus_interface (
                 cpu_resp_valid <= 1'b1;
             end
 
-            unique case (host_state)
+            case (host_state)
                 HOST_IDLE: begin
                     if (accept_host_req_start && rx_pkt_ready) begin
                         host_req_we           <= rx_pkt_we;
@@ -397,10 +401,10 @@ module host_bus_interface (
                         host_req_burst_len_m1 <= rx_pkt_burst_len_m1;
                         host_req_base_addr    <= rx_pkt_base_addr;
                         host_curr_addr        <= rx_pkt_base_addr;
-                        host_addr_fixed       <= rx_pkt_we ? rx_pkt_dst_fixed : rx_pkt_src_fixed;
+                        host_addr_fixed       <= rx_pkt_addr_fixed;
                         host_beats_remaining  <= {1'b0, rx_pkt_burst_len_m1} + 17'd1;
                         host_stride           <= rx_pkt_stride;
-                        if (rx_pkt_we ? !rx_pkt_dst_fixed : !rx_pkt_src_fixed) begin
+                        if (rx_pkt_addr_increments) begin
                             host_next_addr <= rx_pkt_base_addr + {{29{1'b0}}, rx_pkt_stride};
                         end else begin
                             host_next_addr <= rx_pkt_base_addr;
