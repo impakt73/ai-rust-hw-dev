@@ -119,6 +119,17 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     eval_comb(&mut dut);
 
     assert_eq!(
+        dut.master0_mem_a_ready, 0,
+        "master ready must be delayed by the selection stage"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 must also wait for registered arbitration"
+    );
+
+    clock_cycle!(dut);
+
+    assert_eq!(
         dut.master0_mem_a_ready, 1,
         "master0 should win address arbitration"
     );
@@ -131,11 +142,21 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
     set_slave_a_ready(&mut dut, 0, 0);
     eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.master0_mem_a_ready, 0,
+        "address ready should drop once the payload is consumed"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 must still wait while master0 is buffered"
+    );
+
     clock_cycle!(dut);
 
     assert_eq!(
         dut.slave0_mem_a_valid, 1,
-        "slave0 should see master0 request first"
+        "slave0 should see master0 request after decode completes"
     );
     assert_eq!(
         dut.slave0_mem_a_addr, 0x5000_0020,
@@ -155,9 +176,15 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     );
 
     set_slave_a_ready(&mut dut, 0, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
     eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 still needs its own registered selection cycle"
+    );
+
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.master1_mem_a_ready, 1,
@@ -168,6 +195,7 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
     set_slave_a_ready(&mut dut, 1, 0);
     eval_comb(&mut dut);
+
     clock_cycle!(dut);
 
     assert_eq!(
@@ -181,14 +209,33 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     assert_eq!(dut.slave1_mem_a_we, 1, "slave1 write-enable mismatch");
 
     set_slave_a_ready(&mut dut, 1, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
 
     set_slave_response(&mut dut, 0, 0x1111_2222, 1);
     set_slave_response(&mut dut, 1, 0x3333_4444, 1);
     eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.slave0_mem_d_ready, 0,
+        "response ready must also be delayed by selection"
+    );
+    assert_eq!(
+        dut.slave1_mem_d_ready, 0,
+        "slave1 response cannot be accepted immediately"
+    );
+
     clock_cycle!(dut);
-    eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.slave0_mem_d_ready, 1,
+        "slave0 response should win the first response selection stage"
+    );
+    assert_eq!(
+        dut.slave1_mem_d_ready, 0,
+        "slave1 response must wait behind slave0"
+    );
+
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.master0_mem_d_valid, 1,
@@ -204,7 +251,6 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     );
 
     set_master_d_ready(&mut dut, 0, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
     set_master_d_ready(&mut dut, 0, 0);
     eval_comb(&mut dut);
@@ -219,7 +265,13 @@ fn test_registered_bus_arbitrates_requests_and_routes_responses() {
     );
 
     clock_cycle!(dut);
-    eval_comb(&mut dut);
+
+    assert_eq!(
+        dut.slave1_mem_d_ready, 1,
+        "slave1 response should become selected after slave0 completes"
+    );
+
+    clock_cycle!(dut);
 
     assert_eq!(
         dut.master1_mem_d_valid, 1,
@@ -241,20 +293,37 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     reset_dut(&mut dut);
 
     set_master_request(&mut dut, 0, 0x5000_0010, 0xAAAA_5555, 0, 0b10, 1);
-    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.master0_mem_a_ready, 1,
+        "master0 should be selected before its payload is consumed"
+    );
+
     clock_cycle!(dut);
     set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.slave0_mem_a_valid, 1,
+        "slave0 should see the first request after decode"
+    );
+
     clock_cycle!(dut);
 
     set_master_request(&mut dut, 1, 0x5000_0040, 0xBBBB_6666, 1, 0b10, 1);
     eval_comb(&mut dut);
     assert_eq!(
-        dut.master1_mem_a_ready, 1,
-        "master1 request should be accepted while the bus is idle"
+        dut.master1_mem_a_ready, 0,
+        "master1 request still needs a registered selection cycle"
     );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.master1_mem_a_ready, 1,
+        "master1 request should be accepted once selected"
+    );
+
     clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
 
     assert_eq!(
@@ -268,12 +337,16 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
 
     set_master_d_ready(&mut dut, 0, 0);
     set_slave_response(&mut dut, 0, 0x1234_5678, 1);
-    eval_comb(&mut dut);
+    set_slave_a_ready(&mut dut, 0, 0);
+    clock_cycle!(dut);
+
+    assert_eq!(
+        dut.slave0_mem_d_ready, 1,
+        "slave0 response should be selected before capture"
+    );
+
     clock_cycle!(dut);
     clear_slave_responses(&mut dut);
-    set_slave_a_ready(&mut dut, 0, 0);
-    eval_comb(&mut dut);
-    clock_cycle!(dut);
 
     assert_eq!(
         dut.master0_mem_d_valid, 1,
@@ -282,6 +355,17 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     assert_eq!(
         dut.master0_mem_d_rdata, 0x1234_5678,
         "master0 response data mismatch"
+    );
+    assert_eq!(
+        dut.slave0_mem_a_valid, 0,
+        "held request should not appear until the response stage frees the slave"
+    );
+
+    clock_cycle!(dut);
+
+    assert_eq!(
+        dut.master0_mem_d_valid, 1,
+        "master0 response should remain visible until the master consumes it"
     );
     assert_eq!(
         dut.slave0_mem_a_valid, 1,
@@ -294,7 +378,6 @@ fn test_registered_bus_holds_same_slave_request_until_prior_response_is_captured
     assert_eq!(dut.slave0_mem_a_we, 1, "held request write-enable mismatch");
 
     set_slave_a_ready(&mut dut, 0, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
     eval_comb(&mut dut);
 
@@ -318,6 +401,17 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
 
     assert_eq!(
         dut.master0_mem_a_ready, 0,
+        "inactive master0 should not be selected immediately"
+    );
+    assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 ready should wait for the registered selection stage"
+    );
+
+    clock_cycle!(dut);
+
+    assert_eq!(
+        dut.master0_mem_a_ready, 0,
         "inactive master0 should not be selected"
     );
     assert_eq!(
@@ -327,9 +421,7 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
 
     clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
-    eval_comb(&mut dut);
 
     assert_eq!(
         dut.slave0_mem_a_valid, 0,
@@ -353,8 +445,8 @@ fn test_registered_bus_unmapped_address_returns_zero_to_requesting_master() {
     );
 
     set_master_d_ready(&mut dut, 1, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
+    set_master_d_ready(&mut dut, 1, 0);
     eval_comb(&mut dut);
 
     assert_eq!(
@@ -375,28 +467,43 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
     set_master_request(&mut dut, 0, 0x5000_0010, 0xAAAA_1111, 0, 0b10, 1);
     eval_comb(&mut dut);
     assert_eq!(
-        dut.master0_mem_a_ready, 1,
-        "master0 mapped request should be accepted"
+        dut.master0_mem_a_ready, 0,
+        "master0 mapped request should wait for selection"
     );
-    clock_cycle!(dut);
 
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.master0_mem_a_ready, 1,
+        "master0 mapped request should be selected"
+    );
+
+    clock_cycle!(dut);
     set_master_request(&mut dut, 0, 0, 0, 0, 0, 0);
-    eval_comb(&mut dut);
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.slave0_mem_a_valid, 1,
+        "slave0 should see the mapped request after decode"
+    );
+
     clock_cycle!(dut);
 
     set_master_request(&mut dut, 1, 0x4000_0000, 0xBBBB_2222, 1, 0b10, 1);
     eval_comb(&mut dut);
     assert_eq!(
+        dut.master1_mem_a_ready, 0,
+        "master1 unmapped request should wait for the selection stage"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
         dut.master1_mem_a_ready, 1,
         "master1 unmapped request should be accepted while slave0 response is pending"
     );
-    clock_cycle!(dut);
 
+    clock_cycle!(dut);
     set_master_request(&mut dut, 1, 0, 0, 0, 0, 0);
     set_slave_response(&mut dut, 0, 0x1234_5678, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
-    eval_comb(&mut dut);
 
     assert_eq!(
         dut.master1_mem_d_valid, 1,
@@ -410,9 +517,12 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
         dut.master0_mem_d_valid, 0,
         "slave0 response must not overwrite the unmapped response"
     );
+    assert_eq!(
+        dut.slave0_mem_d_ready, 0,
+        "slave0 response should remain pending while the unmapped response is active"
+    );
 
     set_master_d_ready(&mut dut, 1, 1);
-    eval_comb(&mut dut);
     clock_cycle!(dut);
     set_master_d_ready(&mut dut, 1, 0);
     eval_comb(&mut dut);
@@ -428,7 +538,6 @@ fn test_registered_bus_unmapped_and_slave_response_same_cycle_do_not_interfere()
 
     clock_cycle!(dut);
     clear_slave_responses(&mut dut);
-    eval_comb(&mut dut);
 
     assert_eq!(
         dut.master0_mem_d_valid, 1,
