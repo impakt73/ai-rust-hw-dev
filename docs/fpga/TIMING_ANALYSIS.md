@@ -7,41 +7,6 @@
 
 ---
 
-## Fresh-Build Confirmation
-
-This report is based on a fresh local rebuild of the iCE40 target using the
-required stats flow:
-
-```bash
-cd rtl/fpga
-make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
-```
-
-For this run, `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt` was **not**
-generated, so the analysis below uses the **final routed timing section** near the
-end of `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log` as the authoritative timing
-source.
-
----
-
-## Authoritative Artifacts Used
-
-Fresh artifacts for this analysis:
-
-- `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log` — authoritative routed timing
-  details and post-route resource summary
-- `rtl/fpga/build/ice40_alchitry_cu/yosys.log` — synthesis cell counts
-- `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.json` — normalized summary
-  cross-check
-- `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.md` — normalized markdown
-  cross-check
-
-The top synchronous-path ranking in this document comes from the final routed
-reports in `nextpnr.log:261-368`, not from earlier placement summaries or from
-older markdown reports.
-
----
-
 ## Executive Summary
 
 The fresh `ice40_alchitry_cu` build still closes timing comfortably at the
@@ -98,13 +63,48 @@ The most important conclusion from the fresh routed dump is:
 
 ---
 
+## Fresh-Build Confirmation
+
+This report is based on a fresh local rebuild of the iCE40 target using the
+required stats flow:
+
+```bash
+cd rtl/fpga
+make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
+```
+
+For this run, `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_timing.rpt` was **not**
+generated, so the analysis below uses the **final routed timing section** near the
+end of `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log` as the authoritative timing
+source.
+
+---
+
+## Authoritative Artifacts Used
+
+Fresh artifacts for this analysis:
+
+- `rtl/fpga/build/ice40_alchitry_cu/nextpnr.log` — authoritative routed timing
+  details and post-route resource summary
+- `rtl/fpga/build/ice40_alchitry_cu/yosys.log` — synthesis cell counts
+- `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.json` — normalized summary
+  cross-check
+- `rtl/fpga/build/ice40_alchitry_cu/riscv_fpga_stats.md` — normalized markdown
+  cross-check
+
+The top synchronous-path ranking in this document comes from the **final routed
+timing section** in `nextpnr.log`, not from earlier placement summaries or from
+older markdown reports.
+
+---
+
 ## Cross-Check Note: Normalized Stats vs. Raw Routed Log
 
 The normalized stats artifact and the final routed log do **not** agree on the
 headline `pll_clk_global` frequency for this build:
 
 - `riscv_fpga_stats.json` reports **75.69 MHz**
-- the final routed timing summary in `nextpnr.log:363` reports **74.64 MHz**
+- the final routed timing summary in `nextpnr.log` reports **74.64 MHz**
 
 That **1.05 MHz mismatch** means the normalized stats flow captured an earlier
 clock summary from `nextpnr.log`, not the final routed one. For that reason:
@@ -210,8 +210,9 @@ host_read_first_beat[DFF]
 ### Actionable Optimization Suggestions
 
 1. **Split `host_curr_addr` control into explicit local enables.**  
-   In `rtl/common/io/host_bus_interface.sv:333-419`, predecode separate signals
-   such as `host_curr_addr_load`, `host_curr_addr_inc_read`,
+   In the `HOST_IDLE`, `HOST_WRITE_D`, and `HOST_READ_TX` control points
+   (`rtl/common/io/host_bus_interface.sv:342-343,373-375,416-417`), predecode
+   separate signals such as `host_curr_addr_load`, `host_curr_addr_inc_read`,
    `host_curr_addr_inc_write`, and a final short `host_curr_addr_en`. That
    reduces reconvergence at the destination clock enable.
 
