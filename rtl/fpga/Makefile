@@ -276,7 +276,7 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
-	@echo "  - nextpnr    : Place and route"
+	@echo "  - nextpnr    : Place and route (must support --report)"
 	@echo "  - icestorm   : Bitstream generation tools"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 endif

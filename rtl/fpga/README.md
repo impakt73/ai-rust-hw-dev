@@ -126,6 +126,11 @@ python3 fpga_design_stats.py --target ice40_alchitry_cu --format json
 The script rejects `--build-dir` together with `--build` because the build flow
 always writes to the target's standard `build/<target>/` output directory.
 
+For the open-source iCE40 and ECP5 targets, the build now requires a `nextpnr`
+version that supports `--report`, because the routed flow writes
+`build/<target>/riscv_fpga_timing.rpt` as the authoritative multi-path timing
+report.
+
 ### Timing / Utilization Sources Used by the Stats Workflow
 
 - **`ice40_alchitry_cu`**
