@@ -136,6 +136,7 @@ ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
+TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
@@ -154,7 +155,14 @@ NEXTPNR = nextpnr-ecp5
 endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
+HAS_NEXTPNR := $(shell command -v $(NEXTPNR) >/dev/null 2>&1 && echo 1 || echo 0)
+ifeq ($(HAS_NEXTPNR),1)
 HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc" && echo 1 || echo 0)
+HAS_NEXTPNR_REPORT := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--report" && echo 1 || echo 0)
+else
+HAS_NEXTPNR_SDC := 0
+HAS_NEXTPNR_REPORT := 0
+endif
 endif
 
 # Default target
@@ -179,13 +187,23 @@ $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
 # Place and Route with nextpnr
 $(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
-	bash -e -o pipefail -c 'if [ "$(HAS_NEXTPNR_SDC)" = "1" ]; then \
+	bash -e -o pipefail -c 'if [ "$(HAS_NEXTPNR)" != "1" ]; then \
+			echo "ERROR: $(NEXTPNR) not found. Run '\''make check-tools'\'' to verify the FPGA toolchain."; \
+			exit 1; \
+		fi; \
+		if [ "$(HAS_NEXTPNR_SDC)" = "1" ]; then \
 			sdc_arg="--sdc $(abspath $(SDC_CONSTRAINT))"; \
 		else \
 			echo "INFO: $(NEXTPNR) does not support --sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
 			sdc_arg=""; \
 		fi; \
-		$(PNR_CMD) $${sdc_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+		if [ "$(HAS_NEXTPNR_REPORT)" = "1" ]; then \
+			report_arg="--report $(abspath $(TIMING))"; \
+		else \
+			echo "INFO: $(NEXTPNR) does not support --report; timing details will remain in $(BUILD_DIR)/nextpnr.log."; \
+			report_arg=""; \
+		fi; \
+		$(PNR_CMD) $${sdc_arg} $${report_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
@@ -196,11 +214,21 @@ endif
 .PHONY: timing
 ifeq ($(TARGET),artix7_alchitry_au)
 timing: $(BIN)
-	@test -f $(TIMING) || (echo "ERROR: Expected timing report at $(TIMING)"; exit 1)
-	@echo "Timing report written to $(TIMING)"
+	@if test -f $(TIMING); then \
+		echo "Timing report written to $(TIMING)"; \
+	elif test -f $(TIMING_SUMMARY); then \
+		echo "Timing summary available at $(TIMING_SUMMARY)"; \
+	else \
+		echo "ERROR: Expected timing report at $(TIMING) or summary at $(TIMING_SUMMARY)"; \
+		exit 1; \
+	fi
 else
 timing: $(PNR_OUT)
-	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
+	@if test -f $(TIMING); then \
+		echo "Timing report written to $(TIMING)"; \
+	else \
+		echo "Timing details available in $(BUILD_DIR)/nextpnr.log"; \
+	fi
 endif
 
 # Resource utilization report
@@ -253,7 +281,7 @@ endif
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  timing       - Generate timing report (written to $(TIMING))"
 else
-	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
+	@echo "  timing       - Show $(TIMING) when available, otherwise fall back to $(BUILD_DIR)/nextpnr.log"
 endif
 	@echo "  utilization  - Show resource utilization"
 	@echo "  stats        - Build and print standardized timing/utilization stats"

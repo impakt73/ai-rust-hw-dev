@@ -27,7 +27,8 @@ phys_opt_design
 write_checkpoint -force riscv_fpga_placed.dcp
 route_design
 
-report_timing_summary -file riscv_fpga_timing.rpt
+report_timing -max_paths 10 -file riscv_fpga_timing.rpt
+report_timing_summary -file riscv_fpga_timing_summary.rpt
 report_utilization -file riscv_fpga_utilization.rpt
 write_checkpoint -force riscv_fpga_routed.dcp
 write_bitstream -force riscv_fpga.bit

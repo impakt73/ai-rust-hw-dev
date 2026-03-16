@@ -58,17 +58,18 @@ Generated artifacts:
 ## Authoritative Sources Per Target
 
 - **`ice40_alchitry_cu`**
-  - Routed Fmax: `build/ice40_alchitry_cu/nextpnr.log`
+  - Routed timing report: prefer `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`; fall back to `build/ice40_alchitry_cu/nextpnr.log`
   - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
   - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
 
 - **`ecp5_icepi_zero`**
-  - Routed Fmax: `build/ecp5_icepi_zero/nextpnr.log`
+  - Routed timing report: prefer `build/ecp5_icepi_zero/riscv_fpga_timing.rpt`; fall back to `build/ecp5_icepi_zero/nextpnr.log`
   - Resource utilization: `build/ecp5_icepi_zero/nextpnr.log`
   - Synthesis cell counts: `build/ecp5_icepi_zero/yosys.log`
 
 - **`artix7_alchitry_au`**
-  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Routed timing report: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing_summary.rpt`
   - Utilization report: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
 
 ## Agent Guidance
