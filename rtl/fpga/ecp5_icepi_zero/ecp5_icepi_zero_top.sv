@@ -41,7 +41,7 @@ module ecp5_icepi_zero_top #(
     );
 
     logic [7:0] sys_led_out;
-    logic fpga_common_rst;
+    logic fpga_common_rst = 1'b1;
 
     always_ff @(posedge sys_clk) begin
         fpga_common_rst <= ~rst_n_btn_debounced;

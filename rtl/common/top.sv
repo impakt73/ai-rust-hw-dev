@@ -64,22 +64,22 @@ module top #(
     // Reset Controller
     // ============================================================
     logic rst_internal;
-    logic rst_bus_parent;
-    logic rst_core_parent;
-    logic rst_peripheral_parent;
-    logic rst_control_parent;
-    logic rst_output_parent;
-    logic rst_host_bus_mux;
-    logic rst_registered_bus;
-    logic rst_host_bus_if;
-    logic rst_cpu_leaf;
-    logic rst_led_ctrl;
-    logic rst_clock_periph;
-    logic rst_sram_periph;
-    logic rst_sysctrl;
-    logic rst_sys_led;
-    logic rst_output_leaf;
-    logic sysctrl_cpu_rst_leaf;
+    logic rst_bus_parent = 1'b1;
+    logic rst_core_parent = 1'b1;
+    logic rst_peripheral_parent = 1'b1;
+    logic rst_control_parent = 1'b1;
+    logic rst_output_parent = 1'b1;
+    logic rst_host_bus_mux = 1'b1;
+    logic rst_registered_bus = 1'b1;
+    logic rst_host_bus_if = 1'b1;
+    logic rst_cpu_leaf = 1'b1;
+    logic rst_led_ctrl = 1'b1;
+    logic rst_clock_periph = 1'b1;
+    logic rst_sram_periph = 1'b1;
+    logic rst_sysctrl = 1'b1;
+    logic rst_sys_led = 1'b1;
+    logic rst_output_leaf = 1'b1;
+    logic sysctrl_cpu_rst_leaf = 1'b0;
 
     reset_controller #(
         .RESET_CYCLES(RESET_CYCLES)

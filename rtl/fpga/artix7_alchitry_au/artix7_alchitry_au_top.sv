@@ -84,7 +84,7 @@ module artix7_alchitry_au_top #(
     );
 
     logic pll_locked_sync2;
-    logic fpga_common_rst;
+    logic fpga_common_rst = 1'b1;
     ff_sync #(
         .WIDTH(1)
     ) pll_locked_sync_inst (

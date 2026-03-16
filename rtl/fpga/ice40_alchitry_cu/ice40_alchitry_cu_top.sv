@@ -110,7 +110,7 @@ module ice40_alchitry_cu_top #(
     
     // System LED output (from system controller)
     logic [7:0]  sys_led_out;
-    logic fpga_common_rst;
+    logic fpga_common_rst = 1'b1;
     logic rst_core;
 
     always_ff @(posedge sys_clk) begin
