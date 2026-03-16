@@ -136,6 +136,7 @@ ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
+TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 
 # Tools
@@ -155,6 +156,7 @@ endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
 HAS_NEXTPNR_SDC := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--sdc" && echo 1 || echo 0)
+HAS_NEXTPNR_REPORT := $(shell $(NEXTPNR) --help 2>/dev/null | grep -q -- "--report" && echo 1 || echo 0)
 endif
 
 # Default target
@@ -185,7 +187,13 @@ $(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
 			echo "INFO: $(NEXTPNR) does not support --sdc; keeping $(SDC_CONSTRAINT) as timing-intent input only."; \
 			sdc_arg=""; \
 		fi; \
-		$(PNR_CMD) $${sdc_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+		if [ "$(HAS_NEXTPNR_REPORT)" = "1" ]; then \
+			report_arg="--report $(abspath $(TIMING))"; \
+		else \
+			echo "ERROR: $(NEXTPNR) does not support --report, which is required to generate $(TIMING)."; \
+			exit 1; \
+		fi; \
+		$(PNR_CMD) $${sdc_arg} $${report_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
@@ -200,7 +208,8 @@ timing: $(BIN)
 	@echo "Timing report written to $(TIMING)"
 else
 timing: $(PNR_OUT)
-	@echo "Timing information available in $(BUILD_DIR)/nextpnr.log"
+	@test -f $(TIMING) || (echo "ERROR: Expected timing report at $(TIMING)"; exit 1)
+	@echo "Timing report written to $(TIMING)"
 endif
 
 # Resource utilization report
@@ -253,7 +262,7 @@ endif
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  timing       - Generate timing report (written to $(TIMING))"
 else
-	@echo "  timing       - Show timing information from $(BUILD_DIR)/nextpnr.log"
+	@echo "  timing       - Generate detailed timing report (written to $(TIMING))"
 endif
 	@echo "  utilization  - Show resource utilization"
 	@echo "  stats        - Build and print standardized timing/utilization stats"

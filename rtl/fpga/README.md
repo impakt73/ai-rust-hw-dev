@@ -129,17 +129,18 @@ always writes to the target's standard `build/<target>/` output directory.
 ### Timing / Utilization Sources Used by the Stats Workflow
 
 - **`ice40_alchitry_cu`**
-  - Routed Fmax: `build/ice40_alchitry_cu/nextpnr.log`
+  - Routed timing report: `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`
   - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
   - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
 
 - **`ecp5_icepi_zero`**
-  - Routed Fmax: `build/ecp5_icepi_zero/nextpnr.log`
+  - Routed timing report: `build/ecp5_icepi_zero/riscv_fpga_timing.rpt`
   - Resource utilization: `build/ecp5_icepi_zero/nextpnr.log`
   - Synthesis cell counts: `build/ecp5_icepi_zero/yosys.log`
 
 - **`artix7_alchitry_au`**
-  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Routed timing report: `build/artix7_alchitry_au/riscv_fpga_timing.rpt`
+  - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing_summary.rpt`
   - Utilization report: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
 
 ### Program FPGA (Requires Hardware)

@@ -24,19 +24,19 @@ TARGET_CONFIGS = {
     "ice40_alchitry_cu": {
         "target_frequency_mhz": 25.0,
         "preferred_clock_patterns": ["pll_clk_global", "pll_clk", "clk"],
-        "timing_sources": ["nextpnr.log"],
+        "timing_sources": ["riscv_fpga_timing.rpt", "nextpnr.log"],
         "resource_sources": ["nextpnr.log", "yosys.log"],
     },
     "ecp5_icepi_zero": {
         "target_frequency_mhz": 50.0,
         "preferred_clock_patterns": ["clk", "sys_clk"],
-        "timing_sources": ["nextpnr.log"],
+        "timing_sources": ["riscv_fpga_timing.rpt", "nextpnr.log"],
         "resource_sources": ["nextpnr.log", "yosys.log"],
     },
     "artix7_alchitry_au": {
         "target_frequency_mhz": 100.0,
         "preferred_clock_patterns": ["clk_100mhz", "clk"],
-        "timing_sources": ["riscv_fpga_timing.rpt"],
+        "timing_sources": ["riscv_fpga_timing.rpt", "riscv_fpga_timing_summary.rpt"],
         "resource_sources": ["riscv_fpga_utilization.rpt"],
     },
 }
@@ -130,7 +130,7 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def parse_nextpnr_clocks(text: str) -> List[Dict[str, Any]]:
+def parse_nextpnr_clocks(text: str, source_file: str) -> List[Dict[str, Any]]:
     matches: List[Dict[str, Any]] = []
     # Matches nextpnr timing summaries such as:
     # Max frequency for clock 'pll_clk_global': 64.69 MHz (PASS at 25.00 MHz)
@@ -144,15 +144,19 @@ def parse_nextpnr_clocks(text: str) -> List[Dict[str, Any]]:
                 "max_frequency_mhz": float(match.group(2)),
                 "status": match.group(3),
                 "target_frequency_mhz": float(match.group(4)),
-                "source_file": "nextpnr.log",
+                "source_file": source_file,
             }
         )
     return matches
 
 
 def parse_vivado_timing(
-    text: str, preferred_clock_patterns: List[str]
+    text: str, preferred_clock_patterns: List[str], source_file: str
 ) -> Optional[Dict[str, Any]]:
+    detailed_timing = parse_vivado_detailed_timing(text, source_file)
+    if detailed_timing is not None:
+        return detailed_timing
+
     wns = None
     lines = text.splitlines()
     for index, line in enumerate(lines):
@@ -201,7 +205,7 @@ def parse_vivado_timing(
                 "target_frequency_mhz": row["target_frequency_mhz"],
                 "period_ns": row["period_ns"],
                 "status": "UNKNOWN",
-                "source_file": "riscv_fpga_timing.rpt",
+                "source_file": source_file,
             }
             for row in clock_rows
         ],
@@ -221,7 +225,37 @@ def parse_vivado_timing(
         "target_frequency_mhz": selected_clock["target_frequency_mhz"],
         "status": "PASS" if wns >= 0 else "FAIL",
         "wns_ns": wns,
-        "source_file": "riscv_fpga_timing.rpt",
+        "source_file": source_file,
+    }
+
+
+def parse_vivado_detailed_timing(text: str, source_file: str) -> Optional[Dict[str, Any]]:
+    slack_match = re.search(
+        r"Slack \((?:MET|VIOLATED)\)\s*:\s*(-?[0-9.]+)ns", text
+    )
+    requirement_match = re.search(r"Requirement:\s*([0-9.]+)ns", text)
+    path_group_match = re.search(r"Path Group:\s*(.+)", text)
+
+    if (
+        slack_match is None
+        or requirement_match is None
+        or path_group_match is None
+    ):
+        return None
+
+    slack_ns = float(slack_match.group(1))
+    required_period_ns = float(requirement_match.group(1))
+    achieved_period_ns = required_period_ns - slack_ns
+    if achieved_period_ns <= 0:
+        return None
+
+    return {
+        "clock_name": path_group_match.group(1).strip(),
+        "max_frequency_mhz": 1000.0 / achieved_period_ns,
+        "target_frequency_mhz": 1000.0 / required_period_ns,
+        "status": "PASS" if slack_ns >= 0 else "FAIL",
+        "slack_ns": slack_ns,
+        "source_file": source_file,
     }
 
 
@@ -342,6 +376,7 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
     nextpnr_log = build_dir / "nextpnr.log"
     yosys_log = build_dir / "yosys.log"
     timing_report = build_dir / "riscv_fpga_timing.rpt"
+    timing_summary_report = build_dir / "riscv_fpga_timing_summary.rpt"
     utilization_report = build_dir / "riscv_fpga_utilization.rpt"
 
     timing = None
@@ -355,16 +390,32 @@ def collect_stats(target: str, build_dir: Path) -> Dict[str, Any]:
     if nextpnr_log.exists():
         nextpnr_text = load_text(nextpnr_log)
         timing = select_clock(
-            parse_nextpnr_clocks(nextpnr_text),
+            parse_nextpnr_clocks(nextpnr_text, nextpnr_log.name),
             config["preferred_clock_patterns"],
         )
         post_route_resources = parse_nextpnr_resources(nextpnr_text)
+
+    if target != "artix7_alchitry_au" and timing_report.exists():
+        timing_report_text = load_text(timing_report)
+        timing_from_report = select_clock(
+            parse_nextpnr_clocks(timing_report_text, timing_report.name),
+            config["preferred_clock_patterns"],
+        )
+        if timing_from_report is not None:
+            timing = timing_from_report
 
     if target == "artix7_alchitry_au":
         if timing_report.exists():
             vivado_timing_text = load_text(timing_report)
             timing = parse_vivado_timing(
-                vivado_timing_text, config["preferred_clock_patterns"]
+                vivado_timing_text, config["preferred_clock_patterns"], timing_report.name
+            )
+        elif timing_summary_report.exists():
+            vivado_timing_text = load_text(timing_summary_report)
+            timing = parse_vivado_timing(
+                vivado_timing_text,
+                config["preferred_clock_patterns"],
+                timing_summary_report.name,
             )
         if utilization_report.exists():
             post_route_resources = parse_vivado_resources(load_text(utilization_report))
