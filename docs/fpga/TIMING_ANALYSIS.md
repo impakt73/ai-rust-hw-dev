@@ -15,7 +15,7 @@ The fresh `ice40_alchitry_cu` build still closes timing comfortably at the
 
 - **Authoritative post-route Fmax used for this analysis:** **70.65 MHz**
 - **Timing status:** **PASS**
-- **Margin vs. 25.00 MHz target:** **+45.65 MHz** (**+182.6%**)
+- **Margin vs. 25.00 MHz target:** **+45.65 MHz** (**+182.6% above target**)
 - **Worst synchronous routed delay:** **14.2 ns** on `pll_clk_global`
 
 The most important conclusions from the fresh routed dump are:
