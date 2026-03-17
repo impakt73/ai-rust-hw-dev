@@ -356,7 +356,7 @@ If more iCE40 timing margin is needed later, the highest-value next steps are:
 
 ## Bottom Line
 
-The fresh iCE40 routed build still closes timing with almost **2.8x** system-clock
+The fresh iCE40 routed build still closes timing with approximately **2.8x** system-clock
 headroom relative to the 25 MHz target, but the highest-value optimization focus
 has changed.
 
