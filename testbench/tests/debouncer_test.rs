@@ -5,8 +5,9 @@ use riscv_core::{
 
 const WRAPPER_CLK_FREQ_HZ: u64 = 1_000_000;
 const WRAPPER_STABLE_TIME_US: u64 = 3;
-const WRAPPER_STABLE_CYCLES: usize =
-    ((WRAPPER_CLK_FREQ_HZ as u128) * (WRAPPER_STABLE_TIME_US as u128)).div_ceil(1_000_000u128) as usize;
+const WRAPPER_STABLE_CYCLES: usize = ((WRAPPER_CLK_FREQ_HZ as u128)
+    * (WRAPPER_STABLE_TIME_US as u128))
+    .div_ceil(1_000_000u128) as usize;
 const EXPECTED_TRANSITION_DELAY_CYCLES: usize = WRAPPER_STABLE_CYCLES - 1;
 
 fn clock_cycle(dut: &mut DebouncerWrapper) {
