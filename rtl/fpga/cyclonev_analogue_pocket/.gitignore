@@ -1,0 +1,14 @@
+/build/
+/db/
+/incremental_db/
+/output_files/
+/*.bak
+/*.done
+/*.jdi
+/*.pof
+/*.qws
+/*.rbf
+/*.rpt
+/*.smsg
+/*.sof
+/*.summary
