@@ -220,6 +220,12 @@ pub struct SquareWaveGeneratorWrapper;
 pub struct DebouncerWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/debouncer_single_cycle_wrapper.sv",
+    name = "debouncer_single_cycle_wrapper"
+)]
+pub struct DebouncerSingleCycleWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/video_sync_test_wrappers.sv",
     name = "video_sync_wrapper"
 )]
@@ -541,6 +547,14 @@ pub fn create_square_wave_generator_runtime() -> Result<VerilatorRuntime, Box<dy
 
 pub fn create_debouncer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["primitives/debouncer.sv", "wrappers/debouncer_wrapper.sv"])
+}
+
+pub fn create_debouncer_single_cycle_runtime(
+) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/debouncer.sv",
+        "wrappers/debouncer_single_cycle_wrapper.sv",
+    ])
 }
 
 pub fn create_video_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {

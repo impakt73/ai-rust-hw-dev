@@ -30,7 +30,6 @@ module debouncer #(
     // $clog2(1) is 0, but the counter still needs a representable storage bit
     // for the single-cycle debounce case.
     localparam int unsigned COUNTER_WIDTH = (STABLE_CYCLES <= 1) ? 1 : $clog2(STABLE_CYCLES);
-    localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_MAX = COUNTER_WIDTH'(STABLE_CYCLES - 1);
     localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_PRE_MAX =
         (STABLE_CYCLES <= 1) ? '0 : COUNTER_WIDTH'(STABLE_CYCLES - 2);
     localparam bit SINGLE_STABLE_CYCLE = (STABLE_CYCLES == 1);
