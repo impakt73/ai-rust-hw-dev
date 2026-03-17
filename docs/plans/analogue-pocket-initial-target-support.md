@@ -16,7 +16,7 @@ The implementation should follow two simultaneous constraints:
    - the template's `apf_top.v` remains the platform-facing top,
    - and the template's `core_top` becomes the integration seam where repository RTL is instantiated.
 
-For the **initial vertical slice**, the UART path from the repository's existing FPGA common module should **not** be implemented on Pocket. The UART-facing signals should instead be left unconnected externally or driven with explicit no-op values at the repository/Pocket integration boundary.
+For the **initial vertical slice**, the UART path from the repository's existing FPGA common module should **not** be implemented on Pocket. The UART-facing signals should instead be driven with explicit no-op values at the repository/Pocket integration boundary.
 
 ---
 
@@ -50,7 +50,7 @@ The first Pocket implementation should **not** attempt to solve the full platfor
 4. Implementing full audio/video output from the RISC-V system.
 5. Integrating Pocket controller input into CPU software.
 6. Extending CI to build Quartus/openFPGA outputs.
-7. Normalizing Quartus timing/resource reports in `fpga_design_stats.py`.
+7. Normalizing Quartus timing/resource reports in `rtl/fpga/fpga_design_stats.py`.
 
 ---
 
@@ -146,7 +146,7 @@ The initial Pocket architecture should have three clear layers:
 
 2. **Pocket user-core integration layer**
    - `src/fpga/core/core_top.sv`
-   - remains the module instantiated by `apf_top.v`
+   - continues to be the module instantiated by `apf_top.v` after conversion to SystemVerilog
    - owns only Pocket-to-repository adaptation
 
 3. **Repository RTL wrapper layer**
@@ -159,7 +159,7 @@ This matches the openFPGA template's expectations and keeps repository-specific 
 
 ### 6.2 Why `core_top.sv` Is the Right Integration Seam
 
-The official template already treats `core_top` as the user-owned core entry point. Converting it to SystemVerilog and instantiating a repository-specific wrapper from there is the most natural way to integrate this repository because it:
+The official template already treats `core_top` as the user-owned core entry point. Converting it to SystemVerilog and instantiating a repository-specific wrapper from there is the most natural way to integrate the repository RTL because it:
 
 - preserves the template's `apf_top.v` ownership model,
 - keeps APF-specific code and repository-specific code separated,
@@ -277,7 +277,7 @@ The Pocket target should follow the existing Artix-7 precedent more closely than
 
 ### 9.2 Quartus Driver Script
 
-Add a checked-in batch script, e.g.:
+Add a checked-in Tcl batch script, e.g.:
 
 - `rtl/fpga/cyclonev_analogue_pocket/quartus_build.tcl`
 
@@ -375,7 +375,7 @@ The largest deferred question is how the current repository host-bus/UART model 
 
 ### 12.2 Clocking Details
 
-The final Pocket wrapper must confirm which APF/platform clock should drive the repository system and whether a Pocket-specific PLL configuration is required.
+The initial bring-up implementation must confirm which APF/platform clock should drive the repository system and whether a Pocket-specific PLL configuration is required. Even if the first version uses a simple direct clocking choice, that decision needs to be explicit during initial integration rather than deferred implicitly.
 
 ### 12.3 Reset Ownership
 
