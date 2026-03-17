@@ -194,6 +194,8 @@ module host_bus_interface (
     assign host_next_addr_advance = host_next_addr + host_stride_ext;
     assign tx_issue_ready        = !tx_slice_valid && tx_pkt_ready;
     assign tx_output_handshake   = tx_pkt_valid && tx_pkt_ready;
+    // Stage only host-generated responses while stalled. CPU requests must wait for
+    // downstream readiness so a later host response cannot be queued behind them.
     assign tx_stage_capture      = !tx_slice_valid && tx_issue_valid && !tx_pkt_ready && !tx_issue_req;
     assign tx_pkt_valid          = tx_slice_valid || tx_issue_valid;
     assign tx_pkt_start          = tx_slice_valid ? tx_slice_start : tx_issue_start;

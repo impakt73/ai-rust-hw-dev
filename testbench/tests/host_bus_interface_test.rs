@@ -5,6 +5,7 @@ use riscv_core::{create_host_bus_interface_runtime, HostBusInterface};
 
 const MAX_RESPONSE_WAIT_CYCLES: usize = 10;
 const MAX_COLLECTION_CYCLES: usize = 2000;
+const MAX_TARGETED_TEST_CYCLES: usize = 500;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -288,7 +289,7 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
     let mut tx_packet = Vec::new();
     let mut pending_write_response = false;
 
-    for _ in 0..500 {
+    for _ in 0..MAX_TARGETED_TEST_CYCLES {
         dut.host_mem_a_ready = 0;
         dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
         dut.host_mem_d_rdata = 0;
@@ -498,7 +499,7 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
     let mut cpu_request_issued = false;
     let mut clear_cpu_request = false;
 
-    for _ in 0..500 {
+    for _ in 0..MAX_TARGETED_TEST_CYCLES {
         dut.host_mem_a_ready = 0;
         dut.host_mem_d_valid = 0;
         dut.host_mem_d_rdata = 0;
@@ -571,7 +572,7 @@ fn test_host_halfword_write_response_preserves_metadata() {
     let mut tx_packet = Vec::new();
     let mut pending_write_response = false;
 
-    for _ in 0..500 {
+    for _ in 0..MAX_TARGETED_TEST_CYCLES {
         dut.host_mem_a_ready = 0;
         dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
         dut.host_mem_d_rdata = 0;
