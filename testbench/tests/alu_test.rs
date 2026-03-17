@@ -286,6 +286,7 @@ fn test_alu_compare_ops() {
             "SLT failed: {} < {} should be {}",
             a, b, expected
         );
+        assert_eq!(dut.out_data >> 1, 0, "SLT upper bits should remain zero");
     }
 
     // Test SLTU (Set Less Than Unsigned)
@@ -303,6 +304,7 @@ fn test_alu_compare_ops() {
             "SLTU failed: {} < {} should be {}",
             a, b, expected
         );
+        assert_eq!(dut.out_data >> 1, 0, "SLTU upper bits should remain zero");
     }
 }
 
