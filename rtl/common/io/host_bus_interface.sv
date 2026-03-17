@@ -388,7 +388,7 @@ module host_bus_interface (
             end
 
             // CPU response captured from RX
-            if (accept_cpu_resp && rx_pkt_ready) begin
+            if (accept_cpu_resp) begin
                 cpu_wait_resp <= 1'b0;
                 cpu_resp_data  <= rx_pkt_data;
                 cpu_resp_valid <= 1'b1;
@@ -396,7 +396,7 @@ module host_bus_interface (
 
             case (host_state)
                 HOST_IDLE: begin
-                    if (accept_host_req_start && rx_pkt_ready) begin
+                    if (accept_host_req_start) begin
                         host_req_we           <= rx_pkt_we;
                         host_req_size         <= rx_pkt_size;
                         host_req_src_fixed    <= rx_pkt_src_fixed;
@@ -445,7 +445,7 @@ module host_bus_interface (
                 end
 
                 HOST_WRITE_WAIT: begin
-                    if (accept_host_write_payload && rx_pkt_ready) begin
+                    if (accept_host_write_payload) begin
                         host_write_data <= rx_pkt_data;
                         host_state <= HOST_WRITE_A;
                     end
