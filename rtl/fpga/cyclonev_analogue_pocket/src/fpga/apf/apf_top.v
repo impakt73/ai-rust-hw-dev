@@ -92,7 +92,7 @@ module apf_top (
     output wire         aux_scl
 );
     reg [24:0] count;
-    reg reset_n;
+    wire reset_n;
 
     wire [23:0] video_rgb;
     wire        video_rgb_clock;
@@ -154,17 +154,13 @@ module apf_top (
     assign scal_auddac = audio_dac;
     assign scal_audlrck = audio_lrck;
 
-    initial begin
-        count = 25'd0;
-        reset_n = 1'b0;
-    end
-
     always @(posedge clk_74a) begin
-        count <= count + 1'b1;
-        if (count[15]) begin
-            reset_n <= 1'b1;
+        if (!count[15]) begin
+            count <= count + 1'b1;
         end
     end
+
+    assign reset_n = count[15];
 
     core_top ic (
         .clk_74a(clk_74a),

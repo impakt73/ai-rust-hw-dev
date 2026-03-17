@@ -14,7 +14,7 @@ module analogue_pocket_repo_top #(
     output logic            cpu_booting,
     output logic [31:0]     halted_value
 );
-    logic rst = 1'b1;
+    logic rst;
     logic [7:0] host_tx_data_unused;
     logic       host_tx_valid_unused;
     logic       host_rx_ready_unused;
@@ -28,7 +28,11 @@ module analogue_pocket_repo_top #(
     logic [3:0]  debug_fsm_state_unused;
 
     always_ff @(posedge clk) begin
-        rst <= ~reset_n;
+        if (!reset_n) begin
+            rst <= 1'b1;
+        end else begin
+            rst <= 1'b0;
+        end
     end
 
     top #(
