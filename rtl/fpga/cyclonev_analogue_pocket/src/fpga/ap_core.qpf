@@ -1,0 +1,8 @@
+# -------------------------------------------------------------------------- #
+# Quartus Prime project file for the Analogue Pocket bring-up target.
+# -------------------------------------------------------------------------- #
+
+QUARTUS_VERSION = "18.1"
+DATE = "00:00:00  March 17, 2026"
+
+PROJECT_REVISION = "ap_core"

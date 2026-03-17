@@ -106,6 +106,18 @@ OPENFPGALOADER_BOARD = alchitry_au
 OUTPUT_EXT = bit
 endif
 
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+PART = 5CEBA4F23C8
+FPGA_DIR = cyclonev_analogue_pocket
+TOP_MODULE = apf_top
+DEFAULT_PROGRAM_MODE = package
+POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
+QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
+QUARTUS_SH = quartus_sh
+PROGRAM_CMD = echo "ERROR: Pocket programming/package deployment is not automated yet" && exit 1
+OUTPUT_EXT = sof
+endif
+
 PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
 
 ifdef OPENFPGALOADER_BOARD
@@ -121,17 +133,36 @@ PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROG
 endif
 
 ifndef FPGA_DIR
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, or TARGET=artix7_alchitry_au)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, or TARGET=cyclonev_analogue_pocket)
 endif
 
 BUILD_DIR := build/$(TARGET)
 NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+FPGA_SOURCES = \
+	$(FPGA_DIR)/src/fpga/apf/apf_top.v \
+	$(FPGA_DIR)/src/fpga/apf/common.v \
+	$(FPGA_DIR)/src/fpga/apf/io_bridge_peripheral.v \
+	$(FPGA_DIR)/src/fpga/apf/io_pad_controller.v \
+	$(FPGA_DIR)/src/fpga/core/core_bridge_cmd.v \
+	$(FPGA_DIR)/src/fpga/core/core_top.sv \
+	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
+else
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
 	$(FPGA_DIR)/$(TOP_MODULE).sv
+endif
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
+POCKET_PROJECT_FILES = \
+	$(FPGA_DIR)/src/fpga/ap_core.qpf \
+	$(FPGA_DIR)/src/fpga/ap_core.qsf \
+	$(FPGA_DIR)/src/fpga/apf/apf.qip \
+	$(FPGA_DIR)/src/fpga/apf/apf_constraints.sdc \
+	$(FPGA_DIR)/src/fpga/apf/build_id_gen.tcl \
+	$(FPGA_DIR)/src/fpga/core/core_constraints.sdc \
+	$(QUARTUS_TCL)
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -182,6 +213,11 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		-source $(abspath $(VIVADO_TCL)) -tclargs \
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
+	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
+		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
@@ -222,6 +258,13 @@ timing: $(BIN)
 		echo "ERROR: Expected timing report at $(TIMING) or summary at $(TIMING_SUMMARY)"; \
 		exit 1; \
 	fi
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+timing: $(BIN)
+	@if test -f $(TIMING); then \
+		echo "Timing report written to $(TIMING)"; \
+	else \
+		echo "Timing details remain in $(BUILD_DIR)/output_files/"; \
+	fi
 else
 timing: $(PNR_OUT)
 	@if test -f $(TIMING); then \
@@ -237,6 +280,13 @@ ifeq ($(TARGET),artix7_alchitry_au)
 utilization: $(BIN)
 	@test -f $(UTILIZATION) || (echo "ERROR: Expected utilization report at $(UTILIZATION)"; exit 1)
 	@cat $(UTILIZATION)
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+utilization: $(BIN)
+	@if test -f $(UTILIZATION); then \
+		cat $(UTILIZATION); \
+	else \
+		echo "Quartus utilization details remain in $(BUILD_DIR)/output_files/"; \
+	fi
 else
 utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
@@ -250,7 +300,12 @@ check-python:
 
 .PHONY: stats
 stats: check-python
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "ERROR: standardized FPGA stats are not implemented yet for TARGET=$(TARGET)"
+	@exit 1
+else
 	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
+endif
 
 
 # Program FPGA
@@ -273,6 +328,8 @@ help:
 	@echo "  all          - Synthesize and generate bitstream (default)"
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  $(BIN)       - Run the Vivado batch flow and generate the bitstream"
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  $(BIN)       - Run the Quartus batch flow and emit the Pocket bring-up image"
 else
 	@echo "  $(NETLIST)   - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
@@ -280,11 +337,17 @@ else
 endif
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  timing       - Generate timing report (written to $(TIMING))"
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  timing       - Show $(TIMING) when copied from Quartus output_files"
 else
 	@echo "  timing       - Show $(TIMING) when available, otherwise fall back to $(BUILD_DIR)/nextpnr.log"
 endif
 	@echo "  utilization  - Show resource utilization"
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  stats        - Not supported yet for this Quartus target"
+else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
+endif
 	@echo "  program      - Program FPGA with bitstream"
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Show this help message"
@@ -293,6 +356,8 @@ endif
 ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - vivado     : Xilinx Vivado batch/CLI tools"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
@@ -304,6 +369,7 @@ endif
 	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
+	@echo "  - make TARGET=cyclonev_analogue_pocket  (Analogue Pocket Cyclone V bring-up)"
 	@echo ""
 	@echo "Stats output format:"
 	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
@@ -312,11 +378,15 @@ endif
 	@echo ""
 	@echo "Programming selection:"
 	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  - Pocket packaging/programming is not automated yet"
+else
 ifneq ($(DEFAULT_PROGRAM_MODE),sram)
 	@echo "  - make program PROGRAM_MODE=sram"
 endif
 ifneq ($(DEFAULT_PROGRAM_MODE),flash)
 	@echo "  - make program PROGRAM_MODE=flash"
+endif
 endif
 
 .PHONY: check-tools
@@ -325,6 +395,8 @@ check-tools: check-python
 ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(VIVADO) > /dev/null || (echo "ERROR: $(VIVADO) not found"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
+else ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)

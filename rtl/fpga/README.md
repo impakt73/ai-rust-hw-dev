@@ -6,6 +6,7 @@ Currently supported targets:
 - **`TARGET=ice40_alchitry_cu`** (default): Alchitry Cu v1 (iCE40-HX8K-CB132)
 - **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
 - **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T-FTG256-1)
+- **`TARGET=cyclonev_analogue_pocket`**: Analogue Pocket bring-up target (Cyclone V 5CEBA4F23C8)
 
 ## Status: ✅ Successfully Synthesized
 
@@ -87,6 +88,10 @@ make TARGET=ecp5_icepi_zero
 # Run full synthesis flow for Artix-7 Alchitry Au
 # (requires Xilinx Vivado in PATH; the proprietary flow is driven by TCL)
 make TARGET=artix7_alchitry_au
+
+# Run the Quartus batch flow for the Analogue Pocket bring-up target
+# (requires Intel Quartus tools in PATH; outputs stay under build/cyclonev_analogue_pocket/)
+make TARGET=cyclonev_analogue_pocket
 
 # This generates:
 # - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
@@ -175,6 +180,7 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 - **`ecp5_icepi_zero/timing_async.sdc`**: ECP5 asynchronous external I/O timing exceptions
 - **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
 - **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
+- **`cyclonev_analogue_pocket/`**: openFPGA-style Analogue Pocket target scaffold and Quartus collateral
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -201,6 +207,8 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 ## Artix-7 (Alchitry Au) Toolchain Notes
 
 The Artix-7 target now uses the proprietary Vivado CLI flow in batch mode. The flow is encapsulated in `artix7_alchitry_au/vivado_build.tcl`, which reads all RTL/XDC inputs, runs synthesis/place/route, and emits the bitstream plus reports into `build/artix7_alchitry_au/`.
+
+The Analogue Pocket target follows the same repository-native `rtl/fpga/<target>/` pattern, but uses a Quartus batch Tcl flow rooted in `cyclonev_analogue_pocket/quartus_build.tcl`. The initial Pocket target intentionally stubs the repository UART/host path, so it is currently limited to SRAM/peripheral-oriented bring-up rather than full host-backed runtime parity.
 
 The Yosys-based targets keep board pin constraints in PCF/LPF files and store asynchronous external-I/O timing exceptions in target-specific `.sdc` files. The Makefile now feeds those SDC files into the nextpnr phase when the installed nextpnr build supports `--sdc`; otherwise the files remain checked-in timing-intent artifacts alongside the existing open-source flow.
 

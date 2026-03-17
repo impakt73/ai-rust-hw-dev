@@ -1,0 +1,4 @@
+AI Rust HW Dev - Analogue Pocket Bring-Up
+
+Initial openFPGA-style target scaffold for bringing up the repository RTL on Analogue Pocket.
+This build is intentionally limited to SRAM/peripheral-only bring-up until a Pocket-native host transport is added.
