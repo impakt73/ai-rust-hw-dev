@@ -208,8 +208,8 @@ module alu #(
         case (req_op_reg)
             ALU_ADD:  arith_result = req_a_reg + req_b_reg;
             ALU_SUB:  arith_result = req_a_reg - req_b_reg;
-            ALU_SLT:  arith_result[0] = minmax_signed_lt;
-            ALU_SLTU: arith_result[0] = minmax_unsigned_lt;
+            ALU_SLT:  arith_result = {31'd0, minmax_signed_lt};
+            ALU_SLTU: arith_result = {31'd0, minmax_unsigned_lt};
             default:  arith_result = 32'd0;
         endcase
     end
