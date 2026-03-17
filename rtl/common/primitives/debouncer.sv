@@ -36,7 +36,7 @@ module debouncer #(
     localparam bit SINGLE_STABLE_CYCLE = (STABLE_CYCLES == 1);
 
     logic [COUNTER_WIDTH-1:0] stable_counter;
-    logic stable_counter_next_is_max;
+    logic stable_counter_is_max;
 
     // Parameter validation (simulation only)
     initial begin
@@ -54,19 +54,19 @@ module debouncer #(
     always_ff @(posedge clk) begin
         if (rst) begin
             stable_counter <= '0;
-            stable_counter_next_is_max <= 1'b0;
+            stable_counter_is_max <= 1'b0;
             dout <= 1'b0;
         end else begin
             if (din == dout) begin
                 stable_counter <= '0;
-                stable_counter_next_is_max <= 1'b0;
-            end else if (SINGLE_STABLE_CYCLE || stable_counter_next_is_max) begin
+                stable_counter_is_max <= 1'b0;
+            end else if (SINGLE_STABLE_CYCLE || stable_counter_is_max) begin
                 stable_counter <= '0;
-                stable_counter_next_is_max <= 1'b0;
+                stable_counter_is_max <= 1'b0;
                 dout <= din;
             end else begin
                 stable_counter <= stable_counter + 1'b1;
-                stable_counter_next_is_max <= (stable_counter == STABLE_COUNT_PRE_MAX);
+                stable_counter_is_max <= (stable_counter == STABLE_COUNT_PRE_MAX);
             end
         end
     end
