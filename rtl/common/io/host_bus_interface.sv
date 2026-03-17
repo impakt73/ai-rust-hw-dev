@@ -166,8 +166,8 @@ module host_bus_interface (
     logic [2:0]  rx_pkt_stride;
     logic [31:0] host_stride_ext;
     logic [31:0] host_next_addr_advance;
-    logic tx_issue_handshake;
     logic tx_output_handshake;
+    logic tx_stage_capture;
 
     assign host_in_idle       = (host_state == HOST_IDLE);
     assign host_in_write_a    = (host_state == HOST_WRITE_A);
@@ -193,19 +193,19 @@ module host_bus_interface (
     assign host_stride_ext       = {{29{1'b0}}, host_stride};
     assign host_next_addr_advance = host_next_addr + host_stride_ext;
     assign tx_issue_ready        = !tx_slice_valid && tx_pkt_ready;
-    assign tx_issue_handshake    = tx_issue_valid && tx_issue_ready;
     assign tx_output_handshake   = tx_pkt_valid && tx_pkt_ready;
-    assign tx_pkt_valid          = tx_slice_valid;
+    assign tx_stage_capture      = !tx_slice_valid && tx_issue_valid && !tx_pkt_ready && !tx_issue_req;
+    assign tx_pkt_valid          = tx_slice_valid || tx_issue_valid;
     assign tx_pkt_start          = tx_slice_valid ? tx_slice_start : tx_issue_start;
-    assign tx_pkt_last           = tx_slice_last;
-    assign tx_pkt_req            = tx_slice_req;
-    assign tx_pkt_we             = tx_slice_we;
-    assign tx_pkt_size           = tx_slice_size;
-    assign tx_pkt_src_fixed      = tx_slice_src_fixed;
-    assign tx_pkt_dst_fixed      = tx_slice_dst_fixed;
-    assign tx_pkt_burst_len_m1   = tx_slice_burst_len_m1;
-    assign tx_pkt_base_addr      = tx_slice_base_addr;
-    assign tx_pkt_data           = tx_slice_data;
+    assign tx_pkt_last           = tx_slice_valid ? tx_slice_last : tx_issue_last;
+    assign tx_pkt_req            = tx_slice_valid ? tx_slice_req : tx_issue_req;
+    assign tx_pkt_we             = tx_slice_valid ? tx_slice_we : tx_issue_we;
+    assign tx_pkt_size           = tx_slice_valid ? tx_slice_size : tx_issue_size;
+    assign tx_pkt_src_fixed      = tx_slice_valid ? tx_slice_src_fixed : tx_issue_src_fixed;
+    assign tx_pkt_dst_fixed      = tx_slice_valid ? tx_slice_dst_fixed : tx_issue_dst_fixed;
+    assign tx_pkt_burst_len_m1   = tx_slice_valid ? tx_slice_burst_len_m1 : tx_issue_burst_len_m1;
+    assign tx_pkt_base_addr      = tx_slice_valid ? tx_slice_base_addr : tx_issue_base_addr;
+    assign tx_pkt_data           = tx_slice_valid ? tx_slice_data : tx_issue_data;
 
     // ============================================================
     // RX/TX submodules
@@ -349,7 +349,11 @@ module host_bus_interface (
             host_read_first_beat <= 1'b0;
             host_addr_fixed      <= 1'b0;
         end else begin
-            if (tx_issue_handshake) begin
+            if (tx_slice_valid && tx_pkt_ready) begin
+                tx_slice_valid <= 1'b0;
+            end
+
+            if (tx_stage_capture) begin
                 tx_slice_valid          <= 1'b1;
                 tx_slice_start          <= tx_issue_start;
                 tx_slice_last           <= tx_issue_last;
@@ -361,8 +365,6 @@ module host_bus_interface (
                 tx_slice_burst_len_m1   <= tx_issue_burst_len_m1;
                 tx_slice_base_addr      <= tx_issue_base_addr;
                 tx_slice_data           <= tx_issue_data;
-            end else if (tx_output_handshake) begin
-                tx_slice_valid <= 1'b0;
             end
 
             // Capture CPU request (single outstanding)

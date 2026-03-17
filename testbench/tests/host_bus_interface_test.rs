@@ -554,6 +554,67 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
 }
 
 #[test]
+fn test_host_halfword_write_response_preserves_metadata() {
+    let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
+    let mut dut = runtime
+        .create_model_simple::<HostBusInterface>()
+        .expect("Failed to create model");
+
+    reset_module(&mut dut);
+
+    // Host -> FPGA single-beat halfword write request.
+    send_rx_packet(
+        &mut dut,
+        &[0x24, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x70, 0x34, 0x12],
+    );
+
+    let mut tx_packet = Vec::new();
+    let mut pending_write_response = false;
+
+    for _ in 0..500 {
+        dut.host_mem_a_ready = 0;
+        dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
+        dut.host_mem_d_rdata = 0;
+        dut.tx_ready = 0;
+        dut.eval();
+
+        if dut.host_mem_a_valid != 0 {
+            assert_eq!(dut.host_mem_a_addr, 0x7000_0004);
+            assert_eq!(dut.host_mem_a_we, 1);
+            assert_eq!(dut.host_mem_a_size, 0b01);
+            assert_eq!(dut.host_mem_a_wdata, 0x0000_1234);
+            dut.host_mem_a_ready = 1;
+            pending_write_response = true;
+        }
+
+        dut.host_mem_d_valid = if pending_write_response { 1 } else { 0 };
+        dut.host_mem_d_rdata = 0;
+        dut.eval();
+
+        if dut.tx_valid != 0 {
+            dut.tx_ready = 1;
+            dut.eval();
+            tx_packet.push(dut.tx_data);
+        }
+
+        let d_handshake = pending_write_response && dut.host_mem_d_ready != 0;
+        clock_cycle!(dut);
+        if d_handshake {
+            pending_write_response = false;
+        }
+
+        if tx_packet.len() == 8 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        tx_packet,
+        vec![0x34, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x70]
+    );
+}
+
+#[test]
 fn test_stalled_tx_keeps_multi_beat_host_response_ahead_of_cpu_request() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
     let mut dut = runtime
