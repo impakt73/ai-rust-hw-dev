@@ -137,7 +137,6 @@ module host_bus_interface (
     logic [2:0]  host_stride;
     logic [16:0] host_beats_remaining;
     logic [31:0] host_write_data;
-    logic [31:0] host_read_data;
     logic        host_read_first_beat;
     logic        host_addr_fixed;
 
@@ -303,16 +302,6 @@ module host_bus_interface (
             tx_issue_dst_fixed    = host_req_dst_fixed;
             tx_issue_burst_len_m1 = host_req_burst_len_m1;
             tx_issue_base_addr    = host_req_base_addr;
-        end else if (host_in_read_tx) begin
-            tx_issue_valid        = 1'b1;
-            tx_issue_start        = host_read_first_beat;
-            tx_issue_last         = host_last_beat;
-            tx_issue_size         = host_req_size;
-            tx_issue_src_fixed    = host_req_src_fixed;
-            tx_issue_dst_fixed    = host_req_dst_fixed;
-            tx_issue_burst_len_m1 = host_req_burst_len_m1;
-            tx_issue_base_addr    = host_req_base_addr;
-            tx_issue_data         = host_read_data;
         end else if (cpu_req_pending) begin
             tx_issue_valid        = 1'b1;
             tx_issue_start        = 1'b1;
@@ -467,7 +456,17 @@ module host_bus_interface (
 
                 HOST_READ_D: begin
                     if (host_d_handshake) begin
-                        host_read_data <= host_mem_d_rdata;
+                        tx_slice_valid        <= 1'b1;
+                        tx_slice_start        <= host_read_first_beat;
+                        tx_slice_last         <= host_last_beat;
+                        tx_slice_req          <= 1'b0;
+                        tx_slice_we           <= 1'b0;
+                        tx_slice_size         <= host_req_size;
+                        tx_slice_src_fixed    <= host_req_src_fixed;
+                        tx_slice_dst_fixed    <= host_req_dst_fixed;
+                        tx_slice_burst_len_m1 <= host_req_burst_len_m1;
+                        tx_slice_base_addr    <= host_req_base_addr;
+                        tx_slice_data         <= host_mem_d_rdata;
                         host_state <= HOST_READ_TX;
                     end
                 end
