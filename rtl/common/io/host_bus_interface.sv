@@ -76,7 +76,6 @@ module host_bus_interface (
     logic [31:0] tx_pkt_data;
 
     logic        tx_issue_valid;
-    logic        tx_issue_ready;
     logic        tx_issue_start;
     logic        tx_issue_last;
     logic        tx_issue_req;
@@ -192,7 +191,6 @@ module host_bus_interface (
                            (rx_pkt_size == 2'b01) ? 3'd2 : 3'd4;
     assign host_stride_ext       = {{29{1'b0}}, host_stride};
     assign host_next_addr_advance = host_next_addr + host_stride_ext;
-    assign tx_issue_ready        = !tx_slice_valid && tx_pkt_ready;
     assign tx_output_handshake   = tx_pkt_valid && tx_pkt_ready;
     // Stage only host-generated responses while stalled. CPU requests must wait for
     // downstream readiness so a later host response cannot be queued behind them.

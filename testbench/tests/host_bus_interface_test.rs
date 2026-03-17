@@ -555,7 +555,7 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
 }
 
 #[test]
-fn test_host_halfword_write_response_preserves_metadata() {
+fn test_halfword_write_preserves_metadata() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
     let mut dut = runtime
         .create_model_simple::<HostBusInterface>()
