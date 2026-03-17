@@ -266,6 +266,8 @@ module host_bus_interface (
     // RX packet consumption
     // ============================================================
     always_comb begin
+        // `accept_*` predicates are the only conditions that raise rx_pkt_ready, so the
+        // sequential control below can key off those predicates directly.
         rx_pkt_ready = 1'b0;
 
         if (accept_cpu_resp) begin
