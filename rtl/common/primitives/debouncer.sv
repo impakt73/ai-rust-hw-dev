@@ -30,9 +30,12 @@ module debouncer #(
     // $clog2(1) is 0, but the counter still needs a representable storage bit
     // for the single-cycle debounce case.
     localparam int unsigned COUNTER_WIDTH = (STABLE_CYCLES <= 1) ? 1 : $clog2(STABLE_CYCLES);
-    localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_MAX = COUNTER_WIDTH'(STABLE_CYCLES - 1);
+    localparam logic [COUNTER_WIDTH-1:0] STABLE_COUNT_PRE_MAX =
+        (STABLE_CYCLES <= 1) ? '0 : COUNTER_WIDTH'(STABLE_CYCLES - 2);
+    localparam bit SINGLE_STABLE_CYCLE = (STABLE_CYCLES == 1);
 
     logic [COUNTER_WIDTH-1:0] stable_counter;
+    logic stable_counter_is_max;
 
     // Parameter validation (simulation only)
     initial begin
@@ -50,15 +53,19 @@ module debouncer #(
     always_ff @(posedge clk) begin
         if (rst) begin
             stable_counter <= '0;
+            stable_counter_is_max <= 1'b0;
             dout <= 1'b0;
         end else begin
             if (din == dout) begin
                 stable_counter <= '0;
-            end else if (stable_counter == STABLE_COUNT_MAX) begin
+                stable_counter_is_max <= 1'b0;
+            end else if (SINGLE_STABLE_CYCLE || stable_counter_is_max) begin
                 stable_counter <= '0;
+                stable_counter_is_max <= 1'b0;
                 dout <= din;
             end else begin
                 stable_counter <= stable_counter + 1'b1;
+                stable_counter_is_max <= (stable_counter == STABLE_COUNT_PRE_MAX);
             end
         end
     end
