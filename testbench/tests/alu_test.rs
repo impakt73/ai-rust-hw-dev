@@ -390,18 +390,40 @@ fn test_alu_minmax_result_is_registered() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MIN result should still be pending while the selected operand is staged"
+        "MIN should spend the third cycle selecting the comparison mode"
     );
     assert_eq!(
         dut.in_ready, 0,
-        "ALU should remain busy until the MIN select stage completes"
+        "ALU should remain busy until the MIN comparison selection stage completes"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.out_valid, 0,
+        "MIN result should still be pending while the selected operands are staged"
+    );
+    assert_eq!(
+        dut.in_ready, 0,
+        "ALU should remain busy until the MIN operand result stage completes"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.out_valid, 0,
+        "MIN result should still be pending while the min/max candidates are registered"
+    );
+    assert_eq!(
+        dut.in_ready, 0,
+        "ALU should remain busy until the MIN output selection stage completes"
     );
 
     clock_cycle!(dut);
     dut.eval();
     assert_eq!(
         dut.out_valid, 1,
-        "MIN should be valid after the compare and select stages complete"
+        "MIN should be valid after all four registered min/max stages complete"
     );
     assert_eq!(
         dut.out_data, 0xFFFF_FFFBu32,
@@ -443,14 +465,28 @@ fn test_alu_minmax_result_is_registered() {
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "MAXU result should still be pending while the selected operand is staged"
+        "MAXU should spend the third cycle selecting the comparison mode"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.out_valid, 0,
+        "MAXU result should still be pending while the selected operands are staged"
+    );
+
+    clock_cycle!(dut);
+    dut.eval();
+    assert_eq!(
+        dut.out_valid, 0,
+        "MAXU result should still be pending while the min/max candidates are registered"
     );
 
     clock_cycle!(dut);
     dut.eval();
     assert_eq!(
         dut.out_valid, 1,
-        "MAXU should be valid after the compare and select stages complete"
+        "MAXU should be valid after all four registered min/max stages complete"
     );
     assert_eq!(dut.out_data, 10u32, "MAXU should select the larger operand");
 }

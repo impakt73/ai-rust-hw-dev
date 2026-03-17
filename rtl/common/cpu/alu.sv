@@ -125,15 +125,20 @@ module alu #(
     logic [31:0] arith_result;
     logic [31:0] bitwise_result;
     logic [31:0] shift_result;
-    logic [31:0] minmax_result;
     logic [31:0] muldiv_result;
     logic        launch_is_arith_op;
     logic        launch_is_bitwise_op;
     logic        launch_is_shift_op;
     logic        launch_is_minmax_op;
-    logic        minmax_compare_lt;
-    logic        minmax_compare_lt_reg;
-    logic        minmax_compare_done_reg;
+    logic        minmax_signed_lt;
+    logic        minmax_unsigned_lt;
+    logic        minmax_signed_lt_reg;
+    logic        minmax_unsigned_lt_reg;
+    logic        minmax_use_signed_compare_reg;
+    logic        minmax_is_min_op_reg;
+    logic        minmax_less_than_reg;
+    logic [31:0] minmax_min_result_reg;
+    logic [31:0] minmax_max_result_reg;
     logic        pending_operation_reg;
     logic [31:0] req_a_reg;
     logic [31:0] req_b_reg;
@@ -145,6 +150,19 @@ module alu #(
     logic        req_is_mul_reg;
     logic        req_is_div_reg;
     logic [31:0] result_next;
+    // minmax_state_reg is reset to MINMAX_STAGE_IDLE and acts as the
+    // validity/control guard for the min/max pipeline. The datapath payload
+    // registers (minmax_signed_lt_reg/minmax_unsigned_lt_reg/
+    // minmax_less_than_reg/minmax_min_result_reg/minmax_max_result_reg)
+    // intentionally stay off the reset fanout per project reset guidelines.
+    typedef enum logic [2:0] {
+        MINMAX_STAGE_IDLE            = 3'd0,
+        MINMAX_STAGE_COMPARE_CAPTURE = 3'd1,
+        MINMAX_STAGE_COMPARE_SELECT  = 3'd2,
+        MINMAX_STAGE_RESULT_CAPTURE  = 3'd3,
+        MINMAX_STAGE_OUTPUT_SELECT   = 3'd4
+    } minmax_state_t;
+    minmax_state_t minmax_state_reg;
 
     assign launch_is_arith_op = (alu_op == ALU_ADD)  ||
                                 (alu_op == ALU_SUB)  ||
@@ -176,10 +194,8 @@ module alu #(
                                (alu_op == ALU_REM)  ||
                                (alu_op == ALU_REMU));
 
-    // Signed MIN/MAX use signed compare; MINU/MAXU use plain unsigned compare.
-    assign minmax_compare_lt = ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MAX)) ?
-                               ($signed(req_a_reg) < $signed(req_b_reg)) :
-                               (req_a_reg < req_b_reg);
+    assign minmax_signed_lt = $signed(req_a_reg) < $signed(req_b_reg);
+    assign minmax_unsigned_lt = req_a_reg < req_b_reg;
 
     // Backpressure new requests while the ALU holds a latched request that has not
     // yet produced a registered response.
@@ -221,13 +237,6 @@ module alu #(
     end
 
     always_comb begin
-        if ((req_op_reg == ALU_MIN) || (req_op_reg == ALU_MINU))
-            minmax_result = minmax_compare_lt_reg ? req_a_reg : req_b_reg;
-        else
-            minmax_result = minmax_compare_lt_reg ? req_b_reg : req_a_reg;
-    end
-
-    always_comb begin
         if (!ENABLE_M_EXT) begin
             muldiv_result = 32'd0;
         end else if (req_is_mul_reg) begin
@@ -251,7 +260,7 @@ module alu #(
         end else if (req_is_mul_reg || req_is_div_reg) begin
             result_next = muldiv_result;
         end else if (req_is_minmax_reg) begin
-            result_next = minmax_result;
+            result_next = 32'd0;
         end
     end
 
@@ -267,8 +276,9 @@ module alu #(
             req_is_minmax_reg     <= 1'b0;
             req_is_mul_reg        <= 1'b0;
             req_is_div_reg        <= 1'b0;
-            minmax_compare_lt_reg <= 1'b0;
-            minmax_compare_done_reg <= 1'b0;
+            minmax_use_signed_compare_reg <= 1'b0;
+            minmax_is_min_op_reg  <= 1'b0;
+            minmax_state_reg      <= MINMAX_STAGE_IDLE;
             div_is_signed         <= 1'b0;
             div_rem_sel           <= 1'b0;
             mul_op_type           <= 2'b00;
@@ -285,7 +295,7 @@ module alu #(
                 req_is_minmax_reg     <= launch_is_minmax_op;
                 req_is_mul_reg        <= launch_is_mul_op;
                 req_is_div_reg        <= launch_is_div_op;
-                minmax_compare_done_reg <= 1'b0;
+                minmax_state_reg      <= launch_is_minmax_op ? MINMAX_STAGE_COMPARE_CAPTURE : MINMAX_STAGE_IDLE;
                 out_valid             <= 1'b0;
                 case (alu_op)
                     ALU_DIV: begin
@@ -318,13 +328,37 @@ module alu #(
                     default:    mul_op_type <= 2'b00;
                 endcase
             end else if (pending_operation_reg) begin
-                if (req_is_minmax_reg && !minmax_compare_done_reg) begin
-                    minmax_compare_lt_reg   <= minmax_compare_lt;
-                    minmax_compare_done_reg <= 1'b1;
-                end else if (req_is_minmax_reg && minmax_compare_done_reg) begin
-                    pending_operation_reg <= 1'b0;
-                    out_data              <= result_next;
-                    out_valid             <= 1'b1;
+                if (req_is_minmax_reg) begin
+                    case (minmax_state_reg)
+                        MINMAX_STAGE_COMPARE_CAPTURE: begin
+                            minmax_signed_lt_reg          <= minmax_signed_lt;
+                            minmax_unsigned_lt_reg        <= minmax_unsigned_lt;
+                            minmax_use_signed_compare_reg <= (req_op_reg == ALU_MIN) || (req_op_reg == ALU_MAX);
+                            minmax_is_min_op_reg          <= (req_op_reg == ALU_MIN) || (req_op_reg == ALU_MINU);
+                            minmax_state_reg              <= MINMAX_STAGE_COMPARE_SELECT;
+                        end
+                        MINMAX_STAGE_COMPARE_SELECT: begin
+                            minmax_less_than_reg <= minmax_use_signed_compare_reg ?
+                                                   minmax_signed_lt_reg :
+                                                   minmax_unsigned_lt_reg;
+                            minmax_state_reg <= MINMAX_STAGE_RESULT_CAPTURE;
+                        end
+                        MINMAX_STAGE_RESULT_CAPTURE: begin
+                            minmax_min_result_reg <= minmax_less_than_reg ? req_a_reg : req_b_reg;
+                            minmax_max_result_reg <= minmax_less_than_reg ? req_b_reg : req_a_reg;
+                            minmax_state_reg      <= MINMAX_STAGE_OUTPUT_SELECT;
+                        end
+                        MINMAX_STAGE_OUTPUT_SELECT: begin
+                            pending_operation_reg <= 1'b0;
+                            out_data              <= minmax_is_min_op_reg ? minmax_min_result_reg : minmax_max_result_reg;
+                            out_valid             <= 1'b1;
+                            minmax_state_reg      <= MINMAX_STAGE_IDLE;
+                        end
+                        default: begin
+                            pending_operation_reg <= 1'b0;
+                            minmax_state_reg      <= MINMAX_STAGE_IDLE;
+                        end
+                    endcase
                 end else if ((req_is_mul_reg && mul_ready) || (req_is_div_reg && div_ready) ||
                              (!req_is_mul_reg && !req_is_div_reg && !req_is_minmax_reg)) begin
                     pending_operation_reg <= 1'b0;
