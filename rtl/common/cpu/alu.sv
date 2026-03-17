@@ -150,6 +150,11 @@ module alu #(
     logic        req_is_mul_reg;
     logic        req_is_div_reg;
     logic [31:0] result_next;
+    // minmax_state_reg is reset to MINMAX_STAGE_IDLE and acts as the
+    // validity/control guard for the min/max pipeline. The datapath payload
+    // registers (minmax_signed_lt_reg/minmax_unsigned_lt_reg/
+    // minmax_less_than_reg/minmax_min_result_reg/minmax_max_result_reg)
+    // intentionally stay off the reset fanout per project reset guidelines.
     typedef enum logic [2:0] {
         MINMAX_STAGE_IDLE            = 3'd0,
         MINMAX_STAGE_COMPARE_CAPTURE = 3'd1,
@@ -254,6 +259,8 @@ module alu #(
             result_next = bitwise_result;
         end else if (req_is_mul_reg || req_is_div_reg) begin
             result_next = muldiv_result;
+        end else if (req_is_minmax_reg) begin
+            result_next = 32'd0;
         end
     end
 
@@ -269,13 +276,8 @@ module alu #(
             req_is_minmax_reg     <= 1'b0;
             req_is_mul_reg        <= 1'b0;
             req_is_div_reg        <= 1'b0;
-            minmax_signed_lt_reg  <= 1'b0;
-            minmax_unsigned_lt_reg <= 1'b0;
             minmax_use_signed_compare_reg <= 1'b0;
             minmax_is_min_op_reg  <= 1'b0;
-            minmax_less_than_reg  <= 1'b0;
-            minmax_min_result_reg <= 32'd0;
-            minmax_max_result_reg <= 32'd0;
             minmax_state_reg      <= MINMAX_STAGE_IDLE;
             div_is_signed         <= 1'b0;
             div_rem_sel           <= 1'b0;
