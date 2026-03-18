@@ -13,5 +13,8 @@ set_false_path -from [get_ports rst_n_btn]
 # UART RX is asynchronous to sys_clk.
 set_false_path -from [get_ports usb_rx]
 
+# Reset bridges use async assertion, so cut timing into their synchronizer stages.
+set_false_path -to [get_cells -hier -filter {NAME =~ *reset_bridge*/reset_sync_regs*}]
+
 # These outputs are asynchronous off-chip endpoints with no synchronous capture clock.
 set_false_path -to [get_ports {usb_tx led[*]}]

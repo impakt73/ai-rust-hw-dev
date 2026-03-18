@@ -158,6 +158,18 @@ pub struct FfSyncDefaultWrapper;
 )]
 pub struct FfSyncParamWrapper;
 
+#[verilog(
+    src = "../rtl/common/wrappers/reset_bridge_default_wrapper.sv",
+    name = "reset_bridge_default_wrapper"
+)]
+pub struct ResetBridgeDefaultWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/reset_bridge_param_wrapper.sv",
+    name = "reset_bridge_param_wrapper"
+)]
+pub struct ResetBridgeParamWrapper;
+
 // Define Async FIFO wrapper modules for CDC FIFO tests
 #[verilog(
     src = "../rtl/common/wrappers/async_fifo_test_wrapper.sv",
@@ -473,6 +485,21 @@ pub fn create_ff_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::
 pub fn create_ff_sync_param_wrapper_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
 {
     create_runtime(&["primitives/ff_sync.sv", "wrappers/ff_sync_param_wrapper.sv"])
+}
+
+pub fn create_reset_bridge_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/reset_bridge.sv",
+        "wrappers/reset_bridge_default_wrapper.sv",
+    ])
+}
+
+pub fn create_reset_bridge_param_wrapper_runtime(
+) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/reset_bridge.sv",
+        "wrappers/reset_bridge_param_wrapper.sv",
+    ])
 }
 
 // Helper function to create a runtime for async FIFO wrapper (DEPTH=4, SYNC_STAGES=2)

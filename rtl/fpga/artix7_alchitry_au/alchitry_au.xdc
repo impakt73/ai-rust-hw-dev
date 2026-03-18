@@ -56,4 +56,6 @@ set_false_path -from [get_ports rst_n_btn]
 
 set_false_path -from [get_ports usb_rx]
 
+set_false_path -to [get_cells -hier -filter {NAME =~ *reset_bridge*/reset_sync_regs*}]
+
 set_false_path -to [get_ports {usb_tx led[*]}]
