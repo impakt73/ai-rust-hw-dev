@@ -34,14 +34,12 @@ set_global_assignment -name PROJECT_OUTPUT_DIRECTORY $output_dir
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:[file join $qsf_dir apf build_id_gen.tcl]"
 set_global_assignment -name SDC_FILE [file join $qsf_dir apf apf_constraints.sdc]
 set_global_assignment -name SDC_FILE [file join $qsf_dir core core_constraints.sdc]
+set_global_assignment -name GENERATE_RBF_FILE ON
+set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 
 foreach rtl_source $rtl_sources {
     set normalized_source [file normalize $rtl_source]
-    if {[string match "*.sv" $normalized_source]} {
-        set_global_assignment -name SYSTEMVERILOG_FILE $normalized_source
-    } else {
-        set_global_assignment -name VERILOG_FILE $normalized_source
-    }
+    set_global_assignment -name SYSTEMVERILOG_FILE $normalized_source
 }
 
 export_assignments

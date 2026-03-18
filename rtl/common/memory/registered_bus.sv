@@ -1,9 +1,7 @@
 `default_nettype none
 module registered_bus #(
     parameter int unsigned NUM_MASTERS = 1,
-    parameter int unsigned NUM_SLAVES = 2,
-    localparam int unsigned MASTER_IDX_W = (NUM_MASTERS <= 1) ? 1 : $clog2(NUM_MASTERS),
-    localparam int unsigned SLAVE_IDX_W = (NUM_SLAVES <= 1) ? 1 : $clog2(NUM_SLAVES)
+    parameter int unsigned NUM_SLAVES = 2
 ) (
     input wire logic                                 clk,
     input wire logic                                 rst,
@@ -40,6 +38,9 @@ module registered_bus #(
     input wire logic [NUM_SLAVES-1:0]                slave_mem_d_valid,
     output logic [NUM_SLAVES-1:0]                    slave_mem_d_ready
 );
+
+    localparam int unsigned MASTER_IDX_W = (NUM_MASTERS <= 1) ? 1 : $clog2(NUM_MASTERS);
+    localparam int unsigned SLAVE_IDX_W = (NUM_SLAVES <= 1) ? 1 : $clog2(NUM_SLAVES);
 
     logic [31:0]                                     master_mem_a_addr_int [NUM_MASTERS];
     logic [31:0]                                     master_mem_a_wdata_int [NUM_MASTERS];
@@ -100,22 +101,26 @@ module registered_bus #(
     logic                                            slave_req_output_active;
     logic                                            master_resp_output_active;
     logic [MASTER_IDX_W-1:0]                         selected_resp_master_idx;
+    genvar                                           master_idx;
+    genvar                                           slave_idx;
 
-    for (genvar master_idx = 0; master_idx < NUM_MASTERS; master_idx++) begin : gen_master_bus_vectors
-        assign master_mem_a_addr_int[master_idx] = master_mem_a_addr[(master_idx*32) +: 32];
-        assign master_mem_a_wdata_int[master_idx] = master_mem_a_wdata[(master_idx*32) +: 32];
-        assign master_mem_a_size_int[master_idx] = master_mem_a_size[(master_idx*2) +: 2];
-        assign master_mem_d_rdata[(master_idx*32) +: 32] = master_mem_d_rdata_int[master_idx];
-    end
+    generate
+        for (master_idx = 0; master_idx < NUM_MASTERS; master_idx = master_idx + 1) begin : gen_master_bus_vectors
+            assign master_mem_a_addr_int[master_idx] = master_mem_a_addr[(master_idx*32) +: 32];
+            assign master_mem_a_wdata_int[master_idx] = master_mem_a_wdata[(master_idx*32) +: 32];
+            assign master_mem_a_size_int[master_idx] = master_mem_a_size[(master_idx*2) +: 2];
+            assign master_mem_d_rdata[(master_idx*32) +: 32] = master_mem_d_rdata_int[master_idx];
+        end
 
-    for (genvar slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx++) begin : gen_slave_bus_vectors
-        assign slave_base_addr_int[slave_idx] = slave_base_addr[(slave_idx*32) +: 32];
-        assign slave_addr_size_int[slave_idx] = slave_addr_size[(slave_idx*32) +: 32];
-        assign slave_mem_a_addr[(slave_idx*32) +: 32] = slave_mem_a_addr_int[slave_idx];
-        assign slave_mem_a_wdata[(slave_idx*32) +: 32] = slave_mem_a_wdata_int[slave_idx];
-        assign slave_mem_a_size[(slave_idx*2) +: 2] = slave_mem_a_size_int[slave_idx];
-        assign slave_mem_d_rdata_int[slave_idx] = slave_mem_d_rdata[(slave_idx*32) +: 32];
-    end
+        for (slave_idx = 0; slave_idx < NUM_SLAVES; slave_idx = slave_idx + 1) begin : gen_slave_bus_vectors
+            assign slave_base_addr_int[slave_idx] = slave_base_addr[(slave_idx*32) +: 32];
+            assign slave_addr_size_int[slave_idx] = slave_addr_size[(slave_idx*32) +: 32];
+            assign slave_mem_a_addr[(slave_idx*32) +: 32] = slave_mem_a_addr_int[slave_idx];
+            assign slave_mem_a_wdata[(slave_idx*32) +: 32] = slave_mem_a_wdata_int[slave_idx];
+            assign slave_mem_a_size[(slave_idx*2) +: 2] = slave_mem_a_size_int[slave_idx];
+            assign slave_mem_d_rdata_int[slave_idx] = slave_mem_d_rdata[(slave_idx*32) +: 32];
+        end
+    endgenerate
 
     assign master_mem_d_valid = master_mem_d_valid_r;
     assign slave_mem_a_we = slave_mem_a_we_r;
