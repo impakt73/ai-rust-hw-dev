@@ -1,3 +1,3 @@
 [workspace]
-members = ["riscv_core", "testbench", "vcd-mcp", "sim-view", "riscv_shared", "sim-tests", "fpga-host", "device-runtime", "bus-shared"]
+members = ["riscv_core", "testbench", "vcd-mcp", "sim-view", "riscv_shared", "sim-tests", "fpga-host", "device-runtime", "bus-shared", "pkt"]
 resolver = "2"
