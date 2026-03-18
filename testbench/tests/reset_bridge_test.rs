@@ -95,7 +95,7 @@ fn test_reset_bridge_parameterized_release_delay() {
 
     for cycle_idx in 0..4 {
         clock_cycle!(dut);
-        let expected = u8::from(cycle_idx < 3);
+        let expected = if cycle_idx < 3 { 1 } else { 0 };
         assert_eq!(
             dut.rst, expected,
             "4-stage reset bridge should deassert only after 4 release cycles"
