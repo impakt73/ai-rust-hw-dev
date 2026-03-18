@@ -17,6 +17,14 @@ module reset_bridge #(
     output logic     rst
 );
 
+    localparam int EFFECTIVE_STAGES = (STAGES >= 1) ? STAGES : 1;
+
+    initial begin
+        if (STAGES < 1) begin
+            $fatal(1, "reset_bridge: STAGES must be >= 1, got %0d", STAGES);
+        end
+    end
+
     // Vivado
     (* IOB = "false" *)
     (* ASYNC_REG = "TRUE" *)
@@ -25,22 +33,22 @@ module reset_bridge #(
     (* useioff = 0 *)
     (* PRESERVE *)
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION \"FORCED IF ASYNCHRONOUS\"" *)
-    logic reset_bridge_sync_regs [0:STAGES-1] = '{default: 1'b1};
+    logic reset_bridge_sync_regs [0:EFFECTIVE_STAGES-1] = '{default: 1'b1};
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (int i = 0; i < STAGES; i++) begin
+            for (int i = 0; i < EFFECTIVE_STAGES; i++) begin
                 reset_bridge_sync_regs[i] <= 1'b1;
             end
         end else begin
             reset_bridge_sync_regs[0] <= 1'b0;
-            for (int i = 1; i < STAGES; i++) begin
+            for (int i = 1; i < EFFECTIVE_STAGES; i++) begin
                 reset_bridge_sync_regs[i] <= reset_bridge_sync_regs[i-1];
             end
         end
     end
 
-    assign rst = reset_bridge_sync_regs[STAGES-1];
+    assign rst = reset_bridge_sync_regs[EFFECTIVE_STAGES-1];
 
 endmodule
 `default_nettype wire
