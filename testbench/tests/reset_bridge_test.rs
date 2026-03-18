@@ -15,7 +15,7 @@ macro_rules! clock_cycle {
 }
 
 #[test]
-fn test_reset_bridge_powers_up_asserted_and_releases_after_two_cycles() {
+fn test_reset_bridge_powers_up_asserted_and_releases_after_three_cycles() {
     let runtime = create_reset_bridge_runtime().expect("Failed to create reset bridge runtime");
     let mut dut = runtime
         .create_model_simple::<ResetBridgeDefaultWrapper>()
@@ -32,7 +32,13 @@ fn test_reset_bridge_powers_up_asserted_and_releases_after_two_cycles() {
     );
 
     clock_cycle!(dut);
-    assert_eq!(dut.rst, 0, "reset should deassert after 2 release cycles");
+    assert_eq!(
+        dut.rst, 1,
+        "reset should remain asserted after 2 release cycles"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(dut.rst, 0, "reset should deassert after 3 release cycles");
 }
 
 #[test]
@@ -44,6 +50,7 @@ fn test_reset_bridge_asserts_immediately_and_releases_synchronously() {
 
     dut.rst_n = 1;
     dut.eval();
+    clock_cycle!(dut);
     clock_cycle!(dut);
     clock_cycle!(dut);
     assert_eq!(
@@ -69,6 +76,12 @@ fn test_reset_bridge_asserts_immediately_and_releases_synchronously() {
     assert_eq!(
         dut.rst, 1,
         "reset should remain asserted after 1 release cycle"
+    );
+
+    clock_cycle!(dut);
+    assert_eq!(
+        dut.rst, 1,
+        "reset should remain asserted after 2 release cycles"
     );
 
     clock_cycle!(dut);

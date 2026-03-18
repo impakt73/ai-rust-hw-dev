@@ -19,7 +19,7 @@ set_false_path -from [get_ports usb_rx]
 set_false_path -from [get_ports {io_button[*]}]
 
 # Reset bridges use async assertion, so cut timing into their synchronizer stages.
-set_false_path -to [get_cells -hier -filter {NAME =~ *reset_bridge*/reset_sync_regs*}]
+set_false_path -to [get_cells -hier -filter {NAME =~ *reset_bridge_sync_regs*}]
 
 # These outputs are asynchronous off-chip endpoints with no synchronous capture clock.
 set_false_path -to [get_ports {usb_tx led[*] io_led[*] io_sel[*] io_seg[*]}]
