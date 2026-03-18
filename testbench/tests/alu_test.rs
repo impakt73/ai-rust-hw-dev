@@ -28,6 +28,7 @@ const ALU_MIN: u32 = 0b10010;
 const ALU_MAX: u32 = 0b10011;
 const ALU_MINU: u32 = 0b10100;
 const ALU_MAXU: u32 = 0b10101;
+const ALU_REGISTER_PIPELINE_STAGES: usize = 4;
 
 // Clock cycle macro for ALU tests
 macro_rules! clock_cycle {
@@ -494,56 +495,130 @@ fn test_alu_minmax_result_is_registered() {
 }
 
 #[test]
-fn test_alu_single_cycle_result_is_registered() {
+fn test_alu_dsp_result_uses_four_stage_pipeline() {
     let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
-    dut.rst = 1;
-    dut.in_valid = 0;
-    clock_cycle!(dut);
+    for (a, b, alu_op, expected, label) in [
+        (5u32, 3u32, ALU_ADD as u8, 8u32, "ADD"),
+        (
+            0xA5A5_0FF0u32,
+            0x0FF0_F00Fu32,
+            ALU_XOR as u8,
+            0xAA55_FFFFu32,
+            "XOR",
+        ),
+    ] {
+        reset_alu(&mut dut);
+        dut.a = a;
+        dut.b = b;
+        dut.alu_op = alu_op;
+        dut.eval();
 
-    dut.rst = 0;
-    dut.a = 5;
-    dut.b = 3;
-    dut.alu_op = ALU_ADD as u8;
+        assert_eq!(dut.in_ready, 1, "{label} should be accepted immediately");
+        assert_eq!(
+            dut.out_valid, 0,
+            "{label} output must not be valid before the request"
+        );
+
+        dut.in_valid = 1;
+        dut.eval();
+        assert_eq!(
+            dut.out_valid, 0,
+            "{label} output must stay registered during the request cycle"
+        );
+
+        clock_cycle!(dut);
+
+        dut.in_valid = 0;
+        dut.eval();
+        for stage in 0..ALU_REGISTER_PIPELINE_STAGES {
+            assert_eq!(
+                dut.out_valid, 0,
+                "{label} result should remain pending through pipeline stage {stage}"
+            );
+            assert_eq!(
+                dut.in_ready, 0,
+                "{label} should hold off new requests while the pipeline is busy"
+            );
+            clock_cycle!(dut);
+            dut.eval();
+        }
+
+        assert_eq!(
+            dut.out_valid, 0,
+            "{label} result should still be pending while the registered output stage is selected"
+        );
+        clock_cycle!(dut);
+        dut.eval();
+
+        assert_eq!(
+            dut.out_valid, 1,
+            "{label} result should become valid after all four pipeline stages complete"
+        );
+        assert_eq!(
+            dut.out_data, expected,
+            "{label} result should be preserved through the DSP pipeline"
+        );
+        assert_eq!(
+            dut.in_ready, 1,
+            "{label} should release backpressure once the response is registered"
+        );
+    }
+}
+
+#[test]
+fn test_alu_shift_result_uses_four_stage_pipeline() {
+    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+
+    reset_alu(&mut dut);
+    dut.a = 0xF000_0000u32;
+    dut.b = 4u32;
+    dut.alu_op = ALU_SRA as u8;
     dut.eval();
 
-    assert_eq!(dut.in_ready, 1, "ADD should be accepted immediately");
-    assert_eq!(
-        dut.out_valid, 0,
-        "Output must not be valid before the request"
-    );
+    assert_eq!(dut.in_ready, 1, "SRA should be accepted immediately");
 
     dut.in_valid = 1;
     dut.eval();
     assert_eq!(
         dut.out_valid, 0,
-        "Output must stay registered during the request cycle"
+        "SRA output must stay registered during the request cycle"
     );
 
     clock_cycle!(dut);
 
     dut.in_valid = 0;
     dut.eval();
+    for stage in 0..ALU_REGISTER_PIPELINE_STAGES {
+        assert_eq!(
+            dut.out_valid, 0,
+            "SRA result should remain pending through pipeline stage {stage}"
+        );
+        assert_eq!(
+            dut.in_ready, 0,
+            "ALU should not accept a new request while the shift pipeline is busy"
+        );
+        clock_cycle!(dut);
+        dut.eval();
+    }
+
     assert_eq!(
         dut.out_valid, 0,
-        "ADD result should still be pending on the first cycle after the request edge"
+        "SRA result should still be pending while the registered output stage is selected"
     );
-    assert_eq!(
-        dut.in_ready, 0,
-        "ALU should not accept a new request while ADD is pending"
-    );
-
     clock_cycle!(dut);
     dut.eval();
+
     assert_eq!(
         dut.out_valid, 1,
-        "ADD result should become valid once the pending request reaches the response stage"
+        "SRA result should become valid after all four pipeline stages complete"
     );
     assert_eq!(
-        dut.out_data, 8,
-        "ADD result should be registered internally"
+        dut.out_data, 0xFF00_0000u32,
+        "SRA result should be preserved through the shift pipeline"
     );
 }
 
