@@ -156,7 +156,8 @@ Use the task tool with agent_type="rust-verification-architect" for test harness
 
 ## After Modifying RTL
 
-1. **Lint the RTL:** `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
-2. **Clean build:** `cargo clean` (Verilator cache may be stale)
-3. **Run tests:** `cargo test`
-4. **Verify all tests pass:** Look for `test result: ok` with all tests passed
+1. **Format modified RTL:** `verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv`
+2. **Lint the RTL:** `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
+3. **Clean build:** `cargo clean` (Verilator cache may be stale)
+4. **Run tests:** `cargo test`
+5. **Verify all tests pass:** Look for `test result: ok` with all tests passed

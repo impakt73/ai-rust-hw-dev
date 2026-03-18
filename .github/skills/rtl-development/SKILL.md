@@ -178,6 +178,16 @@ Every `.sv` file **must** begin with `` `default_nettype none `` and end with ``
 - The closing `` `default_nettype wire `` restores the default so the guard does not bleed into other files included after this one.
 - All project `.sv` files already carry these guards. Any new file added under `rtl/` must include them.
 
+### Formatting
+```bash
+# Format any modified Verilog/SystemVerilog files before linting or committing
+verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv
+```
+
+- Run Verible on every `.sv` file you modify during development.
+- Use the checked-in `.verible-verilog-format` file from the repository root so formatting stays consistent with existing RTL style.
+- Verible formatting is expected before Verilator linting, synthesis, or commit preparation.
+
 ### Linting
 ```bash
 # Lint SystemVerilog files before committing (RTL files are in subdirectories)

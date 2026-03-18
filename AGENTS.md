@@ -106,6 +106,21 @@ verilator --version  # Verify installation
 
 Without Verilator, all tests fail. This is the #1 cause of build failures.
 
+**⚠️ Verible MUST be installed before formatting RTL!**
+
+```bash
+VERIBLE_VERSION=v0.0-4053-g89d4d98a
+curl -L --fail \
+  -o /tmp/verible.tar.gz \
+  "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+sudo mkdir -p /opt/verible-${VERIBLE_VERSION}
+sudo tar -xzf /tmp/verible.tar.gz -C /opt/verible-${VERIBLE_VERSION} --strip-components=1
+sudo ln -sf /opt/verible-${VERIBLE_VERSION}/bin/verible-verilog-format /usr/local/bin/verible-verilog-format
+sudo ln -sf /opt/verible-${VERIBLE_VERSION}/bin/verible-verilog-lint /usr/local/bin/verible-verilog-lint
+verible-verilog-format --version  # Verify installation
+verible-verilog-lint --version    # Verify installation
+```
+
 **Rust Toolchain** (tested with 1.92.0+):
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -158,6 +173,7 @@ cargo build                            # Build only
 cargo fmt                              # Format Rust code (mandatory before commit)
 cargo clippy --fix --allow-dirty       # Auto-fix clippy warnings (run FIRST!)
 cargo clippy -- -D warnings            # Lint Rust code (mandatory before commit)
+verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv  # Format modified Verilog/SystemVerilog
 find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +  # Lint SystemVerilog
 cargo clean                            # Clear Verilator cache (after RTL changes)
 ```
@@ -181,16 +197,17 @@ Before marking PR ready for review:
 2. ✅ Code formatted: `cargo fmt -- --check`
 3. ✅ Clippy auto-fix run: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. ✅ No clippy warnings: `cargo clippy -- -D warnings` (rerun after auto-fix)
-5. ✅ SystemVerilog linted (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
-6. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd rtl/fpga && make)`
+5. ✅ Modified Verilog/SystemVerilog files formatted with Verible: `verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv`
+6. ✅ SystemVerilog linted (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
+7. ✅ FPGA synthesis verified (if SystemVerilog modified): `(cd rtl/fpga && make)`
 
 **rust-test-program Workspace:**
-7. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
-8. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
-9. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
+8. ✅ Code formatted: `(cd rust-test-program && cargo fmt -- --check)`
+9. ✅ Clippy auto-fix run: `(cd rust-test-program && cargo clippy --fix --allow-dirty)` (do this FIRST!)
+10. ✅ No clippy warnings: `(cd rust-test-program && cargo clippy -- -D warnings)` (rerun after auto-fix)
 
 **Additional Checks:**
-10. ✅ All CI checks pass on GitHub Actions
+11. ✅ All CI checks pass on GitHub Actions
 
 ### Security Scanning
 
