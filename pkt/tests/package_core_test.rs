@@ -79,6 +79,7 @@ fn test_package_core_creates_official_zip_layout() {
     let output_dir = temp_dir.path().join("out");
 
     write_file(&input_rbf, &[0x01, 0x80, 0x3c]);
+    fs::create_dir_all(&output_dir).expect("create output directory");
 
     let output_zip = package_core(&input_rbf, &core_source, &output_dir).expect("package core");
     assert_eq!(
@@ -87,7 +88,7 @@ fn test_package_core_creates_official_zip_layout() {
     );
 
     let mut archive = open_zip(&output_zip);
-    let mut names = (0..archive.len())
+    let mut zip_entry_names = (0..archive.len())
         .map(|index| {
             archive
                 .by_index(index)
@@ -96,26 +97,30 @@ fn test_package_core_creates_official_zip_layout() {
                 .to_string()
         })
         .collect::<Vec<_>>();
-    names.sort();
+    zip_entry_names.sort();
 
-    assert!(names.contains(&"Assets/".to_string()));
-    assert!(names.contains(&"Assets/pdp1/".to_string()));
-    assert!(names.contains(&"Assets/pdp1/common/".to_string()));
-    assert!(names.contains(&"Assets/pdp1/common/bios.bin".to_string()));
-    assert!(names.contains(&"Cores/".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/audio.json".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/core.json".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/info.txt".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/video.json".to_string()));
-    assert!(names.contains(&"Cores/Analogue.PDP-1/bitstream.rbf_r".to_string()));
-    assert!(names.contains(&"Platforms/".to_string()));
-    assert!(names.contains(&"Platforms/_images/".to_string()));
-    assert!(names.contains(&"Platforms/_images/pdp1.bin".to_string()));
-    assert!(names.contains(&"Platforms/pdp1.json".to_string()));
-    assert!(!names.iter().any(|name| name.ends_with("README.md")));
-    assert!(!names.iter().any(|name| name.ends_with("quartus_build.tcl")));
-    assert!(!names.iter().any(|name| name.contains("src/fpga")));
+    assert!(zip_entry_names.contains(&"Assets/".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/pdp1/".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/pdp1/common/".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/pdp1/common/bios.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/audio.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/core.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/info.txt".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/video.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/bitstream.rbf_r".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/_images/".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/_images/pdp1.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/pdp1.json".to_string()));
+    assert!(!zip_entry_names
+        .iter()
+        .any(|name| name.ends_with("README.md")));
+    assert!(!zip_entry_names
+        .iter()
+        .any(|name| name.ends_with("quartus_build.tcl")));
+    assert!(!zip_entry_names.iter().any(|name| name.contains("src/fpga")));
 
     let mut bitstream = archive
         .by_name("Cores/Analogue.PDP-1/bitstream.rbf_r")

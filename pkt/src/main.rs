@@ -12,7 +12,7 @@ struct Args {
     rbf: PathBuf,
     /// Path to the Analogue Pocket core source directory containing core.json and related files.
     core_source: PathBuf,
-    /// Output directory, or the exact official .zip file path to write.
+    /// Existing output directory, or the exact official .zip file path to write.
     output: PathBuf,
 }
 

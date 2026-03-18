@@ -15,7 +15,7 @@ const ROOT_STAGE_DIRECTORIES: &[&str] = &["Assets", "Platforms", "Presets"];
 const CORE_FILE_EXTENSIONS: &[&str] = &["bin", "json", "txt"];
 
 #[derive(Debug)]
-pub enum PacketError {
+pub enum PackageError {
     Io(io::Error),
     Json(serde_json::Error),
     WalkDir(walkdir::Error),
@@ -29,7 +29,7 @@ pub enum PacketError {
     UnexpectedOutputFilename { expected: String, actual: String },
 }
 
-impl Display for PacketError {
+impl Display for PackageError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => write!(f, "I/O error: {error}"),
@@ -66,27 +66,27 @@ impl Display for PacketError {
     }
 }
 
-impl std::error::Error for PacketError {}
+impl std::error::Error for PackageError {}
 
-impl From<io::Error> for PacketError {
+impl From<io::Error> for PackageError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
     }
 }
 
-impl From<serde_json::Error> for PacketError {
+impl From<serde_json::Error> for PackageError {
     fn from(value: serde_json::Error) -> Self {
         Self::Json(value)
     }
 }
 
-impl From<walkdir::Error> for PacketError {
+impl From<walkdir::Error> for PackageError {
     fn from(value: walkdir::Error) -> Self {
         Self::WalkDir(value)
     }
 }
 
-impl From<zip::result::ZipError> for PacketError {
+impl From<zip::result::ZipError> for PackageError {
     fn from(value: zip::result::ZipError) -> Self {
         Self::Zip(value)
     }
@@ -120,10 +120,10 @@ pub fn package_core(
     input_rbf: &Path,
     core_source: &Path,
     output_path: &Path,
-) -> Result<PathBuf, PacketError> {
+) -> Result<PathBuf, PackageError> {
     let core_definition_path = core_source.join("core.json");
     if !core_definition_path.is_file() {
-        return Err(PacketError::MissingCoreDefinition(core_definition_path));
+        return Err(PackageError::MissingCoreDefinition(core_definition_path));
     }
 
     let core_definition = read_core_definition(&core_definition_path)?;
@@ -144,29 +144,29 @@ pub fn package_core(
     }
 
     let bitstream_name = get_bitstream_filename(&core_definition.cores)?;
-    let staging_dir = tempfile::tempdir()?;
-    let staged_core_dir = staging_dir
+    let staging_temp_dir = tempfile::tempdir()?;
+    let staged_core_dir = staging_temp_dir
         .path()
         .join(CORE_ROOT_DIR)
         .join(&core_folder_name);
     fs::create_dir_all(&staged_core_dir)?;
 
     copy_core_files(core_source, &staged_core_dir)?;
-    copy_supported_root_directories(core_source, staging_dir.path())?;
+    copy_supported_root_directories(core_source, staging_temp_dir.path())?;
     reverse_bitstream(input_rbf, &staged_core_dir.join(bitstream_name))?;
-    write_zip(staging_dir, &output_zip_path)?;
+    write_zip(staging_temp_dir, &output_zip_path)?;
 
     Ok(output_zip_path)
 }
 
-fn read_core_definition(path: &Path) -> Result<CoreDefinition, PacketError> {
+fn read_core_definition(path: &Path) -> Result<CoreDefinition, PackageError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let definition = serde_json::from_reader::<_, CoreDefinitionFile>(reader)?;
     Ok(definition.core)
 }
 
-fn validate_metadata(metadata: &CoreMetadata) -> Result<(), PacketError> {
+fn validate_metadata(metadata: &CoreMetadata) -> Result<(), PackageError> {
     for (field, value) in [
         ("author", metadata.author.as_str()),
         ("shortname", metadata.shortname.as_str()),
@@ -174,7 +174,7 @@ fn validate_metadata(metadata: &CoreMetadata) -> Result<(), PacketError> {
         ("date_release", metadata.date_release.as_str()),
     ] {
         if value.is_empty() || value.contains('/') || value.contains('\\') {
-            return Err(PacketError::InvalidMetadataField {
+            return Err(PackageError::InvalidMetadataField {
                 field,
                 value: value.to_string(),
             });
@@ -184,18 +184,18 @@ fn validate_metadata(metadata: &CoreMetadata) -> Result<(), PacketError> {
     Ok(())
 }
 
-fn get_bitstream_filename(cores: &[CoreBitstream]) -> Result<&str, PacketError> {
+fn get_bitstream_filename(cores: &[CoreBitstream]) -> Result<&str, PackageError> {
     let filenames = cores
         .iter()
         .map(|core| core.filename.as_str())
         .collect::<BTreeSet<_>>();
 
     if filenames.is_empty() {
-        return Err(PacketError::MissingBitstreamDefinition);
+        return Err(PackageError::MissingBitstreamDefinition);
     }
 
     if filenames.len() > 1 {
-        return Err(PacketError::MultipleBitstreamDefinitions(
+        return Err(PackageError::MultipleBitstreamDefinitions(
             filenames.into_iter().map(ToOwned::to_owned).collect(),
         ));
     }
@@ -203,9 +203,9 @@ fn get_bitstream_filename(cores: &[CoreBitstream]) -> Result<&str, PacketError> 
     let filename = filenames
         .into_iter()
         .next()
-        .ok_or(PacketError::MissingBitstreamDefinition)?;
+        .ok_or(PackageError::MissingBitstreamDefinition)?;
     if !filename.ends_with(".rbf_r") {
-        return Err(PacketError::InvalidBitstreamFilename(filename.to_string()));
+        return Err(PackageError::InvalidBitstreamFilename(filename.to_string()));
     }
 
     Ok(filename)
@@ -214,7 +214,7 @@ fn get_bitstream_filename(cores: &[CoreBitstream]) -> Result<&str, PacketError> 
 fn resolve_output_zip_path(
     output_path: &Path,
     zip_file_name: &str,
-) -> Result<PathBuf, PacketError> {
+) -> Result<PathBuf, PackageError> {
     if output_path.exists() && output_path.is_dir() {
         return Ok(output_path.join(zip_file_name));
     }
@@ -223,9 +223,9 @@ fn resolve_output_zip_path(
         let actual = output_path
             .file_name()
             .and_then(OsStr::to_str)
-            .ok_or_else(|| PacketError::InvalidOutputPath(output_path.to_path_buf()))?;
+            .ok_or_else(|| PackageError::InvalidOutputPath(output_path.to_path_buf()))?;
         if actual != zip_file_name {
-            return Err(PacketError::UnexpectedOutputFilename {
+            return Err(PackageError::UnexpectedOutputFilename {
                 expected: zip_file_name.to_string(),
                 actual: actual.to_string(),
             });
@@ -234,14 +234,10 @@ fn resolve_output_zip_path(
         return Ok(output_path.to_path_buf());
     }
 
-    if output_path.extension().is_none() {
-        return Ok(output_path.join(zip_file_name));
-    }
-
-    Err(PacketError::InvalidOutputPath(output_path.to_path_buf()))
+    Err(PackageError::InvalidOutputPath(output_path.to_path_buf()))
 }
 
-fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), PacketError> {
+fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), PackageError> {
     for entry in fs::read_dir(core_source)? {
         let entry = entry?;
         let path = entry.path();
@@ -251,7 +247,7 @@ fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), Pac
 
         let filename = path
             .file_name()
-            .ok_or_else(|| PacketError::InvalidOutputPath(path.clone()))?;
+            .ok_or_else(|| PackageError::InvalidOutputPath(path.clone()))?;
         fs::copy(&path, staged_core_dir.join(filename))?;
     }
 
@@ -261,7 +257,7 @@ fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), Pac
 fn copy_supported_root_directories(
     core_source: &Path,
     staging_root: &Path,
-) -> Result<(), PacketError> {
+) -> Result<(), PackageError> {
     for directory_name in ROOT_STAGE_DIRECTORIES {
         let source_root = core_source.join(directory_name);
         if !source_root.is_dir() {
@@ -273,7 +269,7 @@ fn copy_supported_root_directories(
             let relative_path = entry
                 .path()
                 .strip_prefix(core_source)
-                .map_err(|_| PacketError::InvalidOutputPath(entry.path().to_path_buf()))?;
+                .map_err(|_| PackageError::InvalidOutputPath(entry.path().to_path_buf()))?;
             let destination = staging_root.join(relative_path);
 
             if entry.file_type().is_dir() {
@@ -302,7 +298,7 @@ fn is_hidden_path(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with('.'))
 }
 
-fn reverse_bitstream(input_rbf: &Path, output_rbf_r: &Path) -> Result<(), PacketError> {
+fn reverse_bitstream(input_rbf: &Path, output_rbf_r: &Path) -> Result<(), PackageError> {
     let input = File::open(input_rbf)?;
     let output = File::create(output_rbf_r)?;
     let mut reader = BufReader::new(input);
@@ -316,7 +312,7 @@ fn reverse_bitstream(input_rbf: &Path, output_rbf_r: &Path) -> Result<(), Packet
         }
 
         for byte in &mut buffer[..bytes_read] {
-            *byte = reverse_byte(*byte);
+            *byte = byte.reverse_bits();
         }
 
         writer.write_all(&buffer[..bytes_read])?;
@@ -326,7 +322,7 @@ fn reverse_bitstream(input_rbf: &Path, output_rbf_r: &Path) -> Result<(), Packet
     Ok(())
 }
 
-fn write_zip(staging_dir: TempDir, output_zip_path: &Path) -> Result<(), PacketError> {
+fn write_zip(staging_dir: TempDir, output_zip_path: &Path) -> Result<(), PackageError> {
     let zip_file = File::create(output_zip_path)?;
     let mut zip = ZipWriter::new(BufWriter::new(zip_file));
     let file_options = SimpleFileOptions::default()
@@ -348,7 +344,7 @@ fn write_zip(staging_dir: TempDir, output_zip_path: &Path) -> Result<(), PacketE
 
         let relative = path
             .strip_prefix(&staging_root)
-            .map_err(|_| PacketError::InvalidOutputPath(path.to_path_buf()))?;
+            .map_err(|_| PackageError::InvalidOutputPath(path.to_path_buf()))?;
         let zip_path = relative.to_string_lossy().replace('\\', "/");
 
         if entry.file_type().is_dir() {
@@ -363,20 +359,4 @@ fn write_zip(staging_dir: TempDir, output_zip_path: &Path) -> Result<(), PacketE
 
     zip.finish()?;
     Ok(())
-}
-
-pub fn reverse_byte(byte: u8) -> u8 {
-    byte.reverse_bits()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::reverse_byte;
-
-    #[test]
-    fn test_reverse_byte() {
-        assert_eq!(reverse_byte(0b0000_0001), 0b1000_0000);
-        assert_eq!(reverse_byte(0b1000_0000), 0b0000_0001);
-        assert_eq!(reverse_byte(0b0011_1100), 0b0011_1100);
-    }
 }
