@@ -12,13 +12,13 @@ struct Args {
     rbf: PathBuf,
     /// Path to the Analogue Pocket core source directory containing core.json and related files.
     core_source: PathBuf,
-    /// Existing output directory, or the exact official .zip file path to write.
-    output: PathBuf,
+    /// Output directory for the packaged core zip.
+    output_dir: PathBuf,
 }
 
 fn main() {
     let args = Args::parse();
-    match package_core(&args.rbf, &args.core_source, &args.output) {
+    match package_core(&args.rbf, &args.core_source, &args.output_dir) {
         Ok(output_zip) => {
             println!("Created Pocket core package: {}", output_zip.display());
         }

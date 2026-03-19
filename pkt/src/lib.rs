@@ -4,7 +4,7 @@ use std::ffi::OsStr;
 use std::fmt::{Display, Formatter};
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
@@ -26,7 +26,6 @@ pub enum PackageError {
     InvalidBitstreamFilename(String),
     InvalidMetadataField { field: &'static str, value: String },
     InvalidOutputPath(PathBuf),
-    UnexpectedOutputFilename { expected: String, actual: String },
 }
 
 impl Display for PackageError {
@@ -49,19 +48,15 @@ impl Display for PackageError {
             ),
             Self::InvalidBitstreamFilename(filename) => write!(
                 f,
-                "bitstream filename must end with .rbf_r for Pocket packaging: {filename}"
+                "bitstream filename must be a plain filename ending with .rbf_r for Pocket packaging: {filename}"
             ),
             Self::InvalidMetadataField { field, value } => write!(
                 f,
                 "core.json metadata field {field} contains an invalid value for packaging paths: {value}"
             ),
             Self::InvalidOutputPath(path) => {
-                write!(f, "output path must be a directory or a .zip file: {}", path.display())
+                write!(f, "output path must be a directory: {}", path.display())
             }
-            Self::UnexpectedOutputFilename { expected, actual } => write!(
-                f,
-                "output zip filename must match the official Analogue naming convention: expected {expected}, got {actual}"
-            ),
         }
     }
 }
@@ -119,7 +114,7 @@ struct CoreBitstream {
 pub fn package_core(
     input_rbf: &Path,
     core_source: &Path,
-    output_path: &Path,
+    output_dir: &Path,
 ) -> Result<PathBuf, PackageError> {
     let core_definition_path = core_source.join("core.json");
     if !core_definition_path.is_file() {
@@ -137,7 +132,7 @@ pub fn package_core(
         "{}_{}_{}.zip",
         core_folder_name, core_definition.metadata.version, core_definition.metadata.date_release
     );
-    let output_zip_path = resolve_output_zip_path(output_path, &zip_file_name)?;
+    let output_zip_path = resolve_output_zip_path(output_dir, &zip_file_name)?;
 
     if let Some(parent) = output_zip_path.parent() {
         fs::create_dir_all(parent)?;
@@ -204,44 +199,47 @@ fn get_bitstream_filename(cores: &[CoreBitstream]) -> Result<&str, PackageError>
         .into_iter()
         .next()
         .ok_or(PackageError::MissingBitstreamDefinition)?;
-    if !filename.ends_with(".rbf_r") {
+    if !is_valid_bitstream_filename(filename) {
         return Err(PackageError::InvalidBitstreamFilename(filename.to_string()));
     }
 
     Ok(filename)
 }
 
+fn is_valid_bitstream_filename(filename: &str) -> bool {
+    if !filename.ends_with(".rbf_r") || filename.contains('/') || filename.contains('\\') {
+        return false;
+    }
+
+    let mut components = Path::new(filename).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
+
 fn resolve_output_zip_path(
-    output_path: &Path,
+    output_dir: &Path,
     zip_file_name: &str,
 ) -> Result<PathBuf, PackageError> {
-    if output_path.exists() && output_path.is_dir() {
-        return Ok(output_path.join(zip_file_name));
+    if output_dir.exists() && !output_dir.is_dir() {
+        return Err(PackageError::InvalidOutputPath(output_dir.to_path_buf()));
     }
 
-    if output_path.extension() == Some(OsStr::new("zip")) {
-        let actual = output_path
-            .file_name()
-            .and_then(OsStr::to_str)
-            .ok_or_else(|| PackageError::InvalidOutputPath(output_path.to_path_buf()))?;
-        if actual != zip_file_name {
-            return Err(PackageError::UnexpectedOutputFilename {
-                expected: zip_file_name.to_string(),
-                actual: actual.to_string(),
-            });
-        }
-
-        return Ok(output_path.to_path_buf());
+    if output_dir.extension() == Some(OsStr::new("zip")) {
+        return Err(PackageError::InvalidOutputPath(output_dir.to_path_buf()));
     }
 
-    Err(PackageError::InvalidOutputPath(output_path.to_path_buf()))
+    Ok(output_dir.join(zip_file_name))
 }
 
 fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), PackageError> {
     for entry in fs::read_dir(core_source)? {
         let entry = entry?;
         let path = entry.path();
-        if !path.is_file() || is_hidden_path(&path) || !should_copy_to_core_dir(&path) {
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink()
+            || !file_type.is_file()
+            || is_hidden_path(&path)
+            || !should_copy_to_core_dir(&path)
+        {
             continue;
         }
 
