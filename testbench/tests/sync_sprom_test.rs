@@ -1,6 +1,4 @@
 use riscv_core::{create_sync_sprom_runtime, SyncSpromTestWrapper};
-use std::fs;
-use std::path::{Path, PathBuf};
 
 fn clock_cycle(dut: &mut SyncSpromTestWrapper) {
     dut.clk = 0;
@@ -14,29 +12,9 @@ fn advance_read_latency(dut: &mut SyncSpromTestWrapper) {
     clock_cycle(dut);
 }
 
-fn ensure_init_file_visible() {
-    let relative_init_path = Path::new("rtl/common/wrappers/sync_sprom_test_init.hex");
-    if relative_init_path.is_file() {
-        return;
-    }
-
-    let source_init_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../rtl/common/wrappers/sync_sprom_test_init.hex");
-    let target_init_path = std::env::current_dir()
-        .expect("Failed to read current directory")
-        .join(relative_init_path);
-    let target_dir = target_init_path
-        .parent()
-        .expect("ROM init file path should have a parent directory");
-
-    fs::create_dir_all(target_dir).expect("Failed to create ROM init file directory");
-    fs::copy(&source_init_path, &target_init_path).expect("Failed to stage ROM init file");
-}
-
 #[test]
 fn test_sync_sprom_reads_initialized_contents() {
     let runtime = create_sync_sprom_runtime().expect("Failed to create sync_sprom runtime");
-    ensure_init_file_visible();
     let mut dut = runtime
         .create_model_simple::<SyncSpromTestWrapper>()
         .expect("Failed to create sync_sprom model");
@@ -59,7 +37,6 @@ fn test_sync_sprom_reads_initialized_contents() {
 #[test]
 fn test_sync_sprom_read_pipeline_latency() {
     let runtime = create_sync_sprom_runtime().expect("Failed to create sync_sprom runtime");
-    ensure_init_file_visible();
     let mut dut = runtime
         .create_model_simple::<SyncSpromTestWrapper>()
         .expect("Failed to create sync_sprom model");
@@ -88,7 +65,6 @@ fn test_sync_sprom_read_pipeline_latency() {
 #[test]
 fn test_sync_sprom_repeated_reads_are_stable() {
     let runtime = create_sync_sprom_runtime().expect("Failed to create sync_sprom runtime");
-    ensure_init_file_visible();
     let mut dut = runtime
         .create_model_simple::<SyncSpromTestWrapper>()
         .expect("Failed to create sync_sprom model");
