@@ -91,7 +91,7 @@ PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
 		--textcfg $(PNR_OUT) \
 		--freq 50
 PACK_CMD = $(ECPPACK) $(PNR_OUT) $(BIN)
-OPENFPGALOADER_BOARD = icepi_zero
+OPENFPGALOADER_BOARD = icepi-zero
 OUTPUT_EXT = bit
 endif
 
