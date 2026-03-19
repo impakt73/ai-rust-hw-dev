@@ -190,6 +190,12 @@ pub struct SramTestWrapper;
 pub struct SramPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/sync_sprom_test_wrapper.sv",
+    name = "sync_sprom_test_wrapper"
+)]
+pub struct SyncSpromTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/phase_accumulator_wrapper.sv",
     name = "phase_accumulator_wrapper"
 )]
@@ -245,7 +251,7 @@ pub struct SysLedControllerWrapper;
 
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
-    if std::path::Path::new("rtl/common").exists() {
+    if std::path::Path::new("rtl/common/top.sv").is_file() {
         "rtl/common"
     } else {
         "../rtl/common"
@@ -513,6 +519,13 @@ pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std:
         "memory/sram.sv",
         "peripherals/sram_peripheral.sv",
         "wrappers/sram_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_sync_sprom_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "wrappers/sync_sprom_test_wrapper.sv",
     ])
 }
 
