@@ -169,7 +169,6 @@ BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
-PROGRAM_DEPS = $(BIN)
 
 # Tools
 YOSYS = yosys
@@ -312,7 +311,7 @@ endif
 
 # Program FPGA
 .PHONY: program
-program: $(PROGRAM_DEPS)
+program: $(BIN)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
 
 # Clean build artifacts
