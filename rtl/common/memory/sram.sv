@@ -40,6 +40,60 @@ module sram #(
     output logic [31:0]           rdata
 );
 
+`ifdef ALTERA_RESERVED_QIS
+    logic [31:0] ram_q_b;
+    logic [31:0] read_data_pipe;
+
+    altsyncram #(
+        .address_reg_b("CLOCK0"),
+        .byte_size(8),
+        .clock_enable_input_a("BYPASS"),
+        .clock_enable_input_b("BYPASS"),
+        .clock_enable_output_b("BYPASS"),
+        .intended_device_family("Cyclone V"),
+        .numwords_a(DEPTH),
+        .numwords_b(DEPTH),
+        .operation_mode("DUAL_PORT"),
+        .outdata_aclr_b("NONE"),
+        .outdata_reg_b("UNREGISTERED"),
+        .power_up_uninitialized("FALSE"),
+        .read_during_write_mode_mixed_ports("OLD_DATA"),
+        .width_a(32),
+        .width_b(32),
+        .width_byteena_a(4),
+        .widthad_a(ADDR_WIDTH),
+        .widthad_b(ADDR_WIDTH)
+    ) ram_block (
+        .address_a(waddr),
+        .address_b(raddr),
+        .byteena_a(wmask),
+        .clock0(clk),
+        .data_a(wdata),
+        .wren_a(we),
+        .q_b(ram_q_b),
+        .aclr0(1'b0),
+        .aclr1(1'b0),
+        .addressstall_a(1'b0),
+        .addressstall_b(1'b0),
+        .byteena_b(1'b1),
+        .clock1(1'b1),
+        .clocken0(1'b1),
+        .clocken1(1'b1),
+        .clocken2(1'b1),
+        .clocken3(1'b1),
+        .data_b(32'b0),
+        .eccstatus(),
+        .q_a(),
+        .rden_a(1'b1),
+        .rden_b(1'b1),
+        .wren_b(1'b0)
+    );
+
+    always_ff @(posedge clk) begin
+        read_data_pipe <= ram_q_b;
+        rdata <= read_data_pipe;
+    end
+`else
     (* ram_style = "block" *) logic [31:0] mem [0:DEPTH-1];
     logic [31:0] read_data_pipe;
     initial begin
@@ -64,6 +118,7 @@ module sram #(
         read_data_pipe <= mem[raddr];
         rdata <= read_data_pipe;
     end
+`endif
 
 endmodule
 `default_nettype wire
