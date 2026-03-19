@@ -47,6 +47,7 @@ execute_flow -compile
 project_close
 
 foreach pair {
+    {ap_core.rbf riscv_fpga.rbf}
     {ap_core.sof riscv_fpga.sof}
     {ap_core.fit.rpt riscv_fpga_utilization.rpt}
     {ap_core.sta.rpt riscv_fpga_timing.rpt}
