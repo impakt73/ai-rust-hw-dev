@@ -114,7 +114,7 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-PROGRAM_CMD = echo "ERROR: Pocket programming/package deployment is not automated yet" && exit 1
+PROGRAM_CMD = cargo run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(POCKET_RBF)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
 OUTPUT_EXT = sof
 endif
 
@@ -138,6 +138,7 @@ endif
 
 BUILD_DIR := build/$(TARGET)
 NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
+POCKET_RBF = $(BUILD_DIR)/$(PROJECT).rbf
 
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 FPGA_SOURCES = \
@@ -169,6 +170,11 @@ BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
+PROGRAM_DEPS = $(BIN)
+
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+PROGRAM_DEPS += $(POCKET_RBF)
+endif
 
 # Tools
 YOSYS = yosys
@@ -214,7 +220,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
-$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
+$(BIN) $(POCKET_RBF): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
@@ -310,7 +316,7 @@ endif
 
 # Program FPGA
 .PHONY: program
-program: $(BIN)
+program: $(PROGRAM_DEPS)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
 
 # Clean build artifacts
@@ -348,7 +354,11 @@ ifeq ($(TARGET),cyclonev_analogue_pocket)
 else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 endif
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "  program      - Package a deployable Pocket core zip in $(BUILD_DIR)"
+else
 	@echo "  program      - Program FPGA with bitstream"
+endif
 	@echo "  clean        - Remove build artifacts"
 	@echo "  help         - Show this help message"
 	@echo ""
@@ -379,7 +389,7 @@ endif
 	@echo "Programming selection:"
 	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  - Pocket packaging/programming is not automated yet"
+	@echo "  - make program packages $(POCKET_RBF) into a deployable Pocket core zip in $(BUILD_DIR)"
 else
 ifneq ($(DEFAULT_PROGRAM_MODE),sram)
 	@echo "  - make program PROGRAM_MODE=sram"
