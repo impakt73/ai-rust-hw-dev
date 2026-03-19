@@ -114,8 +114,8 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-PROGRAM_CMD = cargo run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(POCKET_RBF)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
-OUTPUT_EXT = sof
+PROGRAM_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
+OUTPUT_EXT = rbf
 endif
 
 PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
@@ -138,7 +138,6 @@ endif
 
 BUILD_DIR := build/$(TARGET)
 NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
-POCKET_RBF = $(BUILD_DIR)/$(PROJECT).rbf
 
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 FPGA_SOURCES = \
@@ -172,10 +171,6 @@ TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
 PROGRAM_DEPS = $(BIN)
 
-ifeq ($(TARGET),cyclonev_analogue_pocket)
-PROGRAM_DEPS += $(POCKET_RBF)
-endif
-
 # Tools
 YOSYS = yosys
 NEXTPNR = nextpnr-ice40
@@ -183,6 +178,7 @@ ICEPACK = icepack
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
+CARGO ?= cargo
 PYTHON3 = python3
 STATS_SCRIPT = ./fpga_design_stats.py
 STATS_FORMAT ?= text
@@ -220,7 +216,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
-$(BIN) $(POCKET_RBF): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
+$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
@@ -368,6 +364,7 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
+	@echo "  - cargo      : Rust toolchain (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
@@ -389,7 +386,7 @@ endif
 	@echo "Programming selection:"
 	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  - make program packages $(POCKET_RBF) into a deployable Pocket core zip in $(BUILD_DIR)"
+	@echo "  - make program packages $(BIN) into a deployable Pocket core zip in $(BUILD_DIR)"
 else
 ifneq ($(DEFAULT_PROGRAM_MODE),sram)
 	@echo "  - make program PROGRAM_MODE=sram"
@@ -407,6 +404,7 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
+	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for 'make program')"; exit 1)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
