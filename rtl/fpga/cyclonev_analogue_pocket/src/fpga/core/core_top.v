@@ -333,11 +333,18 @@ end
 //
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
+    wire    [7:0]   led_out;
+    wire    [7:0]   sys_led_out;
+    wire            halted;
+    wire            instr_complete;
+    wire            rst_out;
+    wire            cpu_booting;
+    wire    [31:0]  halted_value;
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = pll_core_locked_s; 
-    wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
+    wire            status_boot_done = cpu_booting;
+    wire            status_setup_done = cpu_booting; // rising edge triggers a target command
     wire            status_running = reset_n; // we are running as soon as reset_n goes high
 
     wire            dataslot_requestread;
@@ -408,6 +415,18 @@ end
     wire            datatable_wren;
     wire    [31:0]  datatable_data;
     wire    [31:0]  datatable_q;
+
+analogue_pocket_repo_top repo_top_inst (
+    .clk            ( clk_74a ),
+    .reset_n        ( reset_n ),
+    .led_out        ( led_out ),
+    .sys_led_out    ( sys_led_out ),
+    .halted         ( halted ),
+    .instr_complete ( instr_complete ),
+    .rst_out        ( rst_out ),
+    .cpu_booting    ( cpu_booting ),
+    .halted_value   ( halted_value )
+);
 
 core_bridge_cmd icb (
 
@@ -590,10 +609,16 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
             if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
                 // data enable. this is the active region of the line
                 vidout_de <= 1;
-                
-                vidout_rgb[23:16] <= 8'd60;
-                vidout_rgb[15:8]  <= 8'd60;
-                vidout_rgb[7:0]   <= 8'd60;
+
+                if(sys_led_out[0]) begin
+                    vidout_rgb[23:16] <= 8'd0;
+                    vidout_rgb[15:8]  <= 8'd96;
+                    vidout_rgb[7:0]   <= 8'd0;
+                end else begin
+                    vidout_rgb[23:16] <= 8'd60;
+                    vidout_rgb[15:8]  <= 8'd60;
+                    vidout_rgb[7:0]   <= 8'd60;
+                end
                 
             end 
         end
