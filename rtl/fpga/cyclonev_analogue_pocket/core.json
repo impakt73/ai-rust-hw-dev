@@ -2,8 +2,8 @@
   "core": {
     "magic": "APF_VER_1",
     "metadata": {
-      "platform_ids": ["analogue_pocket"],
-      "shortname": "AI Rust HW Dev",
+      "platform_ids": ["aihwdev"],
+      "shortname": "AIHWDEV",
       "description": "Initial Analogue Pocket bring-up target for the RISC-V hardware verification platform.",
       "author": "impakt73",
       "url": "https://github.com/impakt73/ai-rust-hw-dev",

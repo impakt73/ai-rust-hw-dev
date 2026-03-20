@@ -168,7 +168,7 @@ always @(posedge clk) begin
                 pmp_addr[ 7: 0] <= {rx_byte_2[7:2], 2'b00};
                 // address is latched
                 if( rx_byte_2[0] ) begin
-data_cnt <= 0;
+					data_cnt <= 0;
                     state <= ST_WRITE_0;
                 end else begin
                     data_cnt <= 0;

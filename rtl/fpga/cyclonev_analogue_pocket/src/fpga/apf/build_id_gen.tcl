@@ -65,96 +65,96 @@
 #
 
 proc generateBuildID_Verilog {} {
-
-# Get the timestamp (see: http://www.altera.com/support/examples/tcl/tcl-date-time-stamp.html)
-set buildDate [ clock format [ clock seconds ] -format %Y%m%d ]
-set buildTime [ clock format [ clock seconds ] -format %H%M%S ]
-
-# Create a Verilog file for output
-set outputFileName "apf/build_id.v"
-set outputFile [open $outputFileName "w"]
-
-# Output the Verilog source
-puts $outputFile "// Build ID Verilog Module"
-puts $outputFile "//"
-puts $outputFile "// Note - these are stored as binary coded decimal"
-puts $outputFile "// Date:             $buildDate"
-puts $outputFile "// Time:             $buildTime"
-puts $outputFile ""
-puts $outputFile "module build_id"
-puts $outputFile "("
-puts $outputFile "   output \[31:0\]  build_date,"
-puts $outputFile "   output \[31:0\]  build_time"
-puts $outputFile ");"
-puts $outputFile ""
-puts $outputFile "   assign build_date     =  32'h$buildDate;"
-puts $outputFile "   assign build_time     =  32'h$buildTime;"
-puts $outputFile ""
-puts $outputFile "endmodule"
-close $outputFile
-
-
-
-# Send confirmation message to the Messages window
-#post_message "APF core build date/time generated: [pwd]/$outputFileName"
-#post_message "Date:             $buildDate"
-#post_message "Time:             $buildTime"
+	
+	# Get the timestamp (see: http://www.altera.com/support/examples/tcl/tcl-date-time-stamp.html)
+	set buildDate [ clock format [ clock seconds ] -format %Y%m%d ]
+	set buildTime [ clock format [ clock seconds ] -format %H%M%S ]
+		
+	# Create a Verilog file for output
+	set outputFileName "apf/build_id.v"
+	set outputFile [open $outputFileName "w"]
+	
+	# Output the Verilog source
+	puts $outputFile "// Build ID Verilog Module"
+	puts $outputFile "//"
+	puts $outputFile "// Note - these are stored as binary coded decimal"
+	puts $outputFile "// Date:             $buildDate"
+	puts $outputFile "// Time:             $buildTime"
+	puts $outputFile ""
+	puts $outputFile "module build_id"
+	puts $outputFile "("
+	puts $outputFile "   output \[31:0\]  build_date,"
+	puts $outputFile "   output \[31:0\]  build_time"
+	puts $outputFile ");"
+	puts $outputFile ""
+	puts $outputFile "   assign build_date     =  32'h$buildDate;"
+	puts $outputFile "   assign build_time     =  32'h$buildTime;"
+	puts $outputFile ""
+	puts $outputFile "endmodule"
+	close $outputFile
+	
+	
+	
+	# Send confirmation message to the Messages window
+	#post_message "APF core build date/time generated: [pwd]/$outputFileName"
+	#post_message "Date:             $buildDate"
+	#post_message "Time:             $buildTime"
 }
 
 
 proc generateBuildID_MIF {} {
-
-# Get the timestamp (see: http://www.altera.com/support/examples/tcl/tcl-date-time-stamp.html)
-set buildDate [ clock format [ clock seconds ] -format %Y%m%d ]
-set buildTime [ clock format [ clock seconds ] -format %H%M%S ]
-set buildUnique [expr {int(rand()*(4294967295))}]
-
-set buildDateNoLeadingZeros [string trimleft $buildDate "0"]
-set buildTimeNoLeadingZeros [string trimleft $buildTime "0"]
-set buildDate4Byte          [format "%08d" $buildDateNoLeadingZeros]
-set buildTime4Byte          [format "%08d" $buildTimeNoLeadingZeros]
-set buildUnique4Byte        [format "%08x" $buildUnique]
-
-#set buildDate4Byte          \
-[concat [string range $buildDate 0 1] \
-[string range $buildDate 2 3]  \
-[string range $buildDate 4 5]  \
-[string range $buildDate 6 7] ]
-
-
-set buildDateNumBytes       4
-set buildTimeNumBytes       4
-
-# Calculate depth of the memory (8-bit) words
-set memoryDepth [expr $buildDateNumBytes + $buildTimeNumBytes]
-
-# Create a Memory Initialization File for output
-set outputFileName "apf/build_id.mif"
-set outputFile [open $outputFileName "w"]
-
-# Output the MIF header (see: http://quartushelp.altera.com/current/mergedProjects/reference/glossary/def_mif.htm)
-puts $outputFile "-- Build ID Memory Initialization File"
-puts $outputFile "--"
-puts $outputFile ""
-puts $outputFile "DEPTH = 256;"
-puts $outputFile "WIDTH = 32;"
-puts $outputFile "ADDRESS_RADIX = HEX;"
-puts $outputFile "DATA_RADIX = HEX;"
-puts $outputFile ""
-puts $outputFile "CONTENT"
-puts $outputFile "BEGIN"
-puts $outputFile ""
-puts $outputFile "   0E0 : $buildDate4Byte;"
-puts $outputFile "   0E1 : $buildTime4Byte;"
-puts $outputFile "   0E2 : $buildUnique4Byte;"
-puts $outputFile ""
-puts $outputFile "END;"
-
-# Close file to complete write
-close $outputFile
-
-# Send confirmation message to the Messages window
-post_message "APF core build date/time generated: [pwd]/$outputFileName"
+	
+	# Get the timestamp (see: http://www.altera.com/support/examples/tcl/tcl-date-time-stamp.html)
+	set buildDate [ clock format [ clock seconds ] -format %Y%m%d ]
+	set buildTime [ clock format [ clock seconds ] -format %H%M%S ]
+	set buildUnique [expr {int(rand()*(4294967295))}]
+	
+	set buildDateNoLeadingZeros [string trimleft $buildDate "0"]
+	set buildTimeNoLeadingZeros [string trimleft $buildTime "0"]
+	set buildDate4Byte          [format "%08d" $buildDateNoLeadingZeros]
+	set buildTime4Byte          [format "%08d" $buildTimeNoLeadingZeros]
+	set buildUnique4Byte        [format "%08x" $buildUnique]
+	
+	#set buildDate4Byte          \
+		[concat [string range $buildDate 0 1] \
+				[string range $buildDate 2 3]  \
+				[string range $buildDate 4 5]  \
+				[string range $buildDate 6 7] ]
+	
+	
+	set buildDateNumBytes       4
+	set buildTimeNumBytes       4
+	
+	# Calculate depth of the memory (8-bit) words
+	set memoryDepth [expr $buildDateNumBytes + $buildTimeNumBytes]
+	
+	# Create a Memory Initialization File for output
+	set outputFileName "apf/build_id.mif"
+	set outputFile [open $outputFileName "w"]
+	
+	# Output the MIF header (see: http://quartushelp.altera.com/current/mergedProjects/reference/glossary/def_mif.htm)
+	puts $outputFile "-- Build ID Memory Initialization File"
+	puts $outputFile "--"
+	puts $outputFile ""
+	puts $outputFile "DEPTH = 256;"
+	puts $outputFile "WIDTH = 32;"
+	puts $outputFile "ADDRESS_RADIX = HEX;"
+	puts $outputFile "DATA_RADIX = HEX;"
+	puts $outputFile ""
+	puts $outputFile "CONTENT"
+	puts $outputFile "BEGIN"
+	puts $outputFile ""
+	puts $outputFile "   0E0 : $buildDate4Byte;"
+	puts $outputFile "   0E1 : $buildTime4Byte;"
+	puts $outputFile "   0E2 : $buildUnique4Byte;"
+	puts $outputFile ""
+	puts $outputFile "END;"
+	
+	# Close file to complete write
+	close $outputFile
+	
+	# Send confirmation message to the Messages window
+	post_message "APF core build date/time generated: [pwd]/$outputFileName"
 }
 
 generateBuildID_MIF
