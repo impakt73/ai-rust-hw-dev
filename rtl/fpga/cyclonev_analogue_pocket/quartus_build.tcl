@@ -11,35 +11,44 @@ set qsf_file [file normalize [lindex $argv 1]]
 set top_module [lindex $argv 2]
 set rtl_sources [lrange $argv 3 end]
 set qsf_dir [file dirname $qsf_file]
-set output_dir [file join $build_dir output_files]
-
-file mkdir $build_dir
-file mkdir $output_dir
-file mkdir [file join $build_dir apf]
-if {[file exists $qsf_file]} {
-    file copy -force $qsf_file [file join $build_dir [file tail $qsf_file]]
-}
 set qpf_file [file rootname $qsf_file]
 append qpf_file ".qpf"
-if {[file exists $qpf_file]} {
-    file copy -force $qpf_file [file join $build_dir [file tail $qpf_file]]
-}
-cd $build_dir
+set project_name [file rootname [file tail $qsf_file]]
+set project_copy_dir [file join $build_dir project]
+set project_qsf [file join $project_copy_dir [file tail $qsf_file]]
+set project_qpf [file join $project_copy_dir [file tail $qpf_file]]
+set output_dir [file join $build_dir output_files]
 
-project_new -overwrite ap_core -revision ap_core
-set_global_assignment -name FAMILY "Cyclone V"
-set_global_assignment -name DEVICE 5CEBA4F23C8
+if {![file exists $qsf_file]} {
+    puts stderr "Quartus project file not found: $qsf_file"
+    exit 1
+}
+
+file mkdir $build_dir
+file delete -force $project_copy_dir
+file copy -force $qsf_dir $project_copy_dir
+file mkdir $output_dir
+
+project_open $project_qpf -revision $project_name
 set_global_assignment -name TOP_LEVEL_ENTITY $top_module
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY $output_dir
-set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:[file join $qsf_dir apf build_id_gen.tcl]"
-set_global_assignment -name SDC_FILE [file join $qsf_dir apf apf_constraints.sdc]
-set_global_assignment -name SDC_FILE [file join $qsf_dir core core_constraints.sdc]
-set_global_assignment -name GENERATE_RBF_FILE ON
-set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 
 foreach rtl_source $rtl_sources {
     set normalized_source [file normalize $rtl_source]
-    set_global_assignment -name SYSTEMVERILOG_FILE $normalized_source
+    if {[string first $qsf_dir $normalized_source] == 0} {
+        if {$normalized_source ne [file normalize [file join $qsf_dir core analogue_pocket_repo_top.sv]]} {
+            continue
+        }
+    }
+    set extension [string tolower [file extension $normalized_source]]
+    switch -- $extension {
+        ".sv" {
+            set_global_assignment -name SYSTEMVERILOG_FILE $normalized_source
+        }
+        default {
+            set_global_assignment -name VERILOG_FILE $normalized_source
+        }
+    }
 }
 
 export_assignments
