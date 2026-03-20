@@ -141,12 +141,6 @@ NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 FPGA_SOURCES = \
-	$(FPGA_DIR)/src/fpga/apf/apf_top.v \
-	$(FPGA_DIR)/src/fpga/apf/common.v \
-	$(FPGA_DIR)/src/fpga/apf/io_bridge_peripheral.v \
-	$(FPGA_DIR)/src/fpga/apf/io_pad_controller.v \
-	$(FPGA_DIR)/src/fpga/core/core_bridge_cmd.v \
-	$(FPGA_DIR)/src/fpga/core/core_top.sv \
 	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
 else
 FPGA_SOURCES = \
@@ -155,14 +149,7 @@ FPGA_SOURCES = \
 endif
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
-POCKET_PROJECT_FILES = \
-	$(FPGA_DIR)/src/fpga/ap_core.qpf \
-	$(FPGA_DIR)/src/fpga/ap_core.qsf \
-	$(FPGA_DIR)/src/fpga/apf/apf.qip \
-	$(FPGA_DIR)/src/fpga/apf/apf_constraints.sdc \
-	$(FPGA_DIR)/src/fpga/apf/build_id_gen.tcl \
-	$(FPGA_DIR)/src/fpga/core/core_constraints.sdc \
-	$(QUARTUS_TCL)
+POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
