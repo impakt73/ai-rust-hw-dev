@@ -266,6 +266,17 @@ const VERILATOR_ARTIFACT_DIR_ENV: &str = "RISCV_CORE_VERILATOR_ARTIFACT_DIR";
 
 static NEXT_RUNTIME_ARTIFACT_ID: AtomicU64 = AtomicU64::new(0);
 
+/// Returns the marlin artifacts directory for a single [`VerilatorRuntime`].
+///
+/// If `RISCV_CORE_VERILATOR_ARTIFACT_DIR` is set, that directory is used as-is
+/// to allow deterministic reuse during debugging or custom orchestration.
+/// Otherwise, each runtime gets a unique directory under
+/// `target/verilator/pid-<pid>/runtime-<n>` so concurrent tests do not share the
+/// same marlin build artifacts.
+///
+/// Callers must not concurrently mutate `RISCV_CORE_VERILATOR_ARTIFACT_DIR`
+/// while runtimes are being created, because process environment mutation is
+/// global and not synchronized by this helper.
 fn get_verilator_artifact_directory() -> PathBuf {
     if let Some(artifact_dir) = std::env::var_os(VERILATOR_ARTIFACT_DIR_ENV) {
         return PathBuf::from(artifact_dir);
@@ -612,11 +623,18 @@ mod tests {
         sync::{LazyLock, Mutex},
     };
 
+    // Serializes environment variable mutation inside these tests because
+    // std::env::set_var/remove_var operate on process-global state.
     static ARTIFACT_DIR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn test_default_verilator_artifact_directory_is_unique_per_runtime() {
         let _guard = ARTIFACT_DIR_ENV_LOCK.lock().expect("env lock poisoned");
+        // SAFETY: std::env::remove_var is unsafe because it mutates
+        // process-global state that other threads could access concurrently.
+        // These tests serialize their own env mutations with
+        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
+        // protect against unrelated code mutating the same environment variable.
         unsafe {
             std::env::remove_var(VERILATOR_ARTIFACT_DIR_ENV);
         }
@@ -642,6 +660,11 @@ mod tests {
     fn test_verilator_artifact_directory_can_be_overridden() {
         let _guard = ARTIFACT_DIR_ENV_LOCK.lock().expect("env lock poisoned");
         let override_dir = PathBuf::from("target/verilator/custom-runtime-root");
+        // SAFETY: std::env::set_var is unsafe because it mutates
+        // process-global state that other threads could access concurrently.
+        // These tests serialize their own env mutations with
+        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
+        // protect against unrelated code mutating the same environment variable.
         unsafe {
             std::env::set_var(VERILATOR_ARTIFACT_DIR_ENV, &override_dir);
         }
@@ -653,6 +676,11 @@ mod tests {
             "explicit artifact directory override should take precedence"
         );
 
+        // SAFETY: std::env::remove_var is unsafe because it mutates
+        // process-global state that other threads could access concurrently.
+        // These tests serialize their own env mutations with
+        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
+        // protect against unrelated code mutating the same environment variable.
         unsafe {
             std::env::remove_var(VERILATOR_ARTIFACT_DIR_ENV);
         }
