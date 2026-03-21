@@ -118,6 +118,20 @@ PROGRAM_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.t
 OUTPUT_EXT = rbf
 endif
 
+ifeq ($(TARGET),gowin_tang_primer_25k)
+PART = GW5A-LV25MG121NC1/I0
+DEVICE_VERSION = A
+FPGA_DIR = gowin_tang_primer_25k
+TOP_MODULE = gowin_tang_primer_25k_top
+DEFAULT_PROGRAM_MODE = sram
+CONSTRAINT = $(FPGA_DIR)/gowin_tang_primer_25k.cst
+SDC_CONSTRAINT = $(FPGA_DIR)/gowin_tang_primer_25k.sdc
+GOWIN_TCL = $(FPGA_DIR)/gowin_build.tcl
+GOWIN_SH = gw_sh
+OPENFPGALOADER_BOARD = tangprimer25k
+OUTPUT_EXT = fs
+endif
+
 PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
 
 ifdef OPENFPGALOADER_BOARD
@@ -133,7 +147,7 @@ PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROG
 endif
 
 ifndef FPGA_DIR
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, or TARGET=cyclonev_analogue_pocket)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, TARGET=cyclonev_analogue_pocket, or TARGET=gowin_tang_primer_25k)
 endif
 
 BUILD_DIR := build/$(TARGET)
@@ -206,6 +220,12 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+$(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DIR)
+	$(GOWIN_SH) "$(abspath $(GOWIN_TCL))" \
+		"$(abspath $(BUILD_DIR))" "$(PROJECT)" "$(TOP_MODULE)" "$(PART)" "$(DEVICE_VERSION)" \
+		"$(abspath $(CONSTRAINT))" "$(abspath $(SDC_CONSTRAINT))" \
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
@@ -253,6 +273,15 @@ timing: $(BIN)
 	else \
 		echo "Timing details remain in $(BUILD_DIR)/output_files/"; \
 	fi
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+timing: $(BIN)
+	@if test -f $(TIMING); then \
+		echo "Timing report written to $(TIMING)"; \
+	elif test -f $(TIMING_SUMMARY); then \
+		echo "Timing summary available at $(TIMING_SUMMARY)"; \
+	else \
+		echo "Timing details remain in $(BUILD_DIR)/project/"; \
+	fi
 else
 timing: $(PNR_OUT)
 	@if test -f $(TIMING); then \
@@ -275,6 +304,13 @@ utilization: $(BIN)
 	else \
 		echo "Quartus utilization details remain in $(BUILD_DIR)/output_files/"; \
 	fi
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+utilization: $(BIN)
+	@if test -f $(UTILIZATION); then \
+		cat $(UTILIZATION); \
+	else \
+		echo "Gowin utilization details remain in $(BUILD_DIR)/project/"; \
+	fi
 else
 utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
@@ -289,6 +325,9 @@ check-python:
 .PHONY: stats
 stats: check-python
 ifeq ($(TARGET),cyclonev_analogue_pocket)
+	@echo "ERROR: standardized FPGA stats are not implemented yet for TARGET=$(TARGET)"
+	@exit 1
+else ifeq ($(TARGET),gowin_tang_primer_25k)
 	@echo "ERROR: standardized FPGA stats are not implemented yet for TARGET=$(TARGET)"
 	@exit 1
 else
@@ -318,6 +357,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  $(BIN)       - Run the Vivado batch flow and generate the bitstream"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  $(BIN)       - Run the Quartus batch flow and emit the Pocket bring-up image"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  $(BIN)       - Run the Gowin batch flow and generate the Tang Primer 25K bitstream"
 else
 	@echo "  $(NETLIST)   - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
@@ -327,12 +368,16 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  timing       - Generate timing report (written to $(TIMING))"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  timing       - Show $(TIMING) when copied from Quartus output_files"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  timing       - Show $(TIMING) or $(TIMING_SUMMARY) copied from the Gowin project"
 else
 	@echo "  timing       - Show $(TIMING) when available, otherwise fall back to $(BUILD_DIR)/nextpnr.log"
 endif
 	@echo "  utilization  - Show resource utilization"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  stats        - Not supported yet for this Quartus target"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  stats        - Not supported yet for this Gowin target"
 else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 endif
@@ -351,6 +396,9 @@ ifeq ($(TARGET),artix7_alchitry_au)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
 	@echo "  - cargo      : Rust toolchain (required for 'make program')"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  - gw_sh      : Gowin EDA batch/CLI tool"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
@@ -363,6 +411,7 @@ endif
 	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
 	@echo "  - make TARGET=cyclonev_analogue_pocket  (Analogue Pocket Cyclone V bring-up)"
+	@echo "  - make TARGET=gowin_tang_primer_25k  (Sipeed Tang Primer 25K bring-up)"
 	@echo ""
 	@echo "Stats output format:"
 	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
@@ -391,6 +440,9 @@ ifeq ($(TARGET),artix7_alchitry_au)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
 	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for 'make program')"; exit 1)
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@which $(GOWIN_SH) > /dev/null || (echo "ERROR: $(GOWIN_SH) not found"; exit 1)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)

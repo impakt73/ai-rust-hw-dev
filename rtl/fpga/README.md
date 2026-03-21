@@ -7,6 +7,7 @@ Currently supported targets:
 - **`TARGET=ecp5_icepi_zero`**: iCE Pi Zero (ECP5-25F)
 - **`TARGET=artix7_alchitry_au`**: Alchitry Au (Artix-7 XC7A35T-FTG256-1)
 - **`TARGET=cyclonev_analogue_pocket`**: Analogue Pocket bring-up target (Cyclone V 5CEBA4F23C8)
+- **`TARGET=gowin_tang_primer_25k`**: Sipeed Tang Primer 25K bring-up target (Gowin GW5A-LV25MG121NC1/I0)
 
 ## Status: ✅ Successfully Synthesized
 
@@ -93,6 +94,10 @@ make TARGET=artix7_alchitry_au
 # (requires Intel Quartus tools in PATH; outputs stay under build/cyclonev_analogue_pocket/)
 make TARGET=cyclonev_analogue_pocket
 
+# Run the Gowin batch flow for the Tang Primer 25K bring-up target
+# (requires Gowin EDA gw_sh in PATH; outputs stay under build/gowin_tang_primer_25k/)
+make TARGET=gowin_tang_primer_25k
+
 # This generates:
 # - build/<target>/riscv_fpga.*  (target-specific synthesis outputs)
 ```
@@ -154,6 +159,10 @@ available in `build/<target>/nextpnr.log`.
   - Timing summary: `build/artix7_alchitry_au/riscv_fpga_timing_summary.rpt`
   - Utilization report: `build/artix7_alchitry_au/riscv_fpga_utilization.rpt`
 
+- **`gowin_tang_primer_25k`**
+  - Standardized FPGA stats are not implemented yet for the initial Gowin bring-up target
+  - Use `make TARGET=gowin_tang_primer_25k timing` / `utilization` to inspect copied vendor reports
+
 ### Program FPGA (Requires Hardware)
 
 ```bash
@@ -181,6 +190,7 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 - **`artix7_alchitry_au/artix7_alchitry_au_top.sv`**: Artix-7 top-level FPGA wrapper for Alchitry Au
 - **`artix7_alchitry_au/alchitry_au.xdc`**: Artix-7 XDC constraint file for Alchitry Au
 - **`cyclonev_analogue_pocket/`**: openFPGA-style Analogue Pocket target scaffold and Quartus collateral
+- **`gowin_tang_primer_25k/`**: Tang Primer 25K board wrapper, Gowin Tcl flow, and target-local collateral
 - **`Makefile`**: Build automation for synthesis workflow
 - **`build/`**: Generated build artifacts (created during synthesis)
 
@@ -210,6 +220,8 @@ The Artix-7 target now uses the proprietary Vivado CLI flow in batch mode. The f
 
 The Analogue Pocket target follows the same repository-native `rtl/fpga/<target>/` pattern, but uses a Quartus batch Tcl flow rooted in `cyclonev_analogue_pocket/quartus_build.tcl`. The initial Pocket target intentionally stubs the repository UART/host path, so it is currently limited to SRAM/peripheral-oriented bring-up rather than full host-backed runtime parity.
 
+The Tang Primer 25K target follows the same repo-native pattern with a Gowin EDA batch flow rooted in `gowin_tang_primer_25k/gowin_build.tcl`. Like the other vendor-tool targets, it is a local-only flow in the initial revision and is not added to default CI yet.
+
 The Yosys-based targets keep board pin constraints in PCF/LPF files and store asynchronous external-I/O timing exceptions in target-specific `.sdc` files. The Makefile now feeds those SDC files into the nextpnr phase when the installed nextpnr build supports `--sdc`; otherwise the files remain checked-in timing-intent artifacts alongside the existing open-source flow.
 
 By default the Makefile expects `vivado` to be available in your `PATH`. If needed, override the executable path:
@@ -217,6 +229,13 @@ By default the Makefile expects `vivado` to be available in your `PATH`. If need
 ```bash
 make TARGET=artix7_alchitry_au \
   VIVADO=/opt/Xilinx/Vivado/2025.1/bin/vivado
+```
+
+For the Tang Primer 25K target, override the Gowin shell path if needed:
+
+```bash
+make TARGET=gowin_tang_primer_25k \
+  GOWIN_SH=/opt/gowin/IDE/bin/gw_sh
 ```
 
 ## Pin Assignments (Alchitry Cu v1)
