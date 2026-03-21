@@ -238,6 +238,7 @@ existing vendor-tool targets, including:
 - `DEFAULT_PROGRAM_MODE`
 - a Tang-specific Tcl path variable such as `GOWIN_TCL`
 - any vendor executable variable(s)
+- `OPENFPGALOADER_BOARD := tangprimer25k`
 - `OUTPUT_EXT`
 - and, if practical, `PROGRAM_CMD`
 
@@ -337,16 +338,27 @@ as the mature open-source targets on day one.
 
 ### 9.2 Makefile Programming Integration
 
-If the vendor flow exposes a reliable command-line programming path, wire it
-into the Makefile through:
+The Tang target should use **openFPGALoader** for programming, with the board
+parameter set to:
+
+- `-b tangprimer25k`
+
+The Makefile integration should therefore follow the repository's existing
+openFPGALoader pattern and wire programming through:
 
 - `DEFAULT_PROGRAM_MODE`
 - `PROGRAM_MODE`
+- `OPENFPGALOADER_BOARD`
 - `PROGRAM_CMD`
 
-If the programming story is not yet stable enough to automate safely, the target
-README should document manual local programming steps first and defer Makefile
-`program` integration until the flow is better understood.
+The intended programming command shape is:
+
+```bash
+openFPGALoader -b tangprimer25k <program-mode-flag> build/gowin_tang_primer_25k/riscv_fpga.<bitstream-ext>
+```
+
+The target-local README should also document the equivalent manual programming
+command using `openFPGALoader -b tangprimer25k`.
 
 ### 9.3 SRAM vs Flash Policy
 
@@ -357,7 +369,9 @@ The plan should explicitly verify:
 - and which mode should become the default for `DEFAULT_PROGRAM_MODE`.
 
 Those details should be based on confirmed Gowin tooling behavior rather than
-assumptions borrowed from the current Lattice or Quartus targets.
+assumptions borrowed from the current Lattice or Quartus targets, but the
+programmer frontend should be treated as settled: use `openFPGALoader` with
+board parameter `tangprimer25k`.
 
 ---
 
