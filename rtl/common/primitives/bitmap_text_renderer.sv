@@ -267,8 +267,6 @@ module bitmap_text_renderer #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            char_map_addr <= '0;
-            font_addr <= '0;
             video_de <= 1'b0;
             video_hs <= ~HSYNC_ACTIVE_HIGH;
             video_vs <= ~VSYNC_ACTIVE_HIGH;
