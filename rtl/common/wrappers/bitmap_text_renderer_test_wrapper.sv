@@ -40,6 +40,11 @@ module bitmap_text_renderer_test_wrapper (
         .ACTIVE_WIDTH(16),
         .ACTIVE_HEIGHT(16),
         .H_FRONT_PORCH(8),
+        .H_SYNC_WIDTH(1),
+        .H_BACK_PORCH(1),
+        .V_FRONT_PORCH(1),
+        .V_SYNC_WIDTH(1),
+        .V_BACK_PORCH(1),
         .FONT_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_font_init.hex"),
         .CHAR_MAP_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex")
     ) u_bitmap_text_renderer (

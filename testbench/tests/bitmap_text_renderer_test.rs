@@ -50,19 +50,8 @@ fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, 
     panic!("timed out waiting for active coordinate ({x}, {y})");
 }
 
-fn advance_to_active_coordinate_with_pipeline_delay(
-    dut: &mut BitmapTextRendererTestWrapper,
-    x: u8,
-    y: u8,
-) {
-    let delayed_x = x
-        .checked_add(1)
-        .expect("registered-output test helper only supports non-terminal x coordinates");
-    advance_to_active_coordinate(dut, delayed_x, y);
-}
-
 #[test]
-fn test_bitmap_text_renderer_registers_expected_tile_pixels() {
+fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinates() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -86,17 +75,17 @@ fn test_bitmap_text_renderer_registers_expected_tile_pixels() {
     ];
 
     for (x, y, pixel_on) in expected_pixels {
-        advance_to_active_coordinate_with_pipeline_delay(&mut dut, x, y);
+        advance_to_active_coordinate(&mut dut, x, y);
         assert_eq!(
             dut.pixel_on, pixel_on,
-            "unexpected registered pixel value for active coordinate ({x}, {y})"
+            "unexpected registered pixel value aligned to active coordinate ({x}, {y})"
         );
         clock_cycle!(&mut dut);
     }
 }
 
 #[test]
-fn test_bitmap_text_renderer_clears_registered_output_after_blanking_entry() {
+fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -107,18 +96,14 @@ fn test_bitmap_text_renderer_clears_registered_output_after_blanking_entry() {
     wait_for_frame_start(&mut dut, 2);
 
     let mut observed_blanking = false;
-    let mut previous_active_video = dut.active_video;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
         if dut.active_video == 0 {
             observed_blanking = true;
-            if previous_active_video == 0 {
-                assert_eq!(
-                    dut.pixel_on, 0,
-                    "registered pixel_on must clear once blanking persists for a full cycle"
-                );
-            }
+            assert_eq!(
+                dut.pixel_on, 0,
+                "registered pixel_on must stay aligned low during blanking"
+            );
         }
-        previous_active_video = dut.active_video;
         clock_cycle!(&mut dut);
     }
 
