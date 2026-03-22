@@ -29,6 +29,16 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
     for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.frame_start == 1 {
+            assert_eq!(
+                dut.video_de, 1,
+                "frame_start must coincide with active video"
+            );
+            assert_eq!(
+                dut.line_start, 1,
+                "frame_start must also start the first line"
+            );
+            assert_eq!(dut.active_x, 0, "frame_start must align with x=0");
+            assert_eq!(dut.active_y, 0, "frame_start must align with y=0");
             seen += 1;
             if seen == occurrence {
                 return;
@@ -41,7 +51,7 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
 
 fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, y: u8) {
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
-        if dut.active_video == 1 && dut.active_x == x && dut.active_y == y {
+        if dut.video_de == 1 && dut.active_x == x && dut.active_y == y {
             return;
         }
         clock_cycle!(dut);
@@ -97,7 +107,7 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
 
     let mut observed_blanking = false;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
-        if dut.active_video == 0 {
+        if dut.video_de == 0 {
             observed_blanking = true;
             assert_eq!(
                 dut.pixel_on, 0,
@@ -110,5 +120,42 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
     assert!(
         observed_blanking,
         "test frame should include blanking intervals"
+    );
+}
+
+#[test]
+fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    wait_for_frame_start(&mut dut, 2);
+
+    let mut saw_hsync_pulse = false;
+    let mut saw_vsync_pulse = false;
+
+    for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
+        if dut.video_hs == 0 {
+            saw_hsync_pulse = true;
+        }
+        if dut.video_vs == 0 {
+            saw_vsync_pulse = true;
+        }
+        if dut.line_start == 1 {
+            assert_eq!(dut.active_x, 0, "line_start must align with x=0");
+        }
+        clock_cycle!(&mut dut);
+    }
+
+    assert!(
+        saw_hsync_pulse,
+        "test frame should include a horizontal sync pulse"
+    );
+    assert!(
+        saw_vsync_pulse,
+        "test frame should include a vertical sync pulse"
     );
 }
