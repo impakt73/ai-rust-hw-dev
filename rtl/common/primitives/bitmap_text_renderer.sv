@@ -31,8 +31,8 @@ module bitmap_text_renderer #(
     parameter int unsigned V_BACK_PORCH = 33,
     parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
     parameter bit VSYNC_ACTIVE_HIGH = 1'b0,
-    parameter string FONT_INIT_FILE = "",
-    parameter string CHAR_MAP_INIT_FILE = ""
+    parameter FONT_INIT_FILE = "",
+    parameter CHAR_MAP_INIT_FILE = ""
 ) (
     input wire logic clk,
     input wire logic rst,
@@ -124,7 +124,7 @@ module bitmap_text_renderer #(
     );
         int unsigned char_map_index;
 
-        char_map_index = (tile_row * TILE_COLUMNS) + int'(tile_column);
+        char_map_index = (tile_row * TILE_COLUMNS) + 32'(tile_column);
         make_char_map_addr = CHARMAP_ADDR_WIDTH'(char_map_index);
     endfunction
 
@@ -171,6 +171,7 @@ module bitmap_text_renderer #(
         .rdata(font_glyph_rdata)
     );
 
+`ifndef SYNTHESIS
     initial begin
         if (ACTIVE_WIDTH == 0) begin
             $fatal(1, "bitmap_text_renderer: ACTIVE_WIDTH must be > 0");
@@ -194,6 +195,7 @@ module bitmap_text_renderer #(
             $fatal(1, "bitmap_text_renderer: H_FRONT_PORCH must be >= %0d", FONT_PIPELINE_CYCLES);
         end
     end
+`endif
 
     always_comb begin
         active_x_in_tile = sync_active_x[2:0];

@@ -340,6 +340,11 @@ end
     wire            rst_out;
     wire            cpu_booting;
     wire    [31:0]  halted_value;
+    wire    [23:0]  repo_video_rgb;
+    wire            repo_video_de;
+    wire            repo_video_skip;
+    wire            repo_video_vs;
+    wire            repo_video_hs;
     
 // bridge host commands
 // synchronous to clk_74a
@@ -418,6 +423,7 @@ end
 
 analogue_pocket_repo_top repo_top_inst (
     .clk            ( clk_74a ),
+    .clk_video      ( clk_core_12288 ),
     .reset_n        ( reset_n ),
     .led_out        ( led_out ),
     .sys_led_out    ( sys_led_out ),
@@ -425,7 +431,12 @@ analogue_pocket_repo_top repo_top_inst (
     .instr_complete ( instr_complete ),
     .rst_out        ( rst_out ),
     .cpu_booting    ( cpu_booting ),
-    .halted_value   ( halted_value )
+    .halted_value   ( halted_value ),
+    .video_rgb      ( repo_video_rgb ),
+    .video_de       ( repo_video_de ),
+    .video_skip     ( repo_video_skip ),
+    .video_vs       ( repo_video_vs ),
+    .video_hs       ( repo_video_hs )
 );
 
 core_bridge_cmd icb (
@@ -529,101 +540,11 @@ core_bridge_cmd icb (
 
 assign video_rgb_clock = clk_core_12288;
 assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = vidout_rgb;
-assign video_de = vidout_de;
-assign video_skip = vidout_skip;
-assign video_vs = vidout_vs;
-assign video_hs = vidout_hs;
-
-    localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
-    localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
-
-    reg [15:0]  frame_count;
-    
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-    
-    wire [9:0]  visible_x = x_count - VID_H_BPORCH;
-    wire [9:0]  visible_y = y_count - VID_V_BPORCH;
-
-    reg [23:0]  vidout_rgb;
-    reg         vidout_de, vidout_de_1;
-    reg         vidout_skip;
-    reg         vidout_vs;
-    reg         vidout_hs, vidout_hs_1;
-    
-    reg [9:0]   square_x = 'd135;
-    reg [9:0]   square_y = 'd95;
-
-always @(posedge clk_core_12288 or negedge reset_n) begin
-
-    if(~reset_n) begin
-    
-        x_count <= 0;
-        y_count <= 0;
-        
-    end else begin
-        vidout_de <= 0;
-        vidout_skip <= 0;
-        vidout_vs <= 0;
-        vidout_hs <= 0;
-        
-        vidout_hs_1 <= vidout_hs;
-        vidout_de_1 <= vidout_de;
-        
-        // x and y counters
-        x_count <= x_count + 1'b1;
-        if(x_count == VID_H_TOTAL-1) begin
-            x_count <= 0;
-            
-            y_count <= y_count + 1'b1;
-            if(y_count == VID_V_TOTAL-1) begin
-                y_count <= 0;
-            end
-        end
-        
-        // generate sync 
-        if(x_count == 0 && y_count == 0) begin
-            // sync signal in back porch
-            // new frame
-            vidout_vs <= 1;
-            frame_count <= frame_count + 1'b1;
-        end
-        
-        // we want HS to occur a bit after VS, not on the same cycle
-        if(x_count == 3) begin
-            // sync signal in back porch
-            // new line
-            vidout_hs <= 1;
-        end
-
-        // inactive screen areas are black
-        vidout_rgb <= 24'h0;
-        // generate active video
-        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
-
-            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
-                // data enable. this is the active region of the line
-                vidout_de <= 1;
-
-                if(sys_led_out[0]) begin
-                    vidout_rgb[23:16] <= 8'd0;
-                    vidout_rgb[15:8]  <= 8'd96;
-                    vidout_rgb[7:0]   <= 8'd0;
-                end else begin
-                    vidout_rgb[23:16] <= 8'd60;
-                    vidout_rgb[15:8]  <= 8'd60;
-                    vidout_rgb[7:0]   <= 8'd60;
-                end
-                
-            end 
-        end
-    end
-end
+assign video_rgb = repo_video_rgb;
+assign video_de = repo_video_de;
+assign video_skip = repo_video_skip;
+assign video_vs = repo_video_vs;
+assign video_hs = repo_video_hs;
 
 
 

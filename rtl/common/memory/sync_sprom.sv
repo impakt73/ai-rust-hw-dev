@@ -14,7 +14,7 @@
 module sync_sprom #(
     parameter int DATA_WIDTH   = 32,
     parameter int ADDR_WIDTH   = 8,  // 256 entries by default
-    parameter string INIT_FILE = ""
+    parameter INIT_FILE = ""
 ) (
     input  wire logic                  clk,
     input  wire logic [ADDR_WIDTH-1:0] addr,
@@ -26,10 +26,14 @@ module sync_sprom #(
     (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
 
     initial begin
+`ifndef SYNTHESIS
         if (INIT_FILE == "") begin
             $fatal(1, "sync_sprom requires a non-empty INIT_FILE parameter");
         end
-        $readmemh(INIT_FILE, mem);
+`endif
+        if (INIT_FILE != "") begin
+            $readmemh(INIT_FILE, mem);
+        end
     end
 
     // Read port - synchronous read (required for BRAM inference)
