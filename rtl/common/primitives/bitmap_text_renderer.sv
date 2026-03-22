@@ -270,10 +270,6 @@ module bitmap_text_renderer #(
                 latched_active_y <= sync_active_y;
             end
 
-            if (sync_line_start) begin
-                current_tile_row_bits <= '0;
-            end
-
             if (issue_char_request) begin
                 char_map_addr <= requested_char_map_addr;
             end
