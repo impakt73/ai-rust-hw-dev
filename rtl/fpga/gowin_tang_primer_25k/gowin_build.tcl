@@ -37,7 +37,7 @@ foreach rtl_source $rtl_sources {
     set extension [string tolower [file extension $normalized_source]]
     switch -- $extension {
         ".sv" {
-            add_file -type systemverilog $normalized_source
+            add_file -type verilog $normalized_source
         }
         ".v" {
             add_file -type verilog $normalized_source
@@ -54,6 +54,7 @@ add_file -type sdc $timing_file
 
 set_option -top_module $top_module
 set_option -output_base_name $project_name
+set_option -verilog_std sysv2017
 
 run all
 
