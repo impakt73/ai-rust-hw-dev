@@ -110,6 +110,8 @@ module bitmap_text_renderer #(
     logic expected_line_start;
     logic [ACTIVE_X_WIDTH-1:0] expected_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] expected_active_y;
+    logic observed_frame_start;
+    logic timing_locked;
 
     function automatic logic [CHARMAP_ADDR_WIDTH-1:0] make_char_map_addr(
         input logic [TILE_ROW_WIDTH-1:0] tile_row,
@@ -199,6 +201,7 @@ module bitmap_text_renderer #(
         expected_line_start = (h_counter == '0);
         expected_active_x = expected_active_video ? ACTIVE_X_WIDTH'(h_counter) : '0;
         expected_active_y = expected_active_video ? ACTIVE_Y_WIDTH'(v_counter) : '0;
+        observed_frame_start = active_video && line_start && (active_x == '0) && (active_y == '0);
 
         // The externally supplied timing inputs describe the *current* pixel.
         // They still drive the fetch scheduler, which always works several
@@ -261,6 +264,7 @@ module bitmap_text_renderer #(
         if (rst) begin
             h_counter <= H_LAST;
             v_counter <= V_LAST;
+            timing_locked <= 1'b0;
             active_video_d <= 1'b0;
             latched_active_y <= '0;
             next_tile_valid <= 1'b0;
@@ -272,8 +276,14 @@ module bitmap_text_renderer #(
             font_req_valid_d2 <= 1'b0;
             pixel_on <= 1'b0;
         end else begin
-            h_counter <= h_counter_next;
-            v_counter <= v_counter_next;
+            if (observed_frame_start) begin
+                h_counter <= H_COUNTER_WIDTH'(1);
+                v_counter <= '0;
+                timing_locked <= 1'b1;
+            end else begin
+                h_counter <= h_counter_next;
+                v_counter <= v_counter_next;
+            end
             active_video_d <= active_video;
             pixel_on <= pixel_on_next;
 
@@ -281,10 +291,12 @@ module bitmap_text_renderer #(
             // aligned to the external scan coordinates. Catch any parameter
             // mismatch early in simulation instead of silently rendering the
             // wrong pixels.
-            if ((active_video != expected_active_video) ||
+            if (timing_locked &&
+                    !observed_frame_start &&
+                    ((active_video != expected_active_video) ||
                     (line_start != expected_line_start) ||
                     (active_x != expected_active_x) ||
-                    (active_y != expected_active_y)) begin
+                    (active_y != expected_active_y))) begin
                 $fatal(
                     1,
                     "bitmap_text_renderer: input timing does not match configured raster parameters"
