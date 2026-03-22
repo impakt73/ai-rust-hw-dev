@@ -21,9 +21,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
-	$(RTL_DIR)/primitives/bitmap_text_renderer.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
-	$(RTL_DIR)/primitives/video_sync.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/fpu/fp_regfile.sv \
@@ -44,7 +42,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/mul_unit.sv \
 	$(RTL_DIR)/memory/registered_bus.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
-	$(RTL_DIR)/memory/sync_sprom.sv \
 	$(RTL_DIR)/cpu/regfile.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \
 	$(RTL_DIR)/primitives/reset_controller.sv \
@@ -159,13 +156,18 @@ NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 FPGA_SOURCES = \
 	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
+POCKET_RTL_SOURCES = \
+	$(RTL_DIR)/primitives/bitmap_text_renderer.sv \
+	$(RTL_DIR)/primitives/video_sync.sv \
+	$(RTL_DIR)/memory/sync_sprom.sv
 else
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
 	$(FPGA_DIR)/$(TOP_MODULE).sv
+POCKET_RTL_SOURCES =
 endif
 
-ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
+ALL_SOURCES = $(RTL_SOURCES) $(POCKET_RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 
 # Output files
