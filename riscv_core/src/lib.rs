@@ -24,6 +24,10 @@ pub struct Top;
 #[verilog(src = "../rtl/common/cpu/alu.sv", name = "alu")]
 pub struct Alu;
 
+// Define DSP pipeline module
+#[verilog(src = "../rtl/common/cpu/dsp_pipe.sv", name = "dsp_pipe")]
+pub struct DspPipe;
+
 // Define RegFile module
 #[verilog(src = "../rtl/common/cpu/regfile.sv", name = "regfile")]
 pub struct RegFile;
@@ -345,6 +349,11 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["cpu/alu.sv", "cpu/div_unit.sv", "cpu/mul_unit.sv"])
+}
+
+// Helper function to create a runtime for the DSP pipeline
+pub fn create_dsp_pipe_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["cpu/dsp_pipe.sv"])
 }
 
 // Helper function to create a runtime for the MulUnit
