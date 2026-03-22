@@ -190,23 +190,13 @@ module bitmap_text_renderer #(
         if (rst) begin
             active_video_d <= 1'b0;
             latched_active_y <= '0;
-            current_tile_row_bits <= '0;
-            next_tile_row_bits <= '0;
             next_tile_valid <= 1'b0;
-            char_map_addr <= '0;
-            font_addr <= '0;
             char_req_valid_d0 <= 1'b0;
             char_req_valid_d1 <= 1'b0;
             char_req_valid_d2 <= 1'b0;
-            char_req_glyph_row_d0 <= '0;
-            char_req_glyph_row_d1 <= '0;
-            char_req_glyph_row_d2 <= '0;
             font_req_valid_d0 <= 1'b0;
             font_req_valid_d1 <= 1'b0;
             font_req_valid_d2 <= 1'b0;
-            font_req_glyph_row_d0 <= '0;
-            font_req_glyph_row_d1 <= '0;
-            font_req_glyph_row_d2 <= '0;
         end else begin
             active_video_d <= active_video;
 
@@ -248,7 +238,6 @@ module bitmap_text_renderer #(
             if (active_video && (active_x_in_tile == 3'd0) && next_tile_valid) begin
                 current_tile_row_bits <= next_tile_row_bits;
             end
-
         end
     end
 
