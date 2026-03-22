@@ -244,6 +244,12 @@ pub struct VideoSyncWrapper;
 pub struct VideoSyncMinimalWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/bitmap_text_renderer_test_wrapper.sv",
+    name = "bitmap_text_renderer_test_wrapper"
+)]
+pub struct BitmapTextRendererTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sys_led_controller_wrapper.sv",
     name = "sys_led_controller_wrapper"
 )]
@@ -574,5 +580,15 @@ pub fn create_video_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
     create_runtime(&[
         "primitives/video_sync.sv",
         "wrappers/video_sync_test_wrappers.sv",
+    ])
+}
+
+pub fn create_bitmap_text_renderer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/video_sync.sv",
+        "primitives/bitmap_text_renderer.sv",
+        "wrappers/bitmap_text_renderer_test_wrapper.sv",
     ])
 }

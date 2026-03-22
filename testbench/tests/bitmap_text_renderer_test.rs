@@ -1,0 +1,111 @@
+use riscv_core::{create_bitmap_text_renderer_runtime, BitmapTextRendererTestWrapper};
+
+const BITMAP_TEXT_RENDERER_H_TOTAL: usize = 26;
+const BITMAP_TEXT_RENDERER_V_TOTAL: usize = 19;
+const BITMAP_TEXT_RENDERER_FRAME_CYCLES: usize =
+    BITMAP_TEXT_RENDERER_H_TOTAL * BITMAP_TEXT_RENDERER_V_TOTAL;
+
+macro_rules! clock_cycle {
+    ($dut:expr) => {
+        $dut.clk = 0;
+        $dut.eval();
+        $dut.clk = 1;
+        $dut.eval();
+        $dut.clk = 0;
+        $dut.eval();
+    };
+}
+
+fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
+    dut.rst = 1;
+    for _ in 0..6 {
+        clock_cycle!(dut);
+    }
+    dut.rst = 0;
+}
+
+fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usize) {
+    let mut seen = 0;
+    for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
+        clock_cycle!(dut);
+        if dut.frame_start == 1 {
+            seen += 1;
+            if seen == occurrence {
+                return;
+            }
+        }
+    }
+
+    panic!("timed out waiting for frame_start occurrence {occurrence}");
+}
+
+fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, y: u8) {
+    for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
+        if dut.active_video == 1 && dut.active_x == x && dut.active_y == y {
+            return;
+        }
+        clock_cycle!(dut);
+    }
+
+    panic!("timed out waiting for active coordinate ({x}, {y})");
+}
+
+#[test]
+fn test_bitmap_text_renderer_renders_expected_tile_pixels() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    wait_for_frame_start(&mut dut, 2);
+
+    let expected_pixels = [
+        (0u8, 0u8, 1u8),
+        (1u8, 0u8, 0u8),
+        (7u8, 0u8, 1u8),
+        (8u8, 0u8, 1u8),
+        (8u8, 1u8, 0u8),
+        (0u8, 8u8, 1u8),
+        (3u8, 8u8, 1u8),
+        (4u8, 8u8, 0u8),
+        (8u8, 8u8, 0u8),
+        (12u8, 8u8, 1u8),
+    ];
+
+    for (x, y, pixel_on) in expected_pixels {
+        advance_to_active_coordinate(&mut dut, x, y);
+        assert_eq!(
+            dut.pixel_on, pixel_on,
+            "unexpected pixel value at active coordinate ({x}, {y})"
+        );
+        clock_cycle!(&mut dut);
+    }
+}
+
+#[test]
+fn test_bitmap_text_renderer_keeps_pixel_output_low_during_blanking() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    wait_for_frame_start(&mut dut, 2);
+
+    let mut observed_blanking = false;
+    for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
+        if dut.active_video == 0 {
+            observed_blanking = true;
+            assert_eq!(dut.pixel_on, 0, "pixel_on must stay low during blanking");
+        }
+        clock_cycle!(&mut dut);
+    }
+
+    assert!(
+        observed_blanking,
+        "test frame should include blanking intervals"
+    );
+}
