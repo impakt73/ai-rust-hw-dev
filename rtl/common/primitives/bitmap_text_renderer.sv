@@ -268,7 +268,7 @@ module bitmap_text_renderer #(
     always_ff @(posedge clk) begin
         if (rst) begin
             char_map_addr <= '0;
-            font_addr <= {char_map_rdata, FONT_ROW_INDEX_WIDTH'('0)};
+            font_addr <= '0;
             video_de <= 1'b0;
             video_hs <= ~HSYNC_ACTIVE_HIGH;
             video_vs <= ~VSYNC_ACTIVE_HIGH;
@@ -280,8 +280,7 @@ module bitmap_text_renderer #(
             startup_prefetch_done <= 1'b0;
             latched_active_y <= '0;
             current_tile_valid <= 1'b0;
-            next_tile_row_bits <= font_glyph_rdata;
-            next_tile_valid <= 1'b1;
+            next_tile_valid <= 1'b0;
             char_req_valid_d0 <= 1'b0;
             char_req_valid_d1 <= 1'b0;
             char_req_valid_d2 <= 1'b0;

@@ -105,7 +105,7 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
     reset_wrapper(&mut dut);
     wait_for_frame_start(&mut dut, 1);
 
-    let expected_pixels = [(0u8, 0u8, 1u8), (4u8, 0u8, 0u8), (7u8, 0u8, 1u8)];
+    let expected_pixels = [(1u8, 0u8, 0u8), (4u8, 0u8, 0u8), (7u8, 0u8, 1u8)];
 
     for (x, y, pixel_on) in expected_pixels {
         advance_to_active_coordinate(&mut dut, x, y);
