@@ -14,7 +14,7 @@
 module sync_sprom #(
     parameter int DATA_WIDTH   = 32,
     parameter int ADDR_WIDTH   = 8,  // 256 entries by default
-    parameter string INIT_FILE = ""
+    parameter INIT_FILE = ""
 ) (
     input  wire logic                  clk,
     input  wire logic [ADDR_WIDTH-1:0] addr,

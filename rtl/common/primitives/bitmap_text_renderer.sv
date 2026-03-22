@@ -31,8 +31,8 @@ module bitmap_text_renderer #(
     parameter int unsigned V_BACK_PORCH = 33,
     parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
     parameter bit VSYNC_ACTIVE_HIGH = 1'b0,
-    parameter string FONT_INIT_FILE = "",
-    parameter string CHAR_MAP_INIT_FILE = ""
+    parameter FONT_INIT_FILE = "",
+    parameter CHAR_MAP_INIT_FILE = ""
 ) (
     input wire logic clk,
     input wire logic rst,
