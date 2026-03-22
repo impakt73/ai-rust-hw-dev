@@ -32,7 +32,7 @@ module sync_sprom #(
         end
 `endif
         if (INIT_FILE != "") begin
-        $readmemh(INIT_FILE, mem);
+            $readmemh(INIT_FILE, mem);
         end
     end
 
