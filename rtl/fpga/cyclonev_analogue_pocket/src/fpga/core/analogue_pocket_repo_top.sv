@@ -3,8 +3,8 @@
 module analogue_pocket_repo_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
-    parameter string FONT_INIT_FILE = "../common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter string CHAR_MAP_INIT_FILE = "../common/wrappers/bitmap_text_renderer_char_map_init.hex"
+    parameter string FONT_INIT_FILE = "./core/bitmap_text_renderer_font_init.hex",
+    parameter string CHAR_MAP_INIT_FILE = "./core/bitmap_text_renderer_char_map_init.hex"
 ) (
     input  wire logic       clk,
     input  wire logic       clk_video,
