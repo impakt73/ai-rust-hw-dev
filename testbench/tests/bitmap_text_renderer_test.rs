@@ -114,7 +114,7 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
                 "registered pixel_on must stay aligned low during blanking"
             );
         }
-        clock_cycle!(&mut dut);
+        clock_cycle!(dut);
     }
 
     assert!(
@@ -147,7 +147,7 @@ fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
         if dut.line_start == 1 {
             assert_eq!(dut.active_x, 0, "line_start must align with x=0");
         }
-        clock_cycle!(&mut dut);
+        clock_cycle!(dut);
     }
 
     assert!(
