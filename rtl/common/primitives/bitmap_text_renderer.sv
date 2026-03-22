@@ -6,7 +6,9 @@
 // The renderer pipelines its ROM fetches so that each font-row fetch provides
 // 8 pixel decisions for the current scanline. The first tile of the next line
 // is prefetched during the horizontal front porch, so the front porch must be
-// at least as long as the combined character-map and font ROM latency.
+// at least as long as the combined character-map and font-row ROM latency.
+// The `pixel_on` output is registered, so it is available one clock after the
+// corresponding scan position enters the renderer.
 
 module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_WIDTH = 640,
@@ -26,8 +28,9 @@ module bitmap_text_renderer #(
     output logic pixel_on
 );
 
-    localparam int unsigned FONT_ROM_DATA_WIDTH = 64;
-    localparam int unsigned FONT_ROM_ADDR_WIDTH = 8;
+    localparam int unsigned FONT_ROM_DATA_WIDTH = 8;
+    localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
+    localparam int unsigned FONT_ROM_ADDR_WIDTH = 8 + FONT_ROW_INDEX_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
     localparam int unsigned FONT_PIPELINE_CYCLES = 8;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
@@ -53,6 +56,7 @@ module bitmap_text_renderer #(
     logic [7:0] current_tile_row_bits;
     logic [7:0] next_tile_row_bits;
     logic next_tile_valid;
+    logic pixel_on_next;
     logic char_req_valid_d0;
     logic char_req_valid_d1;
     logic char_req_valid_d2;
@@ -62,9 +66,6 @@ module bitmap_text_renderer #(
     logic font_req_valid_d0;
     logic font_req_valid_d1;
     logic font_req_valid_d2;
-    logic [2:0] font_req_glyph_row_d0;
-    logic [2:0] font_req_glyph_row_d1;
-    logic [2:0] font_req_glyph_row_d2;
 
     logic issue_char_request;
     logic [CHARMAP_ADDR_WIDTH-1:0] requested_char_map_addr;
@@ -74,8 +75,6 @@ module bitmap_text_renderer #(
     logic [ACTIVE_Y_WIDTH-1:0] next_line_active_y;
     logic [TILE_ROW_WIDTH-1:0] next_line_tile_row;
     logic [2:0] active_x_in_tile;
-    logic [7:0] font_row_bits;
-
     function automatic logic [CHARMAP_ADDR_WIDTH-1:0] make_char_map_addr(
         input logic [TILE_ROW_WIDTH-1:0] tile_row,
         input logic [TILE_COLUMN_WIDTH-1:0] tile_column
@@ -84,22 +83,6 @@ module bitmap_text_renderer #(
 
         char_map_index = (tile_row * TILE_COLUMNS) + int'(tile_column);
         make_char_map_addr = CHARMAP_ADDR_WIDTH'(char_map_index);
-    endfunction
-
-    function automatic logic [7:0] select_font_row(
-        input logic [FONT_ROM_DATA_WIDTH-1:0] glyph_word,
-        input logic [2:0] glyph_row
-    );
-        case (glyph_row)
-            3'd0: select_font_row = glyph_word[63:56];
-            3'd1: select_font_row = glyph_word[55:48];
-            3'd2: select_font_row = glyph_word[47:40];
-            3'd3: select_font_row = glyph_word[39:32];
-            3'd4: select_font_row = glyph_word[31:24];
-            3'd5: select_font_row = glyph_word[23:16];
-            3'd6: select_font_row = glyph_word[15:8];
-            default: select_font_row = glyph_word[7:0];
-        endcase
     endfunction
 
     sync_sprom #(
@@ -175,14 +158,16 @@ module bitmap_text_renderer #(
             requested_glyph_row = next_line_active_y[2:0];
         end
 
-        font_row_bits = select_font_row(font_glyph_rdata, font_req_glyph_row_d2);
-
         if (!active_video) begin
-            pixel_on = 1'b0;
+            pixel_on_next = 1'b0;
         end else if (active_x_in_tile == 3'd0) begin
-            pixel_on = next_tile_valid ? next_tile_row_bits[7] : 1'b0;
+            if (font_req_valid_d2) begin
+                pixel_on_next = font_glyph_rdata[7];
+            end else begin
+                pixel_on_next = next_tile_valid ? next_tile_row_bits[7] : 1'b0;
+            end
         end else begin
-            pixel_on = current_tile_row_bits[3'd7-active_x_in_tile];
+            pixel_on_next = current_tile_row_bits[3'd7-active_x_in_tile];
         end
     end
 
@@ -197,8 +182,10 @@ module bitmap_text_renderer #(
             font_req_valid_d0 <= 1'b0;
             font_req_valid_d1 <= 1'b0;
             font_req_valid_d2 <= 1'b0;
+            pixel_on <= 1'b0;
         end else begin
             active_video_d <= active_video;
+            pixel_on <= pixel_on_next;
 
             if (active_video) begin
                 latched_active_y <= active_y;
@@ -220,18 +207,15 @@ module bitmap_text_renderer #(
             char_req_glyph_row_d2 <= char_req_glyph_row_d1;
 
             if (char_req_valid_d2) begin
-                font_addr <= char_map_rdata;
+                font_addr <= {char_map_rdata, char_req_glyph_row_d2};
             end
 
             font_req_valid_d0 <= char_req_valid_d2;
             font_req_valid_d1 <= font_req_valid_d0;
             font_req_valid_d2 <= font_req_valid_d1;
-            font_req_glyph_row_d0 <= char_req_glyph_row_d2;
-            font_req_glyph_row_d1 <= font_req_glyph_row_d0;
-            font_req_glyph_row_d2 <= font_req_glyph_row_d1;
 
             if (font_req_valid_d2) begin
-                next_tile_row_bits <= font_row_bits;
+                next_tile_row_bits <= font_glyph_rdata;
                 next_tile_valid <= 1'b1;
             end
 

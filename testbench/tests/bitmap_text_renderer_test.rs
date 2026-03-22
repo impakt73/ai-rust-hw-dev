@@ -50,8 +50,12 @@ fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, 
     panic!("timed out waiting for active coordinate ({x}, {y})");
 }
 
+fn advance_to_registered_sample(dut: &mut BitmapTextRendererTestWrapper, x: u8, y: u8) {
+    advance_to_active_coordinate(dut, x.wrapping_add(1), y);
+}
+
 #[test]
-fn test_bitmap_text_renderer_renders_expected_tile_pixels() {
+fn test_bitmap_text_renderer_registers_expected_tile_pixels() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -75,17 +79,17 @@ fn test_bitmap_text_renderer_renders_expected_tile_pixels() {
     ];
 
     for (x, y, pixel_on) in expected_pixels {
-        advance_to_active_coordinate(&mut dut, x, y);
+        advance_to_registered_sample(&mut dut, x, y);
         assert_eq!(
             dut.pixel_on, pixel_on,
-            "unexpected pixel value at active coordinate ({x}, {y})"
+            "unexpected registered pixel value for active coordinate ({x}, {y})"
         );
         clock_cycle!(&mut dut);
     }
 }
 
 #[test]
-fn test_bitmap_text_renderer_keeps_pixel_output_low_during_blanking() {
+fn test_bitmap_text_renderer_clears_registered_output_after_blanking_entry() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -96,11 +100,18 @@ fn test_bitmap_text_renderer_keeps_pixel_output_low_during_blanking() {
     wait_for_frame_start(&mut dut, 2);
 
     let mut observed_blanking = false;
+    let mut previous_active_video = dut.active_video;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
         if dut.active_video == 0 {
             observed_blanking = true;
-            assert_eq!(dut.pixel_on, 0, "pixel_on must stay low during blanking");
+            if previous_active_video == 0 {
+                assert_eq!(
+                    dut.pixel_on, 0,
+                    "registered pixel_on must clear once blanking persists for a full cycle"
+                );
+            }
         }
+        previous_active_video = dut.active_video;
         clock_cycle!(&mut dut);
     }
 
