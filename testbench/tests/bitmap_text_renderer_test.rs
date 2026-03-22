@@ -90,7 +90,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
             dut.pixel_on, pixel_on,
             "unexpected registered pixel value aligned to active coordinate ({x}, {y})"
         );
-        clock_cycle!(&mut dut);
+        clock_cycle!(dut);
     }
 }
 

@@ -193,7 +193,7 @@ module bitmap_text_renderer #(
 
         issue_char_request = 1'b0;
         requested_char_map_addr = char_map_addr;
-        requested_glyph_row = FONT_ROW_INDEX_WIDTH'(0);
+        requested_glyph_row = '0;
 
         // Fetch ahead of the currently displayed tile so the synchronous
         // character-map ROM and font ROM have enough latency budget to return
