@@ -85,6 +85,7 @@ module video_sync #(
     logic v_in_sync_region;
 
     // Parameter validation (simulation only)
+`ifndef SYNTHESIS
     initial begin
         if (H_ACTIVE == 0) begin
             $fatal(1, "video_sync: H_ACTIVE must be > 0");
@@ -105,6 +106,7 @@ module video_sync #(
             $fatal(1, "video_sync: vertical blanking interval must be > 0");
         end
     end
+`endif
 
     always_comb begin
         if (h_counter == H_LAST) begin

@@ -26,10 +26,14 @@ module sync_sprom #(
     (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
 
     initial begin
+`ifndef SYNTHESIS
         if (INIT_FILE == "") begin
             $fatal(1, "sync_sprom requires a non-empty INIT_FILE parameter");
         end
+`endif
+        if (INIT_FILE != "") begin
         $readmemh(INIT_FILE, mem);
+        end
     end
 
     // Read port - synchronous read (required for BRAM inference)
