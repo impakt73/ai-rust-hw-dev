@@ -262,6 +262,8 @@ module bitmap_text_renderer #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
+            // Match video_sync's reset convention so both timing generators wrap
+            // to (0, 0) together on the first cycle after reset is released.
             h_counter <= H_LAST;
             v_counter <= V_LAST;
             timing_locked <= 1'b0;
@@ -277,6 +279,9 @@ module bitmap_text_renderer #(
             pixel_on <= 1'b0;
         end else begin
             if (observed_frame_start) begin
+                // `observed_frame_start` describes the *current* visible cycle
+                // at (x=0, y=0). After this edge the raster advances to x=1, so
+                // the internal mirrored state must advance as well.
                 h_counter <= H_COUNTER_WIDTH'(1);
                 v_counter <= '0;
                 timing_locked <= 1'b1;
