@@ -55,7 +55,10 @@ fn advance_to_active_coordinate_with_pipeline_delay(
     x: u8,
     y: u8,
 ) {
-    advance_to_active_coordinate(dut, x.wrapping_add(1), y);
+    let delayed_x = x
+        .checked_add(1)
+        .expect("registered-output test helper only supports non-terminal x coordinates");
+    advance_to_active_coordinate(dut, delayed_x, y);
 }
 
 #[test]

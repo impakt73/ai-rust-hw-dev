@@ -60,21 +60,21 @@ module bitmap_text_renderer #(
     logic char_req_valid_d0;
     logic char_req_valid_d1;
     logic char_req_valid_d2;
-    logic [2:0] char_req_glyph_row_d0;
-    logic [2:0] char_req_glyph_row_d1;
-    logic [2:0] char_req_glyph_row_d2;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d0;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d1;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d2;
     logic font_req_valid_d0;
     logic font_req_valid_d1;
     logic font_req_valid_d2;
 
     logic issue_char_request;
     logic [CHARMAP_ADDR_WIDTH-1:0] requested_char_map_addr;
-    logic [2:0] requested_glyph_row;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] requested_glyph_row;
     logic [TILE_COLUMN_WIDTH-1:0] active_tile_column;
     logic [TILE_ROW_WIDTH-1:0] active_tile_row;
     logic [ACTIVE_Y_WIDTH-1:0] next_line_active_y;
     logic [TILE_ROW_WIDTH-1:0] next_line_tile_row;
-    logic [2:0] active_x_in_tile;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] active_x_in_tile;
     function automatic logic [CHARMAP_ADDR_WIDTH-1:0] make_char_map_addr(
         input logic [TILE_ROW_WIDTH-1:0] tile_row,
         input logic [TILE_COLUMN_WIDTH-1:0] tile_column
@@ -151,23 +151,25 @@ module bitmap_text_renderer #(
             issue_char_request = 1'b1;
             requested_char_map_addr =
                 make_char_map_addr(active_tile_row, active_tile_column + 1'b1);
-            requested_glyph_row = active_y[2:0];
+            requested_glyph_row = FONT_ROW_INDEX_WIDTH'(active_y[FONT_ROW_INDEX_WIDTH-1:0]);
         end else if (!active_video && active_video_d) begin
             issue_char_request = 1'b1;
             requested_char_map_addr = make_char_map_addr(next_line_tile_row, '0);
-            requested_glyph_row = next_line_active_y[2:0];
+            requested_glyph_row = FONT_ROW_INDEX_WIDTH'(
+                next_line_active_y[FONT_ROW_INDEX_WIDTH-1:0]
+            );
         end
 
         if (!active_video) begin
             pixel_on_next = 1'b0;
-        end else if (active_x_in_tile == 3'd0) begin
+        end else if (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) begin
             if (font_req_valid_d2) begin
                 pixel_on_next = font_glyph_rdata[7];
             end else begin
                 pixel_on_next = next_tile_valid ? next_tile_row_bits[7] : 1'b0;
             end
         end else begin
-            pixel_on_next = current_tile_row_bits[3'd7-active_x_in_tile];
+            pixel_on_next = current_tile_row_bits[FONT_ROW_INDEX_WIDTH'(7)-active_x_in_tile];
         end
     end
 
@@ -219,7 +221,13 @@ module bitmap_text_renderer #(
                 next_tile_valid <= 1'b1;
             end
 
-            if (active_video && (active_x_in_tile == 3'd0) && next_tile_valid) begin
+            if (active_video &&
+                    (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) &&
+                    font_req_valid_d2) begin
+                current_tile_row_bits <= font_glyph_rdata;
+            end else if (active_video &&
+                    (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) &&
+                    next_tile_valid) begin
                 current_tile_row_bits <= next_tile_row_bits;
             end
         end
