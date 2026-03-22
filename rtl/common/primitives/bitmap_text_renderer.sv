@@ -207,7 +207,7 @@ module bitmap_text_renderer #(
             char_req_glyph_row_d2 <= char_req_glyph_row_d1;
 
             if (char_req_valid_d2) begin
-                font_addr <= {char_map_rdata, char_req_glyph_row_d2};
+                font_addr <= {char_map_rdata, FONT_ROW_INDEX_WIDTH'(char_req_glyph_row_d2)};
             end
 
             font_req_valid_d0 <= char_req_valid_d2;

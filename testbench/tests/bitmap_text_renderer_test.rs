@@ -50,7 +50,11 @@ fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, 
     panic!("timed out waiting for active coordinate ({x}, {y})");
 }
 
-fn advance_to_registered_sample(dut: &mut BitmapTextRendererTestWrapper, x: u8, y: u8) {
+fn advance_to_active_coordinate_with_pipeline_delay(
+    dut: &mut BitmapTextRendererTestWrapper,
+    x: u8,
+    y: u8,
+) {
     advance_to_active_coordinate(dut, x.wrapping_add(1), y);
 }
 
@@ -79,7 +83,7 @@ fn test_bitmap_text_renderer_registers_expected_tile_pixels() {
     ];
 
     for (x, y, pixel_on) in expected_pixels {
-        advance_to_registered_sample(&mut dut, x, y);
+        advance_to_active_coordinate_with_pipeline_delay(&mut dut, x, y);
         assert_eq!(
             dut.pixel_on, pixel_on,
             "unexpected registered pixel value for active coordinate ({x}, {y})"
