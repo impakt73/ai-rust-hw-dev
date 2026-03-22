@@ -136,6 +136,7 @@ module analogue_pocket_repo_top #(
 
     always_ff @(posedge clk_video) begin
         if (video_rst) begin
+            video_rgb_reg <= 24'h00_00_00;
             video_de_reg <= 1'b0;
             video_skip_reg <= 1'b0;
             video_vs_reg <= 1'b0;
