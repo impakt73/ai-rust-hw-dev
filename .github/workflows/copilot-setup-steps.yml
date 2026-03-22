@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      VERIBLE_VERSION: v0.0-4053-g89d4d98a
     
     steps:
       - name: Checkout repository
@@ -40,6 +42,18 @@ jobs:
       
       - name: Install RISC-V Rust Target
         run: rustup target add riscv32imafc-unknown-none-elf
+
+      - name: Install Verible
+        run: |
+          set -euo pipefail
+          VERIBLE_DIR="$RUNNER_TEMP/verible-${VERIBLE_VERSION}"
+          curl -L --fail \
+            -o "$RUNNER_TEMP/verible.tar.gz" \
+            "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+          rm -rf "$VERIBLE_DIR"
+          mkdir -p "$VERIBLE_DIR"
+          tar -xzf "$RUNNER_TEMP/verible.tar.gz" -C "$VERIBLE_DIR" --strip-components=1
+          echo "$VERIBLE_DIR/bin" >> "$GITHUB_PATH"
       
       - name: Cache Cargo dependencies and build artifacts
         uses: actions/cache@v4
@@ -56,6 +70,8 @@ jobs:
       - name: Verify installations
         run: |
           verilator --version
+          verible-verilog-format --version
+          verible-verilog-lint --version
           rustc --version
           cargo --version
           rustup target list --installed | grep riscv32imafc-unknown-none-elf
@@ -69,6 +85,8 @@ jobs:
         run: |
           echo "=== Development Environment Setup Complete ==="
           echo "Verilator: $(verilator --version | head -1)"
+          echo "Verible formatter: $(verible-verilog-format --version | head -1)"
+          echo "Verible linter: $(verible-verilog-lint --version | head -1)"
           echo "Rust: $(rustc --version)"
           echo "Cargo: $(cargo --version)"
           echo "RISC-V Rust target: $(rustup target list --installed | grep riscv32imafc-unknown-none-elf)"
@@ -85,7 +103,9 @@ jobs:
           echo "  cargo test --package cpu_verifier -- cpu_test     - Run CPU integration tests"
           echo "  cargo fmt                                    - Format Rust code"
           echo "  cargo clippy                                 - Run linter"
-          echo "  verilator --lint-only rtl/*.sv               - Lint SystemVerilog files"
+          echo "  verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv - Format modified RTL"
+          echo "  verible-verilog-lint path/to/modified_file.sv - Run Verible style lint on RTL"
+          echo "  find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} + - Lint SystemVerilog files"
           echo "  cargo clean                                  - Clean build artifacts (after RTL changes)"
           echo ""
           echo "FPGA Synthesis commands (in rtl/fpga/ directory):"

@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FPGA_TOOL_CACHE_VERSION: v3
+      VERIBLE_VERSION: v0.0-4053-g89d4d98a
     
     steps:
     - uses: actions/checkout@v4
@@ -26,6 +27,23 @@ jobs:
     
     - name: Verify Verilator installation
       run: verilator --version
+
+    - name: Install Verible
+      run: |
+        set -euo pipefail
+        VERIBLE_DIR="$RUNNER_TEMP/verible-${VERIBLE_VERSION}"
+        curl -L --fail \
+          -o "$RUNNER_TEMP/verible.tar.gz" \
+          "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+        rm -rf "$VERIBLE_DIR"
+        mkdir -p "$VERIBLE_DIR"
+        tar -xzf "$RUNNER_TEMP/verible.tar.gz" -C "$VERIBLE_DIR" --strip-components=1
+        echo "$VERIBLE_DIR/bin" >> "$GITHUB_PATH"
+
+    - name: Verify Verible installation
+      run: |
+        verible-verilog-format --version
+        verible-verilog-lint --version
 
     - name: Run RTL lint
       run: find rtl/common -name '*.sv' -exec verilator --lint-only -Wno-MULTITOP {} +

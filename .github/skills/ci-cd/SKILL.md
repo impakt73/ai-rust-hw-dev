@@ -23,6 +23,8 @@ The workflow executes the following checks:
 7. ✅ **Clippy rust-test-program:** `cargo clippy -- -D warnings` in `rust-test-program/` directory (must pass - blocking)
 8. ✅ **FPGA Synthesis:** `make` in `rtl/fpga/` directory (verifies RTL can be synthesized)
 
+**RTL tooling availability:** CI also installs `verible-verilog-format` and `verible-verilog-lint` so the RTL formatter/linter are always available in workflow runs and Copilot sessions. Verible formatting is **not** yet a blocking CI check.
+
 **Note:** All checks including formatting, clippy, and FPGA synthesis are now blocking in CI. Your code must pass all checks before it can be merged. This includes the separate `rust-test-program` project which builds for the RISC-V target platform.
 
 ## PR Readiness Checklist
@@ -86,19 +88,25 @@ cargo fmt
 cd ..
 ```
 
-#### 5. Lint SystemVerilog Files (if RTL was modified)
+#### 5. Format Modified Verilog/SystemVerilog Files (if RTL was modified)
+```bash
+verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv
+```
+Run Verible on every `.sv` file you changed before moving on to lint or synthesis checks.
+
+#### 6. Lint SystemVerilog Files (if RTL was modified)
 ```bash
 find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +
 ```
 No lint errors should be reported.
 
-#### 6. Verify FPGA Synthesis (if SystemVerilog was modified)
+#### 7. Verify FPGA Synthesis (if SystemVerilog was modified)
 ```bash
 (cd rtl/fpga && make)
 ```
 Synthesis must complete successfully. This verifies that RTL changes can be synthesized to an FPGA target (iCE40-HX8K).
 
-#### 7. Verify CI Pipeline Status
+#### 8. Verify CI Pipeline Status
 - Push your changes to the branch
 - Wait for GitHub Actions CI workflow to complete
 - Check that all CI jobs pass successfully (green checkmark ✓)
@@ -177,6 +185,21 @@ git commit -m "Apply cargo fmt"
 git push   # Push and wait for CI to re-run
 ```
 
+### Verible Availability or Formatting Issues
+
+**Symptoms:**
+- `verible-verilog-format` or `verible-verilog-lint` is missing
+- RTL files were edited but not reformatted with the repo's Verible config
+
+**Solutions:**
+```bash
+verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv
+verible-verilog-lint path/to/modified_file.sv
+```
+- Confirm the workflow installed Verible successfully.
+- Reformat the modified RTL files with the checked-in `.verible-verilog-format`.
+- Re-run Verilator lint and synthesis after formatting if the RTL files changed.
+
 ### Clippy Warnings
 
 **Symptoms:**
@@ -212,9 +235,10 @@ git push
 2. Format code: `cargo fmt`
 3. Auto-fix clippy warnings: `cargo clippy --fix --allow-dirty` (do this FIRST!)
 4. Rerun clippy to check remaining warnings: `cargo clippy -- -D warnings`
-5. Lint RTL (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
-6. Verify FPGA synthesis (if SystemVerilog modified): `(cd rtl/fpga && make)`
-7. If you modified `rust-test-program/`:
+5. Format modified RTL (if modified): `verible-verilog-format --inplace --flagfile .verible-verilog-format path/to/modified_file.sv`
+6. Lint RTL (if modified): `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
+7. Verify FPGA synthesis (if SystemVerilog modified): `(cd rtl/fpga && make)`
+8. If you modified `rust-test-program/`:
    ```bash
    cd rust-test-program
    cargo build --verbose
