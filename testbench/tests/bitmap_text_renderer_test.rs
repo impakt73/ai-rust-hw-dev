@@ -95,6 +95,29 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
 }
 
 #[test]
+fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    wait_for_frame_start(&mut dut, 1);
+
+    let expected_pixels = [(0u8, 0u8, 1u8), (4u8, 0u8, 0u8), (7u8, 0u8, 1u8)];
+
+    for (x, y, pixel_on) in expected_pixels {
+        advance_to_active_coordinate(&mut dut, x, y);
+        assert_eq!(
+            dut.pixel_on, pixel_on,
+            "unexpected first-frame pixel value after reset at ({x}, {y})"
+        );
+        clock_cycle!(dut);
+    }
+}
+
+#[test]
 fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
