@@ -23,6 +23,7 @@ module analogue_pocket_repo_top #(
     output logic            video_hs
 );
     logic rst;
+    logic reset_n_video_sync;
     logic video_rst;
     logic [7:0] host_tx_data_unused;
     logic       host_tx_valid_unused;
@@ -39,6 +40,11 @@ module analogue_pocket_repo_top #(
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
     logic        bitmap_pixel_on;
+    logic [23:0] video_rgb_reg;
+    logic        video_de_reg;
+    logic        video_skip_reg;
+    logic        video_vs_reg;
+    logic        video_hs_reg;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 320;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 240;
@@ -57,13 +63,18 @@ module analogue_pocket_repo_top #(
         end
     end
 
-    always_ff @(posedge clk_video) begin
-        if (!reset_n) begin
-            video_rst <= 1'b1;
-        end else begin
-            video_rst <= 1'b0;
-        end
-    end
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(1),
+        .RESET_VALUE(1'b0)
+    ) video_reset_sync (
+        .clk(clk_video),
+        .rst(1'b0),
+        .din(reset_n),
+        .dout(reset_n_video_sync)
+    );
+
+    assign video_rst = !reset_n_video_sync;
 
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -123,13 +134,26 @@ module analogue_pocket_repo_top #(
         .pixel_on(bitmap_pixel_on)
     );
 
-    always_comb begin
-        video_rgb = bitmap_pixel_on ? 24'hFF_FF_FF : 24'h00_00_00;
-        video_de = bitmap_video_de;
-        video_skip = 1'b0;
-        video_vs = bitmap_video_vs;
-        video_hs = bitmap_video_hs;
+    always_ff @(posedge clk_video) begin
+        if (video_rst) begin
+            video_de_reg <= 1'b0;
+            video_skip_reg <= 1'b0;
+            video_vs_reg <= 1'b0;
+            video_hs_reg <= 1'b0;
+        end else begin
+            video_rgb_reg <= bitmap_pixel_on ? 24'hFF_FF_FF : 24'h00_00_00;
+            video_de_reg <= bitmap_video_de;
+            video_skip_reg <= 1'b0;
+            video_vs_reg <= bitmap_video_vs;
+            video_hs_reg <= bitmap_video_hs;
+        end
     end
+
+    assign video_rgb = video_rgb_reg;
+    assign video_de = video_de_reg;
+    assign video_skip = video_skip_reg;
+    assign video_vs = video_vs_reg;
+    assign video_hs = video_hs_reg;
 endmodule
 
 `default_nettype wire
