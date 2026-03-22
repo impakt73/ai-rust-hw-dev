@@ -64,6 +64,7 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_LAST = H_COUNTER_WIDTH'(H_TOTAL - 1);
     localparam logic [V_COUNTER_WIDTH-1:0] V_LAST = V_COUNTER_WIDTH'(V_TOTAL - 1);
+    localparam logic [H_COUNTER_WIDTH-1:0] H_POST_FRAME_START = H_COUNTER_WIDTH'(1);
     localparam logic [ACTIVE_Y_WIDTH-1:0] ACTIVE_HEIGHT_LAST = ACTIVE_Y_WIDTH'(ACTIVE_HEIGHT - 1);
     localparam logic [TILE_COLUMN_WIDTH-1:0] LAST_TILE_COLUMN =
         TILE_COLUMN_WIDTH'(TILE_COLUMNS - 1);
@@ -262,8 +263,9 @@ module bitmap_text_renderer #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            // Match video_sync's reset convention so both timing generators wrap
-            // to (0, 0) together on the first cycle after reset is released.
+            // Match video_sync's reset convention so both timing generators
+            // advance to (0, 0) together on the first cycle after reset is
+            // released.
             h_counter <= H_LAST;
             v_counter <= V_LAST;
             timing_locked <= 1'b0;
@@ -282,7 +284,7 @@ module bitmap_text_renderer #(
                 // `observed_frame_start` describes the *current* visible cycle
                 // at (x=0, y=0). After this edge the raster advances to x=1, so
                 // the internal mirrored state must advance as well.
-                h_counter <= H_COUNTER_WIDTH'(1);
+                h_counter <= H_POST_FRAME_START;
                 v_counter <= '0;
                 timing_locked <= 1'b1;
             end else begin
