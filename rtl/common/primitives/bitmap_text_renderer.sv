@@ -50,9 +50,13 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
     localparam int unsigned FONT_ROM_ADDR_WIDTH = 8 + FONT_ROW_INDEX_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
-    // Total request-to-font-row latency:
-    //   - 2 cycles: character map sync_sprom latency
+    // Front-porch budget once a request has been launched into the renderer's
+    // registered ROM-address path:
+    //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency after font_addr is issued
+    // The renderer's d0/d1/d2 valid staging tracks those registered handoffs
+    // separately; this constant is only the ROM-latency budget that must fit
+    // inside the horizontal blanking interval.
     localparam int unsigned FONT_PIPELINE_CYCLES = 4;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
@@ -208,12 +212,13 @@ module bitmap_text_renderer #(
         requested_char_map_addr = char_map_addr;
         requested_glyph_row = '0;
 
-        // If tile 0 was not already prefetched during the prior line's blanking
-        // interval (for example immediately after reset), issue a rescue fetch
-        // at line start. The first few pixels of that tile remain blank until
-        // the row arrives, but the buffer is primed before the tile ends and
-        // steady-state rendering for all later lines still uses the blanking
-        // prefetch path below.
+        // `video_sync` asserts `line_start` on the first active pixel
+        // (sync_active_x == 0), so if tile 0 was not already prefetched during
+        // the prior line's blanking interval (for example immediately after
+        // reset) a rescue fetch can be launched on that same cycle. The first
+        // few pixels of that tile remain blank until the row arrives, but the
+        // buffer is primed before the tile ends and steady-state rendering for
+        // all later lines still uses the blanking prefetch path below.
         if (sync_line_start && sync_video_de && !startup_prefetch_done) begin
             issue_char_request = 1'b1;
             requested_is_current_tile = 1'b1;
