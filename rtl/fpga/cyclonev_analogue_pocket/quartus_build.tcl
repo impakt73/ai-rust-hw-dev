@@ -36,9 +36,7 @@ set_global_assignment -name PROJECT_OUTPUT_DIRECTORY $output_dir
 foreach rtl_source $rtl_sources {
     set normalized_source [file normalize $rtl_source]
     if {[string first $qsf_dir $normalized_source] == 0} {
-        if {$normalized_source ne [file normalize [file join $qsf_dir core analogue_pocket_repo_top.sv]]} {
-            continue
-        }
+        continue
     }
     set extension [string tolower [file extension $normalized_source]]
     switch -- $extension {

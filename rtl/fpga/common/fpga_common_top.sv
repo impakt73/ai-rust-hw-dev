@@ -11,11 +11,7 @@ module fpga_common_top #(
     output logic       usb_tx,
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,
-    output logic       halted,
-    output logic       instr_complete,
-    output logic       rst_core,
-    output logic       cpu_booting,
-    output logic [31:0] halted_value
+    output logic       rst_core
 );
     logic [7:0] host_tx_data;
     logic       host_tx_valid;
@@ -24,6 +20,8 @@ module fpga_common_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     logic       com_err;
+    logic       halted;
+    logic       instr_complete;
     logic [31:0] debug_rs1_data;
     logic [31:0] debug_rs2_data;
     logic [31:0] debug_rd_data;
@@ -32,6 +30,8 @@ module fpga_common_top #(
     logic [31:0] debug_current_pc;
     logic [31:0] debug_current_instruction;
     logic [3:0]  debug_fsm_state;
+    logic       cpu_booting;
+    logic [31:0] halted_value;
 
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),

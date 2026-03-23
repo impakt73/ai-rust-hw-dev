@@ -9,7 +9,7 @@ This is an **initial bring-up target**.
 
 - `apf_top.v` remains the Pocket platform-facing top.
 - `core_top.sv` is the user-core integration seam.
-- `analogue_pocket_repo_top.sv` instantiates `rtl/fpga/common/fpga_common_top.sv` to reuse the standard UART-backed host path.
+- `cyclonev_analogue_pocket_top.sv` instantiates `rtl/fpga/common/fpga_common_top.sv` to reuse the standard UART-backed host path.
 - `core_top.v` routes the Pocket link-port SI/SO pins to the shared UART RX/TX path.
 
 The Pocket link port is enabled in `core.json`, so external-memory workflows can use the same UART-backed host bus path as the other FPGA targets.

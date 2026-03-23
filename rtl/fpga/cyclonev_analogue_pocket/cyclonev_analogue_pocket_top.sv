@@ -1,6 +1,6 @@
 `default_nettype none
 
-module analogue_pocket_repo_top #(
+module cyclonev_analogue_pocket_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
     // Original Source: https://github.com/viler-int10h/vga-text-mode-fonts/blob/master/FONTS/PC-OTHER/ATI8X8.F08
@@ -12,13 +12,7 @@ module analogue_pocket_repo_top #(
     input  wire logic       reset_n,
     input  wire logic       serial_rx,
     output logic            serial_tx,
-    output logic [7:0]      led_out,
-    output logic [7:0]      sys_led_out,
-    output logic            halted,
-    output logic            instr_complete,
     output logic            rst_out,
-    output logic            cpu_booting,
-    output logic [31:0]     halted_value,
     output logic [23:0]     video_rgb,
     output logic            video_de,
     output logic            video_skip,
@@ -78,13 +72,9 @@ module analogue_pocket_repo_top #(
         .rst(rst),
         .usb_rx(serial_rx),
         .usb_tx(serial_tx),
-        .led_out(led_out),
-        .sys_led_out(sys_led_out),
-        .halted(halted),
-        .instr_complete(instr_complete),
-        .rst_core(rst_out),
-        .cpu_booting(cpu_booting),
-        .halted_value(halted_value)
+        .led_out(),
+        .sys_led_out(),
+        .rst_core(rst_out)
     );
 
     bitmap_text_renderer #(
