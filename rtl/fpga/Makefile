@@ -156,14 +156,9 @@ endif
 BUILD_DIR := build/$(TARGET)
 NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
-ifeq ($(TARGET),cyclonev_analogue_pocket)
-FPGA_SOURCES = \
-	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
-else
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
-	$(FPGA_DIR)/$(TOP_MODULE).sv
-endif
+	$(FPGA_DIR)/$(FPGA_DIR)_top.sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)

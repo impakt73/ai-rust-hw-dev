@@ -30,6 +30,8 @@ module fpga_common_top #(
     logic [31:0] debug_current_pc;
     logic [31:0] debug_current_instruction;
     logic [3:0]  debug_fsm_state;
+    logic       cpu_booting;
+    logic [31:0] halted_value;
 
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -58,7 +60,9 @@ module fpga_common_top #(
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
-        .rst_out(rst_core)
+        .rst_out(rst_core),
+        .cpu_booting(cpu_booting),
+        .halted_value(halted_value)
     );
 
     uart #(

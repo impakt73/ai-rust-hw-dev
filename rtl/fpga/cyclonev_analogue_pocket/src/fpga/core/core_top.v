@@ -249,11 +249,11 @@ assign cart_pin30_pwroff_reset = 1'b0;  // hardware can control this
 assign cart_tran_pin31 = 1'bz;      // input
 assign cart_tran_pin31_dir = 1'b0;  // input
 
-// link port is unused, set to input only to be safe
+// link port SI/SO carry the shared UART path; leave the other pins unused
 // each bit may be bidirectional in some applications
-assign port_tran_so = 1'bz;
-assign port_tran_so_dir = 1'b0;     // SO is output only
-assign port_tran_si = 1'bz;
+assign port_tran_so = serial_tx;
+assign port_tran_so_dir = 1'b1;     // SO is output only
+assign serial_rx = port_tran_si;
 assign port_tran_si_dir = 1'b0;     // SI is input only
 assign port_tran_sck = 1'bz;
 assign port_tran_sck_dir = 1'b0;    // clock direction can change
@@ -333,24 +333,20 @@ end
 //
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
-    wire    [7:0]   led_out;
-    wire    [7:0]   sys_led_out;
-    wire            halted;
-    wire            instr_complete;
     wire            rst_out;
-    wire            cpu_booting;
-    wire    [31:0]  halted_value;
     wire    [23:0]  repo_video_rgb;
     wire            repo_video_de;
     wire            repo_video_skip;
     wire            repo_video_vs;
     wire            repo_video_hs;
+    wire            serial_rx;
+    wire            serial_tx;
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = cpu_booting;
-    wire            status_setup_done = cpu_booting; // rising edge triggers a target command
-    wire            status_running = reset_n; // we are running as soon as reset_n goes high
+    wire            status_boot_done = !rst_out;
+    wire            status_setup_done = !rst_out; // rising edge triggers a target command
+    wire            status_running = !rst_out;
 
     wire            dataslot_requestread;
     wire    [15:0]  dataslot_requestread_id;
@@ -421,22 +417,18 @@ end
     wire    [31:0]  datatable_data;
     wire    [31:0]  datatable_q;
 
-analogue_pocket_repo_top repo_top_inst (
-    .clk            ( clk_74a ),
-    .clk_video      ( clk_core_12288 ),
-    .reset_n        ( reset_n ),
-    .led_out        ( led_out ),
-    .sys_led_out    ( sys_led_out ),
-    .halted         ( halted ),
-    .instr_complete ( instr_complete ),
-    .rst_out        ( rst_out ),
-    .cpu_booting    ( cpu_booting ),
-    .halted_value   ( halted_value ),
-    .video_rgb      ( repo_video_rgb ),
-    .video_de       ( repo_video_de ),
-    .video_skip     ( repo_video_skip ),
-    .video_vs       ( repo_video_vs ),
-    .video_hs       ( repo_video_hs )
+cyclonev_analogue_pocket_top repo_top_inst (
+    .clk        ( clk_74a ),
+    .clk_video  ( clk_core_12288 ),
+    .reset_n    ( reset_n ),
+    .serial_rx  ( serial_rx ),
+    .serial_tx  ( serial_tx ),
+    .rst_out    ( rst_out ),
+    .video_rgb  ( repo_video_rgb ),
+    .video_de   ( repo_video_de ),
+    .video_skip ( repo_video_skip ),
+    .video_vs   ( repo_video_vs ),
+    .video_hs   ( repo_video_hs )
 );
 
 core_bridge_cmd icb (
