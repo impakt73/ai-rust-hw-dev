@@ -91,7 +91,9 @@ make TARGET=ecp5_icepi_zero
 make TARGET=artix7_alchitry_au
 
 # Run the Quartus batch flow for the Analogue Pocket bring-up target
-# (requires Intel Quartus tools in PATH; outputs stay under build/cyclonev_analogue_pocket/)
+# (requires Intel Quartus tools, cargo, and unzip in PATH; outputs stay under build/cyclonev_analogue_pocket/)
+# The Pocket build also generates a deployable core zip after synthesis, which `make program`
+# deploys for this target.
 make TARGET=cyclonev_analogue_pocket
 
 # Run the Gowin batch flow for the Tang Primer 25K bring-up target
@@ -196,10 +198,10 @@ sudo openFPGALoader -b ice40_generic -f build/ice40_alchitry_cu/riscv_fpga.bin  
 
 ## Makefile Targets
 
-- `make` or `make all` - Full synthesis flow (target-specific bitstream generation)
+- `make` or `make all` - Full synthesis flow (Pocket also packages a deployable zip after synthesis)
 - `make timing` - Generate timing analysis report
 - `make utilization` - Show resource utilization
-- `make program` - Program connected FPGA board (default: flash on Alchitry Cu, SRAM on other targets)
+- `make program` - Program connected FPGA board (Pocket instead unzips the generated package into `POCKET_DEPLOY_DIR`)
 - `make clean` - Remove build artifacts
 - `make check-tools` - Verify required tools are installed
 - `make help` - Show all available targets
