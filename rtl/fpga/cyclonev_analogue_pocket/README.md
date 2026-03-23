@@ -26,8 +26,17 @@ make TARGET=cyclonev_analogue_pocket
 ```
 
 Build artifacts are written under `rtl/fpga/build/cyclonev_analogue_pocket/`.
+The regular build now also runs `pkt`, so each successful synthesis leaves a deployable Pocket core zip in that build directory.
+
+To deploy the generated zip into a user-selected directory:
+
+```bash
+make TARGET=cyclonev_analogue_pocket program POCKET_DEPLOY_DIR=/path/to/pocket
+```
+
+`make program` extracts the generated zip into `POCKET_DEPLOY_DIR` with `unzip -o`, so existing files with the same names are overwritten.
 
 ## Notes
 
 - The target directory keeps openFPGA-style metadata/configuration files alongside target-local FPGA sources.
-- Packaging/deployment automation beyond the Quartus batch compile is follow-on work.
+- The regular build produces both the Quartus `.rbf` output and a deployable Pocket core zip.

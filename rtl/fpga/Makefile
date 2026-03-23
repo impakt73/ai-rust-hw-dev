@@ -117,7 +117,8 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-PROGRAM_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
+POCKET_PACKAGE_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
+POCKET_DEPLOY_DIR ?=
 OUTPUT_EXT = rbf
 endif
 
@@ -162,6 +163,8 @@ FPGA_SOURCES = \
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
+POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
+POCKET_PACKAGE_SOURCES = $(sort $(shell find $(FPGA_DIR) -path '$(FPGA_DIR)/src/fpga' -prune -o -type f -print))
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -178,6 +181,7 @@ OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
 PYTHON3 = python3
+UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
 STATS_FORMAT ?= text
 
@@ -198,7 +202,11 @@ endif
 
 # Default target
 .PHONY: all
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+all: $(POCKET_PACKAGE_INFO) timing
+else
 all: $(BIN) timing
+endif
 
 # Create build directory
 $(BUILD_DIR):
@@ -218,6 +226,16 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+
+$(POCKET_PACKAGE_INFO): $(BIN) $(POCKET_PACKAGE_SOURCES) | $(BUILD_DIR)
+	@package_output="$$(bash -e -o pipefail -c '$(POCKET_PACKAGE_CMD)')"; \
+	printf '%s\n' "$$package_output"; \
+	package_path="$$(printf '%s\n' "$$package_output" | sed -n 's/^Created Pocket core package: //p' | tail -n 1)"; \
+	if [ -z "$$package_path" ]; then \
+		echo "ERROR: failed to determine Pocket package output path"; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$package_path" > $(POCKET_PACKAGE_INFO)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DIR)
 	$(GOWIN_SH) "$(abspath $(GOWIN_TCL))" \
@@ -335,8 +353,24 @@ endif
 
 # Program FPGA
 .PHONY: program
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+program: $(POCKET_PACKAGE_INFO)
+	@if [ -z "$(strip $(POCKET_DEPLOY_DIR))" ]; then \
+		echo "ERROR: POCKET_DEPLOY_DIR is required for TARGET=$(TARGET)"; \
+		echo "Usage: make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=/path/to/deploy"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(POCKET_DEPLOY_DIR)"
+	@package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	if [ ! -f "$$package_path" ]; then \
+		echo "ERROR: Pocket package not found at $$package_path"; \
+		exit 1; \
+	fi; \
+	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"
+else
 program: $(BIN)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
+endif
 
 # Clean build artifacts
 .PHONY: clean
@@ -380,7 +414,7 @@ else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 endif
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  program      - Package a deployable Pocket core zip in $(BUILD_DIR)"
+	@echo "  program      - Unzip the generated Pocket core package into POCKET_DEPLOY_DIR"
 else
 	@echo "  program      - Program FPGA with bitstream"
 endif
@@ -393,7 +427,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
-	@echo "  - cargo      : Rust toolchain (required for 'make program')"
+	@echo "  - cargo      : Rust toolchain (required for the Pocket packaging step)"
+	@echo "  - unzip      : Archive extraction tool (required for 'make program')"
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 	@echo "  - gw_sh      : Gowin EDA batch/CLI tool"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
@@ -417,10 +452,11 @@ endif
 	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
 	@echo ""
 	@echo "Programming selection:"
-	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  - make program packages $(BIN) into a deployable Pocket core zip in $(BUILD_DIR)"
+	@echo "  - make program POCKET_DEPLOY_DIR=/path/to/deploy"
+	@echo "  - make TARGET=$(TARGET)           (builds $(BIN) and packages a deployable Pocket zip)"
 else
+	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifneq ($(DEFAULT_PROGRAM_MODE),sram)
 	@echo "  - make program PROGRAM_MODE=sram"
 endif
@@ -437,7 +473,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
-	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for 'make program')"; exit 1)
+	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for Pocket packaging)"; exit 1)
+	@which $(UNZIP) > /dev/null || (echo "ERROR: $(UNZIP) not found (required for 'make program')"; exit 1)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 	@which $(GOWIN_SH) > /dev/null || (echo "ERROR: $(GOWIN_SH) not found"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
