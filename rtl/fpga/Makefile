@@ -227,12 +227,13 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 
+# pkt currently reports the generated archive as: "Created Pocket core package: <path>".
 $(POCKET_PACKAGE_INFO): $(BIN) $(POCKET_PACKAGE_SOURCES) | $(BUILD_DIR)
 	@package_output="$$(bash -e -o pipefail -c '$(POCKET_PACKAGE_CMD)')"; \
 	printf '%s\n' "$$package_output"; \
 	package_path="$$(printf '%s\n' "$$package_output" | sed -n 's/^Created Pocket core package: //p' | tail -n 1)"; \
 	if [ -z "$$package_path" ]; then \
-		echo "ERROR: failed to determine Pocket package output path"; \
+		echo "ERROR: pkt completed without printing a recognizable Pocket package path"; \
 		exit 1; \
 	fi; \
 	printf '%s\n' "$$package_path" > $(POCKET_PACKAGE_INFO)
@@ -364,6 +365,7 @@ program: $(POCKET_PACKAGE_INFO)
 	@package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
 	if [ ! -f "$$package_path" ]; then \
 		echo "ERROR: Pocket package not found at $$package_path"; \
+		echo "Run 'make TARGET=$(TARGET) clean && make TARGET=$(TARGET)' to rebuild the package before retrying deployment."; \
 		exit 1; \
 	fi; \
 	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"
