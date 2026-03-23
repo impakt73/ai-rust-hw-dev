@@ -347,7 +347,8 @@ program: $(BIN)
 		exit 1; \
 	fi
 	@mkdir -p "$(POCKET_DEPLOY_DIR)"
-	@package_path=""; \
+	@set -e; \
+	package_path=""; \
 	if [ -f "$(POCKET_PACKAGE_INFO)" ]; then \
 		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
 	fi; \

@@ -91,8 +91,9 @@ make TARGET=ecp5_icepi_zero
 make TARGET=artix7_alchitry_au
 
 # Run the Quartus batch flow for the Analogue Pocket bring-up target
-# (requires Intel Quartus tools and cargo in PATH; outputs stay under build/cyclonev_analogue_pocket/)
-# The Pocket build also generates a deployable core zip after synthesis.
+# (requires Intel Quartus tools, cargo, and unzip in PATH; outputs stay under build/cyclonev_analogue_pocket/)
+# The Pocket build also generates a deployable core zip after synthesis, which `make program`
+# deploys for this target.
 make TARGET=cyclonev_analogue_pocket
 
 # Run the Gowin batch flow for the Tang Primer 25K bring-up target
