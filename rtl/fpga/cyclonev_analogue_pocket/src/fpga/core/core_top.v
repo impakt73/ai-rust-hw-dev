@@ -344,9 +344,9 @@ end
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = !rst_out;
-    wire            status_setup_done = !rst_out; // rising edge triggers a target command
-    wire            status_running = !rst_out;
+    wire            status_boot_done = pll_core_locked_s;
+    wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
+    wire            status_running = reset_n;
 
     wire            dataslot_requestread;
     wire    [15:0]  dataslot_requestread_id;
