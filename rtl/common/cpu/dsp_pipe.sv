@@ -7,7 +7,6 @@ module dsp_pipe (
     input  wire logic [31:0] b,
     input  wire logic [4:0]  alu_op,
     input  wire logic        in_valid,
-    output logic             in_ready,
     output logic [31:0]      out_data,
     output logic             out_valid
 );
@@ -43,8 +42,6 @@ module dsp_pipe (
     (* use_dsp = "yes" *) logic signed [63:0] mul_signed_signed;
     (* use_dsp = "yes" *) logic signed [63:0] mul_signed_unsigned;
     (* use_dsp = "yes" *) logic        [63:0] mul_unsigned_unsigned;
-
-    assign in_ready = 1'b1;
 
     assign stage1_signed_lt = $signed(stage1_a_reg) < $signed(stage1_b_reg);
     assign stage1_unsigned_lt = stage1_a_reg < stage1_b_reg;
@@ -83,21 +80,15 @@ module dsp_pipe (
             out_valid        <= 1'b0;
         end else begin
             out_valid <= stage2_valid_reg;
-            if (stage2_valid_reg) begin
-                out_data <= stage2_result_reg;
-            end
+            out_data  <= stage2_result_reg;
 
             stage2_valid_reg <= stage1_valid_reg;
-            if (stage1_valid_reg) begin
-                stage2_result_reg <= stage2_result_next;
-            end
+            stage2_result_reg <= stage2_result_next;
 
             stage1_valid_reg <= in_valid;
-            if (in_valid) begin
-                stage1_a_reg  <= a;
-                stage1_b_reg  <= b;
-                stage1_op_reg <= alu_op;
-            end
+            stage1_a_reg     <= a;
+            stage1_b_reg     <= b;
+            stage1_op_reg    <= alu_op;
         end
     end
 
