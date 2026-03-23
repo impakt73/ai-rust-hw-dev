@@ -117,7 +117,6 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-POCKET_PACKAGE_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
 POCKET_DEPLOY_DIR ?=
 OUTPUT_EXT = rbf
 endif
@@ -164,13 +163,13 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
-POCKET_PACKAGE_SOURCES = $(sort $(shell find $(FPGA_DIR) -path '$(FPGA_DIR)/src/fpga' -prune -o -type f -print))
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
+POCKET_PACKAGE_CMD = $(CARGO) run --quiet --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- --output-path-file $(abspath $(POCKET_PACKAGE_INFO)) $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
 
 # Tools
 YOSYS = yosys
@@ -202,11 +201,7 @@ endif
 
 # Default target
 .PHONY: all
-ifeq ($(TARGET),cyclonev_analogue_pocket)
-all: $(POCKET_PACKAGE_INFO) timing
-else
 all: $(BIN) timing
-endif
 
 # Create build directory
 $(BUILD_DIR):
@@ -226,17 +221,7 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
-
-# pkt currently reports the generated archive as: "Created Pocket core package: <path>".
-$(POCKET_PACKAGE_INFO): $(BIN) $(POCKET_PACKAGE_SOURCES) | $(BUILD_DIR)
-	@package_output="$$(bash -e -o pipefail -c '$(POCKET_PACKAGE_CMD)')"; \
-	printf '%s\n' "$$package_output"; \
-	package_path="$$(printf '%s\n' "$$package_output" | sed -n 's/^Created Pocket core package: //p' | tail -n 1)"; \
-	if [ -z "$$package_path" ]; then \
-		echo "ERROR: pkt completed without printing a recognizable Pocket package path"; \
-		exit 1; \
-	fi; \
-	printf '%s\n' "$$package_path" > $(POCKET_PACKAGE_INFO)
+	$(POCKET_PACKAGE_CMD)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DIR)
 	$(GOWIN_SH) "$(abspath $(GOWIN_TCL))" \
@@ -355,17 +340,24 @@ endif
 # Program FPGA
 .PHONY: program
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-program: $(POCKET_PACKAGE_INFO)
+program: $(BIN)
 	@if [ -z "$(strip $(POCKET_DEPLOY_DIR))" ]; then \
 		echo "ERROR: POCKET_DEPLOY_DIR is required for TARGET=$(TARGET)"; \
 		echo "Usage: make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=/path/to/deploy"; \
 		exit 1; \
 	fi
 	@mkdir -p "$(POCKET_DEPLOY_DIR)"
-	@package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	@package_path=""; \
+	if [ -f "$(POCKET_PACKAGE_INFO)" ]; then \
+		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	fi; \
+	if [ -z "$$package_path" ] || [ ! -f "$$package_path" ]; then \
+		$(POCKET_PACKAGE_CMD); \
+		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	fi; \
 	if [ ! -f "$$package_path" ]; then \
 		echo "ERROR: Pocket package not found at $$package_path"; \
-		echo "Run 'make TARGET=$(TARGET) clean && make TARGET=$(TARGET)' to rebuild the package before retrying deployment."; \
+		echo "Run 'rm -f $(POCKET_PACKAGE_INFO) && make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=$(POCKET_DEPLOY_DIR)' to regenerate the package before retrying deployment."; \
 		exit 1; \
 	fi; \
 	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"
