@@ -4,7 +4,8 @@
 
 module ecp5_icepi_zero_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
-    parameter bit ENABLE_F_EXT = 1'b0
+    parameter bit ENABLE_F_EXT = 1'b0,
+    parameter int BAUD_RATE = 1_000_000
 ) (
     input wire logic clk,
     input wire logic rst_n_btn,
@@ -46,7 +47,8 @@ module ecp5_icepi_zero_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .CLK_FREQ_HZ(50_000_000),
-        .RESET_CYCLES(50_000_000)
+        .RESET_CYCLES(50_000_000),
+        .BAUD_RATE(BAUD_RATE)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
         .rst(~rst_n_btn_debounced),
