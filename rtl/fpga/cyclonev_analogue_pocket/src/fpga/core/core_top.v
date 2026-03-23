@@ -346,7 +346,7 @@ end
 // synchronous to clk_74a
     wire            status_boot_done = pll_core_locked_s;
     wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
-    wire            status_running = reset_n;
+    wire            status_running = !rst_out;
 
     wire            dataslot_requestread;
     wire    [15:0]  dataslot_requestread_id;
