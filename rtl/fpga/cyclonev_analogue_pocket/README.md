@@ -8,7 +8,7 @@ It keeps the Pocket-facing source tree local to `rtl/fpga/cyclonev_analogue_pock
 This is an **initial bring-up target**.
 
 - `apf_top.v` remains the Pocket platform-facing top.
-- `core_top.sv` is the user-core integration seam.
+- `core_top.v` is the user-core integration seam.
 - `cyclonev_analogue_pocket_top.sv` instantiates `rtl/fpga/common/fpga_common_top.sv` to reuse the standard UART-backed host path.
 - `core_top.v` routes the Pocket link-port SI/SO pins to the shared UART RX/TX path.
 
