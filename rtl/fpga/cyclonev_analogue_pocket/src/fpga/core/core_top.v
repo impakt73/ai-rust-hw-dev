@@ -249,11 +249,11 @@ assign cart_pin30_pwroff_reset = 1'b0;  // hardware can control this
 assign cart_tran_pin31 = 1'bz;      // input
 assign cart_tran_pin31_dir = 1'b0;  // input
 
-// link port is unused, set to input only to be safe
+// link port SI/SO carry the shared UART path; leave the other pins unused
 // each bit may be bidirectional in some applications
-assign port_tran_so = 1'bz;
-assign port_tran_so_dir = 1'b0;     // SO is output only
-assign port_tran_si = 1'bz;
+assign port_tran_so = serial_tx;
+assign port_tran_so_dir = 1'b1;     // SO is output only
+assign serial_rx = port_tran_si;
 assign port_tran_si_dir = 1'b0;     // SI is input only
 assign port_tran_sck = 1'bz;
 assign port_tran_sck_dir = 1'b0;    // clock direction can change
@@ -345,6 +345,8 @@ end
     wire            repo_video_skip;
     wire            repo_video_vs;
     wire            repo_video_hs;
+    wire            serial_rx;
+    wire            serial_tx;
     
 // bridge host commands
 // synchronous to clk_74a
@@ -425,6 +427,8 @@ analogue_pocket_repo_top repo_top_inst (
     .clk            ( clk_74a ),
     .clk_video      ( clk_core_12288 ),
     .reset_n        ( reset_n ),
+    .serial_rx      ( serial_rx ),
+    .serial_tx      ( serial_tx ),
     .led_out        ( led_out ),
     .sys_led_out    ( sys_led_out ),
     .halted         ( halted ),

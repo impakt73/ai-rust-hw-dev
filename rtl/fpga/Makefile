@@ -158,6 +158,7 @@ NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 FPGA_SOURCES = \
+	common/fpga_common_top.sv \
 	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
 else
 FPGA_SOURCES = \

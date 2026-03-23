@@ -11,7 +11,11 @@ module fpga_common_top #(
     output logic       usb_tx,
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,
-    output logic       rst_core
+    output logic       halted,
+    output logic       instr_complete,
+    output logic       rst_core,
+    output logic       cpu_booting,
+    output logic [31:0] halted_value
 );
     logic [7:0] host_tx_data;
     logic       host_tx_valid;
@@ -20,8 +24,6 @@ module fpga_common_top #(
     logic       host_rx_valid;
     logic       host_rx_ready;
     logic       com_err;
-    logic       halted;
-    logic       instr_complete;
     logic [31:0] debug_rs1_data;
     logic [31:0] debug_rs2_data;
     logic [31:0] debug_rd_data;
@@ -58,7 +60,9 @@ module fpga_common_top #(
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
-        .rst_out(rst_core)
+        .rst_out(rst_core),
+        .cpu_booting(cpu_booting),
+        .halted_value(halted_value)
     );
 
     uart #(
