@@ -17,8 +17,9 @@
 //   to what was previously the gen_full_range generate block.
 //
 // BRAM INITIALIZATION NOTE:
-// - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
-//   which is supported by this project's target FPGA/toolchain.
+// - Gowin synthesis requires aggregate default initialization for large RAMs.
+// - Yosys does not currently accept that syntax for unpacked memory arrays, so
+//   use a Yosys-only initial loop fallback selected with YOSYS.
 //
 // GLOBAL BUFFER NOTE (iCE40):
 // - The read path is intentionally unconditional (no in-bounds guard on
@@ -94,13 +95,22 @@ module sram #(
         rdata <= read_data_pipe;
     end
 `else
-    (* ram_style = "block" *) logic [31:0] mem [0:DEPTH-1];
+    (* ram_style = "block" *) logic [31:0] mem [0:DEPTH-1]
+`ifdef YOSYS
+    ;
+`else
+    = '{default: '0};
+`endif
     logic [31:0] read_data_pipe;
+
+`ifdef YOSYS
+    integer init_idx;
     initial begin
-        for (int i = 0; i < DEPTH; i = i + 1) begin
-            mem[i] = 32'b0;
+        for (init_idx = 0; init_idx < DEPTH; init_idx = init_idx + 1) begin
+            mem[init_idx] = '0;
         end
     end
+`endif
 
     always_ff @(posedge clk) begin
         // Write with bounds guard.  For power-of-two DEPTH the comparison
