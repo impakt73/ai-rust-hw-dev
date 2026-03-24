@@ -192,7 +192,8 @@ module csr_file #(
 
     sync_dpram #(
         .DATA_WIDTH(32),
-        .ADDR_WIDTH(CSR_MEM_ADDR_WIDTH)
+        .ADDR_WIDTH(CSR_MEM_ADDR_WIDTH),
+        .INIT_ZERO(1'b1)
     ) u_csr_mem (
         .wclk(clk),
         .rclk(clk),

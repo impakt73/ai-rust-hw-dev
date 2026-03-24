@@ -15,7 +15,8 @@
 
 module sync_dpram #(
     parameter int DATA_WIDTH = 32,
-    parameter int ADDR_WIDTH = 8   // 256 entries by default
+    parameter int ADDR_WIDTH = 8,  // 256 entries by default
+    parameter bit INIT_ZERO = 1'b0
 ) (
     input wire logic                    wclk,
     input wire logic                    rclk,
@@ -35,6 +36,17 @@ module sync_dpram #(
     // Memory array
     // Depth is 2^ADDR_WIDTH entries
     (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
+
+    generate
+        if (INIT_ZERO) begin : gen_init_zero
+            int unsigned i;
+            initial begin
+                for (i = 0; i < DEPTH; i++) begin
+                    mem[i] = '0;
+                end
+            end
+        end
+    endgenerate
 
     // Write port - synchronous write
     always_ff @(posedge wclk) begin
