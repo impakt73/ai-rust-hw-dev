@@ -91,7 +91,7 @@ fn test_regfile_x0_storage_is_ordinary_when_written() {
     // responsible for enforcing the architectural x0 semantics.
     dut.we = 1;
     dut.rd_addr = 0;
-    dut.rd_data = 0xDEAD_BEEF;
+    dut.rd_data = 0xDEADBEEF;
     clock_cycle!(dut);
 
     dut.we = 0;
@@ -100,11 +100,11 @@ fn test_regfile_x0_storage_is_ordinary_when_written() {
     dut.eval();
     read_cycle!(dut);
     assert_eq!(
-        dut.rs1_data, 0xDEAD_BEEF,
+        dut.rs1_data, 0xDEADBEEF,
         "Standalone regfile storage should preserve whatever is written to address 0"
     );
     assert_eq!(
-        dut.rs2_data, 0xDEAD_BEEF,
+        dut.rs2_data, 0xDEADBEEF,
         "Both read ports should observe the stored x0 backing value when the CPU is not masking it"
     );
 }

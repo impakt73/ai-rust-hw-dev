@@ -118,7 +118,7 @@ fn test_cpu_masks_x0_rs1_reads_after_attempted_x0_write() {
         .expect("Failed to create CPU model");
 
     let mut program = vec![0_u8; 12];
-    write_u32(&mut program, 0x0, addi(0, 0, 5));
+    write_u32(&mut program, 0, addi(0, 0, 5));
     write_u32(&mut program, 0x4, addi(1, 0, 7));
 
     reset_to_fetch(&mut dut);
