@@ -47,7 +47,7 @@ enum RuntimeArgs {
         device: PathBuf,
 
         /// Baud rate for device communication
-        #[arg(short, long, default_value_t = 1_000_000)]
+        #[arg(short, long, default_value_t = 1_000_000, value_parser = clap::value_parser!(u32).range(1..))]
         baud: u32,
     },
     /// Use the software simulator
@@ -62,6 +62,14 @@ enum RuntimeArgs {
         #[arg(long, default_value_t = 0)]
         memory_latency_cycles: u32,
     },
+}
+
+fn format_timeout_duration(timeout: Duration) -> String {
+    if timeout.as_millis() >= 1_000 {
+        format!("{:.2}s", timeout.as_secs_f64())
+    } else {
+        format!("{}ms", timeout.as_millis())
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -201,12 +209,13 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             // Host-initiated write response - log with request details
                             app.log_host_write_response(*addr, *wdata, *size);
                         }
-                        BusEvent::HostRequestTimeout { addr } => {
+                        BusEvent::HostRequestTimeout { addr, timeout } => {
                             // Host request timed out - emit warning in TUI
                             app.add_log(
                                 log::Level::Warn,
                                 format!(
-                                    "Host request timed out for address 0x{:08x}. Resetting host bus handler.",
+                                    "Host request timed out after {} for address 0x{:08x}. Resetting host bus handler.",
+                                    format_timeout_duration(*timeout),
                                     addr
                                 ),
                             );

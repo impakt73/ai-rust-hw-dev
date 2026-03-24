@@ -201,7 +201,10 @@ pub enum BusEvent {
         size: AccessSize,
     },
     /// A host-initiated request timed out
-    HostRequestTimeout { addr: u32 },
+    HostRequestTimeout {
+        addr: u32,
+        timeout: std::time::Duration,
+    },
     /// A tohost-based termination was detected
     TohostTermination { value: u32 },
 }
@@ -461,9 +464,9 @@ pub trait DeviceRuntime: std::fmt::Display {
                         {
                             break;
                         }
-                        Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                            if resp_addr == addr =>
-                        {
+                        Some(BusEvent::HostRequestTimeout {
+                            addr: resp_addr, ..
+                        }) if resp_addr == addr => {
                             return Err(DeviceError::IoError(std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 format!(
@@ -512,7 +515,9 @@ pub trait DeviceRuntime: std::fmt::Display {
                     {
                         break;
                     }
-                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
+                    Some(BusEvent::HostRequestTimeout {
+                        addr: resp_addr, ..
+                    }) if resp_addr == addr => {
                         return Err(DeviceError::IoError(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
                             format!(
@@ -591,9 +596,9 @@ pub trait DeviceRuntime: std::fmt::Display {
                         {
                             break burst_data;
                         }
-                        Some(BusEvent::HostRequestTimeout { addr: resp_addr })
-                            if resp_addr == addr =>
-                        {
+                        Some(BusEvent::HostRequestTimeout {
+                            addr: resp_addr, ..
+                        }) if resp_addr == addr => {
                             return Err(DeviceError::IoError(std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 format!(
@@ -645,7 +650,9 @@ pub trait DeviceRuntime: std::fmt::Display {
                     {
                         break read_data;
                     }
-                    Some(BusEvent::HostRequestTimeout { addr: resp_addr }) if resp_addr == addr => {
+                    Some(BusEvent::HostRequestTimeout {
+                        addr: resp_addr, ..
+                    }) if resp_addr == addr => {
                         return Err(DeviceError::IoError(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
                             format!(
@@ -693,7 +700,7 @@ pub trait DeviceRuntime: std::fmt::Display {
                 {
                     break data;
                 }
-                Some(BusEvent::HostRequestTimeout { addr }) if addr == status_addr => {
+                Some(BusEvent::HostRequestTimeout { addr, .. }) if addr == status_addr => {
                     return Err(DeviceError::IoError(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("Timed out reading STATUS register at 0x{:08x}", status_addr),
@@ -733,7 +740,7 @@ pub trait DeviceRuntime: std::fmt::Display {
                 {
                     return Ok(());
                 }
-                Some(BusEvent::HostRequestTimeout { addr }) if addr == boot_reg_addr => {
+                Some(BusEvent::HostRequestTimeout { addr, .. }) if addr == boot_reg_addr => {
                     return Err(DeviceError::IoError(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!(

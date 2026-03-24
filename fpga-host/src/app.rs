@@ -12,6 +12,7 @@ use riscv_shared::bus::FIFO_BASE;
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Maximum number of FIFO lines drained per event-loop tick to keep the TUI responsive.
 const MAX_FIFO_LINES_PER_TICK: usize = 64;
@@ -244,8 +245,12 @@ impl App {
                     width = width
                 )
             }
-            BusEvent::HostRequestTimeout { addr } => {
-                format!("HOST REQUEST TIMEOUT @ 0x{:08x}", addr)
+            BusEvent::HostRequestTimeout { addr, timeout } => {
+                format!(
+                    "HOST REQUEST TIMEOUT after {} @ 0x{:08x}",
+                    format_timeout_duration(*timeout),
+                    addr
+                )
             }
             BusEvent::TohostTermination { value } => {
                 format!("TOHOST TERMINATION (value: 0x{:08x})", value)
@@ -371,6 +376,14 @@ impl App {
     /// Scroll log view down
     fn scroll_down(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+}
+
+fn format_timeout_duration(timeout: Duration) -> String {
+    if timeout.as_millis() >= 1_000 {
+        format!("{:.2}s", timeout.as_secs_f64())
+    } else {
+        format!("{}ms", timeout.as_millis())
     }
 }
 
