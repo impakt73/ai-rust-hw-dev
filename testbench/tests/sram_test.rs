@@ -92,6 +92,41 @@ fn test_sram_byte_write_mask() {
 }
 
 #[test]
+fn test_sram_byte_lanes_reassemble_word_in_lane_order() {
+    let runtime = create_sram_runtime().expect("Failed to create SRAM runtime");
+    let mut dut = runtime
+        .create_model_simple::<SramTestWrapper>()
+        .expect("Failed to create SRAM model");
+
+    dut.we = 1;
+    dut.waddr = 9;
+    dut.raddr = 9;
+
+    dut.wmask = 0x1;
+    dut.wdata = 0x0000_00AA;
+    clock_cycle(&mut dut);
+
+    dut.wmask = 0x2;
+    dut.wdata = 0x0000_BB00;
+    clock_cycle(&mut dut);
+
+    dut.wmask = 0x4;
+    dut.wdata = 0x00CC_0000;
+    clock_cycle(&mut dut);
+
+    dut.wmask = 0x8;
+    dut.wdata = 0xDD00_0000;
+    clock_cycle(&mut dut);
+
+    dut.we = 0;
+    advance_read_latency(&mut dut);
+    assert_eq!(
+        dut.rdata, 0xDDCC_BBAA,
+        "independent byte-lane writes should reassemble into the expected word ordering"
+    );
+}
+
+#[test]
 fn test_sram_read_during_write_same_addr_is_read_first() {
     let runtime = create_sram_runtime().expect("Failed to create SRAM runtime");
     let mut dut = runtime
