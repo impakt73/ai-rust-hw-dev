@@ -41,43 +41,27 @@ module sram #(
     output logic [31:0]           rdata
 );
 
-    typedef logic [7:0] byte_t;
-    typedef byte_t [3:0] word_bytes_t;
+    (* ram_style = "block" *) logic [7:0] mem0 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem1 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem2 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem3 [0:DEPTH-1];
 
-    (* ram_style = "block" *) word_bytes_t mem [0:DEPTH-1]
-`ifdef YOSYS
-    ;
-`else
-    = '{default: '{default: 8'h00}};
-`endif
     logic [31:0] read_data_pipe;
-
-`ifdef YOSYS
-    integer init_idx;
-    initial begin
-        for (init_idx = 0; init_idx < DEPTH; init_idx = init_idx + 1) begin
-            mem[init_idx][0] = 8'h00;
-            mem[init_idx][1] = 8'h00;
-            mem[init_idx][2] = 8'h00;
-            mem[init_idx][3] = 8'h00;
-        end
-    end
-`endif
 
     always_ff @(posedge clk) begin
         // Write with bounds guard.  For power-of-two DEPTH the comparison
         // ({1'b0,waddr} < DEPTH) is always true so synthesis folds it away.
         if (we && ({1'b0, waddr} < (ADDR_WIDTH+1)'(DEPTH))) begin
-            if (wmask[0]) mem[waddr][0] <= wdata[7:0];
-            if (wmask[1]) mem[waddr][1] <= wdata[15:8];
-            if (wmask[2]) mem[waddr][2] <= wdata[23:16];
-            if (wmask[3]) mem[waddr][3] <= wdata[31:24];
+            if (wmask[0]) mem0[waddr] <= wdata[7:0];
+            if (wmask[1]) mem1[waddr] <= wdata[15:8];
+            if (wmask[2]) mem2[waddr] <= wdata[23:16];
+            if (wmask[3]) mem3[waddr] <= wdata[31:24];
         end
         // Read-first behaviour: same-cycle read and write to the same address
         // returns the old memory contents after the internal output pipeline
         // latency.  The unconditional read maps to clean BRAM + DFF primitives
         // without synchronous-clear DFFSR cells.
-        read_data_pipe <= {mem[raddr][3], mem[raddr][2], mem[raddr][1], mem[raddr][0]};
+        read_data_pipe <= {mem3[raddr], mem2[raddr], mem1[raddr], mem0[raddr]};
         rdata <= read_data_pipe;
     end
 
