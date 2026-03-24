@@ -388,6 +388,8 @@ end
     wire            savestate_load_err;
     
     wire            osnotify_inmenu;
+    wire            osnotify_play_cartridge;
+    wire            osnotify_cartridge_power;
 
 // bridge target commands
 // synchronous to clk_74a
@@ -487,6 +489,8 @@ core_bridge_cmd icb (
     .savestate_load_err     ( savestate_load_err ),
 
     .osnotify_inmenu        ( osnotify_inmenu ),
+    .osnotify_play_cartridge( osnotify_play_cartridge ),
+    .osnotify_cartridge_power( osnotify_cartridge_power ),
     
     .target_dataslot_read       ( target_dataslot_read ),
     .target_dataslot_write      ( target_dataslot_write ),
