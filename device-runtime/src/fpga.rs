@@ -49,11 +49,6 @@ fn host_request_timeout(request: &BusRequest, baud_rate: u32) -> Duration {
         return HOST_REQUEST_TIMEOUT;
     }
 
-    let baud = match baud_rate {
-        0 => return HOST_REQUEST_TIMEOUT,
-        _ => u64::from(baud_rate),
-    };
-
     let payload_bytes = u64::try_from(request.data.len()).unwrap_or(u64::MAX);
     let request_bytes = HOST_BUS_PACKET_HEADER_BYTES.saturating_add(payload_bytes);
     let response_payload_bytes = if request.we {
@@ -65,6 +60,7 @@ fn host_request_timeout(request: &BusRequest, baud_rate: u32) -> Duration {
     let total_bits = request_bytes
         .saturating_add(response_bytes)
         .saturating_mul(UART_BITS_PER_BYTE);
+    let baud = u64::from(baud_rate);
     let serial_millis = total_bits.saturating_mul(1_000).div_ceil(baud);
 
     HOST_REQUEST_TIMEOUT

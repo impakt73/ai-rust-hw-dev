@@ -379,7 +379,7 @@ impl App {
     }
 }
 
-fn format_timeout_duration(timeout: Duration) -> String {
+pub(crate) fn format_timeout_duration(timeout: Duration) -> String {
     if timeout.as_millis() >= 1_000 {
         format!("{:.2}s", timeout.as_secs_f64())
     } else {

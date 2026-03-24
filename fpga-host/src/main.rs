@@ -8,7 +8,7 @@ mod app;
 mod shell;
 mod ui;
 
-use app::{create_fifo_device, App};
+use app::{create_fifo_device, format_timeout_duration, App};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType, SimDeviceRuntimeArgs};
@@ -62,14 +62,6 @@ enum RuntimeArgs {
         #[arg(long, default_value_t = 0)]
         memory_latency_cycles: u32,
     },
-}
-
-fn format_timeout_duration(timeout: Duration) -> String {
-    if timeout.as_millis() >= 1_000 {
-        format!("{:.2}s", timeout.as_secs_f64())
-    } else {
-        format!("{}ms", timeout.as_millis())
-    }
 }
 
 fn main() -> io::Result<()> {
