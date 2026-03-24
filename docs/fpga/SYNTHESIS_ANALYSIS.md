@@ -34,6 +34,32 @@ The RISC-V CPU design successfully synthesizes and meets timing at **25 MHz** ta
 
 **Summary:** The dual-banked BRAM register file implementation trades 4 BRAM blocks for a 33% reduction in logic cell usage. x0 handling is enforced in the CPU with registered decode-time x0 flags: writes to x0 are blocked and x0 source reads are muxed to zero without relying on BRAM initialization.
 
+### Current PR Impact (x0 zero-init removal)
+
+Measured on **2026-03-24** for the default FPGA target **`ice40_alchitry_cu`** using:
+
+```bash
+cd rtl/fpga
+make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
+```
+
+Comparison baseline:
+
+- **Before PR changes:** `f62c9c9`
+- **Current PR revision:** `57b85d4`
+
+| Metric | Before (`f62c9c9`) | After (`57b85d4`) | Delta |
+|--------|--------------------|-------------------|-------|
+| **Max Frequency** | 71.86 MHz | 77.85 MHz | **+5.99 MHz** |
+| **Timing Margin vs 25 MHz target** | +46.86 MHz | +52.85 MHz | **+5.99 MHz** |
+| **Logic Cells (ICESTORM_LC)** | 6,116 | 6,113 | **-3** |
+| **Block RAM (ICESTORM_RAM)** | 30 | 30 | 0 |
+| **SB_LUT4 (post-synthesis)** | 4,767 | 4,828 | +61 |
+| **SB_GB** | 8 | 8 | 0 |
+| **SB_IO** | 77 | 77 | 0 |
+
+**Takeaway:** On the default iCE40 target, the x0 handling cleanup is effectively resource-neutral post-route and slightly improves timing, while increasing post-synthesis LUT4 count by 61 cells without changing routed logic-cell utilization.
+
 ---
 
 ## Resource Utilization Analysis
