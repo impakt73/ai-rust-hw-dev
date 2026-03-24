@@ -41,7 +41,10 @@ module sram #(
     output logic [31:0]           rdata
 );
 
-    (* ram_style = "block" *) logic [3:0][7:0] mem [0:DEPTH-1]
+    typedef logic [7:0] byte_t;
+    typedef byte_t [3:0] word_bytes_t;
+
+    (* ram_style = "block" *) word_bytes_t mem [0:DEPTH-1]
 `ifdef YOSYS
     ;
 `else
@@ -53,7 +56,10 @@ module sram #(
     integer init_idx;
     initial begin
         for (init_idx = 0; init_idx < DEPTH; init_idx = init_idx + 1) begin
-            mem[init_idx] = '{default: 8'h00};
+            mem[init_idx][0] = 8'h00;
+            mem[init_idx][1] = 8'h00;
+            mem[init_idx][2] = 8'h00;
+            mem[init_idx][3] = 8'h00;
         end
     end
 `endif
