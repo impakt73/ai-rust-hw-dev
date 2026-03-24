@@ -156,7 +156,7 @@ pub enum ConnectRuntime {
         /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
         device: String,
         /// Baud rate (default: 1000000)
-        #[arg(default_value_t = DEFAULT_BAUD_RATE)]
+        #[arg(default_value_t = DEFAULT_BAUD_RATE, value_parser = clap::value_parser!(u32).range(1..))]
         baud: u32,
     },
     /// Connect to the software simulator
@@ -652,6 +652,11 @@ mod tests {
     #[test]
     fn test_parse_connect_invalid_baud() {
         assert!(ShellCommand::parse("connect fpga /dev/ttyUSB0 abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_connect_zero_baud() {
+        assert!(ShellCommand::parse("connect fpga /dev/ttyUSB0 0").is_err());
     }
 
     #[test]

@@ -183,9 +183,11 @@ impl SimDeviceRuntime {
                         let mut pending = pending_host_request.lock().unwrap();
                         if let Some(ref p) = *pending {
                             let failed_addr = p.addr;
+                            let timeout = p.timeout;
                             let _ =
                                 event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
                                     addr: failed_addr,
+                                    timeout,
                                 }));
                         }
                         *pending = None;
@@ -222,11 +224,13 @@ impl SimDeviceRuntime {
             {
                 let mut pending = pending_host_request.lock().unwrap();
                 if let Some(ref p) = *pending {
-                    if p.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
+                    if p.sent_at.elapsed() > p.timeout {
                         let timed_out_addr = p.addr;
+                        let timeout = p.timeout;
                         *pending = None;
                         let _ = event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
                             addr: timed_out_addr,
+                            timeout,
                         }));
                     }
                 }
@@ -285,6 +289,7 @@ impl DeviceRuntime for SimDeviceRuntime {
                 addr: request.addr,
                 wdata: request.wdata,
                 sent_at: Instant::now(),
+                timeout: HOST_REQUEST_TIMEOUT,
             });
         }
 
@@ -339,7 +344,7 @@ impl DeviceRuntime for SimDeviceRuntime {
                         Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
                             return Ok(());
                         }
-                        Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                        Some(BusEvent::HostRequestTimeout { addr, .. }) if addr == reset_addr => {
                             return Err(DeviceError::IoError(std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 format!(

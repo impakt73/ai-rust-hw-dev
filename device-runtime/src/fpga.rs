@@ -27,8 +27,14 @@ use std::time::{Duration, Instant};
 /// Size of the intermediate buffers for RX and TX
 const BUFFER_SIZE: usize = 64;
 
-/// Timeout for host-initiated requests (1 second)
+/// Minimum timeout for host-initiated requests.
 const HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+/// Host-bus packet framing overhead in bytes (ctrl0, ctrl1, len_m1, addr).
+const HOST_BUS_PACKET_HEADER_BYTES: u64 = 8;
+/// UART framing overhead in bits per transmitted byte for standard 8N1 links.
+const UART_BITS_PER_BYTE: u64 = 10;
+/// Extra slack beyond raw wire time for handler turnaround and scheduler jitter.
+const HOST_REQUEST_TIMEOUT_MARGIN: Duration = Duration::from_millis(250);
 /// Delay after issuing a system reset so reset packets can reach the target.
 const SYSTEM_RESET_STABILIZATION_DELAY: Duration = Duration::from_secs(1);
 /// Maximum time to drain queued events after a system reset.
@@ -37,6 +43,29 @@ const SYSTEM_RESET_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const RESET_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 /// Timeout for runtime startup readiness handshake.
 const RUNTIME_INIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn host_request_timeout(request: &BusRequest, baud_rate: u32) -> Duration {
+    if classify_host_request_route(request) != HostRequestRoute::HostBusHandler {
+        return HOST_REQUEST_TIMEOUT;
+    }
+
+    let payload_bytes = u64::try_from(request.data.len()).unwrap_or(u64::MAX);
+    let request_bytes = HOST_BUS_PACKET_HEADER_BYTES.saturating_add(payload_bytes);
+    let response_payload_bytes = if request.we {
+        0
+    } else {
+        u64::from(request.burst_len).saturating_mul(u64::from(request.size.byte_count()))
+    };
+    let response_bytes = HOST_BUS_PACKET_HEADER_BYTES.saturating_add(response_payload_bytes);
+    let total_bits = request_bytes
+        .saturating_add(response_bytes)
+        .saturating_mul(UART_BITS_PER_BYTE);
+    let baud = u64::from(baud_rate);
+    let serial_millis = total_bits.saturating_mul(1_000).div_ceil(baud);
+
+    HOST_REQUEST_TIMEOUT
+        .max(Duration::from_millis(serial_millis).saturating_add(HOST_REQUEST_TIMEOUT_MARGIN))
+}
 
 /// Internal message sent from the main thread to the background thread
 enum RuntimeCommand {
@@ -89,6 +118,13 @@ impl FpgaDeviceRuntime {
         startup_reset: crate::StartupReset,
         bus_devices: Option<Vec<BusDeviceRegistration>>,
     ) -> Result<Self, DeviceError> {
+        if baud == 0 {
+            return Err(DeviceError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Baud rate must be greater than zero",
+            )));
+        }
+
         let port = serialport::new(device, baud)
             .timeout(Duration::from_millis(1))
             .open()
@@ -109,6 +145,7 @@ impl FpgaDeviceRuntime {
                 pending_clone,
                 startup_reset,
                 ready_tx,
+                baud,
                 bus_devices,
             );
         });
@@ -143,6 +180,7 @@ impl FpgaDeviceRuntime {
     }
 
     /// Background thread main loop
+    #[allow(clippy::too_many_arguments)]
     fn run_loop(
         mut port: Box<dyn SerialPort>,
         command_rx: mpsc::Receiver<RuntimeCommand>,
@@ -150,6 +188,7 @@ impl FpgaDeviceRuntime {
         pending_host_request: Arc<Mutex<Option<PendingHostRequest>>>,
         startup_reset: crate::StartupReset,
         ready_tx: mpsc::Sender<Result<(), String>>,
+        baud_rate: u32,
         bus_devices: Option<Vec<BusDeviceRegistration>>,
     ) {
         let mut bus = SystemBus::new();
@@ -186,6 +225,7 @@ impl FpgaDeviceRuntime {
                 &mut tx_buffer_len,
                 &pending_host_request,
                 &event_tx,
+                baud_rate,
                 reset_kind,
             ) {
                 let message = format!("Startup {:?} reset failed: {}", startup_reset, e);
@@ -255,6 +295,7 @@ impl FpgaDeviceRuntime {
                         &mut tx_buffer_len,
                         &pending_host_request,
                         &event_tx,
+                        baud_rate,
                         kind,
                     );
                     let _ = result_tx.send(result.map_err(|e| e.to_string()));
@@ -319,8 +360,9 @@ impl FpgaDeviceRuntime {
         {
             let mut pending = pending_host_request.lock().unwrap();
             if let Some(ref p) = *pending {
-                if p.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
+                if p.sent_at.elapsed() > p.timeout {
                     let timed_out_addr = p.addr;
+                    let timed_out_duration = p.timeout;
 
                     // Drain serial port to remove buffered bytes
                     let mut drain_buffer = [0u8; 256];
@@ -350,6 +392,7 @@ impl FpgaDeviceRuntime {
 
                     return Ok(Some(BusEvent::HostRequestTimeout {
                         addr: timed_out_addr,
+                        timeout: timed_out_duration,
                     }));
                 }
             }
@@ -431,6 +474,7 @@ impl FpgaDeviceRuntime {
         tx_buffer_len: &mut usize,
         pending_host_request: &Arc<Mutex<Option<PendingHostRequest>>>,
         event_tx: &mpsc::Sender<RuntimeEvent>,
+        baud_rate: u32,
         kind: ResetKind,
     ) -> Result<(), DeviceError> {
         let reset_addr = sysctrl_reset_addr();
@@ -448,6 +492,7 @@ impl FpgaDeviceRuntime {
                         addr: request.addr,
                         wdata: request.wdata,
                         sent_at: Instant::now(),
+                        timeout: host_request_timeout(&request, baud_rate),
                     });
                 }
                 if let Err(e) = handler.send_request(request) {
@@ -470,7 +515,7 @@ impl FpgaDeviceRuntime {
                         Some(BusEvent::HostWriteResponse { addr, .. }) if addr == reset_addr => {
                             return Ok(());
                         }
-                        Some(BusEvent::HostRequestTimeout { addr }) if addr == reset_addr => {
+                        Some(BusEvent::HostRequestTimeout { addr, .. }) if addr == reset_addr => {
                             return Err(DeviceError::IoError(std::io::Error::new(
                                 std::io::ErrorKind::TimedOut,
                                 format!(
@@ -783,6 +828,7 @@ impl DeviceRuntime for FpgaDeviceRuntime {
                 addr: request.addr,
                 wdata: request.wdata,
                 sent_at: Instant::now(),
+                timeout: host_request_timeout(&request, self.baud_rate),
             });
         }
 
@@ -891,5 +937,54 @@ impl Drop for FpgaDeviceRuntime {
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_bus_timeout_scales_with_baud_and_payload_size() {
+        let request = BusRequest::burst_write(
+            0x7000_0000,
+            AccessSize::Word,
+            1_024,
+            false,
+            false,
+            vec![0u8; 4 * 1_024],
+        );
+
+        let slow_timeout = host_request_timeout(&request, 9_600);
+        let fast_timeout = host_request_timeout(&request, 1_000_000);
+
+        assert!(slow_timeout > Duration::from_secs(4));
+        assert!(slow_timeout > fast_timeout);
+        assert_eq!(fast_timeout, HOST_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn system_bus_timeout_remains_fixed() {
+        let request = BusRequest::burst_write(
+            0x8000_0000,
+            AccessSize::Word,
+            1_024,
+            false,
+            false,
+            vec![0u8; 4 * 1_024],
+        );
+
+        assert_eq!(host_request_timeout(&request, 9_600), HOST_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn small_host_bus_requests_keep_minimum_timeout() {
+        let request = BusRequest::write(0x7000_0000, 0x1234_5678, AccessSize::Word);
+
+        assert_eq!(host_request_timeout(&request, 9_600), HOST_REQUEST_TIMEOUT);
+        assert_eq!(
+            host_request_timeout(&request, 1_000_000),
+            HOST_REQUEST_TIMEOUT
+        );
     }
 }

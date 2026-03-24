@@ -8,7 +8,7 @@ mod app;
 mod shell;
 mod ui;
 
-use app::{create_fifo_device, App};
+use app::{create_fifo_device, format_timeout_duration, App};
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 use device_runtime::{create_device_runtime, BusEvent, DeviceRuntimeType, SimDeviceRuntimeArgs};
@@ -47,7 +47,7 @@ enum RuntimeArgs {
         device: PathBuf,
 
         /// Baud rate for device communication
-        #[arg(short, long, default_value_t = 1_000_000)]
+        #[arg(short, long, default_value_t = 1_000_000, value_parser = clap::value_parser!(u32).range(1..))]
         baud: u32,
     },
     /// Use the software simulator
@@ -201,14 +201,15 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             // Host-initiated write response - log with request details
                             app.log_host_write_response(*addr, *wdata, *size);
                         }
-                        BusEvent::HostRequestTimeout { addr } => {
+                        BusEvent::HostRequestTimeout { addr, timeout } => {
                             // Host request timed out - emit warning in TUI
                             app.add_log(
                                 log::Level::Warn,
                                 format!(
-                                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
+                                    "Host request timed out after {} for address 0x{:08x}. Resetting host bus handler.",
+                                    format_timeout_duration(*timeout),
                                     addr
-                                )
+                                ),
                             );
                         }
                         BusEvent::TohostTermination { value } => {
