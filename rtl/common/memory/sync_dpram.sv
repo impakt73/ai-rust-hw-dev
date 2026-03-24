@@ -39,12 +39,21 @@ module sync_dpram #(
 
     generate
         if (INIT_ZERO) begin : gen_init_zero
+`ifdef YOSYS
+            // Yosys prefers an explicit per-element initialization loop
             int unsigned i;
             initial begin
                 for (i = 0; i < DEPTH; i++) begin
                     mem[i] = '0;
                 end
             end
+`else
+            // Some vendor flows infer BRAM initialization more reliably
+            // from a single aggregate assignment than from a loop.
+            initial begin
+                mem = '{default: '0};
+            end
+`endif
         end
     endgenerate
 
