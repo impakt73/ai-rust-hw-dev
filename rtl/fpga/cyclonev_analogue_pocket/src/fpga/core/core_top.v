@@ -388,6 +388,8 @@ end
     wire            savestate_load_err;
     
     wire            osnotify_inmenu;
+    wire            osnotify_play_cartridge;
+    wire            osnotify_cartridge_power;
 
 // bridge target commands
 // synchronous to clk_74a
@@ -487,6 +489,8 @@ core_bridge_cmd icb (
     .savestate_load_err     ( savestate_load_err ),
 
     .osnotify_inmenu        ( osnotify_inmenu ),
+    .osnotify_play_cartridge( osnotify_play_cartridge ),
+    .osnotify_cartridge_power( osnotify_cartridge_power ),
     
     .target_dataslot_read       ( target_dataslot_read ),
     .target_dataslot_write      ( target_dataslot_write ),
@@ -530,9 +534,15 @@ core_bridge_cmd icb (
 // PLL output has a minimum output frequency anyway.
 
 
+wire    osnotify_play_cartridge_s;
+wire    osnotify_cartridge_power_s;
+synch_3 play_cart_sync(osnotify_play_cartridge, osnotify_play_cartridge_s, clk_core_12288);
+synch_3 cart_power_sync(osnotify_cartridge_power, osnotify_cartridge_power_s, clk_core_12288);
+
+
 assign video_rgb_clock = clk_core_12288;
 assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = repo_video_rgb;
+assign video_rgb = osnotify_cartridge_power_s ? repo_video_rgb : 24'hffffff;
 assign video_de = repo_video_de;
 assign video_skip = repo_video_skip;
 assign video_vs = repo_video_vs;
