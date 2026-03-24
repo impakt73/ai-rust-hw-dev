@@ -139,6 +139,7 @@ module cpu #(
     // Decoder outputs (registered inside decoder.sv)
     logic [6:0]  opcode_reg;
     logic [4:0]  rd_reg, rs1_reg, rs2_reg;
+    logic        rd_is_x0, rs1_is_x0, rs2_is_x0;
     logic [2:0]  funct3_reg;
     logic [6:0]  funct7_reg;
     logic [31:0] imm_i_reg, imm_s_reg, imm_b_reg, imm_u_reg, imm_j_reg;
@@ -326,12 +327,18 @@ module cpu #(
             instr_pc_reg <= 32'h0;
             instr_pc_next_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
+            rd_is_x0 <= 1'b0;
+            rs1_is_x0 <= 1'b0;
+            rs2_is_x0 <= 1'b0;
         end else if (ir_write) begin
             ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE_WAIT) begin
             instr_pc_next_reg <= instr_pc_reg + pc_increment;  // Capture sequential fall-through PC
+            rd_is_x0 <= (rd_reg == 5'd0);
+            rs1_is_x0 <= (rs1_reg == 5'd0);
+            rs2_is_x0 <= (rs2_reg == 5'd0);
             // The decoder's registered instruction_valid output becomes stable in
             // S_DECODE_WAIT after being registered on the S_DECODE clock edge. This merge combines
             // decompressor and decoder validity checks for the current instruction.
@@ -347,8 +354,8 @@ module cpu #(
             a_reg <= 32'h0;
             b_reg <= 32'h0;
         end else begin
-            if (a_reg_write) a_reg <= rs1_data;
-            if (b_reg_write) b_reg <= rs2_data;
+            if (a_reg_write) a_reg <= rs1_is_x0 ? 32'd0 : rs1_data;
+            if (b_reg_write) b_reg <= rs2_is_x0 ? 32'd0 : rs2_data;
         end
     end
     
@@ -973,9 +980,9 @@ module cpu #(
     // Register file instantiation (write enable gated by FSM)
     // Uses dual-banked BRAM with 2-cycle read latency, handled by S_REG_READ and
     // S_REG_READ_WAIT states
-    // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
+    // x0 write gating: prevent writes to x0 (derived from the registered decode-time flag)
     logic reg_write_x0_gate;
-    assign reg_write_x0_gate = (rd_reg != 5'd0);
+    assign reg_write_x0_gate = !rd_is_x0;
     
     regfile u_regfile (
         .clk(clk),

@@ -111,6 +111,46 @@ fn wait_for_instr_complete(dut: &mut Cpu, program: &[u8], pending_response: &mut
 }
 
 #[test]
+fn test_cpu_masks_x0_rs1_reads_after_attempted_x0_write() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 12];
+    write_u32(&mut program, 0x0, addi(0, 0, 5));
+    write_u32(&mut program, 0x4, addi(1, 0, 7));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+
+    assert_eq!(
+        dut.debug_instruction,
+        addi(1, 0, 7),
+        "Second instruction should read x0 after an attempted write to x0"
+    );
+    assert_eq!(
+        dut.debug_pc, 4,
+        "Second instruction should complete at PC=4"
+    );
+    assert_eq!(
+        dut.debug_rs1_data, 0,
+        "CPU must mux x0 reads to zero even if the backing regfile storage changed"
+    );
+    assert_eq!(
+        dut.debug_rd_data, 7,
+        "Reading x0 after an attempted x0 write must still produce the immediate result"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 8,
+        "CPU should advance past the x0 readback instruction"
+    );
+}
+
+#[test]
 fn test_cpu_branch_taken_redirects_with_unified_target_register() {
     let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut dut = runtime
@@ -267,6 +307,14 @@ fn test_cpu_branch_not_taken_falls_through_after_registered_compare() {
         dut.debug_instruction,
         beq(1, 0, 8),
         "Completed instruction should be the not-taken branch"
+    );
+    assert_eq!(
+        dut.debug_rs1_data, 1,
+        "Branch compare should observe the previously written x1 value on rs1"
+    );
+    assert_eq!(
+        dut.debug_rs2_data, 0,
+        "CPU must mux rs2 reads from x0 to zero for branch comparisons"
     );
     assert_eq!(
         dut.debug_current_pc, 8,

@@ -78,7 +78,7 @@ fn test_regfile_write_read() {
 }
 
 #[test]
-fn test_regfile_x0_hardwired() {
+fn test_regfile_x0_storage_is_ordinary_when_written() {
     let runtime = create_runtime();
     let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
 
@@ -87,21 +87,26 @@ fn test_regfile_x0_hardwired() {
     dut.we = 0;
     dut.eval();
 
-    // NOTE: x0 write gating is now handled in the CPU module, not the regfile.
-    // The regfile's BRAM is initialized to 0, so x0 starts as 0.
-    // In this standalone test, we verify that x0 is initially 0 (BRAM initialized).
-    // The CPU will prevent writes to x0 using the reg_write_x0_gate signal.
+    // The standalone regfile is generic BRAM-backed storage. The CPU is
+    // responsible for enforcing the architectural x0 semantics.
+    dut.we = 1;
+    dut.rd_addr = 0;
+    dut.rd_data = 0xDEAD_BEEF;
+    clock_cycle!(dut);
 
-    // Verify x0 is initially 0 (BRAM initialization)
+    dut.we = 0;
     dut.rs1_addr = 0;
-    dut.eval();
-    read_cycle!(dut);
-    assert_eq!(dut.rs1_data, 0, "Register x0 must be initialized to 0");
-
     dut.rs2_addr = 0;
     dut.eval();
     read_cycle!(dut);
-    assert_eq!(dut.rs2_data, 0, "Register x0 must be initialized to 0");
+    assert_eq!(
+        dut.rs1_data, 0xDEAD_BEEF,
+        "Standalone regfile storage should preserve whatever is written to address 0"
+    );
+    assert_eq!(
+        dut.rs2_data, 0xDEAD_BEEF,
+        "Both read ports should observe the stored x0 backing value when the CPU is not masking it"
+    );
 }
 
 #[test]
@@ -202,9 +207,9 @@ fn test_regfile_all_registers() {
     dut.we = 0;
     dut.eval();
 
-    // Verify all registers (BRAM has 2-cycle read latency)
+    // Verify all written registers (BRAM has 2-cycle read latency)
     #[allow(clippy::needless_range_loop)]
-    for i in 0..32 {
+    for i in 1..32 {
         dut.rs1_addr = i as u8;
         dut.eval();
         read_cycle!(dut);
@@ -267,13 +272,17 @@ fn test_regfile_read_latency_is_two_cycles() {
     dut.rd_data = 0x1234_5678;
     clock_cycle!(dut);
 
+    dut.rd_addr = 5;
+    dut.rd_data = 0;
+    clock_cycle!(dut);
+
     dut.we = 0;
-    dut.rs1_addr = 0;
+    dut.rs1_addr = 5;
     dut.eval();
     read_cycle!(dut);
     assert_eq!(
         dut.rs1_data, 0,
-        "register x0 should seed the read pipeline with zero"
+        "a previously written zero should seed the read pipeline without relying on memory initialization"
     );
 
     dut.rs1_addr = 4;
