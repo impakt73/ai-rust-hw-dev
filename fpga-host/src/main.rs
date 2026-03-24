@@ -206,9 +206,9 @@ fn run_app(mut terminal: DefaultTerminal, args: Args) -> io::Result<()> {
                             app.add_log(
                                 log::Level::Warn,
                                 format!(
-                                    "Host request timeout (1s) for address 0x{:08x}. Resetting host bus handler.",
+                                    "Host request timed out for address 0x{:08x}. Resetting host bus handler.",
                                     addr
-                                )
+                                ),
                             );
                         }
                         BusEvent::TohostTermination { value } => {

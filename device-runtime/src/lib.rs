@@ -215,6 +215,8 @@ pub struct PendingHostRequest {
     pub wdata: u32,
     /// Time when the request was sent
     pub sent_at: std::time::Instant,
+    /// Maximum time to wait for the request to complete
+    pub timeout: std::time::Duration,
 }
 
 /// Get the size name for logging

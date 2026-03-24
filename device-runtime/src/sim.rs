@@ -222,7 +222,7 @@ impl SimDeviceRuntime {
             {
                 let mut pending = pending_host_request.lock().unwrap();
                 if let Some(ref p) = *pending {
-                    if p.sent_at.elapsed() > HOST_REQUEST_TIMEOUT {
+                    if p.sent_at.elapsed() > p.timeout {
                         let timed_out_addr = p.addr;
                         *pending = None;
                         let _ = event_tx.send(RuntimeEvent::Bus(BusEvent::HostRequestTimeout {
@@ -285,6 +285,7 @@ impl DeviceRuntime for SimDeviceRuntime {
                 addr: request.addr,
                 wdata: request.wdata,
                 sent_at: Instant::now(),
+                timeout: HOST_REQUEST_TIMEOUT,
             });
         }
 
