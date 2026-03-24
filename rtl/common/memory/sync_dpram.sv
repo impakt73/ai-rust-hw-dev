@@ -15,7 +15,8 @@
 
 module sync_dpram #(
     parameter int DATA_WIDTH = 32,
-    parameter int ADDR_WIDTH = 8   // 256 entries by default
+    parameter int ADDR_WIDTH = 8,  // 256 entries by default
+    parameter bit INIT_ZERO = 1'b0
 ) (
     input wire logic                    wclk,
     input wire logic                    rclk,
@@ -34,21 +35,27 @@ module sync_dpram #(
 
     // Memory array
     // Depth is 2^ADDR_WIDTH entries
-    (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:DEPTH-1]
-`ifdef YOSYS
-    ;
-`else
-    = '{default: '0};
-`endif
+    (* ram_style = "block" *) logic [DATA_WIDTH-1:0] mem [0:DEPTH-1];
 
+    generate
+        if (INIT_ZERO) begin : gen_init_zero
 `ifdef YOSYS
-    integer init_idx;
-    initial begin
-        for (init_idx = 0; init_idx < DEPTH; init_idx = init_idx + 1) begin
-            mem[init_idx] = '0;
-        end
-    end
+            // Yosys prefers an explicit per-element initialization loop
+            int unsigned i;
+            initial begin
+                for (i = 0; i < DEPTH; i++) begin
+                    mem[i] = '0;
+                end
+            end
+`else
+            // Some vendor flows infer BRAM initialization more reliably
+            // from a single aggregate assignment than from a loop.
+            initial begin
+                mem = '{default: '0};
+            end
 `endif
+        end
+    endgenerate
 
     // Write port - synchronous write
     always_ff @(posedge wclk) begin
