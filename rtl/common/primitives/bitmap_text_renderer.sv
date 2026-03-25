@@ -250,7 +250,7 @@ module bitmap_text_renderer #(
             glyph_row_d1 <= glyph_row_d0;
             glyph_row_d2 <= glyph_row_d1;
             pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(7)
-                - FONT_ROW_INDEX_WIDTH'(fetch_active_x);
+                - fetch_active_x[FONT_ROW_INDEX_WIDTH-1:0];
             pixel_bit_index_d1 <= pixel_bit_index_d0;
             pixel_bit_index_d2 <= pixel_bit_index_d1;
             pixel_bit_index_d3 <= pixel_bit_index_d2;
