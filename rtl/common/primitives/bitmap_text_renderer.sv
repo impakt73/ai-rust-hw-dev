@@ -77,10 +77,10 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
     // video_sync now resets the scan counters to the frame origin while keeping the
     // registered active-video output low during reset. After rst deasserts the
-    // renderer therefore still sees one non-visible warm-up cycle before the first
-    // registered active pixel at (0, 0). Seed the internal prefetch/bit-select
-    // pipeline so that this single warm-up cycle lands on the same state
-    // steady-state scanout would have reached by the first visible pixel.
+    // renderer therefore still sees one non-visible warm-up cycle just before
+    // active video resumes. Seed the internal prefetch/bit-select pipeline so that
+    // this single warm-up cycle lands on the same state steady-state scanout would
+    // have reached by the first visible pixel of the frame.
     localparam int unsigned RESET_FETCH_SCAN_X_PREFETCH = FONT_PIPELINE_CYCLES - 2;
     // D0-D2 preload consecutive bit positions for that one priming shift, and D3/D4 stay
     // at the terminal bit so the first visible tile-0 pixels still index bits 7..0 in order.

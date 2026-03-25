@@ -56,11 +56,20 @@ fn test_video_sync_holds_registered_defaults_during_reset() {
             "active_video must stay low during reset"
         );
         assert_eq!(dut.line_start, 1, "line_start must stay high during reset");
-        assert_eq!(dut.frame_start, 1, "frame_start must stay high during reset");
+        assert_eq!(
+            dut.frame_start, 1,
+            "frame_start must stay high during reset"
+        );
         assert_eq!(dut.active_x, 0, "active_x must reset to zero");
         assert_eq!(dut.active_y, 0, "active_y must reset to zero");
-        assert_eq!(dut.scan_x, 0, "scan_x must reset to the first horizontal position");
-        assert_eq!(dut.scan_y, 0, "scan_y must reset to the first vertical position");
+        assert_eq!(
+            dut.scan_x, 0,
+            "scan_x must reset to the first horizontal position"
+        );
+        assert_eq!(
+            dut.scan_y, 0,
+            "scan_y must reset to the first vertical position"
+        );
     }
 }
 

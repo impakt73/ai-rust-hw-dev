@@ -21,8 +21,10 @@
 //   hsync        - Registered horizontal sync output
 //   vsync        - Registered vertical sync output
 //   active_video - Registered active-region qualifier
-//   line_start   - Registered one-cycle pulse at the first pixel of each line
-//   frame_start  - Registered one-cycle pulse at the first pixel of each frame
+//   line_start   - Registered start-of-line marker; held high during reset and a
+//                  one-cycle pulse at the first pixel of each line otherwise
+//   frame_start  - Registered start-of-frame marker; held high during reset and a
+//                  one-cycle pulse at the first pixel of each frame otherwise
 //   active_x     - Registered X coordinate within the active region, else 0
 //   active_y     - Registered Y coordinate within the active region, else 0
 //   scan_x       - Registered X coordinate across the full scan line
