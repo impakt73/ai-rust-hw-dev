@@ -60,9 +60,8 @@ module bitmap_text_renderer #(
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency (`font_addr` combines
     //               `char_map_rdata` with the aligned glyph row)
-    //   - 1 cycle: registered glyph-bit select alignment
-    // The horizontal front porch must cover this 6-cycle lead before scanout
-    // re-enters the active region.
+    // The horizontal front porch must cover this 6-cycle prefetch lead before
+    // scanout re-enters the active region.
     localparam int unsigned FONT_PIPELINE_CYCLES = 6;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
@@ -76,6 +75,16 @@ module bitmap_text_renderer #(
     localparam int unsigned TILE_ROW_WIDTH = (TILE_ROWS <= 1) ? 1 : $clog2(TILE_ROWS);
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
+    // video_sync resets to H_LAST/V_LAST, so after rst deasserts the renderer sees one
+    // non-visible priming cycle before the first registered active pixel at (0, 0).
+    // Seed the internal prefetch/bit-select pipeline so that single priming cycle lands
+    // on the same state steady-state scanout would have reached by the first visible pixel.
+    localparam int unsigned RESET_FETCH_SCAN_X_PREFETCH = FONT_PIPELINE_CYCLES - 2;
+    localparam int unsigned RESET_PIXEL_BIT_INDEX_D0 = RESET_FETCH_SCAN_X_PREFETCH;
+    localparam int unsigned RESET_PIXEL_BIT_INDEX_D1 = RESET_FETCH_SCAN_X_PREFETCH + 1;
+    localparam int unsigned RESET_PIXEL_BIT_INDEX_D2 = RESET_FETCH_SCAN_X_PREFETCH + 2;
+    localparam int unsigned RESET_PIXEL_BIT_INDEX_D3 = TILE_WIDTH - 1;
+    localparam int unsigned RESET_PIXEL_BIT_INDEX_D4 = TILE_WIDTH - 1;
     localparam logic [H_COUNTER_WIDTH-1:0] FETCH_WRAP_START =
         H_COUNTER_WIDTH'(H_TOTAL - FONT_PIPELINE_CYCLES);
 
@@ -223,17 +232,17 @@ module bitmap_text_renderer #(
             frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
-            fetch_scan_x_prefetch <= H_COUNTER_WIDTH'(4);
+            fetch_scan_x_prefetch <= H_COUNTER_WIDTH'(RESET_FETCH_SCAN_X_PREFETCH);
             fetch_scan_y_prefetch <= '0;
             char_map_addr <= '0;
             glyph_row_d0 <= '0;
             glyph_row_d1 <= '0;
             glyph_row_d2 <= '0;
-            pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(4);
-            pixel_bit_index_d1 <= FONT_ROW_INDEX_WIDTH'(5);
-            pixel_bit_index_d2 <= FONT_ROW_INDEX_WIDTH'(6);
-            pixel_bit_index_d3 <= FONT_ROW_INDEX_WIDTH'(7);
-            pixel_bit_index_d4 <= FONT_ROW_INDEX_WIDTH'(7);
+            pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(RESET_PIXEL_BIT_INDEX_D0);
+            pixel_bit_index_d1 <= FONT_ROW_INDEX_WIDTH'(RESET_PIXEL_BIT_INDEX_D1);
+            pixel_bit_index_d2 <= FONT_ROW_INDEX_WIDTH'(RESET_PIXEL_BIT_INDEX_D2);
+            pixel_bit_index_d3 <= FONT_ROW_INDEX_WIDTH'(RESET_PIXEL_BIT_INDEX_D3);
+            pixel_bit_index_d4 <= FONT_ROW_INDEX_WIDTH'(RESET_PIXEL_BIT_INDEX_D4);
             pixel_on <= 1'b0;
         end else begin
             fetch_scan_x_prefetch <= fetch_scan_x_next;
