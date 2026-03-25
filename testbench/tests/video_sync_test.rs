@@ -5,6 +5,8 @@ const VIDEO_SYNC_WRAPPER_V_TOTAL: usize = 6;
 const VIDEO_SYNC_WRAPPER_H_ACTIVE: u8 = 4;
 const VIDEO_SYNC_WRAPPER_CYCLES_PER_FRAME: usize =
     VIDEO_SYNC_WRAPPER_H_TOTAL * VIDEO_SYNC_WRAPPER_V_TOTAL;
+const VIDEO_SYNC_WRAPPER_BLANKING_TAIL: usize =
+    VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -141,8 +143,7 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
     );
 
     // Advance past the initial blanking tail to reach the first frame start.
-    let blanking_tail = VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize;
-    for _ in 0..blanking_tail {
+    for _ in 0..VIDEO_SYNC_WRAPPER_BLANKING_TAIL {
         clock_cycle!(&mut dut);
     }
     assert_eq!(dut.frame_start, 1, "first active cycle must be frame_start");
@@ -271,10 +272,8 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
 
     reset_default_wrapper(&mut dut);
 
-    // Skip the initial blanking tail (H_TOTAL - H_ACTIVE = 4 cycles) to
-    // reach the first active pixel at (0, 0).
-    let blanking_tail = VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize;
-    advance_default_wrapper(&mut dut, blanking_tail);
+    // Skip the initial blanking tail to reach the first active pixel at (0, 0).
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_BLANKING_TAIL);
     assert_eq!(
         dut.active_video, 1,
         "first line should begin in active video"

@@ -111,7 +111,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
 }
 
 #[test]
-fn test_bitmap_text_renderer_first_frame_matches_expected_bitmap_after_reset() {
+fn test_bitmap_text_renderer_first_frame_matches_expected_bitmap() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
