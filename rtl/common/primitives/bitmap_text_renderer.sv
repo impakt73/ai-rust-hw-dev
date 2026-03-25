@@ -60,11 +60,10 @@ module bitmap_text_renderer #(
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency (`font_addr` combines
     //               `char_map_rdata` with the aligned glyph row)
-    // The public timing bundle adds a separate output-alignment stage after the
-    // prefetch work completes, so `FONT_PIPELINE_CYCLES` still tracks a 5-cycle
-    // lead requirement for the horizontal front porch before scanout re-enters
-    // the active region.
-    localparam int unsigned FONT_PIPELINE_CYCLES = 5;
+    //   - 1 cycle: registered glyph-bit select alignment
+    // The horizontal front porch must cover this 6-cycle lead before scanout
+    // re-enters the active region.
+    localparam int unsigned FONT_PIPELINE_CYCLES = 6;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
@@ -96,13 +95,6 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
     logic pixel_on_next;
-    logic video_de_d0;
-    logic video_hs_d0;
-    logic video_vs_d0;
-    logic line_start_d0;
-    logic frame_start_d0;
-    logic [ACTIVE_X_WIDTH-1:0] active_x_d0;
-    logic [ACTIVE_Y_WIDTH-1:0] active_y_d0;
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_next;
     logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_next;
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_prefetch;
@@ -116,6 +108,10 @@ module bitmap_text_renderer #(
     logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row_prefetch;
     logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_prefetch;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d0;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d1;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d2;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d3;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d4;
 
     video_sync #(
         .H_ACTIVE(ACTIVE_WIDTH),
@@ -215,18 +211,11 @@ module bitmap_text_renderer #(
 
     always_comb begin
         font_addr = {char_map_rdata, glyph_row_d2};
-        pixel_on_next = video_de_d0 ? font_glyph_rdata[pixel_bit_index_d0] : 1'b0;
+        pixel_on_next = sync_video_de ? font_glyph_rdata[pixel_bit_index_d4] : 1'b0;
     end
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            video_de_d0 <= 1'b0;
-            video_hs_d0 <= ~HSYNC_ACTIVE_HIGH;
-            video_vs_d0 <= ~VSYNC_ACTIVE_HIGH;
-            line_start_d0 <= 1'b0;
-            frame_start_d0 <= 1'b0;
-            active_x_d0 <= '0;
-            active_y_d0 <= '0;
             video_de <= 1'b0;
             video_hs <= ~HSYNC_ACTIVE_HIGH;
             video_vs <= ~VSYNC_ACTIVE_HIGH;
@@ -234,36 +223,38 @@ module bitmap_text_renderer #(
             frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
-            fetch_scan_x_prefetch <= '0;
+            fetch_scan_x_prefetch <= H_COUNTER_WIDTH'(4);
             fetch_scan_y_prefetch <= '0;
             char_map_addr <= '0;
             glyph_row_d0 <= '0;
             glyph_row_d1 <= '0;
             glyph_row_d2 <= '0;
-            pixel_bit_index_d0 <= '0;
+            pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(4);
+            pixel_bit_index_d1 <= FONT_ROW_INDEX_WIDTH'(5);
+            pixel_bit_index_d2 <= FONT_ROW_INDEX_WIDTH'(6);
+            pixel_bit_index_d3 <= FONT_ROW_INDEX_WIDTH'(7);
+            pixel_bit_index_d4 <= FONT_ROW_INDEX_WIDTH'(7);
             pixel_on <= 1'b0;
         end else begin
-            video_de_d0 <= sync_video_de;
-            video_hs_d0 <= sync_video_hs;
-            video_vs_d0 <= sync_video_vs;
-            line_start_d0 <= sync_line_start;
-            frame_start_d0 <= sync_frame_start;
-            active_x_d0 <= sync_active_x;
-            active_y_d0 <= sync_active_y;
             fetch_scan_x_prefetch <= fetch_scan_x_next;
             fetch_scan_y_prefetch <= fetch_scan_y_next;
             char_map_addr <= char_map_addr_prefetch;
             glyph_row_d0 <= font_glyph_row_prefetch;
             glyph_row_d1 <= glyph_row_d0;
             glyph_row_d2 <= glyph_row_d1;
-            pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(7) - sync_active_x[FONT_ROW_INDEX_WIDTH-1:0];
-            video_de <= video_de_d0;
-            video_hs <= video_hs_d0;
-            video_vs <= video_vs_d0;
-            line_start <= line_start_d0;
-            frame_start <= frame_start_d0;
-            active_x <= active_x_d0;
-            active_y <= active_y_d0;
+            pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(7)
+                - fetch_scan_x_prefetch[FONT_ROW_INDEX_WIDTH-1:0];
+            pixel_bit_index_d1 <= pixel_bit_index_d0;
+            pixel_bit_index_d2 <= pixel_bit_index_d1;
+            pixel_bit_index_d3 <= pixel_bit_index_d2;
+            pixel_bit_index_d4 <= pixel_bit_index_d3;
+            video_de <= sync_video_de;
+            video_hs <= sync_video_hs;
+            video_vs <= sync_video_vs;
+            line_start <= sync_line_start;
+            frame_start <= sync_frame_start;
+            active_x <= sync_active_x;
+            active_y <= sync_active_y;
             pixel_on <= pixel_on_next;
         end
     end
