@@ -40,7 +40,9 @@ module video_sync #(
     parameter int unsigned V_SYNC_WIDTH = 2,
     parameter int unsigned V_BACK_PORCH = 33,
     parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
-    parameter bit VSYNC_ACTIVE_HIGH = 1'b0
+    parameter bit VSYNC_ACTIVE_HIGH = 1'b0,
+    parameter int unsigned RESET_SCAN_X = 0,
+    parameter int unsigned RESET_SCAN_Y = 0
 ) (
     input wire logic clk,
     input wire logic rst,
@@ -113,6 +115,12 @@ module video_sync #(
         if (V_TOTAL <= V_ACTIVE) begin
             $fatal(1, "video_sync: vertical blanking interval must be > 0");
         end
+        if (RESET_SCAN_X >= H_TOTAL) begin
+            $fatal(1, "video_sync: RESET_SCAN_X must be < H_TOTAL");
+        end
+        if (RESET_SCAN_Y >= V_TOTAL) begin
+            $fatal(1, "video_sync: RESET_SCAN_Y must be < V_TOTAL");
+        end
     end
 `endif
 
@@ -151,8 +159,8 @@ module video_sync #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            h_counter <= '0;
-            v_counter <= '0;
+            h_counter <= H_COUNTER_WIDTH'(RESET_SCAN_X);
+            v_counter <= V_COUNTER_WIDTH'(RESET_SCAN_Y);
             hsync <= ~HSYNC_ACTIVE_HIGH;
             vsync <= ~VSYNC_ACTIVE_HIGH;
             active_video <= 1'b0;

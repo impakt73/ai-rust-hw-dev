@@ -28,9 +28,7 @@ macro_rules! clock_cycle {
 
 fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
     dut.rst = 1;
-    for _ in 0..6 {
-        clock_cycle!(dut);
-    }
+    clock_cycle!(dut);
     dut.rst = 0;
 }
 
@@ -39,24 +37,9 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
     for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.frame_start == 1 {
-            if dut.video_de == 0 {
-                assert_eq!(
-                    dut.line_start, 1,
-                    "reset-origin frame_start must still align with line_start"
-                );
-                assert_eq!(
-                    dut.active_x, 0,
-                    "reset-origin frame_start must still hold x at zero"
-                );
-                assert_eq!(
-                    dut.active_y, 0,
-                    "reset-origin frame_start must still hold y at zero"
-                );
-                continue;
-            }
             assert_eq!(
                 dut.video_de, 1,
-                "frame_start must coincide with active video"
+                "frame_start must coincide with the first visible pixel after warm-up"
             );
             assert_eq!(
                 dut.line_start, 1,
@@ -102,7 +85,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_frame_start(&mut dut, 1);
 
     let expected_pixels = [
         (0u8, 0u8, 1u8),
@@ -164,7 +147,7 @@ fn test_bitmap_text_renderer_matches_expected_bitmap_in_steady_state() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_frame_start(&mut dut, 1);
 
     let mut active_pixel_count = 0usize;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
@@ -206,7 +189,7 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_frame_start(&mut dut, 1);
 
     let mut observed_blanking = false;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
@@ -235,7 +218,7 @@ fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_frame_start(&mut dut, 1);
 
     let mut saw_hsync_pulse = false;
     let mut saw_vsync_pulse = false;
