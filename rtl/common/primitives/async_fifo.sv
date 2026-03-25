@@ -127,7 +127,8 @@ module async_fifo #(
     assign ram_waddr = wr_ptr_bin[ADDR_WIDTH-1:0];
     // While a staged head word is valid, continuously point the RAM read address at the
     // next unread entry so a following rd_fire can immediately launch the refill read.
-    assign ram_raddr = ADDR_WIDTH'(out_valid ? (rd_ptr_bin + PTR_WIDTH'(1)) : rd_ptr_bin);
+    assign ram_raddr = out_valid ? (rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(1))
+                                 : rd_ptr_bin[ADDR_WIDTH-1:0];
 
     ff_sync #(
         .STAGES(SYNC_STAGES),
