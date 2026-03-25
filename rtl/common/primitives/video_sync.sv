@@ -66,11 +66,7 @@ module video_sync #(
     localparam logic [H_COUNTER_WIDTH-1:0] H_LAST = H_COUNTER_WIDTH'(H_TOTAL - 1);
     localparam logic [V_COUNTER_WIDTH-1:0] V_LAST = V_COUNTER_WIDTH'(V_TOTAL - 1);
     localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_START = H_COUNTER_WIDTH'(H_BACK_PORCH);
-    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_END =
-        H_COUNTER_WIDTH'(H_BACK_PORCH + H_ACTIVE);
     localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_START = V_COUNTER_WIDTH'(V_BACK_PORCH);
-    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_END =
-        V_COUNTER_WIDTH'(V_BACK_PORCH + V_ACTIVE);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_START =
         H_COUNTER_WIDTH'(H_BACK_PORCH + H_ACTIVE + H_FRONT_PORCH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_SPAN = H_COUNTER_WIDTH'(H_SYNC_WIDTH);
