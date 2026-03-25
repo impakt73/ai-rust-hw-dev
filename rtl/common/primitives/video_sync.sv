@@ -25,6 +25,8 @@
 //   frame_start  - Registered one-cycle pulse at the first pixel of each frame
 //   active_x     - Registered X coordinate within the active region, else 0
 //   active_y     - Registered Y coordinate within the active region, else 0
+//   scan_x       - Registered X coordinate across the full scan line
+//   scan_y       - Registered Y coordinate across the full frame
 
 module video_sync #(
     parameter int unsigned H_ACTIVE = 640,
@@ -46,7 +48,11 @@ module video_sync #(
     output logic line_start,
     output logic frame_start,
     output logic [((H_ACTIVE <= 1) ? 1 : $clog2(H_ACTIVE)) - 1:0] active_x,
-    output logic [((V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE)) - 1:0] active_y
+    output logic [((V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE)) - 1:0] active_y,
+    output logic [((H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH <= 1) ?
+        1 : $clog2(H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH)) - 1:0] scan_x,
+    output logic [((V_ACTIVE + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH <= 1) ?
+        1 : $clog2(V_ACTIVE + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH)) - 1:0] scan_y
 );
 
     localparam int unsigned H_TOTAL = H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
@@ -164,6 +170,9 @@ module video_sync #(
             active_y <= active_y_next;
         end
     end
+
+    assign scan_x = h_counter;
+    assign scan_y = v_counter;
 
 endmodule
 `default_nettype wire

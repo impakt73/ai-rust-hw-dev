@@ -7,6 +7,8 @@ module video_sync_wrapper (
     output logic active_video,
     output logic line_start,
     output logic frame_start,
+    output logic [2:0] scan_x,
+    output logic [2:0] scan_y,
     output logic [1:0] active_x,
     output logic [1:0] active_y
 );
@@ -30,6 +32,8 @@ module video_sync_wrapper (
         .active_video(active_video),
         .line_start(line_start),
         .frame_start(frame_start),
+        .scan_x(scan_x),
+        .scan_y(scan_y),
         .active_x(active_x),
         .active_y(active_y)
     );
@@ -44,6 +48,8 @@ module video_sync_minimal_wrapper (
     output logic active_video,
     output logic line_start,
     output logic frame_start,
+    output logic scan_x,
+    output logic scan_y,
     output logic active_x,
     output logic active_y
 );
@@ -67,6 +73,8 @@ module video_sync_minimal_wrapper (
         .active_video(active_video),
         .line_start(line_start),
         .frame_start(frame_start),
+        .scan_x(scan_x),
+        .scan_y(scan_y),
         .active_x(active_x),
         .active_y(active_y)
     );
