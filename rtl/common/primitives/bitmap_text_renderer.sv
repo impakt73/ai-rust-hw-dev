@@ -77,9 +77,12 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
     // video_sync resets to H_LAST/V_LAST, so after rst deasserts the renderer sees one
     // non-visible priming cycle before the first registered active pixel at (0, 0).
-    // Seed the internal prefetch/bit-select pipeline so that single priming cycle lands
-    // on the same state steady-state scanout would have reached by the first visible pixel.
+    // Seed the internal prefetch/bit-select pipeline so that the single priming cycle
+    // lands on the same state steady-state scanout would have reached by the first
+    // visible pixel.
     localparam int unsigned RESET_FETCH_SCAN_X_PREFETCH = FONT_PIPELINE_CYCLES - 2;
+    // D0-D2 preload consecutive bit positions for that one priming shift, and D3/D4 stay
+    // at the terminal bit so the first visible tile-0 pixels still index bits 7..0 in order.
     localparam int unsigned RESET_PIXEL_BIT_INDEX_D0 = RESET_FETCH_SCAN_X_PREFETCH;
     localparam int unsigned RESET_PIXEL_BIT_INDEX_D1 = RESET_FETCH_SCAN_X_PREFETCH + 1;
     localparam int unsigned RESET_PIXEL_BIT_INDEX_D2 = RESET_FETCH_SCAN_X_PREFETCH + 2;
