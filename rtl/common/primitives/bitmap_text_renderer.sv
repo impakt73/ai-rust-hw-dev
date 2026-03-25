@@ -17,8 +17,10 @@
 // control interface:
 //   - `video_de` is the registered active-video/display-enable qualifier
 //   - `video_hs` / `video_vs` are the registered sync pulses
-// The module also forwards registered scan coordinates and start-of-line/frame
-// pulses because they are useful to internal consumers and focused tests.
+// In addition, the module exposes registered active-region coordinates
+// (`active_x`, `active_y`) and start-of-line/frame pulses (`line_start`,
+// `frame_start`) because they are useful to internal consumers and focused
+// tests.
 
 module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_WIDTH = 640,

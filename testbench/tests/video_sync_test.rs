@@ -286,8 +286,14 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
         dut.active_y, 0,
         "active_y must be zero in vertical blanking"
     );
-    assert_eq!(dut.scan_x, 0, "vertical blanking line should restart scan_x");
-    assert_eq!(dut.scan_y, 3, "vertical blanking line should expose absolute y");
+    assert_eq!(
+        dut.scan_x, 0,
+        "vertical blanking line should restart scan_x"
+    );
+    assert_eq!(
+        dut.scan_y, 3,
+        "vertical blanking line should expose absolute y"
+    );
 
     for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - 1) {
         clock_cycle!(&mut dut);
