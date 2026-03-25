@@ -57,7 +57,8 @@ module bitmap_text_renderer #(
     // Front-porch budget for the renderer's per-pixel ROM prefetch pipeline:
     //   - 1 cycle: registered character-map request stage
     //   - 2 cycles: character-map sync_sprom latency
-    //   - 2 cycles: font-row sync_sprom latency after font_addr is issued
+    //   - 2 cycles: font-row sync_sprom latency after the character-map result
+    //               has been combined with the aligned glyph row
     // Horizontal front porch must cover this 5-cycle lead so the fetch pointer
     // wraps into the next line during blanking before scanout re-enters the
     // active region.
@@ -93,16 +94,16 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
     logic pixel_on_next;
-    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_next;
-    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_next;
+    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_prefetch;
+    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_prefetch;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d2;
-    logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column_next;
-    logic [TILE_ROW_WIDTH-1:0] fetch_tile_row_next;
-    logic [CHARMAP_ADDR_WIDTH-1:0] fetch_tile_row_base_addr_next;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row_next;
-    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_next;
+    logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column_prefetch;
+    logic [TILE_ROW_WIDTH-1:0] fetch_tile_row_prefetch;
+    logic [CHARMAP_ADDR_WIDTH-1:0] fetch_tile_row_base_addr_prefetch;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row_prefetch;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_prefetch;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index;
 
     video_sync #(
@@ -178,24 +179,25 @@ module bitmap_text_renderer #(
 
     always_comb begin
         if (sync_scan_x >= FETCH_WRAP_START) begin
-            fetch_scan_x_next = sync_scan_x - FETCH_WRAP_START;
+            fetch_scan_x_prefetch = sync_scan_x - FETCH_WRAP_START;
             if (sync_scan_y == V_COUNTER_WIDTH'(V_TOTAL - 1)) begin
-                fetch_scan_y_next = '0;
+                fetch_scan_y_prefetch = '0;
             end else begin
-                fetch_scan_y_next = sync_scan_y + 1'b1;
+                fetch_scan_y_prefetch = sync_scan_y + 1'b1;
             end
         end else begin
-            fetch_scan_x_next = sync_scan_x + H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES);
-            fetch_scan_y_next = sync_scan_y;
+            fetch_scan_x_prefetch = sync_scan_x + H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES);
+            fetch_scan_y_prefetch = sync_scan_y;
         end
 
-        fetch_tile_column_next = TILE_COLUMN_WIDTH'(fetch_scan_x_next >> 3);
-        fetch_tile_row_next = TILE_ROW_WIDTH'(fetch_scan_y_next >> 3);
-        fetch_tile_row_base_addr_next = CHARMAP_ADDR_WIDTH'(fetch_tile_row_next * TILE_COLUMNS);
-        font_glyph_row_next = FONT_ROW_INDEX_WIDTH'(
-            fetch_scan_y_next[FONT_ROW_INDEX_WIDTH-1:0]
+        fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_scan_x_prefetch >> 3);
+        fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_scan_y_prefetch >> 3);
+        fetch_tile_row_base_addr_prefetch = CHARMAP_ADDR_WIDTH'(fetch_tile_row_prefetch * TILE_COLUMNS);
+        font_glyph_row_prefetch = FONT_ROW_INDEX_WIDTH'(
+            fetch_scan_y_prefetch[FONT_ROW_INDEX_WIDTH-1:0]
         );
-        char_map_addr_next = fetch_tile_row_base_addr_next + CHARMAP_ADDR_WIDTH'(fetch_tile_column_next);
+        char_map_addr_prefetch =
+            fetch_tile_row_base_addr_prefetch + CHARMAP_ADDR_WIDTH'(fetch_tile_column_prefetch);
     end
 
     always_comb begin
@@ -219,8 +221,8 @@ module bitmap_text_renderer #(
             glyph_row_d2 <= '0;
             pixel_on <= 1'b0;
         end else begin
-            char_map_addr <= char_map_addr_next;
-            glyph_row_d0 <= font_glyph_row_next;
+            char_map_addr <= char_map_addr_prefetch;
+            glyph_row_d0 <= font_glyph_row_prefetch;
             glyph_row_d1 <= glyph_row_d0;
             glyph_row_d2 <= glyph_row_d1;
             video_de <= sync_video_de;
