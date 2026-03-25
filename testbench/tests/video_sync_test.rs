@@ -82,15 +82,22 @@ fn test_video_sync_generates_expected_first_line_timing() {
 
     reset_default_wrapper(&mut dut);
 
+    // New scan order is BP → Active → FP → Sync:
+    //   H: BP(0) → Active(1..4) → FP(5) → Sync(6,7)
+    //   V: BP(0) → Active(1..3) → FP(4) → Sync(5)
+    // The entire first scan line (v=0) is in vertical back porch, so no pixel
+    // is active. The ninth cycle wraps to the second line (v=1) at the start
+    // of horizontal back porch, and the tenth cycle shows the first active pixel.
     let expected = [
-        (1u8, 1u8, 1u8, 0u8, 0u8, 1u8, 0u8, 1u8, 0u8),
-        (1u8, 1u8, 1u8, 0u8, 0u8, 2u8, 0u8, 2u8, 0u8),
-        (1u8, 1u8, 1u8, 0u8, 0u8, 3u8, 0u8, 3u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 3u8, 0u8),
         (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 4u8, 0u8),
-        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 5u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 5u8, 0u8),
         (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 6u8, 0u8),
-        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 7u8, 0u8),
-        (1u8, 1u8, 1u8, 1u8, 0u8, 0u8, 1u8, 0u8, 1u8),
+        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 7u8, 0u8),
+        (1u8, 1u8, 0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 1u8),
+        (1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 1u8, 1u8),
     ];
 
     for (hsync, vsync, active_video, line_start, frame_start, active_x, active_y, scan_x, scan_y) in
@@ -146,7 +153,10 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
                 "frame_start should pulse at frame origin"
             );
             frame_starts += 1;
-            assert_eq!(dut.active_video, 1, "frame should start in active video");
+            assert_eq!(
+                dut.active_video, 0,
+                "frame origin is in back porch, not active video"
+            );
             assert_eq!(dut.active_x, 0, "frame should start at x=0");
             assert_eq!(dut.active_y, 0, "frame should start at y=0");
             assert_eq!(dut.scan_x, 0, "frame should start at scan_x=0");
@@ -171,8 +181,8 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
     );
     assert_eq!(dut.line_start, 1, "new frame must also start a new line");
     assert_eq!(
-        dut.active_video, 1,
-        "next frame must restart in active video"
+        dut.active_video, 0,
+        "next frame origin is in back porch, not active video"
     );
     assert_eq!(dut.active_x, 0, "next frame must restart x at zero");
     assert_eq!(dut.active_y, 0, "next frame must restart y at zero");
@@ -242,21 +252,42 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
 
     reset_default_wrapper(&mut dut);
 
+    // First scan line (scan_y=0) is vertical back porch – advance past it.
+    // At the start of the second scan line (scan_y=1) we are in horizontal
+    // back porch, so active_video is still deasserted.
     advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL);
     assert_eq!(
-        dut.active_video, 1,
-        "second line should begin in active video"
+        dut.active_video, 0,
+        "second line starts in horizontal back porch"
     );
-    assert_eq!(dut.active_x, 0, "second line should restart x at zero");
     assert_eq!(
-        dut.active_y, 1,
-        "second line should increment y in active region"
+        dut.active_x, 0,
+        "active_x must be zero in horizontal back porch"
+    );
+    assert_eq!(
+        dut.active_y, 0,
+        "active_y must be zero in horizontal back porch"
     );
     assert_eq!(dut.scan_x, 0, "second line should restart scan_x at zero");
     assert_eq!(dut.scan_y, 1, "second line should increment scan_y");
 
-    advance_default_wrapper(&mut dut, 4);
-    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - 4) {
+    // Advance past the horizontal back porch (1 pixel) to the first active pixel.
+    advance_default_wrapper(&mut dut, 1);
+    assert_eq!(
+        dut.active_video, 1,
+        "first active pixel should assert active_video"
+    );
+    assert_eq!(dut.active_x, 0, "first active pixel should have x=0");
+    assert_eq!(dut.active_y, 0, "first active pixel should have y=0");
+    assert_eq!(dut.scan_x, 1, "first active pixel at scan_x = H_BACK_PORCH");
+    assert_eq!(
+        dut.scan_y, 1,
+        "scan_y should remain on the first active line"
+    );
+
+    // Advance through the 4 active pixels to enter horizontal blanking.
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_ACTIVE as usize);
+    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize - 1) {
         assert_eq!(
             dut.active_video, 0,
             "horizontal blanking should deassert active_video"
@@ -269,15 +300,13 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
             dut.active_y, 0,
             "active_y must be zero during horizontal blanking"
         );
-        assert!(
-            dut.scan_x >= VIDEO_SYNC_WRAPPER_H_ACTIVE,
-            "scan_x must continue counting during horizontal blanking"
-        );
-        assert_eq!(dut.scan_y, 1, "scan_y must stay on the same active line");
+        assert_eq!(dut.scan_y, 1, "scan_y must stay on the same scan line");
         clock_cycle!(&mut dut);
     }
 
-    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL);
+    // We are now at the start of scan line scan_y=2 (still in vertical active).
+    // Advance 2 more full lines to reach vertical front porch (scan_y=4).
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL * 2);
     assert_eq!(
         dut.active_video, 0,
         "vertical blanking line should be inactive"
@@ -299,7 +328,7 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
         "vertical blanking line should restart scan_x"
     );
     assert_eq!(
-        dut.scan_y, 3,
+        dut.scan_y, 4,
         "vertical blanking line should expose absolute y"
     );
 
@@ -314,6 +343,6 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
             dut.active_y, 0,
             "active_y must remain zero in vertical blanking"
         );
-        assert_eq!(dut.scan_y, 3, "scan_y must remain on the blanking line");
+        assert_eq!(dut.scan_y, 4, "scan_y must remain on the blanking line");
     }
 }
