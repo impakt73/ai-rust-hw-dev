@@ -65,13 +65,13 @@ module video_sync #(
     localparam int unsigned ACTIVE_Y_WIDTH = (V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE);
     localparam logic [H_COUNTER_WIDTH-1:0] H_LAST = H_COUNTER_WIDTH'(H_TOTAL - 1);
     localparam logic [V_COUNTER_WIDTH-1:0] V_LAST = V_COUNTER_WIDTH'(V_TOTAL - 1);
-    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_END = H_COUNTER_WIDTH'(H_ACTIVE);
-    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_END = V_COUNTER_WIDTH'(V_ACTIVE);
+    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_START = H_COUNTER_WIDTH'(H_BACK_PORCH);
+    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_START = V_COUNTER_WIDTH'(V_BACK_PORCH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_START =
-        H_COUNTER_WIDTH'(H_ACTIVE + H_FRONT_PORCH);
+        H_COUNTER_WIDTH'(H_BACK_PORCH + H_ACTIVE + H_FRONT_PORCH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_SPAN = H_COUNTER_WIDTH'(H_SYNC_WIDTH);
     localparam logic [V_COUNTER_WIDTH-1:0] V_SYNC_START =
-        V_COUNTER_WIDTH'(V_ACTIVE + V_FRONT_PORCH);
+        V_COUNTER_WIDTH'(V_BACK_PORCH + V_ACTIVE + V_FRONT_PORCH);
     localparam logic [V_COUNTER_WIDTH-1:0] V_SYNC_SPAN = V_COUNTER_WIDTH'(V_SYNC_WIDTH);
 
     logic [H_COUNTER_WIDTH-1:0] h_counter;
@@ -129,8 +129,10 @@ module video_sync #(
             v_counter_next = v_counter;
         end
 
-        h_in_active_region = (h_counter_next < H_ACTIVE_END);
-        v_in_active_region = (v_counter_next < V_ACTIVE_END);
+        h_in_active_region =
+            ((h_counter_next - H_ACTIVE_START) < H_COUNTER_WIDTH'(H_ACTIVE));
+        v_in_active_region =
+            ((v_counter_next - V_ACTIVE_START) < V_COUNTER_WIDTH'(V_ACTIVE));
         h_sync_offset = h_counter_next - H_SYNC_START;
         v_sync_offset = v_counter_next - V_SYNC_START;
         h_in_sync_region =
@@ -145,8 +147,10 @@ module video_sync #(
         frame_start_next = (h_counter_next == '0) && (v_counter_next == '0);
         hsync_next = h_in_sync_region ? HSYNC_ACTIVE_HIGH : ~HSYNC_ACTIVE_HIGH;
         vsync_next = v_in_sync_region ? VSYNC_ACTIVE_HIGH : ~VSYNC_ACTIVE_HIGH;
-        active_x_next = active_video_next ? ACTIVE_X_WIDTH'(h_counter_next) : '0;
-        active_y_next = active_video_next ? ACTIVE_Y_WIDTH'(v_counter_next) : '0;
+        active_x_next = active_video_next ?
+            ACTIVE_X_WIDTH'(h_counter_next - H_ACTIVE_START) : '0;
+        active_y_next = active_video_next ?
+            ACTIVE_Y_WIDTH'(v_counter_next - V_ACTIVE_START) : '0;
     end
 
     always_ff @(posedge clk) begin
