@@ -94,21 +94,11 @@ module bitmap_text_renderer #(
     logic [V_COUNTER_WIDTH-1:0] fetch_scan_y;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
-    logic fetch_in_active_region;
     logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column;
     logic [TILE_ROW_WIDTH-1:0] fetch_tile_row;
+    logic [CHARMAP_ADDR_WIDTH-1:0] fetch_tile_row_base_addr;
     logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index;
-
-    function automatic logic [CHARMAP_ADDR_WIDTH-1:0] make_char_map_addr(
-        input logic [TILE_ROW_WIDTH-1:0] tile_row,
-        input logic [TILE_COLUMN_WIDTH-1:0] tile_column
-    );
-        int unsigned char_map_index;
-
-        char_map_index = (tile_row * TILE_COLUMNS) + 32'(tile_column);
-        make_char_map_addr = CHARMAP_ADDR_WIDTH'(char_map_index);
-    endfunction
 
     video_sync #(
         .H_ACTIVE(ACTIVE_WIDTH),
@@ -194,23 +184,13 @@ module bitmap_text_renderer #(
             fetch_scan_y = sync_scan_y;
         end
 
-        fetch_in_active_region =
-            (fetch_scan_x < H_COUNTER_WIDTH'(ACTIVE_WIDTH)) &&
-            (fetch_scan_y < V_COUNTER_WIDTH'(ACTIVE_HEIGHT));
-
-        if (fetch_in_active_region) begin
-            fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_scan_x >> 3);
-            fetch_tile_row = TILE_ROW_WIDTH'(fetch_scan_y >> 3);
-            font_glyph_row = FONT_ROW_INDEX_WIDTH'(
-                fetch_scan_y[FONT_ROW_INDEX_WIDTH-1:0]
-            );
-        end else begin
-            fetch_tile_column = '0;
-            fetch_tile_row = '0;
-            font_glyph_row = '0;
-        end
-
-        char_map_addr = make_char_map_addr(fetch_tile_row, fetch_tile_column);
+        fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_scan_x >> 3);
+        fetch_tile_row = TILE_ROW_WIDTH'(fetch_scan_y >> 3);
+        fetch_tile_row_base_addr = CHARMAP_ADDR_WIDTH'(fetch_tile_row * TILE_COLUMNS);
+        font_glyph_row = FONT_ROW_INDEX_WIDTH'(
+            fetch_scan_y[FONT_ROW_INDEX_WIDTH-1:0]
+        );
+        char_map_addr = fetch_tile_row_base_addr + CHARMAP_ADDR_WIDTH'(fetch_tile_column);
         font_addr = {char_map_rdata, glyph_row_d1};
         pixel_bit_index = FONT_ROW_INDEX_WIDTH'(7) - sync_active_x[FONT_ROW_INDEX_WIDTH-1:0];
         pixel_on_next = sync_video_de ? font_glyph_rdata[pixel_bit_index] : 1'b0;
