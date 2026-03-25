@@ -5,17 +5,19 @@
 //
 // This module owns the raster timing generator so every externally visible
 // timing signal can be registered in the same stage as `pixel_on`. The internal
-// `video_sync` instance produces the current scan position, the ROM pipeline
-// continuously fetches the character/font byte for each pixel position, and a
-// final register stage delays the timing bundle plus `pixel_on` together. That
-// keeps the output interface self-consistent for downstream video users while
-// still giving the FPGA an extra timing-breaking register on the pixel path.
+// `video_sync` instance produces the current scan position while a small
+// prefetcher keeps the character/font ROM pipeline pointed several pixels ahead
+// so the glyph byte arriving this cycle already matches the current pixel. A
+// final register stage captures the public timing bundle plus `pixel_on`
+// together, keeping the output interface self-consistent for downstream video
+// users while still giving the FPGA an extra timing-breaking register on the
+// pixel path.
 //
-// The delayed timing outputs are shaped to match the Analogue Pocket video
+// The registered timing outputs are shaped to match the Analogue Pocket video
 // control interface:
-//   - `video_de` is the delayed active-video/display-enable qualifier
-//   - `video_hs` / `video_vs` are the delayed sync pulses
-// The module also forwards delayed scan coordinates and start-of-line/frame
+//   - `video_de` is the registered active-video/display-enable qualifier
+//   - `video_hs` / `video_vs` are the registered sync pulses
+// The module also forwards registered scan coordinates and start-of-line/frame
 // pulses because they are useful to internal consumers and focused tests.
 
 module bitmap_text_renderer #(
@@ -50,21 +52,25 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
     localparam int unsigned FONT_ROM_ADDR_WIDTH = 8 + FONT_ROW_INDEX_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
-    // Front-porch budget for the renderer's continuous per-pixel ROM pipeline:
+    // Front-porch budget for the renderer's per-pixel ROM prefetch pipeline:
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency after font_addr is issued
-    // Horizontal blanking must cover this 4-cycle latency so tile 0 of the next
-    // line is ready before scanout re-enters the active region.
+    // Horizontal front porch must cover this 4-cycle lead so the fetch pointer
+    // wraps into the next line during blanking before scanout re-enters the
+    // active region.
     localparam int unsigned FONT_PIPELINE_CYCLES = 4;
+    localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
+    localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
+    localparam int unsigned H_COUNTER_WIDTH = (H_TOTAL <= 1) ? 1 : $clog2(H_TOTAL);
+    localparam int unsigned V_COUNTER_WIDTH = (V_TOTAL <= 1) ? 1 : $clog2(V_TOTAL);
     localparam int unsigned TILE_COLUMNS = ACTIVE_WIDTH / TILE_WIDTH;
     localparam int unsigned TILE_ROWS = ACTIVE_HEIGHT / TILE_HEIGHT;
     localparam int unsigned TILE_COLUMN_WIDTH = (TILE_COLUMNS <= 1) ? 1 : $clog2(TILE_COLUMNS);
     localparam int unsigned TILE_ROW_WIDTH = (TILE_ROWS <= 1) ? 1 : $clog2(TILE_ROWS);
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
-    localparam logic [ACTIVE_Y_WIDTH-1:0] ACTIVE_HEIGHT_LAST = ACTIVE_Y_WIDTH'(ACTIVE_HEIGHT - 1);
 
     logic sync_video_de;
     logic sync_video_hs;
@@ -79,27 +85,14 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
-    logic [ACTIVE_Y_WIDTH-1:0] latched_active_y;
     logic pixel_on_next;
-    logic [3:0] video_de_pipe;
-    logic [3:0] video_hs_pipe;
-    logic [3:0] video_vs_pipe;
-    logic [3:0] line_start_pipe;
-    logic [3:0] frame_start_pipe;
-    logic [ACTIVE_X_WIDTH-1:0] active_x_d0;
-    logic [ACTIVE_X_WIDTH-1:0] active_x_d1;
-    logic [ACTIVE_X_WIDTH-1:0] active_x_d2;
-    logic [ACTIVE_X_WIDTH-1:0] active_x_d3;
-    logic [ACTIVE_Y_WIDTH-1:0] active_y_d0;
-    logic [ACTIVE_Y_WIDTH-1:0] active_y_d1;
-    logic [ACTIVE_Y_WIDTH-1:0] active_y_d2;
-    logic [ACTIVE_Y_WIDTH-1:0] active_y_d3;
+    logic [H_COUNTER_WIDTH-1:0] fetch_h_counter;
+    logic [V_COUNTER_WIDTH-1:0] fetch_v_counter;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
-    logic [TILE_COLUMN_WIDTH-1:0] active_tile_column;
-    logic [TILE_ROW_WIDTH-1:0] active_tile_row;
-    logic [ACTIVE_Y_WIDTH-1:0] next_line_active_y;
-    logic [TILE_ROW_WIDTH-1:0] next_line_tile_row;
+    logic fetch_in_active_region;
+    logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column;
+    logic [TILE_ROW_WIDTH-1:0] fetch_tile_row;
     logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index;
 
@@ -183,36 +176,32 @@ module bitmap_text_renderer #(
 `endif
 
     always_comb begin
-        active_tile_column = TILE_COLUMN_WIDTH'(sync_active_x >> 3);
-        active_tile_row = TILE_ROW_WIDTH'(sync_active_y >> 3);
+        fetch_in_active_region =
+            (fetch_h_counter < H_COUNTER_WIDTH'(ACTIVE_WIDTH)) &&
+            (fetch_v_counter < V_COUNTER_WIDTH'(ACTIVE_HEIGHT));
 
-        if (latched_active_y == ACTIVE_HEIGHT_LAST) begin
-            next_line_active_y = '0;
-        end else begin
-            next_line_active_y = latched_active_y + 1'b1;
-        end
-        next_line_tile_row = TILE_ROW_WIDTH'(next_line_active_y >> 3);
-
-        // During active scanout, issue a fetch for the current pixel's tile.
-        // During blanking, continuously fetch tile 0 of the upcoming line so
-        // the guaranteed front porch covers the full 4-cycle ROM pipeline.
-        if (sync_video_de) begin
-            char_map_addr = make_char_map_addr(active_tile_row, active_tile_column);
-            font_glyph_row = FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]);
-        end else begin
-            char_map_addr = make_char_map_addr(next_line_tile_row, '0);
+        if (fetch_in_active_region) begin
+            fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_h_counter >> 3);
+            fetch_tile_row = TILE_ROW_WIDTH'(fetch_v_counter >> 3);
             font_glyph_row = FONT_ROW_INDEX_WIDTH'(
-                next_line_active_y[FONT_ROW_INDEX_WIDTH-1:0]
+                fetch_v_counter[FONT_ROW_INDEX_WIDTH-1:0]
             );
+        end else begin
+            fetch_tile_column = '0;
+            fetch_tile_row = '0;
+            font_glyph_row = '0;
         end
 
+        char_map_addr = make_char_map_addr(fetch_tile_row, fetch_tile_column);
         font_addr = {char_map_rdata, glyph_row_d1};
-        pixel_bit_index = FONT_ROW_INDEX_WIDTH'(7) - active_x_d3[FONT_ROW_INDEX_WIDTH-1:0];
-        pixel_on_next = video_de_pipe[3] ? font_glyph_rdata[pixel_bit_index] : 1'b0;
+        pixel_bit_index = FONT_ROW_INDEX_WIDTH'(7) - sync_active_x[FONT_ROW_INDEX_WIDTH-1:0];
+        pixel_on_next = sync_video_de ? font_glyph_rdata[pixel_bit_index] : 1'b0;
     end
 
     always_ff @(posedge clk) begin
         if (rst) begin
+            fetch_h_counter <= H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES - 1);
+            fetch_v_counter <= '0;
             video_de <= 1'b0;
             video_hs <= ~HSYNC_ACTIVE_HIGH;
             video_vs <= ~VSYNC_ACTIVE_HIGH;
@@ -220,49 +209,30 @@ module bitmap_text_renderer #(
             frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
-            video_de_pipe <= '0;
-            video_hs_pipe <= {4{~HSYNC_ACTIVE_HIGH}};
-            video_vs_pipe <= {4{~VSYNC_ACTIVE_HIGH}};
-            line_start_pipe <= '0;
-            frame_start_pipe <= '0;
-            active_x_d0 <= '0;
-            active_x_d1 <= '0;
-            active_x_d2 <= '0;
-            active_x_d3 <= '0;
-            active_y_d0 <= '0;
-            active_y_d1 <= '0;
-            active_y_d2 <= '0;
-            active_y_d3 <= '0;
             glyph_row_d0 <= '0;
             glyph_row_d1 <= '0;
-            latched_active_y <= ACTIVE_HEIGHT_LAST;
             pixel_on <= 1'b0;
         end else begin
-            video_de_pipe <= {video_de_pipe[2:0], sync_video_de};
-            video_hs_pipe <= {video_hs_pipe[2:0], sync_video_hs};
-            video_vs_pipe <= {video_vs_pipe[2:0], sync_video_vs};
-            line_start_pipe <= {line_start_pipe[2:0], sync_line_start};
-            frame_start_pipe <= {frame_start_pipe[2:0], sync_frame_start};
-            active_x_d0 <= sync_active_x;
-            active_x_d1 <= active_x_d0;
-            active_x_d2 <= active_x_d1;
-            active_x_d3 <= active_x_d2;
-            active_y_d0 <= sync_active_y;
-            active_y_d1 <= active_y_d0;
-            active_y_d2 <= active_y_d1;
-            active_y_d3 <= active_y_d2;
+            if (fetch_h_counter == H_COUNTER_WIDTH'(H_TOTAL - 1)) begin
+                fetch_h_counter <= '0;
+                if (fetch_v_counter == V_COUNTER_WIDTH'(V_TOTAL - 1)) begin
+                    fetch_v_counter <= '0;
+                end else begin
+                    fetch_v_counter <= fetch_v_counter + 1'b1;
+                end
+            end else begin
+                fetch_h_counter <= fetch_h_counter + 1'b1;
+            end
+
             glyph_row_d0 <= font_glyph_row;
             glyph_row_d1 <= glyph_row_d0;
-            if (sync_video_de) begin
-                latched_active_y <= sync_active_y;
-            end
-            video_de <= video_de_pipe[3];
-            video_hs <= video_hs_pipe[3];
-            video_vs <= video_vs_pipe[3];
-            line_start <= line_start_pipe[3];
-            frame_start <= frame_start_pipe[3];
-            active_x <= active_x_d3;
-            active_y <= active_y_d3;
+            video_de <= sync_video_de;
+            video_hs <= sync_video_hs;
+            video_vs <= sync_video_vs;
+            line_start <= sync_line_start;
+            frame_start <= sync_frame_start;
+            active_x <= sync_active_x;
+            active_y <= sync_active_y;
             pixel_on <= pixel_on_next;
         end
     end
