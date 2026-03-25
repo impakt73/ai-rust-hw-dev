@@ -60,9 +60,10 @@ module bitmap_text_renderer #(
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency (`font_addr` combines
     //               `char_map_rdata` with the aligned glyph row)
-    // The registered public timing bundle adds one matching output stage, so the
-    // horizontal front porch still only needs to cover a 5-cycle lead before
-    // scanout re-enters the active region.
+    // The public timing bundle adds a separate output-alignment stage after the
+    // prefetch work completes, so `FONT_PIPELINE_CYCLES` still tracks a 5-cycle
+    // lead requirement for the horizontal front porch before scanout re-enters
+    // the active region.
     localparam int unsigned FONT_PIPELINE_CYCLES = 5;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
