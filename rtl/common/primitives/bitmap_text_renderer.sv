@@ -55,12 +55,13 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROM_ADDR_WIDTH = 8 + FONT_ROW_INDEX_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
     // Front-porch budget for the renderer's per-pixel ROM prefetch pipeline:
+    //   - 1 cycle: registered character-map request stage
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency after font_addr is issued
-    // Horizontal front porch must cover this 4-cycle lead so the fetch pointer
+    // Horizontal front porch must cover this 5-cycle lead so the fetch pointer
     // wraps into the next line during blanking before scanout re-enters the
     // active region.
-    localparam int unsigned FONT_PIPELINE_CYCLES = 4;
+    localparam int unsigned FONT_PIPELINE_CYCLES = 5;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
@@ -92,14 +93,16 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
     logic pixel_on_next;
-    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x;
-    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y;
+    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_next;
+    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_next;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
-    logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column;
-    logic [TILE_ROW_WIDTH-1:0] fetch_tile_row;
-    logic [CHARMAP_ADDR_WIDTH-1:0] fetch_tile_row_base_addr;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d2;
+    logic [TILE_COLUMN_WIDTH-1:0] fetch_tile_column_next;
+    logic [TILE_ROW_WIDTH-1:0] fetch_tile_row_next;
+    logic [CHARMAP_ADDR_WIDTH-1:0] fetch_tile_row_base_addr_next;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row_next;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_next;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index;
 
     video_sync #(
@@ -175,25 +178,28 @@ module bitmap_text_renderer #(
 
     always_comb begin
         if (sync_scan_x >= FETCH_WRAP_START) begin
-            fetch_scan_x = sync_scan_x - FETCH_WRAP_START;
+            fetch_scan_x_next = sync_scan_x - FETCH_WRAP_START;
             if (sync_scan_y == V_COUNTER_WIDTH'(V_TOTAL - 1)) begin
-                fetch_scan_y = '0;
+                fetch_scan_y_next = '0;
             end else begin
-                fetch_scan_y = sync_scan_y + 1'b1;
+                fetch_scan_y_next = sync_scan_y + 1'b1;
             end
         end else begin
-            fetch_scan_x = sync_scan_x + H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES);
-            fetch_scan_y = sync_scan_y;
+            fetch_scan_x_next = sync_scan_x + H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES);
+            fetch_scan_y_next = sync_scan_y;
         end
 
-        fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_scan_x >> 3);
-        fetch_tile_row = TILE_ROW_WIDTH'(fetch_scan_y >> 3);
-        fetch_tile_row_base_addr = CHARMAP_ADDR_WIDTH'(fetch_tile_row * TILE_COLUMNS);
-        font_glyph_row = FONT_ROW_INDEX_WIDTH'(
-            fetch_scan_y[FONT_ROW_INDEX_WIDTH-1:0]
+        fetch_tile_column_next = TILE_COLUMN_WIDTH'(fetch_scan_x_next >> 3);
+        fetch_tile_row_next = TILE_ROW_WIDTH'(fetch_scan_y_next >> 3);
+        fetch_tile_row_base_addr_next = CHARMAP_ADDR_WIDTH'(fetch_tile_row_next * TILE_COLUMNS);
+        font_glyph_row_next = FONT_ROW_INDEX_WIDTH'(
+            fetch_scan_y_next[FONT_ROW_INDEX_WIDTH-1:0]
         );
-        char_map_addr = fetch_tile_row_base_addr + CHARMAP_ADDR_WIDTH'(fetch_tile_column);
-        font_addr = {char_map_rdata, glyph_row_d1};
+        char_map_addr_next = fetch_tile_row_base_addr_next + CHARMAP_ADDR_WIDTH'(fetch_tile_column_next);
+    end
+
+    always_comb begin
+        font_addr = {char_map_rdata, glyph_row_d2};
         pixel_bit_index = FONT_ROW_INDEX_WIDTH'(7) - sync_active_x[FONT_ROW_INDEX_WIDTH-1:0];
         pixel_on_next = sync_video_de ? font_glyph_rdata[pixel_bit_index] : 1'b0;
     end
@@ -207,12 +213,16 @@ module bitmap_text_renderer #(
             frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
+            char_map_addr <= '0;
             glyph_row_d0 <= '0;
             glyph_row_d1 <= '0;
+            glyph_row_d2 <= '0;
             pixel_on <= 1'b0;
         end else begin
-            glyph_row_d0 <= font_glyph_row;
+            char_map_addr <= char_map_addr_next;
+            glyph_row_d0 <= font_glyph_row_next;
             glyph_row_d1 <= glyph_row_d0;
+            glyph_row_d2 <= glyph_row_d1;
             video_de <= sync_video_de;
             video_hs <= sync_video_hs;
             video_vs <= sync_video_vs;
