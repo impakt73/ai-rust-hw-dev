@@ -123,8 +123,12 @@ module bitmap_text_renderer #(
         .V_BACK_PORCH(V_BACK_PORCH),
         .HSYNC_ACTIVE_HIGH(HSYNC_ACTIVE_HIGH),
         .VSYNC_ACTIVE_HIGH(VSYNC_ACTIVE_HIGH),
+        // Reset to the last scan line's front-porch wrap point so the renderer
+        // gets a natural 6-cycle warm-up before the first visible pixel at (0,0).
         .RESET_SCAN_X(H_TOTAL - FONT_PIPELINE_CYCLES),
         .RESET_SCAN_Y(V_TOTAL - 1)
+        // RESET_SCAN_Y picks the final line so RESET_SCAN_X wrapping advances into
+        // frame origin after the warm-up window, matching steady-state scanout.
     ) u_video_sync (
         .clk(clk),
         .rst(rst),

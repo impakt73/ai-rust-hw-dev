@@ -159,8 +159,8 @@ module video_sync #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            h_counter <= H_COUNTER_WIDTH'(RESET_SCAN_X);
-            v_counter <= V_COUNTER_WIDTH'(RESET_SCAN_Y);
+            h_counter <= $bits(h_counter)'(RESET_SCAN_X);
+            v_counter <= $bits(v_counter)'(RESET_SCAN_Y);
             hsync <= ~HSYNC_ACTIVE_HIGH;
             vsync <= ~VSYNC_ACTIVE_HIGH;
             active_video <= 1'b0;

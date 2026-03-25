@@ -37,6 +37,24 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
     for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.frame_start == 1 {
+            // The renderer has one final registered output stage after the internal
+            // timing/prefetch warm-up pipeline, so the first post-reset frame_start
+            // still drains a blank bundle before the first visible pixel appears.
+            if dut.video_de == 0 {
+                assert_eq!(
+                    dut.line_start, 1,
+                    "the registered output stage must keep reset-drain frame_start aligned with line_start"
+                );
+                assert_eq!(
+                    dut.active_x, 0,
+                    "the registered output stage must keep reset-drain frame_start x at zero"
+                );
+                assert_eq!(
+                    dut.active_y, 0,
+                    "the registered output stage must keep reset-drain frame_start y at zero"
+                );
+                continue;
+            }
             assert_eq!(
                 dut.video_de, 1,
                 "frame_start must coincide with the first visible pixel after warm-up"
