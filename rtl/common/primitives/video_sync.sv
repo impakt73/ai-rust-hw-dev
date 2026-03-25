@@ -149,13 +149,13 @@ module video_sync #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            h_counter <= H_LAST;
-            v_counter <= V_LAST;
+            h_counter <= '0;
+            v_counter <= '0;
             hsync <= ~HSYNC_ACTIVE_HIGH;
             vsync <= ~VSYNC_ACTIVE_HIGH;
             active_video <= 1'b0;
-            line_start <= 1'b0;
-            frame_start <= 1'b0;
+            line_start <= 1'b1;
+            frame_start <= 1'b1;
             active_x <= '0;
             active_y <= '0;
         end else begin

@@ -55,18 +55,12 @@ fn test_video_sync_holds_registered_defaults_during_reset() {
             dut.active_video, 0,
             "active_video must stay low during reset"
         );
-        assert_eq!(dut.line_start, 0, "line_start must stay low during reset");
-        assert_eq!(dut.frame_start, 0, "frame_start must stay low during reset");
+        assert_eq!(dut.line_start, 1, "line_start must stay high during reset");
+        assert_eq!(dut.frame_start, 1, "frame_start must stay high during reset");
         assert_eq!(dut.active_x, 0, "active_x must reset to zero");
         assert_eq!(dut.active_y, 0, "active_y must reset to zero");
-        assert_eq!(
-            dut.scan_x, 7,
-            "scan_x must hold the final horizontal position during reset"
-        );
-        assert_eq!(
-            dut.scan_y, 5,
-            "scan_y must hold the final vertical position during reset"
-        );
+        assert_eq!(dut.scan_x, 0, "scan_x must reset to the first horizontal position");
+        assert_eq!(dut.scan_y, 0, "scan_y must reset to the first vertical position");
     }
 }
 
@@ -80,7 +74,6 @@ fn test_video_sync_generates_expected_first_line_timing() {
     reset_default_wrapper(&mut dut);
 
     let expected = [
-        (1u8, 1u8, 1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8),
         (1u8, 1u8, 1u8, 0u8, 0u8, 1u8, 0u8, 1u8, 0u8),
         (1u8, 1u8, 1u8, 0u8, 0u8, 2u8, 0u8, 2u8, 0u8),
         (1u8, 1u8, 1u8, 0u8, 0u8, 3u8, 0u8, 3u8, 0u8),
@@ -88,6 +81,7 @@ fn test_video_sync_generates_expected_first_line_timing() {
         (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 5u8, 0u8),
         (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 6u8, 0u8),
         (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 7u8, 0u8),
+        (1u8, 1u8, 1u8, 1u8, 0u8, 0u8, 1u8, 0u8, 1u8),
     ];
 
     for (hsync, vsync, active_video, line_start, frame_start, active_x, active_y, scan_x, scan_y) in
@@ -121,17 +115,23 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
     let mut line_starts = 0;
     let mut frame_starts = 0;
 
-    for cycle in 0..VIDEO_SYNC_WRAPPER_CYCLES_PER_FRAME {
+    assert_eq!(dut.line_start, 1, "reset must expose the first line origin");
+    assert_eq!(dut.frame_start, 1, "reset must expose the frame origin");
+    assert_eq!(dut.active_video, 0, "reset must still blank active video");
+    assert_eq!(dut.scan_x, 0, "reset must hold scan_x at zero");
+    assert_eq!(dut.scan_y, 0, "reset must hold scan_y at zero");
+
+    for _ in 0..VIDEO_SYNC_WRAPPER_CYCLES_PER_FRAME {
         clock_cycle!(&mut dut);
 
-        if cycle % VIDEO_SYNC_WRAPPER_H_TOTAL == 0 {
+        if dut.scan_x == 0 {
             assert_eq!(dut.line_start, 1, "line_start should pulse once per line");
             line_starts += 1;
         } else {
             assert_eq!(dut.line_start, 0, "line_start should be a one-cycle pulse");
         }
 
-        if cycle == 0 {
+        if dut.scan_x == 0 && dut.scan_y == 0 {
             assert_eq!(
                 dut.frame_start, 1,
                 "frame_start should pulse at frame origin"
@@ -156,10 +156,9 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
         "wrapper timing should contain 1 frame_start per frame"
     );
 
-    clock_cycle!(&mut dut);
     assert_eq!(
         dut.frame_start, 1,
-        "frame_start should repeat at the next frame"
+        "frame_start should repeat at the next frame origin"
     );
     assert_eq!(dut.line_start, 1, "new frame must also start a new line");
     assert_eq!(
@@ -182,10 +181,10 @@ fn test_video_sync_supports_minimal_geometry_and_active_high_syncs() {
     reset_minimal_wrapper(&mut dut);
 
     let expected = [
-        (0u8, 0u8, 1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8),
         (1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8),
         (0u8, 1u8, 0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 1u8),
         (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 1u8),
+        (0u8, 0u8, 1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8),
     ];
 
     for (hsync, vsync, active_video, line_start, frame_start, active_x, active_y, scan_x, scan_y) in
@@ -234,7 +233,7 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
 
     reset_default_wrapper(&mut dut);
 
-    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL + 1);
+    advance_default_wrapper(&mut dut, VIDEO_SYNC_WRAPPER_H_TOTAL);
     assert_eq!(
         dut.active_video, 1,
         "second line should begin in active video"
