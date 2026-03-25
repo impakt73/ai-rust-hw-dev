@@ -6,10 +6,10 @@
 // This module owns the raster timing generator so every externally visible
 // timing signal can be registered in the same stage as `pixel_on`. The internal
 // `video_sync` instance produces the current scan position, the ROM pipeline
-// computes the pixel value for that position, and a final register stage delays
-// the timing bundle plus `pixel_on` together. That keeps the output interface
-// self-consistent for downstream video users while still giving the FPGA an
-// extra timing-breaking register on the pixel path.
+// continuously fetches the character/font byte for each pixel position, and a
+// final register stage delays the timing bundle plus `pixel_on` together. That
+// keeps the output interface self-consistent for downstream video users while
+// still giving the FPGA an extra timing-breaking register on the pixel path.
 //
 // The delayed timing outputs are shaped to match the Analogue Pocket video
 // control interface:
@@ -50,13 +50,11 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
     localparam int unsigned FONT_ROM_ADDR_WIDTH = 8 + FONT_ROW_INDEX_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
-    // Front-porch budget once a request has been launched into the renderer's
-    // registered ROM-address path:
+    // Front-porch budget for the renderer's continuous per-pixel ROM pipeline:
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-row sync_sprom latency after font_addr is issued
-    // The renderer's d0/d1/d2 valid staging tracks those registered handoffs
-    // separately; this constant is only the ROM-latency budget that must fit
-    // inside the horizontal blanking interval.
+    // Horizontal blanking must cover this 4-cycle latency so tile 0 of the next
+    // line is ready before scanout re-enters the active region.
     localparam int unsigned FONT_PIPELINE_CYCLES = 4;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
@@ -67,9 +65,6 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
     localparam logic [ACTIVE_Y_WIDTH-1:0] ACTIVE_HEIGHT_LAST = ACTIVE_Y_WIDTH'(ACTIVE_HEIGHT - 1);
-    localparam logic [TILE_COLUMN_WIDTH-1:0] LAST_TILE_COLUMN =
-        TILE_COLUMN_WIDTH'(TILE_COLUMNS - 1);
-    localparam logic [2:0] PREFETCH_TRIGGER_PIXEL = 3'd0;
 
     logic sync_video_de;
     logic sync_video_hs;
@@ -84,39 +79,29 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
-    logic sync_video_de_d;
-    logic startup_prefetch_done;
     logic [ACTIVE_Y_WIDTH-1:0] latched_active_y;
-    logic [7:0] current_tile_row_bits;
-    logic current_tile_valid;
-    logic [7:0] next_tile_row_bits;
-    logic next_tile_valid;
     logic pixel_on_next;
-    logic char_req_valid_d0;
-    logic char_req_valid_d1;
-    logic char_req_valid_d2;
-    logic char_req_current_tile_d0;
-    logic char_req_current_tile_d1;
-    logic char_req_current_tile_d2;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d0;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d1;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] char_req_glyph_row_d2;
-    logic font_req_valid_d0;
-    logic font_req_valid_d1;
-    logic font_req_valid_d2;
-    logic font_req_current_tile_d0;
-    logic font_req_current_tile_d1;
-    logic font_req_current_tile_d2;
-
-    logic issue_char_request;
-    logic requested_is_current_tile;
-    logic [CHARMAP_ADDR_WIDTH-1:0] requested_char_map_addr;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] requested_glyph_row;
+    logic [3:0] video_de_pipe;
+    logic [3:0] video_hs_pipe;
+    logic [3:0] video_vs_pipe;
+    logic [3:0] line_start_pipe;
+    logic [3:0] frame_start_pipe;
+    logic [ACTIVE_X_WIDTH-1:0] active_x_d0;
+    logic [ACTIVE_X_WIDTH-1:0] active_x_d1;
+    logic [ACTIVE_X_WIDTH-1:0] active_x_d2;
+    logic [ACTIVE_X_WIDTH-1:0] active_x_d3;
+    logic [ACTIVE_Y_WIDTH-1:0] active_y_d0;
+    logic [ACTIVE_Y_WIDTH-1:0] active_y_d1;
+    logic [ACTIVE_Y_WIDTH-1:0] active_y_d2;
+    logic [ACTIVE_Y_WIDTH-1:0] active_y_d3;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
     logic [TILE_COLUMN_WIDTH-1:0] active_tile_column;
     logic [TILE_ROW_WIDTH-1:0] active_tile_row;
     logic [ACTIVE_Y_WIDTH-1:0] next_line_active_y;
     logic [TILE_ROW_WIDTH-1:0] next_line_tile_row;
-    logic [FONT_ROW_INDEX_WIDTH-1:0] active_x_in_tile;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] font_glyph_row;
+    logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index;
 
     function automatic logic [CHARMAP_ADDR_WIDTH-1:0] make_char_map_addr(
         input logic [TILE_ROW_WIDTH-1:0] tile_row,
@@ -198,7 +183,6 @@ module bitmap_text_renderer #(
 `endif
 
     always_comb begin
-        active_x_in_tile = sync_active_x[2:0];
         active_tile_column = TILE_COLUMN_WIDTH'(sync_active_x >> 3);
         active_tile_row = TILE_ROW_WIDTH'(sync_active_y >> 3);
 
@@ -209,67 +193,22 @@ module bitmap_text_renderer #(
         end
         next_line_tile_row = TILE_ROW_WIDTH'(next_line_active_y >> 3);
 
-        issue_char_request = 1'b0;
-        requested_is_current_tile = 1'b0;
-        requested_char_map_addr = char_map_addr;
-        requested_glyph_row = '0;
-
-        // `video_sync` asserts `line_start` on the first active pixel
-        // (sync_active_x == 0), so if tile 0 was not already prefetched during
-        // the prior line's blanking interval (for example immediately after
-        // reset) a rescue fetch can be launched on that same cycle. The first
-        // few pixels of that tile remain blank until the row arrives, but the
-        // buffer is primed before the tile ends and steady-state rendering for
-        // all later lines still uses the blanking prefetch path below.
-        if (sync_line_start && sync_video_de && !startup_prefetch_done) begin
-            issue_char_request = 1'b1;
-            requested_is_current_tile = 1'b1;
-            requested_char_map_addr = make_char_map_addr(active_tile_row, '0);
-            requested_glyph_row =
-                FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]);
-        end else if (sync_video_de &&
-                (active_x_in_tile == PREFETCH_TRIGGER_PIXEL) &&
-                (active_tile_column != LAST_TILE_COLUMN)) begin
-            // Fetch ahead of the currently displayed tile so the synchronous
-            // character-map ROM and font ROM have enough latency budget to
-            // return the next 8-pixel row before scanout reaches the next tile
-            // boundary.
-            issue_char_request = 1'b1;
-            requested_char_map_addr =
-                make_char_map_addr(active_tile_row, active_tile_column + 1'b1);
-            requested_glyph_row =
-                FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]);
-        end else if (!sync_video_de && sync_video_de_d) begin
-            // The first blanking cycle after an active line is used to fetch
-            // tile 0 of the next line. The horizontal front porch must cover
-            // the full two-ROM pipeline so the next line starts with valid row
-            // data already buffered in `next_tile_row_bits`.
-            issue_char_request = 1'b1;
-            requested_char_map_addr = make_char_map_addr(next_line_tile_row, '0);
-            requested_glyph_row = FONT_ROW_INDEX_WIDTH'(
+        // During active scanout, issue a fetch for the current pixel's tile.
+        // During blanking, continuously fetch tile 0 of the upcoming line so
+        // the guaranteed front porch covers the full 4-cycle ROM pipeline.
+        if (sync_video_de) begin
+            char_map_addr = make_char_map_addr(active_tile_row, active_tile_column);
+            font_glyph_row = FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]);
+        end else begin
+            char_map_addr = make_char_map_addr(next_line_tile_row, '0);
+            font_glyph_row = FONT_ROW_INDEX_WIDTH'(
                 next_line_active_y[FONT_ROW_INDEX_WIDTH-1:0]
             );
         end
 
-        if (!sync_video_de) begin
-            pixel_on_next = 1'b0;
-        end else if (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) begin
-            // Pixel 0 of each tile uses the just-arrived font row directly when
-            // possible, otherwise the row previously prefetched into
-            // `next_tile_row_bits` is reused. Pixels 1..7 come from the
-            // `current_tile_row_bits` shift-like lookup below.
-            if (font_req_valid_d2) begin
-                pixel_on_next = font_glyph_rdata[7];
-            end else begin
-                pixel_on_next = next_tile_valid ? next_tile_row_bits[7] : 1'b0;
-            end
-        end else if (font_req_valid_d2 && font_req_current_tile_d2) begin
-            pixel_on_next = font_glyph_rdata[FONT_ROW_INDEX_WIDTH'(7)-active_x_in_tile];
-        end else begin
-            pixel_on_next = current_tile_valid
-                ? current_tile_row_bits[FONT_ROW_INDEX_WIDTH'(7)-active_x_in_tile]
-                : 1'b0;
-        end
+        font_addr = {char_map_rdata, glyph_row_d1};
+        pixel_bit_index = FONT_ROW_INDEX_WIDTH'(7) - active_x_d3[FONT_ROW_INDEX_WIDTH-1:0];
+        pixel_on_next = video_de_pipe[3] ? font_glyph_rdata[pixel_bit_index] : 1'b0;
     end
 
     always_ff @(posedge clk) begin
@@ -281,95 +220,50 @@ module bitmap_text_renderer #(
             frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
-            sync_video_de_d <= 1'b0;
-            startup_prefetch_done <= 1'b0;
-            latched_active_y <= '0;
-            current_tile_valid <= 1'b0;
-            next_tile_valid <= 1'b0;
-            char_req_valid_d0 <= 1'b0;
-            char_req_valid_d1 <= 1'b0;
-            char_req_valid_d2 <= 1'b0;
-            char_req_current_tile_d0 <= 1'b0;
-            char_req_current_tile_d1 <= 1'b0;
-            char_req_current_tile_d2 <= 1'b0;
-            font_req_valid_d0 <= 1'b0;
-            font_req_valid_d1 <= 1'b0;
-            font_req_valid_d2 <= 1'b0;
-            font_req_current_tile_d0 <= 1'b0;
-            font_req_current_tile_d1 <= 1'b0;
-            font_req_current_tile_d2 <= 1'b0;
+            video_de_pipe <= '0;
+            video_hs_pipe <= {4{~HSYNC_ACTIVE_HIGH}};
+            video_vs_pipe <= {4{~VSYNC_ACTIVE_HIGH}};
+            line_start_pipe <= '0;
+            frame_start_pipe <= '0;
+            active_x_d0 <= '0;
+            active_x_d1 <= '0;
+            active_x_d2 <= '0;
+            active_x_d3 <= '0;
+            active_y_d0 <= '0;
+            active_y_d1 <= '0;
+            active_y_d2 <= '0;
+            active_y_d3 <= '0;
+            glyph_row_d0 <= '0;
+            glyph_row_d1 <= '0;
+            latched_active_y <= ACTIVE_HEIGHT_LAST;
             pixel_on <= 1'b0;
         end else begin
-            // Delay the full timing bundle by one cycle so the registered pixel
-            // output and the externally visible video timing stay aligned.
-            video_de <= sync_video_de;
-            video_hs <= sync_video_hs;
-            video_vs <= sync_video_vs;
-            line_start <= sync_line_start;
-            frame_start <= sync_frame_start;
-            active_x <= sync_active_x;
-            active_y <= sync_active_y;
-            pixel_on <= pixel_on_next;
-            sync_video_de_d <= sync_video_de;
-            if (issue_char_request && requested_is_current_tile) begin
-                startup_prefetch_done <= 1'b1;
-            end
-
+            video_de_pipe <= {video_de_pipe[2:0], sync_video_de};
+            video_hs_pipe <= {video_hs_pipe[2:0], sync_video_hs};
+            video_vs_pipe <= {video_vs_pipe[2:0], sync_video_vs};
+            line_start_pipe <= {line_start_pipe[2:0], sync_line_start};
+            frame_start_pipe <= {frame_start_pipe[2:0], sync_frame_start};
+            active_x_d0 <= sync_active_x;
+            active_x_d1 <= active_x_d0;
+            active_x_d2 <= active_x_d1;
+            active_x_d3 <= active_x_d2;
+            active_y_d0 <= sync_active_y;
+            active_y_d1 <= active_y_d0;
+            active_y_d2 <= active_y_d1;
+            active_y_d3 <= active_y_d2;
+            glyph_row_d0 <= font_glyph_row;
+            glyph_row_d1 <= glyph_row_d0;
             if (sync_video_de) begin
                 latched_active_y <= sync_active_y;
             end
-            if (sync_line_start) begin
-                current_tile_valid <= 1'b0;
-            end
-
-            if (issue_char_request) begin
-                char_map_addr <= requested_char_map_addr;
-            end
-
-            char_req_valid_d0 <= issue_char_request;
-            char_req_valid_d1 <= char_req_valid_d0;
-            char_req_valid_d2 <= char_req_valid_d1;
-            char_req_current_tile_d0 <= requested_is_current_tile;
-            char_req_current_tile_d1 <= char_req_current_tile_d0;
-            char_req_current_tile_d2 <= char_req_current_tile_d1;
-            char_req_glyph_row_d0 <= requested_glyph_row;
-            char_req_glyph_row_d1 <= char_req_glyph_row_d0;
-            char_req_glyph_row_d2 <= char_req_glyph_row_d1;
-
-            if (char_req_valid_d2) begin
-                font_addr <= {char_map_rdata, FONT_ROW_INDEX_WIDTH'(char_req_glyph_row_d2)};
-            end
-
-            font_req_valid_d0 <= char_req_valid_d2;
-            font_req_valid_d1 <= font_req_valid_d0;
-            font_req_valid_d2 <= font_req_valid_d1;
-            font_req_current_tile_d0 <= char_req_current_tile_d2;
-            font_req_current_tile_d1 <= font_req_current_tile_d0;
-            font_req_current_tile_d2 <= font_req_current_tile_d1;
-
-            if (font_req_valid_d2) begin
-                next_tile_row_bits <= font_glyph_rdata;
-                next_tile_valid <= !font_req_current_tile_d2;
-            end
-
-            // Move the prefetched tile row into the active buffer on the cycle
-            // where the current scan position is tile pixel 0. That way the
-            // output register captures pixel 0 on this edge, while pixels 1..7
-            // are ready in `current_tile_row_bits` for the following cycles.
-            if (font_req_valid_d2 && font_req_current_tile_d2) begin
-                current_tile_row_bits <= font_glyph_rdata;
-                current_tile_valid <= 1'b1;
-            end else if (sync_video_de &&
-                    (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) &&
-                    font_req_valid_d2) begin
-                current_tile_row_bits <= font_glyph_rdata;
-                current_tile_valid <= 1'b1;
-            end else if (sync_video_de &&
-                    (active_x_in_tile == FONT_ROW_INDEX_WIDTH'(0)) &&
-                    next_tile_valid) begin
-                current_tile_row_bits <= next_tile_row_bits;
-                current_tile_valid <= 1'b1;
-            end
+            video_de <= video_de_pipe[3];
+            video_hs <= video_hs_pipe[3];
+            video_vs <= video_vs_pipe[3];
+            line_start <= line_start_pipe[3];
+            frame_start <= frame_start_pipe[3];
+            active_x <= active_x_d3;
+            active_y <= active_y_d3;
+            pixel_on <= pixel_on_next;
         end
     end
 
