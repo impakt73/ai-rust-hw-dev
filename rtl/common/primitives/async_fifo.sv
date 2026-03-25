@@ -68,6 +68,7 @@ module async_fifo #(
     logic full_next;
     logic start_load;
     logic [PTR_WIDTH-1:0] rd_items_available;
+    logic [ADDR_WIDTH-1:0] ram_waddr;
     logic [ADDR_WIDTH-1:0] ram_raddr;
 
     function automatic logic [PTR_WIDTH-1:0] bin_to_gray(input logic [PTR_WIDTH-1:0] bin);
@@ -123,6 +124,7 @@ module async_fifo #(
         (!out_valid && (rd_items_available != '0)) ||
         (rd_fire && (rd_items_available > PTR_WIDTH'(1)))
     );
+    assign ram_waddr = wr_ptr_bin[ADDR_WIDTH-1:0];
     // While a staged head word is valid, continuously point the RAM read address at the
     // next unread entry so a following rd_fire can immediately launch the refill read.
     assign ram_raddr = out_valid ? (rd_ptr_bin[ADDR_WIDTH-1:0] + ADDR_WIDTH'(1))
@@ -155,7 +157,7 @@ module async_fifo #(
         .wclk(wr_clk),
         .rclk(rd_clk),
         .we(wr_do_write),
-        .waddr(wr_ptr_bin[ADDR_WIDTH-1:0]),
+        .waddr(ram_waddr),
         .wdata(wdata),
         .raddr(ram_raddr),
         .rdata(ram_rdata)

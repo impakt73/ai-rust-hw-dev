@@ -60,9 +60,7 @@ module sync_dpram #(
     // Write port - synchronous write
     always_ff @(posedge wclk) begin
         if (we) begin
-            /* verilator lint_off WIDTHEXPAND */
             mem[waddr] <= wdata;
-            /* verilator lint_on WIDTHEXPAND */
         end
     end
 
@@ -73,9 +71,7 @@ module sync_dpram #(
     logic [DATA_WIDTH-1:0] rdata_pipe;
 
     always_ff @(posedge rclk) begin
-        /* verilator lint_off WIDTHEXPAND */
         rdata_pipe <= mem[raddr];
-        /* verilator lint_on WIDTHEXPAND */
         rdata <= rdata_pipe;
     end
 
