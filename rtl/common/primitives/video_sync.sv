@@ -21,10 +21,10 @@
 //   hsync        - Registered horizontal sync output
 //   vsync        - Registered vertical sync output
 //   active_video - Registered active-region qualifier
-//   line_start   - Registered start-of-line marker; held high during reset and a
-//                  one-cycle pulse at the first pixel of each line otherwise
-//   frame_start  - Registered start-of-frame marker; held high during reset and a
-//                  one-cycle pulse at the first pixel of each frame otherwise
+//   line_start   - Registered start-of-line marker; one-cycle pulse at the
+//                  first pixel of each line (low during reset)
+//   frame_start  - Registered start-of-frame marker; one-cycle pulse at the
+//                  first pixel of each frame (low during reset)
 //   active_x     - Registered X coordinate within the active region, else 0
 //   active_y     - Registered Y coordinate within the active region, else 0
 //   scan_x       - Registered X coordinate across the full scan line
@@ -151,13 +151,19 @@ module video_sync #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            h_counter <= '0;
-            v_counter <= '0;
+            // Reset the scan counters into the blanking region so downstream
+            // modules (e.g. bitmap_text_renderer) have a full horizontal
+            // blanking interval of warm-up cycles before the first active
+            // pixel arrives.  Starting at the first front-porch position of
+            // the last line means the first post-reset active pixel is always
+            // at (0, 0) of a fresh frame.
+            h_counter <= H_COUNTER_WIDTH'(H_ACTIVE);
+            v_counter <= V_LAST;
             hsync <= ~HSYNC_ACTIVE_HIGH;
             vsync <= ~VSYNC_ACTIVE_HIGH;
             active_video <= 1'b0;
-            line_start <= 1'b1;
-            frame_start <= 1'b1;
+            line_start <= 1'b0;
+            frame_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
         end else begin

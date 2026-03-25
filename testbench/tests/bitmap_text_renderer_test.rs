@@ -28,9 +28,7 @@ macro_rules! clock_cycle {
 
 fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
     dut.rst = 1;
-    for _ in 0..6 {
-        clock_cycle!(dut);
-    }
+    clock_cycle!(dut);
     dut.rst = 0;
 }
 
@@ -39,21 +37,6 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
     for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.frame_start == 1 {
-            if dut.video_de == 0 {
-                assert_eq!(
-                    dut.line_start, 1,
-                    "reset-origin frame_start must still align with line_start"
-                );
-                assert_eq!(
-                    dut.active_x, 0,
-                    "reset-origin frame_start must still hold x at zero"
-                );
-                assert_eq!(
-                    dut.active_y, 0,
-                    "reset-origin frame_start must still hold y at zero"
-                );
-                continue;
-            }
             assert_eq!(
                 dut.video_de, 1,
                 "frame_start must coincide with active video"
@@ -128,7 +111,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
 }
 
 #[test]
-fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
+fn test_bitmap_text_renderer_first_frame_matches_expected_bitmap_after_reset() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -139,10 +122,11 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
     wait_for_frame_start(&mut dut, 1);
 
     let expected_pixels = [
-        (1u8, 0u8, 0u8),
-        (4u8, 0u8, 0u8),
-        (6u8, 0u8, 0u8),
-        (7u8, 0u8, 1u8),
+        (0u8, 0u8, expected_pixel(0, 0)),
+        (1u8, 0u8, expected_pixel(1, 0)),
+        (4u8, 0u8, expected_pixel(4, 0)),
+        (6u8, 0u8, expected_pixel(6, 0)),
+        (7u8, 0u8, expected_pixel(7, 0)),
     ];
 
     for (x, y, pixel_on) in expected_pixels {
