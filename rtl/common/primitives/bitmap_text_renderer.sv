@@ -57,9 +57,9 @@ module bitmap_text_renderer #(
     // Front-porch budget for the renderer's per-pixel ROM prefetch pipeline:
     //   - 1 cycle: registered character-map request stage
     //   - 2 cycles: character-map sync_sprom latency
-    //   - 2 cycles: font-row sync_sprom latency after the character-map result
-    //               has been combined with the aligned glyph row
-    // Horizontal front porch must cover this 5-cycle lead so the fetch pointer
+    //   - 2 cycles: font-row sync_sprom latency (`font_addr` combines
+    //               `char_map_rdata` with the aligned glyph row)
+    // horizontal front porch must cover this 5-cycle lead so the fetch pointer
     // wraps into the next line during blanking before scanout re-enters the
     // active region.
     localparam int unsigned FONT_PIPELINE_CYCLES = 5;
