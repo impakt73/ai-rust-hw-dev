@@ -71,6 +71,8 @@ module bitmap_text_renderer #(
     localparam int unsigned TILE_ROW_WIDTH = (TILE_ROWS <= 1) ? 1 : $clog2(TILE_ROWS);
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
+    localparam logic [H_COUNTER_WIDTH-1:0] FETCH_WRAP_START =
+        H_COUNTER_WIDTH'(H_TOTAL - FONT_PIPELINE_CYCLES);
 
     logic sync_video_de;
     logic sync_video_hs;
@@ -79,6 +81,8 @@ module bitmap_text_renderer #(
     logic sync_frame_start;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
+    logic [H_COUNTER_WIDTH-1:0] sync_scan_x;
+    logic [V_COUNTER_WIDTH-1:0] sync_scan_y;
 
     logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr;
     logic [CHARMAP_DATA_WIDTH-1:0] char_map_rdata;
@@ -86,8 +90,8 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
     logic pixel_on_next;
-    logic [H_COUNTER_WIDTH-1:0] fetch_h_counter;
-    logic [V_COUNTER_WIDTH-1:0] fetch_v_counter;
+    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x;
+    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d0;
     logic [FONT_ROW_INDEX_WIDTH-1:0] glyph_row_d1;
     logic fetch_in_active_region;
@@ -126,7 +130,9 @@ module bitmap_text_renderer #(
         .line_start(sync_line_start),
         .frame_start(sync_frame_start),
         .active_x(sync_active_x),
-        .active_y(sync_active_y)
+        .active_y(sync_active_y),
+        .scan_x(sync_scan_x),
+        .scan_y(sync_scan_y)
     );
 
     sync_sprom #(
@@ -176,15 +182,27 @@ module bitmap_text_renderer #(
 `endif
 
     always_comb begin
+        if (sync_scan_x >= FETCH_WRAP_START) begin
+            fetch_scan_x = sync_scan_x - FETCH_WRAP_START;
+            if (sync_scan_y == V_COUNTER_WIDTH'(V_TOTAL - 1)) begin
+                fetch_scan_y = '0;
+            end else begin
+                fetch_scan_y = sync_scan_y + 1'b1;
+            end
+        end else begin
+            fetch_scan_x = sync_scan_x + H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES);
+            fetch_scan_y = sync_scan_y;
+        end
+
         fetch_in_active_region =
-            (fetch_h_counter < H_COUNTER_WIDTH'(ACTIVE_WIDTH)) &&
-            (fetch_v_counter < V_COUNTER_WIDTH'(ACTIVE_HEIGHT));
+            (fetch_scan_x < H_COUNTER_WIDTH'(ACTIVE_WIDTH)) &&
+            (fetch_scan_y < V_COUNTER_WIDTH'(ACTIVE_HEIGHT));
 
         if (fetch_in_active_region) begin
-            fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_h_counter >> 3);
-            fetch_tile_row = TILE_ROW_WIDTH'(fetch_v_counter >> 3);
+            fetch_tile_column = TILE_COLUMN_WIDTH'(fetch_scan_x >> 3);
+            fetch_tile_row = TILE_ROW_WIDTH'(fetch_scan_y >> 3);
             font_glyph_row = FONT_ROW_INDEX_WIDTH'(
-                fetch_v_counter[FONT_ROW_INDEX_WIDTH-1:0]
+                fetch_scan_y[FONT_ROW_INDEX_WIDTH-1:0]
             );
         end else begin
             fetch_tile_column = '0;
@@ -200,8 +218,6 @@ module bitmap_text_renderer #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            fetch_h_counter <= H_COUNTER_WIDTH'(FONT_PIPELINE_CYCLES - 1);
-            fetch_v_counter <= '0;
             video_de <= 1'b0;
             video_hs <= ~HSYNC_ACTIVE_HIGH;
             video_vs <= ~VSYNC_ACTIVE_HIGH;
@@ -213,17 +229,6 @@ module bitmap_text_renderer #(
             glyph_row_d1 <= '0;
             pixel_on <= 1'b0;
         end else begin
-            if (fetch_h_counter == H_COUNTER_WIDTH'(H_TOTAL - 1)) begin
-                fetch_h_counter <= '0;
-                if (fetch_v_counter == V_COUNTER_WIDTH'(V_TOTAL - 1)) begin
-                    fetch_v_counter <= '0;
-                end else begin
-                    fetch_v_counter <= fetch_v_counter + 1'b1;
-                end
-            end else begin
-                fetch_h_counter <= fetch_h_counter + 1'b1;
-            end
-
             glyph_row_d0 <= font_glyph_row;
             glyph_row_d1 <= glyph_row_d0;
             video_de <= sync_video_de;
