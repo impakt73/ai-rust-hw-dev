@@ -117,7 +117,11 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-POCKET_DEPLOY_DIR ?=
+POCKET_DEPLOY_DIR ?= /mnt/analogue-pocket
+POCKET_DEPLOY_UUID ?= 0123-4567
+POCKET_DEPLOY_UID ?= 1000
+POCKET_DEPLOY_GID ?= 1000
+POCKET_DEPLOY_UMASK ?= 022
 OUTPUT_EXT = rbf
 endif
 
@@ -348,6 +352,13 @@ program: $(BIN)
 	fi
 	@mkdir -p "$(POCKET_DEPLOY_DIR)"
 	@set -e; \
+	mounted=0; \
+	cleanup() { \
+		if [ "$$mounted" -eq 1 ]; then \
+			sudo umount "$(POCKET_DEPLOY_DIR)"; \
+		fi; \
+	}; \
+	trap cleanup EXIT; \
 	package_path=""; \
 	if [ -f "$(POCKET_PACKAGE_INFO)" ]; then \
 		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
@@ -361,7 +372,11 @@ program: $(BIN)
 		echo "Run 'rm -f $(POCKET_PACKAGE_INFO) && make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=$(POCKET_DEPLOY_DIR)' to regenerate the package before retrying deployment."; \
 		exit 1; \
 	fi; \
-	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"
+	sudo mount -U $(POCKET_DEPLOY_UUID) "$(POCKET_DEPLOY_DIR)" -o uid=$(POCKET_DEPLOY_UID),gid=$(POCKET_DEPLOY_GID),umask=$(POCKET_DEPLOY_UMASK); \
+	mounted=1; \
+	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"; \
+	sudo umount "$(POCKET_DEPLOY_DIR)"; \
+	mounted=0
 else
 program: $(BIN)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
@@ -409,7 +424,7 @@ else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 endif
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  program      - Unzip the generated Pocket core package into POCKET_DEPLOY_DIR"
+	@echo "  program      - Mount the Pocket SD card at POCKET_DEPLOY_DIR, unzip the generated core package, then unmount it"
 else
 	@echo "  program      - Program FPGA with bitstream"
 endif
@@ -424,6 +439,7 @@ else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
 	@echo "  - cargo      : Rust toolchain (required for the Pocket packaging step)"
 	@echo "  - unzip      : Archive extraction tool (required for 'make program')"
+	@echo "  - sudo mount/umount : Required to mount the Pocket SD card by UUID $(POCKET_DEPLOY_UUID)"
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 	@echo "  - gw_sh      : Gowin EDA batch/CLI tool"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
@@ -448,7 +464,8 @@ endif
 	@echo ""
 	@echo "Programming selection:"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  - make program POCKET_DEPLOY_DIR=/path/to/deploy"
+	@echo "  - make program POCKET_DEPLOY_DIR=/path/to/mountpoint"
+	@echo "    mounts Pocket SD UUID $(POCKET_DEPLOY_UUID), deploys the packaged core, then unmounts"
 	@echo "  - make TARGET=$(TARGET)           (builds $(BIN) and packages a deployable Pocket zip)"
 else
 	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
