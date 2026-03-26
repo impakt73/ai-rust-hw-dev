@@ -9,7 +9,7 @@ module bitmap_text_renderer_test_wrapper (
     output logic frame_start,
     output logic [3:0] active_x,
     output logic [3:0] active_y,
-    output logic [7:0] pixel_on
+    output logic [7:0] pixel_data
 );
 
     bitmap_text_renderer #(
@@ -33,7 +33,7 @@ module bitmap_text_renderer_test_wrapper (
         .frame_start(frame_start),
         .active_x(active_x),
         .active_y(active_y),
-        .pixel_on(pixel_on)
+        .pixel_data(pixel_data)
     );
 
 endmodule
