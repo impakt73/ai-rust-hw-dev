@@ -69,6 +69,8 @@ module bitmap_text_renderer #(
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned H_COUNTER_WIDTH = (H_TOTAL <= 1) ? 1 : $clog2(H_TOTAL);
     localparam int unsigned V_COUNTER_WIDTH = (V_TOTAL <= 1) ? 1 : $clog2(V_TOTAL);
+    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_START = H_COUNTER_WIDTH'(H_BACK_PORCH);
+    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_START = V_COUNTER_WIDTH'(V_BACK_PORCH);
     localparam int unsigned TILE_COLUMNS = ACTIVE_WIDTH / TILE_WIDTH;
     localparam int unsigned TILE_ROWS = ACTIVE_HEIGHT / TILE_HEIGHT;
     localparam int unsigned TILE_COLUMN_WIDTH = (TILE_COLUMNS <= 1) ? 1 : $clog2(TILE_COLUMNS);
@@ -115,8 +117,8 @@ module bitmap_text_renderer #(
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d2;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d3;
     logic [FONT_ROW_INDEX_WIDTH-1:0] pixel_bit_index_d4;
-    logic [H_COUNTER_WIDTH-1:0] fetch_active_x;
-    logic [V_COUNTER_WIDTH-1:0] fetch_active_y;
+    logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_offset;
+    logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_offset;
 
     video_sync #(
         .H_ACTIVE(ACTIVE_WIDTH),
@@ -204,13 +206,13 @@ module bitmap_text_renderer #(
     end
 
     always_comb begin
-        fetch_active_x = fetch_scan_x_prefetch - H_COUNTER_WIDTH'(H_BACK_PORCH);
-        fetch_active_y = fetch_scan_y_prefetch - V_COUNTER_WIDTH'(V_BACK_PORCH);
-        fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_active_x >> 3);
-        fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_active_y >> 3);
+        fetch_scan_x_offset = fetch_scan_x_prefetch - H_ACTIVE_START;
+        fetch_scan_y_offset = fetch_scan_y_prefetch - V_ACTIVE_START;
+        fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_scan_x_offset >> 3);
+        fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_scan_y_offset >> 3);
         fetch_tile_row_base_addr_prefetch = CHARMAP_ADDR_WIDTH'(fetch_tile_row_prefetch * TILE_COLUMNS);
         font_glyph_row_prefetch = FONT_ROW_INDEX_WIDTH'(
-            fetch_active_y[FONT_ROW_INDEX_WIDTH-1:0]
+            fetch_scan_y_offset[FONT_ROW_INDEX_WIDTH-1:0]
         );
         char_map_addr_prefetch =
             fetch_tile_row_base_addr_prefetch + CHARMAP_ADDR_WIDTH'(fetch_tile_column_prefetch);
@@ -250,7 +252,7 @@ module bitmap_text_renderer #(
             glyph_row_d1 <= glyph_row_d0;
             glyph_row_d2 <= glyph_row_d1;
             pixel_bit_index_d0 <= FONT_ROW_INDEX_WIDTH'(7)
-                - fetch_active_x[FONT_ROW_INDEX_WIDTH-1:0];
+                - fetch_scan_x_offset[FONT_ROW_INDEX_WIDTH-1:0];
             pixel_bit_index_d1 <= pixel_bit_index_d0;
             pixel_bit_index_d2 <= pixel_bit_index_d1;
             pixel_bit_index_d3 <= pixel_bit_index_d2;
