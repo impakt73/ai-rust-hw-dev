@@ -71,7 +71,11 @@ fn expected_pixel(x: u8, y: u8) -> u8 {
     let tile_y = usize::from(y / 8);
     let glyph = usize::from(BITMAP_TEXT_RENDERER_CHAR_MAP[(tile_y * 2) + tile_x]);
     let glyph_row = BITMAP_TEXT_RENDERER_FONT_ROWS[glyph][usize::from(y % 8)];
-    (glyph_row >> (7 - (x % 8))) & 1
+    if ((glyph_row >> (7 - (x % 8))) & 1) != 0 {
+        0xFF
+    } else {
+        0x00
+    }
 }
 
 #[test]
@@ -86,22 +90,22 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
     wait_for_frame_start(&mut dut, 2);
 
     let expected_pixels = [
-        (0u8, 0u8, 1u8),
-        (1u8, 0u8, 0u8),
-        (7u8, 0u8, 1u8),
-        (8u8, 0u8, 1u8),
-        (8u8, 1u8, 0u8),
-        (0u8, 8u8, 1u8),
-        (3u8, 8u8, 1u8),
-        (4u8, 8u8, 0u8),
-        (8u8, 8u8, 0u8),
-        (12u8, 8u8, 1u8),
+        (0u8, 0u8, 0xFFu8),
+        (1u8, 0u8, 0x00u8),
+        (7u8, 0u8, 0xFFu8),
+        (8u8, 0u8, 0xFFu8),
+        (8u8, 1u8, 0x00u8),
+        (0u8, 8u8, 0xFFu8),
+        (3u8, 8u8, 0xFFu8),
+        (4u8, 8u8, 0x00u8),
+        (8u8, 8u8, 0x00u8),
+        (12u8, 8u8, 0xFFu8),
     ];
 
-    for (x, y, pixel_on) in expected_pixels {
+    for (x, y, pixel_data) in expected_pixels {
         advance_to_active_coordinate(&mut dut, x, y);
         assert_eq!(
-            dut.pixel_on, pixel_on,
+            dut.pixel_data, pixel_data,
             "unexpected registered pixel value aligned to active coordinate ({x}, {y})"
         );
         clock_cycle!(dut);
@@ -120,16 +124,16 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
     wait_for_frame_start(&mut dut, 1);
 
     let expected_pixels = [
-        (1u8, 0u8, 0u8),
-        (4u8, 0u8, 0u8),
-        (6u8, 0u8, 0u8),
-        (7u8, 0u8, 1u8),
+        (1u8, 0u8, 0x00u8),
+        (4u8, 0u8, 0x00u8),
+        (6u8, 0u8, 0x00u8),
+        (7u8, 0u8, 0xFFu8),
     ];
 
-    for (x, y, pixel_on) in expected_pixels {
+    for (x, y, pixel_data) in expected_pixels {
         advance_to_active_coordinate(&mut dut, x, y);
         assert_eq!(
-            dut.pixel_on, pixel_on,
+            dut.pixel_data, pixel_data,
             "unexpected first-frame pixel value after reset at ({x}, {y})"
         );
         clock_cycle!(dut);
@@ -161,7 +165,7 @@ fn test_bitmap_text_renderer_matches_expected_bitmap_in_steady_state() {
 
             let expected = expected_pixel(dut.active_x, dut.active_y);
             assert_eq!(
-                dut.pixel_on, expected,
+                dut.pixel_data, expected,
                 "unexpected pixel at steady-state coordinate ({}, {})",
                 dut.active_x, dut.active_y
             );
@@ -194,8 +198,8 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
         if dut.video_de == 0 {
             observed_blanking = true;
             assert_eq!(
-                dut.pixel_on, 0,
-                "registered pixel_on must stay aligned low during blanking"
+                dut.pixel_data, 0,
+                "registered pixel_data must stay aligned low during blanking"
             );
         }
         clock_cycle!(dut);
