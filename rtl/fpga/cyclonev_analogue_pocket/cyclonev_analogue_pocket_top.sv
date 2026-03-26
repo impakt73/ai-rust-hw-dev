@@ -35,14 +35,18 @@ module cyclonev_analogue_pocket_top #(
     logic        video_vs_reg;
     logic        video_hs_reg;
 
-    localparam int unsigned VIDEO_ACTIVE_WIDTH = 320;
-    localparam int unsigned VIDEO_ACTIVE_HEIGHT = 240;
+    localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
+    localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
+    localparam int unsigned VIDEO_TOTAL_WIDTH = 400;
+    localparam int unsigned VIDEO_TOTAL_HEIGHT = 512;
     localparam int unsigned VIDEO_H_FRONT_PORCH = 10;
     localparam int unsigned VIDEO_H_SYNC_WIDTH = 1;
-    localparam int unsigned VIDEO_H_BACK_PORCH = 69;
+    localparam int unsigned VIDEO_H_BACK_PORCH =
+        VIDEO_TOTAL_WIDTH - VIDEO_ACTIVE_WIDTH - VIDEO_H_FRONT_PORCH - VIDEO_H_SYNC_WIDTH;
     localparam int unsigned VIDEO_V_FRONT_PORCH = 10;
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
-    localparam int unsigned VIDEO_V_BACK_PORCH = 261;
+    localparam int unsigned VIDEO_V_BACK_PORCH =
+        VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin

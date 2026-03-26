@@ -525,12 +525,10 @@ core_bridge_cmd icb (
 // video generation
 // ~12,288,000 hz pixel clock
 //
-// we want our video mode of 320x240 @ 60hz, this results in 204800 clocks per frame
-// we need to add hblank and vblank times to this, so there will be a nondisplay area. 
-// it can be thought of as a border around the visible area.
-// to make numbers simple, we can have 400 total clocks per line, and 320 visible.
-// dividing 204800 by 400 results in 512 total lines per frame, and 240 visible.
-// this pixel clock is fairly high for the relatively low resolution, but that's fine.
+// we keep a 400x512 total raster at 12.288 MHz so the output remains 60 Hz
+// (12_288_000 / (400 * 512) = 60). The active region is reduced to 256x224 to
+// match the SNES-style viewport, with the extra pixels allocated to blanking.
+// This pixel clock is fairly high for the relatively low resolution, but that's fine.
 // PLL output has a minimum output frequency anyway.
 
 
