@@ -71,7 +71,11 @@ fn expected_pixel(x: u8, y: u8) -> u8 {
     let tile_y = usize::from(y / 8);
     let glyph = usize::from(BITMAP_TEXT_RENDERER_CHAR_MAP[(tile_y * 2) + tile_x]);
     let glyph_row = BITMAP_TEXT_RENDERER_FONT_ROWS[glyph][usize::from(y % 8)];
-    (glyph_row >> (7 - (x % 8))) & 1
+    if ((glyph_row >> (7 - (x % 8))) & 1) != 0 {
+        0xFF
+    } else {
+        0x00
+    }
 }
 
 #[test]
@@ -86,16 +90,16 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
     wait_for_frame_start(&mut dut, 2);
 
     let expected_pixels = [
-        (0u8, 0u8, 1u8),
-        (1u8, 0u8, 0u8),
-        (7u8, 0u8, 1u8),
-        (8u8, 0u8, 1u8),
-        (8u8, 1u8, 0u8),
-        (0u8, 8u8, 1u8),
-        (3u8, 8u8, 1u8),
-        (4u8, 8u8, 0u8),
-        (8u8, 8u8, 0u8),
-        (12u8, 8u8, 1u8),
+        (0u8, 0u8, 0xFFu8),
+        (1u8, 0u8, 0x00u8),
+        (7u8, 0u8, 0xFFu8),
+        (8u8, 0u8, 0xFFu8),
+        (8u8, 1u8, 0x00u8),
+        (0u8, 8u8, 0xFFu8),
+        (3u8, 8u8, 0xFFu8),
+        (4u8, 8u8, 0x00u8),
+        (8u8, 8u8, 0x00u8),
+        (12u8, 8u8, 0xFFu8),
     ];
 
     for (x, y, pixel_on) in expected_pixels {
@@ -120,10 +124,10 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
     wait_for_frame_start(&mut dut, 1);
 
     let expected_pixels = [
-        (1u8, 0u8, 0u8),
-        (4u8, 0u8, 0u8),
-        (6u8, 0u8, 0u8),
-        (7u8, 0u8, 1u8),
+        (1u8, 0u8, 0x00u8),
+        (4u8, 0u8, 0x00u8),
+        (6u8, 0u8, 0x00u8),
+        (7u8, 0u8, 0xFFu8),
     ];
 
     for (x, y, pixel_on) in expected_pixels {

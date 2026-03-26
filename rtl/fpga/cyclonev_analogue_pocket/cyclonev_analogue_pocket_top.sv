@@ -5,7 +5,9 @@ module cyclonev_analogue_pocket_top #(
     parameter bit ENABLE_F_EXT = 1'b0,
     parameter int BAUD_RATE = 9600,
     // Original Source: https://github.com/viler-int10h/vga-text-mode-fonts/blob/master/FONTS/PC-OTHER/ATI8X8.F08
-    parameter string FONT_INIT_FILE = "./core/ati8x8_font_init.hex",
+    // bitmap_text_renderer_font_init.hex stores the same font with one 8-bit
+    // entry per pixel in row-major order.
+    parameter string FONT_INIT_FILE = "./core/bitmap_text_renderer_font_init.hex",
     parameter string CHAR_MAP_INIT_FILE = "./core/bitmap_text_renderer_char_map_init.hex"
 ) (
     input  wire logic       clk,
@@ -26,7 +28,7 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_video_de;
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
-    logic        bitmap_pixel_on;
+    logic [7:0]  bitmap_pixel_on;
     logic [23:0] video_rgb_reg;
     logic        video_de_reg;
     logic        video_skip_reg;
@@ -113,7 +115,7 @@ module cyclonev_analogue_pocket_top #(
             video_vs_reg <= 1'b0;
             video_hs_reg <= 1'b0;
         end else begin
-            video_rgb_reg <= bitmap_pixel_on ? 24'hFF_FF_FF : 24'h00_00_00;
+            video_rgb_reg <= {bitmap_pixel_on, bitmap_pixel_on, bitmap_pixel_on};
             video_de_reg <= bitmap_video_de;
             video_skip_reg <= 1'b0;
             video_vs_reg <= bitmap_video_vs;
