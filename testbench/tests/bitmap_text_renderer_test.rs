@@ -39,25 +39,6 @@ fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usi
     for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.frame_start == 1 {
-            if dut.video_de == 0 {
-                assert_eq!(
-                    dut.line_start, 1,
-                    "reset-origin frame_start must still align with line_start"
-                );
-                assert_eq!(
-                    dut.active_x, 0,
-                    "reset-origin frame_start must still hold x at zero"
-                );
-                assert_eq!(
-                    dut.active_y, 0,
-                    "reset-origin frame_start must still hold y at zero"
-                );
-                continue;
-            }
-            assert_eq!(
-                dut.video_de, 1,
-                "frame_start must coincide with active video"
-            );
             assert_eq!(
                 dut.line_start, 1,
                 "frame_start must also start the first line"

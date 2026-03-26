@@ -15,9 +15,9 @@ module bitmap_text_renderer_test_wrapper (
     bitmap_text_renderer #(
         .ACTIVE_WIDTH(16),
         .ACTIVE_HEIGHT(16),
-        .H_FRONT_PORCH(8),
+        .H_FRONT_PORCH(1),
         .H_SYNC_WIDTH(1),
-        .H_BACK_PORCH(1),
+        .H_BACK_PORCH(8),
         .V_FRONT_PORCH(1),
         .V_SYNC_WIDTH(1),
         .V_BACK_PORCH(1),
