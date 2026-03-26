@@ -28,7 +28,7 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_video_de;
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
-    logic [7:0]  bitmap_pixel_data;
+    logic [23:0] bitmap_pixel_data;
     logic [23:0] video_rgb_reg;
     logic        video_de_reg;
     logic        video_skip_reg;
@@ -119,7 +119,7 @@ module cyclonev_analogue_pocket_top #(
             video_vs_reg <= 1'b0;
             video_hs_reg <= 1'b0;
         end else begin
-            video_rgb_reg <= {bitmap_pixel_data, bitmap_pixel_data, bitmap_pixel_data};
+            video_rgb_reg <= bitmap_pixel_data;
             video_de_reg <= bitmap_video_de;
             video_skip_reg <= 1'b0;
             video_vs_reg <= bitmap_video_vs;
