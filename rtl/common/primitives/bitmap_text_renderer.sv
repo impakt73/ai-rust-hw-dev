@@ -48,7 +48,7 @@ module bitmap_text_renderer #(
     output logic frame_start,
     output logic [((ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH)) - 1:0] active_x,
     output logic [((ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT)) - 1:0] active_y,
-    output logic [7:0] pixel_data
+    output logic [23:0] pixel_data
 );
 
     localparam int unsigned FONT_ROM_DATA_WIDTH = 8;
@@ -104,7 +104,7 @@ module bitmap_text_renderer #(
     logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
 
-    logic [FONT_ROM_DATA_WIDTH-1:0] pixel_data_next;
+    logic [23:0] pixel_data_next;
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_next;
     logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_next;
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_prefetch;
@@ -221,7 +221,9 @@ module bitmap_text_renderer #(
 
     always_comb begin
         font_addr = {char_map_rdata, glyph_offset_d2};
-        pixel_data_next = sync_video_de ? font_glyph_rdata : '0;
+        pixel_data_next = sync_video_de
+            ? {font_glyph_rdata, font_glyph_rdata, font_glyph_rdata}
+            : '0;
     end
 
     always_ff @(posedge clk) begin
