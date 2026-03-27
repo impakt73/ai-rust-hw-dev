@@ -72,6 +72,16 @@ module system_controller #(
     logic millisecond_elapsed;
     logic second_elapsed;
 
+    initial begin
+        if (CLK_FREQ_HZ < 1_000_000) begin
+            $fatal(
+                1,
+                "system_controller: CLK_FREQ_HZ (%0d Hz) must be >= 1_000_000 Hz for valid elapsed time counters.",
+                CLK_FREQ_HZ
+            );
+        end
+    end
+
     typedef enum logic [1:0] {
         CPU_RESET_IDLE      = 2'b00,
         CPU_RESET_WAIT_HALT = 2'b01,
