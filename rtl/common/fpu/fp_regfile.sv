@@ -3,15 +3,15 @@
 // 32x32-bit FP register file for RISC-V RV32F extension
 // Unlike integer x0, all FP registers (f0-f31) are writable
 //
-// BRAM INFERENCE ANALYSIS FOR iCE40-HX8K:
-// ========================================
-// iCE40 BRAM blocks are 256x16-bit (4Kbit each). Yosys infers BRAM when:
-//   1. Memory depth >= 256 entries (our FP regfile has only 32 entries)
-//   2. Synchronous read (read address registered, data available next cycle)
-//   3. Synchronous write
+// BRAM INFERENCE ANALYSIS:
+// =======================
+// FPGA BRAM inference is usually a good fit when:
+//   1. Memory depth is large enough to amortize the block-RAM granularity
+//   2. Reads are synchronous (address registered, data available next cycle)
+//   3. Writes are synchronous
 //
-// PROBLEM: This FP register file does NOT meet BRAM inference criteria because:
-//   - Depth is 32 entries (< 256 minimum for iCE40 BRAM inference)
+// PROBLEM: This FP register file does NOT meet the usual BRAM inference criteria because:
+//   - Depth is only 32 entries, so it is a poor match for block-RAM granularity
 //   - Asynchronous reads are REQUIRED by the multi-cycle CPU architecture
 //     (FP operations need immediate access to operands in EXECUTE state)
 //   - Three simultaneous read ports (rs1, rs2, rs3) for FMA operations
@@ -25,10 +25,10 @@
 //   1. Pipeline the FPU to tolerate 1-cycle read latency
 //   2. Add bypass/forwarding logic for back-to-back read-after-write hazards
 //   3. Use 3 separate BRAM blocks for 3 read ports (increases resource usage!)
-//   4. Potentially increase depth to 256 entries (waste 224 entries)
+//   4. Accept the storage granularity overhead of a much larger memory primitive
 //
 // CURRENT RECOMMENDATION: Keep REGISTER_OUTPUTS=0 (async reads, LUT-based storage)
-// Estimated LUT usage: ~680 LUTs (8.9% of iCE40-HX8K)
+// because the current architecture needs zero-latency operand access.
 
 module fp_regfile #(
     parameter bit REGISTER_OUTPUTS = 1'b0  // 0 = Async reads (LUT-based), 1 = Sync reads (register outputs)
@@ -79,7 +79,8 @@ module fp_regfile #(
     generate
         if (REGISTER_OUTPUTS) begin : gen_registered_outputs
             // Registered outputs (adds 1 cycle latency, improves Fmax)
-            // NOTE: This does NOT infer BRAM on iCE40 due to small depth (32 entries < 256)
+            // NOTE: This still does not infer a practical BRAM implementation because
+            // the register file remains shallow and requires three read ports.
             // It only registers the outputs to break combinational paths
             always_ff @(posedge clk) begin
                 rs1_data <= rs1_data_int;

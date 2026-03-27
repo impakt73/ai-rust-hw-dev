@@ -158,7 +158,7 @@ The multi-cycle design adds handshaking signals:
 
 ### Reset Conventions
 - Use **synchronous resets only** in project RTL modules.
-- Default to active-high reset ports as `rst` for internal RTL modules. On iCE40 hardware this avoids the extra inversion LUTs and timing penalty that come from mapping active-low resets onto active-high fabric reset controls.
+- Default to active-high reset ports as `rst` for internal RTL modules. The supported FPGA flows map these resets efficiently without extra inversion logic, so active-high remains the project default.
 - For sequential logic, use `always_ff @(posedge clk)` (or the local clock domain) and perform reset inside the block with `if (rst)`.
 - Reserve active-low resets for special cases, usually external board or device signals that already arrive active-low. Convert those signals to the internal active-high convention as close to the boundary as practical.
 - When a datapath payload register has a separate `valid`, `pending`, or similar control bit, reset the control bit rather than the payload register itself. Write or refresh the payload whenever you capture new data, typically in the same branch where you set/assert the control bit, and downstream logic must ignore the payload whenever that control bit is low.
@@ -192,12 +192,12 @@ All SystemVerilog code should pass Verilator linting before being committed.
 (cd rtl/fpga && make)
 ```
 
-**Important:** CI automatically runs FPGA synthesis verification on all SystemVerilog changes. The design must successfully synthesize to the iCE40-HX8K target (Alchitry Cu v1 board) using Yosys/nextpnr.
+**Important:** CI automatically runs FPGA synthesis verification on all SystemVerilog changes. The design must successfully synthesize to the default ECP5 target (`ecp5_icepi_zero`) using Yosys/nextpnr-ecp5.
 
 **Key constraints:**
-- Target frequency: 25 MHz
-- Resource limit: ~7,680 LUTs (currently using ~74%)
-- M and F extensions disabled for HX8K (controlled in rtl/common/top.sv)
+- Target frequency: 50 MHz
+- Resource limit: 24,288 LUT4-class combinational cells
+- The default open-source target keeps `ENABLE_F_EXT=0`; check current build reports for the latest resource/timing headroom
 
 ## Debugging Hardware
 

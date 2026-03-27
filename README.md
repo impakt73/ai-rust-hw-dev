@@ -41,7 +41,7 @@ A **multi-cycle non-pipelined RISC-V RV32IMACF CPU** implementation in SystemVer
 - ✅ **Variable-latency Memory Support**: Ready/valid handshaking for realistic memory operations
 - ✅ **Verilator-based Verification**: 264+ comprehensive tests using Rust + marlin framework
 - ✅ **CPU Simulator**: Run bare-metal RISC-V ELF executables with VCD waveform dumping and configurable memory latency
-- ✅ **FPGA Synthesis Support**: Synthesizable to iCE40-HX8K using open-source tools (Yosys + nextpnr)
+- ✅ **FPGA Synthesis Support**: Synthesizable to the iCE Pi Zero ECP5 target with open-source tools (Yosys + nextpnr-ecp5), plus additional vendor-tool bring-up targets
 - ✅ **Exposed Memory Ports**: Instruction and data memory managed externally for flexibility
 - ✅ **Debug Infrastructure**: FIFO-based packet protocol with formatted print macros for bare-metal programs
 
@@ -66,16 +66,16 @@ cargo test
 
 ### FPGA Synthesis (Optional)
 
-To synthesize the design for iCE40-HX8K FPGA:
+To synthesize the design for the default iCE Pi Zero ECP5 FPGA target:
 
 ```bash
 # Install open-source FPGA tools (Ubuntu/Debian)
-sudo apt-get install -y yosys fpga-icestorm nextpnr-ice40
+sudo apt-get install -y yosys fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
 
 # Navigate to rtl/fpga directory
 cd rtl/fpga
 
-# Run synthesis
+# Run synthesis for the default target (iCE Pi Zero ECP5)
 make
 
 # Program FPGA (if hardware connected)
@@ -99,7 +99,7 @@ This design enables higher clock frequencies and more realistic hardware impleme
 
 - **`rtl/`** - All SystemVerilog RTL organized into:
   - **`rtl/common/`** - Shared RTL modules (`cpu/`, `fpu/`, `io/`, `memory/`, `peripherals/`, `primitives/`, `wrappers/`)
-  - **`rtl/fpga/`** - FPGA synthesis files for iCE40-HX8K (Yosys + nextpnr workflow)
+  - **`rtl/fpga/`** - FPGA synthesis files for the supported FPGA targets
 - **`testbench/`** - Rust-based verification tests (testbench package, integration tests)
 - **`cpu-sim/`** - Command-line CPU simulator for running ELF executables with VCD waveform dumping
 - **`riscv_core/`** - Shared Verilator bindings and utilities
@@ -116,7 +116,7 @@ This design enables higher clock frequencies and more realistic hardware impleme
 ## Documentation
 
 - **[AGENTS.md](AGENTS.md)** - Comprehensive guide for developers and AI agents (includes FSM details and instruction cycle counts)
-- **[rtl/fpga/README.md](rtl/fpga/README.md)** - FPGA synthesis guide for iCE40-HX8K using open-source tools
+- **[rtl/fpga/README.md](rtl/fpga/README.md)** - FPGA synthesis guide for the supported FPGA targets
 - **[cpu-sim/README.md](cpu-sim/README.md)** - CPU simulator usage, VCD waveform dumping, and debugging features
 - **[sim-view/README.md](sim-view/README.md)** - Real-time video and audio viewer for simulated programs
 - **[rust-test-program/README.md](rust-test-program/README.md)** - Information about test programs (automatically built when tests run)
