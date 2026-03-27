@@ -8,7 +8,8 @@ module cyclonev_analogue_pocket_top #(
     // bitmap_text_renderer_font_init.hex stores the same font with one 8-bit
     // entry per pixel in row-major order.
     parameter string FONT_INIT_FILE = "./core/bitmap_text_renderer_font_init.hex",
-    parameter string CHAR_MAP_INIT_FILE = "./core/bitmap_text_renderer_char_map_init.hex"
+    parameter string CHAR_MAP_INIT_FILE = "./core/bitmap_text_renderer_char_map_init.hex",
+    parameter string PALETTE_INIT_FILE = "./core/bitmap_text_renderer_palette_init.hex"
 ) (
     input  wire logic       clk,
     input  wire logic       clk_video,
@@ -97,7 +98,8 @@ module cyclonev_analogue_pocket_top #(
         .HSYNC_ACTIVE_HIGH(1'b1),
         .VSYNC_ACTIVE_HIGH(1'b1),
         .FONT_INIT_FILE(FONT_INIT_FILE),
-        .CHAR_MAP_INIT_FILE(CHAR_MAP_INIT_FILE)
+        .CHAR_MAP_INIT_FILE(CHAR_MAP_INIT_FILE),
+        .PALETTE_INIT_FILE(PALETTE_INIT_FILE)
     ) pocket_bitmap_text_renderer (
         .clk(clk_video),
         .rst(video_rst),
