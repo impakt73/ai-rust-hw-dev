@@ -64,10 +64,15 @@ The SRAM change therefore traded a small amount of extra control/pipeline logic 
 
 This report is based on the generated build artifacts for the ECP5 target:
 
+- `rtl/fpga/build/ecp5_icepi_zero/riscv_fpga_timing.rpt` (when the installed `nextpnr-ecp5` supports `--report`)
 - `rtl/fpga/build/ecp5_icepi_zero/yosys.log`
 - `rtl/fpga/build/ecp5_icepi_zero/nextpnr.log`
 
-The current Makefile does not generate a separate standalone timing report for `TARGET=ecp5_icepi_zero`, so the authoritative timing numbers come directly from the final `nextpnr.log`.
+For `TARGET=ecp5_icepi_zero`, the Makefile prefers a standalone
+`riscv_fpga_timing.rpt` generated via nextpnr's `--report` flag when that feature
+is available in the installed `nextpnr-ecp5` build. If `--report` is unavailable,
+the authoritative timing numbers come directly from the final routed timing
+section in `nextpnr.log`.
 
 ---
 
