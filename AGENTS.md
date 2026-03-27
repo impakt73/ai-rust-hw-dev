@@ -61,7 +61,7 @@ What files do you need to modify?
 ### Reset Style (RTL)
 
 - **Use synchronous resets only** across project RTL modules.
-- **Default to active-high reset ports (`rst`) for internal RTL modules.** iCE40 hardware natively supports active-high reset controls; choosing active-high by default avoids extra LUT inversions and unnecessary timing delay.
+- **Default to active-high reset ports (`rst`) for internal RTL modules.** The supported FPGA flows map these resets efficiently without extra inversion logic, so active-high remains the project default.
 - For sequential logic, use `always_ff @(posedge clk)` (or domain clock) and handle reset inside the block with `if (rst)`.
 - Use active-low resets only for special circumstances, usually at external board or device boundaries where the incoming signal is already active-low. Convert those signals to the internal active-high convention as close to the boundary as practical.
 - **Do not reset datapath-only payload registers when a separate `valid`/`pending` flag already guarantees the payload is ignored while invalid.** Instead, clear the control flag on reset and write or refresh the payload whenever new data is captured (typically in the same branch where the `valid`/`pending` flag is asserted).
@@ -133,7 +133,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 │   │   ├── peripherals/   # RTL peripherals (LED, clock, SRAM, system controller)
 │   │   ├── primitives/    # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
 │   │   └── wrappers/      # Test wrapper modules
-│   └── fpga/              # FPGA synthesis files for iCE40-HX8K
+│   └── fpga/              # FPGA synthesis files for the supported board targets
 ├── testbench/              # Rust verification (integration tests)
 │   └── tests/             # Integration test files
 ├── cpu-sim/               # CPU simulator

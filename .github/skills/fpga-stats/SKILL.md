@@ -19,7 +19,6 @@ make TARGET=<target> stats STATS_FORMAT=json
 
 Supported targets:
 
-- `ice40_alchitry_cu`
 - `ecp5_icepi_zero`
 - `artix7_alchitry_au`
 
@@ -27,7 +26,6 @@ Examples:
 
 ```bash
 cd rtl/fpga
-make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json
 make TARGET=ecp5_icepi_zero stats STATS_FORMAT=text
 ```
 
@@ -56,11 +54,6 @@ Generated artifacts:
 - `riscv_fpga_stats.md`
 
 ## Authoritative Sources Per Target
-
-- **`ice40_alchitry_cu`**
-  - Routed timing report: prefer `build/ice40_alchitry_cu/riscv_fpga_timing.rpt`; fall back to `build/ice40_alchitry_cu/nextpnr.log`
-  - Resource utilization: `build/ice40_alchitry_cu/nextpnr.log`
-  - Synthesis cell counts: `build/ice40_alchitry_cu/yosys.log`
 
 - **`ecp5_icepi_zero`**
   - Routed timing report: prefer `build/ecp5_icepi_zero/riscv_fpga_timing.rpt`; fall back to `build/ecp5_icepi_zero/nextpnr.log`

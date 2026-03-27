@@ -67,7 +67,7 @@ This report is based on the generated build artifacts for the ECP5 target:
 - `rtl/fpga/build/ecp5_icepi_zero/yosys.log`
 - `rtl/fpga/build/ecp5_icepi_zero/nextpnr.log`
 
-Unlike the iCE40 flow, the current Makefile does not generate a separate standalone timing report for `TARGET=ecp5_icepi_zero`, so the authoritative timing numbers come directly from the final `nextpnr.log`.
+The current Makefile does not generate a separate standalone timing report for `TARGET=ecp5_icepi_zero`, so the authoritative timing numbers come directly from the final `nextpnr.log`.
 
 ---
 
@@ -98,7 +98,7 @@ Unlike the iCE40 flow, the current Makefile does not generate a separate standal
 
 ### Utilization Notes
 
-1. **The design uses light logic resources on ECP5.** At roughly 40-41% LUT/comb utilization, the ECP5-25F has much more headroom than the iCE40-HX8K target.
+1. **The design uses light logic resources on ECP5.** At roughly 40-41% LUT/comb utilization, the ECP5-25F still has substantial headroom.
 2. **Block RAM pressure is low.** The design uses only **9/56 DP16KD** blocks, so memory resources are not a near-term constraint on this target.
 3. **DSP blocks are unused.** Even with `ENABLE_M_EXT=1`, the current build maps without using `MULT18X18D` primitives, leaving all DSP resources available for future optimization work.
 4. **No PLL is required.** The top-level ECP5 wrapper runs directly from the board's 50 MHz oscillator.

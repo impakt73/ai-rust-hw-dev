@@ -1,9 +1,9 @@
 # Makefile for RISC-V FPGA Synthesis
-# Supports open-source Lattice flows plus a Vivado batch flow for the Alchitry Au.
+# Supports the open-source ECP5 flow plus vendor-tool bring-up flows.
 
 # Project configuration
 PROJECT = riscv_fpga
-TARGET ?= ice40_alchitry_cu
+TARGET ?= ecp5_icepi_zero
 
 # File paths
 RTL_DIR = ../common
@@ -57,26 +57,6 @@ RTL_SOURCES = \
 	$(RTL_DIR)/peripherals/sram_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
-
-ifeq ($(TARGET),ice40_alchitry_cu)
-DEVICE = hx8k
-PACKAGE = cb132
-FPGA_DIR = ice40_alchitry_cu
-TOP_MODULE = ice40_alchitry_cu_top
-DEFAULT_PROGRAM_MODE = flash
-CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
-SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
-SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
-PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
-PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-		--json $(NETLIST) \
-		--pcf $(CONSTRAINT) \
-		--asc $(PNR_OUT) \
-		--freq 25
-PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
-OPENFPGALOADER_BOARD = ice40_generic
-OUTPUT_EXT = bin
-endif
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 DEVICE = 25k
@@ -154,7 +134,7 @@ PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROG
 endif
 
 ifndef FPGA_DIR
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, TARGET=cyclonev_analogue_pocket, or TARGET=gowin_tang_primer_25k)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, TARGET=cyclonev_analogue_pocket, or TARGET=gowin_tang_primer_25k)
 endif
 
 BUILD_DIR := build/$(TARGET)
@@ -177,8 +157,7 @@ POCKET_PACKAGE_CMD = $(CARGO) run --quiet --release --manifest-path $(abspath ..
 
 # Tools
 YOSYS = yosys
-NEXTPNR = nextpnr-ice40
-ICEPACK = icepack
+NEXTPNR = nextpnr-ecp5
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
@@ -187,10 +166,6 @@ PYTHON3 = python3
 UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
 STATS_FORMAT ?= text
-
-ifeq ($(TARGET),ecp5_icepi_zero)
-NEXTPNR = nextpnr-ecp5
-endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
 HAS_NEXTPNR := $(shell command -v $(NEXTPNR) >/dev/null 2>&1 && echo 1 || echo 0)
@@ -446,21 +421,20 @@ else ifeq ($(TARGET),gowin_tang_primer_25k)
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
-	@echo "  - icestorm   : Bitstream generation tools"
+	@echo "  - ecppack    : ECP5 bitstream generation"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 endif
 	@echo ""
 	@echo "Target selection:"
-	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
-	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
+	@echo "  - make TARGET=ecp5_icepi_zero  (default: iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
 	@echo "  - make TARGET=cyclonev_analogue_pocket  (Analogue Pocket Cyclone V bring-up)"
 	@echo "  - make TARGET=gowin_tang_primer_25k  (Sipeed Tang Primer 25K bring-up)"
 	@echo ""
 	@echo "Stats output format:"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=text"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=json"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=markdown"
 	@echo ""
 	@echo "Programming selection:"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
@@ -493,10 +467,6 @@ else ifeq ($(TARGET),gowin_tang_primer_25k)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
-ifeq ($(TARGET),ice40_alchitry_cu)
-	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
-endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
