@@ -9,7 +9,7 @@ static HEAP: common::Heap = common::Heap::empty();
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
-use riscv_shared::bus::{clock_elapsed_ms_addr, LED_BASE};
+use riscv_shared::bus::{sysctrl_elapsed_ms_addr, sysctrl_led_out_addr};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -20,13 +20,13 @@ fn panic(info: &PanicInfo) -> ! {
 /// For a full sweep (16 positions) with ~62ms per position ≈ 1 second total
 const DELAY_MS: u32 = 62;
 
-/// Read the elapsed milliseconds from the clock peripheral
+/// Read the elapsed milliseconds from the system controller
 #[inline(never)]
 fn read_elapsed_ms() -> u32 {
-    unsafe { read_volatile(clock_elapsed_ms_addr() as *const u32) }
+    unsafe { read_volatile(sysctrl_elapsed_ms_addr() as *const u32) }
 }
 
-/// Delay for the specified number of milliseconds using the clock peripheral
+/// Delay for the specified number of milliseconds using the system controller
 /// This provides accurate timing independent of CPU implementation details
 #[inline(never)]
 fn delay_ms(ms: u32) {
@@ -53,7 +53,7 @@ fn delay_ms(ms: u32) {
 #[inline(never)]
 fn write_led(value: u8) {
     unsafe {
-        write_volatile(LED_BASE as *mut u32, value as u32);
+        write_volatile(sysctrl_led_out_addr() as *mut u32, value as u32);
     }
 }
 

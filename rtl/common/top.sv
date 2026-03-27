@@ -16,7 +16,7 @@
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
-    // System Clock Frequency (used by Clock Peripheral)
+    // System Clock Frequency (used by system controller elapsed-time registers)
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8      // Number of cycles to hold reset after release
 ) (
@@ -87,32 +87,6 @@ module top #(
     logic [31:0] cpu_mem_d_rdata;
     logic        cpu_mem_d_valid;
     logic        cpu_mem_d_ready;
-    
-    // ============================================================
-    // LED Controller Interface Signals
-    // ============================================================
-    logic [31:0] led_mem_a_addr;
-    logic [31:0] led_mem_a_wdata;
-    logic        led_mem_a_we;
-    logic [1:0]  led_mem_a_size;
-    logic        led_mem_a_valid;
-    logic        led_mem_a_ready;
-    logic [31:0] led_mem_d_rdata;
-    logic        led_mem_d_valid;
-    logic        led_mem_d_ready;
-    
-    // ============================================================
-    // Clock Peripheral Interface Signals
-    // ============================================================
-    logic [31:0] clock_mem_a_addr;
-    logic [31:0] clock_mem_a_wdata;
-    logic        clock_mem_a_we;
-    logic [1:0]  clock_mem_a_size;
-    logic        clock_mem_a_valid;
-    logic        clock_mem_a_ready;
-    logic [31:0] clock_mem_d_rdata;
-    logic        clock_mem_d_valid;
-    logic        clock_mem_d_ready;
     
     // ============================================================
     // SRAM Peripheral Interface Signals
@@ -199,17 +173,17 @@ module top #(
     logic [1:0]       registered_master_mem_d_valid;
     logic [1:0]       registered_master_mem_d_ready;
 
-    logic [127:0]     registered_slave_base_addr;
-    logic [127:0]     registered_slave_addr_size;
-    logic [127:0]     registered_slave_mem_a_addr;
-    logic [127:0]     registered_slave_mem_a_wdata;
-    logic [3:0]       registered_slave_mem_a_we;
-    logic [7:0]       registered_slave_mem_a_size;
-    logic [3:0]       registered_slave_mem_a_valid;
-    logic [3:0]       registered_slave_mem_a_ready;
-    logic [127:0]     registered_slave_mem_d_rdata;
-    logic [3:0]       registered_slave_mem_d_valid;
-    logic [3:0]       registered_slave_mem_d_ready;
+    logic [63:0]      registered_slave_base_addr;
+    logic [63:0]      registered_slave_addr_size;
+    logic [63:0]      registered_slave_mem_a_addr;
+    logic [63:0]      registered_slave_mem_a_wdata;
+    logic [1:0]       registered_slave_mem_a_we;
+    logic [3:0]       registered_slave_mem_a_size;
+    logic [1:0]       registered_slave_mem_a_valid;
+    logic [1:0]       registered_slave_mem_a_ready;
+    logic [63:0]      registered_slave_mem_d_rdata;
+    logic [1:0]       registered_slave_mem_d_valid;
+    logic [1:0]       registered_slave_mem_d_ready;
 
     logic             sys_bus_handshake;
 
@@ -282,13 +256,9 @@ module top #(
     assign registered_master_mem_d_ready[1] = cpu_to_arb_d_ready;
 
     assign registered_slave_base_addr[31:0] = 32'h2000_0000;
-    assign registered_slave_addr_size[31:0] = 32'h0000_0010;
-    assign registered_slave_base_addr[63:32] = 32'h5000_0000;
-    assign registered_slave_addr_size[63:32] = 32'h0000_0010;
-    assign registered_slave_base_addr[95:64] = 32'h6000_0000;
-    assign registered_slave_addr_size[95:64] = 32'h0000_0010;
-    assign registered_slave_base_addr[127:96] = 32'h7000_0000;
-    assign registered_slave_addr_size[127:96] = 32'h0000_3000;
+    assign registered_slave_addr_size[31:0] = 32'h0000_0020;
+    assign registered_slave_base_addr[63:32] = 32'h7000_0000;
+    assign registered_slave_addr_size[63:32] = 32'h0000_3000;
 
     assign sysctrl_mem_a_addr = registered_slave_mem_a_addr[31:0];
     assign sysctrl_mem_a_wdata = registered_slave_mem_a_wdata[31:0];
@@ -300,35 +270,15 @@ module top #(
     assign registered_slave_mem_d_valid[0] = sysctrl_mem_d_valid;
     assign sysctrl_mem_d_ready = registered_slave_mem_d_ready[0];
 
-    assign led_mem_a_addr = registered_slave_mem_a_addr[63:32];
-    assign led_mem_a_wdata = registered_slave_mem_a_wdata[63:32];
-    assign led_mem_a_we = registered_slave_mem_a_we[1];
-    assign led_mem_a_size = registered_slave_mem_a_size[3:2];
-    assign led_mem_a_valid = registered_slave_mem_a_valid[1];
-    assign registered_slave_mem_a_ready[1] = led_mem_a_ready;
-    assign registered_slave_mem_d_rdata[63:32] = led_mem_d_rdata;
-    assign registered_slave_mem_d_valid[1] = led_mem_d_valid;
-    assign led_mem_d_ready = registered_slave_mem_d_ready[1];
-
-    assign clock_mem_a_addr = registered_slave_mem_a_addr[95:64];
-    assign clock_mem_a_wdata = registered_slave_mem_a_wdata[95:64];
-    assign clock_mem_a_we = registered_slave_mem_a_we[2];
-    assign clock_mem_a_size = registered_slave_mem_a_size[5:4];
-    assign clock_mem_a_valid = registered_slave_mem_a_valid[2];
-    assign registered_slave_mem_a_ready[2] = clock_mem_a_ready;
-    assign registered_slave_mem_d_rdata[95:64] = clock_mem_d_rdata;
-    assign registered_slave_mem_d_valid[2] = clock_mem_d_valid;
-    assign clock_mem_d_ready = registered_slave_mem_d_ready[2];
-
-    assign sram_mem_a_addr = registered_slave_mem_a_addr[127:96];
-    assign sram_mem_a_wdata = registered_slave_mem_a_wdata[127:96];
-    assign sram_mem_a_we = registered_slave_mem_a_we[3];
-    assign sram_mem_a_size = registered_slave_mem_a_size[7:6];
-    assign sram_mem_a_valid = registered_slave_mem_a_valid[3];
-    assign registered_slave_mem_a_ready[3] = sram_mem_a_ready;
-    assign registered_slave_mem_d_rdata[127:96] = sram_mem_d_rdata;
-    assign registered_slave_mem_d_valid[3] = sram_mem_d_valid;
-    assign sram_mem_d_ready = registered_slave_mem_d_ready[3];
+    assign sram_mem_a_addr = registered_slave_mem_a_addr[63:32];
+    assign sram_mem_a_wdata = registered_slave_mem_a_wdata[63:32];
+    assign sram_mem_a_we = registered_slave_mem_a_we[1];
+    assign sram_mem_a_size = registered_slave_mem_a_size[3:2];
+    assign sram_mem_a_valid = registered_slave_mem_a_valid[1];
+    assign registered_slave_mem_a_ready[1] = sram_mem_a_ready;
+    assign registered_slave_mem_d_rdata[63:32] = sram_mem_d_rdata;
+    assign registered_slave_mem_d_valid[1] = sram_mem_d_valid;
+    assign sram_mem_d_ready = registered_slave_mem_d_ready[1];
 
     assign sys_bus_handshake =
         (host_mem_d_valid && host_mem_d_ready) ||
@@ -339,7 +289,7 @@ module top #(
     // ============================================================
     registered_bus #(
         .NUM_MASTERS(2),
-        .NUM_SLAVES(4)
+        .NUM_SLAVES(2)
     ) rtl_registered_bus (
         .clk(clk),
         .rst(rst_internal),
@@ -462,46 +412,6 @@ module top #(
     assign cpu_booting = cpu_is_booting;
     
     // ============================================================
-    // LED Controller Instantiation
-    // ============================================================
-    led_controller_peripheral led_ctrl (
-        .clk(clk),
-        .rst(rst_internal),
-
-        .mem_a_addr(led_mem_a_addr),
-        .mem_a_wdata(led_mem_a_wdata),
-        .mem_a_we(led_mem_a_we),
-        .mem_a_size(led_mem_a_size),
-        .mem_a_valid(led_mem_a_valid),
-        .mem_a_ready(led_mem_a_ready),
-        .mem_d_rdata(led_mem_d_rdata),
-        .mem_d_valid(led_mem_d_valid),
-        .mem_d_ready(led_mem_d_ready),
-
-        .led_out(led_out)
-    );
-    
-    // ============================================================
-    // Clock Peripheral Instantiation
-    // ============================================================
-    clock_peripheral #(
-        .CLK_FREQ_HZ(CLK_FREQ_HZ)
-    ) clock_periph (
-        .clk(clk),
-        .rst(rst_internal),
-
-        .mem_a_addr(clock_mem_a_addr),
-        .mem_a_wdata(clock_mem_a_wdata),
-        .mem_a_we(clock_mem_a_we),
-        .mem_a_size(clock_mem_a_size),
-        .mem_a_valid(clock_mem_a_valid),
-        .mem_a_ready(clock_mem_a_ready),
-        .mem_d_rdata(clock_mem_d_rdata),
-        .mem_d_valid(clock_mem_d_valid),
-        .mem_d_ready(clock_mem_d_ready)
-    );
-    
-    // ============================================================
     // SRAM Peripheral Instantiation
     // ============================================================
     sram_peripheral sram_periph (
@@ -522,7 +432,9 @@ module top #(
     // ============================================================
     // System Controller Instantiation
     // ============================================================
-    system_controller sysctrl (
+    system_controller #(
+        .CLK_FREQ_HZ(CLK_FREQ_HZ)
+    ) sysctrl (
         .clk(clk),
         .rst(rst_internal),
 
@@ -543,6 +455,7 @@ module top #(
         .cpu_boot(sysctrl_cpu_boot),
         .req_cpu_halt(sysctrl_req_cpu_halt),
         .halted_value(sysctrl_halted_value),
+        .led_out(led_out),
         
         // CPU status inputs
         .cpu_halted(cpu_halted_internal),

@@ -111,7 +111,6 @@ yosys -q -p " \
     ../common/memory/registered_bus.sv ../common/memory/sync_dpram.sv ../common/cpu/regfile.sv \
     ../common/primitives/sync_fifo.sv ../common/primitives/reset_controller.sv ../common/io/uart.sv \
     ../common/memory/sram.sv ../common/cpu/writeback_mux.sv ../common/cpu/cpu.sv \
-    ../common/peripherals/clock_peripheral.sv ../common/peripherals/led_controller_peripheral.sv \
     ../common/peripherals/sram_peripheral.sv ../common/peripherals/system_controller_peripheral.sv \
     ../common/top.sv common/fpga_common_top.sv ecp5_icepi_zero/ecp5_icepi_zero_top.sv; \
   hierarchy -check -top ecp5_icepi_zero_top; \

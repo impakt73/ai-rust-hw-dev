@@ -2,6 +2,11 @@
 
 Generated: 2026-03-08 18:27 UTC
 
+> **Note:** This report predates the consolidation of the standalone LED and clock
+> peripherals into `system_controller`. The rows for `clock_peripheral` and
+> `led_controller_peripheral` are therefore historical and now correspond to
+> logic integrated into `system_controller` in the current design.
+
 ## Scope
 
 - Re-runs synthesis/resource analysis on the default FPGA target:

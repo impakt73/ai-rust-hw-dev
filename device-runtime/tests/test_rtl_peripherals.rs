@@ -2,7 +2,7 @@
 //!
 //! This module contains integration tests for RTL-based peripherals including:
 //!
-//! - LED Controller peripheral (0x50000000)
+//! - System controller LED register (0x20000010)
 //! - Host-initiated bus request system
 //! - Host-to-RTL peripheral communication path
 //! - CPU-initiated peripheral access
@@ -25,11 +25,14 @@ use riscv_core::instruction::{
     addi, andi, beq, blt, bne, ebreak, jal, lui, lw, ori, sb, sh, sub, sw,
 };
 use riscv_shared::bus::{
-    DRAM_BASE, LED_BASE, LED_OUT_OFFSET, LED_SIZE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE,
-    SYSCTRL_BASE, SYSCTRL_STATUS_OFFSET,
+    sysctrl_led_out_addr, DRAM_BASE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, SYSCTRL_BASE,
+    SYSCTRL_LED_OUT_OFFSET, SYSCTRL_SIZE, SYSCTRL_STATUS_OFFSET,
 };
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 use std::time::Duration;
+
+const LED_ADDR: u32 = sysctrl_led_out_addr();
+const LED_OFFSET_I32: i32 = SYSCTRL_LED_OUT_OFFSET as i32;
 
 // ============================================================================
 // LED Controller Peripheral Tests
@@ -37,17 +40,22 @@ use std::time::Duration;
 
 #[test]
 fn test_led_constants() {
-    // Verify LED controller memory map constants
-    assert_eq!(LED_BASE, 0x50000000, "LED base address");
-    assert_eq!(LED_OUT_OFFSET, 0x00, "LED_OUT register offset");
-    assert_eq!(LED_SIZE, 0x10, "LED controller size");
+    // Verify integrated system-controller LED register memory map constants
+    assert_eq!(SYSCTRL_BASE, 0x20000000, "System controller base address");
+    assert_eq!(SYSCTRL_LED_OUT_OFFSET, 0x10, "LED_OUT register offset");
+    assert_eq!(SYSCTRL_SIZE, 0x20, "System controller size");
+    assert_eq!(LED_ADDR, 0x20000010, "LED register address");
 }
 
 #[test]
 fn test_led_basic_write_word() {
     let mut runtime = create_test_runtime();
 
-    let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0xAA), sw(15, 14, 0)];
+    let mut instructions = vec![
+        lui(15, SYSCTRL_BASE),
+        addi(14, 0, 0xAA),
+        sw(15, 14, LED_OFFSET_I32),
+    ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     load_and_boot(
@@ -65,7 +73,11 @@ fn test_led_basic_write_word() {
 fn test_led_byte_access() {
     let mut runtime = create_test_runtime();
 
-    let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0x55), sb(15, 14, 0)];
+    let mut instructions = vec![
+        lui(15, SYSCTRL_BASE),
+        addi(14, 0, 0x55),
+        sb(15, 14, LED_OFFSET_I32),
+    ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     load_and_boot(
@@ -83,7 +95,11 @@ fn test_led_byte_access() {
 fn test_led_halfword_access() {
     let mut runtime = create_test_runtime();
 
-    let mut instructions = vec![lui(15, LED_BASE), addi(14, 0, 0xFF), sh(15, 14, 0)];
+    let mut instructions = vec![
+        lui(15, SYSCTRL_BASE),
+        addi(14, 0, 0xFF),
+        sh(15, 14, LED_OFFSET_I32),
+    ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
     load_and_boot(
@@ -103,10 +119,10 @@ fn test_led_read_back() {
 
     // CPU writes, reads back, and verifies - tohost only reached if successful
     let instructions = vec![
-        lui(15, LED_BASE),
+        lui(15, SYSCTRL_BASE),
         addi(14, 0, 0xCC),
-        sw(15, 14, 0),
-        lw(13, 15, 0),
+        sw(15, 14, LED_OFFSET_I32),
+        lw(13, 15, LED_OFFSET_I32),
         andi(13, 13, 0xFF),
         addi(12, 0, 0xCC),
         sub(11, 13, 12),
@@ -138,15 +154,15 @@ fn test_led_pattern_sequence() {
     let mut runtime = create_test_runtime();
 
     let mut instructions = vec![
-        lui(15, LED_BASE),
+        lui(15, SYSCTRL_BASE),
         addi(14, 0, 0x00),
-        sw(15, 14, 0),
+        sw(15, 14, LED_OFFSET_I32),
         addi(14, 0, 0xFF),
-        sw(15, 14, 0),
+        sw(15, 14, LED_OFFSET_I32),
         addi(14, 0, 0xAA),
-        sw(15, 14, 0),
+        sw(15, 14, LED_OFFSET_I32),
         addi(14, 0, 0x55),
-        sw(15, 14, 0),
+        sw(15, 14, LED_OFFSET_I32),
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
@@ -167,11 +183,11 @@ fn test_led_upper_bits_ignored() {
 
     // Write value with upper bits set, read back, verify only lower 8 bits
     let instructions = vec![
-        lui(15, LED_BASE),
+        lui(15, SYSCTRL_BASE),
         lui(14, 0xFFFFF000),
         ori(14, 14, 0xAA),
-        sw(15, 14, 0),
-        lw(13, 15, 0),
+        sw(15, 14, LED_OFFSET_I32),
+        lw(13, 15, LED_OFFSET_I32),
         andi(13, 13, 0xFF),
         addi(12, 0, 0xAA),
         sub(11, 13, 12),
@@ -204,16 +220,16 @@ fn test_led_upper_bits_ignored() {
 
 /// Test basic synchronization using host-initiated LED write.
 ///
-/// The CPU polls the LED register waiting for a non-zero value.
-/// The host writes to the LED peripheral via host bus request.
+/// The CPU polls the system controller LED register waiting for a non-zero value.
+/// The host writes to the LED register via host bus request.
 #[test]
 fn test_host_initiated_basic_sync() {
     let mut runtime = create_test_runtime();
 
-    // Program that spins on LED peripheral until it becomes non-zero
+    // Program that spins on the system controller LED register until it becomes non-zero
     let mut instructions = vec![
-        lui(15, LED_BASE),  // x15 = LED base address (0x50000000)
-        lw(14, 15, 0),      // x14 = LED peripheral value
+        lui(15, SYSCTRL_BASE), // x15 = system controller base address
+        lw(14, 15, LED_OFFSET_I32), // x14 = LED register value
         andi(14, 14, 0xFF), // mask to 8 bits
         beq(14, 0, -8),     // if x14 == 0, loop back to lw
     ];
@@ -226,8 +242,8 @@ fn test_host_initiated_basic_sync() {
     // Let CPU spin for a moment before releasing the fence
     std::thread::sleep(Duration::from_millis(10));
 
-    // Write to LED peripheral via host-initiated request to release CPU from spin loop
-    write_word_with_timeout(runtime.as_mut(), LED_BASE, 0x01, MEDIUM_TIMEOUT);
+    // Write to the LED register via host-initiated request to release CPU from spin loop
+    write_word_with_timeout(runtime.as_mut(), LED_ADDR, 0x01, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
     assert_eq!(
@@ -238,7 +254,7 @@ fn test_host_initiated_basic_sync() {
 
 /// Test host-initiated LED write with CPU verification.
 ///
-/// The host writes a known value to LED peripheral, CPU verifies it.
+/// The host writes a known value to the system controller LED register, CPU verifies it.
 #[test]
 fn test_host_initiated_led_write() {
     let mut runtime = create_test_runtime();
@@ -252,17 +268,17 @@ fn test_host_initiated_led_write() {
     // 3. Reads the actual LED value from LED peripheral
     // 4. Compares and writes result to tohost
     let instructions = vec![
-        lui(15, LED_BASE),        // x15 = LED base address
+        lui(15, SYSCTRL_BASE),    // x15 = system controller base address
         lui(14, 0x80001000),      // x14 = DRAM base for expected value
         lui(9, SIM_CONTROL_BASE), // x9 = tohost address
         // Wait for LED fence (non-zero value)
-        lw(12, 15, 0),      // x12 = LED peripheral value
+        lw(12, 15, LED_OFFSET_I32), // x12 = LED register value
         andi(12, 12, 0xFF), // mask to 8 bits
         beq(12, 0, -8),     // spin while LED == 0
         // Read expected value from DRAM and actual LED value
         lw(11, 14, 0),      // x11 = expected LED value from DRAM
         andi(11, 11, 0xFF), // mask to 8 bits
-        lw(10, 15, 0),      // x10 = LED peripheral value
+        lw(10, 15, LED_OFFSET_I32), // x10 = LED register value
         andi(10, 10, 0xFF), // mask to 8 bits
         // Compare actual vs expected
         sub(8, 10, 11), // x8 = actual - expected
@@ -293,8 +309,8 @@ fn test_host_initiated_led_write() {
     // Let CPU spin
     std::thread::sleep(Duration::from_millis(10));
 
-    // Write test value to LED peripheral via host request
-    write_word_with_timeout(runtime.as_mut(), LED_BASE, TEST_VALUE, MEDIUM_TIMEOUT);
+    // Write test value to the LED register via host request
+    write_word_with_timeout(runtime.as_mut(), LED_ADDR, TEST_VALUE, MEDIUM_TIMEOUT);
 
     // Wait for tohost termination
     assert_eq!(
@@ -305,7 +321,7 @@ fn test_host_initiated_led_write() {
 
 /// Test host-initiated LED read.
 ///
-/// The CPU writes a value to the LED peripheral, then the host reads it back.
+/// The CPU writes a value to the system controller LED register, then the host reads it back.
 #[test]
 fn test_host_initiated_led_read() {
     let mut runtime = create_test_runtime();
@@ -314,9 +330,9 @@ fn test_host_initiated_led_read() {
 
     // CPU writes to LED, executes delay NOPs so host can read it, then terminates
     let mut instructions = vec![
-        lui(15, LED_BASE), // LED base
+        lui(15, SYSCTRL_BASE), // system controller base
         addi(14, 0, LED_VALUE as i32),
-        sw(15, 14, 0), // Write to LED
+        sw(15, 14, LED_OFFSET_I32), // Write to LED register
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
 
@@ -330,7 +346,7 @@ fn test_host_initiated_led_read() {
     );
 
     // Read back LED value via host bus request
-    let led_value = read_word_with_timeout(runtime.as_mut(), LED_BASE, SHORT_TIMEOUT);
+    let led_value = read_word_with_timeout(runtime.as_mut(), LED_ADDR, SHORT_TIMEOUT);
     assert_eq!(
         led_value & 0xFF,
         LED_VALUE as u32,
@@ -347,8 +363,8 @@ fn test_host_request_address_validation() {
     let mut runtime = create_test_runtime();
 
     let mut instructions = vec![
-        lui(15, LED_BASE),
-        lw(14, 15, 0),
+        lui(15, SYSCTRL_BASE),
+        lw(14, 15, LED_OFFSET_I32),
         andi(14, 14, 0xFF),
         beq(14, 0, -8),
     ];
@@ -359,16 +375,16 @@ fn test_host_request_address_validation() {
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     std::thread::sleep(Duration::from_millis(10));
 
-    let first_req = BusRequest::write(LED_BASE, 0x01, AccessSize::Byte);
+    let first_req = BusRequest::write(LED_ADDR, 0x01, AccessSize::Byte);
     runtime
         .send_host_request(first_req)
         .expect("Request to RTL peripheral space should succeed");
-    let second_req = BusRequest::write(LED_BASE + 4, 0x02, AccessSize::Byte);
+    let second_req = BusRequest::write(LED_ADDR + 4, 0x02, AccessSize::Byte);
     assert!(
         runtime.send_host_request(second_req).is_err(),
         "Request while pending should fail"
     );
-    let first_wdata = wait_for_host_write_response(runtime.as_mut(), LED_BASE, MEDIUM_TIMEOUT);
+    let first_wdata = wait_for_host_write_response(runtime.as_mut(), LED_ADDR, MEDIUM_TIMEOUT);
     assert_eq!(
         first_wdata, 0x01,
         "First host write response should match request"
@@ -388,10 +404,10 @@ fn test_multiple_host_requests() {
 
     // Program that spins on LED until it reaches a specific value
     let mut instructions = vec![
-        lui(15, LED_BASE), // x15 = LED base
+        lui(15, SYSCTRL_BASE), // x15 = system controller base
         addi(14, 0, 3),    // x14 = target count (3)
         // Spin loop: wait until LED value >= 3
-        lw(12, 15, 0),      // x12 = LED value
+        lw(12, 15, LED_OFFSET_I32), // x12 = LED value
         andi(12, 12, 0xFF), // mask to 8 bits
         blt(12, 14, -8),    // if LED < 3, loop
     ];
@@ -406,7 +422,7 @@ fn test_multiple_host_requests() {
 
     // Send three sequential write requests
     for count in 1..=3 {
-        write_word_with_timeout(runtime.as_mut(), LED_BASE, count, MEDIUM_TIMEOUT);
+        write_word_with_timeout(runtime.as_mut(), LED_ADDR, count, MEDIUM_TIMEOUT);
     }
 
     // Wait for tohost termination
