@@ -127,6 +127,17 @@ module bitmap_text_renderer #(
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_offset;
     logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_offset;
 
+    logic [7:0] scroll_x_offset;
+    logic [7:0] scroll_y_offset;
+
+    localparam int unsigned RED_OFFSET = 128;
+    localparam int unsigned GREEN_OFFSET = 64;
+    localparam int unsigned BLUE_OFFSET = 32;
+
+    logic [7:0] pixel_data_red;
+    logic [7:0] pixel_data_green;
+    logic [7:0] pixel_data_blue;
+
     video_sync #(
         .H_ACTIVE(ACTIVE_WIDTH),
         .H_FRONT_PORCH(H_FRONT_PORCH),
@@ -223,7 +234,8 @@ module bitmap_text_renderer #(
     end
 
     always_comb begin
-        fetch_scan_x_offset = fetch_scan_x_prefetch - H_ACTIVE_START;
+        fetch_scan_x_offset = fetch_scan_x_prefetch - H_ACTIVE_START + scroll_x_offset;
+        //fetch_scan_y_offset = fetch_scan_y_prefetch - V_ACTIVE_START + scroll_y_offset;
         fetch_scan_y_offset = fetch_scan_y_prefetch - V_ACTIVE_START;
         fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_scan_x_offset >> 3);
         fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_scan_y_offset >> 3);
@@ -238,7 +250,7 @@ module bitmap_text_renderer #(
 
     always_comb begin
         font_addr = {char_map_rdata, glyph_offset_d2};
-        palette_addr = font_glyph_rdata;
+        palette_addr = font_glyph_rdata[FONT_ROM_DATA_WIDTH-1] ? char_map_addr[PALETTE_ROM_ADDR_WIDTH-1:0] + ( scroll_x_offset >> 2 ) : '0;
         pixel_data_next = sync_video_de
             ? palette_rdata
             : '0;
@@ -260,6 +272,8 @@ module bitmap_text_renderer #(
             glyph_offset_d1 <= '0;
             glyph_offset_d2 <= '0;
             pixel_data <= '0;
+            scroll_x_offset <= '0;
+            scroll_y_offset <= '0;
         end else begin
             fetch_scan_x_prefetch <= fetch_scan_x_next;
             fetch_scan_y_prefetch <= fetch_scan_y_next;
@@ -275,6 +289,8 @@ module bitmap_text_renderer #(
             active_x <= sync_active_x;
             active_y <= sync_active_y;
             pixel_data <= pixel_data_next;
+            scroll_x_offset <= sync_frame_start ? scroll_x_offset + 1'b1 : scroll_x_offset;
+            scroll_y_offset <= sync_frame_start ? scroll_y_offset + 1'b1 : scroll_y_offset;
         end
     end
 
