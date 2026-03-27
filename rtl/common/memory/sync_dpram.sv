@@ -1,17 +1,17 @@
 `default_nettype none
 // Synchronous Simple Dual-Port RAM Module
 // One write port, one read port, separate clocks
-// Designed to infer to iCE40 Block RAM on FPGA
+// Designed to infer to FPGA block RAM when the target toolchain supports it
 //
-// BRAM INFERENCE REQUIREMENTS (iCE40 / Yosys):
-// - Separate read/write clocks are supported by iCE40 BRAM primitives
+// BRAM INFERENCE REQUIREMENTS (portable Yosys-style flow):
+// - Separate read/write clocks are supported by common FPGA simple dual-port RAM primitives
 // - Synchronous reads (output registered on clock edge)
 // - Exhaustive assignment to output (no conditional output)
 // - Simple dual-port: one write port, one read port
 //
 // This module is parameterized for width and depth.
-// For iCE40-HX8K: Each SB_RAM40_4K block is 256x16 or 512x8 etc.
-// Yosys will combine blocks as needed for wider/deeper configurations.
+// The exact mapped primitive shape is target-dependent; synthesis combines blocks
+// as needed for wider/deeper configurations.
 
 module sync_dpram #(
     parameter int DATA_WIDTH = 32,

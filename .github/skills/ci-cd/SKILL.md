@@ -96,7 +96,6 @@ No lint errors should be reported.
 ```bash
 (cd rtl/fpga && make)
 ```
-Synthesis must complete successfully. This verifies that RTL changes can be synthesized to an FPGA target (iCE40-HX8K).
 Synthesis must complete successfully. This verifies that RTL changes can be synthesized to the default FPGA target (iCE Pi Zero ECP5-25F).
 
 #### 7. Verify CI Pipeline Status
