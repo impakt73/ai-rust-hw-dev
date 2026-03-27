@@ -3,7 +3,9 @@
 // Controls CPU boot process, system reset, and CPU reset
 // Provides CPU status monitoring via memory-mapped registers
 
-module system_controller (
+module system_controller #(
+    parameter int CLK_FREQ_HZ = 1_000_000
+) (
     // Clock and reset
     input wire logic        clk,
     input wire logic        rst,
@@ -28,6 +30,7 @@ module system_controller (
     output logic        cpu_boot,      // Boot signal output to CPU
     output logic        req_cpu_halt,  // Pulse to request CPU halt
     output logic [31:0] halted_value,  // Latched halt value register
+    output logic [7:0]  led_out,       // User LED output register
     
     // CPU status inputs
     input wire logic        cpu_halted,    // From CPU halted signal
@@ -37,21 +40,47 @@ module system_controller (
     // ========================================================================
     // Register Map (offsets from base address)
     // ========================================================================
-    localparam logic [3:0] REG_STATUS = 4'h0;  // Read-only: CPU status
-    localparam logic [3:0] REG_RESET  = 4'h4;  // Write-only: Reset control
-    localparam logic [3:0] REG_BOOT   = 4'h8;  // Write-only: Boot address
-    localparam logic [3:0] REG_HALT   = 4'hC;  // Read/write: Halt code
+    localparam logic [4:0] REG_STATUS     = 5'h00;  // Read-only: CPU status
+    localparam logic [4:0] REG_RESET      = 5'h04;  // Write-only: Reset control
+    localparam logic [4:0] REG_BOOT       = 5'h08;  // Write-only: Boot address
+    localparam logic [4:0] REG_HALT       = 5'h0C;  // Read/write: Halt code
+    localparam logic [4:0] REG_LED_OUT    = 5'h10;  // Read/write: LED output
+    localparam logic [4:0] REG_ELAPSED_US = 5'h14;  // Read-only: Elapsed microseconds
+    localparam logic [4:0] REG_ELAPSED_MS = 5'h18;  // Read-only: Elapsed milliseconds
+    localparam logic [4:0] REG_ELAPSED_S  = 5'h1C;  // Read-only: Elapsed seconds
     
     // ========================================================================
     // Internal Registers
     // ========================================================================
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
+    logic [7:0]  led_out_reg;            // Stored LED output
     logic        sys_reset_pending;      // Delayed system reset pulse
     logic [31:0] response_data;
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    localparam int CYCLES_PER_US = (CLK_FREQ_HZ >= 1_000_000) ? (CLK_FREQ_HZ / 1_000_000) : 1;
+    localparam int CYCLE_COUNTER_WIDTH = (CYCLES_PER_US > 1) ? $clog2(CYCLES_PER_US) : 1;
+    logic [CYCLE_COUNTER_WIDTH-1:0] cycle_counter;
+    logic [9:0] us_sub_counter;
+    logic [9:0] ms_sub_counter;
+    logic [31:0] elapsed_us;
+    logic [31:0] elapsed_ms;
+    logic [31:0] elapsed_s;
+    logic microsecond_elapsed;
+    logic millisecond_elapsed;
+    logic second_elapsed;
+
+    initial begin
+        if (CLK_FREQ_HZ < 1_000_000) begin
+            $fatal(
+                1,
+                "system_controller: CLK_FREQ_HZ (%0d Hz) must be >= 1_000_000 Hz for valid elapsed time counters.",
+                CLK_FREQ_HZ
+            );
+        end
+    end
 
     typedef enum logic [1:0] {
         CPU_RESET_IDLE      = 2'b00,
@@ -67,6 +96,85 @@ module system_controller (
     assign mem_a_ready = !response_pending && (cpu_reset_state == CPU_RESET_IDLE);
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
+    assign led_out = led_out_reg;
+
+    generate
+        if (CYCLES_PER_US == 1) begin : gen_1mhz
+            assign microsecond_elapsed = 1'b1;
+
+            always_ff @(posedge clk) begin
+                if (rst) begin
+                    cycle_counter <= '0;
+                end else begin
+                    cycle_counter <= '0;
+                end
+            end
+        end else begin : gen_high_freq
+            always_ff @(posedge clk) begin
+                if (rst) begin
+                    cycle_counter <= '0;
+                end else if (cycle_counter >= CYCLE_COUNTER_WIDTH'(CYCLES_PER_US - 1)) begin
+                    cycle_counter <= '0;
+                end else begin
+                    cycle_counter <= cycle_counter + 1'b1;
+                end
+            end
+
+            assign microsecond_elapsed = (cycle_counter >= CYCLE_COUNTER_WIDTH'(CYCLES_PER_US - 1));
+        end
+    endgenerate
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            elapsed_us <= 32'h0;
+        end else if (microsecond_elapsed) begin
+            elapsed_us <= elapsed_us + 32'h1;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            us_sub_counter <= 10'h0;
+        end else if (microsecond_elapsed) begin
+            if (us_sub_counter >= 10'd999) begin
+                us_sub_counter <= 10'h0;
+            end else begin
+                us_sub_counter <= us_sub_counter + 10'h1;
+            end
+        end
+    end
+
+    assign millisecond_elapsed = microsecond_elapsed && (us_sub_counter >= 10'd999);
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            elapsed_ms <= 32'h0;
+        end else if (millisecond_elapsed) begin
+            elapsed_ms <= elapsed_ms + 32'h1;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            ms_sub_counter <= 10'h0;
+        end else if (millisecond_elapsed) begin
+            if (ms_sub_counter >= 10'd999) begin
+                ms_sub_counter <= 10'h0;
+            end else begin
+                ms_sub_counter <= ms_sub_counter + 10'h1;
+            end
+        end
+    end
+
+    assign second_elapsed = millisecond_elapsed && (ms_sub_counter >= 10'd999);
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            elapsed_s <= 32'h0;
+        end else if (second_elapsed) begin
+            elapsed_s <= elapsed_s + 32'h1;
+        end
+    end
 
     // ========================================================================
     // Main Control Registers
@@ -78,6 +186,7 @@ module system_controller (
             cpu_boot      <= 1'b0;
             boot_addr_reg <= 32'h00000000;
             halt_reg      <= 32'h00000000;
+            led_out_reg   <= 8'h00;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
             response_pending <= 1'b0;
@@ -100,7 +209,7 @@ module system_controller (
                         response_data <= 32'h00000000;
 
                         if (mem_a_we) begin
-                            case (mem_a_addr[3:0])  // Use only register offset bits
+                            case (mem_a_addr[4:0])  // Use only register offset bits
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
                                     boot_addr_reg <= mem_a_wdata;
@@ -124,6 +233,27 @@ module system_controller (
                                     response_pending <= 1'b1;
                                 end
 
+                                REG_LED_OUT: begin
+                                    case (mem_a_size)
+                                        2'b00: begin
+                                            if (mem_a_addr[1:0] == 2'b00) begin
+                                                led_out_reg <= mem_a_wdata[7:0];
+                                            end
+                                        end
+                                        2'b01: begin
+                                            if (mem_a_addr[1:0] == 2'b00) begin
+                                                led_out_reg <= mem_a_wdata[7:0];
+                                            end
+                                        end
+                                        2'b10: begin
+                                            led_out_reg <= mem_a_wdata[7:0];
+                                        end
+                                        default: begin
+                                        end
+                                    endcase
+                                    response_pending <= 1'b1;
+                                end
+
                                 default: begin
                                     response_pending <= 1'b1;
                                 end
@@ -131,7 +261,7 @@ module system_controller (
                         end else begin
                             response_pending <= 1'b1;
 
-                            case (mem_a_addr[3:0])
+                            case (mem_a_addr[4:0])
                                 REG_STATUS: begin
                                     // Bit 0 = cpu_booting, Bit 1 = cpu_halted
                                     response_data <= {30'h0, cpu_halted, cpu_booting};
@@ -139,6 +269,22 @@ module system_controller (
 
                                 REG_HALT: begin
                                     response_data <= halt_reg;
+                                end
+
+                                REG_LED_OUT: begin
+                                    response_data <= {24'h0, led_out_reg};
+                                end
+
+                                REG_ELAPSED_US: begin
+                                    response_data <= elapsed_us;
+                                end
+
+                                REG_ELAPSED_MS: begin
+                                    response_data <= elapsed_ms;
+                                end
+
+                                REG_ELAPSED_S: begin
+                                    response_data <= elapsed_s;
                                 end
 
                                 // RESET and BOOT registers are write-only, read as 0
@@ -180,9 +326,5 @@ module system_controller (
     assign cpu_boot_addr = boot_addr_reg;
     assign halted_value  = halt_reg;
     
-    // ========================================================================
-    logic [1:0] unused_size;
-    assign unused_size = mem_a_size;
-
 endmodule
 `default_nettype wire

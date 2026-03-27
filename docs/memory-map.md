@@ -14,9 +14,7 @@ Address Range            | Device              | Type | Description
 0xA0000000 - 0xA000000F  | Audio               | Rust | Audio buffer
 0xB0000000 - 0xB0000007  | FIFO                | Rust | Host communication FIFO
 0xC0000000 - 0xC0000013  | DMA                 | Rust | DMA controller
-0x20000000 - 0x2000000F  | System Controller   | RTL  | CPU boot and reset control
-0x50000000 - 0x5000000F  | LED Controller      | RTL  | 8-bit LED output register
-0x60000000 - 0x6000000F  | Clock Peripheral    | RTL  | Elapsed time counters (us/ms/s)
+0x20000000 - 0x2000001F  | System Controller   | RTL  | CPU control, LED output, elapsed time
 0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
 0x80000000 - 0x8FFFFFFF  | DRAM                | Rust | System memory (256 MiB)
 ```
@@ -109,29 +107,6 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 
 ## RTL Peripherals (top-nibble decoded windows)
 
-### LED Controller (0x50000000)
-
-| Offset | Register | Access | Description |
-|--------|----------|--------|-------------|
-| 0x00   | LED_OUT  | RW     | Bits [7:0]: LED output data |
-
-- **Access sizes:** Byte, halfword, word
-- **Latency:** Single-cycle (ready = 1'b1)
-- **Constants:** `LED_BASE`, `LED_SIZE`, `LED_OUT_OFFSET`
-
-### Clock Peripheral (0x60000000)
-
-| Offset | Register   | Access | Description |
-|--------|------------|--------|-------------|
-| 0x00   | ELAPSED_US | RO     | Elapsed microseconds since reset |
-| 0x04   | ELAPSED_MS | RO     | Elapsed milliseconds since reset |
-| 0x08   | ELAPSED_S  | RO     | Elapsed seconds since reset |
-
-- **Access sizes:** Word (32-bit)
-- **Latency:** Single-cycle (ready = 1'b1)
-- **Note:** Clock frequency is configurable via `CLK_FREQ_HZ` parameter
-- **Constants:** `CLOCK_BASE`, `CLOCK_SIZE`, `CLOCK_ELAPSED_US_OFFSET`, `CLOCK_ELAPSED_MS_OFFSET`, `CLOCK_ELAPSED_S_OFFSET`
-
 ### SRAM Peripheral (0x70000000)
 
 12KB of general-purpose on-chip SRAM. Used by `rust-test-program` for the text, rodata, data, bss, and stack sections.
@@ -149,8 +124,15 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 | 0x04   | RESET    | WO     | Write-data bit 0 selects reset type: 0 = system reset, 1 = CPU reset (halt → reset pulse → wait for cpu_booting) |
 | 0x08   | BOOT     | WO     | Write boot address to start CPU |
 | 0x0C   | HALT     | RW     | Halt termination code (write requests CPU halt next cycle) |
+| 0x10   | LED_OUT  | RW     | Bits [7:0]: LED output data |
+| 0x14   | ELAPSED_US | RO   | Elapsed microseconds since reset |
+| 0x18   | ELAPSED_MS | RO   | Elapsed milliseconds since reset |
+| 0x1C   | ELAPSED_S  | RO   | Elapsed seconds since reset |
 
-- **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`
+- **Access sizes:** `LED_OUT` supports byte, halfword, and word accesses; the elapsed-time registers are word reads.
+- **Latency:** Single-cycle (ready = 1'b1)
+- **Note:** Elapsed-time counters use the system controller `CLK_FREQ_HZ` parameter.
+- **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`, `SYSCTRL_LED_OUT_OFFSET`, `SYSCTRL_ELAPSED_US_OFFSET`, `SYSCTRL_ELAPSED_MS_OFFSET`, `SYSCTRL_ELAPSED_S_OFFSET`
 - **CPU reset sequencing:** `RESET` writes with bit 0 set hold `req_cpu_halt` high until `cpu_halted`, pulse `cpu_rst_n` low for one cycle, and block new A-channel requests until `cpu_booting` reasserts and the D-channel completion response is returned.
 
 ## DRAM (0x80000000 - 0x8FFFFFFF)

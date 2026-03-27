@@ -48,13 +48,6 @@ pub struct FpRegFile;
 #[verilog(src = "../rtl/common/fpu/fpu.sv", name = "fpu")]
 pub struct Fpu;
 
-// Define LED Controller module
-#[verilog(
-    src = "../rtl/common/peripherals/led_controller_peripheral.sv",
-    name = "led_controller_peripheral"
-)]
-pub struct LedControllerPeripheral;
-
 // Define UART core module (no FIFOs, ready/valid interface)
 #[verilog(src = "../rtl/common/io/uart.sv", name = "uart")]
 pub struct Uart;
@@ -83,13 +76,6 @@ pub struct I2sSerializerExpandWrapper;
     name = "i2s_serializer_truncate_wrapper"
 )]
 pub struct I2sSerializerTruncateWrapper;
-
-// Define Clock Peripheral module
-#[verilog(
-    src = "../rtl/common/peripherals/clock_peripheral.sv",
-    name = "clock_peripheral"
-)]
-pub struct ClockPeripheral;
 
 // Define System Controller module
 #[verilog(
@@ -325,8 +311,6 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller
-        "peripherals/led_controller_peripheral.sv", // LED controller peripheral
-        "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
         "memory/sram.sv",     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
@@ -396,11 +380,6 @@ pub fn create_i2s_serializer_runtime() -> Result<VerilatorRuntime, Box<dyn std::
         "io/i2s_serializer.sv",
         "wrappers/i2s_serializer_test_wrappers.sv",
     ])
-}
-
-// Helper function to create a runtime for the Clock Peripheral
-pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["peripherals/clock_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the System Controller

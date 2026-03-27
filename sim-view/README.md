@@ -196,7 +196,7 @@ The simulator uses the following memory-mapped I/O addresses:
 - `0x9000_0000` - Video device (`VIDEO_BASE`)
 - `0xA000_0000` - Audio device (`AUDIO_BASE`)
 - `0xB000_0000` - FIFO device - Built-in
-- `0x2000_0000`, `0x5000_0000`, `0x6000_0000`, `0x7000_0000` windows - RTL peripherals
+- `0x2000_0000` and `0x7000_0000` windows - RTL peripherals
 - `0x8000_0000 - 0x8FFF_FFFF` - DRAM - Built-in
 
 For the full memory map, see [`docs/memory-map.md`](../docs/memory-map.md).
