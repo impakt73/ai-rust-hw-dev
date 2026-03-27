@@ -37,7 +37,8 @@ module bitmap_text_renderer #(
     parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
     parameter bit VSYNC_ACTIVE_HIGH = 1'b0,
     parameter FONT_INIT_FILE = "",
-    parameter CHAR_MAP_INIT_FILE = ""
+    parameter CHAR_MAP_INIT_FILE = "",
+    parameter PALETTE_INIT_FILE = ""
 ) (
     input wire logic clk,
     input wire logic rst,
@@ -58,6 +59,8 @@ module bitmap_text_renderer #(
         FONT_ROW_INDEX_WIDTH + FONT_COLUMN_INDEX_WIDTH;
     localparam int unsigned FONT_ROM_ADDR_WIDTH =
         8 + FONT_GLYPH_OFFSET_WIDTH;
+    localparam int unsigned PALETTE_ROM_DATA_WIDTH = 24;
+    localparam int unsigned PALETTE_ROM_ADDR_WIDTH = FONT_ROM_DATA_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
     // Back-porch budget for the renderer's per-pixel ROM prefetch pipeline:
     //   - 1 cycle: registered fetch-wrap/prefetch scan stage
@@ -65,9 +68,11 @@ module bitmap_text_renderer #(
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-pixel sync_sprom latency (`font_addr` combines
     //               `char_map_rdata` with the aligned glyph row/column)
-    // The horizontal back porch must cover this 6-cycle prefetch lead so the
+    //   - 2 cycles: palette sync_sprom latency (`font_glyph_rdata` indexes the
+    //               24-bit RGB lookup table)
+    // The horizontal back porch must cover this 8-cycle prefetch lead so the
     // pipeline is fully primed before scanout enters the active region.
-    localparam int unsigned FONT_PIPELINE_CYCLES = 6;
+    localparam int unsigned FONT_PIPELINE_CYCLES = 8;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
@@ -103,6 +108,8 @@ module bitmap_text_renderer #(
     logic [CHARMAP_DATA_WIDTH-1:0] char_map_rdata;
     logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
+    logic [PALETTE_ROM_ADDR_WIDTH-1:0] palette_addr;
+    logic [PALETTE_ROM_DATA_WIDTH-1:0] palette_rdata;
 
     logic [23:0] pixel_data_next;
     logic [H_COUNTER_WIDTH-1:0] fetch_scan_x_next;
@@ -165,6 +172,16 @@ module bitmap_text_renderer #(
         .rdata(font_glyph_rdata)
     );
 
+    sync_sprom #(
+        .DATA_WIDTH(PALETTE_ROM_DATA_WIDTH),
+        .ADDR_WIDTH(PALETTE_ROM_ADDR_WIDTH),
+        .INIT_FILE(PALETTE_INIT_FILE)
+    ) u_palette_rom (
+        .clk(clk),
+        .addr(palette_addr),
+        .rdata(palette_rdata)
+    );
+
 `ifndef SYNTHESIS
     initial begin
         if (ACTIVE_WIDTH == 0) begin
@@ -221,8 +238,9 @@ module bitmap_text_renderer #(
 
     always_comb begin
         font_addr = {char_map_rdata, glyph_offset_d2};
+        palette_addr = font_glyph_rdata;
         pixel_data_next = sync_video_de
-            ? {font_glyph_rdata, font_glyph_rdata, font_glyph_rdata}
+            ? palette_rdata
             : '0;
     end
 

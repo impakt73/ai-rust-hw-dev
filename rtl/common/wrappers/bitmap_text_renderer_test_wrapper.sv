@@ -22,7 +22,8 @@ module bitmap_text_renderer_test_wrapper (
         .V_SYNC_WIDTH(1),
         .V_BACK_PORCH(1),
         .FONT_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_font_init.hex"),
-        .CHAR_MAP_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex")
+        .CHAR_MAP_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex"),
+        .PALETTE_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_palette_init.hex")
     ) u_bitmap_text_renderer (
         .clk(clk),
         .rst(rst),
