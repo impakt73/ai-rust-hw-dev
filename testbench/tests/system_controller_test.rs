@@ -321,7 +321,10 @@ fn test_system_controller_led_register_read_write() {
     assert_eq!(dut.led_out, 0xAB, "LED output should track the register");
 
     write_register_with_size(&mut dut, REG_LED_OUT, 0x1234_0055, SIZE_BYTE);
-    assert_eq!(dut.led_out, 0x55, "Byte writes should update the low LED byte");
+    assert_eq!(
+        dut.led_out, 0x55,
+        "Byte writes should update the low LED byte"
+    );
 
     write_register_with_size(&mut dut, REG_LED_OUT, 0x5678_00CC, SIZE_HALFWORD);
     assert_eq!(

@@ -228,10 +228,10 @@ fn test_host_initiated_basic_sync() {
 
     // Program that spins on the system controller LED register until it becomes non-zero
     let mut instructions = vec![
-        lui(15, SYSCTRL_BASE), // x15 = system controller base address
+        lui(15, SYSCTRL_BASE),      // x15 = system controller base address
         lw(14, 15, LED_OFFSET_I32), // x14 = LED register value
-        andi(14, 14, 0xFF), // mask to 8 bits
-        beq(14, 0, -8),     // if x14 == 0, loop back to lw
+        andi(14, 14, 0xFF),         // mask to 8 bits
+        beq(14, 0, -8),             // if x14 == 0, loop back to lw
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
@@ -273,13 +273,13 @@ fn test_host_initiated_led_write() {
         lui(9, SIM_CONTROL_BASE), // x9 = tohost address
         // Wait for LED fence (non-zero value)
         lw(12, 15, LED_OFFSET_I32), // x12 = LED register value
-        andi(12, 12, 0xFF), // mask to 8 bits
-        beq(12, 0, -8),     // spin while LED == 0
+        andi(12, 12, 0xFF),         // mask to 8 bits
+        beq(12, 0, -8),             // spin while LED == 0
         // Read expected value from DRAM and actual LED value
-        lw(11, 14, 0),      // x11 = expected LED value from DRAM
-        andi(11, 11, 0xFF), // mask to 8 bits
+        lw(11, 14, 0),              // x11 = expected LED value from DRAM
+        andi(11, 11, 0xFF),         // mask to 8 bits
         lw(10, 15, LED_OFFSET_I32), // x10 = LED register value
-        andi(10, 10, 0xFF), // mask to 8 bits
+        andi(10, 10, 0xFF),         // mask to 8 bits
         // Compare actual vs expected
         sub(8, 10, 11), // x8 = actual - expected
         bne(8, 0, 16),  // if not equal, jump to failure
@@ -405,11 +405,11 @@ fn test_multiple_host_requests() {
     // Program that spins on LED until it reaches a specific value
     let mut instructions = vec![
         lui(15, SYSCTRL_BASE), // x15 = system controller base
-        addi(14, 0, 3),    // x14 = target count (3)
+        addi(14, 0, 3),        // x14 = target count (3)
         // Spin loop: wait until LED value >= 3
         lw(12, 15, LED_OFFSET_I32), // x12 = LED value
-        andi(12, 12, 0xFF), // mask to 8 bits
-        blt(12, 14, -8),    // if LED < 3, loop
+        andi(12, 12, 0xFF),         // mask to 8 bits
+        blt(12, 14, -8),            // if LED < 3, loop
     ];
     instructions.extend(tohost_termination(10, 11, SUCCESS_CODE));
 
