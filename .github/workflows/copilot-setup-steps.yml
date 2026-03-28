@@ -4,6 +4,32 @@ name: "Copilot Setup Steps"
 # to work on this RISC-V hardware verification project.
 # 
 # CRITICAL: The job name MUST be 'copilot-setup-steps' for Copilot to use it.
+#
+# RUNNER IMAGE MIGRATION (TODO — activate once .github/runner/Dockerfile is
+# built and pushed to GHCR via build-runner-image.yml):
+#
+# Replace the three setup steps below (apt packages, Rust toolchain, RISC-V
+# target) with a single `container:` key on the job, e.g.:
+#
+#   jobs:
+#     copilot-setup-steps:
+#       runs-on: ubuntu-latest
+#       container:
+#         image: ghcr.io/impakt73/ai-rust-hw-dev/runner:latest
+#         credentials:
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+#
+# If the GHCR package stays private, also add `packages: read` to the job
+# permissions, and update the Cargo cache paths to `/usr/local/cargo/...`
+# because the runner image bakes Rust into `CARGO_HOME=/usr/local/cargo`.
+#
+# Then delete:
+#   - "Cache and install apt packages" step
+#   - "Install Rust Toolchain" step
+#   - "Install RISC-V Rust Target" step
+#
+# See docs/research/custom-runner-image.md for the full migration guide.
 
 on:
   workflow_dispatch:  # Allow manual testing

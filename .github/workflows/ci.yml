@@ -1,5 +1,32 @@
 name: CI
 
+# RUNNER IMAGE MIGRATION (TODO — activate once .github/runner/Dockerfile is
+# built and pushed to GHCR via build-runner-image.yml):
+#
+# Replace the three setup steps below (apt packages, Rust toolchain, RISC-V
+# target) with a single `container:` key on the job, e.g.:
+#
+#   jobs:
+#     test:
+#       runs-on: ubuntu-latest
+#       container:
+#         image: ghcr.io/impakt73/ai-rust-hw-dev/runner:latest
+#         credentials:
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+#
+# If the GHCR package stays private, also add `packages: read` to workflow or job
+# permissions, and update the Cargo cache paths to `/usr/local/cargo/...` because
+# the runner image bakes Rust into `CARGO_HOME=/usr/local/cargo`.
+#
+# Then delete:
+#   - "Cache and install system packages" step
+#   - "Verify Verilator installation" step
+#   - "Install Rust" step
+#   - "Install RISC-V Rust Target" step
+#
+# See docs/research/custom-runner-image.md for the full migration guide.
+
 on:
   push:
     branches:
