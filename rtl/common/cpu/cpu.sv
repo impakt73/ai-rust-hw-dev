@@ -163,7 +163,7 @@ module cpu #(
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
-    logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
+    logic        is_ecall_reg, is_ebreak_reg, is_mret_reg, is_wfi_reg, is_fence_reg, is_csr_reg;
     logic        is_lr_reg, is_sc_reg, is_amo_reg;  // A extension registers
     logic [4:0]  funct5_reg;  // A extension - atomic operation type
     logic        sc_success_reg;  // Latched on SC.W completion to preserve success/failure for writeback
@@ -654,10 +654,15 @@ module cpu #(
                             next_state = S_EXECUTE;
                         
                         7'b1110011: begin  // SYSTEM
-                            if (is_ecall_reg || is_ebreak_reg)
-                                next_state = S_HALT;
-                            else if (is_csr_reg)
+                            if (is_csr_reg)
                                 next_state = S_CSR;
+                            else if (is_mret_reg || is_wfi_reg)
+                                next_state = S_FETCH;
+                            else
+                                // ECALL, EBREAK, and unsupported funct3==000 SYSTEM
+                                // encodings stay on the existing debug-halt path
+                                // until later phases add architectural trap entry.
+                                next_state = S_HALT;
                         end
 
                         7'b0001111:  // FENCE
@@ -815,8 +820,14 @@ module cpu #(
                     fb_reg_write = 1'b1;
                     fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
                 end
-                // FENCE completes here (after register read state)
+                // FENCE permanently completes here after register reads.
                 if (is_fence_reg) begin
+                    pc_write = 1'b1;
+                    instr_complete_internal = 1'b1;
+                end
+                // MRET/WFI temporarily complete here as non-halting placeholders
+                // until later phases add real privileged return/wait behavior.
+                if (is_mret_reg || is_wfi_reg) begin
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
                 end
@@ -960,6 +971,8 @@ module cpu #(
         .jump(jump_reg),
         .is_ecall(is_ecall_reg),
         .is_ebreak(is_ebreak_reg),
+        .is_mret(is_mret_reg),
+        .is_wfi(is_wfi_reg),
         .is_fence(is_fence_reg),
         .is_csr(is_csr_reg),
         .is_auipc(is_auipc_reg),
