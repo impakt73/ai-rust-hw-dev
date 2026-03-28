@@ -91,9 +91,11 @@ The devcontainer builds Verilator **from source** with the comment:
 > "to ensure compatibility with marlin / the `--lib-create` and `-j 0` options
 > used by the test harness"
 
-The CI workflow uses the **apt package** (`ubuntu-24.04` ships Verilator 5.x).
-CI tests currently pass with the apt version, so the runner image also uses the
-apt version to match CI behaviour.
+The CI workflow uses the **apt package** from `ubuntu-24.04`. CI tests
+currently pass with that distro-packaged version, so the runner image also uses
+the apt version to match CI behaviour. Before activation, verify the exact
+package version with `apt show verilator` (or `verilator --version`) in the
+target environment.
 
 **Action required before activating the custom image:** Verify that
 `verilator --version` in CI matches what the devcontainer builds from source.
@@ -287,6 +289,8 @@ compatible alternative.
 
 - **Pin image by digest** in workflow files instead of `:latest` for full
   reproducibility (`image: ghcr.io/impakt73/ai-rust-hw-dev/runner@sha256:...`).
+  The build workflow already emits SHA-tagged images for traceability, but a
+  digest pin guarantees an exact immutable image even if tags are later moved.
 - **Nightly rebuild workflow** — schedule `build-runner-image.yml` weekly to
   pick up Ubuntu security patches without waiting for a Dockerfile edit.
 - **Multi-platform image** — add `platforms: linux/amd64,linux/arm64` to

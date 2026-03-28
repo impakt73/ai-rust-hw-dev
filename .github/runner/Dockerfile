@@ -31,7 +31,7 @@ FROM ubuntu:24.04
 # in GHCR.  The build-runner-image.yml workflow sets this automatically via
 # docker/metadata-action.  For local builds, override with:
 #   --build-arg REPO_URL=https://github.com/<org>/<repo>
-ARG REPO_URL=https://github.com/OWNER/REPO
+ARG REPO_URL=https://github.com/impakt73/ai-rust-hw-dev
 LABEL org.opencontainers.image.source="${REPO_URL}"
 LABEL org.opencontainers.image.description="Pre-baked CI/Copilot runner: Verilator, FPGA tools, RISC-V GCC, Rust stable"
 
@@ -43,6 +43,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # NOTE: Verilator is installed from apt to match current ci.yml behaviour.
 #       See docs/research/custom-runner-image.md for the devcontainer discrepancy
 #       (devcontainer builds Verilator from source for marlin compatibility).
+#       If the apt package ever lacks required marlin options such as
+#       `--lib-create` or `-j 0`, switch this image to the devcontainer's
+#       build-from-source recipe before activating it in CI.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # ---------- Core build tools ----------
