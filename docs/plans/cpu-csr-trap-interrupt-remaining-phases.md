@@ -16,10 +16,10 @@ Make `fflags`, `frm`, and `fcsr` obey the same Zicsr operation semantics as the 
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/csr_file.sv`
 - likely Rust coverage in:
-  - `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/device-runtime/tests/test_instructions.rs`
+  - `device-runtime/tests/test_instructions.rs`
 
 ### Work items
 
@@ -51,11 +51,11 @@ Replace halt-for-debug behavior with architectural machine-mode trap entry for:
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/csr_file.sv`
 - possibly:
-  - `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/decoder.sv`
-  - `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/top.sv`
+  - `rtl/common/cpu/decoder.sv`
+  - `rtl/common/top.sv`
 
 ### Work items
 
@@ -90,8 +90,8 @@ Replace the phase 1 placeholder with real machine-mode trap return behavior.
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- likely `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+- likely `rtl/common/cpu/csr_file.sv`
 
 ### Work items
 
@@ -114,9 +114,9 @@ Expose machine interrupt sources to the CPU and make them software-visible.
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/top.sv`
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/csr_file.sv`
+- `rtl/common/top.sv`
 
 ### Work items
 
@@ -137,8 +137,8 @@ Take interrupts between instructions when they are both pending and enabled.
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/csr_file.sv`
 
 ### Work items
 
@@ -167,9 +167,9 @@ Stop silently accepting unsupported or illegal CSR accesses once trap entry exis
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/cpu.sv`
-- possibly `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/decoder.sv`
+- `rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+- possibly `rtl/common/cpu/decoder.sv`
 
 ### Work items
 
@@ -190,7 +190,7 @@ Mask or constrain unsupported bits so machine CSRs present cleaner architectural
 
 ### Scope
 
-- `/home/runner/work/ai-rust-hw-dev/ai-rust-hw-dev/rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/csr_file.sv`
 
 ### Work items
 
