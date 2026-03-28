@@ -60,6 +60,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REPO_URL=https://github.com/${{ github.repository }}
           # Layer caching backed by the Actions cache — keeps incremental rebuilds fast.
           cache-from: type=gha
           cache-to: type=gha,mode=max

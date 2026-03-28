@@ -3,7 +3,8 @@
 # Pre-baked CI/Copilot runner image for the RISC-V hardware verification project.
 #
 # Base: ubuntu:24.04 — matches the OS version used by GitHub's ubuntu-latest hosted
-# runners (GitHub switched ubuntu-latest to 24.04 in mid-2024).
+# runners (GitHub switched ubuntu-latest to 24.04 starting Dec 2024 and completing
+# in Jan 2025).
 # Keeping the base in sync with the host runner avoids glibc / kernel ABI surprises.
 #
 # BUILD LOCALLY (for testing; run from the repository root):
@@ -95,5 +96,5 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 RUN verilator --version \
     && yosys --version \
     && nextpnr-ecp5 --version \
-    && riscv64-unknown-elf-gcc --version | head -1 \
+    && riscv64-unknown-elf-gcc --version \
     && command -v openFPGALoader

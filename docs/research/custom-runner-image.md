@@ -114,9 +114,10 @@ single source of truth for all tools required by CI and Copilot sessions.
 
 Key design decisions:
 - `ubuntu:24.04` base — mirrors the OS version used by GitHub's `ubuntu-latest`
-  hosted runners (GitHub switched `ubuntu-latest` to 24.04 in mid-2024).
-  Keeping the base version in sync with the host runner avoids subtle glibc /
-  kernel ABI differences between the container and its host.
+  hosted runners (GitHub began switching `ubuntu-latest` to 24.04 in Dec 2024,
+  with the rollout completing in Jan 2025). Keeping the base version in sync
+  with the host runner avoids subtle glibc / kernel ABI differences between
+  the container and its host.
 - Rust installed system-wide (`RUSTUP_HOME=/usr/local/rustup`,
   `CARGO_HOME=/usr/local/cargo`) so that container jobs running as root find
   `cargo`/`rustc` on `$PATH` without sourcing `.cargo/env`.
@@ -152,7 +153,7 @@ docker run --rm ghcr.io/impakt73/ai-rust-hw-dev/runner:test bash -c "
   verilator --version
   yosys --version
   nextpnr-ecp5 --version
-  riscv64-unknown-elf-gcc --version | head -1
+  riscv64-unknown-elf-gcc --version
   rustc --version
   cargo --version
   rustup target list --installed | grep riscv32imafc
