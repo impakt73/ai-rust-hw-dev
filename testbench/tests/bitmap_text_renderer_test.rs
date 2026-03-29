@@ -34,36 +34,71 @@ fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
     dut.rst = 0;
 }
 
-fn wait_for_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usize) {
+fn wait_for_active_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurrence: usize) {
     let mut seen = 0;
-    for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
+    let mut saw_vsync_pulse = false;
+
+    for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 4) {
         clock_cycle!(dut);
-        if dut.frame_start == 1 {
-            assert_eq!(
-                dut.line_start, 1,
-                "frame_start must also start the first line"
-            );
-            assert_eq!(dut.active_x, 0, "frame_start must align with x=0");
-            assert_eq!(dut.active_y, 0, "frame_start must align with y=0");
+        if dut.video_vs == 0 {
+            saw_vsync_pulse = true;
+        } else if saw_vsync_pulse && dut.video_de == 1 {
             seen += 1;
             if seen == occurrence {
                 return;
             }
+            saw_vsync_pulse = false;
         }
     }
 
-    panic!("timed out waiting for frame_start occurrence {occurrence}");
+    panic!("timed out waiting for active frame start occurrence {occurrence}");
 }
 
-fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, y: u8) {
-    for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
-        if dut.video_de == 1 && dut.active_x == x && dut.active_y == y {
-            return;
+fn capture_active_frame_pixels(
+    dut: &mut BitmapTextRendererTestWrapper,
+    occurrence: usize,
+) -> Vec<u32> {
+    let width = usize::from(BITMAP_TEXT_RENDERER_ACTIVE_WIDTH);
+    let height = usize::from(BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT);
+    let mut pixels = Vec::with_capacity(width * height);
+
+    wait_for_active_frame_start(dut, occurrence);
+
+    for row in 0..height {
+        for col in 0..width {
+            assert_eq!(
+                dut.video_de, 1,
+                "expected active video at raster coordinate ({col}, {row})"
+            );
+            pixels.push(dut.video_rgb);
+
+            if (row + 1) != height || (col + 1) != width {
+                clock_cycle!(dut);
+            }
         }
-        clock_cycle!(dut);
+
+        if (row + 1) != height {
+            for _ in 0..BITMAP_TEXT_RENDERER_H_TOTAL {
+                if dut.video_de == 1 {
+                    break;
+                }
+                clock_cycle!(dut);
+            }
+
+            assert_eq!(
+                dut.video_de,
+                1,
+                "timed out waiting for active video on row {}",
+                row + 1
+            );
+        }
     }
 
-    panic!("timed out waiting for active coordinate ({x}, {y})");
+    pixels
+}
+
+fn active_frame_pixel(pixels: &[u32], x: u8, y: u8) -> u32 {
+    pixels[(usize::from(y) * usize::from(BITMAP_TEXT_RENDERER_ACTIVE_WIDTH)) + usize::from(x)]
 }
 
 fn expected_pixel(x: u8, y: u8) -> u32 {
@@ -87,7 +122,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    let pixels = capture_active_frame_pixels(&mut dut, 2);
 
     let expected_pixels = [
         (0u8, 0u8, 0xFF_FF_FFu32),
@@ -102,13 +137,12 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
         (12u8, 8u8, 0xFF_FF_FFu32),
     ];
 
-    for (x, y, pixel_data) in expected_pixels {
-        advance_to_active_coordinate(&mut dut, x, y);
+    for (x, y, video_rgb) in expected_pixels {
         assert_eq!(
-            dut.pixel_data, pixel_data,
-            "unexpected registered pixel value aligned to active coordinate ({x}, {y})"
+            active_frame_pixel(&pixels, x, y),
+            video_rgb,
+            "unexpected delayed pixel value aligned to raster coordinate ({x}, {y})"
         );
-        clock_cycle!(dut);
     }
 }
 
@@ -121,7 +155,7 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 1);
+    let pixels = capture_active_frame_pixels(&mut dut, 1);
 
     let expected_pixels = [
         (1u8, 0u8, 0x00_00_00u32),
@@ -130,13 +164,12 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
         (7u8, 0u8, 0xFF_FF_FFu32),
     ];
 
-    for (x, y, pixel_data) in expected_pixels {
-        advance_to_active_coordinate(&mut dut, x, y);
+    for (x, y, video_rgb) in expected_pixels {
         assert_eq!(
-            dut.pixel_data, pixel_data,
+            active_frame_pixel(&pixels, x, y),
+            video_rgb,
             "unexpected first-frame pixel value after reset at ({x}, {y})"
         );
-        clock_cycle!(dut);
     }
 }
 
@@ -149,29 +182,21 @@ fn test_bitmap_text_renderer_matches_expected_bitmap_in_steady_state() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    let pixels = capture_active_frame_pixels(&mut dut, 2);
 
     let mut active_pixel_count = 0usize;
-    for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
-        if dut.video_de == 1 {
-            assert!(
-                dut.active_x < BITMAP_TEXT_RENDERER_ACTIVE_WIDTH,
-                "active_x must stay inside the active region"
-            );
-            assert!(
-                dut.active_y < BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT,
-                "active_y must stay inside the active region"
-            );
-
-            let expected = expected_pixel(dut.active_x, dut.active_y);
+    for y in 0..BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT {
+        for x in 0..BITMAP_TEXT_RENDERER_ACTIVE_WIDTH {
+            let expected = expected_pixel(x, y);
             assert_eq!(
-                dut.pixel_data, expected,
+                active_frame_pixel(&pixels, x, y),
+                expected,
                 "unexpected pixel at steady-state coordinate ({}, {})",
-                dut.active_x, dut.active_y
+                x,
+                y
             );
             active_pixel_count += 1;
         }
-        clock_cycle!(dut);
     }
 
     assert_eq!(
@@ -191,15 +216,15 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_active_frame_start(&mut dut, 2);
 
     let mut observed_blanking = false;
     for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
         if dut.video_de == 0 {
             observed_blanking = true;
             assert_eq!(
-                dut.pixel_data, 0,
-                "registered pixel_data must stay aligned low during blanking"
+                dut.video_rgb, 0,
+                "delayed video_rgb must stay aligned low during blanking"
             );
         }
         clock_cycle!(dut);
@@ -220,7 +245,7 @@ fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
         .expect("Failed to create bitmap_text_renderer model");
 
     reset_wrapper(&mut dut);
-    wait_for_frame_start(&mut dut, 2);
+    wait_for_active_frame_start(&mut dut, 2);
 
     let mut saw_hsync_pulse = false;
     let mut saw_vsync_pulse = false;
@@ -231,9 +256,6 @@ fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
         }
         if dut.video_vs == 0 {
             saw_vsync_pulse = true;
-        }
-        if dut.line_start == 1 {
-            assert_eq!(dut.active_x, 0, "line_start must align with x=0");
         }
         clock_cycle!(dut);
     }

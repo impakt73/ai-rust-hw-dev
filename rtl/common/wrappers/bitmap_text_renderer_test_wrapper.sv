@@ -5,11 +5,7 @@ module bitmap_text_renderer_test_wrapper (
     output logic video_de,
     output logic video_hs,
     output logic video_vs,
-    output logic line_start,
-    output logic frame_start,
-    output logic [3:0] active_x,
-    output logic [3:0] active_y,
-    output logic [23:0] pixel_data
+    output logic [23:0] video_rgb
 );
 
     bitmap_text_renderer #(
@@ -30,11 +26,7 @@ module bitmap_text_renderer_test_wrapper (
         .video_de(video_de),
         .video_hs(video_hs),
         .video_vs(video_vs),
-        .line_start(line_start),
-        .frame_start(frame_start),
-        .active_x(active_x),
-        .active_y(active_y),
-        .pixel_data(pixel_data)
+        .video_rgb(video_rgb)
     );
 
 endmodule

@@ -29,7 +29,7 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_video_de;
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
-    logic [23:0] bitmap_pixel_data;
+    logic [23:0] bitmap_video_rgb;
     logic [23:0] video_rgb_reg;
     logic        video_de_reg;
     logic        video_skip_reg;
@@ -106,11 +106,7 @@ module cyclonev_analogue_pocket_top #(
         .video_de(bitmap_video_de),
         .video_hs(bitmap_video_hs),
         .video_vs(bitmap_video_vs),
-        .line_start(),
-        .frame_start(),
-        .active_x(),
-        .active_y(),
-        .pixel_data(bitmap_pixel_data)
+        .video_rgb(bitmap_video_rgb)
     );
 
     always_ff @(posedge clk_video) begin
@@ -121,7 +117,7 @@ module cyclonev_analogue_pocket_top #(
             video_vs_reg <= 1'b0;
             video_hs_reg <= 1'b0;
         end else begin
-            video_rgb_reg <= bitmap_pixel_data;
+            video_rgb_reg <= bitmap_video_rgb;
             video_de_reg <= bitmap_video_de;
             video_skip_reg <= 1'b0;
             video_vs_reg <= bitmap_video_vs;
