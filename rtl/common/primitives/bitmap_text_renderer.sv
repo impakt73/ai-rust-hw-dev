@@ -41,6 +41,8 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROM_DATA_WIDTH = 8;
     localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
     localparam int unsigned FONT_COLUMN_INDEX_WIDTH = (TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH);
+    localparam int unsigned TILE_ROW_SHIFT = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
+    localparam int unsigned TILE_COLUMN_SHIFT = (TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH);
     localparam int unsigned FONT_GLYPH_OFFSET_WIDTH =
         FONT_ROW_INDEX_WIDTH + FONT_COLUMN_INDEX_WIDTH;
     localparam int unsigned FONT_ROM_ADDR_WIDTH =
@@ -48,6 +50,12 @@ module bitmap_text_renderer #(
     localparam int unsigned PALETTE_ROM_DATA_WIDTH = 24;
     localparam int unsigned PALETTE_ROM_ADDR_WIDTH = FONT_ROM_DATA_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
+    // The direct lookup path is:
+    //   - 2 cycles: character-map sync_sprom latency
+    //   - 2 cycles: font sync_sprom latency
+    //   - 2 cycles: palette sync_sprom latency
+    // Delay the public video control outputs by the same 6 cycles so they stay
+    // aligned with the RGB data emerging from the palette ROM.
     localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 6;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
@@ -160,13 +168,15 @@ module bitmap_text_renderer #(
 `endif
 
     always_comb begin
-        tile_column = TILE_COLUMN_WIDTH'(sync_active_x >> FONT_COLUMN_INDEX_WIDTH);
-        tile_row = TILE_ROW_WIDTH'(sync_active_y >> FONT_ROW_INDEX_WIDTH);
+        tile_column = TILE_COLUMN_WIDTH'(sync_active_x >> TILE_COLUMN_SHIFT);
+        tile_row = TILE_ROW_WIDTH'(sync_active_y >> TILE_ROW_SHIFT);
         tile_row_base_addr = CHARMAP_ADDR_WIDTH'(tile_row * TILE_COLUMNS);
         glyph_offset = {
             FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]),
             FONT_COLUMN_INDEX_WIDTH'(sync_active_x[FONT_COLUMN_INDEX_WIDTH-1:0])
         };
+        // `sync_sprom` already registers its address/data path internally, so a
+        // separate registered character-map address stage is unnecessary here.
         char_map_addr = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
         font_addr = {char_map_rdata, glyph_offset_d1};
         palette_addr = font_glyph_rdata;
@@ -175,9 +185,7 @@ module bitmap_text_renderer #(
     assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_vs = video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_rgb = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1]
-        ? palette_rdata
-        : '0;
+    assign video_rgb = video_de ? palette_rdata : '0;
 
     always_ff @(posedge clk) begin
         if (rst) begin

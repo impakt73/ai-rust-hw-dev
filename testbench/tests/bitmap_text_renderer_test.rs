@@ -38,11 +38,12 @@ fn wait_for_active_frame_start(dut: &mut BitmapTextRendererTestWrapper, occurren
     let mut seen = 0;
     let mut saw_vsync_pulse = false;
 
-    for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 4) {
+    for _ in 0..(BITMAP_TEXT_RENDERER_FRAME_CYCLES * 3) {
         clock_cycle!(dut);
         if dut.video_vs == 0 {
             saw_vsync_pulse = true;
-        } else if saw_vsync_pulse && dut.video_de == 1 {
+        }
+        if saw_vsync_pulse && dut.video_vs == 1 && dut.video_de == 1 {
             seen += 1;
             if seen == occurrence {
                 return;
@@ -78,6 +79,8 @@ fn capture_active_frame_pixels(
         }
 
         if (row + 1) != height {
+            // At most one full horizontal line period should elapse before the
+            // next active row starts.
             for _ in 0..BITMAP_TEXT_RENDERER_H_TOTAL {
                 if dut.video_de == 1 {
                     break;
@@ -137,10 +140,10 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
         (12u8, 8u8, 0xFF_FF_FFu32),
     ];
 
-    for (x, y, video_rgb) in expected_pixels {
+    for (x, y, pixel_rgb) in expected_pixels {
         assert_eq!(
             active_frame_pixel(&pixels, x, y),
-            video_rgb,
+            pixel_rgb,
             "unexpected delayed pixel value aligned to raster coordinate ({x}, {y})"
         );
     }
@@ -164,10 +167,10 @@ fn test_bitmap_text_renderer_primes_first_frame_tile_zero_after_reset() {
         (7u8, 0u8, 0xFF_FF_FFu32),
     ];
 
-    for (x, y, video_rgb) in expected_pixels {
+    for (x, y, pixel_rgb) in expected_pixels {
         assert_eq!(
             active_frame_pixel(&pixels, x, y),
-            video_rgb,
+            pixel_rgb,
             "unexpected first-frame pixel value after reset at ({x}, {y})"
         );
     }
