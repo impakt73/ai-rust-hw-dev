@@ -68,13 +68,13 @@ fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, 
     panic!("timed out waiting for active coordinate ({x}, {y})");
 }
 
-fn wrap_scroll(coord: u8, scroll: u8, active_size: u8) -> u8 {
+fn apply_scroll_with_wrap(coord: u8, scroll: u8, active_size: u8) -> u8 {
     ((usize::from(coord) + usize::from(scroll)) % usize::from(active_size)) as u8
 }
 
 fn expected_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
-    let scrolled_x = wrap_scroll(x, scroll_x, BITMAP_TEXT_RENDERER_ACTIVE_WIDTH);
-    let scrolled_y = wrap_scroll(y, scroll_y, BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT);
+    let scrolled_x = apply_scroll_with_wrap(x, scroll_x, BITMAP_TEXT_RENDERER_ACTIVE_WIDTH);
+    let scrolled_y = apply_scroll_with_wrap(y, scroll_y, BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT);
     let tile_x = usize::from(scrolled_x / 8);
     let tile_y = usize::from(scrolled_y / 8);
     let glyph = usize::from(BITMAP_TEXT_RENDERER_CHAR_MAP[(tile_y * 2) + tile_x]);
