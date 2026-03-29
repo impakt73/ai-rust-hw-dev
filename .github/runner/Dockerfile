@@ -55,7 +55,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     pkg-config \
-    zstd \
     # ---------- RTL simulation ----------
     verilator \
     # ---------- FPGA toolchain ----------
@@ -98,5 +97,4 @@ RUN verilator --version \
     && yosys --version \
     && nextpnr-ecp5 --version \
     && riscv64-unknown-elf-gcc --version \
-    && zstd --version \
     && command -v openFPGALoader
