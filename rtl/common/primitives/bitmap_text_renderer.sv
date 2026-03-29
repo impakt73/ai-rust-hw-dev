@@ -50,13 +50,15 @@ module bitmap_text_renderer #(
     localparam int unsigned PALETTE_ROM_DATA_WIDTH = 24;
     localparam int unsigned PALETTE_ROM_ADDR_WIDTH = FONT_ROM_DATA_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
-    // The direct lookup path is:
+    // The registered lookup/output path is:
+    //   - 1 cycle: registered character-map address stage
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font sync_sprom latency
     //   - 2 cycles: palette sync_sprom latency
-    // Delay the public video control outputs by the same 6 cycles so they stay
-    // aligned with the RGB data emerging from the palette ROM.
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 6;
+    //   - 1 cycle: registered `video_rgb` output stage
+    // Delay the public video control outputs by the same 8 cycles so they stay
+    // aligned with the RGB data leaving the module.
+    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 8;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned TILE_COLUMNS = ACTIVE_WIDTH / TILE_WIDTH;
@@ -73,6 +75,7 @@ module bitmap_text_renderer #(
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
 
     logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_next;
     logic [CHARMAP_DATA_WIDTH-1:0] char_map_rdata;
     logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
     logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
@@ -82,6 +85,7 @@ module bitmap_text_renderer #(
     logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset;
     logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset_d0;
     logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset_d1;
+    logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset_d2;
     logic [TILE_COLUMN_WIDTH-1:0] tile_column;
     logic [TILE_ROW_WIDTH-1:0] tile_row;
     logic [CHARMAP_ADDR_WIDTH-1:0] tile_row_base_addr;
@@ -175,31 +179,35 @@ module bitmap_text_renderer #(
             FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]),
             FONT_COLUMN_INDEX_WIDTH'(sync_active_x[FONT_COLUMN_INDEX_WIDTH-1:0])
         };
-        // `sync_sprom` already registers its address/data path internally, so a
-        // separate registered character-map address stage is unnecessary here.
-        char_map_addr = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
-        font_addr = {char_map_rdata, glyph_offset_d1};
+        char_map_addr_next = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
+        font_addr = {char_map_rdata, glyph_offset_d2};
         palette_addr = font_glyph_rdata;
     end
 
     assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_vs = video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_rgb = video_de ? palette_rdata : '0;
-
     always_ff @(posedge clk) begin
         if (rst) begin
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~HSYNC_ACTIVE_HIGH}};
             video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VSYNC_ACTIVE_HIGH}};
+            char_map_addr <= '0;
             glyph_offset_d0 <= '0;
             glyph_offset_d1 <= '0;
+            glyph_offset_d2 <= '0;
+            video_rgb <= '0;
         end else begin
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+            char_map_addr <= char_map_addr_next;
             glyph_offset_d0 <= glyph_offset;
             glyph_offset_d1 <= glyph_offset_d0;
+            glyph_offset_d2 <= glyph_offset_d1;
+            video_rgb <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2]
+                ? palette_rdata
+                : '0;
         end
     end
 
