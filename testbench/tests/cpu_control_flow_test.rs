@@ -1,4 +1,4 @@
-use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr};
+use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr, mret, wfi};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 const S_FETCH: u8 = 0x1;
@@ -387,5 +387,75 @@ fn test_cpu_jalr_masks_target_and_uses_fallthrough_link_address() {
     assert_eq!(
         dut.debug_current_pc, 12,
         "JALR target should be masked to an even address before redirect"
+    );
+}
+
+#[test]
+fn test_cpu_mret_advances_without_halting() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 8];
+    write_u32(&mut program, 0x0, mret());
+    write_u32(&mut program, 0x4, addi(5, 0, 9));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+
+    assert_eq!(
+        dut.debug_instruction,
+        mret(),
+        "Completed instruction should be MRET rather than an ECALL alias"
+    );
+    assert_eq!(dut.halted, 0, "MRET decode must not send the CPU to HALT");
+    assert_eq!(
+        dut.debug_current_pc, 4,
+        "MRET should advance to the next sequential fetch until trap return is implemented"
+    );
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_instruction,
+        addi(5, 0, 9),
+        "CPU should continue executing after placeholder MRET completion"
+    );
+}
+
+#[test]
+fn test_cpu_wfi_advances_without_halting() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 8];
+    write_u32(&mut program, 0x0, wfi());
+    write_u32(&mut program, 0x4, addi(6, 0, 11));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+
+    assert_eq!(
+        dut.debug_instruction,
+        wfi(),
+        "Completed instruction should be WFI rather than an EBREAK alias"
+    );
+    assert_eq!(dut.halted, 0, "WFI decode must not send the CPU to HALT");
+    assert_eq!(
+        dut.debug_current_pc, 4,
+        "WFI should advance to the next sequential fetch until wait semantics are implemented"
+    );
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_instruction,
+        addi(6, 0, 11),
+        "CPU should continue executing after placeholder WFI completion"
     );
 }
