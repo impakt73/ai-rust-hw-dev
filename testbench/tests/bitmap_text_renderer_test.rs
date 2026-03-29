@@ -73,12 +73,14 @@ fn capture_active_frame_pixels(
             );
             pixels.push(dut.video_rgb);
 
-            if (row + 1) != height || (col + 1) != width {
+            if col + 1 != width {
                 clock_cycle!(dut);
             }
         }
 
         if (row + 1) != height {
+            clock_cycle!(dut);
+
             // At most one full horizontal line period should elapse before the
             // next active row starts.
             for _ in 0..BITMAP_TEXT_RENDERER_H_TOTAL {

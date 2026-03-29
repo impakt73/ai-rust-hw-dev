@@ -41,8 +41,8 @@ module bitmap_text_renderer #(
     localparam int unsigned FONT_ROM_DATA_WIDTH = 8;
     localparam int unsigned FONT_ROW_INDEX_WIDTH = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
     localparam int unsigned FONT_COLUMN_INDEX_WIDTH = (TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH);
-    localparam int unsigned TILE_ROW_SHIFT = (TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT);
-    localparam int unsigned TILE_COLUMN_SHIFT = (TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH);
+    localparam int unsigned TILE_ROW_SHIFT = (TILE_HEIGHT <= 1) ? 0 : $clog2(TILE_HEIGHT);
+    localparam int unsigned TILE_COLUMN_SHIFT = (TILE_WIDTH <= 1) ? 0 : $clog2(TILE_WIDTH);
     localparam int unsigned FONT_GLYPH_OFFSET_WIDTH =
         FONT_ROW_INDEX_WIDTH + FONT_COLUMN_INDEX_WIDTH;
     localparam int unsigned FONT_ROM_ADDR_WIDTH =
