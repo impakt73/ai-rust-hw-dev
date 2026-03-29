@@ -66,15 +66,16 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
     // Back-porch budget for the renderer's per-pixel ROM prefetch pipeline:
     //   - 1 cycle: registered fetch-wrap/prefetch scan stage
+    //   - 1 cycle: registered active-space scroll stage
     //   - 1 cycle: registered character-map request stage
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font-pixel sync_sprom latency (`font_addr` combines
     //               `char_map_rdata` with the aligned glyph row/column)
     //   - 2 cycles: palette sync_sprom latency (`font_glyph_rdata` indexes the
     //               24-bit RGB lookup table)
-    // The horizontal back porch must cover this 8-cycle prefetch lead so the
+    // The horizontal back porch must cover this 9-cycle prefetch lead so the
     // pipeline is fully primed before scanout enters the active region.
-    localparam int unsigned FONT_PIPELINE_CYCLES = 8;
+    localparam int unsigned FONT_PIPELINE_CYCLES = 9;
     localparam int unsigned H_TOTAL = ACTIVE_WIDTH + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
     localparam int unsigned V_TOTAL = ACTIVE_HEIGHT + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
@@ -132,6 +133,10 @@ module bitmap_text_renderer #(
     logic [V_COUNTER_WIDTH-1:0] fetch_scan_y_offset;
     logic [ACTIVE_X_WIDTH-1:0] fetch_active_x_prefetch;
     logic [ACTIVE_Y_WIDTH-1:0] fetch_active_y_prefetch;
+    logic [ACTIVE_X_WIDTH:0] fetch_scrolled_x_sum;
+    logic [ACTIVE_Y_WIDTH:0] fetch_scrolled_y_sum;
+    logic [ACTIVE_X_WIDTH-1:0] fetch_scrolled_x_next;
+    logic [ACTIVE_Y_WIDTH-1:0] fetch_scrolled_y_next;
     logic [ACTIVE_X_WIDTH-1:0] fetch_scrolled_x_prefetch;
     logic [ACTIVE_Y_WIDTH-1:0] fetch_scrolled_y_prefetch;
 
@@ -231,18 +236,25 @@ module bitmap_text_renderer #(
     end
 
     always_comb begin
-        logic [ACTIVE_X_WIDTH:0] fetch_scrolled_x_sum;
-        logic [ACTIVE_Y_WIDTH:0] fetch_scrolled_y_sum;
-
         fetch_scan_x_offset = fetch_scan_x_prefetch - H_ACTIVE_START;
         fetch_scan_y_offset = fetch_scan_y_prefetch - V_ACTIVE_START;
         fetch_active_x_prefetch = ACTIVE_X_WIDTH'(fetch_scan_x_offset);
         fetch_active_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scan_y_offset);
         fetch_scrolled_x_sum = {1'b0, fetch_active_x_prefetch} + {1'b0, scroll_x};
         fetch_scrolled_y_sum = {1'b0, fetch_active_y_prefetch} + {1'b0, scroll_y};
-        fetch_scrolled_x_prefetch = ACTIVE_X_WIDTH'(fetch_scrolled_x_sum % ACTIVE_WIDTH_EXTENDED);
-        fetch_scrolled_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scrolled_y_sum % ACTIVE_HEIGHT_EXTENDED);
+        if (fetch_scrolled_x_sum >= ACTIVE_WIDTH_EXTENDED) begin
+            fetch_scrolled_x_next = ACTIVE_X_WIDTH'(fetch_scrolled_x_sum - ACTIVE_WIDTH_EXTENDED);
+        end else begin
+            fetch_scrolled_x_next = ACTIVE_X_WIDTH'(fetch_scrolled_x_sum);
+        end
+        if (fetch_scrolled_y_sum >= ACTIVE_HEIGHT_EXTENDED) begin
+            fetch_scrolled_y_next = ACTIVE_Y_WIDTH'(fetch_scrolled_y_sum - ACTIVE_HEIGHT_EXTENDED);
+        end else begin
+            fetch_scrolled_y_next = ACTIVE_Y_WIDTH'(fetch_scrolled_y_sum);
+        end
+    end
 
+    always_comb begin
         fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_scrolled_x_prefetch >> 3);
         fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_scrolled_y_prefetch >> 3);
         fetch_tile_row_base_addr_prefetch = CHARMAP_ADDR_WIDTH'(fetch_tile_row_prefetch * TILE_COLUMNS);
@@ -273,6 +285,8 @@ module bitmap_text_renderer #(
             active_y <= '0;
             fetch_scan_x_prefetch <= '0;
             fetch_scan_y_prefetch <= '0;
+            fetch_scrolled_x_prefetch <= '0;
+            fetch_scrolled_y_prefetch <= '0;
             char_map_addr <= '0;
             glyph_offset_d0 <= '0;
             glyph_offset_d1 <= '0;
@@ -281,6 +295,8 @@ module bitmap_text_renderer #(
         end else begin
             fetch_scan_x_prefetch <= fetch_scan_x_next;
             fetch_scan_y_prefetch <= fetch_scan_y_next;
+            fetch_scrolled_x_prefetch <= fetch_scrolled_x_next;
+            fetch_scrolled_y_prefetch <= fetch_scrolled_y_next;
             char_map_addr <= char_map_addr_prefetch;
             glyph_offset_d0 <= glyph_offset_prefetch;
             glyph_offset_d1 <= glyph_offset_d0;

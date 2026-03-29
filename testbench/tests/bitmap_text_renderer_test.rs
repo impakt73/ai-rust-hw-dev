@@ -1,6 +1,6 @@
 use riscv_core::{create_bitmap_text_renderer_runtime, BitmapTextRendererTestWrapper};
 
-const BITMAP_TEXT_RENDERER_H_TOTAL: usize = 26;
+const BITMAP_TEXT_RENDERER_H_TOTAL: usize = 27;
 const BITMAP_TEXT_RENDERER_V_TOTAL: usize = 19;
 const BITMAP_TEXT_RENDERER_FRAME_CYCLES: usize =
     BITMAP_TEXT_RENDERER_H_TOTAL * BITMAP_TEXT_RENDERER_V_TOTAL;
