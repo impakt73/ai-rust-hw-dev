@@ -27,6 +27,8 @@ macro_rules! clock_cycle {
 }
 
 fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
+    dut.scroll_x = 0;
+    dut.scroll_y = 0;
     dut.rst = 1;
     for _ in 0..6 {
         clock_cycle!(dut);
@@ -66,12 +68,18 @@ fn advance_to_active_coordinate(dut: &mut BitmapTextRendererTestWrapper, x: u8, 
     panic!("timed out waiting for active coordinate ({x}, {y})");
 }
 
-fn expected_pixel(x: u8, y: u8) -> u32 {
-    let tile_x = usize::from(x / 8);
-    let tile_y = usize::from(y / 8);
+fn wrap_scroll(coord: u8, scroll: u8, active_size: u8) -> u8 {
+    ((usize::from(coord) + usize::from(scroll)) % usize::from(active_size)) as u8
+}
+
+fn expected_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
+    let scrolled_x = wrap_scroll(x, scroll_x, BITMAP_TEXT_RENDERER_ACTIVE_WIDTH);
+    let scrolled_y = wrap_scroll(y, scroll_y, BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT);
+    let tile_x = usize::from(scrolled_x / 8);
+    let tile_y = usize::from(scrolled_y / 8);
     let glyph = usize::from(BITMAP_TEXT_RENDERER_CHAR_MAP[(tile_y * 2) + tile_x]);
-    let glyph_row = BITMAP_TEXT_RENDERER_FONT_ROWS[glyph][usize::from(y % 8)];
-    if ((glyph_row >> (7 - (x % 8))) & 1) != 0 {
+    let glyph_row = BITMAP_TEXT_RENDERER_FONT_ROWS[glyph][usize::from(scrolled_y % 8)];
+    if ((glyph_row >> (7 - (scrolled_x % 8))) & 1) != 0 {
         0xFF_FF_FF
     } else {
         0x00_00_00
@@ -163,7 +171,7 @@ fn test_bitmap_text_renderer_matches_expected_bitmap_in_steady_state() {
                 "active_y must stay inside the active region"
             );
 
-            let expected = expected_pixel(dut.active_x, dut.active_y);
+            let expected = expected_pixel(dut.active_x, dut.active_y, 0, 0);
             assert_eq!(
                 dut.pixel_data, expected,
                 "unexpected pixel at steady-state coordinate ({}, {})",
@@ -246,4 +254,67 @@ fn test_bitmap_text_renderer_exposes_aligned_video_control_outputs() {
         saw_vsync_pulse,
         "test frame should include a vertical sync pulse"
     );
+}
+
+#[test]
+fn test_bitmap_text_renderer_applies_horizontal_scroll_before_tile_fetch() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    dut.scroll_x = 8;
+    wait_for_frame_start(&mut dut, 2);
+
+    let expected_pixels = [
+        (0u8, 0u8),
+        (1u8, 0u8),
+        (7u8, 0u8),
+        (8u8, 0u8),
+        (12u8, 8u8),
+    ];
+
+    for (x, y) in expected_pixels {
+        advance_to_active_coordinate(&mut dut, x, y);
+        assert_eq!(
+            dut.pixel_data,
+            expected_pixel(x, y, dut.scroll_x, dut.scroll_y),
+            "unexpected horizontally scrolled pixel at ({x}, {y})"
+        );
+        clock_cycle!(dut);
+    }
+}
+
+#[test]
+fn test_bitmap_text_renderer_applies_vertical_scroll_with_active_height_wrap() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+    dut.scroll_x = 4;
+    dut.scroll_y = 12;
+    wait_for_frame_start(&mut dut, 2);
+
+    let expected_pixels = [
+        (0u8, 0u8),
+        (4u8, 0u8),
+        (8u8, 4u8),
+        (12u8, 8u8),
+        (15u8, 15u8),
+    ];
+
+    for (x, y) in expected_pixels {
+        advance_to_active_coordinate(&mut dut, x, y);
+        assert_eq!(
+            dut.pixel_data,
+            expected_pixel(x, y, dut.scroll_x, dut.scroll_y),
+            "unexpected wrapped vertically scrolled pixel at ({x}, {y})"
+        );
+        clock_cycle!(dut);
+    }
 }

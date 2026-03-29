@@ -103,6 +103,8 @@ module cyclonev_analogue_pocket_top #(
     ) pocket_bitmap_text_renderer (
         .clk(clk_video),
         .rst(video_rst),
+        .scroll_x('0),
+        .scroll_y('0),
         .video_de(bitmap_video_de),
         .video_hs(bitmap_video_hs),
         .video_vs(bitmap_video_vs),

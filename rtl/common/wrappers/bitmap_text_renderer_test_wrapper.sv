@@ -2,6 +2,8 @@
 module bitmap_text_renderer_test_wrapper (
     input wire logic clk,
     input wire logic rst,
+    input wire logic [3:0] scroll_x,
+    input wire logic [3:0] scroll_y,
     output logic video_de,
     output logic video_hs,
     output logic video_vs,
@@ -27,6 +29,8 @@ module bitmap_text_renderer_test_wrapper (
     ) u_bitmap_text_renderer (
         .clk(clk),
         .rst(rst),
+        .scroll_x(scroll_x),
+        .scroll_y(scroll_y),
         .video_de(video_de),
         .video_hs(video_hs),
         .video_vs(video_vs),
