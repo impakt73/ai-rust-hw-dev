@@ -81,11 +81,8 @@ module bitmap_text_renderer #(
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned H_COUNTER_WIDTH = (H_TOTAL <= 1) ? 1 : $clog2(H_TOTAL);
     localparam int unsigned V_COUNTER_WIDTH = (V_TOTAL <= 1) ? 1 : $clog2(V_TOTAL);
-    localparam logic [ACTIVE_X_WIDTH:0] ACTIVE_WIDTH_EXT = (ACTIVE_X_WIDTH + 1)'(ACTIVE_WIDTH);
-    localparam logic [ACTIVE_Y_WIDTH:0] ACTIVE_HEIGHT_EXT = (ACTIVE_Y_WIDTH + 1)'(ACTIVE_HEIGHT);
-    localparam logic [ACTIVE_X_WIDTH:0] ACTIVE_WIDTH_X2_EXT = (ACTIVE_X_WIDTH + 1)'(ACTIVE_WIDTH * 2);
-    localparam logic [ACTIVE_Y_WIDTH:0] ACTIVE_HEIGHT_X2_EXT =
-        (ACTIVE_Y_WIDTH + 1)'(ACTIVE_HEIGHT * 2);
+    localparam logic [ACTIVE_X_WIDTH:0] ACTIVE_WIDTH_MODULO = (ACTIVE_X_WIDTH + 1)'(ACTIVE_WIDTH);
+    localparam logic [ACTIVE_Y_WIDTH:0] ACTIVE_HEIGHT_MODULO = (ACTIVE_Y_WIDTH + 1)'(ACTIVE_HEIGHT);
     localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_START = H_COUNTER_WIDTH'(H_BACK_PORCH);
     localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_START = V_COUNTER_WIDTH'(V_BACK_PORCH);
     localparam int unsigned TILE_COLUMNS = ACTIVE_WIDTH / TILE_WIDTH;
@@ -236,37 +233,15 @@ module bitmap_text_renderer #(
     always_comb begin
         logic [ACTIVE_X_WIDTH:0] fetch_scrolled_x_sum;
         logic [ACTIVE_Y_WIDTH:0] fetch_scrolled_y_sum;
-        logic [ACTIVE_X_WIDTH:0] fetch_scrolled_x_wrapped;
-        logic [ACTIVE_Y_WIDTH:0] fetch_scrolled_y_wrapped;
 
         fetch_scan_x_offset = fetch_scan_x_prefetch - H_ACTIVE_START;
         fetch_scan_y_offset = fetch_scan_y_prefetch - V_ACTIVE_START;
         fetch_active_x_prefetch = ACTIVE_X_WIDTH'(fetch_scan_x_offset);
         fetch_active_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scan_y_offset);
-
         fetch_scrolled_x_sum = {1'b0, fetch_active_x_prefetch} + {1'b0, scroll_x};
-        if (fetch_scrolled_x_sum >= ACTIVE_WIDTH_X2_EXT) begin
-            fetch_scrolled_x_wrapped = fetch_scrolled_x_sum - ACTIVE_WIDTH_X2_EXT;
-        end else begin
-            fetch_scrolled_x_wrapped = fetch_scrolled_x_sum;
-        end
-        if (fetch_scrolled_x_wrapped >= ACTIVE_WIDTH_EXT) begin
-            fetch_scrolled_x_prefetch = ACTIVE_X_WIDTH'(fetch_scrolled_x_wrapped - ACTIVE_WIDTH_EXT);
-        end else begin
-            fetch_scrolled_x_prefetch = ACTIVE_X_WIDTH'(fetch_scrolled_x_wrapped);
-        end
-
         fetch_scrolled_y_sum = {1'b0, fetch_active_y_prefetch} + {1'b0, scroll_y};
-        if (fetch_scrolled_y_sum >= ACTIVE_HEIGHT_X2_EXT) begin
-            fetch_scrolled_y_wrapped = fetch_scrolled_y_sum - ACTIVE_HEIGHT_X2_EXT;
-        end else begin
-            fetch_scrolled_y_wrapped = fetch_scrolled_y_sum;
-        end
-        if (fetch_scrolled_y_wrapped >= ACTIVE_HEIGHT_EXT) begin
-            fetch_scrolled_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scrolled_y_wrapped - ACTIVE_HEIGHT_EXT);
-        end else begin
-            fetch_scrolled_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scrolled_y_wrapped);
-        end
+        fetch_scrolled_x_prefetch = ACTIVE_X_WIDTH'(fetch_scrolled_x_sum % ACTIVE_WIDTH_MODULO);
+        fetch_scrolled_y_prefetch = ACTIVE_Y_WIDTH'(fetch_scrolled_y_sum % ACTIVE_HEIGHT_MODULO);
 
         fetch_tile_column_prefetch = TILE_COLUMN_WIDTH'(fetch_scrolled_x_prefetch >> 3);
         fetch_tile_row_prefetch = TILE_ROW_WIDTH'(fetch_scrolled_y_prefetch >> 3);
