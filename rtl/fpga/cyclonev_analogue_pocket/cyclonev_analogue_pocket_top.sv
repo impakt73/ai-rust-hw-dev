@@ -13,6 +13,7 @@ module cyclonev_analogue_pocket_top #(
 ) (
     input  wire logic       clk,
     input  wire logic       clk_video,
+    input  wire logic [3:0] dpad_key,
     input  wire logic       reset_n,
     input  wire logic       serial_rx,
     output logic            serial_tx,
@@ -30,6 +31,10 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
     logic [23:0] bitmap_video_rgb;
+    logic [3:0]  dpad_key_video;
+    logic        bitmap_video_vs_prev;
+    logic [7:0]  scroll_x_reg;
+    logic [7:0]  scroll_y_reg;
     logic [23:0] video_rgb_reg;
     logic        video_de_reg;
     logic        video_skip_reg;
@@ -48,6 +53,10 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
+    localparam int unsigned DPAD_UP_BIT = 0;
+    localparam int unsigned DPAD_DOWN_BIT = 1;
+    localparam int unsigned DPAD_LEFT_BIT = 2;
+    localparam int unsigned DPAD_RIGHT_BIT = 3;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -69,6 +78,16 @@ module cyclonev_analogue_pocket_top #(
     );
 
     assign video_rst = !reset_n_video_sync;
+
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(4)
+    ) video_dpad_sync (
+        .clk(clk_video),
+        .rst(video_rst),
+        .din(dpad_key),
+        .dout(dpad_key_video)
+    );
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -105,8 +124,8 @@ module cyclonev_analogue_pocket_top #(
     ) pocket_bitmap_text_renderer (
         .clk(clk_video),
         .rst(video_rst),
-        .scroll_x('0),
-        .scroll_y('0),
+        .scroll_x(scroll_x_reg),
+        .scroll_y(scroll_y_reg),
         .video_de(bitmap_video_de),
         .video_hs(bitmap_video_hs),
         .video_vs(bitmap_video_vs),
@@ -115,12 +134,29 @@ module cyclonev_analogue_pocket_top #(
 
     always_ff @(posedge clk_video) begin
         if (video_rst) begin
+            bitmap_video_vs_prev <= 1'b0;
+            scroll_x_reg <= 8'd0;
+            scroll_y_reg <= 8'd0;
             video_rgb_reg <= 24'h00_00_00;
             video_de_reg <= 1'b0;
             video_skip_reg <= 1'b0;
             video_vs_reg <= 1'b0;
             video_hs_reg <= 1'b0;
         end else begin
+            bitmap_video_vs_prev <= bitmap_video_vs;
+            if (bitmap_video_vs && !bitmap_video_vs_prev) begin
+                if (dpad_key_video[DPAD_LEFT_BIT] && !dpad_key_video[DPAD_RIGHT_BIT]) begin
+                    scroll_x_reg <= scroll_x_reg - 8'd1;
+                end else if (dpad_key_video[DPAD_RIGHT_BIT] && !dpad_key_video[DPAD_LEFT_BIT]) begin
+                    scroll_x_reg <= scroll_x_reg + 8'd1;
+                end
+
+                if (dpad_key_video[DPAD_UP_BIT] && !dpad_key_video[DPAD_DOWN_BIT]) begin
+                    scroll_y_reg <= scroll_y_reg - 8'd1;
+                end else if (dpad_key_video[DPAD_DOWN_BIT] && !dpad_key_video[DPAD_UP_BIT]) begin
+                    scroll_y_reg <= scroll_y_reg + 8'd1;
+                end
+            end
             video_rgb_reg <= bitmap_video_rgb;
             video_de_reg <= bitmap_video_de;
             video_skip_reg <= 1'b0;
