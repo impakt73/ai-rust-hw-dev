@@ -6,6 +6,7 @@ const BITMAP_TEXT_RENDERER_FRAME_CYCLES: usize =
     BITMAP_TEXT_RENDERER_H_TOTAL * BITMAP_TEXT_RENDERER_V_TOTAL;
 const BITMAP_TEXT_RENDERER_ACTIVE_WIDTH: u8 = 16;
 const BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT: u8 = 16;
+const BITMAP_TEXT_RENDERER_SCROLL_MASK: u8 = BITMAP_TEXT_RENDERER_ACTIVE_WIDTH - 1;
 const BITMAP_TEXT_RENDERER_CHAR_MAP: [u8; 4] = [1, 2, 3, 4];
 const BITMAP_TEXT_RENDERER_FONT_ROWS: [[u8; 8]; 5] = [
     [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -27,6 +28,8 @@ macro_rules! clock_cycle {
 }
 
 fn reset_wrapper(dut: &mut BitmapTextRendererTestWrapper) {
+    dut.scroll_x = 0;
+    dut.scroll_y = 0;
     dut.rst = 1;
     for _ in 0..6 {
         clock_cycle!(dut);
@@ -116,6 +119,13 @@ fn expected_pixel(x: u8, y: u8) -> u32 {
     } else {
         0x00_00_00
     }
+}
+
+fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
+    expected_pixel(
+        (x.wrapping_add(scroll_x)) & BITMAP_TEXT_RENDERER_SCROLL_MASK,
+        (y.wrapping_add(scroll_y)) & BITMAP_TEXT_RENDERER_SCROLL_MASK,
+    )
 }
 
 #[test]
@@ -210,6 +220,76 @@ fn test_bitmap_text_renderer_matches_expected_bitmap_in_steady_state() {
             * usize::from(BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT),
         "expected to validate every active pixel in the 16x16 test frame"
     );
+}
+
+#[test]
+fn test_bitmap_text_renderer_scrolls_tilemap_pixels_with_wraparound() {
+    let runtime = create_bitmap_text_renderer_runtime()
+        .expect("Failed to create bitmap_text_renderer runtime");
+    let mut dut = runtime
+        .create_model_simple::<BitmapTextRendererTestWrapper>()
+        .expect("Failed to create bitmap_text_renderer model");
+
+    reset_wrapper(&mut dut);
+
+    let scroll_cases = [
+        (1u8, 0u8),
+        (15u8, 0u8),
+        (0u8, 1u8),
+        (0u8, 15u8),
+        (9u8, 10u8),
+    ];
+
+    for (scroll_x, scroll_y) in scroll_cases {
+        dut.scroll_x = scroll_x;
+        dut.scroll_y = scroll_y;
+
+        let pixels = capture_active_frame_pixels(&mut dut, 2);
+
+        for y in 0..BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT {
+            for x in 0..BITMAP_TEXT_RENDERER_ACTIVE_WIDTH {
+                assert_eq!(
+                    active_frame_pixel(&pixels, x, y),
+                    expected_scrolled_pixel(x, y, scroll_x, scroll_y),
+                    "unexpected pixel at ({x}, {y}) with scroll_x={scroll_x} scroll_y={scroll_y}"
+                );
+            }
+        }
+
+        let mut saw_hsync_pulse = false;
+        let mut saw_vsync_pulse = false;
+        let mut observed_blanking = false;
+
+        for _ in 0..BITMAP_TEXT_RENDERER_FRAME_CYCLES {
+            if dut.video_de == 0 {
+                observed_blanking = true;
+                assert_eq!(
+                    dut.video_rgb, 0,
+                    "video_rgb must stay low during blanking with scroll_x={scroll_x} scroll_y={scroll_y}"
+                );
+            }
+            if dut.video_hs == 0 {
+                saw_hsync_pulse = true;
+            }
+            if dut.video_vs == 0 {
+                saw_vsync_pulse = true;
+            }
+            clock_cycle!(dut);
+        }
+
+        assert!(
+            observed_blanking,
+            "expected blanking intervals with scroll_x={scroll_x} scroll_y={scroll_y}"
+        );
+        assert!(
+            saw_hsync_pulse,
+            "expected horizontal sync pulse with scroll_x={scroll_x} scroll_y={scroll_y}"
+        );
+        assert!(
+            saw_vsync_pulse,
+            "expected vertical sync pulse with scroll_x={scroll_x} scroll_y={scroll_y}"
+        );
+    }
 }
 
 #[test]
