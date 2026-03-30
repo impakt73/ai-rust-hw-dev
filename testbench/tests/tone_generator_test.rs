@@ -1,10 +1,10 @@
 use riscv_core::{create_tone_generator_runtime, ToneGeneratorTestWrapper};
 
 const TABLE_SIZE: u16 = 1024;
-const PHASE_WIDTH: usize = 16;
+const PHASE_WIDTH: usize = 32;
 const TABLE_ADDR_WIDTH: usize = TABLE_SIZE.ilog2() as usize;
 const PIPELINE_STAGES: usize = 4;
-const ONE_INDEX_STEP_TUNING_WORD: u16 = 1u16 << (PHASE_WIDTH - TABLE_ADDR_WIDTH);
+const ONE_INDEX_STEP_TUNING_WORD: u32 = 1u32 << (PHASE_WIDTH - TABLE_ADDR_WIDTH);
 
 fn expected_sample(index: u16) -> u16 {
     const QADDR_W: usize = TABLE_ADDR_WIDTH - 2;
