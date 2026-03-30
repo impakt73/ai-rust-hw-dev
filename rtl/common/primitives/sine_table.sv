@@ -23,7 +23,7 @@
 //   Stage 4 : Conditionally two's-complement the ROM result; register output.
 //
 // Parameters:
-//   TABLE_SIZE   - Full table size (number of samples per period; power-of-2, >= 4)
+//   TABLE_SIZE   - Full table size (number of samples per period; power-of-2, >= 8)
 //   SAMPLE_WIDTH - Bit-width of each signed sample
 //   INIT_FILE    - Path passed to $readmemh; must contain TABLE_SIZE/4 entries
 //                  generated using mid-tread sample positions and symmetric
@@ -36,19 +36,19 @@ module sine_table #(
 ) (
     input  wire logic                          clk,
     input  wire logic [$clog2(TABLE_SIZE)-1:0] index,
-    output      logic [SAMPLE_WIDTH-1:0]       sample
+    output      logic signed [SAMPLE_WIDTH-1:0] sample
 );
 
     // -----------------------------------------------------------------------
     // Derived widths
     // -----------------------------------------------------------------------
-    localparam int IDX_W   = $clog2(TABLE_SIZE);  // full-period index width
-    localparam int QADDR_W = IDX_W - 2;           // quarter-wave address width
+    localparam int IDX_W   = $clog2(TABLE_SIZE);               // full-period index width
+    localparam int QADDR_W = (IDX_W > 2) ? (IDX_W - 2) : 1;   // quarter-wave address width
 
     // Parameter validation (simulation only)
     initial begin
-        if (TABLE_SIZE < 4) begin
-            $fatal(1, "sine_table: TABLE_SIZE must be >= 4, got %0d", TABLE_SIZE);
+        if (TABLE_SIZE < 8) begin
+            $fatal(1, "sine_table: TABLE_SIZE must be >= 8, got %0d", TABLE_SIZE);
         end
         if ((TABLE_SIZE & (TABLE_SIZE - 1)) != 0) begin
             $fatal(1, "sine_table: TABLE_SIZE must be a power of 2, got %0d", TABLE_SIZE);
@@ -84,7 +84,8 @@ module sine_table #(
     // -----------------------------------------------------------------------
     // Stages 2–3 – synchronous ROM (sync_sprom provides exactly 2-cycle latency)
     // -----------------------------------------------------------------------
-    logic [SAMPLE_WIDTH-1:0] rom_data;
+    logic [SAMPLE_WIDTH-1:0]        rom_data_raw;
+    logic signed [SAMPLE_WIDTH-1:0] rom_data;
 
     sync_sprom #(
         .DATA_WIDTH (SAMPLE_WIDTH),
@@ -93,8 +94,10 @@ module sine_table #(
     ) u_rom (
         .clk   (clk),
         .addr  (rom_addr_r),
-        .rdata (rom_data)
+        .rdata (rom_data_raw)
     );
+
+    assign rom_data = $signed(rom_data_raw);
 
     // Delay invert_result through the two ROM pipeline stages so it arrives
     // aligned with rom_data at the input of Stage 4.
@@ -110,7 +113,7 @@ module sine_table #(
     // Stage 4 – conditional two's-complement and output register
     // -----------------------------------------------------------------------
     always_ff @(posedge clk) begin
-        sample <= invert_result_r3 ? -rom_data : rom_data;
+        sample <= invert_result_r3 ? -$signed(rom_data) : $signed(rom_data);
     end
 
 endmodule
