@@ -6,7 +6,8 @@ const BITMAP_TEXT_RENDERER_FRAME_CYCLES: usize =
     BITMAP_TEXT_RENDERER_H_TOTAL * BITMAP_TEXT_RENDERER_V_TOTAL;
 const BITMAP_TEXT_RENDERER_ACTIVE_WIDTH: u8 = 16;
 const BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT: u8 = 16;
-const BITMAP_TEXT_RENDERER_SCROLL_MASK: u8 = BITMAP_TEXT_RENDERER_ACTIVE_WIDTH - 1;
+const BITMAP_TEXT_RENDERER_SCROLL_X_MASK: u8 = BITMAP_TEXT_RENDERER_ACTIVE_WIDTH - 1;
+const BITMAP_TEXT_RENDERER_SCROLL_Y_MASK: u8 = BITMAP_TEXT_RENDERER_ACTIVE_HEIGHT - 1;
 const BITMAP_TEXT_RENDERER_CHAR_MAP: [u8; 4] = [1, 2, 3, 4];
 const BITMAP_TEXT_RENDERER_FONT_ROWS: [[u8; 8]; 5] = [
     [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -123,8 +124,8 @@ fn expected_pixel(x: u8, y: u8) -> u32 {
 
 fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     expected_pixel(
-        (x.wrapping_add(scroll_x)) & BITMAP_TEXT_RENDERER_SCROLL_MASK,
-        (y.wrapping_add(scroll_y)) & BITMAP_TEXT_RENDERER_SCROLL_MASK,
+        (x.wrapping_add(scroll_x)) & BITMAP_TEXT_RENDERER_SCROLL_X_MASK,
+        (y.wrapping_add(scroll_y)) & BITMAP_TEXT_RENDERER_SCROLL_Y_MASK,
     )
 }
 
