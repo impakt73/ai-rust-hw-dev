@@ -245,6 +245,12 @@ pub struct BitmapTextRendererTestWrapper;
 )]
 pub struct SysLedControllerWrapper;
 
+#[verilog(
+    src = "../rtl/common/wrappers/sine_table_test_wrapper.sv",
+    name = "sine_table_test_wrapper"
+)]
+pub struct SineTableTestWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl/common/top.sv").is_file() {
@@ -578,5 +584,13 @@ pub fn create_bitmap_text_renderer_runtime() -> Result<VerilatorRuntime, Box<dyn
         "primitives/video_sync.sv",
         "primitives/bitmap_text_renderer.sv",
         "wrappers/bitmap_text_renderer_test_wrapper.sv",
+    ])
+}
+
+pub fn create_sine_table_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/sine_table.sv",
+        "wrappers/sine_table_test_wrapper.sv",
     ])
 }
