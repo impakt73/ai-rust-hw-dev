@@ -28,6 +28,7 @@ module tone_generator #(
     localparam int TABLE_ADDR_WIDTH = $clog2(TABLE_SIZE);
 
     logic [PHASE_WIDTH-1:0]         phase_acc;
+    logic [PHASE_WIDTH+TABLE_ADDR_WIDTH-1:0] phase_index_window;
     logic [TABLE_ADDR_WIDTH-1:0]    table_index;
 
     initial begin
@@ -53,13 +54,8 @@ module tone_generator #(
         end
     end
 
-    generate
-        if (PHASE_WIDTH >= TABLE_ADDR_WIDTH) begin : g_phase_index_direct
-            assign table_index = phase_acc[PHASE_WIDTH-1 -: TABLE_ADDR_WIDTH];
-        end else begin : g_phase_index_padded
-            assign table_index = {{(TABLE_ADDR_WIDTH - PHASE_WIDTH){1'b0}}, phase_acc};
-        end
-    endgenerate
+    assign phase_index_window = {phase_acc, {TABLE_ADDR_WIDTH{1'b0}}};
+    assign table_index = phase_index_window[PHASE_WIDTH+TABLE_ADDR_WIDTH-1 -: TABLE_ADDR_WIDTH];
 
     always_ff @(posedge clk) begin
         if (rst) begin

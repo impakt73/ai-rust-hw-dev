@@ -1,13 +1,13 @@
 use riscv_core::{create_tone_generator_runtime, ToneGeneratorTestWrapper};
 
 const TABLE_SIZE: u16 = 1024;
-const PHASE_WIDTH: u32 = 16;
-const TABLE_ADDR_WIDTH: u32 = TABLE_SIZE.ilog2();
+const PHASE_WIDTH: usize = 16;
+const TABLE_ADDR_WIDTH: usize = TABLE_SIZE.ilog2() as usize;
 const PIPELINE_STAGES: usize = 4;
 const ONE_INDEX_STEP_TUNING_WORD: u16 = 1u16 << (PHASE_WIDTH - TABLE_ADDR_WIDTH);
 
 fn expected_sample(index: u16) -> u16 {
-    const QADDR_W: u32 = TABLE_ADDR_WIDTH - 2;
+    const QADDR_W: usize = TABLE_ADDR_WIDTH - 2;
     const QADDR_MASK: u16 = (1u16 << QADDR_W) - 1;
     const MAX_SIGNED: f64 = 32767.0;
     const MID_TREAD_OFFSET: f64 = 0.5;
@@ -37,8 +37,6 @@ fn clock_cycle(dut: &mut ToneGeneratorTestWrapper) {
     dut.clk = 0;
     dut.eval();
     dut.clk = 1;
-    dut.eval();
-    dut.clk = 0;
     dut.eval();
 }
 
