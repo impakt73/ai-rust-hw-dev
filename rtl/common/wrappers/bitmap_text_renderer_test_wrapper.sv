@@ -11,6 +11,8 @@ module bitmap_text_renderer_test_wrapper (
     bitmap_text_renderer #(
         .ACTIVE_WIDTH(16),
         .ACTIVE_HEIGHT(16),
+        .TILE_COLUMNS(2),
+        .TILE_ROWS(2),
         .H_FRONT_PORCH(1),
         .H_SYNC_WIDTH(1),
         .H_BACK_PORCH(8),
@@ -23,6 +25,8 @@ module bitmap_text_renderer_test_wrapper (
     ) u_bitmap_text_renderer (
         .clk(clk),
         .rst(rst),
+        .scroll_x('0),
+        .scroll_y('0),
         .video_de(video_de),
         .video_hs(video_hs),
         .video_vs(video_vs),

@@ -89,6 +89,8 @@ module cyclonev_analogue_pocket_top #(
     bitmap_text_renderer #(
         .ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
         .ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),
+        .TILE_COLUMNS(32),
+        .TILE_ROWS(32),
         .H_FRONT_PORCH(VIDEO_H_FRONT_PORCH),
         .H_SYNC_WIDTH(VIDEO_H_SYNC_WIDTH),
         .H_BACK_PORCH(VIDEO_H_BACK_PORCH),
@@ -103,6 +105,8 @@ module cyclonev_analogue_pocket_top #(
     ) pocket_bitmap_text_renderer (
         .clk(clk_video),
         .rst(video_rst),
+        .scroll_x('0),
+        .scroll_y('0),
         .video_de(bitmap_video_de),
         .video_hs(bitmap_video_hs),
         .video_vs(bitmap_video_vs),
