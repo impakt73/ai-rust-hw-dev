@@ -251,6 +251,12 @@ pub struct SysLedControllerWrapper;
 )]
 pub struct SineTableTestWrapper;
 
+#[verilog(
+    src = "../rtl/common/wrappers/tone_generator_test_wrapper.sv",
+    name = "tone_generator_test_wrapper"
+)]
+pub struct ToneGeneratorTestWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl/common/top.sv").is_file() {
@@ -592,5 +598,14 @@ pub fn create_sine_table_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
         "memory/sync_sprom.sv",
         "primitives/sine_table.sv",
         "wrappers/sine_table_test_wrapper.sv",
+    ])
+}
+
+pub fn create_tone_generator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/sine_table.sv",
+        "primitives/tone_generator.sv",
+        "wrappers/tone_generator_test_wrapper.sv",
     ])
 }
