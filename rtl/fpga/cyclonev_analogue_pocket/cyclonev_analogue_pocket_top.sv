@@ -40,6 +40,11 @@ module cyclonev_analogue_pocket_top #(
     logic [23:0] bitmap_video_rgb;
     logic [31:0] cont1_key_video;
     logic        face_a_audio;
+    logic        face_b_audio;
+    logic        face_x_audio;
+    logic        face_y_audio;
+    logic        trig_l_audio;
+    logic        trig_r_audio;
     logic        bitmap_video_vs_prev;
     logic [7:0]  scroll_x_reg;
     logic [7:0]  scroll_y_reg;
@@ -73,9 +78,19 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned DPAD_LEFT_BIT = 2;
     localparam int unsigned DPAD_RIGHT_BIT = 3;
     localparam int unsigned FACE_A_BIT = 4;
+    localparam int unsigned FACE_B_BIT = 5;
+    localparam int unsigned FACE_X_BIT = 6;
+    localparam int unsigned FACE_Y_BIT = 7;
+    localparam int unsigned TRIG_L1_BIT = 8;
+    localparam int unsigned TRIG_R1_BIT = 9;
     // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
     // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_440HZ = 32'd615165;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_A4 = 32'd615165;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_G4 = 32'd548049;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_D4 = 32'd410573;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_C4 = 32'd365779;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_E4 = 32'd460853;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_F4 = 32'd488256;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -121,15 +136,28 @@ module cyclonev_analogue_pocket_top #(
         .dout(cont1_key_video)
     );
 
+    // Synchronize all audio-domain button bits as a packed vector to reduce duplication.
+    // Bit order: [5]=TRIG_R1, [4]=TRIG_L1, [3]=FACE_Y, [2]=FACE_X, [1]=FACE_B, [0]=FACE_A
+    logic [5:0] audio_buttons_sync;
+
     ff_sync #(
         .STAGES(3),
-        .WIDTH(1)
-    ) audio_face_a_sync (
+        .WIDTH(6)
+    ) audio_buttons_key_sync (
         .clk(audio_sclk),
         .rst(audio_rst),
-        .din(cont1_key[FACE_A_BIT]),
-        .dout(face_a_audio)
+        .din({cont1_key[TRIG_R1_BIT], cont1_key[TRIG_L1_BIT],
+              cont1_key[FACE_Y_BIT],  cont1_key[FACE_X_BIT],
+              cont1_key[FACE_B_BIT],  cont1_key[FACE_A_BIT]}),
+        .dout(audio_buttons_sync)
     );
+
+    assign face_a_audio = audio_buttons_sync[0];
+    assign face_b_audio = audio_buttons_sync[1];
+    assign face_x_audio = audio_buttons_sync[2];
+    assign face_y_audio = audio_buttons_sync[3];
+    assign trig_l_audio = audio_buttons_sync[4];
+    assign trig_r_audio = audio_buttons_sync[5];
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -147,6 +175,28 @@ module cyclonev_analogue_pocket_top #(
         .rst_core(rst_out)
     );
 
+    logic audio_en;
+    logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
+
+    always_comb begin
+        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
+        if (face_a_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_A4;
+        end else if (face_b_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_C4;
+        end else if (face_x_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_G4;
+        end else if (face_y_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_D4;
+        end else if (trig_l_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_E4;
+        end else if (trig_r_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_F4;
+        end else begin
+            audio_tuning_word = AUDIO_TUNING_WORD_A4;  // default to A4 to avoid needing a separate mute implementation
+        end
+    end
+
     // tone_generator has a fixed multi-cycle lookup latency, so delay the
     // sideband valid flag until the output sample is fully populated.
     always_ff @(posedge audio_sclk) begin
@@ -155,7 +205,7 @@ module cyclonev_analogue_pocket_top #(
         end else begin
             tone_sample_valid_pipe <= {
                 tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-2:0],
-                face_a_audio
+                audio_en
             };
         end
     end
@@ -170,7 +220,7 @@ module cyclonev_analogue_pocket_top #(
     ) pocket_tone_generator (
         .clk        (audio_sclk),
         .rst        (audio_rst),
-        .tuning_word(AUDIO_TUNING_WORD_440HZ),
+        .tuning_word(audio_tuning_word),
         .sample     (tone_sample)
     );
 
@@ -182,7 +232,7 @@ module cyclonev_analogue_pocket_top #(
         .rst         (audio_rst),
         .sample_data (tone_sample),
         .sample_valid(tone_sample_valid),
-        .sample_ready(),  // the tone free-runs; face_a gates validity, so backpressure is unused
+        .sample_ready(),  // the tone free-runs; audio_en gates validity, so backpressure is unused
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
         .i2s_sd      (audio_dac)
