@@ -9,10 +9,11 @@ const PIPELINE_STAGES: usize = 4; // Stage 1 + 2 ROM stages + Stage 4
 /// Mirrors the RTL quadrant logic and the same formula used to build the hex
 /// init file: ROM[k] = round(32767 * sin(2π * ((k + 0.5) / TABLE_SIZE))).
 fn expected_sample(index: u16) -> u16 {
-    const IDX_W: u32 = TABLE_SIZE.ilog2(); // 10 for TABLE_SIZE=1024
+    const IDX_W: u32 = TABLE_SIZE.ilog2(); // log2(TABLE_SIZE), so 10 for 1024 entries
     const QADDR_W: u32 = IDX_W - 2; // 8
     const QADDR_MASK: u16 = (1u16 << QADDR_W) - 1; // 0xFF
     const MAX_SIGNED: f64 = 32767.0;
+    const MID_TREAD_OFFSET: f64 = 0.5;
 
     let invert_result = (index >> (IDX_W - 1)) & 1 != 0;
     let invert_index = (index >> (IDX_W - 2)) & 1 != 0;
@@ -23,7 +24,8 @@ fn expected_sample(index: u16) -> u16 {
         qaddr
     };
 
-    let phase = 2.0 * std::f64::consts::PI * ((rom_addr as f64 + 0.5) / (TABLE_SIZE as f64));
+    let normalized_phase = (rom_addr as f64 + MID_TREAD_OFFSET) / (TABLE_SIZE as f64);
+    let phase = 2.0 * std::f64::consts::PI * normalized_phase;
     let raw = (MAX_SIGNED * phase.sin()).round() as i16;
     let raw_bits = raw as u16;
 
@@ -280,7 +282,7 @@ fn test_sine_table_quadrant_symmetry() {
     advance_pipeline(&mut dut);
     let s64 = dut.sample;
 
-    dut.index = 511 - 64; // 447: Q1, invert_index, qaddr=191, ROM addr=~191=64
+    dut.index = 511 - 64; // 447: Q1, invert_index, qaddr=191, ROM addr=(~191) & 0xFF = 64
     advance_pipeline(&mut dut);
     let s447 = dut.sample;
     assert_eq!(
