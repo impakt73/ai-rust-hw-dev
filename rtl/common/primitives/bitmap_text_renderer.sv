@@ -189,6 +189,8 @@ module bitmap_text_renderer #(
     always_comb begin
         scroll_x_sum = {1'b0, SCROLL_X_WIDTH'(sync_active_x)} + {1'b0, scroll_x};
         scroll_y_sum = {1'b0, SCROLL_Y_WIDTH'(sync_active_y)} + {1'b0, scroll_y};
+        // Truncating the carry bit wraps the scrolled coordinates within the
+        // power-of-two tilemap dimensions without explicit compare/subtract logic.
         scrolled_active_x_next = scroll_x_sum[SCROLL_X_WIDTH-1:0];
         scrolled_active_y_next = scroll_y_sum[SCROLL_Y_WIDTH-1:0];
         tile_column = TILE_COLUMN_WIDTH'(scrolled_active_x >> TILE_COLUMN_SHIFT);
