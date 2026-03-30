@@ -14,7 +14,7 @@ module cyclonev_analogue_pocket_top #(
 ) (
     input  wire logic       clk,
     input  wire logic       clk_video,
-    input  wire logic       audio_mclk,
+    input  wire logic       audio_mclk,  // Reserved MCLK input for the Pocket audio interface
     input  wire logic       audio_sclk,
     input  wire logic [31:0] cont1_key,
     input  wire logic       reset_n,
@@ -48,9 +48,13 @@ module cyclonev_analogue_pocket_top #(
     logic        video_skip_reg;
     logic        video_vs_reg;
     logic        video_hs_reg;
+    localparam int unsigned AUDIO_PHASE_WIDTH = 32;
+    localparam int unsigned AUDIO_TABLE_SIZE = 1024;
+    localparam int unsigned TONE_GENERATOR_LATENCY = 5;
+    localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
+    logic [TONE_GENERATOR_LATENCY-1:0] tone_sample_valid_pipe;
     logic signed [15:0] tone_sample;
     logic               tone_sample_valid;
-    logic [4:0]         tone_sample_valid_pipe;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -69,10 +73,6 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned DPAD_LEFT_BIT = 2;
     localparam int unsigned DPAD_RIGHT_BIT = 3;
     localparam int unsigned FACE_A_BIT = 4;
-    localparam int unsigned AUDIO_PHASE_WIDTH = 32;
-    localparam int unsigned AUDIO_TABLE_SIZE = 1024;
-    localparam int unsigned TONE_GENERATOR_LATENCY = 5;
-    localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
     // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
     // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_440HZ = 32'd615165;
@@ -114,7 +114,7 @@ module cyclonev_analogue_pocket_top #(
     ff_sync #(
         .STAGES(3),
         .WIDTH(32)
-    ) video_dpad_sync (
+    ) video_cont1_key_sync (
         .clk(clk_video),
         .rst(video_rst),
         .din(cont1_key),

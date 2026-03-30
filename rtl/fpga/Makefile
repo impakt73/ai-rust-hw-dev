@@ -22,7 +22,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
 	$(RTL_DIR)/primitives/bitmap_text_renderer.sv \
+	$(RTL_DIR)/primitives/sine_table.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
+	$(RTL_DIR)/primitives/tone_generator.sv \
 	$(RTL_DIR)/primitives/video_sync.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
@@ -39,6 +41,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/io/host_bus_interface.sv \
 	$(RTL_DIR)/io/host_bus_rx.sv \
 	$(RTL_DIR)/io/host_bus_tx.sv \
+	$(RTL_DIR)/io/i2s_serializer.sv \
 	$(RTL_DIR)/io/sys_led_controller.sv \
 	$(RTL_DIR)/cpu/mem_interface.sv \
 	$(RTL_DIR)/cpu/mul_unit.sv \

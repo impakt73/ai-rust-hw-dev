@@ -418,6 +418,8 @@ end
     wire            datatable_wren;
     wire    [31:0]  datatable_data;
     wire    [31:0]  datatable_q;
+    wire            audgen_lrck;
+    wire            audgen_dac;
 
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
@@ -555,9 +557,6 @@ assign video_hs = repo_video_hs;
 assign audio_mclk = clk_core_12288;
 assign audio_dac = audgen_dac;
 assign audio_lrck = audgen_lrck;
-
-wire            audgen_lrck;
-wire            audgen_dac;
 
 
 ///////////////////////////////////////////////
