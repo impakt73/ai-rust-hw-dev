@@ -53,6 +53,10 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
+    localparam int unsigned DPAD_UP_BIT = 0;
+    localparam int unsigned DPAD_DOWN_BIT = 1;
+    localparam int unsigned DPAD_LEFT_BIT = 2;
+    localparam int unsigned DPAD_RIGHT_BIT = 3;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -131,8 +135,8 @@ module cyclonev_analogue_pocket_top #(
     always_ff @(posedge clk_video) begin
         if (video_rst) begin
             bitmap_video_vs_prev <= 1'b0;
-            scroll_x_reg <= '0;
-            scroll_y_reg <= '0;
+            scroll_x_reg <= 8'd0;
+            scroll_y_reg <= 8'd0;
             video_rgb_reg <= 24'h00_00_00;
             video_de_reg <= 1'b0;
             video_skip_reg <= 1'b0;
@@ -141,15 +145,15 @@ module cyclonev_analogue_pocket_top #(
         end else begin
             bitmap_video_vs_prev <= bitmap_video_vs;
             if (bitmap_video_vs && !bitmap_video_vs_prev) begin
-                if (dpad_key_video[2] && !dpad_key_video[3]) begin
+                if (dpad_key_video[DPAD_LEFT_BIT] && !dpad_key_video[DPAD_RIGHT_BIT]) begin
                     scroll_x_reg <= scroll_x_reg - 8'd1;
-                end else if (dpad_key_video[3] && !dpad_key_video[2]) begin
+                end else if (dpad_key_video[DPAD_RIGHT_BIT] && !dpad_key_video[DPAD_LEFT_BIT]) begin
                     scroll_x_reg <= scroll_x_reg + 8'd1;
                 end
 
-                if (dpad_key_video[0] && !dpad_key_video[1]) begin
+                if (dpad_key_video[DPAD_UP_BIT] && !dpad_key_video[DPAD_DOWN_BIT]) begin
                     scroll_y_reg <= scroll_y_reg - 8'd1;
-                end else if (dpad_key_video[1] && !dpad_key_video[0]) begin
+                end else if (dpad_key_video[DPAD_DOWN_BIT] && !dpad_key_video[DPAD_UP_BIT]) begin
                     scroll_y_reg <= scroll_y_reg + 8'd1;
                 end
             end
