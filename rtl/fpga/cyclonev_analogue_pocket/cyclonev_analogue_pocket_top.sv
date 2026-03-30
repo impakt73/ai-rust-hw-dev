@@ -43,6 +43,8 @@ module cyclonev_analogue_pocket_top #(
     logic        face_b_audio;
     logic        face_x_audio;
     logic        face_y_audio;
+    logic        trig_l_audio;
+    logic        trig_r_audio;
     logic        bitmap_video_vs_prev;
     logic [7:0]  scroll_x_reg;
     logic [7:0]  scroll_y_reg;
@@ -79,12 +81,16 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned FACE_B_BIT = 5;
     localparam int unsigned FACE_X_BIT = 6;
     localparam int unsigned FACE_Y_BIT = 7;
+    localparam int unsigned TRIG_L_BIT = 8;
+    localparam int unsigned TRIG_R_BIT = 9;
     // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
     // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_A4 = 32'd615165;
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_G4 = 32'd548049;
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_D4 = 32'd410573;
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_C4 = 32'd365779;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_E4 = 32'd460853;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_F4 = 32'd488256;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -170,6 +176,26 @@ module cyclonev_analogue_pocket_top #(
         .dout(face_y_audio)
     );
 
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(1)
+    ) audio_trig_l_sync (
+        .clk(audio_sclk),
+        .rst(audio_rst),
+        .din(cont1_key[TRIG_L_BIT]),
+        .dout(trig_l_audio)
+    );
+
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(1)
+    ) audio_trig_r_sync (
+        .clk(audio_sclk),
+        .rst(audio_rst),
+        .din(cont1_key[TRIG_R_BIT]),
+        .dout(trig_r_audio)
+    );
+
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
@@ -190,7 +216,7 @@ module cyclonev_analogue_pocket_top #(
     logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
 
     always_comb begin
-        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio;
+        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
         if (face_a_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;
         end else if (face_b_audio) begin
@@ -199,6 +225,10 @@ module cyclonev_analogue_pocket_top #(
             audio_tuning_word = AUDIO_TUNING_WORD_G4;
         end else if (face_y_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_D4;
+        end else if (trig_l_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_E4;
+        end else if (trig_r_audio) begin
+            audio_tuning_word = AUDIO_TUNING_WORD_F4;
         end else begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;  // default to A4 to avoid needing a separate mute implementation
         end
