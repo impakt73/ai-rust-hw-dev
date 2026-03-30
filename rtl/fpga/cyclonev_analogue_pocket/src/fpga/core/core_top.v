@@ -422,6 +422,7 @@ end
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
     .clk_video  ( clk_core_12288 ),
+    .dpad_key   ( cont1_key[3:0] ),
     .reset_n    ( reset_n ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
