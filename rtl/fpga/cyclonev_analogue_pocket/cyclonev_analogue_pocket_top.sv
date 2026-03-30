@@ -16,7 +16,7 @@ module cyclonev_analogue_pocket_top #(
     input  wire logic       clk_video,
     input  wire logic       audio_mclk,
     input  wire logic       audio_sclk,
-    input  wire logic [3:0] dpad_key,
+    input  wire logic [31:0] cont1_key,
     input  wire logic       reset_n,
     input  wire logic       serial_rx,
     output logic            serial_tx,
@@ -38,7 +38,8 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
     logic [23:0] bitmap_video_rgb;
-    logic [3:0]  dpad_key_video;
+    logic [31:0] cont1_key_video;
+    logic        face_a_audio;
     logic        bitmap_video_vs_prev;
     logic [7:0]  scroll_x_reg;
     logic [7:0]  scroll_y_reg;
@@ -67,10 +68,13 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned DPAD_DOWN_BIT = 1;
     localparam int unsigned DPAD_LEFT_BIT = 2;
     localparam int unsigned DPAD_RIGHT_BIT = 3;
+    localparam int unsigned FACE_A_BIT = 4;
     localparam int unsigned AUDIO_PHASE_WIDTH = 32;
     localparam int unsigned AUDIO_TABLE_SIZE = 1024;
     localparam int unsigned TONE_GENERATOR_LATENCY = 5;
     localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
+    // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
+    // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_440HZ = 32'd615165;
 
     always_ff @(posedge clk) begin
@@ -109,12 +113,22 @@ module cyclonev_analogue_pocket_top #(
 
     ff_sync #(
         .STAGES(3),
-        .WIDTH(4)
+        .WIDTH(32)
     ) video_dpad_sync (
         .clk(clk_video),
         .rst(video_rst),
-        .din(dpad_key),
-        .dout(dpad_key_video)
+        .din(cont1_key),
+        .dout(cont1_key_video)
+    );
+
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(1)
+    ) audio_face_a_sync (
+        .clk(audio_sclk),
+        .rst(audio_rst),
+        .din(cont1_key[FACE_A_BIT]),
+        .dout(face_a_audio)
     );
 
     fpga_common_top #(
@@ -133,13 +147,15 @@ module cyclonev_analogue_pocket_top #(
         .rst_core(rst_out)
     );
 
+    // tone_generator has a fixed multi-cycle lookup latency, so delay the
+    // sideband valid flag until the output sample is fully populated.
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
             tone_sample_valid_pipe <= '0;
         end else begin
             tone_sample_valid_pipe <= {
                 tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-2:0],
-                1'b1
+                face_a_audio
             };
         end
     end
@@ -166,7 +182,7 @@ module cyclonev_analogue_pocket_top #(
         .rst         (audio_rst),
         .sample_data (tone_sample),
         .sample_valid(tone_sample_valid),
-        .sample_ready(),
+        .sample_ready(),  // the tone free-runs; face_a gates validity, so backpressure is unused
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
         .i2s_sd      (audio_dac)
@@ -212,15 +228,15 @@ module cyclonev_analogue_pocket_top #(
         end else begin
             bitmap_video_vs_prev <= bitmap_video_vs;
             if (bitmap_video_vs && !bitmap_video_vs_prev) begin
-                if (dpad_key_video[DPAD_LEFT_BIT] && !dpad_key_video[DPAD_RIGHT_BIT]) begin
+                if (cont1_key_video[DPAD_LEFT_BIT] && !cont1_key_video[DPAD_RIGHT_BIT]) begin
                     scroll_x_reg <= scroll_x_reg - 8'd1;
-                end else if (dpad_key_video[DPAD_RIGHT_BIT] && !dpad_key_video[DPAD_LEFT_BIT]) begin
+                end else if (cont1_key_video[DPAD_RIGHT_BIT] && !cont1_key_video[DPAD_LEFT_BIT]) begin
                     scroll_x_reg <= scroll_x_reg + 8'd1;
                 end
 
-                if (dpad_key_video[DPAD_UP_BIT] && !dpad_key_video[DPAD_DOWN_BIT]) begin
+                if (cont1_key_video[DPAD_UP_BIT] && !cont1_key_video[DPAD_DOWN_BIT]) begin
                     scroll_y_reg <= scroll_y_reg - 8'd1;
-                end else if (dpad_key_video[DPAD_DOWN_BIT] && !dpad_key_video[DPAD_UP_BIT]) begin
+                end else if (cont1_key_video[DPAD_DOWN_BIT] && !cont1_key_video[DPAD_UP_BIT]) begin
                     scroll_y_reg <= scroll_y_reg + 8'd1;
                 end
             end
