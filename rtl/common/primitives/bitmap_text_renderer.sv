@@ -18,6 +18,8 @@ module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_HEIGHT = 480,
     parameter int unsigned TILE_WIDTH = 8,
     parameter int unsigned TILE_HEIGHT = 8,
+    parameter int unsigned TILE_COLUMNS = 128,
+    parameter int unsigned TILE_ROWS = 64,
     parameter int unsigned H_FRONT_PORCH = 16,
     parameter int unsigned H_SYNC_WIDTH = 96,
     parameter int unsigned H_BACK_PORCH = 48,
@@ -32,6 +34,10 @@ module bitmap_text_renderer #(
 ) (
     input wire logic clk,
     input wire logic rst,
+    input wire logic [(((TILE_WIDTH * TILE_COLUMNS) <= 1) ? 1 : $clog2(TILE_WIDTH * TILE_COLUMNS))-1:0]
+        scroll_x,
+    input wire logic [(((TILE_HEIGHT * TILE_ROWS) <= 1) ? 1 : $clog2(TILE_HEIGHT * TILE_ROWS))-1:0]
+        scroll_y,
     output logic video_de,
     output logic video_hs,
     output logic video_vs,
@@ -51,18 +57,21 @@ module bitmap_text_renderer #(
     localparam int unsigned PALETTE_ROM_ADDR_WIDTH = FONT_ROM_DATA_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
     // The registered lookup/output path is:
+    //   - 1 cycle: registered scrolled tilemap-coordinate stage
     //   - 1 cycle: registered character-map address stage
     //   - 2 cycles: character-map sync_sprom latency
     //   - 2 cycles: font sync_sprom latency
     //   - 2 cycles: palette sync_sprom latency
     //   - 1 cycle: registered `video_rgb` output stage
-    // Delay the public video control outputs by the same 8 cycles so they stay
+    // Delay the public video control outputs by the same 9 cycles so they stay
     // aligned with the RGB data leaving the module.
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 8;
+    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
-    localparam int unsigned TILE_COLUMNS = ACTIVE_WIDTH / TILE_WIDTH;
-    localparam int unsigned TILE_ROWS = ACTIVE_HEIGHT / TILE_HEIGHT;
+    localparam int unsigned TILEMAP_WIDTH = TILE_WIDTH * TILE_COLUMNS;
+    localparam int unsigned TILEMAP_HEIGHT = TILE_HEIGHT * TILE_ROWS;
+    localparam int unsigned SCROLL_X_WIDTH = (TILEMAP_WIDTH <= 1) ? 1 : $clog2(TILEMAP_WIDTH);
+    localparam int unsigned SCROLL_Y_WIDTH = (TILEMAP_HEIGHT <= 1) ? 1 : $clog2(TILEMAP_HEIGHT);
     localparam int unsigned TILE_COLUMN_WIDTH = (TILE_COLUMNS <= 1) ? 1 : $clog2(TILE_COLUMNS);
     localparam int unsigned TILE_ROW_WIDTH = (TILE_ROWS <= 1) ? 1 : $clog2(TILE_ROWS);
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
@@ -73,6 +82,8 @@ module bitmap_text_renderer #(
     logic sync_video_vs;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
+    logic [SCROLL_X_WIDTH-1:0] scrolled_active_x;
+    logic [SCROLL_Y_WIDTH-1:0] scrolled_active_y;
 
     logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr;
     logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_next;
@@ -89,6 +100,10 @@ module bitmap_text_renderer #(
     logic [TILE_COLUMN_WIDTH-1:0] tile_column;
     logic [TILE_ROW_WIDTH-1:0] tile_row;
     logic [CHARMAP_ADDR_WIDTH-1:0] tile_row_base_addr;
+    logic [SCROLL_X_WIDTH:0] scroll_x_sum;
+    logic [SCROLL_Y_WIDTH:0] scroll_y_sum;
+    logic [SCROLL_X_WIDTH-1:0] scrolled_active_x_next;
+    logic [SCROLL_Y_WIDTH-1:0] scrolled_active_y_next;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_de_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_hs_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_vs_pipe;
@@ -162,22 +177,28 @@ module bitmap_text_renderer #(
         if (TILE_HEIGHT != 8) begin
             $fatal(1, "bitmap_text_renderer: TILE_HEIGHT must be 8");
         end
-        if ((ACTIVE_WIDTH % TILE_WIDTH) != 0) begin
-            $fatal(1, "bitmap_text_renderer: ACTIVE_WIDTH must be divisible by TILE_WIDTH");
+        if ((TILE_COLUMNS == 0) || ((TILE_COLUMNS & (TILE_COLUMNS - 1)) != 0)) begin
+            $fatal(1, "bitmap_text_renderer: TILE_COLUMNS must be a non-zero power of two");
         end
-        if ((ACTIVE_HEIGHT % TILE_HEIGHT) != 0) begin
-            $fatal(1, "bitmap_text_renderer: ACTIVE_HEIGHT must be divisible by TILE_HEIGHT");
+        if ((TILE_ROWS == 0) || ((TILE_ROWS & (TILE_ROWS - 1)) != 0)) begin
+            $fatal(1, "bitmap_text_renderer: TILE_ROWS must be a non-zero power of two");
         end
     end
 `endif
 
     always_comb begin
-        tile_column = TILE_COLUMN_WIDTH'(sync_active_x >> TILE_COLUMN_SHIFT);
-        tile_row = TILE_ROW_WIDTH'(sync_active_y >> TILE_ROW_SHIFT);
+        scroll_x_sum = {1'b0, SCROLL_X_WIDTH'(sync_active_x)} + {1'b0, scroll_x};
+        scroll_y_sum = {1'b0, SCROLL_Y_WIDTH'(sync_active_y)} + {1'b0, scroll_y};
+        // Truncating the carry bit wraps the scrolled coordinates within the
+        // power-of-two tilemap dimensions without explicit compare/subtract logic.
+        scrolled_active_x_next = scroll_x_sum[SCROLL_X_WIDTH-1:0];
+        scrolled_active_y_next = scroll_y_sum[SCROLL_Y_WIDTH-1:0];
+        tile_column = TILE_COLUMN_WIDTH'(scrolled_active_x >> TILE_COLUMN_SHIFT);
+        tile_row = TILE_ROW_WIDTH'(scrolled_active_y >> TILE_ROW_SHIFT);
         tile_row_base_addr = CHARMAP_ADDR_WIDTH'(tile_row * TILE_COLUMNS);
         glyph_offset = {
-            FONT_ROW_INDEX_WIDTH'(sync_active_y[FONT_ROW_INDEX_WIDTH-1:0]),
-            FONT_COLUMN_INDEX_WIDTH'(sync_active_x[FONT_COLUMN_INDEX_WIDTH-1:0])
+            FONT_ROW_INDEX_WIDTH'(scrolled_active_y[FONT_ROW_INDEX_WIDTH-1:0]),
+            FONT_COLUMN_INDEX_WIDTH'(scrolled_active_x[FONT_COLUMN_INDEX_WIDTH-1:0])
         };
         char_map_addr_next = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
         font_addr = {char_map_rdata, glyph_offset_d2};
@@ -192,6 +213,8 @@ module bitmap_text_renderer #(
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~HSYNC_ACTIVE_HIGH}};
             video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VSYNC_ACTIVE_HIGH}};
+            scrolled_active_x <= '0;
+            scrolled_active_y <= '0;
             char_map_addr <= '0;
             glyph_offset_d0 <= '0;
             glyph_offset_d1 <= '0;
@@ -201,6 +224,8 @@ module bitmap_text_renderer #(
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+            scrolled_active_x <= scrolled_active_x_next;
+            scrolled_active_y <= scrolled_active_y_next;
             char_map_addr <= char_map_addr_next;
             glyph_offset_d0 <= glyph_offset;
             glyph_offset_d1 <= glyph_offset_d0;
