@@ -549,29 +549,9 @@ assign video_hs = repo_video_hs;
 // see other examples for actual audio generation
 //
 
-assign audio_mclk = audgen_mclk;
+assign audio_mclk = clk_core_12288;
 assign audio_dac = audgen_dac;
 assign audio_lrck = audgen_lrck;
-
-// generate MCLK = 12.288mhz with fractional accumulator
-    reg         [21:0]  audgen_accum;
-    reg                 audgen_mclk;
-    parameter   [20:0]  CYCLE_48KHZ = 21'd122880 * 2;
-always @(posedge clk_74a) begin
-    audgen_accum <= audgen_accum + CYCLE_48KHZ;
-    if(audgen_accum >= 21'd742500) begin
-        audgen_mclk <= ~audgen_mclk;
-        audgen_accum <= audgen_accum - 21'd742500 + CYCLE_48KHZ;
-    end
-end
-
-// generate SCLK = 3.072mhz by dividing MCLK by 4
-    reg [1:0]   aud_mclk_divider;
-    wire        audgen_sclk = aud_mclk_divider[1] /* synthesis keep*/;
-    reg         audgen_lrck_1;
-always @(posedge audgen_mclk) begin
-    aud_mclk_divider <= aud_mclk_divider + 1'b1;
-end
 
 // shift out audio data as I2S 
 // 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
@@ -579,7 +559,7 @@ end
     reg     [4:0]   audgen_lrck_cnt;    
     reg             audgen_lrck;
     reg             audgen_dac;
-always @(negedge audgen_sclk) begin
+always @(posedge clk_core_3072_180deg) begin
     audgen_dac <= 1'b0;
     // 48khz * 64
     audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
@@ -596,6 +576,7 @@ end
 
     wire    clk_core_12288;
     wire    clk_core_12288_90deg;
+    wire    clk_core_3072_180deg;
     
     wire    pll_core_locked;
     wire    pll_core_locked_s;
@@ -607,6 +588,7 @@ mf_pllbase mp1 (
     
     .outclk_0       ( clk_core_12288 ),
     .outclk_1       ( clk_core_12288_90deg ),
+    .outclk_2       ( clk_core_3072_180deg ),
     
     .locked         ( pll_core_locked )
 );
