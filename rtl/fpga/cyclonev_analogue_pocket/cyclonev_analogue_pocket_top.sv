@@ -81,8 +81,8 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned FACE_B_BIT = 5;
     localparam int unsigned FACE_X_BIT = 6;
     localparam int unsigned FACE_Y_BIT = 7;
-    localparam int unsigned TRIG_L_BIT = 8;
-    localparam int unsigned TRIG_R_BIT = 9;
+    localparam int unsigned TRIG_L1_BIT = 8;
+    localparam int unsigned TRIG_R1_BIT = 9;
     // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
     // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
     localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_A4 = 32'd615165;
@@ -136,65 +136,28 @@ module cyclonev_analogue_pocket_top #(
         .dout(cont1_key_video)
     );
 
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1)
-    ) audio_face_a_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din(cont1_key[FACE_A_BIT]),
-        .dout(face_a_audio)
-    );
+    // Synchronize all audio-domain button bits as a packed vector to reduce duplication.
+    // Bit order: [5]=TRIG_R1, [4]=TRIG_L1, [3]=FACE_Y, [2]=FACE_X, [1]=FACE_B, [0]=FACE_A
+    logic [5:0] audio_buttons_sync;
 
     ff_sync #(
         .STAGES(3),
-        .WIDTH(1)
-    ) audio_face_b_sync (
+        .WIDTH(6)
+    ) audio_buttons_key_sync (
         .clk(audio_sclk),
         .rst(audio_rst),
-        .din(cont1_key[FACE_B_BIT]),
-        .dout(face_b_audio)
+        .din({cont1_key[TRIG_R1_BIT], cont1_key[TRIG_L1_BIT],
+              cont1_key[FACE_Y_BIT],  cont1_key[FACE_X_BIT],
+              cont1_key[FACE_B_BIT],  cont1_key[FACE_A_BIT]}),
+        .dout(audio_buttons_sync)
     );
 
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1)
-    ) audio_face_x_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din(cont1_key[FACE_X_BIT]),
-        .dout(face_x_audio)
-    );
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1)
-    ) audio_face_y_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din(cont1_key[FACE_Y_BIT]),
-        .dout(face_y_audio)
-    );
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1)
-    ) audio_trig_l_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din(cont1_key[TRIG_L_BIT]),
-        .dout(trig_l_audio)
-    );
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1)
-    ) audio_trig_r_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din(cont1_key[TRIG_R_BIT]),
-        .dout(trig_r_audio)
-    );
+    assign face_a_audio = audio_buttons_sync[0];
+    assign face_b_audio = audio_buttons_sync[1];
+    assign face_x_audio = audio_buttons_sync[2];
+    assign face_y_audio = audio_buttons_sync[3];
+    assign trig_l_audio = audio_buttons_sync[4];
+    assign trig_r_audio = audio_buttons_sync[5];
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -269,7 +232,7 @@ module cyclonev_analogue_pocket_top #(
         .rst         (audio_rst),
         .sample_data (tone_sample),
         .sample_valid(tone_sample_valid),
-        .sample_ready(),  // the tone free-runs; face_a gates validity, so backpressure is unused
+        .sample_ready(),  // the tone free-runs; audio_en gates validity, so backpressure is unused
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
         .i2s_sd      (audio_dac)
