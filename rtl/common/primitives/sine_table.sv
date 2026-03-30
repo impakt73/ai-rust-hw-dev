@@ -113,7 +113,7 @@ module sine_table #(
     // Stage 4 – conditional two's-complement and output register
     // -----------------------------------------------------------------------
     always_ff @(posedge clk) begin
-        sample <= invert_result_r3 ? -$signed(rom_data) : $signed(rom_data);
+        sample <= invert_result_r3 ? -rom_data : rom_data;
     end
 
 endmodule
