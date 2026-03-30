@@ -42,8 +42,11 @@ module sine_table #(
     // -----------------------------------------------------------------------
     // Derived widths
     // -----------------------------------------------------------------------
-    localparam int IDX_W   = $clog2(TABLE_SIZE);               // full-period index width
-    localparam int QADDR_W = (IDX_W > 2) ? (IDX_W - 2) : 1;   // quarter-wave address width
+    localparam int IDX_W   = $clog2(TABLE_SIZE);  // full-period index width
+    // Keep QADDR_W at least 1 so invalid parameterizations still elaborate far
+    // enough to hit the TABLE_SIZE runtime fatal instead of tripping zero-width
+    // declarations first.
+    localparam int QADDR_W = (IDX_W > 2) ? (IDX_W - 2) : 1;  // quarter-wave address width
 
     // Parameter validation (simulation only)
     initial begin
