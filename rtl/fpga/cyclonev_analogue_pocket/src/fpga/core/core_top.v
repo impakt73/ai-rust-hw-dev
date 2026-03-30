@@ -422,6 +422,8 @@ end
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
     .clk_video  ( clk_core_12288 ),
+    .audio_mclk ( clk_core_12288 ),
+    .audio_sclk ( clk_core_3072_180deg ),
     .dpad_key   ( cont1_key[3:0] ),
     .reset_n    ( reset_n ),
     .serial_rx  ( serial_rx ),
@@ -431,7 +433,9 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .video_de   ( repo_video_de ),
     .video_skip ( repo_video_skip ),
     .video_vs   ( repo_video_vs ),
-    .video_hs   ( repo_video_hs )
+    .video_hs   ( repo_video_hs ),
+    .audio_dac  ( audgen_dac ),
+    .audio_lrclk( audgen_lrck )
 );
 
 core_bridge_cmd icb (
@@ -545,30 +549,15 @@ assign video_hs = repo_video_hs;
 
 
 //
-// audio i2s silence generator
-// see other examples for actual audio generation
+// audio outputs are generated inside cyclonev_analogue_pocket_top
 //
 
 assign audio_mclk = clk_core_12288;
 assign audio_dac = audgen_dac;
 assign audio_lrck = audgen_lrck;
 
-// shift out audio data as I2S 
-// 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
-//
-    reg     [4:0]   audgen_lrck_cnt;    
-    reg             audgen_lrck;
-    reg             audgen_dac;
-always @(posedge clk_core_3072_180deg) begin
-    audgen_dac <= 1'b0;
-    // 48khz * 64
-    audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
-    if(audgen_lrck_cnt == 31) begin
-        // switch channels
-        audgen_lrck <= ~audgen_lrck;
-        
-    end 
-end
+wire            audgen_lrck;
+wire            audgen_dac;
 
 
 ///////////////////////////////////////////////

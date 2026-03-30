@@ -9,10 +9,13 @@ module cyclonev_analogue_pocket_top #(
     // entry per pixel in row-major order.
     parameter string FONT_INIT_FILE = "./core/bitmap_text_renderer_font_init.hex",
     parameter string CHAR_MAP_INIT_FILE = "./core/bitmap_text_renderer_char_map_init.hex",
-    parameter string PALETTE_INIT_FILE = "./core/bitmap_text_renderer_palette_init.hex"
+    parameter string PALETTE_INIT_FILE = "./core/bitmap_text_renderer_palette_init.hex",
+    parameter string AUDIO_INIT_FILE = "./core/sine_table_init.hex"
 ) (
     input  wire logic       clk,
     input  wire logic       clk_video,
+    input  wire logic       audio_mclk,
+    input  wire logic       audio_sclk,
     input  wire logic [3:0] dpad_key,
     input  wire logic       reset_n,
     input  wire logic       serial_rx,
@@ -22,11 +25,15 @@ module cyclonev_analogue_pocket_top #(
     output logic            video_de,
     output logic            video_skip,
     output logic            video_vs,
-    output logic            video_hs
+    output logic            video_hs,
+    output logic            audio_dac,
+    output logic            audio_lrclk
 );
     logic rst;
     logic reset_n_video_sync;
+    logic reset_n_audio_sync;
     logic video_rst;
+    logic audio_rst;
     logic        bitmap_video_de;
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;
@@ -40,6 +47,9 @@ module cyclonev_analogue_pocket_top #(
     logic        video_skip_reg;
     logic        video_vs_reg;
     logic        video_hs_reg;
+    logic signed [15:0] tone_sample;
+    logic               tone_sample_valid;
+    logic [4:0]         tone_sample_valid_pipe;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -57,6 +67,11 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned DPAD_DOWN_BIT = 1;
     localparam int unsigned DPAD_LEFT_BIT = 2;
     localparam int unsigned DPAD_RIGHT_BIT = 3;
+    localparam int unsigned AUDIO_PHASE_WIDTH = 32;
+    localparam int unsigned AUDIO_TABLE_SIZE = 1024;
+    localparam int unsigned TONE_GENERATOR_LATENCY = 5;
+    localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
+    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_440HZ = 32'd615165;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -78,6 +93,19 @@ module cyclonev_analogue_pocket_top #(
     );
 
     assign video_rst = !reset_n_video_sync;
+
+    ff_sync #(
+        .STAGES(3),
+        .WIDTH(1),
+        .RESET_VALUE(1'b0)
+    ) audio_reset_sync (
+        .clk(audio_sclk),
+        .rst(1'b0),
+        .din(reset_n),
+        .dout(reset_n_audio_sync)
+    );
+
+    assign audio_rst = !reset_n_audio_sync;
 
     ff_sync #(
         .STAGES(3),
@@ -103,6 +131,45 @@ module cyclonev_analogue_pocket_top #(
         .led_out(),
         .sys_led_out(),
         .rst_core(rst_out)
+    );
+
+    always_ff @(posedge audio_sclk) begin
+        if (audio_rst) begin
+            tone_sample_valid_pipe <= '0;
+        end else begin
+            tone_sample_valid_pipe <= {
+                tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-2:0],
+                1'b1
+            };
+        end
+    end
+
+    assign tone_sample_valid = tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-1];
+
+    tone_generator #(
+        .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
+        .TABLE_SIZE  (AUDIO_TABLE_SIZE),
+        .SAMPLE_WIDTH(16),
+        .INIT_FILE   (AUDIO_INIT_FILE)
+    ) pocket_tone_generator (
+        .clk        (audio_sclk),
+        .rst        (audio_rst),
+        .tuning_word(AUDIO_TUNING_WORD_440HZ),
+        .sample     (tone_sample)
+    );
+
+    i2s_serializer #(
+        .INPUT_SAMPLE_WIDTH (16),
+        .OUTPUT_SAMPLE_WIDTH(I2S_OUTPUT_SAMPLE_WIDTH)
+    ) pocket_i2s_serializer (
+        .clk         (audio_sclk),
+        .rst         (audio_rst),
+        .sample_data (tone_sample),
+        .sample_valid(tone_sample_valid),
+        .sample_ready(),
+        .i2s_bclk    (),
+        .i2s_lrclk   (audio_lrclk),
+        .i2s_sd      (audio_dac)
     );
 
     bitmap_text_renderer #(
