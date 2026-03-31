@@ -22,12 +22,14 @@ module tone_generator #(
     input  wire logic                           clk,
     input  wire logic                           rst,
     input  wire logic [PHASE_WIDTH-1:0]         tuning_word,
+    output      logic                           zero_crossing,
     output      logic signed [SAMPLE_WIDTH-1:0] sample
 );
 
     localparam int TABLE_ADDR_WIDTH = $clog2(TABLE_SIZE);
 
     logic [PHASE_WIDTH-1:0]         phase_acc;
+    logic [PHASE_WIDTH-1:0]         phase_acc_next;
     logic [PHASE_WIDTH+TABLE_ADDR_WIDTH-1:0] phase_index_window;
     logic [TABLE_ADDR_WIDTH-1:0]    table_index;
 
@@ -54,14 +56,16 @@ module tone_generator #(
         end
     end
 
+    assign phase_acc_next = phase_acc + tuning_word;
     assign phase_index_window = {phase_acc, {TABLE_ADDR_WIDTH{1'b0}}};
     assign table_index = phase_index_window[PHASE_WIDTH+TABLE_ADDR_WIDTH-1 -: TABLE_ADDR_WIDTH];
+    assign zero_crossing = !rst && (phase_acc[PHASE_WIDTH-1] != phase_acc_next[PHASE_WIDTH-1]);
 
     always_ff @(posedge clk) begin
         if (rst) begin
             phase_acc <= '0;
         end else begin
-            phase_acc <= phase_acc + tuning_word;
+            phase_acc <= phase_acc_next;
         end
     end
 

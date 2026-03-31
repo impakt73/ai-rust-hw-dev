@@ -64,6 +64,7 @@ module cyclonev_analogue_pocket_top #(
     logic               tone_sample_hold_valid;
     logic               i2s_sample_ready;
     logic               tone_sample_valid;
+    logic               tone_zero_crossing;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -180,10 +181,11 @@ module cyclonev_analogue_pocket_top #(
     );
 
     logic audio_en;
+    logic audio_en_req;
     logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
 
     always_comb begin
-        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
+        audio_en_req = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
         if (face_a_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;
         end else if (face_b_audio) begin
@@ -198,6 +200,14 @@ module cyclonev_analogue_pocket_top #(
             audio_tuning_word = AUDIO_TUNING_WORD_F4;
         end else begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;  // default to A4 to avoid needing a separate mute implementation
+        end
+    end
+
+    always_ff @(posedge audio_sclk) begin
+        if (audio_rst) begin
+            audio_en <= 1'b0;
+        end else if (tone_zero_crossing) begin
+            audio_en <= audio_en_req;
         end
     end
 
@@ -241,10 +251,11 @@ module cyclonev_analogue_pocket_top #(
         .SAMPLE_WIDTH(16),
         .INIT_FILE   (AUDIO_INIT_FILE)
     ) pocket_tone_generator (
-        .clk        (audio_sclk),
-        .rst        (audio_rst),
-        .tuning_word(audio_tuning_word),
-        .sample     (tone_sample)
+        .clk          (audio_sclk),
+        .rst          (audio_rst),
+        .tuning_word  (audio_tuning_word),
+        .zero_crossing(tone_zero_crossing),
+        .sample       (tone_sample)
     );
 
     i2s_serializer #(

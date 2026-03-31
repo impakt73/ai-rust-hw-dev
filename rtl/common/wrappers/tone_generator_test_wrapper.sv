@@ -12,10 +12,11 @@ module tone_generator_test_wrapper (
         .SAMPLE_WIDTH(16),
         .INIT_FILE   ("../rtl/common/wrappers/sine_table_test_init.hex")
     ) u_tone_generator (
-        .clk         (clk),
-        .rst         (rst),
-        .tuning_word (tuning_word),
-        .sample      (sample)
+        .clk          (clk),
+        .rst          (rst),
+        .tuning_word  (tuning_word),
+        .zero_crossing(),
+        .sample       (sample)
     );
 
 endmodule
