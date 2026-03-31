@@ -221,7 +221,8 @@ module cyclonev_analogue_pocket_top #(
         .clk        (audio_sclk),
         .rst        (audio_rst),
         .tuning_word(audio_tuning_word),
-        .sample     (tone_sample)
+        .sample     (tone_sample),
+        .zero_cross ()
     );
 
     i2s_serializer #(

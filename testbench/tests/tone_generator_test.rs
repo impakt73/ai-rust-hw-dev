@@ -4,6 +4,7 @@ const TABLE_SIZE: u16 = 1024;
 const PHASE_WIDTH: usize = 32;
 const TABLE_ADDR_WIDTH: usize = TABLE_SIZE.ilog2() as usize;
 const PIPELINE_STAGES: usize = 4;
+const HALF_TABLE_SIZE: u16 = TABLE_SIZE / 2;
 const ONE_INDEX_STEP_TUNING_WORD: u32 = 1u32 << (PHASE_WIDTH - TABLE_ADDR_WIDTH);
 
 fn expected_sample(index: u16) -> u16 {
@@ -66,6 +67,10 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
         expected_sample(0),
         "reset must hold the phase accumulator at index 0"
     );
+    assert_eq!(
+        dut.zero_cross, 0,
+        "zero_cross must stay low while reset is asserted"
+    );
 
     for _ in 0..4 {
         clock_cycle(&mut dut);
@@ -73,6 +78,10 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
             dut.sample,
             expected_sample(0),
             "sample must remain at the index-0 sine value while reset is asserted"
+        );
+        assert_eq!(
+            dut.zero_cross, 0,
+            "zero_cross must stay low while reset is asserted"
         );
     }
 }
@@ -117,6 +126,36 @@ fn test_tone_generator_advances_one_table_index_per_cycle() {
             dut.sample,
             expected_sample(expected_index),
             "sample must match sine-table index {expected_index} when the tuning word advances one index per cycle"
+        );
+        clock_cycle(&mut dut);
+    }
+}
+
+#[test]
+fn test_tone_generator_zero_cross_aligns_with_output_sample() {
+    let runtime = create_tone_generator_runtime().expect("Failed to create tone_generator runtime");
+    let mut dut = runtime
+        .create_model_simple::<ToneGeneratorTestWrapper>()
+        .expect("Failed to create tone_generator model");
+
+    flush_reset_pipeline(&mut dut);
+    dut.rst = 0;
+    dut.tuning_word = ONE_INDEX_STEP_TUNING_WORD;
+
+    for _ in 0..PIPELINE_STAGES {
+        clock_cycle(&mut dut);
+    }
+
+    for expected_index in 0..TABLE_SIZE {
+        assert_eq!(
+            dut.sample,
+            expected_sample(expected_index),
+            "sample must match sine-table index {expected_index}"
+        );
+        assert_eq!(
+            dut.zero_cross != 0,
+            expected_index == 0 || expected_index == HALF_TABLE_SIZE,
+            "zero_cross must align with the output samples nearest the sine zero crossings at index {expected_index}"
         );
         clock_cycle(&mut dut);
     }
