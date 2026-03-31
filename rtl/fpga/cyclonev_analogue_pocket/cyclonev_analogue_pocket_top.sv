@@ -62,6 +62,7 @@ module cyclonev_analogue_pocket_top #(
     logic               tone_sample_hold_valid;
     logic               i2s_sample_ready;
     logic               tone_sample_valid;
+    logic               tone_zero_cross;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -181,7 +182,6 @@ module cyclonev_analogue_pocket_top #(
     logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
 
     always_comb begin
-        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
         if (face_a_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;
         end else if (face_b_audio) begin
@@ -216,6 +216,16 @@ module cyclonev_analogue_pocket_top #(
             tone_sample_hold_valid <= 1'b1;
         end
     end
+
+    always_ff @(posedge audio_sclk) begin
+        if (audio_rst) begin
+            audio_en <= 1'b0;
+        end else if (tone_zero_cross && tone_sample_valid) begin
+            audio_en <= face_a_audio || face_b_audio || face_x_audio || face_y_audio
+                || trig_l_audio || trig_r_audio;
+        end
+    end
+
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
         .TABLE_SIZE  (AUDIO_TABLE_SIZE),
@@ -226,7 +236,7 @@ module cyclonev_analogue_pocket_top #(
         .rst        (audio_rst),
         .tuning_word(audio_tuning_word),
         .sample     (tone_sample),
-        .zero_cross (),
+        .zero_cross (tone_zero_cross),
         .valid      (tone_sample_valid)
     );
 
