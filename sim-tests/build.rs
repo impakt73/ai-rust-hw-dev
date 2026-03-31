@@ -52,6 +52,8 @@ fn visit_latest_modified(path: &Path, latest: &mut Option<SystemTime>) {
     }
 }
 
+/// Returns true when every expected `rust-test-program` release binary exists and is at least as
+/// new as the latest tracked source/configuration input that can affect those ELFs.
 fn rust_test_program_inputs_are_current(
     rust_test_program_dir: &Path,
     target_dir: &Path,
