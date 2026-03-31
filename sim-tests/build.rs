@@ -63,6 +63,7 @@ fn rust_test_program_inputs_are_current(
     for path in [
         rust_test_program_dir.join("src"),
         rust_test_program_dir.join("Cargo.toml"),
+        rust_test_program_dir.join("Cargo.lock"),
         rust_test_program_dir.join("build.rs"),
         rust_test_program_dir.join("memory.x"),
         rust_test_program_dir.join(".cargo").join("config.toml"),
@@ -177,6 +178,10 @@ fn main() {
     println!(
         "cargo:rerun-if-changed={}",
         rust_test_program_dir.join("Cargo.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        rust_test_program_dir.join("Cargo.lock").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
