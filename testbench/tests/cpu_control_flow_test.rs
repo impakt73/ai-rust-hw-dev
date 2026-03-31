@@ -1,6 +1,7 @@
 use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr, mret, wfi};
 use riscv_core::{create_cpu_runtime, Cpu};
 
+use riscv_core::AsDynamicVerilatedModel;
 const S_FETCH: u8 = 0x1;
 const S_DECODE: u8 = 0x2;
 const S_EXECUTE: u8 = 0x3;

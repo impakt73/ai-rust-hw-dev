@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{
     create_debouncer_runtime, create_debouncer_single_cycle_runtime, DebouncerSingleCycleWrapper,
     DebouncerWrapper,

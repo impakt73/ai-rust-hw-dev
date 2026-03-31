@@ -1,5 +1,6 @@
 use riscv_core::{create_fpu_runtime, Fpu};
 
+use riscv_core::AsDynamicVerilatedModel;
 // FPU Operation Encodings (must match rtl/fpu.sv)
 const FPU_ADD: u8 = 0b00000;
 const FPU_SUB: u8 = 0b00001;

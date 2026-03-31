@@ -5,6 +5,7 @@ use bus_shared::{
     HandlerError, HostBusHandler, RequestAddressRegion,
 };
 use riscv_core::trace::InstructionTrace;
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{Top, Vcd, VerilatedModelConfig, VerilatorRuntime};
 use std::time::Instant;
 

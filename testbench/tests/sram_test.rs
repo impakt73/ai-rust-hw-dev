@@ -1,5 +1,6 @@
 use riscv_core::{create_sram_runtime, SramTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut SramTestWrapper) {
     dut.clk = 0;
     dut.eval();

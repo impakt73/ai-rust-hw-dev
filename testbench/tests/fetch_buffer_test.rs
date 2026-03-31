@@ -1,6 +1,7 @@
 use riscv_core::instruction::{addi, c_addi};
 use riscv_core::{create_fetch_buffer_runtime, FetchBuffer};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn create_runtime() -> riscv_core::VerilatorRuntime {
     create_fetch_buffer_runtime().expect("Failed to create FetchBuffer runtime")
 }

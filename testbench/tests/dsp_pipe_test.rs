@@ -1,5 +1,6 @@
 use riscv_core::{create_dsp_pipe_runtime, DspPipe};
 
+use riscv_core::AsDynamicVerilatedModel;
 const ALU_ADD: u32 = 0b00000;
 const ALU_SUB: u32 = 0b00001;
 const ALU_AND: u32 = 0b00010;

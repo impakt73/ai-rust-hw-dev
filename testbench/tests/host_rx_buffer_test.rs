@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 // Host RX Buffer Tests
 // Focused burst-native protocol coverage for 8-byte metadata framing.
 

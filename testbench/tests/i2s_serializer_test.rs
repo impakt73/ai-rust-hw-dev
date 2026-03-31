@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{
     create_i2s_serializer_runtime, I2sSerializerEqualWidthWrapper, I2sSerializerExpandWrapper,
     I2sSerializerTruncateWrapper,

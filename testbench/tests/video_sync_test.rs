@@ -1,5 +1,6 @@
 use riscv_core::{create_video_sync_runtime, VideoSyncMinimalWrapper, VideoSyncWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 const VIDEO_SYNC_WRAPPER_H_TOTAL: usize = 8;
 const VIDEO_SYNC_WRAPPER_V_TOTAL: usize = 6;
 const VIDEO_SYNC_WRAPPER_H_ACTIVE: u8 = 4;

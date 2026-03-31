@@ -1,5 +1,6 @@
 use riscv_core::{create_activity_indicator_runtime, ActivityIndicatorWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut ActivityIndicatorWrapper) {
     dut.clk = 0;
     dut.eval();

@@ -1331,9 +1331,8 @@ dependencies = [
 
 [[package]]
 name = "marlin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b87ca46e97019acfa9d0c54ba659870a0951cafb20c9ab3de689d61671eeeadf"
+version = "0.11.1"
+source = "git+https://github.com/impakt73/marlin?rev=48731fc5bc0a54de01681f6c2736a1cb8f7736ad#48731fc5bc0a54de01681f6c2736a1cb8f7736ad"
 dependencies = [
  "marlin-verilator",
  "marlin-verilog",
@@ -1341,9 +1340,8 @@ dependencies = [
 
 [[package]]
 name = "marlin-verilator"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9426f6c6a56fd088acfb846eabe340f3f27801e458c41e3c1284501b9be5f854"
+version = "0.11.1"
+source = "git+https://github.com/impakt73/marlin?rev=48731fc5bc0a54de01681f6c2736a1cb8f7736ad#48731fc5bc0a54de01681f6c2736a1cb8f7736ad"
 dependencies = [
  "boxcar",
  "camino",
@@ -1357,9 +1355,8 @@ dependencies = [
 
 [[package]]
 name = "marlin-verilog"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9c8ce58aa327027da2a9ed01d5015743deb97c7b69b4d26353096fd9b89bee"
+version = "0.11.1"
+source = "git+https://github.com/impakt73/marlin?rev=48731fc5bc0a54de01681f6c2736a1cb8f7736ad#48731fc5bc0a54de01681f6c2736a1cb8f7736ad"
 dependencies = [
  "libloading",
  "marlin-verilator",
@@ -1368,9 +1365,8 @@ dependencies = [
 
 [[package]]
 name = "marlin-verilog-macro"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2510e7d31834f127c9b740da08eee8f647e3bbe4a82f1469d0afc9cc01cb06d5"
+version = "0.11.1"
+source = "git+https://github.com/impakt73/marlin?rev=48731fc5bc0a54de01681f6c2736a1cb8f7736ad#48731fc5bc0a54de01681f6c2736a1cb8f7736ad"
 dependencies = [
  "marlin-verilator",
  "marlin-verilog-macro-builder",
@@ -1380,9 +1376,8 @@ dependencies = [
 
 [[package]]
 name = "marlin-verilog-macro-builder"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9262fb8685f09046dec89f0d2e1bf6a9dd32db63f36ee14d59c7905746f7a6b0"
+version = "0.11.1"
+source = "git+https://github.com/impakt73/marlin?rev=48731fc5bc0a54de01681f6c2736a1cb8f7736ad#48731fc5bc0a54de01681f6c2736a1cb8f7736ad"
 dependencies = [
  "marlin-verilator",
  "proc-macro2",

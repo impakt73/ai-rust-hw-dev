@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{
     create_async_fifo_runtime, create_async_fifo_sync3_runtime, AsyncFifoSync3Wrapper,
     AsyncFifoTestWrapper,
