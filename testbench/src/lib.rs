@@ -11,9 +11,7 @@ fn testbench_model_config() -> VerilatedModelConfig {
         .ok()
         .map(|value| {
             value.parse::<usize>().unwrap_or_else(|err| {
-                panic!(
-                    "Invalid {TESTBENCH_VERILATOR_OPT_LEVEL_ENV} value `{value}`: {err}"
-                )
+                panic!("Invalid {TESTBENCH_VERILATOR_OPT_LEVEL_ENV} value `{value}`: {err}")
             })
         })
         .unwrap_or(DEFAULT_TESTBENCH_VERILATOR_OPT_LEVEL);
