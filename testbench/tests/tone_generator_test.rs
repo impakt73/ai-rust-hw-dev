@@ -67,10 +67,6 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
         expected_sample(0),
         "reset must hold the phase accumulator at index 0"
     );
-    assert_eq!(
-        dut.zero_cross, 0,
-        "zero_cross must stay low while reset is asserted"
-    );
 
     for _ in 0..4 {
         clock_cycle(&mut dut);
@@ -78,10 +74,6 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
             dut.sample,
             expected_sample(0),
             "sample must remain at the index-0 sine value while reset is asserted"
-        );
-        assert_eq!(
-            dut.zero_cross, 0,
-            "zero_cross must stay low while reset is asserted"
         );
     }
 }

@@ -33,8 +33,8 @@ module tone_generator #(
     logic [PHASE_WIDTH-1:0]         phase_acc;
     logic [PHASE_WIDTH+TABLE_ADDR_WIDTH-1:0] phase_index_window;
     logic [TABLE_ADDR_WIDTH-1:0]    table_index;
-    logic                           zero_cross_pre;
-    logic [SINE_TABLE_LATENCY-2:0]  zero_cross_pipe;
+    logic                           zero_cross_index;
+    logic [SINE_TABLE_LATENCY-1:0]  zero_cross_pipe;
 
     initial begin
         if (PHASE_WIDTH == 0) begin
@@ -63,7 +63,8 @@ module tone_generator #(
     assign table_index = phase_index_window[PHASE_WIDTH+TABLE_ADDR_WIDTH-1 -: TABLE_ADDR_WIDTH];
     // lower bits all zero only at index 0 and TABLE_SIZE/2, the two samples nearest
     // the positive-going and negative-going sine zero crossings, respectively.
-    assign zero_cross_pre = (table_index[TABLE_ADDR_WIDTH-2:0] == '0);
+    assign zero_cross_index = (table_index[TABLE_ADDR_WIDTH-2:0] == '0);
+    assign zero_cross = zero_cross_pipe[SINE_TABLE_LATENCY-1];
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -74,13 +75,7 @@ module tone_generator #(
     end
 
     always_ff @(posedge clk) begin
-        if (rst) begin
-            zero_cross_pipe <= '0;
-            zero_cross      <= 1'b0;
-        end else begin
-            zero_cross_pipe <= {zero_cross_pipe[SINE_TABLE_LATENCY-3:0], zero_cross_pre};
-            zero_cross      <= zero_cross_pipe[SINE_TABLE_LATENCY-2];
-        end
+        zero_cross_pipe <= {zero_cross_pipe[SINE_TABLE_LATENCY-2:0], zero_cross_index};
     end
 
     sine_table #(
