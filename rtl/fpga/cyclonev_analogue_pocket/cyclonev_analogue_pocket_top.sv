@@ -61,6 +61,7 @@ module cyclonev_analogue_pocket_top #(
     logic signed [15:0] tone_sample;
     logic signed [15:0] i2s_sample_data;
     logic signed [15:0] tone_sample_hold;
+    logic               tone_sample_hold_valid;
     logic               i2s_sample_ready;
     logic               tone_sample_valid;
 
@@ -216,14 +217,21 @@ module cyclonev_analogue_pocket_top #(
     assign tone_sample_valid = tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-1];
     // audio_lrclk still reflects the previous slot until the serializer reloads on
     // this clock edge, so a high value means the next slot is the first channel of
-    // the stereo pair and should latch a fresh sample.
-    assign i2s_sample_data = audio_lrclk ? tone_sample : tone_sample_hold;
+    // the stereo pair and should latch a fresh sample. Before the hold register has
+    // been seeded after reset, always bypass it so the first stereo frame does not
+    // transmit zeros.
+    assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
 
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
-            tone_sample_hold <= '0;
-        end else if (i2s_sample_ready && audio_lrclk) begin
-            tone_sample_hold <= tone_sample;
+            tone_sample_hold_valid <= 1'b0;
+        end else if (i2s_sample_ready) begin
+            if (!tone_sample_hold_valid) begin
+                tone_sample_hold <= tone_sample;
+                tone_sample_hold_valid <= 1'b1;
+            end else if (audio_lrclk) begin
+                tone_sample_hold <= tone_sample;
+            end
         end
     end
 
