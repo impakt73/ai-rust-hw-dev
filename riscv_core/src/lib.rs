@@ -2,10 +2,6 @@
 pub use marlin::verilator::vcd::Vcd;
 pub use marlin::verilator::{VerilatedModelConfig, VerilatorRuntime, VerilatorRuntimeOptions};
 pub use marlin::verilog::prelude::*;
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
 
 // Disassembler module
 pub mod disasm;
@@ -262,33 +258,6 @@ fn get_rtl_path() -> &'static str {
     }
 }
 
-const VERILATOR_ARTIFACT_DIR_ENV: &str = "RISCV_CORE_VERILATOR_ARTIFACT_DIR";
-
-static NEXT_RUNTIME_ARTIFACT_ID: AtomicU64 = AtomicU64::new(0);
-
-/// Returns the marlin artifacts directory for a single [`VerilatorRuntime`].
-///
-/// If `RISCV_CORE_VERILATOR_ARTIFACT_DIR` is set, that directory is used as-is
-/// to allow deterministic reuse during debugging or custom orchestration.
-/// Otherwise, each runtime gets a unique directory under
-/// `target/verilator/pid-<pid>/runtime-<n>` so concurrent tests do not share the
-/// same marlin build artifacts.
-///
-/// Callers must not concurrently mutate `RISCV_CORE_VERILATOR_ARTIFACT_DIR`
-/// while runtimes are being created, because process environment mutation is
-/// global and not synchronized by this helper.
-fn get_verilator_artifact_directory() -> PathBuf {
-    if let Some(artifact_dir) = std::env::var_os(VERILATOR_ARTIFACT_DIR_ENV) {
-        return PathBuf::from(artifact_dir);
-    }
-
-    let runtime_id = NEXT_RUNTIME_ARTIFACT_ID.fetch_add(1, Ordering::Relaxed);
-    PathBuf::from("target")
-        .join("verilator")
-        .join(format!("pid-{}", std::process::id()))
-        .join(format!("runtime-{runtime_id}"))
-}
-
 // Generic helper to create a Verilator runtime with specified files
 fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     let rtl_path = get_rtl_path();
@@ -296,13 +265,6 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
         .iter()
         .map(|file| format!("{}/{}", rtl_path, file))
         .collect();
-    let artifact_directory = get_verilator_artifact_directory();
-    let artifact_directory = artifact_directory.to_str().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "verilator artifact directory must be valid UTF-8",
-        )
-    })?;
 
     // Convert to references that can be passed to VerilatorRuntime::new
     let file_refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
@@ -328,7 +290,7 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
     ];
 
     VerilatorRuntime::new(
-        artifact_directory.into(),
+        "target/verilator".into(),
         &file_refs.iter().map(|s| (*s).as_ref()).collect::<Vec<_>>(),
         &include_paths
             .iter()
@@ -613,76 +575,4 @@ pub fn create_video_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
         "primitives/video_sync.sv",
         "wrappers/video_sync_test_wrappers.sv",
     ])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{get_verilator_artifact_directory, VERILATOR_ARTIFACT_DIR_ENV};
-    use std::{
-        path::PathBuf,
-        sync::{LazyLock, Mutex},
-    };
-
-    // Serializes environment variable mutation inside these tests because
-    // std::env::set_var/remove_var operate on process-global state.
-    static ARTIFACT_DIR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-    #[test]
-    fn test_default_verilator_artifact_directory_is_unique_per_runtime() {
-        let _guard = ARTIFACT_DIR_ENV_LOCK.lock().expect("env lock poisoned");
-        // SAFETY: std::env::remove_var is unsafe because it mutates
-        // process-global state that other threads could access concurrently.
-        // These tests serialize their own env mutations with
-        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
-        // protect against unrelated code mutating the same environment variable.
-        unsafe {
-            std::env::remove_var(VERILATOR_ARTIFACT_DIR_ENV);
-        }
-
-        let first = get_verilator_artifact_directory();
-        let second = get_verilator_artifact_directory();
-
-        assert_ne!(
-            first, second,
-            "default artifact directories should be unique per runtime"
-        );
-        assert!(
-            first.starts_with(PathBuf::from("target").join("verilator")),
-            "artifact directory should stay under target/verilator: {first:?}"
-        );
-        assert!(
-            second.starts_with(PathBuf::from("target").join("verilator")),
-            "artifact directory should stay under target/verilator: {second:?}"
-        );
-    }
-
-    #[test]
-    fn test_verilator_artifact_directory_can_be_overridden() {
-        let _guard = ARTIFACT_DIR_ENV_LOCK.lock().expect("env lock poisoned");
-        let override_dir = PathBuf::from("target/verilator/custom-runtime-root");
-        // SAFETY: std::env::set_var is unsafe because it mutates
-        // process-global state that other threads could access concurrently.
-        // These tests serialize their own env mutations with
-        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
-        // protect against unrelated code mutating the same environment variable.
-        unsafe {
-            std::env::set_var(VERILATOR_ARTIFACT_DIR_ENV, &override_dir);
-        }
-
-        let artifact_dir = get_verilator_artifact_directory();
-
-        assert_eq!(
-            artifact_dir, override_dir,
-            "explicit artifact directory override should take precedence"
-        );
-
-        // SAFETY: std::env::remove_var is unsafe because it mutates
-        // process-global state that other threads could access concurrently.
-        // These tests serialize their own env mutations with
-        // ARTIFACT_DIR_ENV_LOCK so they do not race each other. This does not
-        // protect against unrelated code mutating the same environment variable.
-        unsafe {
-            std::env::remove_var(VERILATOR_ARTIFACT_DIR_ENV);
-        }
-    }
 }
