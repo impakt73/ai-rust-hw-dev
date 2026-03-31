@@ -59,7 +59,7 @@ module tone_generator #(
     assign phase_acc_next = phase_acc + tuning_word;
     assign phase_index_window = {phase_acc, {TABLE_ADDR_WIDTH{1'b0}}};
     assign table_index = phase_index_window[PHASE_WIDTH+TABLE_ADDR_WIDTH-1 -: TABLE_ADDR_WIDTH];
-    assign zero_crossing = !rst && (phase_acc[PHASE_WIDTH-1] != phase_acc_next[PHASE_WIDTH-1]);
+    assign zero_crossing = phase_acc[PHASE_WIDTH-1] != phase_acc_next[PHASE_WIDTH-1];
 
     always_ff @(posedge clk) begin
         if (rst) begin
