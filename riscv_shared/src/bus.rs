@@ -29,57 +29,23 @@ pub const RTL_PERIPH_BASE: u32 = 0x0000_0000;
 /// Limit address for RTL peripherals (exclusive)
 pub const RTL_PERIPH_LIMIT: u32 = 0x8000_0000;
 
-/// LED Controller Peripheral (RTL)
-pub const LED_BASE: u32 = 0x5000_0000;
-
-/// LED Controller size (16 bytes)
-pub const LED_SIZE: u32 = 0x0000_0010;
-
-/// LED register offset: LED_OUT (output data register)
-pub const LED_OUT_OFFSET: u32 = 0x00;
-
-/// Helper function to get LED_OUT register address
-pub const fn led_out_addr() -> u32 {
-    LED_BASE + LED_OUT_OFFSET
-}
-
 /// SRAM Peripheral (RTL)
 pub const SRAM_BASE: u32 = 0x7000_0000;
 pub const SRAM_SIZE: u32 = 0x0000_3000; // 12KB
 
-/// Clock Peripheral (RTL)
-pub const CLOCK_BASE: u32 = 0x6000_0000;
-pub const CLOCK_SIZE: u32 = 0x0000_0010; // 16 bytes
-
-/// Clock peripheral register offsets
-pub const CLOCK_ELAPSED_US_OFFSET: u32 = 0x00;
-pub const CLOCK_ELAPSED_MS_OFFSET: u32 = 0x04;
-pub const CLOCK_ELAPSED_S_OFFSET: u32 = 0x08;
-
-/// Helper function to get CLOCK ELAPSED_US register address
-pub const fn clock_elapsed_us_addr() -> u32 {
-    CLOCK_BASE + CLOCK_ELAPSED_US_OFFSET
-}
-
-/// Helper function to get CLOCK ELAPSED_MS register address
-pub const fn clock_elapsed_ms_addr() -> u32 {
-    CLOCK_BASE + CLOCK_ELAPSED_MS_OFFSET
-}
-
-/// Helper function to get CLOCK ELAPSED_S register address
-pub const fn clock_elapsed_s_addr() -> u32 {
-    CLOCK_BASE + CLOCK_ELAPSED_S_OFFSET
-}
-
 /// System Controller Peripheral (RTL)
 pub const SYSCTRL_BASE: u32 = 0x2000_0000;
-pub const SYSCTRL_SIZE: u32 = 0x0000_0010; // 16 bytes
+pub const SYSCTRL_SIZE: u32 = 0x0000_0020; // 32 bytes
 
 /// System Controller register offsets
 pub const SYSCTRL_STATUS_OFFSET: u32 = 0x00;
 pub const SYSCTRL_RESET_OFFSET: u32 = 0x04;
 pub const SYSCTRL_BOOT_OFFSET: u32 = 0x08;
 pub const SYSCTRL_HALT_OFFSET: u32 = 0x0C;
+pub const SYSCTRL_LED_OUT_OFFSET: u32 = 0x10;
+pub const SYSCTRL_ELAPSED_US_OFFSET: u32 = 0x14;
+pub const SYSCTRL_ELAPSED_MS_OFFSET: u32 = 0x18;
+pub const SYSCTRL_ELAPSED_S_OFFSET: u32 = 0x1C;
 
 /// System Controller RESET register write values.
 ///
@@ -111,6 +77,26 @@ pub const fn sysctrl_boot_addr() -> u32 {
 /// Helper function to get System Controller HALT register address
 pub const fn sysctrl_halt_addr() -> u32 {
     SYSCTRL_BASE + SYSCTRL_HALT_OFFSET
+}
+
+/// Helper function to get System Controller LED_OUT register address
+pub const fn sysctrl_led_out_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_LED_OUT_OFFSET
+}
+
+/// Helper function to get System Controller ELAPSED_US register address
+pub const fn sysctrl_elapsed_us_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_ELAPSED_US_OFFSET
+}
+
+/// Helper function to get System Controller ELAPSED_MS register address
+pub const fn sysctrl_elapsed_ms_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_ELAPSED_MS_OFFSET
+}
+
+/// Helper function to get System Controller ELAPSED_S register address
+pub const fn sysctrl_elapsed_s_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_ELAPSED_S_OFFSET
 }
 
 /// Check if an address targets RTL peripheral space.

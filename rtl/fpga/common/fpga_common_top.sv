@@ -3,7 +3,8 @@ module fpga_common_top #(
     parameter bit ENABLE_M_EXT = 1'b1,
     parameter bit ENABLE_F_EXT = 1'b0,
     parameter int CLK_FREQ_HZ = 25_000_000,
-    parameter int RESET_CYCLES = 25_000_000
+    parameter int RESET_CYCLES = 25_000_000,
+    parameter int BAUD_RATE = 1_000_000
 ) (
     input wire logic       sys_clk,
     input wire logic       rst,
@@ -30,6 +31,8 @@ module fpga_common_top #(
     logic [31:0] debug_current_pc;
     logic [31:0] debug_current_instruction;
     logic [3:0]  debug_fsm_state;
+    logic       cpu_booting;
+    logic [31:0] halted_value;
 
     top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -58,12 +61,14 @@ module fpga_common_top #(
         .debug_current_pc(debug_current_pc),
         .debug_current_instruction(debug_current_instruction),
         .debug_fsm_state(debug_fsm_state),
-        .rst_out(rst_core)
+        .rst_out(rst_core),
+        .cpu_booting(cpu_booting),
+        .halted_value(halted_value)
     );
 
     uart #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .BAUD_RATE(1_000_000)
+        .BAUD_RATE(BAUD_RATE)
     ) host_uart_inst (
         .clk(sys_clk),
         .rst(rst_core),

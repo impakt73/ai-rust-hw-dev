@@ -21,12 +21,6 @@ if sys.version_info < MIN_PYTHON:
     raise SystemExit(1)
 
 TARGET_CONFIGS = {
-    "ice40_alchitry_cu": {
-        "target_frequency_mhz": 25.0,
-        "preferred_clock_patterns": ["pll_clk_global", "pll_clk", "clk"],
-        "timing_sources": ["riscv_fpga_timing.rpt", "nextpnr.log"],
-        "resource_sources": ["nextpnr.log", "yosys.log"],
-    },
     "ecp5_icepi_zero": {
         "target_frequency_mhz": 50.0,
         "preferred_clock_patterns": ["clk", "sys_clk"],

@@ -8,6 +8,10 @@
 ///                      bit 0 = 0 => system reset, bit 0 = 1 => CPU reset
 ///   0x08 - BOOT   (WO): write boot address to complete CPU boot
 ///   0x0C - HALT   (RW): termination code + CPU halt request pulse
+///   0x10 - LED_OUT (RW): bits [7:0] drive the user LEDs
+///   0x14 - ELAPSED_US (RO): elapsed microseconds since reset
+///   0x18 - ELAPSED_MS (RO): elapsed milliseconds since reset
+///   0x1C - ELAPSED_S (RO): elapsed seconds since reset
 ///
 /// BOOT, HALT, and system reset are request pulses on register writes.
 /// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst high,
@@ -19,10 +23,17 @@ const REG_STATUS: u32 = 0x00;
 const REG_RESET: u32 = 0x04;
 const REG_BOOT: u32 = 0x08;
 const REG_HALT: u32 = 0x0C;
+const REG_LED_OUT: u32 = 0x10;
+const REG_ELAPSED_US: u32 = 0x14;
+const REG_ELAPSED_MS: u32 = 0x18;
+const REG_ELAPSED_S: u32 = 0x1C;
 
 // Reset control values
 const RESET_SYSTEM: u32 = 0;
 const RESET_CPU: u32 = 1;
+const SIZE_BYTE: u8 = 0b00;
+const SIZE_HALFWORD: u8 = 0b01;
+const SIZE_WORD: u8 = 0b10;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -42,7 +53,7 @@ fn reset_dut(dut: &mut SystemController) {
     dut.mem_a_we = 0;
     dut.mem_a_addr = 0;
     dut.mem_a_wdata = 0;
-    dut.mem_a_size = 0b10; // Word
+    dut.mem_a_size = SIZE_WORD;
     dut.mem_d_ready = 0;
     dut.cpu_halted = 0;
     dut.cpu_booting = 0;
@@ -54,11 +65,15 @@ fn reset_dut(dut: &mut SystemController) {
 }
 
 fn read_register(dut: &mut SystemController, offset: u32) -> u32 {
+    read_register_with_size(dut, offset, SIZE_WORD)
+}
+
+fn read_register_with_size(dut: &mut SystemController, offset: u32, size: u8) -> u32 {
     dut.mem_a_addr = offset;
     dut.mem_a_wdata = 0;
     dut.mem_a_we = 0;
     dut.mem_a_valid = 1;
-    dut.mem_a_size = 0b10; // Word
+    dut.mem_a_size = size;
     dut.eval();
     assert_eq!(
         dut.mem_a_ready, 1,
@@ -86,11 +101,15 @@ fn read_register(dut: &mut SystemController, offset: u32) -> u32 {
 }
 
 fn issue_write_register(dut: &mut SystemController, offset: u32, value: u32) {
+    issue_write_register_with_size(dut, offset, value, SIZE_WORD);
+}
+
+fn issue_write_register_with_size(dut: &mut SystemController, offset: u32, value: u32, size: u8) {
     dut.mem_a_addr = offset;
     dut.mem_a_wdata = value;
     dut.mem_a_we = 1;
     dut.mem_a_valid = 1;
-    dut.mem_a_size = 0b10; // Word
+    dut.mem_a_size = size;
     dut.eval();
     assert_eq!(
         dut.mem_a_ready, 1,
@@ -121,6 +140,11 @@ fn complete_pending_response(dut: &mut SystemController) {
 
 fn write_register(dut: &mut SystemController, offset: u32, value: u32) {
     issue_write_register(dut, offset, value);
+    complete_pending_response(dut);
+}
+
+fn write_register_with_size(dut: &mut SystemController, offset: u32, value: u32, size: u8) {
+    issue_write_register_with_size(dut, offset, value, size);
     complete_pending_response(dut);
 }
 
@@ -269,6 +293,191 @@ fn test_system_controller_halt_write_pulses_req_cpu_halt() {
         dut.req_cpu_halt, 0,
         "req_cpu_halt should deassert after the write response is consumed"
     );
+}
+
+#[test]
+fn test_system_controller_led_register_read_write() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    assert_eq!(
+        read_register(&mut dut, REG_LED_OUT),
+        0,
+        "LED register should reset to zero"
+    );
+    assert_eq!(dut.led_out, 0, "LED output should reset low");
+
+    write_register(&mut dut, REG_LED_OUT, 0xAB);
+    assert_eq!(
+        read_register(&mut dut, REG_LED_OUT),
+        0xAB,
+        "LED register should return the stored 8-bit value"
+    );
+    assert_eq!(dut.led_out, 0xAB, "LED output should track the register");
+
+    write_register_with_size(&mut dut, REG_LED_OUT, 0x1234_0055, SIZE_BYTE);
+    assert_eq!(
+        dut.led_out, 0x55,
+        "Byte writes should update the low LED byte"
+    );
+
+    write_register_with_size(&mut dut, REG_LED_OUT, 0x5678_00CC, SIZE_HALFWORD);
+    assert_eq!(
+        dut.led_out, 0xCC,
+        "Halfword writes should update the low LED byte and ignore upper bits"
+    );
+}
+
+#[test]
+fn test_system_controller_led_register_upper_bytes_ignored() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    write_register_with_size(&mut dut, REG_LED_OUT + 1, 0xFF, SIZE_BYTE);
+    assert_eq!(
+        dut.led_out, 0,
+        "Byte writes above the low LED byte should be ignored"
+    );
+
+    write_register_with_size(&mut dut, REG_LED_OUT + 2, 0xAAAA, SIZE_HALFWORD);
+    assert_eq!(
+        dut.led_out, 0,
+        "Halfword writes outside the low LED halfword should be ignored"
+    );
+}
+
+#[test]
+fn test_system_controller_clock_registers_reset_to_zero() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    assert_eq!(
+        read_register(&mut dut, REG_ELAPSED_US),
+        0,
+        "ELAPSED_US should be zero after reset"
+    );
+    assert_eq!(
+        read_register(&mut dut, REG_ELAPSED_MS),
+        0,
+        "ELAPSED_MS should be zero after reset"
+    );
+    assert_eq!(
+        read_register(&mut dut, REG_ELAPSED_S),
+        0,
+        "ELAPSED_S should be zero after reset"
+    );
+}
+
+#[test]
+fn test_system_controller_elapsed_us_advances() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    let us_0 = read_register(&mut dut, REG_ELAPSED_US);
+    clock_cycle!(dut);
+    let us_1 = read_register(&mut dut, REG_ELAPSED_US);
+    assert!(
+        us_1.saturating_sub(us_0) >= 1,
+        "ELAPSED_US should advance after one clock cycle"
+    );
+
+    for _ in 0..8 {
+        clock_cycle!(dut);
+    }
+    let us_9 = read_register(&mut dut, REG_ELAPSED_US);
+    assert!(
+        us_9 >= us_1 + 8,
+        "ELAPSED_US should keep advancing with each microsecond tick"
+    );
+}
+
+#[test]
+fn test_system_controller_elapsed_ms_and_s_advance() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    for _ in 0..1_000 {
+        clock_cycle!(dut);
+    }
+    assert_eq!(
+        read_register(&mut dut, REG_ELAPSED_MS),
+        1,
+        "At 1 MHz default clock, 1000 cycles should equal 1 ms"
+    );
+
+    for _ in 0..999_000 {
+        clock_cycle!(dut);
+    }
+    assert_eq!(
+        read_register(&mut dut, REG_ELAPSED_S),
+        1,
+        "At 1 MHz default clock, 1,000,000 cycles should equal 1 s"
+    );
+}
+
+#[test]
+fn test_system_controller_clock_registers_are_read_only() {
+    let runtime =
+        create_system_controller_runtime().expect("Failed to create system controller runtime");
+    let mut dut = runtime
+        .create_model_simple::<SystemController>()
+        .expect("Failed to create system controller model");
+
+    reset_dut(&mut dut);
+
+    for _ in 0..10 {
+        clock_cycle!(dut);
+    }
+
+    let us_before = read_register(&mut dut, REG_ELAPSED_US);
+    let ms_before = read_register(&mut dut, REG_ELAPSED_MS);
+    let s_before = read_register(&mut dut, REG_ELAPSED_S);
+
+    write_register(&mut dut, REG_ELAPSED_US, 0xDEAD_BEEF);
+    write_register(&mut dut, REG_ELAPSED_MS, 0xCAFE_BABE);
+    write_register(&mut dut, REG_ELAPSED_S, 0x1234_5678);
+
+    let us_after = read_register(&mut dut, REG_ELAPSED_US);
+    let ms_after = read_register(&mut dut, REG_ELAPSED_MS);
+    let s_after = read_register(&mut dut, REG_ELAPSED_S);
+
+    assert!(
+        us_after > us_before,
+        "ELAPSED_US should keep incrementing after ignored writes"
+    );
+    assert!(
+        ms_after >= ms_before,
+        "ELAPSED_MS should never move backwards"
+    );
+    assert!(s_after >= s_before, "ELAPSED_S should never move backwards");
+    assert_ne!(us_after, 0xDEAD_BEEF, "ELAPSED_US should not be writable");
+    assert_ne!(ms_after, 0xCAFE_BABE, "ELAPSED_MS should not be writable");
+    assert_ne!(s_after, 0x1234_5678, "ELAPSED_S should not be writable");
 }
 
 // ============================================================

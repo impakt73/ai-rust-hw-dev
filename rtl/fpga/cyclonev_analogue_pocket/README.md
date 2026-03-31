@@ -8,12 +8,11 @@ It keeps the Pocket-facing source tree local to `rtl/fpga/cyclonev_analogue_pock
 This is an **initial bring-up target**.
 
 - `apf_top.v` remains the Pocket platform-facing top.
-- `core_top.sv` is the user-core integration seam.
-- `analogue_pocket_repo_top.sv` instantiates `rtl/common/top.sv` directly.
-- The repository UART/host path is intentionally stubbed with explicit no-op values.
+- `core_top.v` is the user-core integration seam.
+- `cyclonev_analogue_pocket_top.sv` instantiates `rtl/fpga/common/fpga_common_top.sv` to reuse the standard UART-backed host path.
+- `core_top.v` routes the Pocket link-port SI/SO pins to the shared UART RX/TX path.
 
-Because the host path is stubbed, this target is currently suitable only for SRAM/peripheral-oriented bring-up work.
-External-memory workflows that depend on the UART-backed host bus are intentionally deferred.
+The Pocket link port is enabled in `core.json`, so external-memory workflows can use the same UART-backed host bus path as the other FPGA targets.
 
 ## Tooling
 
@@ -27,8 +26,17 @@ make TARGET=cyclonev_analogue_pocket
 ```
 
 Build artifacts are written under `rtl/fpga/build/cyclonev_analogue_pocket/`.
+The regular build now also runs `pkt`, so each successful synthesis leaves a deployable Pocket core zip in that build directory.
+
+To deploy the generated zip into a user-selected directory:
+
+```bash
+make TARGET=cyclonev_analogue_pocket program POCKET_DEPLOY_DIR=/path/to/pocket
+```
+
+`make program` extracts the generated zip into `POCKET_DEPLOY_DIR` with `unzip -o`, so existing files with the same names are overwritten.
 
 ## Notes
 
 - The target directory keeps openFPGA-style metadata/configuration files alongside target-local FPGA sources.
-- Packaging/deployment automation beyond the Quartus batch compile is follow-on work.
+- The regular build produces both the Quartus `.rbf` output and a deployable Pocket core zip.

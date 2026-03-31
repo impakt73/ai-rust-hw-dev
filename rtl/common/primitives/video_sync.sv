@@ -21,10 +21,14 @@
 //   hsync        - Registered horizontal sync output
 //   vsync        - Registered vertical sync output
 //   active_video - Registered active-region qualifier
-//   line_start   - Registered one-cycle pulse at the first pixel of each line
-//   frame_start  - Registered one-cycle pulse at the first pixel of each frame
+//   line_start   - Registered start-of-line marker; held high during reset and a
+//                  one-cycle pulse at the first pixel of each line otherwise
+//   frame_start  - Registered start-of-frame marker; held high during reset and a
+//                  one-cycle pulse at the first pixel of each frame otherwise
 //   active_x     - Registered X coordinate within the active region, else 0
 //   active_y     - Registered Y coordinate within the active region, else 0
+//   scan_x       - Registered X coordinate across the full scan line
+//   scan_y       - Registered Y coordinate across the full frame
 
 module video_sync #(
     parameter int unsigned H_ACTIVE = 640,
@@ -46,7 +50,11 @@ module video_sync #(
     output logic line_start,
     output logic frame_start,
     output logic [((H_ACTIVE <= 1) ? 1 : $clog2(H_ACTIVE)) - 1:0] active_x,
-    output logic [((V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE)) - 1:0] active_y
+    output logic [((V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE)) - 1:0] active_y,
+    output logic [((H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH <= 1) ?
+        1 : $clog2(H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH)) - 1:0] scan_x,
+    output logic [((V_ACTIVE + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH <= 1) ?
+        1 : $clog2(V_ACTIVE + V_FRONT_PORCH + V_SYNC_WIDTH + V_BACK_PORCH)) - 1:0] scan_y
 );
 
     localparam int unsigned H_TOTAL = H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH;
@@ -57,13 +65,13 @@ module video_sync #(
     localparam int unsigned ACTIVE_Y_WIDTH = (V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE);
     localparam logic [H_COUNTER_WIDTH-1:0] H_LAST = H_COUNTER_WIDTH'(H_TOTAL - 1);
     localparam logic [V_COUNTER_WIDTH-1:0] V_LAST = V_COUNTER_WIDTH'(V_TOTAL - 1);
-    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_END = H_COUNTER_WIDTH'(H_ACTIVE);
-    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_END = V_COUNTER_WIDTH'(V_ACTIVE);
+    localparam logic [H_COUNTER_WIDTH-1:0] H_ACTIVE_START = H_COUNTER_WIDTH'(H_BACK_PORCH);
+    localparam logic [V_COUNTER_WIDTH-1:0] V_ACTIVE_START = V_COUNTER_WIDTH'(V_BACK_PORCH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_START =
-        H_COUNTER_WIDTH'(H_ACTIVE + H_FRONT_PORCH);
+        H_COUNTER_WIDTH'(H_BACK_PORCH + H_ACTIVE + H_FRONT_PORCH);
     localparam logic [H_COUNTER_WIDTH-1:0] H_SYNC_SPAN = H_COUNTER_WIDTH'(H_SYNC_WIDTH);
     localparam logic [V_COUNTER_WIDTH-1:0] V_SYNC_START =
-        V_COUNTER_WIDTH'(V_ACTIVE + V_FRONT_PORCH);
+        V_COUNTER_WIDTH'(V_BACK_PORCH + V_ACTIVE + V_FRONT_PORCH);
     localparam logic [V_COUNTER_WIDTH-1:0] V_SYNC_SPAN = V_COUNTER_WIDTH'(V_SYNC_WIDTH);
 
     logic [H_COUNTER_WIDTH-1:0] h_counter;
@@ -85,6 +93,7 @@ module video_sync #(
     logic v_in_sync_region;
 
     // Parameter validation (simulation only)
+`ifndef SYNTHESIS
     initial begin
         if (H_ACTIVE == 0) begin
             $fatal(1, "video_sync: H_ACTIVE must be > 0");
@@ -105,6 +114,7 @@ module video_sync #(
             $fatal(1, "video_sync: vertical blanking interval must be > 0");
         end
     end
+`endif
 
     always_comb begin
         if (h_counter == H_LAST) begin
@@ -119,8 +129,10 @@ module video_sync #(
             v_counter_next = v_counter;
         end
 
-        h_in_active_region = (h_counter_next < H_ACTIVE_END);
-        v_in_active_region = (v_counter_next < V_ACTIVE_END);
+        h_in_active_region =
+            ((h_counter_next - H_ACTIVE_START) < H_COUNTER_WIDTH'(H_ACTIVE));
+        v_in_active_region =
+            ((v_counter_next - V_ACTIVE_START) < V_COUNTER_WIDTH'(V_ACTIVE));
         h_sync_offset = h_counter_next - H_SYNC_START;
         v_sync_offset = v_counter_next - V_SYNC_START;
         h_in_sync_region =
@@ -135,19 +147,21 @@ module video_sync #(
         frame_start_next = (h_counter_next == '0) && (v_counter_next == '0);
         hsync_next = h_in_sync_region ? HSYNC_ACTIVE_HIGH : ~HSYNC_ACTIVE_HIGH;
         vsync_next = v_in_sync_region ? VSYNC_ACTIVE_HIGH : ~VSYNC_ACTIVE_HIGH;
-        active_x_next = active_video_next ? ACTIVE_X_WIDTH'(h_counter_next) : '0;
-        active_y_next = active_video_next ? ACTIVE_Y_WIDTH'(v_counter_next) : '0;
+        active_x_next = active_video_next ?
+            ACTIVE_X_WIDTH'(h_counter_next - H_ACTIVE_START) : '0;
+        active_y_next = active_video_next ?
+            ACTIVE_Y_WIDTH'(v_counter_next - V_ACTIVE_START) : '0;
     end
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            h_counter <= H_LAST;
-            v_counter <= V_LAST;
+            h_counter <= '0;
+            v_counter <= '0;
             hsync <= ~HSYNC_ACTIVE_HIGH;
             vsync <= ~VSYNC_ACTIVE_HIGH;
             active_video <= 1'b0;
-            line_start <= 1'b0;
-            frame_start <= 1'b0;
+            line_start <= 1'b1;
+            frame_start <= 1'b1;
             active_x <= '0;
             active_y <= '0;
         end else begin
@@ -162,6 +176,9 @@ module video_sync #(
             active_y <= active_y_next;
         end
     end
+
+    assign scan_x = h_counter;
+    assign scan_y = v_counter;
 
 endmodule
 `default_nettype wire

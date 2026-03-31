@@ -139,6 +139,7 @@ module cpu #(
     // Decoder outputs (registered inside decoder.sv)
     logic [6:0]  opcode_reg;
     logic [4:0]  rd_reg, rs1_reg, rs2_reg;
+    logic        rd_is_x0, rs1_is_x0, rs2_is_x0;
     logic [2:0]  funct3_reg;
     logic [6:0]  funct7_reg;
     logic [31:0] imm_i_reg, imm_s_reg, imm_b_reg, imm_u_reg, imm_j_reg;
@@ -162,7 +163,7 @@ module cpu #(
     // Completed instruction registers (captured at instruction completion for tracing)
     logic [31:0] completed_pc_reg;
     logic [31:0] completed_instr_reg;
-    logic        is_ecall_reg, is_ebreak_reg, is_fence_reg, is_csr_reg;
+    logic        is_ecall_reg, is_ebreak_reg, is_mret_reg, is_wfi_reg, is_fence_reg, is_csr_reg;
     logic        is_lr_reg, is_sc_reg, is_amo_reg;  // A extension registers
     logic [4:0]  funct5_reg;  // A extension - atomic operation type
     logic        sc_success_reg;  // Latched on SC.W completion to preserve success/failure for writeback
@@ -326,12 +327,18 @@ module cpu #(
             instr_pc_reg <= 32'h0;
             instr_pc_next_reg <= 32'h0;
             is_instruction_valid_reg <= 1'b1;  // Assume valid on startup
+            rd_is_x0 <= 1'b0;
+            rs1_is_x0 <= 1'b0;
+            rs2_is_x0 <= 1'b0;
         end else if (ir_write) begin
             ir_reg <= fetched_instruction;  // Use fetch buffer output
             instr_pc_reg <= pc;  // Capture PC of this instruction alongside the decode outputs
             is_instruction_valid_reg <= fetched_valid;  // Capture fetch buffer validity
         end else if (current_state == S_DECODE_WAIT) begin
             instr_pc_next_reg <= instr_pc_reg + pc_increment;  // Capture sequential fall-through PC
+            rd_is_x0 <= (rd_reg == 5'd0);
+            rs1_is_x0 <= (rs1_reg == 5'd0);
+            rs2_is_x0 <= (rs2_reg == 5'd0);
             // The decoder's registered instruction_valid output becomes stable in
             // S_DECODE_WAIT after being registered on the S_DECODE clock edge. This merge combines
             // decompressor and decoder validity checks for the current instruction.
@@ -347,8 +354,8 @@ module cpu #(
             a_reg <= 32'h0;
             b_reg <= 32'h0;
         end else begin
-            if (a_reg_write) a_reg <= rs1_data;
-            if (b_reg_write) b_reg <= rs2_data;
+            if (a_reg_write) a_reg <= rs1_is_x0 ? 32'd0 : rs1_data;
+            if (b_reg_write) b_reg <= rs2_is_x0 ? 32'd0 : rs2_data;
         end
     end
     
@@ -647,10 +654,15 @@ module cpu #(
                             next_state = S_EXECUTE;
                         
                         7'b1110011: begin  // SYSTEM
-                            if (is_ecall_reg || is_ebreak_reg)
-                                next_state = S_HALT;
-                            else if (is_csr_reg)
+                            if (is_csr_reg)
                                 next_state = S_CSR;
+                            else if (is_mret_reg || is_wfi_reg)
+                                next_state = S_FETCH;
+                            else
+                                // ECALL, EBREAK, and unsupported funct3==000 SYSTEM
+                                // encodings stay on the existing debug-halt path
+                                // until later phases add architectural trap entry.
+                                next_state = S_HALT;
                         end
 
                         7'b0001111:  // FENCE
@@ -808,8 +820,14 @@ module cpu #(
                     fb_reg_write = 1'b1;
                     fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
                 end
-                // FENCE completes here (after register read state)
+                // FENCE permanently completes here after register reads.
                 if (is_fence_reg) begin
+                    pc_write = 1'b1;
+                    instr_complete_internal = 1'b1;
+                end
+                // MRET/WFI temporarily complete here as non-halting placeholders
+                // until later phases add real privileged return/wait behavior.
+                if (is_mret_reg || is_wfi_reg) begin
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
                 end
@@ -953,6 +971,8 @@ module cpu #(
         .jump(jump_reg),
         .is_ecall(is_ecall_reg),
         .is_ebreak(is_ebreak_reg),
+        .is_mret(is_mret_reg),
+        .is_wfi(is_wfi_reg),
         .is_fence(is_fence_reg),
         .is_csr(is_csr_reg),
         .is_auipc(is_auipc_reg),
@@ -973,9 +993,9 @@ module cpu #(
     // Register file instantiation (write enable gated by FSM)
     // Uses dual-banked BRAM with 2-cycle read latency, handled by S_REG_READ and
     // S_REG_READ_WAIT states
-    // x0 write gating: prevent writes to x0 (derived from registered rd_reg)
+    // x0 write gating: prevent writes to x0 (derived from the registered decode-time flag)
     logic reg_write_x0_gate;
-    assign reg_write_x0_gate = (rd_reg != 5'd0);
+    assign reg_write_x0_gate = !rd_is_x0;
     
     regfile u_regfile (
         .clk(clk),

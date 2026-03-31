@@ -63,7 +63,9 @@ The repository already uses a stable multi-target model:
 - `rtl/common/` contains vendor-neutral CPU/peripheral RTL.
 - `rtl/fpga/<target>/` contains target-specific wrappers and collateral.
 - `rtl/fpga/Makefile` selects a target with `TARGET=...`.
-- existing supported targets are `ice40_alchitry_cu`, `ecp5_icepi_zero`, and `artix7_alchitry_au`.
+- at the time this plan was written, the existing supported FPGA board targets
+  were `ecp5_icepi_zero` and `artix7_alchitry_au`; consult
+  `rtl/fpga/Makefile` for the current list of supported targets.
 
 This existing structure should remain intact. The Pocket target should be added as another target, not as a special alternate build system detached from `rtl/fpga/`.
 

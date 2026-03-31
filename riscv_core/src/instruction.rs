@@ -287,6 +287,16 @@ pub fn ebreak() -> u32 {
     encode_i_type(0b1110011, 0, 0b000, 0, 1)
 }
 
+/// MRET: Machine Return
+pub fn mret() -> u32 {
+    encode_i_type(0b1110011, 0, 0b000, 0, 0x302)
+}
+
+/// WFI: Wait For Interrupt
+pub fn wfi() -> u32 {
+    encode_i_type(0b1110011, 0, 0b000, 0, 0x105)
+}
+
 // ============================================================================
 // Zicsr Extension - CSR Instructions
 // ============================================================================

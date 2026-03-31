@@ -24,6 +24,10 @@ pub struct Top;
 #[verilog(src = "../rtl/common/cpu/alu.sv", name = "alu")]
 pub struct Alu;
 
+// Define DSP pipeline module
+#[verilog(src = "../rtl/common/cpu/dsp_pipe.sv", name = "dsp_pipe")]
+pub struct DspPipe;
+
 // Define RegFile module
 #[verilog(src = "../rtl/common/cpu/regfile.sv", name = "regfile")]
 pub struct RegFile;
@@ -43,13 +47,6 @@ pub struct FpRegFile;
 // Define FPU module
 #[verilog(src = "../rtl/common/fpu/fpu.sv", name = "fpu")]
 pub struct Fpu;
-
-// Define LED Controller module
-#[verilog(
-    src = "../rtl/common/peripherals/led_controller_peripheral.sv",
-    name = "led_controller_peripheral"
-)]
-pub struct LedControllerPeripheral;
 
 // Define UART core module (no FIFOs, ready/valid interface)
 #[verilog(src = "../rtl/common/io/uart.sv", name = "uart")]
@@ -79,13 +76,6 @@ pub struct I2sSerializerExpandWrapper;
     name = "i2s_serializer_truncate_wrapper"
 )]
 pub struct I2sSerializerTruncateWrapper;
-
-// Define Clock Peripheral module
-#[verilog(
-    src = "../rtl/common/peripherals/clock_peripheral.sv",
-    name = "clock_peripheral"
-)]
-pub struct ClockPeripheral;
 
 // Define System Controller module
 #[verilog(
@@ -244,10 +234,28 @@ pub struct VideoSyncWrapper;
 pub struct VideoSyncMinimalWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/bitmap_text_renderer_test_wrapper.sv",
+    name = "bitmap_text_renderer_test_wrapper"
+)]
+pub struct BitmapTextRendererTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sys_led_controller_wrapper.sv",
     name = "sys_led_controller_wrapper"
 )]
 pub struct SysLedControllerWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/sine_table_test_wrapper.sv",
+    name = "sine_table_test_wrapper"
+)]
+pub struct SineTableTestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/tone_generator_test_wrapper.sv",
+    name = "tone_generator_test_wrapper"
+)]
+pub struct ToneGeneratorTestWrapper;
 
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
@@ -315,8 +323,6 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller
-        "peripherals/led_controller_peripheral.sv", // LED controller peripheral
-        "peripherals/clock_peripheral.sv", // Clock peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
         "memory/sram.sv",     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
@@ -339,6 +345,11 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
 // Helper function to create a runtime for the ALU
 pub fn create_alu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&["cpu/alu.sv", "cpu/div_unit.sv", "cpu/mul_unit.sv"])
+}
+
+// Helper function to create a runtime for the DSP pipeline
+pub fn create_dsp_pipe_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&["cpu/dsp_pipe.sv"])
 }
 
 // Helper function to create a runtime for the MulUnit
@@ -381,11 +392,6 @@ pub fn create_i2s_serializer_runtime() -> Result<VerilatorRuntime, Box<dyn std::
         "io/i2s_serializer.sv",
         "wrappers/i2s_serializer_test_wrappers.sv",
     ])
-}
-
-// Helper function to create a runtime for the Clock Peripheral
-pub fn create_clock_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
-    create_runtime(&["peripherals/clock_peripheral.sv"])
 }
 
 // Helper function to create a runtime for the System Controller
@@ -574,5 +580,32 @@ pub fn create_video_sync_runtime() -> Result<VerilatorRuntime, Box<dyn std::erro
     create_runtime(&[
         "primitives/video_sync.sv",
         "wrappers/video_sync_test_wrappers.sv",
+    ])
+}
+
+pub fn create_bitmap_text_renderer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/video_sync.sv",
+        "primitives/bitmap_text_renderer.sv",
+        "wrappers/bitmap_text_renderer_test_wrapper.sv",
+    ])
+}
+
+pub fn create_sine_table_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/sine_table.sv",
+        "wrappers/sine_table_test_wrapper.sv",
+    ])
+}
+
+pub fn create_tone_generator_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sync_sprom.sv",
+        "primitives/sine_table.sv",
+        "primitives/tone_generator.sv",
+        "wrappers/tone_generator_test_wrapper.sv",
     ])
 }

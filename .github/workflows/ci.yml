@@ -1,5 +1,32 @@
 name: CI
 
+# RUNNER IMAGE MIGRATION (TODO — activate once .github/runner/Dockerfile is
+# built and pushed to GHCR via build-runner-image.yml):
+#
+# Replace the three setup steps below (apt packages, Rust toolchain, RISC-V
+# target) with a single `container:` key on the job, e.g.:
+#
+#   jobs:
+#     test:
+#       runs-on: ubuntu-latest
+#       container:
+#         image: ghcr.io/impakt73/ai-rust-hw-dev/runner:latest
+#         credentials:
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+#
+# If the GHCR package stays private, also add `packages: read` to workflow or job
+# permissions, and update the Cargo cache paths to `/usr/local/cargo/...` because
+# the runner image bakes Rust into `CARGO_HOME=/usr/local/cargo`.
+#
+# Then delete:
+#   - "Cache and install system packages" step
+#   - "Verify Verilator installation" step
+#   - "Install Rust" step
+#   - "Install RISC-V Rust Target" step
+#
+# See docs/research/custom-runner-image.md for the full migration guide.
+
 on:
   push:
     branches:
@@ -12,7 +39,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      FPGA_TOOL_CACHE_VERSION: v3
+      FPGA_TOOL_CACHE_VERSION: v4
     
     steps:
     - uses: actions/checkout@v4
@@ -20,9 +47,8 @@ jobs:
     - name: Cache and install system packages
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        packages: verilator libasound2-dev libudev-dev yosys fpga-icestorm nextpnr-ice40 fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
-        # Bump version (v2 -> v3) to force cache refresh
-        version: v3
+        packages: verilator libasound2-dev libudev-dev yosys fpga-trellis fpga-trellis-database nextpnr-ecp5 openfpgaloader
+        version: v4
     
     - name: Verify Verilator installation
       run: verilator --version
@@ -33,7 +59,6 @@ jobs:
     - name: Verify FPGA tools installation
       run: |
         yosys --version
-        nextpnr-ice40 --version
         nextpnr-ecp5 --version
     
     - name: Install Rust
@@ -58,16 +83,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
-    - name: Cache iCE40 FPGA synthesis artifacts
-      id: fpga-cache-ice40
-      uses: actions/cache@v4
-      with:
-        path: |
-          rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin
-        key: ${{ runner.os }}-fpga-synth-ice40-${{ env.FPGA_TOOL_CACHE_VERSION }}-${{ hashFiles('rtl/**/*.sv', 'rtl/fpga/ice40_alchitry_cu/**/*.sv', 'rtl/fpga/ice40_alchitry_cu/**/*.pcf', 'rtl/fpga/Makefile') }}
-
-    - name: Cache ECP5 FPGA synthesis artifacts
-      id: fpga-cache-ecp5
+    - name: Cache default FPGA synthesis artifacts
+      id: fpga-cache
       uses: actions/cache@v4
       with:
         path: |
@@ -98,22 +115,12 @@ jobs:
       working-directory: rust-test-program
       run: cargo build --release --verbose
     
-    - name: Verify iCE40 FPGA synthesis (cache miss)
-      if: steps.fpga-cache-ice40.outputs.cache-hit != 'true'
+    - name: Verify default FPGA synthesis (cache miss)
+      if: steps.fpga-cache.outputs.cache-hit != 'true'
       working-directory: rtl/fpga
-      run: make TARGET=ice40_alchitry_cu
+      run: make
 
-    - name: Verify cached iCE40 FPGA synthesis artifacts (cache hit)
-      if: steps.fpga-cache-ice40.outputs.cache-hit == 'true'
-      run: |
-        test -f rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin || (echo "Missing rtl/fpga/build/ice40_alchitry_cu/riscv_fpga.bin" && exit 1)
-
-    - name: Verify ECP5 FPGA synthesis (cache miss)
-      if: steps.fpga-cache-ecp5.outputs.cache-hit != 'true'
-      working-directory: rtl/fpga
-      run: make TARGET=ecp5_icepi_zero
-
-    - name: Verify cached ECP5 FPGA synthesis artifacts (cache hit)
-      if: steps.fpga-cache-ecp5.outputs.cache-hit == 'true'
+    - name: Verify cached default FPGA synthesis artifacts (cache hit)
+      if: steps.fpga-cache.outputs.cache-hit == 'true'
       run: |
         test -f rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit || (echo "Missing rtl/fpga/build/ecp5_icepi_zero/riscv_fpga.bit" && exit 1)

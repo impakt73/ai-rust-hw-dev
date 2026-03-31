@@ -249,11 +249,11 @@ assign cart_pin30_pwroff_reset = 1'b0;  // hardware can control this
 assign cart_tran_pin31 = 1'bz;      // input
 assign cart_tran_pin31_dir = 1'b0;  // input
 
-// link port is unused, set to input only to be safe
+// link port SI/SO carry the shared UART path; leave the other pins unused
 // each bit may be bidirectional in some applications
-assign port_tran_so = 1'bz;
-assign port_tran_so_dir = 1'b0;     // SO is output only
-assign port_tran_si = 1'bz;
+assign port_tran_so = serial_tx;
+assign port_tran_so_dir = 1'b1;     // SO is output only
+assign serial_rx = port_tran_si;
 assign port_tran_si_dir = 1'b0;     // SI is input only
 assign port_tran_sck = 1'bz;
 assign port_tran_sck_dir = 1'b0;    // clock direction can change
@@ -333,19 +333,20 @@ end
 //
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
-    wire    [7:0]   led_out;
-    wire    [7:0]   sys_led_out;
-    wire            halted;
-    wire            instr_complete;
     wire            rst_out;
-    wire            cpu_booting;
-    wire    [31:0]  halted_value;
+    wire    [23:0]  repo_video_rgb;
+    wire            repo_video_de;
+    wire            repo_video_skip;
+    wire            repo_video_vs;
+    wire            repo_video_hs;
+    wire            serial_rx;
+    wire            serial_tx;
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = cpu_booting;
-    wire            status_setup_done = cpu_booting; // rising edge triggers a target command
-    wire            status_running = reset_n; // we are running as soon as reset_n goes high
+    wire            status_boot_done = pll_core_locked_s;
+    wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
+    wire            status_running = !rst_out;
 
     wire            dataslot_requestread;
     wire    [15:0]  dataslot_requestread_id;
@@ -387,6 +388,8 @@ end
     wire            savestate_load_err;
     
     wire            osnotify_inmenu;
+    wire            osnotify_play_cartridge;
+    wire            osnotify_cartridge_power;
 
 // bridge target commands
 // synchronous to clk_74a
@@ -415,17 +418,26 @@ end
     wire            datatable_wren;
     wire    [31:0]  datatable_data;
     wire    [31:0]  datatable_q;
+    wire            audgen_lrck;
+    wire            audgen_dac;
 
-analogue_pocket_repo_top repo_top_inst (
-    .clk            ( clk_74a ),
-    .reset_n        ( reset_n ),
-    .led_out        ( led_out ),
-    .sys_led_out    ( sys_led_out ),
-    .halted         ( halted ),
-    .instr_complete ( instr_complete ),
-    .rst_out        ( rst_out ),
-    .cpu_booting    ( cpu_booting ),
-    .halted_value   ( halted_value )
+cyclonev_analogue_pocket_top repo_top_inst (
+    .clk        ( clk_74a ),
+    .clk_video  ( clk_core_12288 ),
+    .audio_mclk ( clk_core_12288 ),
+    .audio_sclk ( clk_core_3072_180deg ),
+    .cont1_key  ( cont1_key ),
+    .reset_n    ( reset_n ),
+    .serial_rx  ( serial_rx ),
+    .serial_tx  ( serial_tx ),
+    .rst_out    ( rst_out ),
+    .video_rgb  ( repo_video_rgb ),
+    .video_de   ( repo_video_de ),
+    .video_skip ( repo_video_skip ),
+    .video_vs   ( repo_video_vs ),
+    .video_hs   ( repo_video_hs ),
+    .audio_dac  ( audgen_dac ),
+    .audio_lrclk( audgen_lrck )
 );
 
 core_bridge_cmd icb (
@@ -484,6 +496,8 @@ core_bridge_cmd icb (
     .savestate_load_err     ( savestate_load_err ),
 
     .osnotify_inmenu        ( osnotify_inmenu ),
+    .osnotify_play_cartridge( osnotify_play_cartridge ),
+    .osnotify_cartridge_power( osnotify_cartridge_power ),
     
     .target_dataslot_read       ( target_dataslot_read ),
     .target_dataslot_write      ( target_dataslot_write ),
@@ -518,161 +532,31 @@ core_bridge_cmd icb (
 // video generation
 // ~12,288,000 hz pixel clock
 //
-// we want our video mode of 320x240 @ 60hz, this results in 204800 clocks per frame
-// we need to add hblank and vblank times to this, so there will be a nondisplay area. 
-// it can be thought of as a border around the visible area.
-// to make numbers simple, we can have 400 total clocks per line, and 320 visible.
-// dividing 204800 by 400 results in 512 total lines per frame, and 240 visible.
-// this pixel clock is fairly high for the relatively low resolution, but that's fine.
+// we keep a 400x512 total raster at 12.288 MHz so the output remains 60 Hz
+// (12_288_000 / (400 * 512) = 60). The active region is reduced to 256x224 to
+// match the SNES-style viewport, with the extra pixels allocated to blanking.
+// This pixel clock is fairly high for the relatively low resolution, but that's fine.
 // PLL output has a minimum output frequency anyway.
 
 
 assign video_rgb_clock = clk_core_12288;
 assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = vidout_rgb;
-assign video_de = vidout_de;
-assign video_skip = vidout_skip;
-assign video_vs = vidout_vs;
-assign video_hs = vidout_hs;
-
-    localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
-    localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
-
-    reg [15:0]  frame_count;
-    
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-    
-    wire [9:0]  visible_x = x_count - VID_H_BPORCH;
-    wire [9:0]  visible_y = y_count - VID_V_BPORCH;
-
-    reg [23:0]  vidout_rgb;
-    reg         vidout_de, vidout_de_1;
-    reg         vidout_skip;
-    reg         vidout_vs;
-    reg         vidout_hs, vidout_hs_1;
-    
-    reg [9:0]   square_x = 'd135;
-    reg [9:0]   square_y = 'd95;
-
-always @(posedge clk_core_12288 or negedge reset_n) begin
-
-    if(~reset_n) begin
-    
-        x_count <= 0;
-        y_count <= 0;
-        
-    end else begin
-        vidout_de <= 0;
-        vidout_skip <= 0;
-        vidout_vs <= 0;
-        vidout_hs <= 0;
-        
-        vidout_hs_1 <= vidout_hs;
-        vidout_de_1 <= vidout_de;
-        
-        // x and y counters
-        x_count <= x_count + 1'b1;
-        if(x_count == VID_H_TOTAL-1) begin
-            x_count <= 0;
-            
-            y_count <= y_count + 1'b1;
-            if(y_count == VID_V_TOTAL-1) begin
-                y_count <= 0;
-            end
-        end
-        
-        // generate sync 
-        if(x_count == 0 && y_count == 0) begin
-            // sync signal in back porch
-            // new frame
-            vidout_vs <= 1;
-            frame_count <= frame_count + 1'b1;
-        end
-        
-        // we want HS to occur a bit after VS, not on the same cycle
-        if(x_count == 3) begin
-            // sync signal in back porch
-            // new line
-            vidout_hs <= 1;
-        end
-
-        // inactive screen areas are black
-        vidout_rgb <= 24'h0;
-        // generate active video
-        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
-
-            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
-                // data enable. this is the active region of the line
-                vidout_de <= 1;
-
-                if(sys_led_out[0]) begin
-                    vidout_rgb[23:16] <= 8'd0;
-                    vidout_rgb[15:8]  <= 8'd96;
-                    vidout_rgb[7:0]   <= 8'd0;
-                end else begin
-                    vidout_rgb[23:16] <= 8'd60;
-                    vidout_rgb[15:8]  <= 8'd60;
-                    vidout_rgb[7:0]   <= 8'd60;
-                end
-                
-            end 
-        end
-    end
-end
+assign video_rgb = repo_video_rgb;
+assign video_de = repo_video_de;
+assign video_skip = repo_video_skip;
+assign video_vs = repo_video_vs;
+assign video_hs = repo_video_hs;
 
 
 
 
 //
-// audio i2s silence generator
-// see other examples for actual audio generation
+// audio outputs are generated inside cyclonev_analogue_pocket_top
 //
 
-assign audio_mclk = audgen_mclk;
+assign audio_mclk = clk_core_12288;
 assign audio_dac = audgen_dac;
 assign audio_lrck = audgen_lrck;
-
-// generate MCLK = 12.288mhz with fractional accumulator
-    reg         [21:0]  audgen_accum;
-    reg                 audgen_mclk;
-    parameter   [20:0]  CYCLE_48KHZ = 21'd122880 * 2;
-always @(posedge clk_74a) begin
-    audgen_accum <= audgen_accum + CYCLE_48KHZ;
-    if(audgen_accum >= 21'd742500) begin
-        audgen_mclk <= ~audgen_mclk;
-        audgen_accum <= audgen_accum - 21'd742500 + CYCLE_48KHZ;
-    end
-end
-
-// generate SCLK = 3.072mhz by dividing MCLK by 4
-    reg [1:0]   aud_mclk_divider;
-    wire        audgen_sclk = aud_mclk_divider[1] /* synthesis keep*/;
-    reg         audgen_lrck_1;
-always @(posedge audgen_mclk) begin
-    aud_mclk_divider <= aud_mclk_divider + 1'b1;
-end
-
-// shift out audio data as I2S 
-// 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
-//
-    reg     [4:0]   audgen_lrck_cnt;    
-    reg             audgen_lrck;
-    reg             audgen_dac;
-always @(negedge audgen_sclk) begin
-    audgen_dac <= 1'b0;
-    // 48khz * 64
-    audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
-    if(audgen_lrck_cnt == 31) begin
-        // switch channels
-        audgen_lrck <= ~audgen_lrck;
-        
-    end 
-end
 
 
 ///////////////////////////////////////////////
@@ -680,6 +564,7 @@ end
 
     wire    clk_core_12288;
     wire    clk_core_12288_90deg;
+    wire    clk_core_3072_180deg;
     
     wire    pll_core_locked;
     wire    pll_core_locked_s;
@@ -691,6 +576,7 @@ mf_pllbase mp1 (
     
     .outclk_0       ( clk_core_12288 ),
     .outclk_1       ( clk_core_12288_90deg ),
+    .outclk_2       ( clk_core_3072_180deg ),
     
     .locked         ( pll_core_locked )
 );

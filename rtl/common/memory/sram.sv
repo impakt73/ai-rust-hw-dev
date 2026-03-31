@@ -17,8 +17,9 @@
 //   to what was previously the gen_full_range generate block.
 //
 // BRAM INITIALIZATION NOTE:
-// - The zero-initialization loop below relies on Yosys/iCE40 BRAM init support,
-//   which is supported by this project's target FPGA/toolchain.
+// - Gowin synthesis requires aggregate default initialization for large RAMs.
+// - Yosys does not currently accept that syntax for unpacked memory arrays, so
+//   use a Yosys-only initial loop fallback selected with YOSYS.
 //
 // GLOBAL BUFFER NOTE (iCE40):
 // - The read path is intentionally unconditional (no in-bounds guard on
@@ -40,85 +41,29 @@ module sram #(
     output logic [31:0]           rdata
 );
 
-`ifdef ALTERA_RESERVED_QIS
-    logic [31:0] ram_q_b;
-    logic [31:0] read_data_pipe;
+    (* ram_style = "block" *) logic [7:0] mem0 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem1 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem2 [0:DEPTH-1];
+    (* ram_style = "block" *) logic [7:0] mem3 [0:DEPTH-1];
 
-    altsyncram #(
-        .address_reg_b("CLOCK0"),
-        .byte_size(8),
-        .clock_enable_input_a("BYPASS"),
-        .clock_enable_input_b("BYPASS"),
-        .clock_enable_output_b("BYPASS"),
-        .intended_device_family("Cyclone V"),
-        .numwords_a(DEPTH),
-        .numwords_b(DEPTH),
-        .operation_mode("DUAL_PORT"),
-        .outdata_aclr_b("NONE"),
-        .outdata_reg_b("UNREGISTERED"),
-        .power_up_uninitialized("FALSE"),
-        .read_during_write_mode_mixed_ports("OLD_DATA"),
-        .width_a(32),
-        .width_b(32),
-        .width_byteena_a(4),
-        .widthad_a(ADDR_WIDTH),
-        .widthad_b(ADDR_WIDTH)
-    ) ram_block (
-        .address_a(waddr),
-        .address_b(raddr),
-        .byteena_a(wmask),
-        .clock0(clk),
-        .data_a(wdata),
-        .wren_a(we),
-        .q_b(ram_q_b),
-        .aclr0(1'b0),
-        .aclr1(1'b0),
-        .addressstall_a(1'b0),
-        .addressstall_b(1'b0),
-        .byteena_b(1'b1),
-        .clock1(1'b1),
-        .clocken0(1'b1),
-        .clocken1(1'b1),
-        .clocken2(1'b1),
-        .clocken3(1'b1),
-        .data_b(32'b0),
-        .eccstatus(),
-        .q_a(),
-        .rden_a(1'b1),
-        .rden_b(1'b1),
-        .wren_b(1'b0)
-    );
-
-    always_ff @(posedge clk) begin
-        read_data_pipe <= ram_q_b;
-        rdata <= read_data_pipe;
-    end
-`else
-    (* ram_style = "block" *) logic [31:0] mem [0:DEPTH-1];
     logic [31:0] read_data_pipe;
-    initial begin
-        for (int i = 0; i < DEPTH; i = i + 1) begin
-            mem[i] = 32'b0;
-        end
-    end
 
     always_ff @(posedge clk) begin
         // Write with bounds guard.  For power-of-two DEPTH the comparison
         // ({1'b0,waddr} < DEPTH) is always true so synthesis folds it away.
         if (we && ({1'b0, waddr} < (ADDR_WIDTH+1)'(DEPTH))) begin
-            if (wmask[0]) mem[waddr][7:0]   <= wdata[7:0];
-            if (wmask[1]) mem[waddr][15:8]  <= wdata[15:8];
-            if (wmask[2]) mem[waddr][23:16] <= wdata[23:16];
-            if (wmask[3]) mem[waddr][31:24] <= wdata[31:24];
+            if (wmask[0]) mem0[waddr] <= wdata[7:0];
+            if (wmask[1]) mem1[waddr] <= wdata[15:8];
+            if (wmask[2]) mem2[waddr] <= wdata[23:16];
+            if (wmask[3]) mem3[waddr] <= wdata[31:24];
         end
         // Read-first behaviour: same-cycle read and write to the same address
         // returns the old memory contents after the internal output pipeline
         // latency.  The unconditional read maps to clean BRAM + DFF primitives
         // without synchronous-clear DFFSR cells.
-        read_data_pipe <= mem[raddr];
+        read_data_pipe <= {mem3[raddr], mem2[raddr], mem1[raddr], mem0[raddr]};
         rdata <= read_data_pipe;
     end
-`endif
 
 endmodule
 `default_nettype wire

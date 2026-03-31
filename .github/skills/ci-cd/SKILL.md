@@ -96,7 +96,7 @@ No lint errors should be reported.
 ```bash
 (cd rtl/fpga && make)
 ```
-Synthesis must complete successfully. This verifies that RTL changes can be synthesized to an FPGA target (iCE40-HX8K).
+Synthesis must complete successfully. This verifies that RTL changes can be synthesized to the default FPGA target (iCE Pi Zero ECP5-25F).
 
 #### 7. Verify CI Pipeline Status
 - Push your changes to the branch
@@ -309,7 +309,7 @@ cargo test   # Rebuild from scratch
 
 **Possible causes:**
 - Non-synthesizable SystemVerilog constructs
-- Resource usage exceeds FPGA capacity (iCE40-HX8K has ~7,680 LUTs)
+- Resource usage exceeds FPGA capacity (ECP5-25F has 24,288 LUT4-class combinational cells)
 - Timing constraints not met (target: 25 MHz)
 - Missing or incorrect module instantiations
 
@@ -323,7 +323,7 @@ cat rtl/fpga/build/yosys.log | grep -i error
 cat rtl/fpga/build/nextpnr.log | grep -i error
 
 # Check timing report
-cat rtl/fpga/build/ice40_alchitry_cu/nextpnr.log | grep -i "max frequency"
+cat rtl/fpga/build/ecp5_icepi_zero/nextpnr.log | grep -i "max frequency"
 ```
 
 **Common fixes:**

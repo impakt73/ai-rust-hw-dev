@@ -1,9 +1,9 @@
 # Makefile for RISC-V FPGA Synthesis
-# Supports open-source Lattice flows plus a Vivado batch flow for the Alchitry Au.
+# Supports the open-source ECP5 flow plus vendor-tool bring-up flows.
 
 # Project configuration
 PROJECT = riscv_fpga
-TARGET ?= ice40_alchitry_cu
+TARGET ?= ecp5_icepi_zero
 
 # File paths
 RTL_DIR = ../common
@@ -21,7 +21,11 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/ff_sync.sv \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
+	$(RTL_DIR)/primitives/bitmap_text_renderer.sv \
+	$(RTL_DIR)/primitives/sine_table.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
+	$(RTL_DIR)/primitives/tone_generator.sv \
+	$(RTL_DIR)/primitives/video_sync.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/fpu/fp_regfile.sv \
@@ -37,11 +41,13 @@ RTL_SOURCES = \
 	$(RTL_DIR)/io/host_bus_interface.sv \
 	$(RTL_DIR)/io/host_bus_rx.sv \
 	$(RTL_DIR)/io/host_bus_tx.sv \
+	$(RTL_DIR)/io/i2s_serializer.sv \
 	$(RTL_DIR)/io/sys_led_controller.sv \
 	$(RTL_DIR)/cpu/mem_interface.sv \
 	$(RTL_DIR)/cpu/mul_unit.sv \
 	$(RTL_DIR)/memory/registered_bus.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
+	$(RTL_DIR)/memory/sync_sprom.sv \
 	$(RTL_DIR)/cpu/regfile.sv \
 	$(RTL_DIR)/primitives/sync_fifo.sv \
 	$(RTL_DIR)/primitives/reset_controller.sv \
@@ -49,31 +55,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/memory/sram.sv \
 	$(RTL_DIR)/cpu/writeback_mux.sv \
 	$(RTL_DIR)/cpu/cpu.sv \
-	$(RTL_DIR)/peripherals/clock_peripheral.sv \
-	$(RTL_DIR)/peripherals/led_controller_peripheral.sv \
 	$(RTL_DIR)/peripherals/sram_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
-
-ifeq ($(TARGET),ice40_alchitry_cu)
-DEVICE = hx8k
-PACKAGE = cb132
-FPGA_DIR = ice40_alchitry_cu
-TOP_MODULE = ice40_alchitry_cu_top
-DEFAULT_PROGRAM_MODE = flash
-CONSTRAINT = $(FPGA_DIR)/ice40_alchitry_cu.pcf
-SDC_CONSTRAINT = $(FPGA_DIR)/timing_async.sdc
-SYNTH_CMD = synth_ice40 -top $(TOP_MODULE) -json $(NETLIST)
-PNR_OUT = $(BUILD_DIR)/$(PROJECT).asc
-PNR_CMD = $(NEXTPNR) --$(DEVICE) --package $(PACKAGE) \
-		--json $(NETLIST) \
-		--pcf $(CONSTRAINT) \
-		--asc $(PNR_OUT) \
-		--freq 25
-PACK_CMD = $(ICEPACK) $(PNR_OUT) $(BIN)
-OPENFPGALOADER_BOARD = ice40_generic
-OUTPUT_EXT = bin
-endif
 
 ifeq ($(TARGET),ecp5_icepi_zero)
 DEVICE = 25k
@@ -114,8 +98,26 @@ DEFAULT_PROGRAM_MODE = package
 POCKET_QSF = $(FPGA_DIR)/src/fpga/ap_core.qsf
 QUARTUS_TCL = $(FPGA_DIR)/quartus_build.tcl
 QUARTUS_SH = quartus_sh
-PROGRAM_CMD = $(CARGO) run --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
+POCKET_DEPLOY_DIR ?= /mnt/analogue-pocket
+POCKET_DEPLOY_UUID ?= 0123-4567
+POCKET_DEPLOY_UID ?= 1000
+POCKET_DEPLOY_GID ?= 1000
+POCKET_DEPLOY_UMASK ?= 022
 OUTPUT_EXT = rbf
+endif
+
+ifeq ($(TARGET),gowin_tang_primer_25k)
+PART = GW5A-LV25MG121NC1/I0
+DEVICE_VERSION = A
+FPGA_DIR = gowin_tang_primer_25k
+TOP_MODULE = gowin_tang_primer_25k_top
+DEFAULT_PROGRAM_MODE = sram
+CONSTRAINT = $(FPGA_DIR)/gowin_tang_primer_25k.cst
+SDC_CONSTRAINT = $(FPGA_DIR)/gowin_tang_primer_25k.sdc
+GOWIN_TCL = $(FPGA_DIR)/gowin_build.tcl
+GOWIN_SH = gw_sh
+OPENFPGALOADER_BOARD = tangprimer25k
+OUTPUT_EXT = fs
 endif
 
 PROGRAM_MODE ?= $(DEFAULT_PROGRAM_MODE)
@@ -133,45 +135,38 @@ PROGRAM_CMD = $(OPENFPGALOADER) -b $(OPENFPGALOADER_BOARD) $(OPENFPGALOADER_PROG
 endif
 
 ifndef FPGA_DIR
-$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ice40_alchitry_cu, TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, or TARGET=cyclonev_analogue_pocket)
+$(error Unsupported TARGET value '$(TARGET)'. Set TARGET=ecp5_icepi_zero, TARGET=artix7_alchitry_au, TARGET=cyclonev_analogue_pocket, or TARGET=gowin_tang_primer_25k)
 endif
 
 BUILD_DIR := build/$(TARGET)
 NETLIST ?= $(BUILD_DIR)/$(PROJECT).json
 
-ifeq ($(TARGET),cyclonev_analogue_pocket)
-FPGA_SOURCES = \
-	$(FPGA_DIR)/src/fpga/core/analogue_pocket_repo_top.sv
-else
 FPGA_SOURCES = \
 	common/fpga_common_top.sv \
-	$(FPGA_DIR)/$(TOP_MODULE).sv
-endif
+	$(FPGA_DIR)/$(FPGA_DIR)_top.sv
 
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
+POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
 TIMING = $(BUILD_DIR)/$(PROJECT)_timing.rpt
 TIMING_SUMMARY = $(BUILD_DIR)/$(PROJECT)_timing_summary.rpt
 UTILIZATION = $(BUILD_DIR)/$(PROJECT)_utilization.rpt
+POCKET_PACKAGE_CMD = $(CARGO) run --quiet --release --manifest-path $(abspath ../../pkt/Cargo.toml) -- --output-path-file $(abspath $(POCKET_PACKAGE_INFO)) $(abspath $(BIN)) $(abspath $(FPGA_DIR)) $(abspath $(BUILD_DIR))
 
 # Tools
 YOSYS = yosys
-NEXTPNR = nextpnr-ice40
-ICEPACK = icepack
+NEXTPNR = nextpnr-ecp5
 ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
 PYTHON3 = python3
+UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
 STATS_FORMAT ?= text
-
-ifeq ($(TARGET),ecp5_icepi_zero)
-NEXTPNR = nextpnr-ecp5
-endif
 
 ifneq ($(TARGET),artix7_alchitry_au)
 HAS_NEXTPNR := $(shell command -v $(NEXTPNR) >/dev/null 2>&1 && echo 1 || echo 0)
@@ -205,6 +200,13 @@ else ifeq ($(TARGET),cyclonev_analogue_pocket)
 $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
+		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+	$(POCKET_PACKAGE_CMD)
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+$(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DIR)
+	$(GOWIN_SH) "$(abspath $(GOWIN_TCL))" \
+		"$(abspath $(BUILD_DIR))" "$(PROJECT)" "$(TOP_MODULE)" "$(PART)" "$(DEVICE_VERSION)" \
+		"$(abspath $(CONSTRAINT))" "$(abspath $(SDC_CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
@@ -253,6 +255,15 @@ timing: $(BIN)
 	else \
 		echo "Timing details remain in $(BUILD_DIR)/output_files/"; \
 	fi
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+timing: $(BIN)
+	@if test -f $(TIMING); then \
+		echo "Timing report written to $(TIMING)"; \
+	elif test -f $(TIMING_SUMMARY); then \
+		echo "Timing summary available at $(TIMING_SUMMARY)"; \
+	else \
+		echo "Timing details remain in $(BUILD_DIR)/project/"; \
+	fi
 else
 timing: $(PNR_OUT)
 	@if test -f $(TIMING); then \
@@ -275,6 +286,13 @@ utilization: $(BIN)
 	else \
 		echo "Quartus utilization details remain in $(BUILD_DIR)/output_files/"; \
 	fi
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+utilization: $(BIN)
+	@if test -f $(UTILIZATION); then \
+		cat $(UTILIZATION); \
+	else \
+		echo "Gowin utilization details remain in $(BUILD_DIR)/project/"; \
+	fi
 else
 utilization: $(NETLIST)
 	bash -e -o pipefail -c 'echo "Generating resource utilization report..."; echo "=== Resource Utilization ===" > $(UTILIZATION); grep -A 20 "Printing statistics" $(BUILD_DIR)/yosys.log >> $(UTILIZATION) || true; cat $(UTILIZATION)'
@@ -291,6 +309,9 @@ stats: check-python
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "ERROR: standardized FPGA stats are not implemented yet for TARGET=$(TARGET)"
 	@exit 1
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "ERROR: standardized FPGA stats are not implemented yet for TARGET=$(TARGET)"
+	@exit 1
 else
 	@$(PYTHON3) $(STATS_SCRIPT) --target $(TARGET) --build --format $(STATS_FORMAT)
 endif
@@ -298,8 +319,44 @@ endif
 
 # Program FPGA
 .PHONY: program
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+program: $(BIN)
+	@if [ -z "$(strip $(POCKET_DEPLOY_DIR))" ]; then \
+		echo "ERROR: POCKET_DEPLOY_DIR is required for TARGET=$(TARGET)"; \
+		echo "Usage: make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=/path/to/deploy"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(POCKET_DEPLOY_DIR)"
+	@set -e; \
+	mounted=0; \
+	cleanup() { \
+		if [ "$$mounted" -eq 1 ]; then \
+			sudo umount "$(POCKET_DEPLOY_DIR)"; \
+		fi; \
+	}; \
+	trap cleanup EXIT; \
+	package_path=""; \
+	if [ -f "$(POCKET_PACKAGE_INFO)" ]; then \
+		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	fi; \
+	if [ -z "$$package_path" ] || [ ! -f "$$package_path" ]; then \
+		$(POCKET_PACKAGE_CMD); \
+		package_path="$$(cat $(POCKET_PACKAGE_INFO))"; \
+	fi; \
+	if [ ! -f "$$package_path" ]; then \
+		echo "ERROR: Pocket package not found at $$package_path"; \
+		echo "Run 'rm -f $(POCKET_PACKAGE_INFO) && make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=$(POCKET_DEPLOY_DIR)' to regenerate the package before retrying deployment."; \
+		exit 1; \
+	fi; \
+	sudo mount -U $(POCKET_DEPLOY_UUID) "$(POCKET_DEPLOY_DIR)" -o uid=$(POCKET_DEPLOY_UID),gid=$(POCKET_DEPLOY_GID),umask=$(POCKET_DEPLOY_UMASK); \
+	mounted=1; \
+	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"; \
+	sudo umount "$(POCKET_DEPLOY_DIR)"; \
+	mounted=0
+else
 program: $(BIN)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
+endif
 
 # Clean build artifacts
 .PHONY: clean
@@ -318,6 +375,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  $(BIN)       - Run the Vivado batch flow and generate the bitstream"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  $(BIN)       - Run the Quartus batch flow and emit the Pocket bring-up image"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  $(BIN)       - Run the Gowin batch flow and generate the Tang Primer 25K bitstream"
 else
 	@echo "  $(NETLIST)   - Run synthesis only (Yosys)"
 	@echo "  $(PNR_OUT)   - Run place and route (nextpnr)"
@@ -327,17 +386,21 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  timing       - Generate timing report (written to $(TIMING))"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  timing       - Show $(TIMING) when copied from Quartus output_files"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  timing       - Show $(TIMING) or $(TIMING_SUMMARY) copied from the Gowin project"
 else
 	@echo "  timing       - Show $(TIMING) when available, otherwise fall back to $(BUILD_DIR)/nextpnr.log"
 endif
 	@echo "  utilization  - Show resource utilization"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  stats        - Not supported yet for this Quartus target"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  stats        - Not supported yet for this Gowin target"
 else
 	@echo "  stats        - Build and print standardized timing/utilization stats"
 endif
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  program      - Package a deployable Pocket core zip in $(BUILD_DIR)"
+	@echo "  program      - Mount the Pocket SD card at POCKET_DEPLOY_DIR, unzip the generated core package, then unmount it"
 else
 	@echo "  program      - Program FPGA with bitstream"
 endif
@@ -350,30 +413,37 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
-	@echo "  - cargo      : Rust toolchain (required for 'make program')"
+	@echo "  - cargo      : Rust toolchain (required for the Pocket packaging step)"
+	@echo "  - unzip      : Archive extraction tool (required for 'make program')"
+	@echo "  - sudo mount/umount : Required to mount the Pocket SD card by UUID $(POCKET_DEPLOY_UUID)"
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@echo "  - gw_sh      : Gowin EDA batch/CLI tool"
+	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 else
 	@echo "  - yosys      : Verilog synthesis"
 	@echo "  - nextpnr    : Place and route"
-	@echo "  - icestorm   : Bitstream generation tools"
+	@echo "  - ecppack    : ECP5 bitstream generation"
 	@echo "  - openFPGALoader : Board programming tool (required for 'make program')"
 endif
 	@echo ""
 	@echo "Target selection:"
-	@echo "  - make TARGET=ice40_alchitry_cu  (default: Alchitry Cu v1)"
-	@echo "  - make TARGET=ecp5_icepi_zero  (iCE Pi Zero ECP5-25F)"
+	@echo "  - make TARGET=ecp5_icepi_zero  (default: iCE Pi Zero ECP5-25F)"
 	@echo "  - make TARGET=artix7_alchitry_au  (Alchitry Au Artix-7)"
 	@echo "  - make TARGET=cyclonev_analogue_pocket  (Analogue Pocket Cyclone V bring-up)"
+	@echo "  - make TARGET=gowin_tang_primer_25k  (Sipeed Tang Primer 25K bring-up)"
 	@echo ""
 	@echo "Stats output format:"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=text"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=json"
-	@echo "  - make TARGET=ice40_alchitry_cu stats STATS_FORMAT=markdown"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=text"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=json"
+	@echo "  - make TARGET=ecp5_icepi_zero stats STATS_FORMAT=markdown"
 	@echo ""
 	@echo "Programming selection:"
-	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-	@echo "  - make program packages $(BIN) into a deployable Pocket core zip in $(BUILD_DIR)"
+	@echo "  - make program POCKET_DEPLOY_DIR=/path/to/mountpoint"
+	@echo "    mounts Pocket SD UUID $(POCKET_DEPLOY_UUID), deploys the packaged core, then unmounts"
+	@echo "  - make TARGET=$(TARGET)           (builds $(BIN) and packages a deployable Pocket zip)"
 else
+	@echo "  - make program PROGRAM_MODE=$(DEFAULT_PROGRAM_MODE)   (default for TARGET=$(TARGET))"
 ifneq ($(DEFAULT_PROGRAM_MODE),sram)
 	@echo "  - make program PROGRAM_MODE=sram"
 endif
@@ -390,14 +460,14 @@ ifeq ($(TARGET),artix7_alchitry_au)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
-	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for 'make program')"; exit 1)
+	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for Pocket packaging)"; exit 1)
+	@which $(UNZIP) > /dev/null || (echo "ERROR: $(UNZIP) not found (required for 'make program')"; exit 1)
+else ifeq ($(TARGET),gowin_tang_primer_25k)
+	@which $(GOWIN_SH) > /dev/null || (echo "ERROR: $(GOWIN_SH) not found"; exit 1)
+	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
 else
 	@which $(YOSYS) > /dev/null || (echo "ERROR: yosys not found"; exit 1)
 	@which $(NEXTPNR) > /dev/null || (echo "ERROR: $(NEXTPNR) not found"; exit 1)
-ifeq ($(TARGET),ice40_alchitry_cu)
-	@which $(ICEPACK) > /dev/null || (echo "ERROR: icepack not found"; exit 1)
-	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)
-endif
 ifeq ($(TARGET),ecp5_icepi_zero)
 	@which $(ECPPACK) > /dev/null || (echo "ERROR: ecppack not found"; exit 1)
 	@which $(OPENFPGALOADER) > /dev/null || (echo "WARNING: openFPGALoader not found (required for 'make program')"; exit 0)

@@ -1,82 +1,17 @@
-# FPGA RTL Resource Breakdown (ICE40 + ECP5)
+# FPGA RTL Resource Breakdown (ECP5)
 
 Generated: 2026-03-08 18:27 UTC
 
+> **Note:** This report predates the consolidation of the standalone LED and clock
+> peripherals into `system_controller`. The rows for `clock_peripheral` and
+> `led_controller_peripheral` are therefore historical and now correspond to
+> logic integrated into `system_controller` in the current design.
+
 ## Scope
 
-- Re-runs synthesis/resource analysis on the latest merged branch state for **both** FPGA targets:
-  - `TARGET=ice40_alchitry_cu` (iCE40 HX8K)
+- Re-runs synthesis/resource analysis on the default FPGA target:
   - `TARGET=ecp5_icepi_zero` (ECP5-25F)
-- Uses target build outputs from `rtl/fpga/build/<target>/` and hierarchical Yosys stats (`-noflatten`) for module attribution.
-
-## Target: ice40_alchitry_cu (iCE40-HX8K)
-
-| Resource | Used | Available | Utilization | Source |
-|---|---:|---:|---:|---|
-| Logic Cells | 5679 | 7680 | 73.9% | nextpnr |
-| Block RAM | 30 | 32 | 93.8% | nextpnr |
-| Global Buffers | 8 | 8 | 100.0% | nextpnr |
-| IO Blocks | 77 | 256 | 30.1% | nextpnr |
-| PLL | 1 | 2 | 50.0% | nextpnr |
-| SB_LUT4 (hierarchical mapped LUTs) | 5292 | n/a | n/a | Yosys |
-| Total DFF-family cells (hierarchical) | 2360 | n/a | n/a | Yosys |
-| SB_CARRY (hierarchical) | 897 | n/a | n/a | Yosys |
-| SB_RAM40_4K (hierarchical) | 30 | 32 | 93.8% | Yosys |
-
-- Post-route Fmax (`pll_clk_global`): **40.32 MHz**
-
-### ICE40 Hierarchical Breakdown: board top (`ice40_alchitry_cu_top`)
-
-| Area | Instances | SB_LUT4 | Share | DFF cells | Carry cells | RAM blocks |
-|---|---:|---:|---:|---:|---:|---:|
-| fpga_common_top | 1 | 5206 | 98.4% | 2325 | 859 | 30 |
-| ff_sync | 2 | 1 | 0.0% | 2 | 0 | 0 |
-| local glue logic | 1 | 84 | 1.6% | 31 | 38 | 0 |
-
-### ICE40 Hierarchical Breakdown: `fpga_common_top`
-
-| Area | Instances | SB_LUT4 | Share | DFF cells | Carry cells | RAM blocks |
-|---|---:|---:|---:|---:|---:|---:|
-| top | 1 | 5082 | 97.6% | 2237 | 822 | 30 |
-| uart | 1 | 124 | 2.4% | 88 | 37 | 0 |
-| local glue logic | 1 | 0 | 0.0% | 0 | 0 | 0 |
-
-### ICE40 Hierarchical Breakdown: `rtl/common/top.sv`
-
-| Area | Instances | SB_LUT4 | Share | DFF cells | Carry cells | RAM blocks |
-|---|---:|---:|---:|---:|---:|---:|
-| cpu | 1 | 2712 | 53.4% | 874 | 402 | 6 |
-| host_bus_interface | 1 | 650 | 12.8% | 561 | 137 | 0 |
-| registered_bus | 1 | 620 | 12.2% | 111 | 3 | 0 |
-| sram_peripheral | 1 | 544 | 10.7% | 165 | 10 | 24 |
-| clock_peripheral | 1 | 211 | 4.2% | 154 | 131 | 0 |
-| sys_led_controller | 1 | 173 | 3.4% | 124 | 98 | 0 |
-| system_controller | 1 | 64 | 1.3% | 102 | 0 | 0 |
-| host_bus_mux | 1 | 51 | 1.0% | 103 | 0 | 0 |
-| reset_controller | 1 | 37 | 0.7% | 26 | 41 | 0 |
-| led_controller_peripheral | 1 | 15 | 0.3% | 17 | 0 | 0 |
-| local glue logic | 1 | 5 | 0.1% | 0 | 0 | 0 |
-
-### ICE40 Hierarchical Breakdown: `cpu`
-
-| Area | Instances | SB_LUT4 | Share | DFF cells | Carry cells | RAM blocks |
-|---|---:|---:|---:|---:|---:|---:|
-| alu | 1 | 814 | 30.0% | 0 | 95 | 0 |
-| csr_file | 1 | 317 | 11.7% | 97 | 60 | 2 |
-| writeback_mux | 1 | 263 | 9.7% | 0 | 59 | 0 |
-| decompress | 1 | 243 | 9.0% | 0 | 0 | 0 |
-| mem_interface | 1 | 93 | 3.4% | 0 | 0 | 0 |
-| branch_unit | 1 | 62 | 2.3% | 0 | 64 | 0 |
-| decoder | 1 | 52 | 1.9% | 0 | 0 | 0 |
-| fetch_buffer | 1 | 40 | 1.5% | 18 | 0 | 0 |
-| regfile | 1 | 2 | 0.1% | 64 | 0 | 4 |
-| local glue logic | 1 | 826 | 30.5% | 695 | 124 | 0 |
-
-### ICE40 ALU Detailed Breakdown
-
-| Area | Instances | SB_LUT4 | Share | DFF cells | Carry cells | RAM blocks |
-|---|---:|---:|---:|---:|---:|---:|
-| local glue logic | 1 | 814 | 100.0% | 0 | 95 | 0 |
+- Uses target build outputs from `rtl/fpga/build/ecp5_icepi_zero/` and hierarchical Yosys stats (`-noflatten`) for module attribution.
 
 ## Target: ecp5_icepi_zero (ECP5-25F)
 
@@ -151,6 +86,6 @@ Generated: 2026-03-08 18:27 UTC
 
 ## Notes
 
-- iCE40 and ECP5 use different primitive vocabularies (`SB_*` vs `LUT4/PFUMX/L6MUX21/CCU2C` + `TRELLIS_FF/DP16KD`), so area columns are target-specific.
-- ECP5 nextpnr reports packed utilization as `TRELLIS_COMB`; the hierarchical Yosys proxy sums mapped logic primitives `LUT4 + PFUMX + L6MUX21 + CCU2C`.
+- The ECP5 open-source flow reports packed utilization as `TRELLIS_COMB` / `TRELLIS_FF` / `DP16KD`.
+- The hierarchical Yosys proxy sums mapped logic primitives `LUT4 + PFUMX + L6MUX21 + CCU2C`.
 - Hierarchical rows include descendants; local glue rows represent primitives instantiated directly in the named module.

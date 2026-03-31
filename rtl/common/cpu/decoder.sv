@@ -32,6 +32,8 @@ module decoder #(
     output logic        jump,
     output logic        is_ecall,     // ECALL instruction
     output logic        is_ebreak,    // EBREAK instruction
+    output logic        is_mret,      // MRET instruction
+    output logic        is_wfi,       // WFI instruction
     output logic        is_fence,     // FENCE instruction
     output logic        is_csr,       // CSR instruction
     output logic        is_auipc,     // AUIPC instruction
@@ -70,6 +72,8 @@ module decoder #(
     logic        jump_dec;
     logic        is_ecall_dec;
     logic        is_ebreak_dec;
+    logic        is_mret_dec;
+    logic        is_wfi_dec;
     logic        is_fence_dec;
     logic        is_csr_dec;
     logic        is_auipc_dec;
@@ -199,6 +203,8 @@ module decoder #(
         jump_dec = 1'b0;
         is_ecall_dec = 1'b0;
         is_ebreak_dec = 1'b0;
+        is_mret_dec = 1'b0;
+        is_wfi_dec = 1'b0;
         is_fence_dec = 1'b0;
         is_csr_dec = 1'b0;
         is_auipc_dec = 1'b0;
@@ -359,13 +365,24 @@ module decoder #(
             end
 
             OP_SYSTEM: begin
-                // SYSTEM instructions: ECALL, EBREAK, CSR*
+                // SYSTEM instructions: ECALL, EBREAK, MRET, WFI, CSR*
                 if (funct3_dec == 3'b000) begin
-                    // ECALL or EBREAK (distinguished by imm[0])
-                    if (imm_i_dec[0] == 1'b0) begin
-                        is_ecall_dec = 1'b1;
+                    // ECALL/EBREAK/MRET/WFI require rs1 (instruction[19:15]) and
+                    // rd (instruction[11:7]) to be zero, with funct3 already
+                    // checked above, so instruction[19:7] must be all zeros.
+                    if (instruction[19:7] == 13'b0) begin
+                        case (instruction[31:20])
+                            12'h000: is_ecall_dec = 1'b1;   // ECALL
+                            12'h001: is_ebreak_dec = 1'b1;  // EBREAK
+                            12'h105: is_wfi_dec = 1'b1;     // WFI
+                            12'h302: is_mret_dec = 1'b1;    // MRET
+                            // Keep unsupported SYSTEM funct12 values on the existing
+                            // invalid-instruction path until later trap phases add
+                            // architectural illegal-instruction handling.
+                            default: instruction_valid_dec = 1'b0;
+                        endcase
                     end else begin
-                        is_ebreak_dec = 1'b1;
+                        instruction_valid_dec = 1'b0;
                     end
                 end else begin
                     // CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
@@ -602,6 +619,8 @@ module decoder #(
             jump <= 1'b0;
             is_ecall <= 1'b0;
             is_ebreak <= 1'b0;
+            is_mret <= 1'b0;
+            is_wfi <= 1'b0;
             is_fence <= 1'b0;
             is_csr <= 1'b0;
             is_auipc <= 1'b0;
@@ -638,6 +657,8 @@ module decoder #(
             jump <= jump_dec;
             is_ecall <= is_ecall_dec;
             is_ebreak <= is_ebreak_dec;
+            is_mret <= is_mret_dec;
+            is_wfi <= is_wfi_dec;
             is_fence <= is_fence_dec;
             is_csr <= is_csr_dec;
             is_auipc <= is_auipc_dec;

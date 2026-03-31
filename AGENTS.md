@@ -61,7 +61,7 @@ What files do you need to modify?
 ### Reset Style (RTL)
 
 - **Use synchronous resets only** across project RTL modules.
-- **Default to active-high reset ports (`rst`) for internal RTL modules.** iCE40 hardware natively supports active-high reset controls; choosing active-high by default avoids extra LUT inversions and unnecessary timing delay.
+- **Default to active-high reset ports (`rst`) for internal RTL modules.** The supported FPGA flows map these resets efficiently without extra inversion logic, so active-high remains the project default.
 - For sequential logic, use `always_ff @(posedge clk)` (or domain clock) and handle reset inside the block with `if (rst)`.
 - Use active-low resets only for special circumstances, usually at external board or device boundaries where the incoming signal is already active-low. Convert those signals to the internal active-high convention as close to the boundary as practical.
 - **Do not reset datapath-only payload registers when a separate `valid`/`pending` flag already guarantees the payload is ignored while invalid.** Instead, clear the control flag on reset and write or refresh the payload whenever new data is captured (typically in the same branch where the `valid`/`pending` flag is asserted).
@@ -133,7 +133,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 │   │   ├── peripherals/   # RTL peripherals (LED, clock, SRAM, system controller)
 │   │   ├── primitives/    # Primitive modules (ff_sync.sv, sync_fifo.sv, etc.)
 │   │   └── wrappers/      # Test wrapper modules
-│   └── fpga/              # FPGA synthesis files for iCE40-HX8K
+│   └── fpga/              # FPGA synthesis files for the supported board targets
 ├── testbench/              # Rust verification (integration tests)
 │   └── tests/             # Integration test files
 ├── cpu-sim/               # CPU simulator
@@ -211,29 +211,36 @@ Address Range          | Device           | Type | Description
 0xA0000000-0xA000000F | Audio            | Rust | Audio buffer
 0xB0000000-0xB0000007 | FIFO             | Rust | Host communication FIFO
 0xC0000000-0xC0000013 | DMA              | Rust | DMA controller
-0x20000000-0x2000000F | System Controller| RTL  | CPU boot and reset control
-0x50000000-0x5000000F | LED Controller   | RTL  | 8-bit LED output register
-0x60000000-0x6000000F | Clock Peripheral | RTL  | Elapsed time counters (us/ms/s)
+0x20000000-0x2000001F | System Controller| RTL  | CPU control, LED output, elapsed time
 0x70000000-0x70002FFF | SRAM Peripheral  | RTL  | 12KB on-chip SRAM
 0x80000000-0x8FFFFFFF | DRAM             | Rust | System memory (256 MiB)
 ```
 
-**LED Controller Peripheral:**
-- **Address:** 0x50000000
+**System Controller Peripheral:**
+- **Address:** 0x20000000
+- **Registers:**
+  - 0x00: STATUS - Bit 0 = cpu_booting, Bit 1 = cpu_halted
+  - 0x04: RESET - Write-data bit 0 selects reset type (0 = system reset, 1 = CPU reset)
+  - 0x08: BOOT - Boot address write register
+  - 0x0C: HALT - Halt code read/write register
+  - 0x10: LED_OUT - 8-bit LED output register
+  - 0x14: ELAPSED_US - Elapsed microseconds since reset
+  - 0x18: ELAPSED_MS - Elapsed milliseconds since reset
+  - 0x1C: ELAPSED_S - Elapsed seconds since reset
+- **Latency:** Single-cycle (ready = 1'b1)
+
+**LED Output Register:**
 - **Register:** LED_OUT (read/write)
   - Bits [7:0]: LED output data
   - Bits [31:8]: Reserved (read as 0, writes ignored)
 - **Access sizes:** Byte, halfword, word
-- **Latency:** Single-cycle (ready = 1'b1)
 
-**Clock Peripheral:**
-- **Address:** 0x60000000
+**Elapsed Time Registers:**
 - **Registers (all read-only):**
-  - 0x00: ELAPSED_US - Elapsed microseconds since reset
-  - 0x04: ELAPSED_MS - Elapsed milliseconds since reset
-  - 0x08: ELAPSED_S - Elapsed seconds since reset
+  - 0x14: ELAPSED_US - Elapsed microseconds since reset
+  - 0x18: ELAPSED_MS - Elapsed milliseconds since reset
+  - 0x1C: ELAPSED_S - Elapsed seconds since reset
 - **Access sizes:** Word (32-bit)
-- **Latency:** Single-cycle (ready = 1'b1)
 - **Note:** Clock frequency is configurable via CLK_FREQ_HZ parameter
 
 **RTL vs Rust Peripherals:**
@@ -250,34 +257,34 @@ sw(reg, val, offset);   // Store with offset
 
 **LED Controller Usage Example:**
 ```rust
-// Write pattern to LED
-lui(15, 0x50000000);  // Load LED base address
+// Write pattern to the system controller LED register
+lui(15, 0x20000000);  // Load system controller base address
 addi(14, 0, 0xAA);    // Load pattern 0xAA
-sw(15, 14, 0);        // Write to LED_OUT register
+sw(15, 14, 0x10);     // Write to LED_OUT register
 
 // Read back LED value
-lw(13, 15, 0);        // Read LED_OUT into register x13
+lw(13, 15, 0x10);     // Read LED_OUT into register x13
 ```
 
 **Clock Peripheral Usage Example:**
 ```rust
-// Read elapsed time from clock peripheral
-lui(15, 0x60000000);  // Load Clock peripheral base address
+// Read elapsed time from the system controller
+lui(15, 0x20000000);  // Load system controller base address
 
 // Read elapsed microseconds
-lw(10, 15, 0x00);     // Read ELAPSED_US into register x10
+lw(10, 15, 0x14);     // Read ELAPSED_US into register x10
 
 // Read elapsed milliseconds
-lw(11, 15, 0x04);     // Read ELAPSED_MS into register x11
+lw(11, 15, 0x18);     // Read ELAPSED_MS into register x11
 
 // Read elapsed seconds
-lw(12, 15, 0x08);     // Read ELAPSED_S into register x12
+lw(12, 15, 0x1C);     // Read ELAPSED_S into register x12
 
 // Delay loop using clock peripheral (wait 100ms)
-lw(10, 15, 0x04);     // Read start time (ms)
+lw(10, 15, 0x18);     // Read start time (ms)
 addi(11, 10, 100);    // target = start + 100ms
 delay_loop:
-lw(12, 15, 0x04);     // Read current time (ms)
+lw(12, 15, 0x18);     // Read current time (ms)
 blt(12, 11, delay_loop); // Loop until current >= target
 ```
 

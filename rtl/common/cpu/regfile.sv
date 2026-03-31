@@ -21,9 +21,9 @@
 //   - Writes: 1 cycle (synchronous BRAM write)
 //
 // x0 HANDLING:
-//   - BRAM is initialized to 0 (via sync_dpram initialization)
-//   - Writes to x0 are blocked by the CPU (we is gated in cpu.sv)
-//   - No special read logic needed since x0 is initialized to 0 and never written
+//   - This storage is intentionally generic and does not special-case x0
+//   - The CPU computes registered x0 flags during decode, blocks writes to x0,
+//     and muxes x0 operand reads to 0 after the BRAM read latency
 
 module regfile (
     input wire logic        clk,

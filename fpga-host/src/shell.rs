@@ -156,7 +156,7 @@ pub enum ConnectRuntime {
         /// Device path (e.g., /dev/ttyUSB0 for FPGA serial)
         device: String,
         /// Baud rate (default: 1000000)
-        #[arg(default_value_t = DEFAULT_BAUD_RATE)]
+        #[arg(default_value_t = DEFAULT_BAUD_RATE, value_parser = clap::value_parser!(u32).range(1..))]
         baud: u32,
     },
     /// Connect to the software simulator
@@ -655,6 +655,11 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_connect_zero_baud() {
+        assert!(ShellCommand::parse("connect fpga /dev/ttyUSB0 0").is_err());
+    }
+
+    #[test]
     fn test_parse_disconnect() {
         assert!(matches!(
             ShellCommand::parse("disconnect"),
@@ -688,11 +693,11 @@ mod tests {
 
     #[test]
     fn test_parse_read_hex() {
-        let result = ShellCommand::parse("read 0x50000000");
+        let result = ShellCommand::parse("read 0x20000010");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Read {
-                address: 0x50000000,
+                address: 0x20000010,
                 size: SizeArg::Word
             }))
         ));
@@ -712,29 +717,29 @@ mod tests {
 
     #[test]
     fn test_parse_read_with_size() {
-        let result = ShellCommand::parse("read 0x50000000 byte");
+        let result = ShellCommand::parse("read 0x20000010 byte");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Read {
-                address: 0x50000000,
+                address: 0x20000010,
                 size: SizeArg::Byte
             }))
         ));
 
-        let result = ShellCommand::parse("read 0x50000000 halfword");
+        let result = ShellCommand::parse("read 0x20000010 halfword");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Read {
-                address: 0x50000000,
+                address: 0x20000010,
                 size: SizeArg::Halfword
             }))
         ));
 
-        let result = ShellCommand::parse("read 0x50000000 half");
+        let result = ShellCommand::parse("read 0x20000010 half");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Read {
-                address: 0x50000000,
+                address: 0x20000010,
                 size: SizeArg::Halfword
             }))
         ));
@@ -742,11 +747,11 @@ mod tests {
 
     #[test]
     fn test_parse_write_hex() {
-        let result = ShellCommand::parse("write 0x50000000 0xDEADBEEF");
+        let result = ShellCommand::parse("write 0x20000010 0xDEADBEEF");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Write {
-                address: 0x50000000,
+                address: 0x20000010,
                 data: 0xDEADBEEF,
                 size: SizeArg::Word
             }))
@@ -755,11 +760,11 @@ mod tests {
 
     #[test]
     fn test_parse_write_with_size() {
-        let result = ShellCommand::parse("write 0x50000000 0xAB byte");
+        let result = ShellCommand::parse("write 0x20000010 0xAB byte");
         assert!(matches!(
             result,
             Ok(ParseResult::Command(ShellCommand::Write {
-                address: 0x50000000,
+                address: 0x20000010,
                 data: 0xAB,
                 size: SizeArg::Byte
             }))
@@ -774,7 +779,7 @@ mod tests {
     #[test]
     fn test_parse_write_missing_args() {
         assert!(ShellCommand::parse("write").is_err());
-        assert!(ShellCommand::parse("write 0x50000000").is_err());
+        assert!(ShellCommand::parse("write 0x20000010").is_err());
     }
 
     #[test]
