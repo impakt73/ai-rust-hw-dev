@@ -55,9 +55,7 @@ module cyclonev_analogue_pocket_top #(
     logic        video_hs_reg;
     localparam int unsigned AUDIO_PHASE_WIDTH = 32;
     localparam int unsigned AUDIO_TABLE_SIZE = 1024;
-    localparam int unsigned TONE_GENERATOR_LATENCY = 5;
     localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
-    logic [TONE_GENERATOR_LATENCY-1:0] tone_sample_valid_pipe;
     logic signed [15:0] tone_sample;
     logic signed [15:0] i2s_sample_data;
     logic signed [15:0] tone_sample_hold;
@@ -201,40 +199,23 @@ module cyclonev_analogue_pocket_top #(
         end
     end
 
-    // tone_generator has a fixed multi-cycle lookup latency, so delay the
-    // sideband valid flag until the output sample is fully populated.
-    always_ff @(posedge audio_sclk) begin
-        if (audio_rst) begin
-            tone_sample_valid_pipe <= '0;
-        end else begin
-            tone_sample_valid_pipe <= {
-                tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-2:0],
-                audio_en
-            };
-        end
-    end
-
-    assign tone_sample_valid = tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-1];
     // audio_lrclk still reflects the previous slot until the serializer reloads on
-    // this clock edge, so a high value means the next slot is the first channel of
-    // the stereo pair and should latch a fresh sample. Before the hold register has
-    // been seeded after reset, always bypass it so the first stereo frame does not
-    // transmit zeros.
+    // this clock edge, so audio_lrclk=1 means the serializer is about to load the
+    // first channel of the next stereo pair and should see a fresh sample. Before
+    // the hold register has been seeded after reset, always bypass it so the first
+    // stereo frame does not transmit zeros.
     assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
 
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
             tone_sample_hold_valid <= 1'b0;
         end else if (i2s_sample_ready) begin
-            if (!tone_sample_hold_valid) begin
-                tone_sample_hold <= tone_sample;
-                tone_sample_hold_valid <= 1'b1;
-            end else if (audio_lrclk) begin
+            if (!tone_sample_hold_valid || audio_lrclk) begin
                 tone_sample_hold <= tone_sample;
             end
+            tone_sample_hold_valid <= 1'b1;
         end
     end
-
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
         .TABLE_SIZE  (AUDIO_TABLE_SIZE),
@@ -244,7 +225,9 @@ module cyclonev_analogue_pocket_top #(
         .clk        (audio_sclk),
         .rst        (audio_rst),
         .tuning_word(audio_tuning_word),
-        .sample     (tone_sample)
+        .sample     (tone_sample),
+        .zero_cross (),
+        .valid      (tone_sample_valid)
     );
 
     i2s_serializer #(
@@ -254,7 +237,7 @@ module cyclonev_analogue_pocket_top #(
         .clk         (audio_sclk),
         .rst         (audio_rst),
         .sample_data (i2s_sample_data),
-        .sample_valid(tone_sample_valid),
+        .sample_valid(audio_en && tone_sample_valid),
         .sample_ready(i2s_sample_ready),
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
