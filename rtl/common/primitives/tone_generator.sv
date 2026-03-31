@@ -27,6 +27,7 @@ module tone_generator #(
 );
 
     localparam int TABLE_ADDR_WIDTH = $clog2(TABLE_SIZE);
+    // sine_table registers its output after four clocked stages from index to sample.
     localparam int SINE_TABLE_LATENCY = 4;
 
     logic [PHASE_WIDTH-1:0]         phase_acc;
@@ -60,6 +61,8 @@ module tone_generator #(
 
     assign phase_index_window = {phase_acc, {TABLE_ADDR_WIDTH{1'b0}}};
     assign table_index = phase_index_window[PHASE_WIDTH+TABLE_ADDR_WIDTH-1 -: TABLE_ADDR_WIDTH];
+    // lower bits all zero only at index 0 and TABLE_SIZE/2, the two samples nearest
+    // the positive-going and negative-going sine zero crossings, respectively.
     assign zero_cross_pre = (table_index[TABLE_ADDR_WIDTH-2:0] == '0);
 
     always_ff @(posedge clk) begin
