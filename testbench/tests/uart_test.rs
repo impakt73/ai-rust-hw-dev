@@ -1,6 +1,5 @@
-use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
-
 use riscv_core::AsDynamicVerilatedModel;
+use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
 // UART timing for 1M baud (based on 50MHz clock)
 // CLKS_PER_BIT = 50_000_000 / 1_000_000 = 50
 const CLKS_PER_BIT: u32 = 50;
