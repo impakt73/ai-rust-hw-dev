@@ -2,6 +2,15 @@ use riscv_core::{
     create_i2s_serializer_runtime, I2sSerializerEqualWidthWrapper, I2sSerializerExpandWrapper,
     I2sSerializerMonoWrapper, I2sSerializerTruncateWrapper,
 };
+use std::sync::{Mutex, MutexGuard};
+
+static I2S_SERIALIZER_TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+fn lock_i2s_serializer_test() -> MutexGuard<'static, ()> {
+    I2S_SERIALIZER_TEST_MUTEX
+        .lock()
+        .expect("i2s serializer test mutex poisoned")
+}
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -42,6 +51,7 @@ macro_rules! capture_bits {
 
 #[test]
 fn test_i2s_serializer_zero_fills_when_no_sample_is_available() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerEqualWidthWrapper>()
@@ -96,6 +106,7 @@ fn test_i2s_serializer_zero_fills_when_no_sample_is_available() {
 
 #[test]
 fn test_i2s_serializer_serializes_back_to_back_samples_and_toggles_lrclk() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerEqualWidthWrapper>()
@@ -154,6 +165,7 @@ fn test_i2s_serializer_serializes_back_to_back_samples_and_toggles_lrclk() {
 
 #[test]
 fn test_i2s_serializer_pads_narrow_samples_with_trailing_zeros() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerExpandWrapper>()
@@ -177,6 +189,7 @@ fn test_i2s_serializer_pads_narrow_samples_with_trailing_zeros() {
 
 #[test]
 fn test_i2s_serializer_mono_mode_duplicates_samples_across_both_channels() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerMonoWrapper>()
@@ -237,6 +250,7 @@ fn test_i2s_serializer_mono_mode_duplicates_samples_across_both_channels() {
 
 #[test]
 fn test_i2s_serializer_mono_mode_zero_fills_both_channels_without_input() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerMonoWrapper>()
@@ -281,6 +295,7 @@ fn test_i2s_serializer_mono_mode_zero_fills_both_channels_without_input() {
 
 #[test]
 fn test_i2s_serializer_truncates_wider_samples_to_most_significant_bits() {
+    let _guard = lock_i2s_serializer_test();
     let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
     let mut dut = runtime
         .create_model_simple::<I2sSerializerTruncateWrapper>()
