@@ -1,9 +1,9 @@
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{
     create_fpu_classifier_runtime, create_fpu_comparator_runtime, create_fpu_float_to_int_runtime,
     create_fpu_int_to_float_runtime, create_fpu_sqrt_runtime, FpuClassifier, FpuComparator,
     FpuFloatToInt, FpuIntToFloat, FpuSqrt,
 };
-use riscv_core::AsDynamicVerilatedModel;
 
 // IEEE 754 test constants
 const POS_ZERO: u32 = 0x00000000;

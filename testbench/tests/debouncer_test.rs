@@ -1,8 +1,8 @@
+use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{
     create_debouncer_runtime, create_debouncer_single_cycle_runtime, DebouncerSingleCycleWrapper,
     DebouncerWrapper,
 };
-use riscv_core::AsDynamicVerilatedModel;
 
 const WRAPPER_CLK_FREQ_HZ: u64 = 1_000_000;
 const WRAPPER_STABLE_TIME_US: u64 = 3;
