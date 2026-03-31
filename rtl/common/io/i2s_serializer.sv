@@ -1,5 +1,5 @@
 `default_nettype none
-// I2S serializer for single-channel sample beats.
+// I2S serializer for stereo sample words, with optional mono-input duplication.
 //
 // Clocking note:
 //   - This module does not generate its own bit clock; it forwards clk to i2s_bclk.
@@ -9,7 +9,8 @@
 //     by 180 degrees so LRCLK/SD are aligned for downstream I2S sampling.
 module i2s_serializer #(
     parameter int INPUT_SAMPLE_WIDTH = 16,
-    parameter int OUTPUT_SAMPLE_WIDTH = 16
+    parameter int OUTPUT_SAMPLE_WIDTH = 16,
+    parameter bit MONO_INPUT_MODE = 1'b0
 ) (
     input wire logic                          clk,
     input wire logic                          rst,
@@ -35,14 +36,17 @@ module i2s_serializer #(
     end
 
     logic [OUTPUT_SAMPLE_WIDTH-1:0] shift_reg;
+    logic [OUTPUT_SAMPLE_WIDTH-1:0] held_sample;
     logic [OUTPUT_SAMPLE_WIDTH-1:0] formatted_sample;
+    logic [OUTPUT_SAMPLE_WIDTH-1:0] load_sample;
     logic [BIT_INDEX_WIDTH-1:0] bit_index;
     logic reload_pending;
     logic next_channel;
 
     // Forward the caller-provided bit clock phase directly to the I2S pins.
     assign i2s_bclk = clk;
-    assign sample_ready = reload_pending;
+    assign sample_ready = reload_pending && (!MONO_INPUT_MODE || !next_channel);
+    assign load_sample = sample_valid ? formatted_sample : '0;
 
     generate
         if (INPUT_SAMPLE_WIDTH >= OUTPUT_SAMPLE_WIDTH) begin : gen_truncate_input
@@ -62,7 +66,12 @@ module i2s_serializer #(
             i2s_lrclk <= 1'b0;
             i2s_sd <= 1'b0;
         end else if (reload_pending) begin
-            shift_reg <= sample_valid ? formatted_sample : '0;
+            if (MONO_INPUT_MODE && next_channel) begin
+                shift_reg <= held_sample;
+            end else begin
+                shift_reg <= load_sample;
+                held_sample <= load_sample;
+            end
             bit_index <= '0;
             reload_pending <= 1'b0;
             i2s_lrclk <= next_channel;

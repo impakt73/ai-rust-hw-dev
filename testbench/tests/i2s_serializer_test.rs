@@ -1,6 +1,6 @@
 use riscv_core::{
     create_i2s_serializer_runtime, I2sSerializerEqualWidthWrapper, I2sSerializerExpandWrapper,
-    I2sSerializerTruncateWrapper,
+    I2sSerializerMonoWrapper, I2sSerializerTruncateWrapper,
 };
 
 macro_rules! clock_cycle {
@@ -172,6 +172,110 @@ fn test_i2s_serializer_pads_narrow_samples_with_trailing_zeros() {
         bits,
         vec![1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0],
         "narrower input samples must be left-justified and zero-padded in the output word"
+    );
+}
+
+#[test]
+fn test_i2s_serializer_mono_mode_duplicates_samples_across_both_channels() {
+    let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
+    let mut dut = runtime
+        .create_model_simple::<I2sSerializerMonoWrapper>()
+        .expect("Failed to create mono I2S serializer model");
+
+    reset_dut!(&mut dut);
+
+    dut.sample_data = 0xA5;
+    dut.sample_valid = 1;
+    clock_cycle!(&mut dut);
+    dut.sample_valid = 0;
+    dut.eval();
+
+    assert_eq!(
+        dut.i2s_lrclk, 0,
+        "first mono word should start on the left channel"
+    );
+    assert_eq!(
+        dut.sample_ready, 0,
+        "mono mode must hold off a new input sample while shifting the left word"
+    );
+
+    let left_bits = capture_bits!(&mut dut, 8);
+    assert_eq!(
+        left_bits,
+        vec![1, 0, 1, 0, 0, 1, 0, 1],
+        "mono mode must shift the accepted sample MSB-first on the left channel"
+    );
+    assert_eq!(
+        dut.sample_ready, 0,
+        "mono mode must not request a new sample between the left and right words"
+    );
+
+    clock_cycle!(&mut dut);
+    assert_eq!(
+        dut.i2s_lrclk, 1,
+        "second mono word should switch to the right channel"
+    );
+    assert_eq!(
+        dut.i2s_sd, 0,
+        "mono mode should still insert the I2S alignment cycle before the right-word MSB"
+    );
+    assert_eq!(
+        dut.sample_ready, 0,
+        "mono mode must continue replaying the held sample instead of consuming a new one"
+    );
+
+    let right_bits = capture_bits!(&mut dut, 8);
+    assert_eq!(
+        right_bits, left_bits,
+        "mono mode must duplicate the accepted sample onto the right channel"
+    );
+    assert_eq!(
+        dut.sample_ready, 1,
+        "mono mode must request a new sample only after both stereo words complete"
+    );
+}
+
+#[test]
+fn test_i2s_serializer_mono_mode_zero_fills_both_channels_without_input() {
+    let runtime = create_i2s_serializer_runtime().expect("Failed to create I2S serializer runtime");
+    let mut dut = runtime
+        .create_model_simple::<I2sSerializerMonoWrapper>()
+        .expect("Failed to create mono I2S serializer model");
+
+    reset_dut!(&mut dut);
+
+    clock_cycle!(&mut dut);
+    assert_eq!(
+        dut.i2s_lrclk, 0,
+        "first empty mono word should still start on the left channel"
+    );
+
+    let left_bits = capture_bits!(&mut dut, 8);
+    assert_eq!(
+        left_bits,
+        vec![0; 8],
+        "missing mono input must zero-fill the left channel"
+    );
+    assert_eq!(
+        dut.sample_ready, 0,
+        "mono mode should not request a new sample until the duplicated right word also completes"
+    );
+
+    clock_cycle!(&mut dut);
+    assert_eq!(
+        dut.i2s_lrclk, 1,
+        "second empty mono word should advance to the right channel"
+    );
+
+    let right_bits = capture_bits!(&mut dut, 8);
+    assert_eq!(
+        right_bits,
+        vec![0; 8],
+        "missing mono input must also zero-fill the right channel"
+    );
+    assert_eq!(
+        dut.sample_ready, 1,
+        "mono mode should request a new sample after both zero-filled stereo words finish"
     );
 }
 

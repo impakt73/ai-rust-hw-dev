@@ -73,6 +73,12 @@ pub struct I2sSerializerExpandWrapper;
 
 #[verilog(
     src = "../rtl/common/wrappers/i2s_serializer_test_wrappers.sv",
+    name = "i2s_serializer_mono_wrapper"
+)]
+pub struct I2sSerializerMonoWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/i2s_serializer_test_wrappers.sv",
     name = "i2s_serializer_truncate_wrapper"
 )]
 pub struct I2sSerializerTruncateWrapper;
