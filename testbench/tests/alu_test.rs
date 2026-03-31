@@ -1,7 +1,7 @@
 use rand::Rng;
-use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::Alu;
-use testbench::alu_runtime;
+use riscv_core::AsDynamicVerilatedModel;
+use testbench::create_alu_model;
 // ALU Operation Encodings (must match the RTL)
 const ALU_ADD: u32 = 0b00000;
 const ALU_SUB: u32 = 0b00001;
@@ -127,9 +127,7 @@ fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
 
 #[test]
 fn test_alu_add() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     for _ in 0..100 {
@@ -149,9 +147,7 @@ fn test_alu_add() {
 
 #[test]
 fn test_alu_sub() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     for _ in 0..100 {
@@ -171,8 +167,7 @@ fn test_alu_sub() {
 
 #[test]
 fn test_alu_operations_latch_inputs_after_handshake() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     for (a, b, alu_op, expected) in [
         (5_u32, 3_u32, ALU_ADD as u8, 8_u32),
@@ -216,9 +211,7 @@ fn test_alu_operations_latch_inputs_after_handshake() {
 
 #[test]
 fn test_alu_logic_ops() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     for _ in 0..50 {
@@ -241,9 +234,7 @@ fn test_alu_logic_ops() {
 
 #[test]
 fn test_alu_shift_ops() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     for _ in 0..50 {
@@ -267,9 +258,7 @@ fn test_alu_shift_ops() {
 
 #[test]
 fn test_alu_compare_ops() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Test SLT (Set Less Than - signed)
     let test_cases_slt = vec![
@@ -311,8 +300,7 @@ fn test_alu_compare_ops() {
 
 #[test]
 fn test_alu_minmax_ops() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     let signed_cases = vec![
         (0x8000_0000u32, 0u32),           // i32::MIN, 0
@@ -357,8 +345,7 @@ fn test_alu_minmax_ops() {
 
 #[test]
 fn test_alu_minmax_result_is_registered() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     dut.rst = 1;
     dut.in_valid = 0;
@@ -496,9 +483,7 @@ fn test_alu_minmax_result_is_registered() {
 
 #[test]
 fn test_alu_single_cycle_result_is_registered() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     dut.rst = 1;
     dut.in_valid = 0;
@@ -550,9 +535,7 @@ fn test_alu_single_cycle_result_is_registered() {
 
 #[test]
 fn test_alu_all_operations() {
-    let runtime = alu_runtime();
-
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     for _ in 0..100 {
@@ -578,8 +561,7 @@ fn test_alu_all_operations() {
 
 #[test]
 fn test_alu_mul() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
     let mut rng = rand::thread_rng();
 
     // Test basic multiplication
@@ -607,8 +589,7 @@ fn test_alu_mul() {
 
 #[test]
 fn test_alu_mulh() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Test signed × signed, upper 32 bits
     // Positive × Positive
@@ -634,8 +615,7 @@ fn test_alu_mulh() {
 
 #[test]
 fn test_alu_mulhsu() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Test signed × unsigned, upper 32 bits
     // Negative signed × positive unsigned
@@ -653,8 +633,7 @@ fn test_alu_mulhsu() {
 
 #[test]
 fn test_alu_mulhu() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Test unsigned × unsigned, upper 32 bits
     execute_alu_operation(&mut dut, 0xFFFFFFFF, 0xFFFFFFFF, ALU_MULHU as u8);
@@ -677,8 +656,7 @@ fn test_alu_mulhu() {
 
 #[test]
 fn test_alu_div() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Normal signed division
     execute_alu_operation(&mut dut, 20, 3, ALU_DIV as u8);
@@ -710,8 +688,7 @@ fn test_alu_div() {
 
 #[test]
 fn test_alu_divu() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Normal unsigned division
     execute_alu_operation(&mut dut, 20, 3, ALU_DIVU as u8);
@@ -735,8 +712,7 @@ fn test_alu_divu() {
 
 #[test]
 fn test_alu_rem() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Normal signed remainder
     execute_alu_operation(&mut dut, 20, 3, ALU_REM as u8);
@@ -765,8 +741,7 @@ fn test_alu_rem() {
 
 #[test]
 fn test_alu_remu() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Normal unsigned remainder
     execute_alu_operation(&mut dut, 20, 3, ALU_REMU as u8);
@@ -787,8 +762,7 @@ fn test_alu_remu() {
 
 #[test]
 fn test_alu_m_extension_edge_cases() {
-    let runtime = alu_runtime();
-    let mut dut = runtime.create_model_simple::<Alu>().unwrap();
+    let mut dut = create_alu_model();
 
     // Test all M operations with zero
     let m_ops = [

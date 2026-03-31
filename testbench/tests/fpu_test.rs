@@ -1,6 +1,6 @@
 use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::Fpu;
-use testbench::fpu_runtime;
+use testbench::create_fpu_model;
 // FPU Operation Encodings (must match rtl/fpu.sv)
 const FPU_ADD: u8 = 0b00000;
 const FPU_SUB: u8 = 0b00001;
@@ -38,7 +38,6 @@ const NEG_ONE: u32 = 0xBF800000; // -1.0
 const POS_INF: u32 = 0x7F800000;
 const NEG_INF: u32 = 0xFF800000;
 const QNAN: u32 = 0x7FC00000;
-
 
 // Clock cycle macro for FPU tests
 macro_rules! clock_cycle {
@@ -103,8 +102,7 @@ fn execute_fpu_operation(
 
 #[test]
 fn test_fpu_add_basic() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 + 2.0 = 3.0
     execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_ADD, 0);
@@ -113,8 +111,7 @@ fn test_fpu_add_basic() {
 
 #[test]
 fn test_fpu_add_negative() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 + (-1.0) = 0.0
     execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_ADD, 0);
@@ -123,8 +120,7 @@ fn test_fpu_add_negative() {
 
 #[test]
 fn test_fpu_sub_basic() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 3.0 - 1.0 = 2.0
     execute_fpu_operation(&mut dut, THREE, ONE, 0, 0, FPU_SUB, 0);
@@ -133,8 +129,7 @@ fn test_fpu_sub_basic() {
 
 #[test]
 fn test_fpu_mul_basic() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 2.0 * 2.0 = 4.0
     execute_fpu_operation(&mut dut, TWO, TWO, 0, 0, FPU_MUL, 0);
@@ -145,8 +140,7 @@ fn test_fpu_mul_basic() {
 
 #[test]
 fn test_fpu_sign_injection() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // FSGNJ: copy sign of fs2 to fs1 -> -1.0
     execute_fpu_operation(&mut dut, ONE, NEG_ONE, 0, 0, FPU_SGNJ, 0);
@@ -168,8 +162,7 @@ fn test_fpu_sign_injection() {
 
 #[test]
 fn test_fpu_feq() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 == 1.0 -> true (1)
     execute_fpu_operation(&mut dut, ONE, ONE, 0, 0, FPU_FEQ, 0);
@@ -182,8 +175,7 @@ fn test_fpu_feq() {
 
 #[test]
 fn test_fpu_flt() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 < 2.0 -> true (1)
     execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_FLT, 0);
@@ -196,8 +188,7 @@ fn test_fpu_flt() {
 
 #[test]
 fn test_fpu_fle() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 <= 2.0 -> true (1)
     execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_FLE, 0);
@@ -216,8 +207,7 @@ fn test_fpu_fle() {
 
 #[test]
 fn test_fpu_min_max() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // MIN: min(1.0, 2.0) = 1.0
     execute_fpu_operation(&mut dut, ONE, TWO, 0, 0, FPU_MIN, 0);
@@ -230,8 +220,7 @@ fn test_fpu_min_max() {
 
 #[test]
 fn test_fpu_min_max_signed_zero() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // MIN: min(+0.0, -0.0) = -0.0
     execute_fpu_operation(&mut dut, POS_ZERO, NEG_ZERO, 0, 0, FPU_MIN, 0);
@@ -246,8 +235,7 @@ fn test_fpu_min_max_signed_zero() {
 
 #[test]
 fn test_fpu_fcvt_w_s() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: float 3.0 -> int 3
     execute_fpu_operation(&mut dut, THREE, 0, 0, 0, FPU_CVTWS, 0);
@@ -260,8 +248,7 @@ fn test_fpu_fcvt_w_s() {
 
 #[test]
 fn test_fpu_fcvt_wu_s() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: float 3.0 -> unsigned int 3
     execute_fpu_operation(&mut dut, THREE, 0, 0, 0, FPU_CVTWUS, 0);
@@ -275,8 +262,7 @@ fn test_fpu_fcvt_wu_s() {
 
 #[test]
 fn test_fpu_fcvt_s_w() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: int 3 -> float 3.0
     execute_fpu_operation(&mut dut, 0, 0, 0, 3, FPU_CVTSW, 0);
@@ -289,8 +275,7 @@ fn test_fpu_fcvt_s_w() {
 
 #[test]
 fn test_fpu_fcvt_s_wu() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: unsigned int 3 -> float 3.0
     execute_fpu_operation(&mut dut, 0, 0, 0, 3, FPU_CVTSWU, 0);
@@ -306,8 +291,7 @@ fn test_fpu_fcvt_s_wu() {
 
 #[test]
 fn test_fpu_fmv_x_w() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     execute_fpu_operation(&mut dut, ONE, 0, 0, 0, FPU_MVXW, 0);
     assert_eq!(dut.int_result, ONE, "fmv.x.w should copy bits unchanged");
@@ -315,8 +299,7 @@ fn test_fpu_fmv_x_w() {
 
 #[test]
 fn test_fpu_fmv_w_x() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     execute_fpu_operation(&mut dut, 0, 0, 0, ONE, FPU_MVWX, 0);
     assert_eq!(dut.fp_result, ONE, "fmv.w.x should copy bits unchanged");
@@ -324,8 +307,7 @@ fn test_fpu_fmv_w_x() {
 
 #[test]
 fn test_fpu_fclass() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: fclass(-inf) = bit 0
     execute_fpu_operation(&mut dut, NEG_INF, 0, 0, 0, FPU_FCLASS, 0);
@@ -361,8 +343,7 @@ fn test_fpu_fclass() {
 // FP32 division test - using multi-cycle hardware divider
 #[test]
 fn test_fpu_div_basic() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 4.0 / 2.0 = 2.0
     execute_fpu_operation(&mut dut, FOUR, TWO, 0, 0, FPU_DIV, 0);
@@ -371,8 +352,7 @@ fn test_fpu_div_basic() {
 
 #[test]
 fn test_fpu_div_by_zero() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: 1.0 / 0.0 = +inf with DZ flag
     execute_fpu_operation(&mut dut, ONE, POS_ZERO, 0, 0, FPU_DIV, 0);
@@ -384,8 +364,7 @@ fn test_fpu_div_by_zero() {
 
 #[test]
 fn test_fpu_sqrt_basic() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: sqrt(4.0) = 2.0
     execute_fpu_operation(&mut dut, FOUR, 0, 0, 0, FPU_SQRT, 0);
@@ -394,8 +373,7 @@ fn test_fpu_sqrt_basic() {
 
 #[test]
 fn test_fpu_sqrt_negative() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: sqrt(-1.0) = NaN with NV flag
     execute_fpu_operation(&mut dut, NEG_ONE, 0, 0, 0, FPU_SQRT, 0);
@@ -407,8 +385,7 @@ fn test_fpu_sqrt_negative() {
 
 #[test]
 fn test_fpu_fmadd() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: FMADD 2.0 * 3.0 + 1.0 = 7.0
     let seven: u32 = 0x40E00000; // 7.0
@@ -418,8 +395,7 @@ fn test_fpu_fmadd() {
 
 #[test]
 fn test_fpu_fmsub() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: FMSUB 2.0 * 3.0 - 1.0 = 5.0
     let five: u32 = 0x40A00000; // 5.0
@@ -429,8 +405,7 @@ fn test_fpu_fmsub() {
 
 #[test]
 fn test_fpu_fnmsub() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: FNMSUB -(2.0 * 3.0) + 1.0 = -5.0
     let neg_five: u32 = 0xC0A00000; // -5.0
@@ -443,8 +418,7 @@ fn test_fpu_fnmsub() {
 
 #[test]
 fn test_fpu_fnmadd() {
-    let runtime = fpu_runtime();
-    let mut dut = runtime.create_model_simple::<Fpu>().unwrap();
+    let mut dut = create_fpu_model();
 
     // Test: FNMADD -(2.0 * 3.0) - 1.0 = -7.0
     let neg_seven: u32 = 0xC0E00000; // -7.0
