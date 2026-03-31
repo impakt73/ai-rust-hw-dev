@@ -59,6 +59,9 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
     logic [TONE_GENERATOR_LATENCY-1:0] tone_sample_valid_pipe;
     logic signed [15:0] tone_sample;
+    logic signed [15:0] i2s_sample_data;
+    logic signed [15:0] tone_sample_hold;
+    logic               i2s_sample_ready;
     logic               tone_sample_valid;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
@@ -211,6 +214,18 @@ module cyclonev_analogue_pocket_top #(
     end
 
     assign tone_sample_valid = tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-1];
+    // audio_lrclk still reflects the previous slot until the serializer reloads on
+    // this clock edge, so a high value means the next slot is the first channel of
+    // the stereo pair and should latch a fresh sample.
+    assign i2s_sample_data = audio_lrclk ? tone_sample : tone_sample_hold;
+
+    always_ff @(posedge audio_sclk) begin
+        if (audio_rst) begin
+            tone_sample_hold <= '0;
+        end else if (i2s_sample_ready && audio_lrclk) begin
+            tone_sample_hold <= tone_sample;
+        end
+    end
 
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
@@ -230,9 +245,9 @@ module cyclonev_analogue_pocket_top #(
     ) pocket_i2s_serializer (
         .clk         (audio_sclk),
         .rst         (audio_rst),
-        .sample_data (tone_sample),
+        .sample_data (i2s_sample_data),
         .sample_valid(tone_sample_valid),
-        .sample_ready(),  // the tone free-runs; audio_en gates validity, so backpressure is unused
+        .sample_ready(i2s_sample_ready),
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
         .i2s_sd      (audio_dac)
