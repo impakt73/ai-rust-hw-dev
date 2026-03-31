@@ -1,7 +1,7 @@
 use rand::Rng;
-use riscv_core::{create_alu_runtime, Alu};
-
 use riscv_core::AsDynamicVerilatedModel;
+use riscv_core::Alu;
+use testbench::alu_runtime;
 // ALU Operation Encodings (must match the RTL)
 const ALU_ADD: u32 = 0b00000;
 const ALU_SUB: u32 = 0b00001;
@@ -127,7 +127,7 @@ fn calculate_expected(a: u32, b: u32, alu_op: u32) -> u32 {
 
 #[test]
 fn test_alu_add() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -149,7 +149,7 @@ fn test_alu_add() {
 
 #[test]
 fn test_alu_sub() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -171,7 +171,7 @@ fn test_alu_sub() {
 
 #[test]
 fn test_alu_operations_latch_inputs_after_handshake() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     for (a, b, alu_op, expected) in [
@@ -216,7 +216,7 @@ fn test_alu_operations_latch_inputs_after_handshake() {
 
 #[test]
 fn test_alu_logic_ops() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -241,7 +241,7 @@ fn test_alu_logic_ops() {
 
 #[test]
 fn test_alu_shift_ops() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -267,7 +267,7 @@ fn test_alu_shift_ops() {
 
 #[test]
 fn test_alu_compare_ops() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -311,7 +311,7 @@ fn test_alu_compare_ops() {
 
 #[test]
 fn test_alu_minmax_ops() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     let signed_cases = vec![
@@ -357,7 +357,7 @@ fn test_alu_minmax_ops() {
 
 #[test]
 fn test_alu_minmax_result_is_registered() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     dut.rst = 1;
@@ -496,7 +496,7 @@ fn test_alu_minmax_result_is_registered() {
 
 #[test]
 fn test_alu_single_cycle_result_is_registered() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
@@ -550,7 +550,7 @@ fn test_alu_single_cycle_result_is_registered() {
 
 #[test]
 fn test_alu_all_operations() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
 
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
@@ -578,7 +578,7 @@ fn test_alu_all_operations() {
 
 #[test]
 fn test_alu_mul() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
     let mut rng = rand::thread_rng();
 
@@ -607,7 +607,7 @@ fn test_alu_mul() {
 
 #[test]
 fn test_alu_mulh() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test signed × signed, upper 32 bits
@@ -634,7 +634,7 @@ fn test_alu_mulh() {
 
 #[test]
 fn test_alu_mulhsu() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test signed × unsigned, upper 32 bits
@@ -653,7 +653,7 @@ fn test_alu_mulhsu() {
 
 #[test]
 fn test_alu_mulhu() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test unsigned × unsigned, upper 32 bits
@@ -677,7 +677,7 @@ fn test_alu_mulhu() {
 
 #[test]
 fn test_alu_div() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal signed division
@@ -710,7 +710,7 @@ fn test_alu_div() {
 
 #[test]
 fn test_alu_divu() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal unsigned division
@@ -735,7 +735,7 @@ fn test_alu_divu() {
 
 #[test]
 fn test_alu_rem() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal signed remainder
@@ -765,7 +765,7 @@ fn test_alu_rem() {
 
 #[test]
 fn test_alu_remu() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Normal unsigned remainder
@@ -787,7 +787,7 @@ fn test_alu_remu() {
 
 #[test]
 fn test_alu_m_extension_edge_cases() {
-    let runtime = create_alu_runtime().expect("Failed to create ALU runtime");
+    let runtime = alu_runtime();
     let mut dut = runtime.create_model_simple::<Alu>().unwrap();
 
     // Test all M operations with zero

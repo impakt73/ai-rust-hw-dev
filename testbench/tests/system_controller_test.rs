@@ -17,7 +17,8 @@ use riscv_core::AsDynamicVerilatedModel;
 /// BOOT, HALT, and system reset are request pulses on register writes.
 /// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst high,
 /// and only return a D-channel response once cpu_booting is observed after reset.
-use riscv_core::{create_system_controller_runtime, SystemController};
+use riscv_core::SystemController;
+use testbench::system_controller_runtime;
 
 // Register offsets
 const REG_STATUS: u32 = 0x00;
@@ -180,7 +181,7 @@ fn finish_response_after_observation(dut: &mut SystemController) {
 #[test]
 fn test_system_controller_ready_always_asserted() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -201,7 +202,7 @@ fn test_system_controller_ready_always_asserted() {
 #[test]
 fn test_system_controller_status_register_read() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -250,7 +251,7 @@ fn test_system_controller_status_register_read() {
 #[test]
 fn test_system_controller_halt_register_read_write() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -276,7 +277,7 @@ fn test_system_controller_halt_register_read_write() {
 #[test]
 fn test_system_controller_halt_write_pulses_req_cpu_halt() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -299,7 +300,7 @@ fn test_system_controller_halt_write_pulses_req_cpu_halt() {
 #[test]
 fn test_system_controller_led_register_read_write() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -337,7 +338,7 @@ fn test_system_controller_led_register_read_write() {
 #[test]
 fn test_system_controller_led_register_upper_bytes_ignored() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -360,7 +361,7 @@ fn test_system_controller_led_register_upper_bytes_ignored() {
 #[test]
 fn test_system_controller_clock_registers_reset_to_zero() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -387,7 +388,7 @@ fn test_system_controller_clock_registers_reset_to_zero() {
 #[test]
 fn test_system_controller_elapsed_us_advances() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -415,7 +416,7 @@ fn test_system_controller_elapsed_us_advances() {
 #[test]
 fn test_system_controller_elapsed_ms_and_s_advance() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -444,7 +445,7 @@ fn test_system_controller_elapsed_ms_and_s_advance() {
 #[test]
 fn test_system_controller_clock_registers_are_read_only() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -488,7 +489,7 @@ fn test_system_controller_clock_registers_are_read_only() {
 #[test]
 fn test_system_controller_initial_state_after_reset() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -508,7 +509,7 @@ fn test_system_controller_initial_state_after_reset() {
 #[test]
 fn test_system_controller_boot_sequence() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -542,7 +543,7 @@ fn test_system_controller_boot_sequence() {
 #[test]
 fn test_system_controller_boot_requires_cpu_booting() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -561,7 +562,7 @@ fn test_system_controller_boot_requires_cpu_booting() {
 #[test]
 fn test_system_controller_boot_addr_output() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -589,7 +590,7 @@ fn test_system_controller_boot_addr_output() {
 #[test]
 fn test_system_controller_system_reset() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -614,7 +615,7 @@ fn test_system_controller_system_reset() {
 #[test]
 fn test_system_controller_cpu_reset() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -710,7 +711,7 @@ fn test_system_controller_cpu_reset() {
 #[test]
 fn test_system_controller_write_to_status_ignored() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -737,7 +738,7 @@ fn test_system_controller_write_to_status_ignored() {
 #[test]
 fn test_system_controller_reset_clears_state() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -762,7 +763,7 @@ fn test_system_controller_reset_clears_state() {
 #[test]
 fn test_system_controller_cpu_reset_then_reboot() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");
@@ -812,7 +813,7 @@ fn test_system_controller_cpu_reset_then_reboot() {
 #[test]
 fn test_system_controller_reset_uses_only_bit_zero() {
     let runtime =
-        create_system_controller_runtime().expect("Failed to create system controller runtime");
+        system_controller_runtime();
     let mut dut = runtime
         .create_model_simple::<SystemController>()
         .expect("Failed to create system controller model");

@@ -1,6 +1,6 @@
-use riscv_core::{create_uart_1m_runtime, create_uart_runtime, Uart, Uart1MBaud};
-
 use riscv_core::AsDynamicVerilatedModel;
+use riscv_core::{Uart, Uart1MBaud};
+use testbench::{uart_1m_runtime, uart_runtime};
 // UART timing for 1M baud (based on 50MHz clock)
 // CLKS_PER_BIT = 50_000_000 / 1_000_000 = 50
 const CLKS_PER_BIT: u32 = 50;
@@ -83,7 +83,7 @@ fn receive_byte(dut: &mut Uart, data: u8) {
 
 #[test]
 fn test_uart_reset_state() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -106,7 +106,7 @@ fn test_uart_reset_state() {
 
 #[test]
 fn test_uart_tx_idle_high() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -123,7 +123,7 @@ fn test_uart_tx_idle_high() {
 
 #[test]
 fn test_uart_tx_start_bit() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -160,7 +160,7 @@ fn test_uart_tx_start_bit() {
 
 #[test]
 fn test_uart_tx_full_byte() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -205,7 +205,7 @@ fn test_uart_tx_full_byte() {
 
 #[test]
 fn test_uart_tx_data_pattern() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -247,7 +247,7 @@ fn test_uart_tx_data_pattern() {
 
 #[test]
 fn test_uart_tx_ready_signal() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -285,7 +285,7 @@ fn test_uart_tx_ready_signal() {
 
 #[test]
 fn test_uart_tx_back_to_back_no_idle_gap() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -338,7 +338,7 @@ fn test_uart_tx_back_to_back_no_idle_gap() {
 
 #[test]
 fn test_uart_baud_timing() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -382,7 +382,7 @@ fn test_uart_baud_timing() {
 
 #[test]
 fn test_uart_rx_idle() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -403,7 +403,7 @@ fn test_uart_rx_idle() {
 
 #[test]
 fn test_uart_rx_single_byte() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -436,7 +436,7 @@ fn test_uart_rx_single_byte() {
 
 #[test]
 fn test_uart_rx_valid_handshake() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -468,7 +468,7 @@ fn test_uart_rx_valid_handshake() {
 
 #[test]
 fn test_uart_loopback_single_byte() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -505,7 +505,7 @@ fn test_uart_loopback_single_byte() {
 
 #[test]
 fn test_uart_loopback_multiple_bytes() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -558,7 +558,7 @@ fn test_uart_loopback_multiple_bytes() {
 
 #[test]
 fn test_uart_rx_framing_error() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -595,7 +595,7 @@ fn test_uart_rx_framing_error() {
 
 #[test]
 fn test_uart_rx_error_sticky() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -662,7 +662,7 @@ fn test_uart_rx_error_sticky() {
 
 #[test]
 fn test_uart_rx_error_clr() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -722,7 +722,7 @@ fn test_uart_rx_error_clr() {
 
 #[test]
 fn test_uart_rx_overrun() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -776,7 +776,7 @@ fn test_uart_rx_overrun() {
 
 #[test]
 fn test_uart_rx_overrun_allows_simultaneous_read_and_new_byte() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -873,7 +873,7 @@ fn receive_byte_with_data_glitch(dut: &mut Uart, data: u8, glitch_bit: u8) {
 
 #[test]
 fn test_uart_rx_majority_vote_data_glitch() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -922,7 +922,7 @@ fn test_uart_rx_majority_vote_data_glitch() {
 
 #[test]
 fn test_uart_rx_majority_vote_start_bit_glitch() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -972,7 +972,7 @@ fn test_uart_rx_majority_vote_start_bit_glitch() {
 
 #[test]
 fn test_uart_rx_majority_vote_stop_bit_glitch() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1022,7 +1022,7 @@ fn test_uart_rx_majority_vote_stop_bit_glitch() {
 
 #[test]
 fn test_uart_rx_falling_edge_detection() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1091,7 +1091,7 @@ fn test_uart_rx_falling_edge_detection() {
 
 #[test]
 fn test_uart_rx_full_stop_bit_timing() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1133,7 +1133,7 @@ fn test_uart_rx_full_stop_bit_timing() {
 
 #[test]
 fn test_uart_rx_accepts_early_next_start_after_stop_midpoint() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1183,7 +1183,7 @@ fn test_uart_rx_accepts_early_next_start_after_stop_midpoint() {
 
 #[test]
 fn test_uart_rx_consecutive_bytes_no_gap() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1241,7 +1241,7 @@ fn test_uart_rx_consecutive_bytes_no_gap() {
 
 #[test]
 fn test_uart_rx_glitch_does_not_trigger_false_start() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1269,7 +1269,7 @@ fn test_uart_rx_glitch_does_not_trigger_false_start() {
 
 #[test]
 fn test_uart_loopback_with_tight_spacing() {
-    let runtime = create_uart_runtime().expect("Failed to create UART runtime");
+    let runtime = uart_runtime();
     let mut dut = runtime
         .create_model_simple::<Uart>()
         .expect("Failed to create UART model");
@@ -1327,7 +1327,7 @@ fn test_uart_loopback_with_tight_spacing() {
 
 #[test]
 fn test_uart_bidirectional_end_to_end_at_1m_baud() {
-    let runtime = create_uart_1m_runtime().expect("Failed to create 1M UART runtime");
+    let runtime = uart_1m_runtime();
     let mut uart_a = runtime
         .create_model_simple::<Uart1MBaud>()
         .expect("Failed to create UART A model");

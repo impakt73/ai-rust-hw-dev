@@ -1,8 +1,8 @@
 use riscv_core::AsDynamicVerilatedModel;
-use riscv_core::{
-    create_fpu_classifier_runtime, create_fpu_comparator_runtime, create_fpu_float_to_int_runtime,
-    create_fpu_int_to_float_runtime, create_fpu_sqrt_runtime, FpuClassifier, FpuComparator,
-    FpuFloatToInt, FpuIntToFloat, FpuSqrt,
+use riscv_core::{FpuClassifier, FpuComparator, FpuFloatToInt, FpuIntToFloat, FpuSqrt};
+use testbench::{
+    fpu_classifier_runtime, fpu_comparator_runtime, fpu_float_to_int_runtime,
+    fpu_int_to_float_runtime, fpu_sqrt_runtime,
 };
 
 // IEEE 754 test constants
@@ -28,7 +28,7 @@ const HUNDRED: u32 = 0x42C80000; // 100.0
 
 #[test]
 fn test_fpu_classifier_nan() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Quiet NaN
@@ -43,7 +43,7 @@ fn test_fpu_classifier_nan() {
 
 #[test]
 fn test_fpu_classifier_snan() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Signaling NaN
@@ -56,7 +56,7 @@ fn test_fpu_classifier_snan() {
 
 #[test]
 fn test_fpu_classifier_infinity() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Positive Infinity
@@ -75,7 +75,7 @@ fn test_fpu_classifier_infinity() {
 
 #[test]
 fn test_fpu_classifier_zero() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Positive Zero
@@ -94,7 +94,7 @@ fn test_fpu_classifier_zero() {
 
 #[test]
 fn test_fpu_classifier_normal() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Normal number
@@ -108,7 +108,7 @@ fn test_fpu_classifier_normal() {
 
 #[test]
 fn test_fpu_classifier_subnormal() {
-    let runtime = create_fpu_classifier_runtime().expect("Failed to create classifier runtime");
+    let runtime = fpu_classifier_runtime();
     let mut dut = runtime.create_model_simple::<FpuClassifier>().unwrap();
 
     // Test Subnormal number
@@ -127,7 +127,7 @@ fn test_fpu_classifier_subnormal() {
 
 #[test]
 fn test_fpu_comparator_basic() {
-    let runtime = create_fpu_comparator_runtime().expect("Failed to create comparator runtime");
+    let runtime = fpu_comparator_runtime();
     let mut dut = runtime.create_model_simple::<FpuComparator>().unwrap();
 
     // Test: 1.0 < 2.0 -> true
@@ -151,7 +151,7 @@ fn test_fpu_comparator_basic() {
 
 #[test]
 fn test_fpu_comparator_negative() {
-    let runtime = create_fpu_comparator_runtime().expect("Failed to create comparator runtime");
+    let runtime = fpu_comparator_runtime();
     let mut dut = runtime.create_model_simple::<FpuComparator>().unwrap();
 
     // Test: -2.0 < -1.0 -> true
@@ -175,7 +175,7 @@ fn test_fpu_comparator_negative() {
 
 #[test]
 fn test_fpu_comparator_zero() {
-    let runtime = create_fpu_comparator_runtime().expect("Failed to create comparator runtime");
+    let runtime = fpu_comparator_runtime();
     let mut dut = runtime.create_model_simple::<FpuComparator>().unwrap();
 
     // Test: +0.0 < -0.0 -> false (both zeros are equal)
@@ -193,7 +193,7 @@ fn test_fpu_comparator_zero() {
 
 #[test]
 fn test_fpu_comparator_nan() {
-    let runtime = create_fpu_comparator_runtime().expect("Failed to create comparator runtime");
+    let runtime = fpu_comparator_runtime();
     let mut dut = runtime.create_model_simple::<FpuComparator>().unwrap();
 
     // Test: NaN < 1.0 -> false (NaN comparisons are always false)
@@ -219,7 +219,7 @@ fn test_fpu_comparator_nan() {
 
 #[test]
 fn test_fpu_int_to_float_signed_positive() {
-    let runtime = create_fpu_int_to_float_runtime().expect("Failed to create int_to_float runtime");
+    let runtime = fpu_int_to_float_runtime();
     let mut dut = runtime.create_model_simple::<FpuIntToFloat>().unwrap();
 
     // Test: int 3 -> float 3.0
@@ -243,7 +243,7 @@ fn test_fpu_int_to_float_signed_positive() {
 
 #[test]
 fn test_fpu_int_to_float_signed_negative() {
-    let runtime = create_fpu_int_to_float_runtime().expect("Failed to create int_to_float runtime");
+    let runtime = fpu_int_to_float_runtime();
     let mut dut = runtime.create_model_simple::<FpuIntToFloat>().unwrap();
 
     // Test: int -1 -> float -1.0
@@ -261,7 +261,7 @@ fn test_fpu_int_to_float_signed_negative() {
 
 #[test]
 fn test_fpu_int_to_float_unsigned() {
-    let runtime = create_fpu_int_to_float_runtime().expect("Failed to create int_to_float runtime");
+    let runtime = fpu_int_to_float_runtime();
     let mut dut = runtime.create_model_simple::<FpuIntToFloat>().unwrap();
 
     // Test: unsigned 3 -> float 3.0
@@ -279,7 +279,7 @@ fn test_fpu_int_to_float_unsigned() {
 
 #[test]
 fn test_fpu_int_to_float_zero() {
-    let runtime = create_fpu_int_to_float_runtime().expect("Failed to create int_to_float runtime");
+    let runtime = fpu_int_to_float_runtime();
     let mut dut = runtime.create_model_simple::<FpuIntToFloat>().unwrap();
 
     // Test: int 0 -> float 0.0
@@ -293,7 +293,7 @@ fn test_fpu_int_to_float_zero() {
 
 #[test]
 fn test_fpu_float_to_int_signed_positive() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float 3.0 -> int 3
@@ -313,7 +313,7 @@ fn test_fpu_float_to_int_signed_positive() {
 
 #[test]
 fn test_fpu_float_to_int_signed_negative() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float -1.0 -> int -1
@@ -326,7 +326,7 @@ fn test_fpu_float_to_int_signed_negative() {
 
 #[test]
 fn test_fpu_float_to_int_unsigned() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float 3.0 -> unsigned 3
@@ -346,7 +346,7 @@ fn test_fpu_float_to_int_unsigned() {
 
 #[test]
 fn test_fpu_float_to_int_zero() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float 0.0 -> int 0
@@ -359,7 +359,7 @@ fn test_fpu_float_to_int_zero() {
 
 #[test]
 fn test_fpu_float_to_int_nan() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float NaN -> saturate to max value (invalid)
@@ -385,7 +385,7 @@ fn test_fpu_float_to_int_nan() {
 
 #[test]
 fn test_fpu_float_to_int_infinity() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float +Inf -> saturate to max value (invalid)
@@ -412,7 +412,7 @@ fn test_fpu_float_to_int_infinity() {
 
 #[test]
 fn test_fpu_float_to_int_fractional() {
-    let runtime = create_fpu_float_to_int_runtime().expect("Failed to create float_to_int runtime");
+    let runtime = fpu_float_to_int_runtime();
     let mut dut = runtime.create_model_simple::<FpuFloatToInt>().unwrap();
 
     // Test: float 0.5 -> int 0 (truncate)
@@ -426,7 +426,7 @@ fn test_fpu_float_to_int_fractional() {
 
 #[test]
 fn test_fpu_sqrt_basic() {
-    let runtime = create_fpu_sqrt_runtime().expect("Failed to create sqrt runtime");
+    let runtime = fpu_sqrt_runtime();
     let mut dut = runtime.create_model_simple::<FpuSqrt>().unwrap();
 
     // Note: The sqrt module has a simplified implementation without Newton-Raphson iterations
@@ -465,7 +465,7 @@ fn test_fpu_sqrt_basic() {
 
 #[test]
 fn test_fpu_sqrt_zero() {
-    let runtime = create_fpu_sqrt_runtime().expect("Failed to create sqrt runtime");
+    let runtime = fpu_sqrt_runtime();
     let mut dut = runtime.create_model_simple::<FpuSqrt>().unwrap();
 
     // Test: sqrt(0.0) = 0.0
@@ -481,7 +481,7 @@ fn test_fpu_sqrt_zero() {
 
 #[test]
 fn test_fpu_sqrt_negative() {
-    let runtime = create_fpu_sqrt_runtime().expect("Failed to create sqrt runtime");
+    let runtime = fpu_sqrt_runtime();
     let mut dut = runtime.create_model_simple::<FpuSqrt>().unwrap();
 
     // Test: sqrt(-1.0) = NaN (invalid operation)
@@ -493,7 +493,7 @@ fn test_fpu_sqrt_negative() {
 
 #[test]
 fn test_fpu_sqrt_infinity() {
-    let runtime = create_fpu_sqrt_runtime().expect("Failed to create sqrt runtime");
+    let runtime = fpu_sqrt_runtime();
     let mut dut = runtime.create_model_simple::<FpuSqrt>().unwrap();
 
     // Test: sqrt(+Inf) = +Inf
@@ -510,7 +510,7 @@ fn test_fpu_sqrt_infinity() {
 
 #[test]
 fn test_fpu_sqrt_nan() {
-    let runtime = create_fpu_sqrt_runtime().expect("Failed to create sqrt runtime");
+    let runtime = fpu_sqrt_runtime();
     let mut dut = runtime.create_model_simple::<FpuSqrt>().unwrap();
 
     // Test: sqrt(NaN) = NaN
