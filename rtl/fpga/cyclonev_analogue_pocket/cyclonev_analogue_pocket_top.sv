@@ -62,6 +62,7 @@ module cyclonev_analogue_pocket_top #(
     logic               tone_sample_hold_valid;
     logic               i2s_sample_ready;
     logic               tone_sample_valid;
+    logic               tone_zero_cross;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -178,10 +179,13 @@ module cyclonev_analogue_pocket_top #(
     );
 
     logic audio_en;
+    logic audio_en_next;
+    logic audio_sample_en;
+    logic audio_en_update;
     logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
 
     always_comb begin
-        audio_en = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
+        audio_en_next = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
         if (face_a_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;
         end else if (face_b_audio) begin
@@ -205,6 +209,8 @@ module cyclonev_analogue_pocket_top #(
     // the hold register has been seeded after reset, always bypass it so the first
     // stereo frame does not transmit zeros.
     assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
+    assign audio_en_update = i2s_sample_ready && tone_zero_cross && tone_sample_valid;
+    assign audio_sample_en = audio_en_update ? audio_en_next : audio_en;
 
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
@@ -216,6 +222,15 @@ module cyclonev_analogue_pocket_top #(
             tone_sample_hold_valid <= 1'b1;
         end
     end
+
+    always_ff @(posedge audio_sclk) begin
+        if (audio_rst) begin
+            audio_en <= 1'b0;
+        end else if (audio_en_update) begin
+            audio_en <= audio_en_next;
+        end
+    end
+
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
         .TABLE_SIZE  (AUDIO_TABLE_SIZE),
@@ -226,7 +241,7 @@ module cyclonev_analogue_pocket_top #(
         .rst        (audio_rst),
         .tuning_word(audio_tuning_word),
         .sample     (tone_sample),
-        .zero_cross (),
+        .zero_cross (tone_zero_cross),
         .valid      (tone_sample_valid)
     );
 
@@ -237,7 +252,7 @@ module cyclonev_analogue_pocket_top #(
         .clk         (audio_sclk),
         .rst         (audio_rst),
         .sample_data (i2s_sample_data),
-        .sample_valid(audio_en && tone_sample_valid),
+        .sample_valid(audio_sample_en && tone_sample_valid),
         .sample_ready(i2s_sample_ready),
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
