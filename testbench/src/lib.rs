@@ -1,7 +1,39 @@
 use std::cell::OnceCell;
 use std::thread::LocalKey;
 
-use riscv_core::VerilatorRuntime;
+use riscv_core::{AsVerilatedModel, VerilatedModelConfig, VerilatorRuntime};
+
+const TESTBENCH_VERILATOR_OPT_LEVEL_ENV: &str = "TESTBENCH_VERILATOR_OPT_LEVEL";
+const DEFAULT_TESTBENCH_VERILATOR_OPT_LEVEL: usize = 0;
+
+fn testbench_model_config() -> VerilatedModelConfig {
+    let verilator_optimization = std::env::var(TESTBENCH_VERILATOR_OPT_LEVEL_ENV)
+        .ok()
+        .map(|value| {
+            value.parse::<usize>().unwrap_or_else(|err| {
+                panic!("Invalid {TESTBENCH_VERILATOR_OPT_LEVEL_ENV} value `{value}`: {err}")
+            })
+        })
+        .unwrap_or(DEFAULT_TESTBENCH_VERILATOR_OPT_LEVEL);
+
+    assert!(
+        verilator_optimization <= 3,
+        "{TESTBENCH_VERILATOR_OPT_LEVEL_ENV} must be between 0 and 3, got {verilator_optimization}"
+    );
+
+    VerilatedModelConfig {
+        verilator_optimization,
+        ..VerilatedModelConfig::default()
+    }
+}
+
+pub fn create_testbench_model<'ctx, M: AsVerilatedModel<'ctx>>(
+    runtime: &'ctx VerilatorRuntime,
+) -> Result<M, Box<dyn std::error::Error>> {
+    runtime
+        .create_model(&testbench_model_config())
+        .map_err(|err| err.into())
+}
 
 /// Executes `f` with a per-thread cached Verilator runtime for the requested DUT family.
 ///
@@ -30,8 +62,7 @@ macro_rules! with_cached_model_fn {
             }
 
             with_cached_runtime(&RUNTIME, riscv_core::$create_fn, $name, |runtime| {
-                let model = runtime
-                    .create_model_simple::<riscv_core::$model_ty>()
+                let model = create_testbench_model::<riscv_core::$model_ty>(runtime)
                     .unwrap_or_else(|err| panic!("Failed to create {} model: {}", $name, err));
                 f(model)
             })

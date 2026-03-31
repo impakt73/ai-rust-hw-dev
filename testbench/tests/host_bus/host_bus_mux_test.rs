@@ -34,9 +34,8 @@ fn reset_module(dut: &mut HostBusMux) {
 #[test]
 fn test_low_address_routes_to_system_path_and_holds_response() {
     let runtime = create_host_bus_mux_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusMux>()
-        .expect("Failed to create model");
+    let mut dut =
+        testbench::create_testbench_model::<HostBusMux>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -96,9 +95,8 @@ fn test_low_address_routes_to_system_path_and_holds_response() {
 #[test]
 fn test_high_address_routes_to_host_path() {
     let runtime = create_host_bus_mux_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusMux>()
-        .expect("Failed to create model");
+    let mut dut =
+        testbench::create_testbench_model::<HostBusMux>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 

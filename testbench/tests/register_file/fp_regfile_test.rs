@@ -20,7 +20,7 @@ macro_rules! clock_cycle {
 #[test]
 fn test_fp_regfile_write_read() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset the FP register file
     dut.clk = 0;
@@ -75,7 +75,7 @@ fn test_fp_regfile_write_read() {
 #[test]
 fn test_fp_regfile_f0_writable() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset
     dut.clk = 0;
@@ -107,7 +107,7 @@ fn test_fp_regfile_f0_writable() {
 #[test]
 fn test_fp_regfile_three_port_read() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset
     dut.clk = 0;
@@ -149,7 +149,7 @@ fn test_fp_regfile_three_port_read() {
 #[test]
 fn test_fp_regfile_write_enable() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset
     dut.clk = 0;
@@ -189,7 +189,7 @@ fn test_fp_regfile_write_enable() {
 #[test]
 fn test_fp_regfile_all_registers() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
     let mut rng = rand::thread_rng();
 
     // Reset
@@ -233,7 +233,7 @@ fn test_fp_regfile_all_registers() {
 #[test]
 fn test_fp_regfile_reset() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset
     dut.clk = 0;
@@ -274,7 +274,7 @@ fn test_fp_regfile_reset() {
 #[test]
 fn test_fp_regfile_overwrite() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<FpRegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<FpRegFile>(&runtime).unwrap();
 
     // Reset
     dut.clk = 0;

@@ -40,8 +40,7 @@ fn wait_for_read_data(dut: &mut SyncFifoTestWrapper) {
 #[test]
 fn test_sync_fifo_ready_valid_first_word_fall_through() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<SyncFifoTestWrapper>()
+    let mut dut = testbench::create_testbench_model::<SyncFifoTestWrapper>(&runtime)
         .expect("Failed to create sync_fifo model");
 
     reset_fifo(&mut dut);
@@ -88,8 +87,7 @@ fn test_sync_fifo_ready_valid_first_word_fall_through() {
 #[test]
 fn test_sync_fifo_preserves_order_with_ready_valid_reads() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<SyncFifoTestWrapper>()
+    let mut dut = testbench::create_testbench_model::<SyncFifoTestWrapper>(&runtime)
         .expect("Failed to create sync_fifo model");
 
     reset_fifo(&mut dut);
@@ -133,8 +131,7 @@ fn test_sync_fifo_preserves_order_with_ready_valid_reads() {
 #[test]
 fn test_sync_fifo_refill_latency_is_two_cycles() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<SyncFifoTestWrapper>()
+    let mut dut = testbench::create_testbench_model::<SyncFifoTestWrapper>(&runtime)
         .expect("Failed to create sync_fifo model");
 
     reset_fifo(&mut dut);
@@ -181,8 +178,7 @@ fn test_sync_fifo_refill_latency_is_two_cycles() {
 #[test]
 fn test_sync_fifo_write_backpressure_and_simultaneous_pop_push() {
     let runtime = create_sync_fifo_runtime().expect("Failed to create sync_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<SyncFifoTestWrapper>()
+    let mut dut = testbench::create_testbench_model::<SyncFifoTestWrapper>(&runtime)
         .expect("Failed to create sync_fifo model");
 
     reset_fifo(&mut dut);
