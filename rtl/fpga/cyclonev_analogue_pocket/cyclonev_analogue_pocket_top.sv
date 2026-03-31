@@ -179,9 +179,12 @@ module cyclonev_analogue_pocket_top #(
     );
 
     logic audio_en;
+    logic audio_en_next;
+    logic audio_sample_en;
     logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
 
     always_comb begin
+        audio_en_next = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
         if (face_a_audio) begin
             audio_tuning_word = AUDIO_TUNING_WORD_A4;
         end else if (face_b_audio) begin
@@ -205,6 +208,7 @@ module cyclonev_analogue_pocket_top #(
     // the hold register has been seeded after reset, always bypass it so the first
     // stereo frame does not transmit zeros.
     assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
+    assign audio_sample_en = (i2s_sample_ready && tone_zero_cross && tone_sample_valid) ? audio_en_next : audio_en;
 
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
@@ -220,9 +224,8 @@ module cyclonev_analogue_pocket_top #(
     always_ff @(posedge audio_sclk) begin
         if (audio_rst) begin
             audio_en <= 1'b0;
-        end else if (tone_zero_cross && tone_sample_valid) begin
-            audio_en <= face_a_audio || face_b_audio || face_x_audio || face_y_audio
-                || trig_l_audio || trig_r_audio;
+        end else if (i2s_sample_ready && tone_zero_cross && tone_sample_valid) begin
+            audio_en <= audio_en_next;
         end
     end
 
@@ -247,7 +250,7 @@ module cyclonev_analogue_pocket_top #(
         .clk         (audio_sclk),
         .rst         (audio_rst),
         .sample_data (i2s_sample_data),
-        .sample_valid(audio_en && tone_sample_valid),
+        .sample_valid(audio_sample_en && tone_sample_valid),
         .sample_ready(i2s_sample_ready),
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
