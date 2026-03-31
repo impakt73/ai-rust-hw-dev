@@ -81,7 +81,6 @@ module tone_generator #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            zero_cross_pipe <= '0;
             valid_pipe      <= '0;
         end else begin
             zero_cross_pipe <= {zero_cross_pipe[SINE_TABLE_LATENCY-2:0], zero_cross_index};
