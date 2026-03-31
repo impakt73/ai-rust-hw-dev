@@ -171,9 +171,7 @@ fn collect_host_read_tx(
 #[test]
 fn test_reset_state() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -188,9 +186,7 @@ fn test_reset_state() {
 #[test]
 fn test_cpu_single_write_request_uses_8byte_metadata_header() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -231,9 +227,7 @@ fn test_cpu_single_write_request_uses_8byte_metadata_header() {
 #[test]
 fn test_host_read_burst_streams_two_beats_and_echoes_metadata() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -270,9 +264,7 @@ fn test_host_read_burst_streams_two_beats_and_echoes_metadata() {
 #[test]
 fn test_host_write_burst_dst_fixed_keeps_bus_address() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -352,9 +344,7 @@ fn test_host_write_burst_dst_fixed_keeps_bus_address() {
 #[test]
 fn test_host_read_burst_src_fixed_keeps_bus_address() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -377,9 +367,7 @@ fn test_host_read_burst_src_fixed_keeps_bus_address() {
 fn test_host_read_burst_byte_and_halfword_stride_increment_addresses() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
 
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
     reset_module(&mut dut);
 
     // Host -> FPGA read request, 3 byte-sized beats
@@ -393,9 +381,7 @@ fn test_host_read_burst_byte_and_halfword_stride_increment_addresses() {
         vec![0x30, 0x00, 0x02, 0x00, 0x00, 0x30, 0x00, 0x60, 0x11, 0x22, 0x33]
     );
 
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
     reset_module(&mut dut);
 
     // Host -> FPGA read request, 2 halfword-sized beats
@@ -413,9 +399,7 @@ fn test_host_read_burst_byte_and_halfword_stride_increment_addresses() {
 #[test]
 fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -481,9 +465,7 @@ fn test_cpu_read_response_is_buffered_on_d_channel_until_ready() {
 #[test]
 fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -558,9 +540,7 @@ fn test_host_write_response_keeps_tx_priority_over_pending_cpu_request() {
 #[test]
 fn test_halfword_write_preserves_metadata() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -619,9 +599,7 @@ fn test_halfword_write_preserves_metadata() {
 #[test]
 fn test_stalled_tx_keeps_multi_beat_host_response_ahead_of_cpu_request() {
     let runtime = create_host_bus_interface_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusInterface>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusInterface>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 

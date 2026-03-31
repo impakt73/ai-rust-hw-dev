@@ -62,9 +62,7 @@ fn wait_for_read_data(dut: &mut AsyncFifoTestWrapper) {
 fn test_async_fifo_sync_stage_parameterization() {
     let runtime =
         create_async_fifo_sync3_runtime().expect("Failed to create async_fifo sync3 runtime");
-    let mut dut = runtime
-        .create_model_simple::<AsyncFifoSync3Wrapper>()
-        .expect("Failed to create async_fifo sync3 model");
+    let mut dut = testbench::create_testbench_model::<AsyncFifoSync3Wrapper>(&runtime).expect("Failed to create async_fifo sync3 model");
 
     dut.rst = 1;
     dut.wr_valid = 0;
@@ -123,9 +121,7 @@ fn test_async_fifo_sync_stage_parameterization() {
 #[test]
 fn test_async_fifo_basic_ready_valid_and_order() {
     let runtime = create_async_fifo_runtime().expect("Failed to create async_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<AsyncFifoTestWrapper>()
-        .expect("Failed to create async_fifo model");
+    let mut dut = testbench::create_testbench_model::<AsyncFifoTestWrapper>(&runtime).expect("Failed to create async_fifo model");
 
     reset_fifo(&mut dut);
     assert_eq!(
@@ -177,9 +173,7 @@ fn test_async_fifo_basic_ready_valid_and_order() {
 #[test]
 fn test_async_fifo_fast_writer_slow_reader() {
     let runtime = create_async_fifo_runtime().expect("Failed to create async_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<AsyncFifoTestWrapper>()
-        .expect("Failed to create async_fifo model");
+    let mut dut = testbench::create_testbench_model::<AsyncFifoTestWrapper>(&runtime).expect("Failed to create async_fifo model");
 
     reset_fifo(&mut dut);
 
@@ -225,9 +219,7 @@ fn test_async_fifo_fast_writer_slow_reader() {
 #[test]
 fn test_async_fifo_slow_writer_fast_reader() {
     let runtime = create_async_fifo_runtime().expect("Failed to create async_fifo runtime");
-    let mut dut = runtime
-        .create_model_simple::<AsyncFifoTestWrapper>()
-        .expect("Failed to create async_fifo model");
+    let mut dut = testbench::create_testbench_model::<AsyncFifoTestWrapper>(&runtime).expect("Failed to create async_fifo model");
 
     reset_fifo(&mut dut);
 

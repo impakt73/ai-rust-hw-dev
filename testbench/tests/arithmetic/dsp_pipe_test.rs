@@ -85,7 +85,7 @@ fn run_single_operation(dut: &mut DspPipe, a: u32, b: u32, alu_op: u8) -> u32 {
 #[test]
 fn test_dsp_pipe_supported_operations() {
     let runtime = create_dsp_pipe_runtime().expect("Failed to create DSP pipe runtime");
-    let mut dut = runtime.create_model_simple::<DspPipe>().unwrap();
+    let mut dut = testbench::create_testbench_model::<DspPipe>(&runtime).unwrap();
 
     for (a, b, alu_op) in [
         (0x1234_5678_u32, 0x0102_0304_u32, ALU_ADD),
@@ -115,7 +115,7 @@ fn test_dsp_pipe_supported_operations() {
 #[test]
 fn test_dsp_pipe_accepts_back_to_back_inputs() {
     let runtime = create_dsp_pipe_runtime().expect("Failed to create DSP pipe runtime");
-    let mut dut = runtime.create_model_simple::<DspPipe>().unwrap();
+    let mut dut = testbench::create_testbench_model::<DspPipe>(&runtime).unwrap();
 
     let requests = [
         (5_u32, 7_u32, ALU_ADD),

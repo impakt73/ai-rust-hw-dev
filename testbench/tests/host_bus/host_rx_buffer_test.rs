@@ -64,9 +64,7 @@ fn consume_packet(dut: &mut HostBusRx) {
 #[test]
 fn test_reset_state() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusRx>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusRx>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -79,9 +77,7 @@ fn test_reset_state() {
 #[test]
 fn test_decode_metadata_only_read_request_with_flags() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusRx>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusRx>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -111,9 +107,7 @@ fn test_decode_metadata_only_read_request_with_flags() {
 #[test]
 fn test_streaming_two_beat_write_request() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusRx>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusRx>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 
@@ -164,9 +158,7 @@ fn test_streaming_two_beat_write_request() {
 #[test]
 fn test_single_beat_write_compatibility() {
     let runtime = create_host_bus_rx_runtime().expect("Failed to create runtime");
-    let mut dut = runtime
-        .create_model_simple::<HostBusRx>()
-        .expect("Failed to create model");
+    let mut dut = testbench::create_testbench_model::<HostBusRx>(&runtime).expect("Failed to create model");
 
     reset_module(&mut dut);
 

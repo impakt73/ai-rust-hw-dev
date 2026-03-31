@@ -29,7 +29,7 @@ macro_rules! read_cycle {
 #[test]
 fn test_regfile_write_read() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     // Initialize
     dut.clk = 0;
@@ -81,7 +81,7 @@ fn test_regfile_write_read() {
 #[test]
 fn test_regfile_x0_storage_is_ordinary_when_written() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     // Initialize
     dut.clk = 0;
@@ -113,7 +113,7 @@ fn test_regfile_x0_storage_is_ordinary_when_written() {
 #[test]
 fn test_regfile_simultaneous_read() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     // Initialize
     dut.clk = 0;
@@ -144,7 +144,7 @@ fn test_regfile_simultaneous_read() {
 #[test]
 fn test_regfile_write_enable() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     // Initialize
     dut.clk = 0;
@@ -183,7 +183,7 @@ fn test_regfile_write_enable() {
 #[test]
 fn test_regfile_all_registers() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
     let mut rng = rand::thread_rng();
 
     // Initialize
@@ -225,7 +225,7 @@ fn test_regfile_all_registers() {
 #[test]
 fn test_regfile_overwrite() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     // Initialize
     dut.clk = 0;
@@ -262,7 +262,7 @@ fn test_regfile_overwrite() {
 #[test]
 fn test_regfile_read_latency_is_two_cycles() {
     let runtime = create_runtime();
-    let mut dut = runtime.create_model_simple::<RegFile>().unwrap();
+    let mut dut = testbench::create_testbench_model::<RegFile>(&runtime).unwrap();
 
     dut.clk = 0;
     dut.we = 0;
