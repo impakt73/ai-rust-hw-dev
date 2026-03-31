@@ -4,7 +4,8 @@ module tone_generator_test_wrapper (
     input  wire logic        rst,
     input  wire logic [31:0] tuning_word,
     output      logic [15:0] sample,
-    output      logic        zero_cross
+    output      logic        zero_cross,
+    output      logic        valid
 );
 
     tone_generator #(
@@ -17,7 +18,8 @@ module tone_generator_test_wrapper (
         .rst         (rst),
         .tuning_word (tuning_word),
         .sample      (sample),
-        .zero_cross  (zero_cross)
+        .zero_cross  (zero_cross),
+        .valid       (valid)
     );
 
 endmodule

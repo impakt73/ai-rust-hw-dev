@@ -12,7 +12,9 @@
 //   clk         - System clock
 //   rst         - Synchronous active-high reset
 //   tuning_word - Per-cycle phase increment
-//   sample      - Pipelined sine sample output
+//   sample      - Pipelined sine sample output; only valid when valid=1
+//   zero_cross  - Sample-aligned zero-cross indicator; only valid when valid=1
+//   valid       - High once sample/zero_cross have propagated through the internal lookup latency
 module tone_generator #(
     parameter int unsigned PHASE_WIDTH  = 32,
     parameter int          TABLE_SIZE   = 1024,
@@ -23,7 +25,8 @@ module tone_generator #(
     input  wire logic                           rst,
     input  wire logic [PHASE_WIDTH-1:0]         tuning_word,
     output      logic signed [SAMPLE_WIDTH-1:0] sample,
-    output      logic                           zero_cross
+    output      logic                           zero_cross,
+    output      logic                           valid
 );
 
     localparam int TABLE_ADDR_WIDTH = $clog2(TABLE_SIZE);
@@ -35,6 +38,7 @@ module tone_generator #(
     logic [TABLE_ADDR_WIDTH-1:0]    table_index;
     logic                           zero_cross_index;
     logic [SINE_TABLE_LATENCY-1:0]  zero_cross_pipe;
+    logic [SINE_TABLE_LATENCY-1:0]  valid_pipe;
 
     initial begin
         if (PHASE_WIDTH == 0) begin
@@ -65,6 +69,7 @@ module tone_generator #(
     // the positive-going and negative-going sine zero crossings, respectively.
     assign zero_cross_index = (table_index[TABLE_ADDR_WIDTH-2:0] == '0);
     assign zero_cross = zero_cross_pipe[SINE_TABLE_LATENCY-1];
+    assign valid = valid_pipe[SINE_TABLE_LATENCY-1];
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -75,7 +80,13 @@ module tone_generator #(
     end
 
     always_ff @(posedge clk) begin
-        zero_cross_pipe <= {zero_cross_pipe[SINE_TABLE_LATENCY-2:0], zero_cross_index};
+        if (rst) begin
+            zero_cross_pipe <= '0;
+            valid_pipe      <= '0;
+        end else begin
+            zero_cross_pipe <= {zero_cross_pipe[SINE_TABLE_LATENCY-2:0], zero_cross_index};
+            valid_pipe      <= {valid_pipe[SINE_TABLE_LATENCY-2:0], 1'b1};
+        end
     end
 
     sine_table #(

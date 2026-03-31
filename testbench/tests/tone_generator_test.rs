@@ -67,6 +67,11 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
         expected_sample(0),
         "reset must hold the phase accumulator at index 0"
     );
+    assert_eq!(dut.valid, 0, "valid must stay low while reset is asserted");
+    assert_eq!(
+        dut.zero_cross, 0,
+        "zero_cross must reset low while outputs are invalid"
+    );
 
     for _ in 0..4 {
         clock_cycle(&mut dut);
@@ -74,6 +79,11 @@ fn test_tone_generator_reset_holds_zero_phase_sample() {
             dut.sample,
             expected_sample(0),
             "sample must remain at the index-0 sine value while reset is asserted"
+        );
+        assert_eq!(dut.valid, 0, "valid must stay low while reset is asserted");
+        assert_eq!(
+            dut.zero_cross, 0,
+            "zero_cross must reset low while outputs are invalid"
         );
     }
 }
@@ -88,8 +98,13 @@ fn test_tone_generator_zero_tuning_word_holds_constant_sample() {
     flush_reset_pipeline(&mut dut);
     dut.rst = 0;
 
-    for _ in 0..(PIPELINE_STAGES + 2) {
+    for cycle in 0..(PIPELINE_STAGES + 2) {
         clock_cycle(&mut dut);
+        assert_eq!(
+            dut.valid != 0,
+            cycle >= PIPELINE_STAGES - 1,
+            "valid must assert only after the sine-table lookup latency"
+        );
         assert_eq!(
             dut.sample,
             expected_sample(0),
@@ -109,11 +124,18 @@ fn test_tone_generator_advances_one_table_index_per_cycle() {
     dut.rst = 0;
     dut.tuning_word = ONE_INDEX_STEP_TUNING_WORD;
 
-    for _ in 0..PIPELINE_STAGES {
+    for cycle in 0..PIPELINE_STAGES {
         clock_cycle(&mut dut);
+        assert_eq!(
+            dut.valid != 0,
+            cycle == PIPELINE_STAGES - 1,
+            "valid must assert after exactly {} clocks of lookup latency",
+            PIPELINE_STAGES
+        );
     }
 
     for expected_index in 0..8u16 {
+        assert_ne!(dut.valid, 0, "sample checks require valid output data");
         assert_eq!(
             dut.sample,
             expected_sample(expected_index),
@@ -134,11 +156,21 @@ fn test_tone_generator_zero_cross_aligns_with_output_sample() {
     dut.rst = 0;
     dut.tuning_word = ONE_INDEX_STEP_TUNING_WORD;
 
-    for _ in 0..PIPELINE_STAGES {
+    for cycle in 0..PIPELINE_STAGES {
         clock_cycle(&mut dut);
+        assert_eq!(
+            dut.valid != 0,
+            cycle == PIPELINE_STAGES - 1,
+            "valid must assert after exactly {} clocks of lookup latency",
+            PIPELINE_STAGES
+        );
     }
 
     for expected_index in 0..TABLE_SIZE {
+        assert_ne!(
+            dut.valid, 0,
+            "zero-cross alignment checks require valid output data"
+        );
         assert_eq!(
             dut.sample,
             expected_sample(expected_index),

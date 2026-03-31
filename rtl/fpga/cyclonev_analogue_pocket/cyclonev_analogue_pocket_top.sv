@@ -55,9 +55,7 @@ module cyclonev_analogue_pocket_top #(
     logic        video_hs_reg;
     localparam int unsigned AUDIO_PHASE_WIDTH = 32;
     localparam int unsigned AUDIO_TABLE_SIZE = 1024;
-    localparam int unsigned TONE_GENERATOR_LATENCY = 5;
     localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
-    logic [TONE_GENERATOR_LATENCY-1:0] tone_sample_valid_pipe;
     logic signed [15:0] tone_sample;
     logic               tone_sample_valid;
 
@@ -197,21 +195,6 @@ module cyclonev_analogue_pocket_top #(
         end
     end
 
-    // tone_generator has a fixed multi-cycle lookup latency, so delay the
-    // sideband valid flag until the output sample is fully populated.
-    always_ff @(posedge audio_sclk) begin
-        if (audio_rst) begin
-            tone_sample_valid_pipe <= '0;
-        end else begin
-            tone_sample_valid_pipe <= {
-                tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-2:0],
-                audio_en
-            };
-        end
-    end
-
-    assign tone_sample_valid = tone_sample_valid_pipe[TONE_GENERATOR_LATENCY-1];
-
     tone_generator #(
         .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
         .TABLE_SIZE  (AUDIO_TABLE_SIZE),
@@ -222,7 +205,8 @@ module cyclonev_analogue_pocket_top #(
         .rst        (audio_rst),
         .tuning_word(audio_tuning_word),
         .sample     (tone_sample),
-        .zero_cross ()
+        .zero_cross (),
+        .valid      (tone_sample_valid)
     );
 
     i2s_serializer #(
@@ -232,7 +216,7 @@ module cyclonev_analogue_pocket_top #(
         .clk         (audio_sclk),
         .rst         (audio_rst),
         .sample_data (tone_sample),
-        .sample_valid(tone_sample_valid),
+        .sample_valid(audio_en && tone_sample_valid),
         .sample_ready(),  // the tone free-runs; audio_en gates validity, so backpressure is unused
         .i2s_bclk    (),
         .i2s_lrclk   (audio_lrclk),
