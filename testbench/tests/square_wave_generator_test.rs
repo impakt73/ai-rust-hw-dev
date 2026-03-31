@@ -1,5 +1,6 @@
 use riscv_core::{create_square_wave_generator_runtime, SquareWaveGeneratorWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut SquareWaveGeneratorWrapper) {
     dut.clk = 0;
     dut.eval();

@@ -1,5 +1,6 @@
 use riscv_core::{create_sync_sprom_runtime, SyncSpromTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut SyncSpromTestWrapper) {
     dut.clk = 0;
     dut.eval();

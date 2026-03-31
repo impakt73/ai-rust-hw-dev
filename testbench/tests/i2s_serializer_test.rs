@@ -2,6 +2,7 @@ use riscv_core::{
     create_i2s_serializer_runtime, I2sSerializerEqualWidthWrapper, I2sSerializerExpandWrapper,
     I2sSerializerTruncateWrapper,
 };
+use riscv_core::AsDynamicVerilatedModel;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {

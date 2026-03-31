@@ -1,5 +1,6 @@
 use riscv_core::{create_tone_generator_runtime, ToneGeneratorTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 const TABLE_SIZE: u16 = 1024;
 const PHASE_WIDTH: usize = 32;
 const TABLE_ADDR_WIDTH: usize = TABLE_SIZE.ilog2() as usize;

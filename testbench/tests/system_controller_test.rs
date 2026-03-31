@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 /// System Controller Peripheral RTL Tests
 ///
 /// Tests the system_controller module which manages CPU boot, reset, and system control.

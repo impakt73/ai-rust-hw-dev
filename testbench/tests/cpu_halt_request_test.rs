@@ -1,5 +1,6 @@
 use riscv_core::{create_cpu_runtime, Cpu};
 
+use riscv_core::AsDynamicVerilatedModel;
 const S_BOOT: u8 = 0x0; // Matches cpu.sv S_BOOT encoding.
 const S_FETCH: u8 = 0x1;
 const S_HALT: u8 = 0xA;

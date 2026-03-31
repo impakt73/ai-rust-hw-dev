@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 // Tests for RV32C Instruction Decompressor
 // Validates all 27 compressed instructions decompress correctly
 

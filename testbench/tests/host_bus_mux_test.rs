@@ -1,5 +1,6 @@
 use riscv_core::{create_host_bus_mux_runtime, HostBusMux};
 
+use riscv_core::AsDynamicVerilatedModel;
 macro_rules! clock_cycle {
     ($dut:expr) => {
         $dut.clk = 0;

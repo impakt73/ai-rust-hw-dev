@@ -1,6 +1,7 @@
 use rand::Rng;
 use riscv_core::{create_alu_runtime, Alu};
 
+use riscv_core::AsDynamicVerilatedModel;
 // ALU Operation Encodings (must match the RTL)
 const ALU_ADD: u32 = 0b00000;
 const ALU_SUB: u32 = 0b00001;

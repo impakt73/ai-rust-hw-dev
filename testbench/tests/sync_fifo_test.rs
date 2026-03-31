@@ -1,5 +1,6 @@
 use riscv_core::{create_sync_fifo_runtime, SyncFifoTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 const READ_DATA_TIMEOUT_CYCLES: usize = 16;
 
 fn tick(dut: &mut SyncFifoTestWrapper) {

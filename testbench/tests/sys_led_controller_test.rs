@@ -1,5 +1,6 @@
 use riscv_core::{create_sys_led_controller_runtime, SysLedControllerWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 const ACTIVITY_BITS_MASK: u8 = 0x1E;
 const WRAPPER_CLK_FREQ_HZ: u32 = 4;
 const ACTIVITY_FREQ_MILLIHERTZ: u32 = 250;

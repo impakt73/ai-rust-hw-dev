@@ -1,5 +1,6 @@
 use riscv_core::{create_sram_peripheral_runtime, SramPeripheralTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 const SIZE_HALFWORD: u8 = 0b01;
 const SIZE_WORD: u8 = 0b10;
 

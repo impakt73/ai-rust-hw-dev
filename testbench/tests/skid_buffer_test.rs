@@ -1,5 +1,6 @@
 use riscv_core::{create_skid_buffer_runtime, SkidBufferWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut SkidBufferWrapper) {
     dut.clk = 0;
     dut.eval();

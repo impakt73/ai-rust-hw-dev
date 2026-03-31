@@ -1,5 +1,6 @@
 use riscv_core::{create_sine_table_runtime, SineTableTestWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 // Parameters matching sine_table_test_wrapper / sine_table_test_init.hex
 const TABLE_SIZE: u16 = 1024;
 const PIPELINE_STAGES: usize = 4; // Stage 1 + 2 ROM stages + Stage 4

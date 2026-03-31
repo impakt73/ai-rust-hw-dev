@@ -1,5 +1,6 @@
 use riscv_core::{create_phase_accumulator_runtime, PhaseAccumulatorWrapper};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn clock_cycle(dut: &mut PhaseAccumulatorWrapper) {
     dut.clk = 0;
     dut.eval();

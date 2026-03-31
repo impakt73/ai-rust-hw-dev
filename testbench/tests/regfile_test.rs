@@ -1,6 +1,7 @@
 use rand::Rng;
 use riscv_core::{create_regfile_runtime, RegFile};
 
+use riscv_core::AsDynamicVerilatedModel;
 fn create_runtime() -> riscv_core::VerilatorRuntime {
     create_regfile_runtime().expect("Failed to create RegFile runtime")
 }

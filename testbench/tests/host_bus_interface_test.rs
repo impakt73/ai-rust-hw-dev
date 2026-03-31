@@ -1,3 +1,4 @@
+use riscv_core::AsDynamicVerilatedModel;
 // Host Bus Interface Tests
 // Focused burst-native protocol coverage.
 

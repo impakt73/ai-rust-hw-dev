@@ -2,6 +2,7 @@ use riscv_core::{
     create_ff_sync_param_wrapper_runtime, create_ff_sync_runtime, FfSyncDefaultWrapper,
     FfSyncParamWrapper,
 };
+use riscv_core::AsDynamicVerilatedModel;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
