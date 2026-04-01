@@ -102,7 +102,6 @@ fn wait_for_rd_valid(dut: &mut LineBufferTestWrapper, max_cycles: usize) -> bool
 /// Read all pixels of a line. Returns (pixels, saw_eol, saw_sof_on_first_pixel).
 fn read_line(dut: &mut LineBufferTestWrapper) -> (Vec<u8>, bool, bool) {
     let mut pixels = Vec::new();
-    let mut saw_eol = false;
     let mut saw_sof_on_first = false;
 
     // Wait for first pixel
@@ -122,19 +121,14 @@ fn read_line(dut: &mut LineBufferTestWrapper) -> (Vec<u8>, bool, bool) {
         }
         pixels.push(pixel);
 
-        if is_eol {
-            saw_eol = true;
-            // Consume the last pixel
-            dut.rd_ready = 1;
-            tick_rd(dut);
-            dut.rd_ready = 0;
-            break;
-        }
-
         // Consume this pixel
         dut.rd_ready = 1;
         tick_rd(dut);
         dut.rd_ready = 0;
+
+        if is_eol {
+            return (pixels, true, saw_sof_on_first);
+        }
 
         // Wait for next pixel (or check if available immediately)
         if dut.rd_valid == 0 {
@@ -145,8 +139,6 @@ fn read_line(dut: &mut LineBufferTestWrapper) -> (Vec<u8>, bool, bool) {
             );
         }
     }
-
-    (pixels, saw_eol, saw_sof_on_first)
 }
 
 /// Allow CDC propagation by ticking both clocks
@@ -332,10 +324,10 @@ fn test_varying_line_lengths() {
     reset(&mut dut);
 
     let lines: Vec<Vec<u8>> = vec![
-        vec![0x01],                                     // 1 pixel
-        vec![0x10, 0x11, 0x12, 0x13, 0x14, 0x15],      // 6 pixels
-        vec![0x20, 0x21],                               // 2 pixels
-        (0..MAX_LINE_WIDTH as u8).collect(),             // max pixels
+        vec![0x01],                               // 1 pixel
+        vec![0x10, 0x11, 0x12, 0x13, 0x14, 0x15], // 6 pixels
+        vec![0x20, 0x21],                         // 2 pixels
+        (0..MAX_LINE_WIDTH as u8).collect(),      // max pixels
     ];
 
     for (i, line) in lines.iter().enumerate() {
@@ -376,10 +368,7 @@ fn test_sof_resets_pointers() {
     propagate_cdc(&mut dut, CDC_TIMEOUT * 2);
 
     // Writer should be ready
-    assert_eq!(
-        dut.wr_ready, 1,
-        "wr_ready must be high after SOF reset"
-    );
+    assert_eq!(dut.wr_ready, 1, "wr_ready must be high after SOF reset");
 
     // Write a new line after SOF
     write_line(&mut dut, &[0x11, 0x22]);
@@ -571,10 +560,7 @@ fn test_fast_writer_slow_reader() {
         }
     }
 
-    assert_eq!(
-        lines_written, total_lines,
-        "all lines must be written"
-    );
+    assert_eq!(lines_written, total_lines, "all lines must be written");
     assert_eq!(lines_read, total_lines, "all lines must be read");
     assert_eq!(
         read_data, write_data,
@@ -749,11 +735,7 @@ fn test_write_read_alternating_banks() {
         propagate_cdc(&mut dut, CDC_TIMEOUT);
 
         let (pixels, saw_eol, _) = read_line(&mut dut);
-        assert_eq!(
-            pixels, line,
-            "iteration {} data mismatch",
-            iteration
-        );
+        assert_eq!(pixels, line, "iteration {} data mismatch", iteration);
         assert!(saw_eol, "iteration {} missing eol", iteration);
 
         propagate_cdc(&mut dut, CDC_TIMEOUT);
