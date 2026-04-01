@@ -38,8 +38,9 @@ module cyclonev_analogue_pocket_top #(
     logic        bitmap_sync_video_de;
     logic        bitmap_sync_video_hs;
     logic        bitmap_sync_video_vs;
-    logic [7:0]  bitmap_sync_active_x;
-    logic [7:0]  bitmap_sync_active_y;
+    logic [((VIDEO_ACTIVE_WIDTH <= 1) ? 1 : $clog2(VIDEO_ACTIVE_WIDTH))-1:0] bitmap_sync_active_x;
+    logic [((VIDEO_ACTIVE_HEIGHT <= 1) ? 1 : $clog2(VIDEO_ACTIVE_HEIGHT))-1:0]
+        bitmap_sync_active_y;
     logic        bitmap_video_de;
     logic        bitmap_video_hs;
     logic        bitmap_video_vs;

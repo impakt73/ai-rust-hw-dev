@@ -5,9 +5,14 @@
 // External logic owns the raster timing generator and all backing memories.
 // This module only computes the lookup pipeline:
 //   screen_x/screen_y -> char_mem_addr -> font_mem_addr -> palette_mem_addr -> video_rgb
+// External memory backends must preserve the original sync_sprom-style timing:
+//   - `char_mem_rdata` must correspond to `char_mem_addr` from 2 cycles earlier
+//   - `font_mem_rdata` must correspond to `font_mem_addr` from 2 cycles earlier
+//   - `palette_mem_rdata` must correspond to `palette_mem_addr` from 2 cycles earlier
 // The fixed registered pipeline latency from coordinate input to `video_rgb` is
-// 9 cycles, so callers must delay any associated sync/display-enable signals by
-// the same amount if they need aligned video-control outputs.
+// 9 cycles under that contract, so callers must delay any associated
+// sync/display-enable signals by the same amount if they need aligned
+// video-control outputs.
 module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_WIDTH = 640,
     parameter int unsigned ACTIVE_HEIGHT = 480,
