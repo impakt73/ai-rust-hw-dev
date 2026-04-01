@@ -201,14 +201,11 @@ module line_buffer #(
         input logic [LINE_ADDR_WIDTH-1:0] gray
     );
         logic [LINE_ADDR_WIDTH-1:0] bin;
-        integer i;
-        begin
-            bin[LINE_ADDR_WIDTH-1] = gray[LINE_ADDR_WIDTH-1];
-            for (i = LINE_ADDR_WIDTH-2; i >= 0; i--) begin
-                bin[i] = bin[i+1] ^ gray[i];
-            end
-            gray2bin = bin;
+        bin[LINE_ADDR_WIDTH-1] = gray[LINE_ADDR_WIDTH-1];
+        for (int i = LINE_ADDR_WIDTH-2; i >= 0; i--) begin
+            bin[i] = bin[i+1] ^ gray[i];
         end
+        gray2bin = bin;
     endfunction
 
     // Encode line lengths in Gray code (write domain)
