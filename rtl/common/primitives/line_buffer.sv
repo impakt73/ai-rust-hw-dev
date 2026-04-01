@@ -42,10 +42,12 @@ module line_buffer #(
     logic                    wr_blocked_base;
     logic                    wr_addr_has_space;
     logic                    wr_sof_toggle;
+    logic                    wr_wait_for_rd_reset;
 
     logic                    rd_line_ptr_msb;
     logic [LINE_ADDR_WIDTH-1:0] rd_addr;
     logic                    wr_line_ptr_msb_sync_rd;
+    logic                    rd_wait_for_wr_reset;
     logic                    rd_line_active;
     logic                    rd_out_valid;
     logic                    rd_out_eol;
@@ -94,7 +96,7 @@ module line_buffer #(
     assign rd_fire  = rd_valid && rd_ready;
 
     assign rd_frame_reset = rd_sof_toggle_sync ^ rd_sof_toggle_sync_d;
-    assign rd_line_available = (wr_line_ptr_msb_sync_rd != rd_line_ptr_msb);
+    assign rd_line_available = !rd_wait_for_wr_reset && (wr_line_ptr_msb_sync_rd != rd_line_ptr_msb);
     assign rd_start_load = !rd_load_pending_stage1
         && !rd_load_pending_stage2
         && !rd_out_valid
@@ -105,7 +107,7 @@ module line_buffer #(
         .WIDTH(1)
     ) u_rd_line_ptr_sync (
         .clk(wr_clk),
-        .rst(rst || start_of_frame),
+        .rst(rst),
         .din(rd_line_ptr_msb),
         .dout(rd_line_ptr_msb_sync_wr)
     );
@@ -115,7 +117,7 @@ module line_buffer #(
         .WIDTH(1)
     ) u_wr_line_ptr_sync (
         .clk(rd_clk),
-        .rst(rst || rd_frame_reset),
+        .rst(rst),
         .din(wr_line_ptr_msb),
         .dout(wr_line_ptr_msb_sync_rd)
     );
@@ -149,21 +151,28 @@ module line_buffer #(
             wr_addr         <= '0;
             wr_blocked      <= 1'b0;
             wr_sof_toggle   <= 1'b0;
+            wr_wait_for_rd_reset <= 1'b1;
         end else begin
             if (start_of_frame) begin
                 wr_line_ptr_msb <= 1'b0;
                 wr_addr         <= '0;
                 wr_blocked      <= 1'b0;
                 wr_sof_toggle   <= ~wr_sof_toggle;
-            end else if (wr_blocked && (rd_line_ptr_msb_sync_wr != wr_line_ptr_msb)) begin
-                wr_blocked <= 1'b0;
+                wr_wait_for_rd_reset <= 1'b1;
+            end else begin
+                if (wr_wait_for_rd_reset && (rd_line_ptr_msb_sync_wr == 1'b0)) begin
+                    wr_wait_for_rd_reset <= 1'b0;
+                end
             end
 
+            if (wr_blocked && !wr_wait_for_rd_reset && (rd_line_ptr_msb_sync_wr != wr_line_ptr_msb)) begin
+                wr_blocked <= 1'b0;
+            end
             if (wr_fire) begin
                 if (wr_eol) begin
                     wr_line_ptr_msb <= ~wr_line_ptr_msb_base;
                     wr_addr         <= '0;
-                    wr_blocked      <= ((~wr_line_ptr_msb_base) == rd_line_ptr_msb_sync_wr);
+                    wr_blocked      <= ((~wr_line_ptr_msb_base) == (wr_wait_for_rd_reset ? 1'b0 : rd_line_ptr_msb_sync_wr));
                 end else begin
                     wr_addr <= wr_addr_base + LINE_ADDR_WIDTH'(1);
                 end
@@ -173,9 +182,10 @@ module line_buffer #(
 
     always_ff @(posedge rd_clk) begin
         if (rst || rd_frame_reset) begin
-            rd_sof_toggle_sync_d    <= 1'b0;
+            rd_sof_toggle_sync_d <= 1'b0;
             rd_line_ptr_msb      <= 1'b0;
             rd_addr              <= '0;
+            rd_wait_for_wr_reset <= 1'b1;
             rd_line_active       <= 1'b0;
             rd_out_valid         <= 1'b0;
             rd_out_eol           <= 1'b0;
@@ -183,6 +193,10 @@ module line_buffer #(
             rd_load_pending_stage2 <= 1'b0;
         end else begin
             rd_sof_toggle_sync_d <= rd_sof_toggle_sync;
+
+            if (rd_wait_for_wr_reset && (wr_line_ptr_msb_sync_rd == 1'b0)) begin
+                rd_wait_for_wr_reset <= 1'b0;
+            end
 
             if (rd_load_pending_stage2) begin
                 rd_out_pixel <= ram_rdata[PIXEL_WIDTH-1:0];
