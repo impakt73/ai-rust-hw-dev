@@ -32,6 +32,7 @@ module line_buffer #(
     localparam int RAM_ADDR_WIDTH  = LINE_ADDR_WIDTH + 1;
     localparam int RAM_DATA_WIDTH  = PIXEL_WIDTH + 1;
 
+    // wr_clk domain signals
     logic                    wr_line_ptr_msb;
     logic [LINE_ADDR_WIDTH-1:0] wr_addr;
     logic                    wr_blocked;
@@ -44,6 +45,7 @@ module line_buffer #(
     logic                    wr_sof_toggle;
     logic                    wr_wait_for_rd_reset;
 
+    // rd_clk domain signals
     logic                    rd_line_ptr_msb;
     logic [LINE_ADDR_WIDTH-1:0] rd_addr;
     logic                    wr_line_ptr_msb_sync_rd;
@@ -65,10 +67,10 @@ module line_buffer #(
 
     initial begin
         if (PIXEL_WIDTH <= 0) begin
-            $fatal(1, "line_buffer: PIXEL_WIDTH must be > 0");
+            $fatal(1, "line_buffer: PIXEL_WIDTH must be > 0, got %0d", PIXEL_WIDTH);
         end
         if (MAX_LINE_PIXELS <= 0) begin
-            $fatal(1, "line_buffer: MAX_LINE_PIXELS must be > 0");
+            $fatal(1, "line_buffer: MAX_LINE_PIXELS must be > 0, got %0d", MAX_LINE_PIXELS);
         end
         if (SYNC_STAGES < 2) begin
             $fatal(1, "line_buffer: SYNC_STAGES must be >= 2, got %0d", SYNC_STAGES);
