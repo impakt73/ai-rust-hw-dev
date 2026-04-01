@@ -86,6 +86,7 @@ module line_buffer #(
     logic [LINE_ADDR_WIDTH-1:0]  wr_addr;        // Pixel index within current line
     logic                        wr_active;      // Writer is accepting pixels
     logic                        wr_sof_toggle;  // Toggles on each SOF event
+    logic                        wr_sof_stall;   // Writer stalled waiting for SOF ack
 
     // Per-buffer line length (index of last pixel written)
     logic [LINE_ADDR_WIDTH-1:0]  wr_line_len [0:1];
@@ -121,6 +122,15 @@ module line_buffer #(
     logic                        wr_sof_toggle_synced;
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_0;
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_1;
+
+    // SOF ack from read domain → write domain
+    logic                        rd_sof_ack_synced_wr;
+
+    // Gray-coded line length intermediates for CDC-safe transfer
+    logic [LINE_ADDR_WIDTH-1:0]  wr_line_len_0_gray;
+    logic [LINE_ADDR_WIDTH-1:0]  wr_line_len_1_gray;
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_0_gray;
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_1_gray;
 
     // Combinational read-side helpers
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len;
@@ -178,6 +188,34 @@ module line_buffer #(
                                               : rd_addr};
 
     // ================================================================
+    //  Gray-code helpers for CDC-safe multi-bit transfer
+    // ================================================================
+
+    function automatic logic [LINE_ADDR_WIDTH-1:0] bin2gray(
+        input logic [LINE_ADDR_WIDTH-1:0] bin
+    );
+        bin2gray = (bin >> 1) ^ bin;
+    endfunction
+
+    function automatic logic [LINE_ADDR_WIDTH-1:0] gray2bin(
+        input logic [LINE_ADDR_WIDTH-1:0] gray
+    );
+        logic [LINE_ADDR_WIDTH-1:0] bin;
+        integer i;
+        begin
+            bin[LINE_ADDR_WIDTH-1] = gray[LINE_ADDR_WIDTH-1];
+            for (i = LINE_ADDR_WIDTH-2; i >= 0; i--) begin
+                bin[i] = bin[i+1] ^ gray[i];
+            end
+            gray2bin = bin;
+        end
+    endfunction
+
+    // Encode line lengths in Gray code (write domain)
+    assign wr_line_len_0_gray = bin2gray(wr_line_len[0]);
+    assign wr_line_len_1_gray = bin2gray(wr_line_len[1]);
+
+    // ================================================================
     //  CDC synchronisers (ff_sync instances)
     // ================================================================
 
@@ -203,27 +241,31 @@ module line_buffer #(
         .dout (rd_bank_synced_wr)
     );
 
-    // Line length for buffer 0 → read domain
+    // Line length for buffer 0 → read domain (Gray-coded CDC)
     ff_sync #(
         .STAGES(SYNC_STAGES),
         .WIDTH (LINE_ADDR_WIDTH)
     ) u_line_len_0_sync (
         .clk  (rd_clk),
         .rst  (rd_rst),
-        .din  (wr_line_len[0]),
-        .dout (rd_line_len_0)
+        .din  (wr_line_len_0_gray),
+        .dout (rd_line_len_0_gray)
     );
 
-    // Line length for buffer 1 → read domain
+    // Line length for buffer 1 → read domain (Gray-coded CDC)
     ff_sync #(
         .STAGES(SYNC_STAGES),
         .WIDTH (LINE_ADDR_WIDTH)
     ) u_line_len_1_sync (
         .clk  (rd_clk),
         .rst  (rd_rst),
-        .din  (wr_line_len[1]),
-        .dout (rd_line_len_1)
+        .din  (wr_line_len_1_gray),
+        .dout (rd_line_len_1_gray)
     );
+
+    // Decode Gray-coded lengths back to binary in read domain
+    assign rd_line_len_0 = gray2bin(rd_line_len_0_gray);
+    assign rd_line_len_1 = gray2bin(rd_line_len_1_gray);
 
     // wr_sof_toggle → read domain
     ff_sync #(
@@ -234,6 +276,17 @@ module line_buffer #(
         .rst  (rd_rst),
         .din  (wr_sof_toggle),
         .dout (wr_sof_toggle_synced)
+    );
+
+    // SOF ack: rd_sof_toggle_prev → write domain (confirms reader processed SOF)
+    ff_sync #(
+        .STAGES(SYNC_STAGES),
+        .WIDTH (1)
+    ) u_sof_ack_sync (
+        .clk  (wr_clk),
+        .rst  (wr_rst),
+        .din  (rd_sof_toggle_prev),
+        .dout (rd_sof_ack_synced_wr)
     );
 
     // ================================================================
@@ -261,16 +314,19 @@ module line_buffer #(
             wr_addr       <= '0;
             wr_active     <= 1'b1;
             wr_sof_toggle <= 1'b0;
+            wr_sof_stall  <= 1'b0;
             // NOTE: wr_line_len[] is datapath payload — intentionally not reset.
             // Safe because a complete write (with EOL) always stores a valid length
             // before the read side can access it via the bank-swap handshake.
         end else begin
-            // SOF resets write state and toggles the frame marker.
+            // SOF resets write address, marks a new frame, and stalls until
+            // the reader acknowledges to avoid same-bank read/write collisions.
             if (wr_sof) begin
                 wr_bank       <= 1'b0;
                 wr_addr       <= '0;
-                wr_active     <= 1'b1;
+                wr_active     <= 1'b0;
                 wr_sof_toggle <= ~wr_sof_toggle;
+                wr_sof_stall  <= 1'b1;
             end else if (wr_do_write) begin
                 if (wr_eol) begin
                     // Record the index of the last pixel as the line length.
@@ -288,11 +344,19 @@ module line_buffer #(
                     wr_addr <= wr_addr + LINE_ADDR_WIDTH'(1);
                 end
             end else if (!wr_active) begin
-                // Stalled after EOL: poll until the next buffer is released.
-                if (wr_next_buf_free) begin
-                    wr_bank   <= ~wr_bank;
-                    wr_addr   <= '0;
-                    wr_active <= 1'b1;
+                if (wr_sof_stall) begin
+                    // Stalled after SOF: wait for reader to acknowledge SOF.
+                    if (rd_sof_ack_synced_wr == wr_sof_toggle) begin
+                        wr_active    <= 1'b1;
+                        wr_sof_stall <= 1'b0;
+                    end
+                end else begin
+                    // Stalled after EOL: poll until the next buffer is released.
+                    if (wr_next_buf_free) begin
+                        wr_bank   <= ~wr_bank;
+                        wr_addr   <= '0;
+                        wr_active <= 1'b1;
+                    end
                 end
             end
         end
