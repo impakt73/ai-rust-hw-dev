@@ -259,6 +259,13 @@ pub struct SineTableTestWrapper;
 )]
 pub struct ToneGeneratorTestWrapper;
 
+// Define LineBuffer test wrapper module
+#[verilog(
+    src = "../rtl/common/wrappers/line_buffer_test_wrapper.sv",
+    name = "line_buffer_test_wrapper"
+)]
+pub struct LineBufferTestWrapper;
+
 // Helper function to determine RTL path
 fn get_rtl_path() -> &'static str {
     if std::path::Path::new("rtl/common/top.sv").is_file() {
@@ -609,5 +616,14 @@ pub fn create_tone_generator_runtime() -> Result<VerilatorRuntime, Box<dyn std::
         "primitives/sine_table.sv",
         "primitives/tone_generator.sv",
         "wrappers/tone_generator_test_wrapper.sv",
+    ])
+}
+
+pub fn create_line_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "memory/sync_dpram.sv",
+        "primitives/line_buffer.sv",
+        "wrappers/line_buffer_test_wrapper.sv",
     ])
 }
