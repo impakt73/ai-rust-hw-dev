@@ -13,7 +13,7 @@ module line_buffer #(
     input  wire logic                   wr_clk,
     input  wire logic                   rd_clk,
     input  wire logic                   rst,
-    input  wire logic                   start_of_frame,
+    input  wire logic                   start_of_frame, // Synchronous to wr_clk; forwarded internally to rd_clk
 
     // Write-side pixel input (wr_clk domain)
     input  wire logic                   wr_valid,
