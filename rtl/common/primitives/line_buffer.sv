@@ -262,6 +262,8 @@ module line_buffer #(
             wr_active     <= 1'b1;
             wr_sof_toggle <= 1'b0;
             // NOTE: wr_line_len[] is datapath payload — intentionally not reset.
+            // Safe because a complete write (with EOL) always stores a valid length
+            // before the read side can access it via the bank-swap handshake.
         end else begin
             // SOF resets write state and toggles the frame marker.
             if (wr_sof) begin
@@ -309,6 +311,7 @@ module line_buffer #(
             rd_sof_pending     <= 1'b0;
             rd_sof_toggle_prev <= 1'b0;
             // NOTE: rd_out_data is datapath payload — intentionally not reset.
+            // Safely ignored when rd_out_valid is low after reset.
         end else begin
             // ---------------------------------------------------------
             // SOF edge: hard-reset the entire read side for the new frame.

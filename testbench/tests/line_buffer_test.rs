@@ -104,7 +104,7 @@ fn read_line(dut: &mut LineBufferTestWrapper) -> (Vec<u8>, bool, bool) {
     let mut pixels = Vec::new();
     let mut saw_sof_on_first = false;
 
-    // Wait for first pixel
+    // Wait for first pixel (needs extra margin for initial CDC + DPRAM pipeline)
     assert!(
         wait_for_rd_valid(dut, CDC_TIMEOUT * 4),
         "timed out waiting for rd_valid at start of line"
