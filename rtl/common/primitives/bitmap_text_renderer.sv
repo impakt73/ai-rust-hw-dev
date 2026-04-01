@@ -1,46 +1,42 @@
 `default_nettype none
 // Bitmap Text Renderer
-// Renders 8x8 character tiles during scanout using a character map ROM and a
-// CP437-compatible font ROM.
+// Renders 8x8 character tiles for an externally supplied screen coordinate.
 //
-// This module owns the raster timing generator. The internal `video_sync`
-// instance produces the current active-region coordinates, which directly drive
-// the character/font/palette ROM lookup pipeline. The public video control
-// signals are delayed through shift registers so they stay aligned with the
-// RGB pixel value when the outputs leave the module.
-//
-// The registered timing outputs are shaped to match the Analogue Pocket video
-// control interface:
-//   - `video_de` is the registered active-video/display-enable qualifier
-//   - `video_hs` / `video_vs` are the registered sync pulses
+// External logic owns the raster timing generator and all backing memories.
+// This module only computes the lookup pipeline:
+//   screen_x/screen_y -> char_mem_addr -> font_mem_addr -> palette_mem_addr -> video_rgb
+// External memory backends must preserve the original sync_sprom-style timing:
+//   - `char_mem_rdata` must correspond to `char_mem_addr` from 2 cycles earlier
+//   - `font_mem_rdata` must correspond to `font_mem_addr` from 2 cycles earlier
+//   - `palette_mem_rdata` must correspond to `palette_mem_addr` from 2 cycles earlier
+// The fixed registered pipeline latency from coordinate input to `video_rgb` is
+// 9 cycles under that contract, so callers must delay any associated
+// sync/display-enable signals by the same amount if they need aligned
+// video-control outputs.
 module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_WIDTH = 640,
     parameter int unsigned ACTIVE_HEIGHT = 480,
     parameter int unsigned TILE_WIDTH = 8,
     parameter int unsigned TILE_HEIGHT = 8,
     parameter int unsigned TILE_COLUMNS = 128,
-    parameter int unsigned TILE_ROWS = 64,
-    parameter int unsigned H_FRONT_PORCH = 16,
-    parameter int unsigned H_SYNC_WIDTH = 96,
-    parameter int unsigned H_BACK_PORCH = 48,
-    parameter int unsigned V_FRONT_PORCH = 10,
-    parameter int unsigned V_SYNC_WIDTH = 2,
-    parameter int unsigned V_BACK_PORCH = 33,
-    parameter bit HSYNC_ACTIVE_HIGH = 1'b0,
-    parameter bit VSYNC_ACTIVE_HIGH = 1'b0,
-    parameter FONT_INIT_FILE = "",
-    parameter CHAR_MAP_INIT_FILE = "",
-    parameter PALETTE_INIT_FILE = ""
+    parameter int unsigned TILE_ROWS = 64
 ) (
     input wire logic clk,
     input wire logic rst,
+    input wire logic [((ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH))-1:0] screen_x,
+    input wire logic [((ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT))-1:0] screen_y,
     input wire logic [(((TILE_WIDTH * TILE_COLUMNS) <= 1) ? 1 : $clog2(TILE_WIDTH * TILE_COLUMNS))-1:0]
         scroll_x,
     input wire logic [(((TILE_HEIGHT * TILE_ROWS) <= 1) ? 1 : $clog2(TILE_HEIGHT * TILE_ROWS))-1:0]
         scroll_y,
-    output logic video_de,
-    output logic video_hs,
-    output logic video_vs,
+    output logic [(((TILE_COLUMNS * TILE_ROWS) <= 1) ? 1 : $clog2(TILE_COLUMNS * TILE_ROWS))-1:0]
+        char_mem_addr,
+    input wire logic [7:0] char_mem_rdata,
+    output logic [(8 + (((TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT)) +
+        (((TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH)))))-1:0] font_mem_addr,
+    input wire logic [7:0] font_mem_rdata,
+    output logic [7:0] palette_mem_addr,
+    input wire logic [23:0] palette_mem_rdata,
     output logic [23:0] video_rgb
 );
 
@@ -59,13 +55,10 @@ module bitmap_text_renderer #(
     // The registered lookup/output path is:
     //   - 1 cycle: registered scrolled tilemap-coordinate stage
     //   - 1 cycle: registered character-map address stage
-    //   - 2 cycles: character-map sync_sprom latency
-    //   - 2 cycles: font sync_sprom latency
-    //   - 2 cycles: palette sync_sprom latency
+    //   - 2 cycles: character-memory latency
+    //   - 2 cycles: font-memory latency
+    //   - 2 cycles: palette-memory latency
     //   - 1 cycle: registered `video_rgb` output stage
-    // Delay the public video control outputs by the same 9 cycles so they stay
-    // aligned with the RGB data leaving the module.
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned TILEMAP_WIDTH = TILE_WIDTH * TILE_COLUMNS;
@@ -77,21 +70,10 @@ module bitmap_text_renderer #(
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH = (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
 
-    logic sync_video_de;
-    logic sync_video_hs;
-    logic sync_video_vs;
-    logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
-    logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
     logic [SCROLL_X_WIDTH-1:0] scrolled_active_x;
     logic [SCROLL_Y_WIDTH-1:0] scrolled_active_y;
 
-    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr;
-    logic [CHARMAP_ADDR_WIDTH-1:0] char_map_addr_next;
-    logic [CHARMAP_DATA_WIDTH-1:0] char_map_rdata;
-    logic [FONT_ROM_ADDR_WIDTH-1:0] font_addr;
-    logic [FONT_ROM_DATA_WIDTH-1:0] font_glyph_rdata;
-    logic [PALETTE_ROM_ADDR_WIDTH-1:0] palette_addr;
-    logic [PALETTE_ROM_DATA_WIDTH-1:0] palette_rdata;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_mem_addr_next;
 
     logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset;
     logic [FONT_GLYPH_OFFSET_WIDTH-1:0] glyph_offset_d0;
@@ -104,64 +86,6 @@ module bitmap_text_renderer #(
     logic [SCROLL_Y_WIDTH:0] scroll_y_sum;
     logic [SCROLL_X_WIDTH-1:0] scrolled_active_x_next;
     logic [SCROLL_Y_WIDTH-1:0] scrolled_active_y_next;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_de_pipe;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_hs_pipe;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_vs_pipe;
-
-    video_sync #(
-        .H_ACTIVE(ACTIVE_WIDTH),
-        .H_FRONT_PORCH(H_FRONT_PORCH),
-        .H_SYNC_WIDTH(H_SYNC_WIDTH),
-        .H_BACK_PORCH(H_BACK_PORCH),
-        .V_ACTIVE(ACTIVE_HEIGHT),
-        .V_FRONT_PORCH(V_FRONT_PORCH),
-        .V_SYNC_WIDTH(V_SYNC_WIDTH),
-        .V_BACK_PORCH(V_BACK_PORCH),
-        .HSYNC_ACTIVE_HIGH(HSYNC_ACTIVE_HIGH),
-        .VSYNC_ACTIVE_HIGH(VSYNC_ACTIVE_HIGH)
-    ) u_video_sync (
-        .clk(clk),
-        .rst(rst),
-        .hsync(sync_video_hs),
-        .vsync(sync_video_vs),
-        .active_video(sync_video_de),
-        .line_start(),
-        .frame_start(),
-        .active_x(sync_active_x),
-        .active_y(sync_active_y),
-        .scan_x(),
-        .scan_y()
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(CHARMAP_DATA_WIDTH),
-        .ADDR_WIDTH(CHARMAP_ADDR_WIDTH),
-        .INIT_FILE(CHAR_MAP_INIT_FILE)
-    ) u_char_map_rom (
-        .clk(clk),
-        .addr(char_map_addr),
-        .rdata(char_map_rdata)
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(FONT_ROM_DATA_WIDTH),
-        .ADDR_WIDTH(FONT_ROM_ADDR_WIDTH),
-        .INIT_FILE(FONT_INIT_FILE)
-    ) u_font_rom (
-        .clk(clk),
-        .addr(font_addr),
-        .rdata(font_glyph_rdata)
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(PALETTE_ROM_DATA_WIDTH),
-        .ADDR_WIDTH(PALETTE_ROM_ADDR_WIDTH),
-        .INIT_FILE(PALETTE_INIT_FILE)
-    ) u_palette_rom (
-        .clk(clk),
-        .addr(palette_addr),
-        .rdata(palette_rdata)
-    );
 
 `ifndef SYNTHESIS
     initial begin
@@ -187,8 +111,8 @@ module bitmap_text_renderer #(
 `endif
 
     always_comb begin
-        scroll_x_sum = {1'b0, SCROLL_X_WIDTH'(sync_active_x)} + {1'b0, scroll_x};
-        scroll_y_sum = {1'b0, SCROLL_Y_WIDTH'(sync_active_y)} + {1'b0, scroll_y};
+        scroll_x_sum = {1'b0, SCROLL_X_WIDTH'(screen_x)} + {1'b0, scroll_x};
+        scroll_y_sum = {1'b0, SCROLL_Y_WIDTH'(screen_y)} + {1'b0, scroll_y};
         // Truncating the carry bit wraps the scrolled coordinates within the
         // power-of-two tilemap dimensions without explicit compare/subtract logic.
         scrolled_active_x_next = scroll_x_sum[SCROLL_X_WIDTH-1:0];
@@ -200,39 +124,28 @@ module bitmap_text_renderer #(
             FONT_ROW_INDEX_WIDTH'(scrolled_active_y[FONT_ROW_INDEX_WIDTH-1:0]),
             FONT_COLUMN_INDEX_WIDTH'(scrolled_active_x[FONT_COLUMN_INDEX_WIDTH-1:0])
         };
-        char_map_addr_next = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
-        font_addr = {char_map_rdata, glyph_offset_d2};
-        palette_addr = font_glyph_rdata;
+        char_mem_addr_next = tile_row_base_addr + CHARMAP_ADDR_WIDTH'(tile_column);
+        font_mem_addr = {char_mem_rdata, glyph_offset_d2};
+        palette_mem_addr = font_mem_rdata;
     end
 
-    assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_vs = video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     always_ff @(posedge clk) begin
         if (rst) begin
-            video_de_pipe <= '0;
-            video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~HSYNC_ACTIVE_HIGH}};
-            video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VSYNC_ACTIVE_HIGH}};
             scrolled_active_x <= '0;
             scrolled_active_y <= '0;
-            char_map_addr <= '0;
+            char_mem_addr <= '0;
             glyph_offset_d0 <= '0;
             glyph_offset_d1 <= '0;
             glyph_offset_d2 <= '0;
             video_rgb <= '0;
         end else begin
-            video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
-            video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
-            video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
             scrolled_active_x <= scrolled_active_x_next;
             scrolled_active_y <= scrolled_active_y_next;
-            char_map_addr <= char_map_addr_next;
+            char_mem_addr <= char_mem_addr_next;
             glyph_offset_d0 <= glyph_offset;
             glyph_offset_d1 <= glyph_offset_d0;
             glyph_offset_d2 <= glyph_offset_d1;
-            video_rgb <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2]
-                ? palette_rdata
-                : '0;
+            video_rgb <= palette_mem_rdata;
         end
     end
 
