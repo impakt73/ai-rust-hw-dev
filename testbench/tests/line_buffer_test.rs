@@ -181,7 +181,11 @@ fn test_line_buffer_fast_writer_slow_reader_preserves_order_and_eol() {
         }
     }
 
-    assert_eq!(write_line_index, lines.len(), "all queued lines should be written");
+    assert_eq!(
+        write_line_index,
+        lines.len(),
+        "all queued lines should be written"
+    );
     assert_eq!(
         observed, expected,
         "slow read-side draining should preserve pixel order and end-of-line markers"
