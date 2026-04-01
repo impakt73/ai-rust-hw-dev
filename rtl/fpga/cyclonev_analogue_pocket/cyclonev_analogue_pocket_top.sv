@@ -390,13 +390,11 @@ module cyclonev_analogue_pocket_top #(
                     scroll_y_reg <= scroll_y_reg + 8'd1;
                 end
             end
-            video_rgb_reg <= bitmap_video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2]
-                ? bitmap_video_rgb
-                : 24'h00_00_00;
-            video_de_reg <= bitmap_video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_rgb_reg <= bitmap_video_de ? bitmap_video_rgb : 24'h00_00_00;
+            video_de_reg <= bitmap_video_de;
             video_skip_reg <= 1'b0;
-            video_vs_reg <= bitmap_video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-            video_hs_reg <= bitmap_video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_vs_reg <= bitmap_video_vs;
+            video_hs_reg <= bitmap_video_hs;
         end
     end
 
