@@ -31,6 +31,8 @@ module line_buffer #(
     localparam int LINE_ADDR_WIDTH   = (MAX_LINE_PIXELS <= 1) ? 1 : $clog2(MAX_LINE_PIXELS);
     localparam int LINE_LENGTH_WIDTH = LINE_ADDR_WIDTH + 1;
     localparam int RAM_ADDR_WIDTH    = LINE_ADDR_WIDTH + 1;
+    // Four slots let the read side hold the current output word, one queued follow-on
+    // word, and the two sync_dpram pipeline reads needed to sustain one pixel per rd_clk.
     localparam int READ_AHEAD_DEPTH  = 4;
 
     // wr_clk domain signals
@@ -302,8 +304,6 @@ module line_buffer #(
                     && (rd_issue_count == (rd_line_length - LINE_LENGTH_WIDTH'(1)));
 
                 case ({rd_fire, rd_push})
-                    2'b00: begin
-                    end
                     2'b01: begin
                         if (!rd_stage0_valid) begin
                             rd_stage0_pixel <= ram_rdata;

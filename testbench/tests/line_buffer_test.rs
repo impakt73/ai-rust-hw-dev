@@ -137,6 +137,8 @@ fn test_line_buffer_fast_writer_slow_reader_preserves_order_and_eol() {
     let mut write_line_index = 0usize;
     let mut write_pixel_index = 0usize;
 
+    // 160 steps is comfortably above the worst-case time for two short lines to cross the
+    // buffer with a 1:3 read clock ratio, including CDC synchronization and BRAM latency.
     for step in 0..160 {
         let rd_rise = step % 3 == 0;
         let rd_do_read = rd_rise && dut.rd_valid != 0;
