@@ -108,7 +108,7 @@ endif
 
 ifeq ($(TARGET),gowin_tang_primer_25k)
 PART = GW5A-LV25MG121NC1/I0
-DEVICE_VERSION = A
+DEVICE_VERSION = B
 FPGA_DIR = gowin_tang_primer_25k
 TOP_MODULE = gowin_tang_primer_25k_top
 DEFAULT_PROGRAM_MODE = sram

@@ -9,10 +9,9 @@ module gowin_tang_primer_25k_top #(
     parameter int BAUD_RATE = 1_000_000
 ) (
     input  wire logic clk,
-    input  wire logic rst_n_btn,
-    output logic      led,
-    output logic      led_done,
+    input  wire logic rst_btn,
     output logic      led_ready,
+    output logic      led_done,
     input  wire logic usb_rx,
     output logic      usb_tx
 );
@@ -21,28 +20,28 @@ module gowin_tang_primer_25k_top #(
     logic sys_clk;
     assign sys_clk = clk;
 
-    logic rst_n_btn_sync2;
-    logic rst_n_btn_debounced;
+    logic rst_btn_sync2;
+    logic rst_btn_debounced;
 
     // Keep synchronizer reset deasserted so it can safely sample the async
     // button even while downstream reset is asserted.
     ff_sync #(
         .WIDTH(1)
-    ) rst_n_btn_sync_inst (
+    ) rst_btn_sync_inst (
         .clk(sys_clk),
         .rst(1'b0),
-        .din(rst_n_btn),
-        .dout(rst_n_btn_sync2)
+        .din(rst_btn),
+        .dout(rst_btn_sync2)
     );
 
     debouncer #(
         .CLK_FREQ_HZ(50_000_000),
         .STABLE_TIME_US(BUTTON_DEBOUNCE_US)
-    ) rst_n_btn_debouncer_inst (
+    ) rst_btn_debouncer_inst (
         .clk(sys_clk),
-        .rst(~rst_n_btn_sync2),
-        .din(rst_n_btn_sync2),
-        .dout(rst_n_btn_debounced)
+        .rst(rst_btn_sync2),
+        .din(rst_btn_sync2),
+        .dout(rst_btn_debounced)
     );
 
     logic [7:0] sys_led_out;
@@ -55,7 +54,7 @@ module gowin_tang_primer_25k_top #(
         .BAUD_RATE(BAUD_RATE)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
-        .rst(~rst_n_btn_debounced),
+        .rst(rst_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),
@@ -63,9 +62,8 @@ module gowin_tang_primer_25k_top #(
         .rst_core()
     );
 
-    assign led       = sys_led_out[0];
+    assign led_ready = sys_led_out[0];
     assign led_done  = sys_led_out[1];
-    assign led_ready = sys_led_out[2];
 
 endmodule
 `default_nettype wire

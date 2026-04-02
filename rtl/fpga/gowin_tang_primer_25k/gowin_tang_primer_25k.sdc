@@ -7,8 +7,8 @@
 # 50 MHz on-board oscillator.
 create_clock -name clk_50mhz -period 20.000 [get_ports {clk}]
 
-# Active-low pushbutton reset is asynchronous to the design clocks.
-set_false_path -from [get_ports {rst_n_btn}]
+# Active-high pushbutton reset is asynchronous to the design clocks.
+set_false_path -from [get_ports {rst_btn}]
 
 # UART RX is asynchronous to sys_clk.
 set_false_path -from [get_ports {usb_rx}]
