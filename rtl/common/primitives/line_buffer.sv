@@ -87,6 +87,7 @@ module line_buffer #(
     logic                        wr_active;      // Writer is accepting pixels
     logic                        wr_sof_toggle;  // Toggles on each SOF event
     logic                        wr_sof_stall;   // Writer stalled waiting for SOF ack
+    logic                        wr_sof_prev;    // Previous wr_sof for edge detection
 
     // Per-buffer line length (index of last pixel written)
     logic [LINE_ADDR_WIDTH-1:0]  wr_line_len [0:1];
@@ -97,6 +98,7 @@ module line_buffer #(
     // Combinational write-side helpers
     logic                        wr_do_write;
     logic                        wr_next_buf_free;
+    logic                        wr_sof_edge;    // Rising edge of wr_sof
 
     // ================================================================
     //  Read-domain signals
@@ -132,6 +134,12 @@ module line_buffer #(
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_0_gray;
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_1_gray;
 
+    // Stability filter: only accept synchronized Gray values after they settle
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_0_gray_prev;
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_0_gray_stable;
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_1_gray_prev;
+    logic [LINE_ADDR_WIDTH-1:0]  rd_line_len_1_gray_stable;
+
     // Combinational read-side helpers
     logic [LINE_ADDR_WIDTH-1:0]  rd_line_len;
     logic                        rd_has_line;
@@ -153,6 +161,7 @@ module line_buffer #(
     assign wr_ready        = wr_active;
     assign wr_do_write     = wr_valid && wr_ready;
     assign wr_next_buf_free = (wr_bank == rd_bank_synced_wr);
+    assign wr_sof_edge     = wr_sof && !wr_sof_prev;
 
     // -- Read side --
     assign rd_valid        = rd_out_valid;
@@ -260,9 +269,31 @@ module line_buffer #(
         .dout (rd_line_len_1_gray)
     );
 
-    // Decode Gray-coded lengths back to binary in read domain
-    assign rd_line_len_0 = gray2bin(rd_line_len_0_gray);
-    assign rd_line_len_1 = gray2bin(rd_line_len_1_gray);
+    // Decode Gray-coded lengths back to binary in read domain.
+    // To avoid decoding transient, potentially invalid Gray words caused by
+    // non-adjacent multi-bit changes at EOL, require the synchronized Gray
+    // value to be stable for at least one full rd_clk cycle before accepting it.
+    always_ff @(posedge rd_clk) begin
+        if (rd_rst) begin
+            rd_line_len_0_gray_prev   <= '0;
+            rd_line_len_0_gray_stable <= '0;
+            rd_line_len_1_gray_prev   <= '0;
+            rd_line_len_1_gray_stable <= '0;
+        end else begin
+            if (rd_line_len_0_gray == rd_line_len_0_gray_prev) begin
+                rd_line_len_0_gray_stable <= rd_line_len_0_gray;
+            end
+            rd_line_len_0_gray_prev <= rd_line_len_0_gray;
+
+            if (rd_line_len_1_gray == rd_line_len_1_gray_prev) begin
+                rd_line_len_1_gray_stable <= rd_line_len_1_gray;
+            end
+            rd_line_len_1_gray_prev <= rd_line_len_1_gray;
+        end
+    end
+
+    assign rd_line_len_0 = gray2bin(rd_line_len_0_gray_stable);
+    assign rd_line_len_1 = gray2bin(rd_line_len_1_gray_stable);
 
     // wr_sof_toggle → read domain
     ff_sync #(
@@ -312,13 +343,17 @@ module line_buffer #(
             wr_active     <= 1'b1;
             wr_sof_toggle <= 1'b0;
             wr_sof_stall  <= 1'b0;
+            wr_sof_prev   <= 1'b0;
             // NOTE: wr_line_len[] is datapath payload — intentionally not reset.
             // Safe because a complete write (with EOL) always stores a valid length
             // before the read side can access it via the bank-swap handshake.
         end else begin
-            // SOF resets write address, marks a new frame, and stalls until
-            // the reader acknowledges to avoid same-bank read/write collisions.
-            if (wr_sof) begin
+            wr_sof_prev <= wr_sof;
+
+            // SOF rising edge resets write address, marks a new frame, and stalls
+            // until the reader acknowledges to avoid same-bank read/write collisions.
+            // Edge-detected to prevent multi-toggle if wr_sof is held >1 cycle.
+            if (wr_sof_edge) begin
                 wr_bank       <= 1'b0;
                 wr_addr       <= '0;
                 wr_active     <= 1'b0;
@@ -339,6 +374,13 @@ module line_buffer #(
                     end
                 end else begin
                     wr_addr <= wr_addr + LINE_ADDR_WIDTH'(1);
+`ifndef SYNTHESIS
+                    if (wr_addr == LINE_ADDR_WIDTH'(MAX_LINE_WIDTH - 1)) begin
+                        $fatal(1,
+                               "line_buffer: wr_addr overflow — %0d pixels without EOL (MAX_LINE_WIDTH=%0d)",
+                               MAX_LINE_WIDTH, MAX_LINE_WIDTH);
+                    end
+`endif
                 end
             end else if (!wr_active) begin
                 if (wr_sof_stall) begin
