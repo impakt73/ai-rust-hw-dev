@@ -6,9 +6,10 @@
 // bank.  The write side stores a complete scan line, then swaps banks.  The
 // read side drains a complete line from the opposite bank before swapping.
 //
-// The read-side staging register follows the same 2-stage load-pending pipeline
-// used by async_fifo, which hides the sync_dpram 2-cycle read latency behind
-// a continuously pre-fetched output register.
+// The read-side output pipeline extends the async_fifo 2-stage load pattern with
+// an additional prefetch register.  While the output register holds a valid pixel,
+// the DPRAM pre-loads the next pixel into the prefetch buffer.  On rd_fire, the
+// prefetch moves to output for a zero-bubble handoff whenever it is ready.
 //
 // Parameters:
 //   PIXEL_WIDTH    - Width of a single pixel in bits (default: 8)
@@ -106,9 +107,13 @@ module line_buffer #(
     logic                        rd_bank;        // Active read bank (0 or 1)
     logic [LINE_ADDR_WIDTH-1:0]  rd_addr;        // Pixel index within current line
 
-    // Output staging register (async_fifo pattern)
+    // Output staging register (async_fifo pattern + prefetch)
     logic                        rd_out_valid;
     logic [PIXEL_WIDTH-1:0]      rd_out_data;
+
+    // Prefetch register (holds next pixel pre-loaded from DPRAM)
+    logic                        rd_prefetch_valid;
+    logic [PIXEL_WIDTH-1:0]      rd_prefetch_data;
 
     // 2-stage load-pending pipeline (matches sync_dpram 2-cycle read latency)
     logic                        rd_load_s1;
@@ -176,12 +181,12 @@ module line_buffer #(
     assign rd_eol          = rd_out_valid && rd_is_last;
     assign rd_sof          = rd_out_valid && rd_sof_pending;
 
-    // Start a DPRAM fetch when no load is in flight and either:
+    // Start a DPRAM fetch when no load is in flight, prefetch is empty, and either:
     //   (a) the output is empty and a complete line is available, or
-    //   (b) the consumer just took a pixel and more pixels remain in the line.
-    assign rd_start_load = (!rd_load_pending) && (
+    //   (b) the output holds a pixel and more pixels remain (prefetch fill).
+    assign rd_start_load = (!rd_load_pending) && !rd_prefetch_valid && (
         (!rd_out_valid && rd_has_line) ||
-        (rd_fire && !rd_is_last)
+        (rd_out_valid && !rd_is_last)
     );
 
     // SOF edge detection: wr_sof_toggle crossed into read domain vs. previous
@@ -378,7 +383,7 @@ module line_buffer #(
                     if (wr_addr == LINE_ADDR_WIDTH'(MAX_LINE_WIDTH - 1)) begin
                         $fatal(1,
                                "line_buffer: wr_addr overflow — %0d pixels without EOL (MAX_LINE_WIDTH=%0d)",
-                               MAX_LINE_WIDTH, MAX_LINE_WIDTH);
+                               wr_addr + LINE_ADDR_WIDTH'(1), MAX_LINE_WIDTH);
                     end
 `endif
                 end
@@ -413,8 +418,9 @@ module line_buffer #(
             rd_load_s2         <= 1'b0;
             rd_sof_pending     <= 1'b0;
             rd_sof_toggle_prev <= 1'b0;
-            // NOTE: rd_out_data is datapath payload — intentionally not reset.
-            // Safely ignored when rd_out_valid is low after reset.
+            rd_prefetch_valid  <= 1'b0;
+            // NOTE: rd_out_data / rd_prefetch_data are datapath payload —
+            // intentionally not reset.  Safely ignored when valid flags are low.
         end else begin
             // ---------------------------------------------------------
             // SOF edge: hard-reset the entire read side for the new frame.
@@ -427,18 +433,28 @@ module line_buffer #(
                 rd_load_s2         <= 1'b0;
                 rd_sof_pending     <= 1'b1;
                 rd_sof_toggle_prev <= wr_sof_toggle_synced;
+                rd_prefetch_valid  <= 1'b0;
             end else begin
                 // -------------------------------------------------
-                // Read-side staging pipeline (mirrors async_fifo):
-                //   idle     (out_valid=0, pending=0) → loading
-                //   loading  (pending=1)              → valid
-                //   valid    (out_valid=1, pending=0)  → loading (on rd_fire)
+                // Read-side staging pipeline with prefetch register:
+                //
+                // While the output register holds a valid pixel, the
+                // DPRAM pre-loads the next pixel into a prefetch buffer.
+                // On rd_fire, the prefetch moves to output for a
+                // zero-bubble handoff whenever the prefetch is ready.
                 // -------------------------------------------------
 
-                // Stage 2 completes: capture DPRAM output into staging register.
+                // Stage 2 completes: direct DPRAM data to output or prefetch.
                 if (rd_load_s2) begin
-                    rd_out_data  <= ram_rdata;
-                    rd_out_valid <= 1'b1;
+                    if (!rd_out_valid) begin
+                        // Output empty → load directly into output register.
+                        rd_out_data  <= ram_rdata;
+                        rd_out_valid <= 1'b1;
+                    end else begin
+                        // Output occupied → load into prefetch buffer.
+                        rd_prefetch_data  <= ram_rdata;
+                        rd_prefetch_valid <= 1'b1;
+                    end
                 end
 
                 // Shift the load pipeline forward.
@@ -446,11 +462,6 @@ module line_buffer #(
                 rd_load_s1 <= 1'b0;
 
                 if (rd_fire) begin
-                    // Consumer accepted the staged pixel.
-                    rd_out_valid <= 1'b0;
-                    rd_load_s2  <= 1'b0;
-                    rd_load_s1  <= rd_start_load;
-
                     // Clear SOF flag once the first pixel of the frame is consumed.
                     if (rd_sof_pending) begin
                         rd_sof_pending <= 1'b0;
@@ -458,14 +469,31 @@ module line_buffer #(
 
                     if (rd_is_last) begin
                         // Last pixel of line — release this bank, move to next.
-                        rd_bank <= ~rd_bank;
-                        rd_addr <= '0;
+                        rd_bank           <= ~rd_bank;
+                        rd_addr           <= '0;
+                        rd_out_valid      <= 1'b0;
+                        rd_prefetch_valid <= 1'b0;
+                        rd_load_s1        <= 1'b0;
+                        rd_load_s2        <= 1'b0;
+                    end else if (rd_prefetch_valid) begin
+                        // Prefetch available → immediate handoff (zero bubble).
+                        rd_out_data       <= rd_prefetch_data;
+                        rd_out_valid      <= 1'b1;
+                        rd_prefetch_valid <= 1'b0;
+                        rd_addr           <= rd_addr + LINE_ADDR_WIDTH'(1);
+                    end else if (rd_load_s2) begin
+                        // DPRAM data arriving this same cycle → pass through.
+                        rd_out_data       <= ram_rdata;
+                        rd_out_valid      <= 1'b1;
+                        rd_prefetch_valid <= 1'b0;
+                        rd_addr           <= rd_addr + LINE_ADDR_WIDTH'(1);
                     end else begin
-                        // More pixels remain — advance the address.
-                        rd_addr <= rd_addr + LINE_ADDR_WIDTH'(1);
+                        // No data available yet → bubble.
+                        rd_out_valid <= 1'b0;
+                        rd_addr      <= rd_addr + LINE_ADDR_WIDTH'(1);
                     end
                 end else if (rd_start_load) begin
-                    // No rd_fire this cycle but a load can start (initial or idle).
+                    // No rd_fire this cycle — begin a prefetch or initial load.
                     rd_load_s1 <= 1'b1;
                 end
             end
