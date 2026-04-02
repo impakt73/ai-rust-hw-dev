@@ -164,6 +164,18 @@ pub struct AsyncFifoTestWrapper;
 pub struct AsyncFifoSync3Wrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/dual_clock_line_buffer_test_wrappers.sv",
+    name = "line_buffer_test_wrapper"
+)]
+pub struct LineBufferTestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/dual_clock_line_buffer_test_wrappers.sv",
+    name = "line_buffer_nonpow2_test_wrapper"
+)]
+pub struct LineBufferNonpow2TestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_fifo_test_wrapper.sv",
     name = "sync_fifo_test_wrapper"
 )]
@@ -506,6 +518,15 @@ pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "memory/sync_dpram.sv",
         "primitives/async_fifo.sv",
         "wrappers/async_fifo_sync3_wrapper.sv",
+    ])
+}
+
+pub fn create_line_buffer_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "memory/sync_dpram.sv",
+        "primitives/dual_clock_line_buffer.sv",
+        "wrappers/dual_clock_line_buffer_test_wrappers.sv",
     ])
 }
 
