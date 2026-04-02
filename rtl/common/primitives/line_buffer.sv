@@ -483,6 +483,9 @@ module line_buffer #(
                         rd_addr           <= rd_addr + LINE_ADDR_WIDTH'(1);
                     end else if (rd_load_s2) begin
                         // DPRAM data arriving this same cycle → pass through.
+                        // The rd_load_s2 block above also fires and assigns
+                        // rd_prefetch_{data,valid}; this branch's later NB
+                        // assignments override those (last-write-wins).
                         rd_out_data       <= ram_rdata;
                         rd_out_valid      <= 1'b1;
                         rd_prefetch_valid <= 1'b0;
