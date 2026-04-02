@@ -48,7 +48,7 @@ module dual_clock_line_buffer #(
     endfunction
 
     localparam int BANK_DEPTH      = ceil_pow2(LINE_PIXELS);
-    localparam int BANK_ADDR_WIDTH = (BANK_DEPTH <= 2) ? 1 : $clog2(BANK_DEPTH);
+    localparam int BANK_ADDR_WIDTH = (BANK_DEPTH == 1) ? 1 : $clog2(BANK_DEPTH);
     localparam int TOTAL_ADDR_WIDTH = BANK_ADDR_WIDTH + 1;
     localparam logic [BANK_ADDR_WIDTH-1:0] LAST_ADDR = BANK_ADDR_WIDTH'(LINE_PIXELS - 1);
 
@@ -92,8 +92,8 @@ module dual_clock_line_buffer #(
     endfunction
 
     initial begin
-        if (LINE_PIXELS < 2) begin
-            $fatal(1, "dual_clock_line_buffer: LINE_PIXELS must be >= 2, got %0d", LINE_PIXELS);
+        if (LINE_PIXELS < 1) begin
+            $fatal(1, "dual_clock_line_buffer: LINE_PIXELS must be >= 1, got %0d", LINE_PIXELS);
         end
         if (SYNC_STAGES < 2) begin
             $fatal(1, "dual_clock_line_buffer: SYNC_STAGES must be >= 2, got %0d", SYNC_STAGES);
@@ -190,6 +190,7 @@ module dual_clock_line_buffer #(
             rd_eol <= 1'b0;
 
             if (rd_pending_stage2) begin
+                // rdata payload is only meaningful while rd_valid is asserted.
                 rdata <= ram_rdata;
                 rd_valid <= 1'b1;
                 rd_eol <= rd_eol_stage2;
