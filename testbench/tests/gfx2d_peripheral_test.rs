@@ -453,7 +453,7 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
 }
 
 #[test]
-fn test_gfx2d_ram_regions_are_write_only_and_filter_unsupported_writes() {
+fn test_gfx2d_ram_windows_are_write_only() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
     let mut dut = runtime
         .create_model_simple::<Gfx2dPeripheralTestWrapper>()
@@ -500,7 +500,7 @@ fn test_gfx2d_ram_regions_are_write_only_and_filter_unsupported_writes() {
         "palette RAM must be write-only from the CPU"
     );
 
-    let configured_pixels = capture_active_frame_pixels(&mut dut, 2);
+    let baseline_pixels = capture_active_frame_pixels(&mut dut, 2);
 
     write_access_with_size(&mut dut, palette_addr(7), 0x0000_00EE, MEM_SIZE_BYTE);
     write_access_with_size(&mut dut, palette_addr(7), 0x0000_DDEE, MEM_SIZE_HALFWORD);
@@ -518,7 +518,7 @@ fn test_gfx2d_ram_regions_are_write_only_and_filter_unsupported_writes() {
 
     let pixels = capture_active_frame_pixels(&mut dut, 2);
     assert_eq!(
-        pixels, configured_pixels,
+        pixels, baseline_pixels,
         "unsupported writes must not perturb the renderer-visible RAM contents"
     );
 }

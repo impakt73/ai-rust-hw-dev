@@ -127,6 +127,8 @@ module gfx2d_peripheral #(
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
     assign periph_addr_offset = periph_mem_a_addr[15:0];
+    // Keep the MMIO path single-issue so the zero/non-zero response payload
+    // stays paired with exactly one accepted request.
     assign periph_mem_a_ready = !video_rst && !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
