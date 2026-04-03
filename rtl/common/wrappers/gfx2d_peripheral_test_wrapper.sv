@@ -34,10 +34,7 @@ module gfx2d_peripheral_test_wrapper (
         .TILE_WIDTH(8),
         .TILE_HEIGHT(8),
         .TILE_COLUMNS(2),
-        .TILE_ROWS(2),
-        .FONT_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_font_init.hex"),
-        .CHAR_MAP_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex"),
-        .PALETTE_INIT_FILE("../rtl/common/wrappers/bitmap_text_renderer_palette_init.hex")
+        .TILE_ROWS(2)
     ) u_gfx2d_peripheral (
         .sys_clk(sys_clk),
         .video_clk(video_clk),

@@ -15,6 +15,7 @@ Address Range            | Device              | Type | Description
 0xB0000000 - 0xB0000007  | FIFO                | Rust | Host communication FIFO
 0xC0000000 - 0xC0000013  | DMA                 | Rust | DMA controller
 0x20000000 - 0x2000001F  | System Controller   | RTL  | CPU control, LED output, elapsed time
+0x30000000 - 0x300063FF  | GFX2D Peripheral    | RTL  | Scroll registers and CPU-visible tile/font/palette RAMs
 0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
 0x80000000 - 0x8FFFFFFF  | DRAM                | Rust | System memory (256 MiB)
 ```
@@ -106,6 +107,30 @@ The DMA device provides hardware-accelerated memory-to-memory transfers.
 **Constants:** `DMA_BASE`, `DMA_SRC_ADDR`, `DMA_DST_ADDR`, `DMA_SIZE`, `DMA_STATUS`, `DMA_DISPATCH`
 
 ## RTL Peripherals (top-nibble decoded windows)
+
+### GFX2D Peripheral (0x30000000)
+
+Tile/sprite text renderer control space plus the three video-clocked RAMs that back
+the renderer.
+
+| Offset | Region/Register | Access | Description |
+|--------|-----------------|--------|-------------|
+| 0x0000 | SCROLL_X        | RW     | Horizontal scroll value, word access only |
+| 0x0004 | SCROLL_Y        | RW     | Vertical scroll value, word access only |
+| 0x1000-0x13FF | CHAR_MAP RAM | RW | 8-bit tile IDs, byte access only |
+| 0x2000-0x5FFF | FONT RAM | RW | 8-bit per-pixel palette indices, byte access only |
+| 0x6000-0x63FF | PALETTE RAM | RW | 24-bit RGB entries in 32-bit words, word access only |
+
+- **Size:** 25 KiB (`0x30000000 – 0x300063FF`) in the default 32x32-tile configuration.
+- **Access sizes:** `SCROLL_X`/`SCROLL_Y` and `PALETTE RAM` accept aligned word accesses only;
+  `CHAR_MAP RAM` and `FONT RAM` accept byte accesses only. Unsupported sizes are acknowledged
+  and dropped.
+- **Palette read/write format:** writes ignore `wdata[31:24]`; reads return `{8'h00, rgb24}`.
+- **Clocking:** CPU accesses cross into the video clock domain through `bus_cdc_bridge`; the
+  backing RAMs use `video_clk` on both ports.
+- **Constants:** `GFX2D_BASE`, `GFX2D_SIZE`, `GFX2D_SCROLL_X_OFFSET`, `GFX2D_SCROLL_Y_OFFSET`,
+  `GFX2D_CHAR_MAP_OFFSET`, `GFX2D_CHAR_MAP_SIZE`, `GFX2D_FONT_OFFSET`, `GFX2D_FONT_SIZE`,
+  `GFX2D_PALETTE_OFFSET`, `GFX2D_PALETTE_SIZE`
 
 ### SRAM Peripheral (0x70000000)
 

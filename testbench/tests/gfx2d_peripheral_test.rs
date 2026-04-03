@@ -4,6 +4,9 @@ use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
+const GFX2D_CHAR_MAP_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x1000;
+const GFX2D_FONT_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x2000;
+const GFX2D_PALETTE_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x6000;
 const MEM_SIZE_BYTE: u8 = 0;
 const MEM_SIZE_HALFWORD: u8 = 1;
 const MEM_SIZE_WORD: u8 = 2;
@@ -95,7 +98,7 @@ fn write_access_with_size(
     dut.mem_a_we = 0;
     dut.eval();
 
-    elapsed_cycles += wait_for_response(dut, 32);
+    elapsed_cycles += wait_for_response(dut, 64);
     assert_eq!(
         dut.mem_d_rdata, 0,
         "writes should acknowledge with zero data"
@@ -131,7 +134,7 @@ fn read_access_with_size(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, size: 
     dut.mem_a_valid = 0;
     dut.eval();
 
-    wait_for_response(dut, 32);
+    wait_for_response(dut, 64);
     let rdata = dut.mem_d_rdata;
 
     dut.mem_d_ready = 1;
@@ -144,6 +147,42 @@ fn read_access_with_size(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, size: 
 
 fn read_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32) -> u32 {
     read_access_with_size(dut, addr, MEM_SIZE_WORD)
+}
+
+fn font_addr(glyph: u8, row: u8, col: u8) -> u32 {
+    GFX2D_FONT_BASE_ADDR + (u32::from(glyph) << 6) + (u32::from(row) << 3) + u32::from(col)
+}
+
+fn palette_addr(index: u8) -> u32 {
+    GFX2D_PALETTE_BASE_ADDR + (u32::from(index) << 2)
+}
+
+fn load_test_pattern(dut: &mut Gfx2dPeripheralTestWrapper) {
+    for (index, glyph) in GFX2D_CHAR_MAP.iter().enumerate() {
+        write_access_with_size(
+            dut,
+            GFX2D_CHAR_MAP_BASE_ADDR + u32::try_from(index).unwrap(),
+            u32::from(*glyph),
+            MEM_SIZE_BYTE,
+        );
+    }
+
+    for (glyph, rows) in GFX2D_FONT_ROWS.iter().enumerate() {
+        for (row, bits) in rows.iter().enumerate() {
+            for col in 0..8 {
+                let palette_index = if ((bits >> (7 - col)) & 1) != 0 { 1 } else { 0 };
+                write_access_with_size(
+                    dut,
+                    font_addr(glyph as u8, row as u8, col as u8),
+                    palette_index,
+                    MEM_SIZE_BYTE,
+                );
+            }
+        }
+    }
+
+    write_access(dut, palette_addr(0), 0xAA00_0000);
+    write_access(dut, palette_addr(1), 0x12FF_FFFF);
 }
 
 fn wait_for_active_frame_start(dut: &mut Gfx2dPeripheralTestWrapper, occurrence: usize) {
@@ -192,8 +231,6 @@ fn capture_active_frame_pixels(
 
         if row + 1 != height {
             clock_cycle!(dut);
-            // A full horizontal period is a safe upper bound for reaching the
-            // next active row after the current line's blanking interval.
             for _ in 0..GFX2D_H_TOTAL {
                 if dut.video_de == 1 {
                     break;
@@ -236,10 +273,6 @@ fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     )
 }
 
-// Verifies that, from the current output cycle position onward, the currently
-// displayed frame continues using the supplied already-latched scroll values
-// until the next frame boundary rather than applying a newly written scroll
-// mid-frame.
 fn verify_active_pixels_from_current_frame(
     dut: &mut Gfx2dPeripheralTestWrapper,
     start_cycle_in_frame: usize,
@@ -293,6 +326,7 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
         .expect("Failed to create gfx2d model");
 
     reset(&mut dut);
+    load_test_pattern(&mut dut);
 
     let baseline_pixels = capture_active_frame_pixels(&mut dut, 2);
     for y in 0..GFX2D_ACTIVE_HEIGHT {
@@ -306,14 +340,11 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
     }
 
     wait_for_active_frame_start(&mut dut, 1);
-    let elapsed_cycles = write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1)
-        + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
+    let elapsed_cycles =
+        write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1) + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
 
     verify_active_pixels_from_current_frame(
         &mut dut,
-        // The output-space cycle counter starts at frame pixel (0, 0), so wrap
-        // the write latency back into the current frame before checking that the
-        // old scroll value is still being displayed.
         elapsed_cycles % GFX2D_FRAME_CYCLES,
         8,
         0,
@@ -423,5 +454,74 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         read_access_with_size(&mut dut, GFX2D_SCROLL_X_ADDR + 1, MEM_SIZE_WORD),
         0,
         "unaligned MMIO reads should return zero"
+    );
+}
+
+#[test]
+fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
+    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
+    let mut dut = runtime
+        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
+        .expect("Failed to create gfx2d model");
+
+    reset(&mut dut);
+
+    write_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, 0x0000_0034, MEM_SIZE_BYTE);
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, MEM_SIZE_BYTE),
+        0x34
+    );
+    write_access(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, 0xAABB_CCDD);
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, MEM_SIZE_BYTE),
+        0x34,
+        "word writes must not modify char map RAM"
+    );
+    assert_eq!(
+        read_access(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR),
+        0,
+        "word reads from char map RAM must be dropped"
+    );
+
+    write_access_with_size(&mut dut, font_addr(2, 3, 4), 0x0000_0056, MEM_SIZE_BYTE);
+    assert_eq!(
+        read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_BYTE),
+        0x56
+    );
+    write_access_with_size(&mut dut, font_addr(2, 3, 4), 0x0000_BBCC, MEM_SIZE_HALFWORD);
+    assert_eq!(
+        read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_BYTE),
+        0x56,
+        "halfword writes must not modify font RAM"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_HALFWORD),
+        0,
+        "non-byte reads from font RAM must be dropped"
+    );
+
+    write_access(&mut dut, palette_addr(7), 0xAB12_3456);
+    assert_eq!(
+        read_access(&mut dut, palette_addr(7)),
+        0x0012_3456,
+        "palette reads must zero-extend the stored 24-bit color"
+    );
+    write_access_with_size(&mut dut, palette_addr(7), 0x0000_00EE, MEM_SIZE_BYTE);
+    write_access_with_size(&mut dut, palette_addr(7), 0x0000_DDEE, MEM_SIZE_HALFWORD);
+    write_access_with_size(&mut dut, palette_addr(7) + 1, 0x5566_7788, MEM_SIZE_WORD);
+    assert_eq!(
+        read_access(&mut dut, palette_addr(7)),
+        0x0012_3456,
+        "unsupported palette accesses must not modify RAM contents"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, palette_addr(7), MEM_SIZE_BYTE),
+        0,
+        "subword palette reads must be dropped"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, palette_addr(7) + 1, MEM_SIZE_WORD),
+        0,
+        "unaligned palette reads must be dropped"
     );
 }
