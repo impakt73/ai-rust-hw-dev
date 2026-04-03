@@ -7,7 +7,8 @@ module bus_cdc_bridge #(
 ) (
     input wire logic                  sys_clk,
     input wire logic                  periph_clk,
-    input wire logic                  rst,
+    input wire logic                  sys_rst,
+    input wire logic                  periph_rst,
 
     input wire logic [ADDR_WIDTH-1:0] sys_mem_a_addr,
     input wire logic [DATA_WIDTH-1:0] sys_mem_a_wdata,
@@ -87,7 +88,7 @@ module bus_cdc_bridge #(
     end
 
     always_ff @(posedge sys_clk) begin
-        if (rst) begin
+        if (sys_rst) begin
             sys_a_src_valid <= 1'b0;
             sys_mem_a_ready <= 1'b1;
             sys_mem_d_valid <= 1'b0;
@@ -112,7 +113,7 @@ module bus_cdc_bridge #(
     assign d_cdc_dst_ready = !sys_mem_d_valid || sys_mem_d_ready;
 
     always_ff @(posedge periph_clk) begin
-        if (rst) begin
+        if (periph_rst) begin
             periph_mem_a_valid <= 1'b0;
             periph_d_src_valid <= 1'b0;
             periph_mem_d_ready <= 1'b1;
@@ -159,7 +160,8 @@ module bus_cdc_bridge #(
     ) u_addr_channel_cdc (
         .src_clk(sys_clk),
         .dst_clk(periph_clk),
-        .rst(rst),
+        .src_rst(sys_rst),
+        .dst_rst(periph_rst),
         .src_valid(sys_a_src_valid),
         .src_ready(a_cdc_src_ready),
         .src_data(sys_a_src_payload),
@@ -174,7 +176,8 @@ module bus_cdc_bridge #(
     ) u_data_channel_cdc (
         .src_clk(periph_clk),
         .dst_clk(sys_clk),
-        .rst(rst),
+        .src_rst(periph_rst),
+        .dst_rst(sys_rst),
         .src_valid(periph_d_src_valid),
         .src_ready(d_cdc_src_ready),
         .src_data(periph_d_src_payload),

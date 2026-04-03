@@ -17,7 +17,8 @@ module cdc_handshake_test_wrapper (
     ) u_cdc_handshake (
         .src_clk(src_clk),
         .dst_clk(dst_clk),
-        .rst(rst),
+        .src_rst(rst),
+        .dst_rst(rst),
         .src_valid(src_valid),
         .src_ready(src_ready),
         .src_data(src_data),
