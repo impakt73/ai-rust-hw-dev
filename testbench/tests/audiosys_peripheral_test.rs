@@ -162,7 +162,7 @@ fn test_audiosys_registers_reset_low_and_mask_reserved_control_bits() {
 }
 
 #[test]
-fn test_audiosys_control_register_is_at_base_addr_and_disable_mutes_output() {
+fn test_audiosys_control_register_is_at_base_addr() {
     let runtime =
         create_audiosys_peripheral_runtime().expect("Failed to create audiosys peripheral runtime");
     let mut dut = runtime
@@ -182,6 +182,20 @@ fn test_audiosys_control_register_is_at_base_addr_and_disable_mutes_output() {
         read_access(&mut dut, AUDIOSYS_CONTROL_ADDR),
         AUDIOSYS_ENABLE_BIT
     );
+}
+
+#[test]
+fn test_audiosys_disable_mutes_output() {
+    let runtime =
+        create_audiosys_peripheral_runtime().expect("Failed to create audiosys peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<AudiosysPeripheralTestWrapper>()
+        .expect("Failed to create audiosys peripheral model");
+
+    reset(&mut dut);
+
+    write_access(&mut dut, AUDIOSYS_TUNING_WORD_ADDR, TEST_TUNING_WORD);
+    write_access(&mut dut, AUDIOSYS_CONTROL_ADDR, AUDIOSYS_ENABLE_BIT);
 
     write_access(&mut dut, AUDIOSYS_CONTROL_ADDR, 0);
     assert_eq!(read_access(&mut dut, AUDIOSYS_CONTROL_ADDR), 0);
