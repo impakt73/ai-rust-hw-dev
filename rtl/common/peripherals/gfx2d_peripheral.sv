@@ -15,7 +15,10 @@ module gfx2d_peripheral #(
     parameter int unsigned TILE_HEIGHT = 8,
     parameter int unsigned TILE_COLUMNS = 32,
     parameter int unsigned TILE_ROWS = 32,
-    parameter int unsigned BUS_CDC_SYNC_STAGES = 3
+    parameter int unsigned BUS_CDC_SYNC_STAGES = 3,
+    parameter FONT_INIT_FILE = "",
+    parameter CHAR_MAP_INIT_FILE = "",
+    parameter PALETTE_INIT_FILE = ""
 ) (
     input  wire logic        sys_clk,
     input  wire logic        video_clk,
@@ -56,15 +59,13 @@ module gfx2d_peripheral #(
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH =
         (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
-    localparam int unsigned FONT_ADDR_WIDTH =
-        8 + (((TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT)) +
-        ((TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH)));
+    localparam int unsigned FONT_ADDR_WIDTH = 14;
     localparam int unsigned FONT_DEPTH = (1 << FONT_ADDR_WIDTH);
     localparam int unsigned PALETTE_ADDR_WIDTH = 8;
     localparam int unsigned PALETTE_DEPTH = (1 << PALETTE_ADDR_WIDTH);
-    localparam logic [15:0] CHAR_MAP_END_OFFSET = CHAR_MAP_BASE_OFFSET + CHARMAP_DEPTH;
-    localparam logic [15:0] FONT_END_OFFSET = FONT_BASE_OFFSET + FONT_DEPTH;
-    localparam logic [15:0] PALETTE_END_OFFSET = PALETTE_BASE_OFFSET + (PALETTE_DEPTH * 4);
+    localparam logic [15:0] CHAR_MAP_END_OFFSET = 16'(CHAR_MAP_BASE_OFFSET) + 16'(CHARMAP_DEPTH);
+    localparam logic [15:0] FONT_END_OFFSET = 16'(FONT_BASE_OFFSET) + 16'(FONT_DEPTH);
+    localparam logic [15:0] PALETTE_END_OFFSET = 16'(PALETTE_BASE_OFFSET) + 16'(PALETTE_DEPTH * 4);
     localparam int unsigned SCROLL_X_WIDTH =
         ((TILE_WIDTH * TILE_COLUMNS) <= 1) ? 1 : $clog2(TILE_WIDTH * TILE_COLUMNS);
     localparam int unsigned SCROLL_Y_WIDTH =
@@ -92,8 +93,10 @@ module gfx2d_peripheral #(
     logic        periph_char_map_read;
     logic        periph_font_read;
     logic        periph_palette_read;
-    logic        cpu_ram_read_pending;
-    ram_read_source_t cpu_ram_read_source;
+    logic        cpu_ram_read_pending_d0;
+    logic        cpu_ram_read_pending_d1;
+    ram_read_source_t cpu_ram_read_source_d0;
+    ram_read_source_t cpu_ram_read_source_d1;
 
     logic        periph_mem_a_handshake;
     logic        periph_mem_d_handshake;
@@ -136,7 +139,11 @@ module gfx2d_peripheral #(
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
     assign periph_addr_offset = periph_mem_a_addr[15:0];
-    assign periph_mem_a_ready = !video_rst && !cpu_ram_read_pending && !response_pending;
+    assign periph_mem_a_ready =
+        !video_rst &&
+        !cpu_ram_read_pending_d0 &&
+        !cpu_ram_read_pending_d1 &&
+        !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
     assign periph_byte_access = (periph_mem_a_size == 2'b00);
@@ -322,8 +329,10 @@ module gfx2d_peripheral #(
             scroll_y_reg <= 32'h0000_0000;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
-            cpu_ram_read_pending <= 1'b0;
-            cpu_ram_read_source <= RAM_READ_NONE;
+            cpu_ram_read_pending_d0 <= 1'b0;
+            cpu_ram_read_pending_d1 <= 1'b0;
+            cpu_ram_read_source_d0 <= RAM_READ_NONE;
+            cpu_ram_read_source_d1 <= RAM_READ_NONE;
             response_pending <= 1'b0;
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_HSYNC_ACTIVE_HIGH}};
@@ -337,11 +346,15 @@ module gfx2d_peripheral #(
                 response_pending <= 1'b0;
             end
 
-            if (cpu_ram_read_pending) begin
-                cpu_ram_read_pending <= 1'b0;
+            cpu_ram_read_pending_d1 <= cpu_ram_read_pending_d0;
+            cpu_ram_read_source_d1 <= cpu_ram_read_source_d0;
+            cpu_ram_read_pending_d0 <= 1'b0;
+            cpu_ram_read_source_d0 <= RAM_READ_NONE;
+
+            if (cpu_ram_read_pending_d1) begin
                 response_pending <= 1'b1;
 
-                case (cpu_ram_read_source)
+                case (cpu_ram_read_source_d1)
                     RAM_READ_CHAR: response_data <= {24'h00_00_00, char_mem_rdata};
                     RAM_READ_FONT: response_data <= {24'h00_00_00, font_mem_rdata};
                     RAM_READ_PALETTE: response_data <= {8'h00, palette_mem_rdata};
@@ -349,8 +362,6 @@ module gfx2d_peripheral #(
                         response_data <= 32'h0000_0000;
                     end
                 endcase
-
-                cpu_ram_read_source <= RAM_READ_NONE;
             end
 
             if (sync_vblank_start) begin
@@ -364,14 +375,14 @@ module gfx2d_peripheral #(
                 response_data <= 32'h0000_0000;
 
                 if (periph_char_map_read) begin
-                    cpu_ram_read_pending <= 1'b1;
-                    cpu_ram_read_source <= RAM_READ_CHAR;
+                    cpu_ram_read_pending_d0 <= 1'b1;
+                    cpu_ram_read_source_d0 <= RAM_READ_CHAR;
                 end else if (periph_font_read) begin
-                    cpu_ram_read_pending <= 1'b1;
-                    cpu_ram_read_source <= RAM_READ_FONT;
+                    cpu_ram_read_pending_d0 <= 1'b1;
+                    cpu_ram_read_source_d0 <= RAM_READ_FONT;
                 end else if (periph_palette_read) begin
-                    cpu_ram_read_pending <= 1'b1;
-                    cpu_ram_read_source <= RAM_READ_PALETTE;
+                    cpu_ram_read_pending_d0 <= 1'b1;
+                    cpu_ram_read_source_d0 <= RAM_READ_PALETTE;
                 end else begin
                     response_pending <= 1'b1;
                 end

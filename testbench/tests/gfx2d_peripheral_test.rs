@@ -340,16 +340,10 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
     }
 
     wait_for_active_frame_start(&mut dut, 1);
-    let elapsed_cycles =
-        write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1) + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
+    let elapsed_cycles = write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1)
+        + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
 
-    verify_active_pixels_from_current_frame(
-        &mut dut,
-        elapsed_cycles % GFX2D_FRAME_CYCLES,
-        8,
-        0,
-        0,
-    );
+    verify_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8, 0, 0);
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_X_ADDR), 1);
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_Y_ADDR), 1);
 
@@ -466,7 +460,12 @@ fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
 
     reset(&mut dut);
 
-    write_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, 0x0000_0034, MEM_SIZE_BYTE);
+    write_access_with_size(
+        &mut dut,
+        GFX2D_CHAR_MAP_BASE_ADDR,
+        0x0000_0034,
+        MEM_SIZE_BYTE,
+    );
     assert_eq!(
         read_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, MEM_SIZE_BYTE),
         0x34
