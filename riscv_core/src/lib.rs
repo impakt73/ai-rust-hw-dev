@@ -176,6 +176,12 @@ pub struct CdcHandshakeTestWrapper;
 pub struct CdcHandshakeParamWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/bus_cdc_bridge_test_wrapper.sv",
+    name = "bus_cdc_bridge_test_wrapper"
+)]
+pub struct BusCdcBridgeTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_fifo_test_wrapper.sv",
     name = "sync_fifo_test_wrapper"
 )]
@@ -537,6 +543,15 @@ pub fn create_cdc_handshake_param_runtime() -> Result<VerilatorRuntime, Box<dyn 
         "primitives/ff_sync.sv",
         "primitives/cdc_handshake.sv",
         "wrappers/cdc_handshake_param_wrapper.sv",
+    ])
+}
+
+pub fn create_bus_cdc_bridge_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "primitives/bus_cdc_bridge.sv",
+        "wrappers/bus_cdc_bridge_test_wrapper.sv",
     ])
 }
 
