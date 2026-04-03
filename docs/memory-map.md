@@ -144,7 +144,7 @@ Single read-only register exposing live button state sampled in the system bus c
 | 0x00   | GAMEPAD_STATE | RO | Bits [9:0] reflect dpad/buttons/triggers; bits [31:10] read as 0 |
 
 - **Bit mapping:** [0] up, [1] down, [2] left, [3] right, [4] A, [5] B, [6] X, [7] Y, [8] L, [9] R
-- **Access sizes:** Byte, halfword, and word accesses are all accepted; reads always return the full right-justified 32-bit state value.
+- **Access sizes:** Only aligned 32-bit word reads from offset `0x00` return button state. Byte reads, halfword reads, unaligned word reads, and reads to other offsets are acknowledged but return zero.
 - **Latency:** Single response register in the bus clock domain (no CDC path).
 - **Platform note:** The Analogue Pocket top inverts `cont1_key[9:0]` before driving the peripheral because Pocket button inputs are active-low.
 - **Constants:** `GAMEPAD_BASE`, `GAMEPAD_SIZE`, `GAMEPAD_STATE_OFFSET`, `GAMEPAD_DPAD_UP`, `GAMEPAD_DPAD_DOWN`, `GAMEPAD_DPAD_LEFT`, `GAMEPAD_DPAD_RIGHT`, `GAMEPAD_BTN_A`, `GAMEPAD_BTN_B`, `GAMEPAD_BTN_X`, `GAMEPAD_BTN_Y`, `GAMEPAD_TRIG_L`, `GAMEPAD_TRIG_R`

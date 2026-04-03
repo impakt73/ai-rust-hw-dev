@@ -6,6 +6,8 @@ use riscv_shared::bus::{
 };
 
 const GAMEPAD_BASE_ADDR: u32 = 0x5000_0000;
+const MEM_SIZE_BYTE: u8 = 0;
+const MEM_SIZE_HALFWORD: u8 = 1;
 const MEM_SIZE_WORD: u8 = 2;
 const GAMEPAD_BUTTON_MASK: u32 = 0x0000_03FF;
 const RESET_SETTLE_CYCLES: usize = 4;
@@ -47,10 +49,14 @@ fn reset(dut: &mut GamepadPeripheralTestWrapper) {
 
 /// Issue a single bus read and return the data.  Panics on timeout.
 fn read_access(dut: &mut GamepadPeripheralTestWrapper, addr: u32) -> u32 {
+    read_access_with_size(dut, addr, MEM_SIZE_WORD)
+}
+
+fn read_access_with_size(dut: &mut GamepadPeripheralTestWrapper, addr: u32, size: u8) -> u32 {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = 0;
     dut.mem_a_we = 0;
-    dut.mem_a_size = MEM_SIZE_WORD;
+    dut.mem_a_size = size;
     dut.mem_a_valid = 1;
     dut.eval();
 
@@ -87,10 +93,14 @@ fn read_access(dut: &mut GamepadPeripheralTestWrapper, addr: u32) -> u32 {
 
 /// Issue a single bus write and consume the ack response.
 fn write_access(dut: &mut GamepadPeripheralTestWrapper, addr: u32, wdata: u32) {
+    write_access_with_size(dut, addr, wdata, MEM_SIZE_WORD);
+}
+
+fn write_access_with_size(dut: &mut GamepadPeripheralTestWrapper, addr: u32, wdata: u32, size: u8) {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = wdata;
     dut.mem_a_we = 1;
-    dut.mem_a_size = MEM_SIZE_WORD;
+    dut.mem_a_size = size;
     dut.mem_a_valid = 1;
     dut.eval();
 
@@ -157,7 +167,7 @@ fn test_gamepad_all_buttons_pressed() {
     reset(&mut dut);
 
     // Press all 10 buttons (bits [9:0])
-    dut.gamepad_in = 0b_11_1111_1111;
+    dut.gamepad_in = 0b11_1111_1111;
     dut.eval();
 
     let state = read_access(&mut dut, GAMEPAD_BASE_ADDR);
@@ -235,13 +245,13 @@ fn test_gamepad_input_updates_reflected_between_reads() {
     reset(&mut dut);
 
     // First read: only dpad_up
-    dut.gamepad_in = 0b_00_0000_0001; // dpad_up
+    dut.gamepad_in = 0b00_0000_0001; // dpad_up
     dut.eval();
     let first = read_access(&mut dut, GAMEPAD_BASE_ADDR);
     assert_eq!(first, GAMEPAD_DPAD_UP);
 
     // Second read: only trig_r
-    dut.gamepad_in = 0b_10_0000_0000; // trig_r
+    dut.gamepad_in = 0b10_0000_0000; // trig_r
     dut.eval();
     let second = read_access(&mut dut, GAMEPAD_BASE_ADDR);
     assert_eq!(second, GAMEPAD_TRIG_R);
@@ -278,6 +288,75 @@ fn test_gamepad_writes_are_ignored() {
     );
 }
 
+/// Only aligned word reads from offset 0x00 return the live state value.
+#[test]
+fn test_gamepad_only_returns_state_at_word_offset_zero() {
+    let runtime =
+        create_gamepad_peripheral_runtime().expect("Failed to create gamepad peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<GamepadPeripheralTestWrapper>()
+        .expect("Failed to create gamepad peripheral model");
+
+    reset(&mut dut);
+
+    dut.gamepad_in = 0b01_0011_0101;
+    dut.eval();
+
+    assert_eq!(
+        read_access(&mut dut, GAMEPAD_BASE_ADDR),
+        0b01_0011_0101,
+        "aligned word read at offset 0 must return live button state"
+    );
+    assert_eq!(
+        read_access(&mut dut, GAMEPAD_BASE_ADDR + 4),
+        0,
+        "non-zero register offsets must read as zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GAMEPAD_BASE_ADDR, MEM_SIZE_HALFWORD),
+        0,
+        "halfword reads must be acknowledged with zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GAMEPAD_BASE_ADDR, MEM_SIZE_BYTE),
+        0,
+        "byte reads must be acknowledged with zero"
+    );
+    assert_eq!(
+        read_access(&mut dut, GAMEPAD_BASE_ADDR + 2),
+        0,
+        "unaligned word reads must be acknowledged with zero"
+    );
+}
+
+/// Unsupported writes still acknowledge cleanly and do not mutate visible state.
+#[test]
+fn test_gamepad_unsupported_writes_acknowledge_without_effect() {
+    let runtime =
+        create_gamepad_peripheral_runtime().expect("Failed to create gamepad peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<GamepadPeripheralTestWrapper>()
+        .expect("Failed to create gamepad peripheral model");
+
+    reset(&mut dut);
+
+    dut.gamepad_in = u16::try_from(GAMEPAD_BTN_B | GAMEPAD_TRIG_L).unwrap();
+    dut.eval();
+
+    write_access_with_size(
+        &mut dut,
+        GAMEPAD_BASE_ADDR + 4,
+        0xFFFF_FFFF,
+        MEM_SIZE_HALFWORD,
+    );
+
+    assert_eq!(
+        read_access(&mut dut, GAMEPAD_BASE_ADDR),
+        GAMEPAD_BTN_B | GAMEPAD_TRIG_L,
+        "unsupported writes must not affect the visible button state"
+    );
+}
+
 /// Reserved bits [31:10] always read as zero regardless of gamepad_in.
 #[test]
 fn test_gamepad_reserved_bits_always_zero() {
@@ -290,7 +369,7 @@ fn test_gamepad_reserved_bits_always_zero() {
     reset(&mut dut);
 
     // Drive all 10 buttons; the upper 22 bits must still be zero
-    dut.gamepad_in = 0b_11_1111_1111;
+    dut.gamepad_in = 0b11_1111_1111;
     dut.eval();
 
     let state = read_access(&mut dut, GAMEPAD_BASE_ADDR);

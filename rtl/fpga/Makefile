@@ -61,6 +61,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/peripherals/gfx2d_peripheral.sv \
 	$(RTL_DIR)/peripherals/audiosys_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
+	$(RTL_DIR)/peripherals/gamepad_peripheral.sv \
 	$(RTL_DIR)/top.sv
 
 ifeq ($(TARGET),ecp5_icepi_zero)

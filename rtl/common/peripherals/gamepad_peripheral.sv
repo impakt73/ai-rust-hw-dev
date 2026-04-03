@@ -25,7 +25,8 @@
 // On Analogue Pocket hardware gamepad_in should be driven with
 // ~cont1_key[9:0] (inverting the active-low Pocket key signals).
 //
-// Writes are silently accepted and acknowledged with 32'h0 data.
+// Only aligned 32-bit reads at byte offset 0x00 return button state.
+// Unsupported offsets/sizes and all writes are acknowledged with 32'h0 data.
 
 module gamepad_peripheral (
     input  wire logic        clk,
@@ -61,12 +62,21 @@ module gamepad_peripheral (
 
     localparam int unsigned GAMEPAD_BUTTON_BITS = 10;
     localparam int unsigned GAMEPAD_RESERVED_BITS = 32 - GAMEPAD_BUTTON_BITS;
+    localparam logic [3:0] REG_GAMEPAD_STATE = 4'h0;
 
     logic mem_a_handshake;
     logic mem_d_handshake;
+    logic word_read_access;
+    logic state_reg_access;
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    // mem_a_size==2'b10 is the project bus encoding for an aligned 32-bit word access.
+    assign word_read_access =
+        !mem_a_we &&
+        (mem_a_size == 2'b10) &&
+        (mem_a_addr[1:0] == 2'b00);
+    assign state_reg_access = word_read_access && (mem_a_addr[3:0] == REG_GAMEPAD_STATE);
 
     // Accept a new request only when no response is outstanding.
     assign mem_a_ready = !response_pending;
@@ -90,29 +100,26 @@ module gamepad_peripheral (
                 if (mem_a_we) begin
                     // Writes are silently accepted; the write data is discarded.
                     response_data <= 32'h0000_0000;
-                end else begin
+                end else if (state_reg_access) begin
                     // Sample current button state into the response register.
-                    // Address and size decoding are intentionally omitted: there
-                    // is a single register that responds to any byte offset.
                     response_data <= {
                         {GAMEPAD_RESERVED_BITS{1'b0}},
                         gamepad_in[GAMEPAD_BUTTON_BITS-1:0]
                     };
+                end else begin
+                    response_data <= 32'h0000_0000;
                 end
                 response_pending <= 1'b1;
             end
         end
     end
 
-    // mem_a_addr, mem_a_wdata, and mem_a_size are part of the standard bus
-    // interface but are not functionally needed by this peripheral (single
-    // register, writes ignored, any access size allowed).  They are listed as
-    // explicit inputs so the module remains a drop-in for the common bus
-    // fabric; synthesis will optimise away the unused connections.
-    // Suppress Verilator lint warnings for those intentionally unused inputs.
+    // mem_a_wdata is part of the standard bus interface but is only ignored for
+    // read-only accesses and discarded writes. Keep the port for drop-in bus
+    // compatibility and consume it to avoid lint noise.
     /* verilator lint_off UNUSED */
-    logic unused_bus_inputs;
-    assign unused_bus_inputs = ^mem_a_addr ^ ^mem_a_wdata ^ ^mem_a_size;
+    logic unused_write_data;
+    assign unused_write_data = ^mem_a_wdata;
     /* verilator lint_on UNUSED */
 
 endmodule
