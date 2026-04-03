@@ -35,8 +35,8 @@ fn reset(dut: &mut BusCdcBridgeTestWrapper) {
     tick(dut, true, true);
 }
 
-fn wait_for_periph_request(dut: &mut BusCdcBridgeTestWrapper, limit: usize) {
-    for _ in 0..limit {
+fn wait_for_periph_request(dut: &mut BusCdcBridgeTestWrapper, max_cycles: usize) {
+    for _ in 0..max_cycles {
         if dut.periph_mem_a_valid != 0 {
             return;
         }
@@ -46,8 +46,8 @@ fn wait_for_periph_request(dut: &mut BusCdcBridgeTestWrapper, limit: usize) {
     panic!("timed out waiting for peripheral A-channel request");
 }
 
-fn wait_for_sys_response(dut: &mut BusCdcBridgeTestWrapper, limit: usize) {
-    for _ in 0..limit {
+fn wait_for_sys_response(dut: &mut BusCdcBridgeTestWrapper, max_cycles: usize) {
+    for _ in 0..max_cycles {
         if dut.sys_mem_d_valid != 0 {
             return;
         }
