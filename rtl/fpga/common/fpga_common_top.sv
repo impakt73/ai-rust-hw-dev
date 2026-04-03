@@ -8,7 +8,7 @@ module fpga_common_top #(
     parameter int RESET_CYCLES = 25_000_000,
     parameter int BAUD_RATE = 1_000_000,
     parameter int unsigned GFX2D_BASE_ADDR = 32'h3000_0000,
-    parameter int unsigned GFX2D_ADDR_SIZE = 32'h0000_0020,
+    parameter int unsigned GFX2D_ADDR_SIZE = 32'h0000_6400,
     parameter int unsigned AUDIOSYS_BASE_ADDR = 32'h6000_0000,
     parameter int unsigned AUDIOSYS_ADDR_SIZE = 32'h0000_0020,
     parameter int unsigned GFX2D_VIDEO_ACTIVE_WIDTH = 256,
@@ -25,9 +25,6 @@ module fpga_common_top #(
     parameter int unsigned GFX2D_TILE_HEIGHT = 8,
     parameter int unsigned GFX2D_TILE_COLUMNS = 32,
     parameter int unsigned GFX2D_TILE_ROWS = 32,
-    parameter GFX2D_FONT_INIT_FILE = "../common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter GFX2D_CHAR_MAP_INIT_FILE = "../common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter GFX2D_PALETTE_INIT_FILE = "../common/wrappers/bitmap_text_renderer_palette_init.hex",
     parameter AUDIOSYS_INIT_FILE = "../fpga/cyclonev_analogue_pocket/src/fpga/core/sine_table_init.hex"
 ) (
     input wire logic       sys_clk,
@@ -92,9 +89,6 @@ module fpga_common_top #(
         .GFX2D_TILE_HEIGHT(GFX2D_TILE_HEIGHT),
         .GFX2D_TILE_COLUMNS(GFX2D_TILE_COLUMNS),
         .GFX2D_TILE_ROWS(GFX2D_TILE_ROWS),
-        .GFX2D_FONT_INIT_FILE(GFX2D_FONT_INIT_FILE),
-        .GFX2D_CHAR_MAP_INIT_FILE(GFX2D_CHAR_MAP_INIT_FILE),
-        .GFX2D_PALETTE_INIT_FILE(GFX2D_PALETTE_INIT_FILE),
         .AUDIOSYS_INIT_FILE(AUDIOSYS_INIT_FILE)
     ) cpu_inst (
         .clk(sys_clk),

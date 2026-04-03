@@ -15,10 +15,7 @@ module gfx2d_peripheral #(
     parameter int unsigned TILE_HEIGHT = 8,
     parameter int unsigned TILE_COLUMNS = 32,
     parameter int unsigned TILE_ROWS = 32,
-    parameter int unsigned BUS_CDC_SYNC_STAGES = 3,
-    parameter FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter int unsigned BUS_CDC_SYNC_STAGES = 3
 ) (
     input  wire logic        sys_clk,
     input  wire logic        video_clk,
@@ -39,8 +36,12 @@ module gfx2d_peripheral #(
     output logic             video_skip
 );
 
-    localparam logic [4:0] REG_SCROLL_X = 5'h00;
-    localparam logic [4:0] REG_SCROLL_Y = 5'h04;
+    localparam logic [15:0] REG_SCROLL_X = 16'h0000;
+    localparam logic [15:0] REG_SCROLL_Y = 16'h0004;
+    localparam logic [15:0] CHAR_MAP_BASE_OFFSET = 16'h1000;
+    localparam logic [15:0] FONT_BASE_OFFSET = 16'h2000;
+    localparam logic [15:0] PALETTE_BASE_OFFSET = 16'h6000;
+    localparam logic [63:0] PERIPHERAL_APERTURE_BYTES = 64'd65536;
     localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
     localparam int unsigned ACTIVE_X_WIDTH =
         (VIDEO_ACTIVE_WIDTH <= 1) ? 1 : $clog2(VIDEO_ACTIVE_WIDTH);
@@ -52,6 +53,18 @@ module gfx2d_peripheral #(
     localparam int unsigned FONT_ADDR_WIDTH =
         8 + (((TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT)) +
         ((TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH)));
+    localparam int unsigned FONT_DEPTH = (1 << FONT_ADDR_WIDTH);
+    localparam int unsigned PALETTE_ADDR_WIDTH = 8;
+    localparam int unsigned PALETTE_DEPTH = (1 << PALETTE_ADDR_WIDTH);
+    localparam int unsigned CHARMAP_SPAN_BYTES = CHARMAP_DEPTH;
+    localparam int unsigned FONT_SPAN_BYTES = FONT_DEPTH;
+    localparam int unsigned PALETTE_SPAN_BYTES = PALETTE_DEPTH * 4;
+    localparam logic [63:0] CHAR_MAP_BASE_OFFSET_U = {48'h0, CHAR_MAP_BASE_OFFSET};
+    localparam logic [63:0] FONT_BASE_OFFSET_U = {48'h0, FONT_BASE_OFFSET};
+    localparam logic [63:0] PALETTE_BASE_OFFSET_U = {48'h0, PALETTE_BASE_OFFSET};
+    localparam logic [15:0] CHAR_MAP_END_OFFSET = 16'(CHAR_MAP_BASE_OFFSET) + 16'(CHARMAP_DEPTH);
+    localparam logic [15:0] FONT_END_OFFSET = 16'(FONT_BASE_OFFSET) + 16'(FONT_DEPTH);
+    localparam logic [15:0] PALETTE_END_OFFSET = 16'(PALETTE_BASE_OFFSET) + 16'(PALETTE_DEPTH * 4);
     localparam int unsigned SCROLL_X_WIDTH =
         ((TILE_WIDTH * TILE_COLUMNS) <= 1) ? 1 : $clog2(TILE_WIDTH * TILE_COLUMNS);
     localparam int unsigned SCROLL_Y_WIDTH =
@@ -69,7 +82,13 @@ module gfx2d_peripheral #(
     logic [31:0] periph_mem_d_rdata;
     logic        periph_mem_d_valid;
     logic        periph_mem_d_ready;
+    logic [15:0] periph_addr_offset;
+    logic        periph_byte_access;
     logic        periph_word_access;
+    logic        periph_reg_access;
+    logic        periph_char_map_access;
+    logic        periph_font_access;
+    logic        periph_palette_access;
 
     logic        periph_mem_a_handshake;
     logic        periph_mem_d_handshake;
@@ -86,10 +105,22 @@ module gfx2d_peripheral #(
     logic        sync_vblank_start;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_ram_waddr;
+    logic [CHARMAP_ADDR_WIDTH-1:0] char_ram_raddr;
+    logic [7:0] char_ram_wdata;
+    logic       char_ram_we;
     logic [CHARMAP_ADDR_WIDTH-1:0] char_mem_addr;
     logic [7:0] char_mem_rdata;
+    logic [FONT_ADDR_WIDTH-1:0] font_ram_waddr;
+    logic [FONT_ADDR_WIDTH-1:0] font_ram_raddr;
+    logic [7:0] font_ram_wdata;
+    logic       font_ram_we;
     logic [FONT_ADDR_WIDTH-1:0] font_mem_addr;
     logic [7:0] font_mem_rdata;
+    logic [PALETTE_ADDR_WIDTH-1:0] palette_ram_waddr;
+    logic [PALETTE_ADDR_WIDTH-1:0] palette_ram_raddr;
+    logic [23:0] palette_ram_wdata;
+    logic        palette_ram_we;
     logic [7:0] palette_mem_addr;
     logic [23:0] palette_mem_rdata;
     logic [23:0] renderer_video_rgb;
@@ -97,12 +128,64 @@ module gfx2d_peripheral #(
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_hs_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_vs_pipe;
 
+`ifndef SYNTHESIS
+    initial begin
+        if (!(CHAR_MAP_BASE_OFFSET < FONT_BASE_OFFSET)) begin
+            $fatal(1, "gfx2d_peripheral requires char map window base before font window base");
+        end
+        if (!(FONT_BASE_OFFSET < PALETTE_BASE_OFFSET)) begin
+            $fatal(1, "gfx2d_peripheral requires font window base before palette window base");
+        end
+        if ((CHAR_MAP_BASE_OFFSET_U + 64'(CHARMAP_SPAN_BYTES)) > FONT_BASE_OFFSET_U) begin
+            $fatal(1, "gfx2d_peripheral char map window overlaps font window");
+        end
+        if ((FONT_BASE_OFFSET_U + 64'(FONT_SPAN_BYTES)) > PALETTE_BASE_OFFSET_U) begin
+            $fatal(1, "gfx2d_peripheral font window overlaps palette window");
+        end
+        if ((PALETTE_BASE_OFFSET_U + 64'(PALETTE_SPAN_BYTES)) > PERIPHERAL_APERTURE_BYTES) begin
+            $fatal(1, "gfx2d_peripheral palette window exceeds 64 KiB peripheral aperture");
+        end
+    end
+`endif
+
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
+    assign periph_addr_offset = periph_mem_a_addr[15:0];
+    // Keep the MMIO path single-issue so the zero/non-zero response payload
+    // stays paired with exactly one accepted request.
     assign periph_mem_a_ready = !video_rst && !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
+    assign periph_byte_access = (periph_mem_a_size == 2'b00);
     assign periph_word_access = (periph_mem_a_size == 2'b10) && (periph_mem_a_addr[1:0] == 2'b00);
+    assign periph_reg_access = periph_word_access && (periph_addr_offset < CHAR_MAP_BASE_OFFSET);
+    assign periph_char_map_access =
+        periph_byte_access &&
+        (periph_addr_offset >= CHAR_MAP_BASE_OFFSET) &&
+        (periph_addr_offset < CHAR_MAP_END_OFFSET);
+    assign periph_font_access =
+        periph_byte_access &&
+        (periph_addr_offset >= FONT_BASE_OFFSET) &&
+        (periph_addr_offset < FONT_END_OFFSET);
+    assign periph_palette_access =
+        periph_word_access &&
+        (periph_addr_offset >= PALETTE_BASE_OFFSET) &&
+        (periph_addr_offset < PALETTE_END_OFFSET);
+
+    assign char_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_char_map_access;
+    assign char_ram_waddr = CHARMAP_ADDR_WIDTH'(periph_addr_offset - CHAR_MAP_BASE_OFFSET);
+    assign char_ram_wdata = periph_mem_a_wdata[7:0];
+    assign char_ram_raddr = char_mem_addr;
+
+    assign font_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_font_access;
+    assign font_ram_waddr = FONT_ADDR_WIDTH'(periph_addr_offset - FONT_BASE_OFFSET);
+    assign font_ram_wdata = periph_mem_a_wdata[7:0];
+    assign font_ram_raddr = font_mem_addr;
+
+    assign palette_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_palette_access;
+    assign palette_ram_waddr = PALETTE_ADDR_WIDTH'((periph_addr_offset - PALETTE_BASE_OFFSET) >> 2);
+    assign palette_ram_wdata = periph_mem_a_wdata[23:0];
+    assign palette_ram_raddr = palette_mem_addr;
 
     assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
@@ -180,33 +263,42 @@ module gfx2d_peripheral #(
         .scan_y()
     );
 
-    sync_sprom #(
+    sync_dpram #(
         .DATA_WIDTH(8),
-        .ADDR_WIDTH(CHARMAP_ADDR_WIDTH),
-        .INIT_FILE(CHAR_MAP_INIT_FILE)
-    ) u_char_map_rom (
-        .clk(video_clk),
-        .addr(char_mem_addr),
+        .ADDR_WIDTH(CHARMAP_ADDR_WIDTH)
+    ) u_char_map_ram (
+        .wclk(video_clk),
+        .rclk(video_clk),
+        .we(char_ram_we),
+        .waddr(char_ram_waddr),
+        .wdata(char_ram_wdata),
+        .raddr(char_ram_raddr),
         .rdata(char_mem_rdata)
     );
 
-    sync_sprom #(
+    sync_dpram #(
         .DATA_WIDTH(8),
-        .ADDR_WIDTH(FONT_ADDR_WIDTH),
-        .INIT_FILE(FONT_INIT_FILE)
-    ) u_font_rom (
-        .clk(video_clk),
-        .addr(font_mem_addr),
+        .ADDR_WIDTH(FONT_ADDR_WIDTH)
+    ) u_font_ram (
+        .wclk(video_clk),
+        .rclk(video_clk),
+        .we(font_ram_we),
+        .waddr(font_ram_waddr),
+        .wdata(font_ram_wdata),
+        .raddr(font_ram_raddr),
         .rdata(font_mem_rdata)
     );
 
-    sync_sprom #(
+    sync_dpram #(
         .DATA_WIDTH(24),
-        .ADDR_WIDTH(8),
-        .INIT_FILE(PALETTE_INIT_FILE)
-    ) u_palette_rom (
-        .clk(video_clk),
-        .addr(palette_mem_addr),
+        .ADDR_WIDTH(PALETTE_ADDR_WIDTH)
+    ) u_palette_ram (
+        .wclk(video_clk),
+        .rclk(video_clk),
+        .we(palette_ram_we),
+        .waddr(palette_ram_waddr),
+        .wdata(palette_ram_wdata),
+        .raddr(palette_ram_raddr),
         .rdata(palette_mem_rdata)
     );
 
@@ -263,16 +355,16 @@ module gfx2d_peripheral #(
                 response_data <= 32'h0000_0000;
                 response_pending <= 1'b1;
 
-                if (periph_word_access) begin
+                if (periph_reg_access) begin
                     if (periph_mem_a_we) begin
-                        case (periph_mem_a_addr[4:0])
+                        case (periph_addr_offset)
                             REG_SCROLL_X: scroll_x_reg <= periph_mem_a_wdata;
                             REG_SCROLL_Y: scroll_y_reg <= periph_mem_a_wdata;
                             default: begin
                             end
                         endcase
                     end else begin
-                        case (periph_mem_a_addr[4:0])
+                        case (periph_addr_offset)
                             REG_SCROLL_X: response_data <= scroll_x_reg;
                             REG_SCROLL_Y: response_data <= scroll_y_reg;
                             default: response_data <= 32'h0000_0000;

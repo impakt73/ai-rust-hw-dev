@@ -607,7 +607,7 @@ pub fn create_gfx2d_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "primitives/ff_sync.sv",
         "primitives/cdc_handshake.sv",
         "primitives/bus_cdc_bridge.sv",
-        "memory/sync_sprom.sv",
+        "memory/sync_dpram.sv",
         "primitives/video_sync.sv",
         "primitives/bitmap_text_renderer.sv",
         "peripherals/gfx2d_peripheral.sv",

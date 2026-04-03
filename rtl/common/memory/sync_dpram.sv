@@ -61,7 +61,9 @@ module sync_dpram #(
     always_ff @(posedge wclk) begin
         if (we) begin
             /* verilator lint_off WIDTHEXPAND */
+            /* verilator lint_off WIDTHTRUNC */
             mem[waddr] <= wdata;
+            /* verilator lint_on WIDTHTRUNC */
             /* verilator lint_on WIDTHEXPAND */
         end
     end
@@ -74,7 +76,9 @@ module sync_dpram #(
 
     always_ff @(posedge rclk) begin
         /* verilator lint_off WIDTHEXPAND */
+        /* verilator lint_off WIDTHTRUNC */
         rdata_pipe <= mem[raddr];
+        /* verilator lint_on WIDTHTRUNC */
         /* verilator lint_on WIDTHEXPAND */
         rdata <= rdata_pipe;
     end
