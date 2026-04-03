@@ -104,6 +104,7 @@ module artix7_alchitry_au_top #(
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
         .video_clk(1'b0),
+        .audio_clk(1'b0),
         .rst(~pll_locked_sync2),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
@@ -114,7 +115,9 @@ module artix7_alchitry_au_top #(
         .video_de(),
         .video_skip(),
         .video_vs(),
-        .video_hs()
+        .video_hs(),
+        .audio_dac(),
+        .audio_lrclk()
     );
 
     assign led = sys_led_out;

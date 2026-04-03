@@ -206,6 +206,12 @@ pub struct SramPeripheralTestWrapper;
 pub struct Gfx2dPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/audiosys_peripheral_test_wrapper.sv",
+    name = "audiosys_peripheral_test_wrapper"
+)]
+pub struct AudiosysPeripheralTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_sprom_test_wrapper.sv",
     name = "sync_sprom_test_wrapper"
 )]
@@ -346,6 +352,8 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "primitives/bus_cdc_bridge.sv",
         "primitives/video_sync.sv",
         "primitives/bitmap_text_renderer.sv",
+        "primitives/sine_table.sv",
+        "primitives/tone_generator.sv",
         "cpu/cpu.sv",               // CPU core
         "memory/sync_dpram.sv",     // BRAM-friendly simple dual-port RAM
         "memory/registered_bus.sv", // Registered bus helper used by top-level peripherals
@@ -357,7 +365,9 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/host_bus_rx.sv",  // Host bus receive path used by host_bus_interface
         "io/host_bus_tx.sv",  // Host bus transmit path used by host_bus_interface
+        "io/i2s_serializer.sv",
         "io/sys_led_controller.sv", // System LED controller
+        "peripherals/audiosys_peripheral.sv", // Audio MMIO peripheral
         "peripherals/gfx2d_peripheral.sv", // GFX2D peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
         "memory/sram.sv",     // SRAM module used by SRAM peripheral
@@ -602,6 +612,21 @@ pub fn create_gfx2d_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "primitives/bitmap_text_renderer.sv",
         "peripherals/gfx2d_peripheral.sv",
         "wrappers/gfx2d_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_audiosys_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "primitives/bus_cdc_bridge.sv",
+        "memory/sync_sprom.sv",
+        "primitives/sine_table.sv",
+        "primitives/tone_generator.sv",
+        "io/i2s_serializer.sv",
+        "peripherals/audiosys_peripheral.sv",
+        "wrappers/audiosys_peripheral_test_wrapper.sv",
     ])
 }
 
