@@ -22,9 +22,9 @@ module fpga_common_top #(
     parameter int unsigned GFX2D_TILE_HEIGHT = 8,
     parameter int unsigned GFX2D_TILE_COLUMNS = 32,
     parameter int unsigned GFX2D_TILE_ROWS = 32,
-    parameter string GFX2D_FONT_INIT_FILE = "../common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter string GFX2D_CHAR_MAP_INIT_FILE = "../common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter string GFX2D_PALETTE_INIT_FILE = "../common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter GFX2D_FONT_INIT_FILE = "../common/wrappers/bitmap_text_renderer_font_init.hex",
+    parameter GFX2D_CHAR_MAP_INIT_FILE = "../common/wrappers/bitmap_text_renderer_char_map_init.hex",
+    parameter GFX2D_PALETTE_INIT_FILE = "../common/wrappers/bitmap_text_renderer_palette_init.hex"
 ) (
     input wire logic       sys_clk,
     input wire logic       video_clk,

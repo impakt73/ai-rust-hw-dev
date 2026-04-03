@@ -339,19 +339,19 @@ fn create_runtime(files: &[&str]) -> Result<VerilatorRuntime, Box<dyn std::error
 // Helper function to create a runtime for the full CPU
 pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
     create_runtime(&[
-        "top.sv",                                      // Top-level wrapper with RTL peripherals
-        "primitives/reset_controller.sv",              // Power-on reset controller
+        "top.sv",                         // Top-level wrapper with RTL peripherals
+        "primitives/reset_controller.sv", // Power-on reset controller
         "primitives/ff_sync.sv",
         "primitives/cdc_handshake.sv",
         "primitives/bus_cdc_bridge.sv",
         "primitives/video_sync.sv",
         "primitives/bitmap_text_renderer.sv",
-        "cpu/cpu.sv",                                  // CPU core
-        "memory/sync_dpram.sv",                        // BRAM-friendly simple dual-port RAM
+        "cpu/cpu.sv",           // CPU core
+        "memory/sync_dpram.sv", // BRAM-friendly simple dual-port RAM
         "memory/sync_sprom.sv",
-        "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
-        "primitives/square_wave_generator.sv",         // System LED boot blink generator
-        "primitives/activity_indicator.sv",            // System LED activity indicators
+        "primitives/sync_fifo.sv",             // Generic synchronous FIFO
+        "primitives/square_wave_generator.sv", // System LED boot blink generator
+        "primitives/activity_indicator.sv",    // System LED activity indicators
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller

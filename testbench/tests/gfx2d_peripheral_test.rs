@@ -4,15 +4,15 @@ use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
-const SIZE_WORD: u8 = 0b10;
+const MEM_SIZE_WORD: u8 = 2;
 
 const GFX2D_H_TOTAL: usize = 26;
 const GFX2D_V_TOTAL: usize = 19;
 const GFX2D_FRAME_CYCLES: usize = GFX2D_H_TOTAL * GFX2D_V_TOTAL;
 const GFX2D_ACTIVE_WIDTH: u8 = 16;
 const GFX2D_ACTIVE_HEIGHT: u8 = 16;
-const GFX2D_SCROLL_X_MASK: u8 = GFX2D_ACTIVE_WIDTH - 1;
-const GFX2D_SCROLL_Y_MASK: u8 = GFX2D_ACTIVE_HEIGHT - 1;
+const GFX2D_SCROLL_X_WRAP_MASK: u8 = GFX2D_ACTIVE_WIDTH - 1;
+const GFX2D_SCROLL_Y_WRAP_MASK: u8 = GFX2D_ACTIVE_HEIGHT - 1;
 const GFX2D_CHAR_MAP: [u8; 4] = [1, 2, 3, 4];
 const GFX2D_FONT_ROWS: [[u8; 8]; 5] = [
     [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -24,6 +24,8 @@ const GFX2D_FONT_ROWS: [[u8; 8]; 5] = [
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
+        // Keep both domains phase-aligned in this unit test so bus writes and
+        // raster progress are deterministic while still exercising the CDC path.
         $dut.sys_clk = 0;
         $dut.video_clk = 0;
         $dut.eval();
@@ -70,11 +72,14 @@ fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = wdata;
     dut.mem_a_we = 1;
-    dut.mem_a_size = SIZE_WORD;
+    dut.mem_a_size = MEM_SIZE_WORD;
     dut.mem_a_valid = 1;
     dut.eval();
 
-    assert_eq!(dut.mem_a_ready, 1, "expected system bus request to be accepted");
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "expected system bus request to be accepted"
+    );
 
     clock_cycle!(dut);
     dut.mem_a_valid = 0;
@@ -82,7 +87,10 @@ fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) {
     dut.eval();
 
     wait_for_response(dut, 32);
-    assert_eq!(dut.mem_d_rdata, 0, "writes should acknowledge with zero data");
+    assert_eq!(
+        dut.mem_d_rdata, 0,
+        "writes should acknowledge with zero data"
+    );
 
     dut.mem_d_ready = 1;
     clock_cycle!(dut);
@@ -94,11 +102,14 @@ fn read_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32) -> u32 {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = 0;
     dut.mem_a_we = 0;
-    dut.mem_a_size = SIZE_WORD;
+    dut.mem_a_size = MEM_SIZE_WORD;
     dut.mem_a_valid = 1;
     dut.eval();
 
-    assert_eq!(dut.mem_a_ready, 1, "expected system bus request to be accepted");
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "expected system bus request to be accepted"
+    );
 
     clock_cycle!(dut);
     dut.mem_a_valid = 0;
@@ -136,7 +147,10 @@ fn wait_for_active_frame_start(dut: &mut Gfx2dPeripheralTestWrapper, occurrence:
     panic!("timed out waiting for active frame start occurrence {occurrence}");
 }
 
-fn capture_active_frame_pixels(dut: &mut Gfx2dPeripheralTestWrapper, occurrence: usize) -> Vec<u32> {
+fn capture_active_frame_pixels(
+    dut: &mut Gfx2dPeripheralTestWrapper,
+    occurrence: usize,
+) -> Vec<u32> {
     let width = usize::from(GFX2D_ACTIVE_WIDTH);
     let height = usize::from(GFX2D_ACTIVE_HEIGHT);
     let mut pixels = Vec::with_capacity(width * height);
@@ -158,6 +172,8 @@ fn capture_active_frame_pixels(dut: &mut Gfx2dPeripheralTestWrapper, occurrence:
 
         if row + 1 != height {
             clock_cycle!(dut);
+            // A full horizontal period is a safe upper bound for reaching the
+            // next active row after the current line's blanking interval.
             for _ in 0..GFX2D_H_TOTAL {
                 if dut.video_de == 1 {
                     break;
@@ -166,7 +182,8 @@ fn capture_active_frame_pixels(dut: &mut Gfx2dPeripheralTestWrapper, occurrence:
             }
 
             assert_eq!(
-                dut.video_de, 1,
+                dut.video_de,
+                1,
                 "timed out waiting for active video on row {}",
                 row + 1
             );
@@ -194,8 +211,8 @@ fn expected_pixel(x: u8, y: u8) -> u32 {
 
 fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     expected_pixel(
-        (x.wrapping_add(scroll_x)) & GFX2D_SCROLL_X_MASK,
-        (y.wrapping_add(scroll_y)) & GFX2D_SCROLL_Y_MASK,
+        (x.wrapping_add(scroll_x)) & GFX2D_SCROLL_X_WRAP_MASK,
+        (y.wrapping_add(scroll_y)) & GFX2D_SCROLL_Y_WRAP_MASK,
     )
 }
 
@@ -236,8 +253,14 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
         write_access(&mut dut, GFX2D_SCROLL_X_ADDR, u32::from(scroll_x));
         write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, u32::from(scroll_y));
 
-        assert_eq!(read_access(&mut dut, GFX2D_SCROLL_X_ADDR), u32::from(scroll_x));
-        assert_eq!(read_access(&mut dut, GFX2D_SCROLL_Y_ADDR), u32::from(scroll_y));
+        assert_eq!(
+            read_access(&mut dut, GFX2D_SCROLL_X_ADDR),
+            u32::from(scroll_x)
+        );
+        assert_eq!(
+            read_access(&mut dut, GFX2D_SCROLL_Y_ADDR),
+            u32::from(scroll_y)
+        );
 
         let pixels = capture_active_frame_pixels(&mut dut, 2);
         for y in 0..GFX2D_ACTIVE_HEIGHT {

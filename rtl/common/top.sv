@@ -36,9 +36,9 @@ module top #(
     parameter int unsigned GFX2D_TILE_HEIGHT = 8,
     parameter int unsigned GFX2D_TILE_COLUMNS = 32,
     parameter int unsigned GFX2D_TILE_ROWS = 32,
-    parameter string GFX2D_FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter string GFX2D_CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter string GFX2D_PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter GFX2D_FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
+    parameter GFX2D_CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
+    parameter GFX2D_PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
 ) (
     input wire logic        clk,
     input wire logic        video_clk,
@@ -149,6 +149,7 @@ module top #(
     logic [31:0] sysctrl_halted_value;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
+    // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional GFX2D.
     localparam int unsigned NUM_RTL_SLAVES = ENABLE_GFX2D ? 3 : 2;
 
     // ============================================================

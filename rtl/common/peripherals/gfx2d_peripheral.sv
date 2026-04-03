@@ -16,9 +16,9 @@ module gfx2d_peripheral #(
     parameter int unsigned TILE_COLUMNS = 32,
     parameter int unsigned TILE_ROWS = 32,
     parameter int unsigned BUS_CDC_SYNC_STAGES = 3,
-    parameter string FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter string CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter string PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
+    parameter CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
+    parameter PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
 ) (
     input  wire logic        sys_clk,
     input  wire logic        video_clk,
