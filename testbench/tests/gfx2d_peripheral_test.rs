@@ -453,13 +453,14 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
 }
 
 #[test]
-fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
+fn test_gfx2d_ram_regions_are_write_only_and_filter_unsupported_writes() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
     let mut dut = runtime
         .create_model_simple::<Gfx2dPeripheralTestWrapper>()
         .expect("Failed to create gfx2d model");
 
     reset(&mut dut);
+    load_test_pattern(&mut dut);
 
     write_access_with_size(
         &mut dut,
@@ -469,14 +470,10 @@ fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
     );
     assert_eq!(
         read_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, MEM_SIZE_BYTE),
-        0x34
+        0,
+        "char map RAM must be write-only from the CPU"
     );
     write_access(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, 0xAABB_CCDD);
-    assert_eq!(
-        read_access_with_size(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR, MEM_SIZE_BYTE),
-        0x34,
-        "word writes must not modify char map RAM"
-    );
     assert_eq!(
         read_access(&mut dut, GFX2D_CHAR_MAP_BASE_ADDR),
         0,
@@ -486,14 +483,10 @@ fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
     write_access_with_size(&mut dut, font_addr(2, 3, 4), 0x0000_0056, MEM_SIZE_BYTE);
     assert_eq!(
         read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_BYTE),
-        0x56
+        0,
+        "font RAM must be write-only from the CPU"
     );
     write_access_with_size(&mut dut, font_addr(2, 3, 4), 0x0000_BBCC, MEM_SIZE_HALFWORD);
-    assert_eq!(
-        read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_BYTE),
-        0x56,
-        "halfword writes must not modify font RAM"
-    );
     assert_eq!(
         read_access_with_size(&mut dut, font_addr(2, 3, 4), MEM_SIZE_HALFWORD),
         0,
@@ -503,17 +496,15 @@ fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
     write_access(&mut dut, palette_addr(7), 0xAB12_3456);
     assert_eq!(
         read_access(&mut dut, palette_addr(7)),
-        0x0012_3456,
-        "palette reads must zero-extend the stored 24-bit color"
+        0,
+        "palette RAM must be write-only from the CPU"
     );
+
+    let configured_pixels = capture_active_frame_pixels(&mut dut, 2);
+
     write_access_with_size(&mut dut, palette_addr(7), 0x0000_00EE, MEM_SIZE_BYTE);
     write_access_with_size(&mut dut, palette_addr(7), 0x0000_DDEE, MEM_SIZE_HALFWORD);
     write_access_with_size(&mut dut, palette_addr(7) + 1, 0x5566_7788, MEM_SIZE_WORD);
-    assert_eq!(
-        read_access(&mut dut, palette_addr(7)),
-        0x0012_3456,
-        "unsupported palette accesses must not modify RAM contents"
-    );
     assert_eq!(
         read_access_with_size(&mut dut, palette_addr(7), MEM_SIZE_BYTE),
         0,
@@ -523,5 +514,11 @@ fn test_gfx2d_ram_regions_enforce_access_granularity_and_palette_masking() {
         read_access_with_size(&mut dut, palette_addr(7) + 1, MEM_SIZE_WORD),
         0,
         "unaligned palette reads must be dropped"
+    );
+
+    let pixels = capture_active_frame_pixels(&mut dut, 2);
+    assert_eq!(
+        pixels, configured_pixels,
+        "unsupported writes must not perturb the renderer-visible RAM contents"
     );
 }

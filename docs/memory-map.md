@@ -117,15 +117,17 @@ the renderer.
 |--------|-----------------|--------|-------------|
 | 0x0000 | SCROLL_X        | RW     | Horizontal scroll value, word access only |
 | 0x0004 | SCROLL_Y        | RW     | Vertical scroll value, word access only |
-| 0x1000-0x13FF | CHAR_MAP RAM | RW | 8-bit tile IDs, byte access only |
-| 0x2000-0x5FFF | FONT RAM | RW | 8-bit per-pixel palette indices, byte access only |
-| 0x6000-0x63FF | PALETTE RAM | RW | 24-bit RGB entries in 32-bit words, word access only |
+| 0x1000-0x13FF | CHAR_MAP RAM | WO | 8-bit tile IDs, byte access only |
+| 0x2000-0x5FFF | FONT RAM | WO | 8-bit per-pixel palette indices, byte access only |
+| 0x6000-0x63FF | PALETTE RAM | WO | 24-bit RGB entries in 32-bit words, word access only |
 
 - **Size:** 25 KiB (`0x30000000 – 0x300063FF`) in the default 32x32-tile configuration.
 - **Access sizes:** `SCROLL_X`/`SCROLL_Y` and `PALETTE RAM` accept aligned word accesses only;
   `CHAR_MAP RAM` and `FONT RAM` accept byte accesses only. Unsupported sizes are acknowledged
   and dropped.
-- **Palette read/write format:** writes ignore `wdata[31:24]`; reads return `{8'h00, rgb24}`.
+- **CPU visibility:** the renderer owns the RAM read ports exclusively; CPU accesses to the RAM
+  windows are write-only and reads return zero.
+- **Palette write format:** writes ignore `wdata[31:24]`.
 - **Clocking:** CPU accesses cross into the video clock domain through `bus_cdc_bridge`; the
   backing RAMs use `video_clk` on both ports.
 - **Constants:** `GFX2D_BASE`, `GFX2D_SIZE`, `GFX2D_SCROLL_X_OFFSET`, `GFX2D_SCROLL_Y_OFFSET`,

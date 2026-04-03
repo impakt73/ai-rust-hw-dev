@@ -39,13 +39,6 @@ module gfx2d_peripheral #(
     output logic             video_skip
 );
 
-    typedef enum logic [1:0] {
-        RAM_READ_NONE = 2'd0,
-        RAM_READ_CHAR = 2'd1,
-        RAM_READ_FONT = 2'd2,
-        RAM_READ_PALETTE = 2'd3
-    } ram_read_source_t;
-
     localparam logic [15:0] REG_SCROLL_X = 16'h0000;
     localparam logic [15:0] REG_SCROLL_Y = 16'h0004;
     localparam logic [15:0] CHAR_MAP_BASE_OFFSET = 16'h1000;
@@ -92,13 +85,6 @@ module gfx2d_peripheral #(
     logic        periph_char_map_access;
     logic        periph_font_access;
     logic        periph_palette_access;
-    logic        periph_char_map_read;
-    logic        periph_font_read;
-    logic        periph_palette_read;
-    logic        cpu_ram_read_pending_d0;
-    logic        cpu_ram_read_pending_d1;
-    ram_read_source_t cpu_ram_read_source_d0;
-    ram_read_source_t cpu_ram_read_source_d1;
 
     logic        periph_mem_a_handshake;
     logic        periph_mem_d_handshake;
@@ -141,15 +127,7 @@ module gfx2d_peripheral #(
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
     assign periph_addr_offset = periph_mem_a_addr[15:0];
-    // sync_dpram registers both the array read and the externally visible
-    // output, so this module sees CPU read data two video_clk edges after the
-    // accepted request. Keep requests serialized until both pipeline stages
-    // are clear and any response has been consumed.
-    assign periph_mem_a_ready =
-        !video_rst &&
-        !cpu_ram_read_pending_d0 &&
-        !cpu_ram_read_pending_d1 &&
-        !response_pending;
+    assign periph_mem_a_ready = !video_rst && !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
     assign periph_byte_access = (periph_mem_a_size == 2'b00);
@@ -167,29 +145,21 @@ module gfx2d_peripheral #(
         periph_word_access &&
         (periph_addr_offset >= PALETTE_BASE_OFFSET) &&
         (periph_addr_offset < PALETTE_END_OFFSET);
-    assign periph_char_map_read = periph_mem_a_handshake && !periph_mem_a_we && periph_char_map_access;
-    assign periph_font_read = periph_mem_a_handshake && !periph_mem_a_we && periph_font_access;
-    assign periph_palette_read = periph_mem_a_handshake && !periph_mem_a_we && periph_palette_access;
 
     assign char_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_char_map_access;
     assign char_ram_waddr = CHARMAP_ADDR_WIDTH'(periph_addr_offset - CHAR_MAP_BASE_OFFSET);
     assign char_ram_wdata = periph_mem_a_wdata[7:0];
-    assign char_ram_raddr =
-        periph_char_map_read ? CHARMAP_ADDR_WIDTH'(periph_addr_offset - CHAR_MAP_BASE_OFFSET) : char_mem_addr;
+    assign char_ram_raddr = char_mem_addr;
 
     assign font_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_font_access;
     assign font_ram_waddr = FONT_ADDR_WIDTH'(periph_addr_offset - FONT_BASE_OFFSET);
     assign font_ram_wdata = periph_mem_a_wdata[7:0];
-    assign font_ram_raddr =
-        periph_font_read ? FONT_ADDR_WIDTH'(periph_addr_offset - FONT_BASE_OFFSET) : font_mem_addr;
+    assign font_ram_raddr = font_mem_addr;
 
     assign palette_ram_we = periph_mem_a_handshake && periph_mem_a_we && periph_palette_access;
     assign palette_ram_waddr = PALETTE_ADDR_WIDTH'((periph_addr_offset - PALETTE_BASE_OFFSET) >> 2);
     assign palette_ram_wdata = periph_mem_a_wdata[23:0];
-    assign palette_ram_raddr =
-        periph_palette_read
-            ? PALETTE_ADDR_WIDTH'((periph_addr_offset - PALETTE_BASE_OFFSET) >> 2)
-            : palette_mem_addr;
+    assign palette_ram_raddr = palette_mem_addr;
 
     assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
@@ -335,10 +305,6 @@ module gfx2d_peripheral #(
             scroll_y_reg <= 32'h0000_0000;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
-            cpu_ram_read_pending_d0 <= 1'b0;
-            cpu_ram_read_pending_d1 <= 1'b0;
-            cpu_ram_read_source_d0 <= RAM_READ_NONE;
-            cpu_ram_read_source_d1 <= RAM_READ_NONE;
             response_pending <= 1'b0;
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_HSYNC_ACTIVE_HIGH}};
@@ -352,23 +318,6 @@ module gfx2d_peripheral #(
                 response_pending <= 1'b0;
             end
 
-            cpu_ram_read_pending_d1 <= cpu_ram_read_pending_d0;
-            cpu_ram_read_source_d1 <= cpu_ram_read_source_d0;
-            cpu_ram_read_pending_d0 <= 1'b0;
-            cpu_ram_read_source_d0 <= RAM_READ_NONE;
-
-            if (cpu_ram_read_pending_d1) begin
-                response_pending <= 1'b1;
-
-                case (cpu_ram_read_source_d1)
-                    RAM_READ_CHAR: response_data <= {24'h00_00_00, char_mem_rdata};
-                    RAM_READ_FONT: response_data <= {24'h00_00_00, font_mem_rdata};
-                    RAM_READ_PALETTE: response_data <= {8'h00, palette_mem_rdata};
-                    default: begin
-                    end
-                endcase
-            end
-
             if (sync_vblank_start) begin
                 renderer_scroll_x <= scroll_x_reg[SCROLL_X_WIDTH-1:0];
                 renderer_scroll_y <= scroll_y_reg[SCROLL_Y_WIDTH-1:0];
@@ -378,19 +327,7 @@ module gfx2d_peripheral #(
                 // response_data intentionally is not reset because response_pending
                 // marks when the payload is meaningful.
                 response_data <= 32'h0000_0000;
-
-                if (periph_char_map_read) begin
-                    cpu_ram_read_pending_d0 <= 1'b1;
-                    cpu_ram_read_source_d0 <= RAM_READ_CHAR;
-                end else if (periph_font_read) begin
-                    cpu_ram_read_pending_d0 <= 1'b1;
-                    cpu_ram_read_source_d0 <= RAM_READ_FONT;
-                end else if (periph_palette_read) begin
-                    cpu_ram_read_pending_d0 <= 1'b1;
-                    cpu_ram_read_source_d0 <= RAM_READ_PALETTE;
-                end else begin
-                    response_pending <= 1'b1;
-                end
+                response_pending <= 1'b1;
 
                 if (periph_reg_access) begin
                     if (periph_mem_a_we) begin
