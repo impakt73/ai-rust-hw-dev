@@ -366,14 +366,14 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "io/host_bus_rx.sv",  // Host bus receive path used by host_bus_interface
         "io/host_bus_tx.sv",  // Host bus transmit path used by host_bus_interface
         "io/i2s_serializer.sv",
-        "io/sys_led_controller.sv", // System LED controller
+        "io/sys_led_controller.sv",           // System LED controller
         "peripherals/audiosys_peripheral.sv", // Audio MMIO peripheral
-        "peripherals/gfx2d_peripheral.sv", // GFX2D peripheral
-        "peripherals/sram_peripheral.sv", // SRAM peripheral
-        "memory/sram.sv",     // SRAM module used by SRAM peripheral
+        "peripherals/gfx2d_peripheral.sv",    // GFX2D peripheral
+        "peripherals/sram_peripheral.sv",     // SRAM peripheral
+        "memory/sram.sv",                     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
-        "cpu/fetch_buffer.sv", // RV32C fetch buffer
-        "cpu/decompress.sv",  // RV32C decompressor
+        "cpu/fetch_buffer.sv",                // RV32C fetch buffer
+        "cpu/decompress.sv",                  // RV32C decompressor
         "cpu/alu.sv",
         "cpu/div_unit.sv",
         "cpu/mul_unit.sv",

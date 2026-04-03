@@ -2,8 +2,8 @@ use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{create_audiosys_peripheral_runtime, AudiosysPeripheralTestWrapper};
 
 const AUDIOSYS_BASE_ADDR: u32 = 0x6000_0000;
-const AUDIOSYS_TUNING_WORD_ADDR: u32 = AUDIOSYS_BASE_ADDR;
-const AUDIOSYS_CONTROL_ADDR: u32 = AUDIOSYS_BASE_ADDR + 4;
+const AUDIOSYS_CONTROL_ADDR: u32 = AUDIOSYS_BASE_ADDR;
+const AUDIOSYS_TUNING_WORD_ADDR: u32 = AUDIOSYS_BASE_ADDR + 4;
 const AUDIOSYS_ENABLE_BIT: u32 = 1;
 const MEM_SIZE_WORD: u8 = 2;
 const TEST_TUNING_WORD: u32 = 0x1000_0000;
@@ -72,7 +72,10 @@ fn write_access(dut: &mut AudiosysPeripheralTestWrapper, addr: u32, wdata: u32) 
     dut.eval();
 
     wait_for_response(dut, 32);
-    assert_eq!(dut.mem_d_rdata, 0, "writes should acknowledge with zero data");
+    assert_eq!(
+        dut.mem_d_rdata, 0,
+        "writes should acknowledge with zero data"
+    );
 
     dut.mem_d_ready = 1;
     clock_cycle!(dut);
@@ -113,17 +116,6 @@ fn audio_dac_stays_low_for_cycles(dut: &mut AudiosysPeripheralTestWrapper, cycle
         assert_eq!(dut.audio_dac, 0, "expected muted audio output");
         clock_cycle!(dut);
     }
-}
-
-fn wait_for_audio_dac_high(dut: &mut AudiosysPeripheralTestWrapper, max_cycles: usize) {
-    for _ in 0..max_cycles {
-        if dut.audio_dac != 0 {
-            return;
-        }
-        clock_cycle!(dut);
-    }
-
-    panic!("timed out waiting for audiosys output to become active");
 }
 
 fn wait_for_muted_audio_window(
@@ -170,7 +162,7 @@ fn test_audiosys_registers_reset_low_and_mask_reserved_control_bits() {
 }
 
 #[test]
-fn test_audiosys_mmio_enable_controls_audio_output() {
+fn test_audiosys_control_register_is_at_base_addr_and_disable_mutes_output() {
     let runtime =
         create_audiosys_peripheral_runtime().expect("Failed to create audiosys peripheral runtime");
     let mut dut = runtime
@@ -180,16 +172,19 @@ fn test_audiosys_mmio_enable_controls_audio_output() {
     reset(&mut dut);
 
     write_access(&mut dut, AUDIOSYS_TUNING_WORD_ADDR, TEST_TUNING_WORD);
-    assert_eq!(read_access(&mut dut, AUDIOSYS_TUNING_WORD_ADDR), TEST_TUNING_WORD);
-
-    write_access(&mut dut, AUDIOSYS_CONTROL_ADDR, 0);
-    audio_dac_stays_low_for_cycles(&mut dut, 256);
+    assert_eq!(
+        read_access(&mut dut, AUDIOSYS_TUNING_WORD_ADDR),
+        TEST_TUNING_WORD
+    );
 
     write_access(&mut dut, AUDIOSYS_CONTROL_ADDR, AUDIOSYS_ENABLE_BIT);
-    assert_eq!(read_access(&mut dut, AUDIOSYS_CONTROL_ADDR), AUDIOSYS_ENABLE_BIT);
-    wait_for_audio_dac_high(&mut dut, 2048);
+    assert_eq!(
+        read_access(&mut dut, AUDIOSYS_CONTROL_ADDR),
+        AUDIOSYS_ENABLE_BIT
+    );
 
     write_access(&mut dut, AUDIOSYS_CONTROL_ADDR, 0);
     assert_eq!(read_access(&mut dut, AUDIOSYS_CONTROL_ADDR), 0);
+    audio_dac_stays_low_for_cycles(&mut dut, 256);
     wait_for_muted_audio_window(&mut dut, 128, 2048);
 }

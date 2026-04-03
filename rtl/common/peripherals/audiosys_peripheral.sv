@@ -23,8 +23,8 @@ module audiosys_peripheral #(
     output logic             audio_lrclk
 );
 
-    localparam logic [4:0] REG_TUNING_WORD = 5'h00;
-    localparam logic [4:0] REG_CONTROL = 5'h04;
+    localparam logic [4:0] REG_CONTROL = 5'h00;
+    localparam logic [4:0] REG_TUNING_WORD = 5'h04;
 
     logic reset_n_audio_sync;
     logic audio_rst;
