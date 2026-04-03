@@ -51,6 +51,7 @@ module cyclonev_analogue_pocket_top #(
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .ENABLE_GFX2D(1'b1),
         .ENABLE_AUDIOSYS(1'b1),
+        .ENABLE_GAMEPAD(1'b1),
         .CLK_FREQ_HZ(74_250_000),
         .RESET_CYCLES(74_250_000),
         .BAUD_RATE(BAUD_RATE),
@@ -77,6 +78,13 @@ module cyclonev_analogue_pocket_top #(
         .led_out(),
         .sys_led_out(),
         .rst_core(rst_out),
+        // cont1_key uses active-low polarity (0 = pressed) from the Pocket
+        // hardware; invert to active-high for the gamepad peripheral.
+        // Bit mapping of cont1_key[9:0] → gamepad_in[9:0]:
+        //   [0]=dpad_up [1]=dpad_down [2]=dpad_left [3]=dpad_right
+        //   [4]=btn_a   [5]=btn_b     [6]=btn_x      [7]=btn_y
+        //   [8]=trig_l  [9]=trig_r
+        .gamepad_in(~cont1_key[9:0]),
         .video_rgb(video_rgb),
         .video_de(video_de),
         .video_skip(video_skip),

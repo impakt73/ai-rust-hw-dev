@@ -111,6 +111,7 @@ module artix7_alchitry_au_top #(
         .led_out(),
         .sys_led_out(sys_led_out),
         .rst_core(),
+        .gamepad_in(10'b0),
         .video_rgb(),
         .video_de(),
         .video_skip(),

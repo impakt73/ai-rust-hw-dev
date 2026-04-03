@@ -25,6 +25,9 @@ module top #(
     parameter int unsigned GFX2D_ADDR_SIZE = 32'h0000_6400,
     parameter int unsigned AUDIOSYS_BASE_ADDR = 32'h6000_0000,
     parameter int unsigned AUDIOSYS_ADDR_SIZE = 32'h0000_0020,
+    parameter bit ENABLE_GAMEPAD = 1'b0,
+    parameter int unsigned GAMEPAD_BASE_ADDR = 32'h5000_0000,
+    parameter int unsigned GAMEPAD_ADDR_SIZE = 32'h0000_0010,
     parameter int unsigned GFX2D_VIDEO_ACTIVE_WIDTH = 256,
     parameter int unsigned GFX2D_VIDEO_ACTIVE_HEIGHT = 224,
     parameter int unsigned GFX2D_VIDEO_H_FRONT_PORCH = 10,
@@ -87,7 +90,10 @@ module top #(
     output logic        video_vs,
     output logic        video_hs,
     output logic        audio_dac,
-    output logic        audio_lrclk
+    output logic        audio_lrclk,
+    
+    // Gamepad input (active-high button state; ignored when ENABLE_GAMEPAD=0)
+    input  wire logic [9:0]  gamepad_in
 );
 
     // ============================================================
@@ -154,11 +160,14 @@ module top #(
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
     // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional GFX2D,
-    // slave 3 or 2 = optional audiosys depending on whether GFX2D is enabled.
+    // slave 3 or 2 = optional audiosys depending on whether GFX2D is enabled,
+    // last slot = optional gamepad.
     localparam int unsigned GFX2D_SLAVE_INDEX = 2;
     localparam int unsigned AUDIOSYS_SLAVE_INDEX = ENABLE_GFX2D ? 3 : 2;
-    localparam int unsigned NUM_RTL_SLAVES =
+    localparam int unsigned GAMEPAD_SLAVE_INDEX =
         2 + (ENABLE_GFX2D ? 1 : 0) + (ENABLE_AUDIOSYS ? 1 : 0);
+    localparam int unsigned NUM_RTL_SLAVES =
+        2 + (ENABLE_GFX2D ? 1 : 0) + (ENABLE_AUDIOSYS ? 1 : 0) + (ENABLE_GAMEPAD ? 1 : 0);
 
     // ============================================================
     // GFX2D Peripheral Interface Signals
@@ -185,6 +194,19 @@ module top #(
     logic [31:0] audiosys_mem_d_rdata;
     logic        audiosys_mem_d_valid;
     logic        audiosys_mem_d_ready;
+    
+    // ============================================================
+    // Gamepad Peripheral Interface Signals
+    // ============================================================
+    logic [31:0] gamepad_mem_a_addr;
+    logic [31:0] gamepad_mem_a_wdata;
+    logic        gamepad_mem_a_we;
+    logic [1:0]  gamepad_mem_a_size;
+    logic        gamepad_mem_a_valid;
+    logic        gamepad_mem_a_ready;
+    logic [31:0] gamepad_mem_d_rdata;
+    logic        gamepad_mem_d_valid;
+    logic        gamepad_mem_d_ready;
     
     // ============================================================
     // host_bus_mux -> registered_bus Signals (CPU RTL peripheral accesses only)
@@ -337,6 +359,13 @@ module top #(
         end
     endgenerate
 
+    generate
+        if (ENABLE_GAMEPAD) begin : gen_gamepad_bus_map
+            assign registered_slave_base_addr[(32*GAMEPAD_SLAVE_INDEX)+31 -: 32] = GAMEPAD_BASE_ADDR;
+            assign registered_slave_addr_size[(32*GAMEPAD_SLAVE_INDEX)+31 -: 32] = GAMEPAD_ADDR_SIZE;
+        end
+    endgenerate
+
     assign sysctrl_mem_a_addr = registered_slave_mem_a_addr[31:0];
     assign sysctrl_mem_a_wdata = registered_slave_mem_a_wdata[31:0];
     assign sysctrl_mem_a_we = registered_slave_mem_a_we[0];
@@ -396,6 +425,27 @@ module top #(
             assign audiosys_mem_a_size = 2'b00;
             assign audiosys_mem_a_valid = 1'b0;
             assign audiosys_mem_d_ready = 1'b0;
+        end
+    endgenerate
+
+    generate
+        if (ENABLE_GAMEPAD) begin : gen_gamepad_bus_wiring
+            assign gamepad_mem_a_addr  = registered_slave_mem_a_addr[(32*GAMEPAD_SLAVE_INDEX)+31 -: 32];
+            assign gamepad_mem_a_wdata = registered_slave_mem_a_wdata[(32*GAMEPAD_SLAVE_INDEX)+31 -: 32];
+            assign gamepad_mem_a_we    = registered_slave_mem_a_we[GAMEPAD_SLAVE_INDEX];
+            assign gamepad_mem_a_size  = registered_slave_mem_a_size[(2*GAMEPAD_SLAVE_INDEX)+1 -: 2];
+            assign gamepad_mem_a_valid = registered_slave_mem_a_valid[GAMEPAD_SLAVE_INDEX];
+            assign registered_slave_mem_a_ready[GAMEPAD_SLAVE_INDEX]              = gamepad_mem_a_ready;
+            assign registered_slave_mem_d_rdata[(32*GAMEPAD_SLAVE_INDEX)+31 -: 32] = gamepad_mem_d_rdata;
+            assign registered_slave_mem_d_valid[GAMEPAD_SLAVE_INDEX]              = gamepad_mem_d_valid;
+            assign gamepad_mem_d_ready = registered_slave_mem_d_ready[GAMEPAD_SLAVE_INDEX];
+        end else begin : gen_gamepad_bus_disabled
+            assign gamepad_mem_a_addr  = 32'h0000_0000;
+            assign gamepad_mem_a_wdata = 32'h0000_0000;
+            assign gamepad_mem_a_we    = 1'b0;
+            assign gamepad_mem_a_size  = 2'b00;
+            assign gamepad_mem_a_valid = 1'b0;
+            assign gamepad_mem_d_ready = 1'b0;
         end
     endgenerate
 
@@ -622,6 +672,29 @@ module top #(
             assign audiosys_mem_d_valid = 1'b0;
             assign audio_dac = 1'b0;
             assign audio_lrclk = 1'b0;
+        end
+    endgenerate
+
+    generate
+        if (ENABLE_GAMEPAD) begin : gen_gamepad_peripheral
+            gamepad_peripheral gamepad_periph (
+                .clk(clk),
+                .rst(rst_internal),
+                .gamepad_in(gamepad_in),
+                .mem_a_addr(gamepad_mem_a_addr),
+                .mem_a_wdata(gamepad_mem_a_wdata),
+                .mem_a_we(gamepad_mem_a_we),
+                .mem_a_size(gamepad_mem_a_size),
+                .mem_a_valid(gamepad_mem_a_valid),
+                .mem_a_ready(gamepad_mem_a_ready),
+                .mem_d_rdata(gamepad_mem_d_rdata),
+                .mem_d_valid(gamepad_mem_d_valid),
+                .mem_d_ready(gamepad_mem_d_ready)
+            );
+        end else begin : gen_no_gamepad_peripheral
+            assign gamepad_mem_a_ready = 1'b1;
+            assign gamepad_mem_d_rdata = 32'h0000_0000;
+            assign gamepad_mem_d_valid = 1'b0;
         end
     endgenerate
     

@@ -11,6 +11,7 @@ module fpga_common_top #(
     parameter int unsigned GFX2D_ADDR_SIZE = 32'h0000_6400,
     parameter int unsigned AUDIOSYS_BASE_ADDR = 32'h6000_0000,
     parameter int unsigned AUDIOSYS_ADDR_SIZE = 32'h0000_0020,
+    parameter bit ENABLE_GAMEPAD = 1'b0,
     parameter int unsigned GFX2D_VIDEO_ACTIVE_WIDTH = 256,
     parameter int unsigned GFX2D_VIDEO_ACTIVE_HEIGHT = 224,
     parameter int unsigned GFX2D_VIDEO_H_FRONT_PORCH = 10,
@@ -36,6 +37,7 @@ module fpga_common_top #(
     output logic [7:0] led_out,
     output logic [7:0] sys_led_out,
     output logic       rst_core,
+    input  wire logic [9:0] gamepad_in,
     output logic [23:0] video_rgb,
     output logic       video_de,
     output logic       video_skip,
@@ -69,6 +71,7 @@ module fpga_common_top #(
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .ENABLE_GFX2D(ENABLE_GFX2D),
         .ENABLE_AUDIOSYS(ENABLE_AUDIOSYS),
+        .ENABLE_GAMEPAD(ENABLE_GAMEPAD),
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .RESET_CYCLES(RESET_CYCLES),
         .GFX2D_BASE_ADDR(GFX2D_BASE_ADDR),
@@ -123,7 +126,8 @@ module fpga_common_top #(
         .video_vs(video_vs),
         .video_hs(video_hs),
         .audio_dac(audio_dac),
-        .audio_lrclk(audio_lrclk)
+        .audio_lrclk(audio_lrclk),
+        .gamepad_in(gamepad_in)
     );
 
     uart #(
