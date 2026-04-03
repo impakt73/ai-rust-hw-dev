@@ -174,6 +174,8 @@ module cyclonev_analogue_pocket_top #(
         .active_video(bitmap_sync_video_de),
         .line_start(),
         .frame_start(),
+        .hblank_start(),
+        .vblank_start(),
         .active_x(bitmap_sync_active_x),
         .active_y(bitmap_sync_active_y),
         .scan_x(),
