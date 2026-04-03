@@ -236,9 +236,10 @@ fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     )
 }
 
-// Verifies that the currently displayed frame keeps using the supplied scroll
-// values starting from the current output cycle position, without waiting for a
-// frame boundary.
+// Verifies that, from the current output cycle position onward, the currently
+// displayed frame continues using the supplied already-latched scroll values
+// until the next frame boundary rather than applying a newly written scroll
+// mid-frame.
 fn verify_active_pixels_from_current_frame(
     dut: &mut Gfx2dPeripheralTestWrapper,
     start_cycle_in_frame: usize,

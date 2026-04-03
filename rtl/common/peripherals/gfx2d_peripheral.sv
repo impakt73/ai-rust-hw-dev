@@ -237,6 +237,8 @@ module gfx2d_peripheral #(
         if (video_rst) begin
             scroll_x_reg <= 32'h0000_0000;
             scroll_y_reg <= 32'h0000_0000;
+            renderer_scroll_x <= '0;
+            renderer_scroll_y <= '0;
             response_pending <= 1'b0;
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_HSYNC_ACTIVE_HIGH}};
