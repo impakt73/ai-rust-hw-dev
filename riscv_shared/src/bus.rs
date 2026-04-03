@@ -49,6 +49,36 @@ pub const GFX2D_PALETTE_SIZE: u32 = 0x0400;
 pub const SYSCTRL_BASE: u32 = 0x2000_0000;
 pub const SYSCTRL_SIZE: u32 = 0x0000_0020; // 32 bytes
 
+/// Gamepad Peripheral (RTL)
+/// Single 32-bit read-only register that exposes controller button state.
+/// Address: 0x5000_0000
+/// Register map (offset 0x00):
+///   [0]  dpad_up    [1]  dpad_down  [2]  dpad_left   [3]  dpad_right
+///   [4]  btn_a      [5]  btn_b      [6]  btn_x        [7]  btn_y
+///   [8]  trig_l     [9]  trig_r     [31:10] reserved (read 0)
+pub const GAMEPAD_BASE: u32 = 0x5000_0000;
+pub const GAMEPAD_SIZE: u32 = 0x0000_0010; // 16 bytes
+
+/// Gamepad register offset
+pub const GAMEPAD_STATE_OFFSET: u32 = 0x00;
+
+/// Gamepad GAMEPAD_STATE register bit masks
+pub const GAMEPAD_DPAD_UP: u32 = 1 << 0;
+pub const GAMEPAD_DPAD_DOWN: u32 = 1 << 1;
+pub const GAMEPAD_DPAD_LEFT: u32 = 1 << 2;
+pub const GAMEPAD_DPAD_RIGHT: u32 = 1 << 3;
+pub const GAMEPAD_BTN_A: u32 = 1 << 4;
+pub const GAMEPAD_BTN_B: u32 = 1 << 5;
+pub const GAMEPAD_BTN_X: u32 = 1 << 6;
+pub const GAMEPAD_BTN_Y: u32 = 1 << 7;
+pub const GAMEPAD_TRIG_L: u32 = 1 << 8;
+pub const GAMEPAD_TRIG_R: u32 = 1 << 9;
+
+/// Helper: address of the GAMEPAD_STATE register.
+pub const fn gamepad_state_addr() -> u32 {
+    GAMEPAD_BASE + GAMEPAD_STATE_OFFSET
+}
+
 /// System Controller register offsets
 pub const SYSCTRL_STATUS_OFFSET: u32 = 0x00;
 pub const SYSCTRL_RESET_OFFSET: u32 = 0x04;

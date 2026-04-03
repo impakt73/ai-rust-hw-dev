@@ -212,6 +212,12 @@ pub struct Gfx2dPeripheralTestWrapper;
 pub struct AudiosysPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/gamepad_peripheral_test_wrapper.sv",
+    name = "gamepad_peripheral_test_wrapper"
+)]
+pub struct GamepadPeripheralTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_sprom_test_wrapper.sv",
     name = "sync_sprom_test_wrapper"
 )]
@@ -372,6 +378,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "peripherals/sram_peripheral.sv",     // SRAM peripheral
         "memory/sram.sv",                     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
+        "peripherals/gamepad_peripheral.sv",  // Gamepad MMIO peripheral
         "cpu/fetch_buffer.sv",                // RV32C fetch buffer
         "cpu/decompress.sv",                  // RV32C decompressor
         "cpu/alu.sv",
@@ -627,6 +634,14 @@ pub fn create_audiosys_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn 
         "io/i2s_serializer.sv",
         "peripherals/audiosys_peripheral.sv",
         "wrappers/audiosys_peripheral_test_wrapper.sv",
+    ])
+}
+
+/// Create a Verilator runtime for the gamepad peripheral standalone test.
+pub fn create_gamepad_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "peripherals/gamepad_peripheral.sv",
+        "wrappers/gamepad_peripheral_test_wrapper.sv",
     ])
 }
 
