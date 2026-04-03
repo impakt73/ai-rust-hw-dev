@@ -38,6 +38,8 @@ module gfx2d_peripheral #(
 
     localparam logic [15:0] REG_SCROLL_X = 16'h0000;
     localparam logic [15:0] REG_SCROLL_Y = 16'h0004;
+    localparam logic [15:0] REG_CONTROL = 16'h0008;
+    localparam logic [15:0] REG_FRAME_COUNTER = 16'h000C;
     localparam logic [15:0] CHAR_MAP_BASE_OFFSET = 16'h1000;
     localparam logic [15:0] FONT_BASE_OFFSET = 16'h2000;
     localparam logic [15:0] PALETTE_BASE_OFFSET = 16'h6000;
@@ -96,12 +98,15 @@ module gfx2d_peripheral #(
     logic        response_pending;
     logic [31:0] scroll_x_reg;
     logic [31:0] scroll_y_reg;
+    logic        video_scanout_hold_reg;
+    logic [31:0] frame_counter_reg;
     logic [SCROLL_X_WIDTH-1:0] renderer_scroll_x;
     logic [SCROLL_Y_WIDTH-1:0] renderer_scroll_y;
 
     logic        sync_video_de;
     logic        sync_video_hs;
     logic        sync_video_vs;
+    logic        sync_frame_start;
     logic        sync_vblank_start;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
@@ -249,12 +254,12 @@ module gfx2d_peripheral #(
         .VSYNC_ACTIVE_HIGH(VIDEO_VSYNC_ACTIVE_HIGH)
     ) u_video_sync (
         .clk(video_clk),
-        .rst(video_rst),
+        .rst(video_rst || video_scanout_hold_reg),
         .hsync(sync_video_hs),
         .vsync(sync_video_vs),
         .active_video(sync_video_de),
         .line_start(),
-        .frame_start(),
+        .frame_start(sync_frame_start),
         .hblank_start(),
         .vblank_start(sync_vblank_start),
         .active_x(sync_active_x),
@@ -329,6 +334,8 @@ module gfx2d_peripheral #(
         if (video_rst) begin
             scroll_x_reg <= 32'h0000_0000;
             scroll_y_reg <= 32'h0000_0000;
+            video_scanout_hold_reg <= 1'b0;
+            frame_counter_reg <= 32'h0000_0000;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
             response_pending <= 1'b0;
@@ -339,6 +346,10 @@ module gfx2d_peripheral #(
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+
+            if (!video_scanout_hold_reg && sync_frame_start) begin
+                frame_counter_reg <= frame_counter_reg + 1'b1;
+            end
 
             if (periph_mem_d_handshake) begin
                 response_pending <= 1'b0;
@@ -360,6 +371,7 @@ module gfx2d_peripheral #(
                         case (periph_addr_offset)
                             REG_SCROLL_X: scroll_x_reg <= periph_mem_a_wdata;
                             REG_SCROLL_Y: scroll_y_reg <= periph_mem_a_wdata;
+                            REG_CONTROL: video_scanout_hold_reg <= periph_mem_a_wdata[0];
                             default: begin
                             end
                         endcase
@@ -367,6 +379,8 @@ module gfx2d_peripheral #(
                         case (periph_addr_offset)
                             REG_SCROLL_X: response_data <= scroll_x_reg;
                             REG_SCROLL_Y: response_data <= scroll_y_reg;
+                            REG_CONTROL: response_data <= {31'h0, video_scanout_hold_reg};
+                            REG_FRAME_COUNTER: response_data <= frame_counter_reg;
                             default: response_data <= 32'h0000_0000;
                         endcase
                     end
