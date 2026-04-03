@@ -59,6 +59,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/cpu.sv \
 	$(RTL_DIR)/peripherals/sram_peripheral.sv \
 	$(RTL_DIR)/peripherals/gfx2d_peripheral.sv \
+	$(RTL_DIR)/peripherals/audiosys_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
 

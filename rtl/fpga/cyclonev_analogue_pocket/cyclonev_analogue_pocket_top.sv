@@ -30,24 +30,6 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_lrclk
 );
     logic rst;
-    logic reset_n_audio_sync;
-    logic audio_rst;
-    logic        face_a_audio;
-    logic        face_b_audio;
-    logic        face_x_audio;
-    logic        face_y_audio;
-    logic        trig_l_audio;
-    logic        trig_r_audio;
-    localparam int unsigned AUDIO_PHASE_WIDTH = 32;
-    localparam int unsigned AUDIO_TABLE_SIZE = 1024;
-    localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
-    logic signed [15:0] tone_sample;
-    logic signed [15:0] i2s_sample_data;
-    logic signed [15:0] tone_sample_hold;
-    logic               tone_sample_hold_valid;
-    logic               i2s_sample_ready;
-    logic               tone_sample_valid;
-    logic               tone_zero_cross;
 
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -61,20 +43,6 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
-    localparam int unsigned FACE_A_BIT = 4;
-    localparam int unsigned FACE_B_BIT = 5;
-    localparam int unsigned FACE_X_BIT = 6;
-    localparam int unsigned FACE_Y_BIT = 7;
-    localparam int unsigned TRIG_L1_BIT = 8;
-    localparam int unsigned TRIG_R1_BIT = 9;
-    // sine_table reconstructs a full TABLE_SIZE waveform from a quarter-wave ROM,
-    // so the Pocket init file intentionally contains AUDIO_TABLE_SIZE/4 entries.
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_A4 = 32'd615165;
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_G4 = 32'd548049;
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_D4 = 32'd410573;
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_C4 = 32'd365779;
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_E4 = 32'd460853;
-    localparam logic [AUDIO_PHASE_WIDTH-1:0] AUDIO_TUNING_WORD_F4 = 32'd488256;
 
     always_ff @(posedge clk) begin
         if (!reset_n) begin
@@ -84,46 +52,11 @@ module cyclonev_analogue_pocket_top #(
         end
     end
 
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1),
-        .RESET_VALUE(1'b0)
-    ) audio_reset_sync (
-        .clk(audio_sclk),
-        .rst(1'b0),
-        .din(reset_n),
-        .dout(reset_n_audio_sync)
-    );
-
-    assign audio_rst = !reset_n_audio_sync;
-
-    // Synchronize all audio-domain button bits as a packed vector to reduce duplication.
-    // Bit order: [5]=TRIG_R1, [4]=TRIG_L1, [3]=FACE_Y, [2]=FACE_X, [1]=FACE_B, [0]=FACE_A
-    logic [5:0] audio_buttons_sync;
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(6)
-    ) audio_buttons_key_sync (
-        .clk(audio_sclk),
-        .rst(audio_rst),
-        .din({cont1_key[TRIG_R1_BIT], cont1_key[TRIG_L1_BIT],
-              cont1_key[FACE_Y_BIT],  cont1_key[FACE_X_BIT],
-              cont1_key[FACE_B_BIT],  cont1_key[FACE_A_BIT]}),
-        .dout(audio_buttons_sync)
-    );
-
-    assign face_a_audio = audio_buttons_sync[0];
-    assign face_b_audio = audio_buttons_sync[1];
-    assign face_x_audio = audio_buttons_sync[2];
-    assign face_y_audio = audio_buttons_sync[3];
-    assign trig_l_audio = audio_buttons_sync[4];
-    assign trig_r_audio = audio_buttons_sync[5];
-
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .ENABLE_GFX2D(1'b1),
+        .ENABLE_AUDIOSYS(1'b1),
         .CLK_FREQ_HZ(74_250_000),
         .RESET_CYCLES(74_250_000),
         .BAUD_RATE(BAUD_RATE),
@@ -141,10 +74,12 @@ module cyclonev_analogue_pocket_top #(
         .GFX2D_TILE_ROWS(32),
         .GFX2D_FONT_INIT_FILE(FONT_INIT_FILE),
         .GFX2D_CHAR_MAP_INIT_FILE(CHAR_MAP_INIT_FILE),
-        .GFX2D_PALETTE_INIT_FILE(PALETTE_INIT_FILE)
+        .GFX2D_PALETTE_INIT_FILE(PALETTE_INIT_FILE),
+        .AUDIOSYS_INIT_FILE(AUDIO_INIT_FILE)
     ) repo_top_inst (
         .sys_clk(clk),
         .video_clk(clk_video),
+        .audio_clk(audio_sclk),
         .rst(rst),
         .usb_rx(serial_rx),
         .usb_tx(serial_tx),
@@ -155,88 +90,9 @@ module cyclonev_analogue_pocket_top #(
         .video_de(video_de),
         .video_skip(video_skip),
         .video_vs(video_vs),
-        .video_hs(video_hs)
-    );
-
-    logic audio_en;
-    logic audio_en_next;
-    logic audio_sample_en;
-    logic audio_en_update;
-    logic [AUDIO_PHASE_WIDTH-1:0] audio_tuning_word;
-
-    always_comb begin
-        audio_en_next = face_a_audio || face_b_audio || face_x_audio || face_y_audio || trig_l_audio || trig_r_audio;
-        if (face_a_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_A4;
-        end else if (face_b_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_C4;
-        end else if (face_x_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_G4;
-        end else if (face_y_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_D4;
-        end else if (trig_l_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_E4;
-        end else if (trig_r_audio) begin
-            audio_tuning_word = AUDIO_TUNING_WORD_F4;
-        end else begin
-            audio_tuning_word = AUDIO_TUNING_WORD_A4;  // default to A4 to avoid needing a separate mute implementation
-        end
-    end
-
-    // audio_lrclk still reflects the previous slot until the serializer reloads on
-    // this clock edge, so audio_lrclk=1 means the serializer is about to load the
-    // first channel of the next stereo pair and should see a fresh sample. Before
-    // the hold register has been seeded after reset, always bypass it so the first
-    // stereo frame does not transmit zeros.
-    assign i2s_sample_data = (audio_lrclk || !tone_sample_hold_valid) ? tone_sample : tone_sample_hold;
-    assign audio_en_update = i2s_sample_ready && tone_zero_cross && tone_sample_valid;
-    assign audio_sample_en = audio_en_update ? audio_en_next : audio_en;
-
-    always_ff @(posedge audio_sclk) begin
-        if (audio_rst) begin
-            tone_sample_hold_valid <= 1'b0;
-        end else if (i2s_sample_ready) begin
-            if (!tone_sample_hold_valid || audio_lrclk) begin
-                tone_sample_hold <= tone_sample;
-            end
-            tone_sample_hold_valid <= 1'b1;
-        end
-    end
-
-    always_ff @(posedge audio_sclk) begin
-        if (audio_rst) begin
-            audio_en <= 1'b0;
-        end else if (audio_en_update) begin
-            audio_en <= audio_en_next;
-        end
-    end
-
-    tone_generator #(
-        .PHASE_WIDTH (AUDIO_PHASE_WIDTH),
-        .TABLE_SIZE  (AUDIO_TABLE_SIZE),
-        .SAMPLE_WIDTH(16),
-        .INIT_FILE   (AUDIO_INIT_FILE)
-    ) pocket_tone_generator (
-        .clk        (audio_sclk),
-        .rst        (audio_rst),
-        .tuning_word(audio_tuning_word),
-        .sample     (tone_sample),
-        .zero_cross (tone_zero_cross),
-        .valid      (tone_sample_valid)
-    );
-
-    i2s_serializer #(
-        .INPUT_SAMPLE_WIDTH (16),
-        .OUTPUT_SAMPLE_WIDTH(I2S_OUTPUT_SAMPLE_WIDTH)
-    ) pocket_i2s_serializer (
-        .clk         (audio_sclk),
-        .rst         (audio_rst),
-        .sample_data (i2s_sample_data),
-        .sample_valid(audio_sample_en && tone_sample_valid),
-        .sample_ready(i2s_sample_ready),
-        .i2s_bclk    (),
-        .i2s_lrclk   (audio_lrclk),
-        .i2s_sd      (audio_dac)
+        .video_hs(video_hs),
+        .audio_dac(audio_dac),
+        .audio_lrclk(audio_lrclk)
     );
 
 endmodule

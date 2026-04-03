@@ -55,6 +55,7 @@ module gowin_tang_primer_25k_top #(
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
         .video_clk(1'b0),
+        .audio_clk(1'b0),
         .rst(rst_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
@@ -65,7 +66,9 @@ module gowin_tang_primer_25k_top #(
         .video_de(),
         .video_skip(),
         .video_vs(),
-        .video_hs()
+        .video_hs(),
+        .audio_dac(),
+        .audio_lrclk()
     );
 
     assign led_ready = sys_led_out[0];
