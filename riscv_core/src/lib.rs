@@ -164,6 +164,18 @@ pub struct AsyncFifoTestWrapper;
 pub struct AsyncFifoSync3Wrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/cdc_handshake_test_wrapper.sv",
+    name = "cdc_handshake_test_wrapper"
+)]
+pub struct CdcHandshakeTestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/cdc_handshake_param_wrapper.sv",
+    name = "cdc_handshake_param_wrapper"
+)]
+pub struct CdcHandshakeParamWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_fifo_test_wrapper.sv",
     name = "sync_fifo_test_wrapper"
 )]
@@ -506,6 +518,25 @@ pub fn create_async_fifo_sync3_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "memory/sync_dpram.sv",
         "primitives/async_fifo.sv",
         "wrappers/async_fifo_sync3_wrapper.sv",
+    ])
+}
+
+// Helper function to create a runtime for the default CDC handshake wrapper
+pub fn create_cdc_handshake_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "wrappers/cdc_handshake_test_wrapper.sv",
+    ])
+}
+
+// Helper function to create a runtime for the parameterized CDC handshake wrapper
+pub fn create_cdc_handshake_param_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>>
+{
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "wrappers/cdc_handshake_param_wrapper.sv",
     ])
 }
 
