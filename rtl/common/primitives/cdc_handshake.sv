@@ -90,6 +90,9 @@ module cdc_handshake #(
             src_ready      <= 1'b1;
         end else begin
             if (src_fire) begin
+                // Hold the payload stable until the destination consumes it and the
+                // synchronized acknowledge returns. This register intentionally is not
+                // reset because src_pending guarantees it is ignored while invalid.
                 src_data_hold  <= src_data;
                 src_req_toggle <= ~src_req_toggle;
                 src_pending    <= 1'b1;
@@ -110,6 +113,10 @@ module cdc_handshake #(
             dst_req_toggle_prev <= dst_req_toggle_sync;
 
             if (dst_req_seen) begin
+                // The request toggle is synchronized into dst_clk before capture, so
+                // src_data_hold has already been stable for multiple dst_clk cycles
+                // when the destination samples it here. dst_data intentionally is not
+                // reset because dst_valid marks when it contains meaningful data.
                 dst_data  <= src_data_hold;
                 dst_valid <= 1'b1;
             end else if (dst_fire) begin
