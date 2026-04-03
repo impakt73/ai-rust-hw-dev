@@ -35,7 +35,8 @@ module bus_cdc_bridge_test_wrapper (
     ) u_bus_cdc_bridge (
         .sys_clk(sys_clk),
         .periph_clk(periph_clk),
-        .rst(rst),
+        .sys_rst(rst),
+        .periph_rst(rst),
         .sys_mem_a_addr(sys_mem_a_addr),
         .sys_mem_a_wdata(sys_mem_a_wdata),
         .sys_mem_a_we(sys_mem_a_we),

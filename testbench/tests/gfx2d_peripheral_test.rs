@@ -4,6 +4,8 @@ use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
+const MEM_SIZE_BYTE: u8 = 0;
+const MEM_SIZE_HALFWORD: u8 = 1;
 const MEM_SIZE_WORD: u8 = 2;
 
 const GFX2D_H_TOTAL: usize = 26;
@@ -57,10 +59,10 @@ fn reset(dut: &mut Gfx2dPeripheralTestWrapper) {
     }
 }
 
-fn wait_for_response(dut: &mut Gfx2dPeripheralTestWrapper, max_cycles: usize) {
-    for _ in 0..max_cycles {
+fn wait_for_response(dut: &mut Gfx2dPeripheralTestWrapper, max_cycles: usize) -> usize {
+    for cycle in 0..max_cycles {
         if dut.mem_d_valid != 0 {
-            return;
+            return cycle;
         }
         clock_cycle!(dut);
     }
@@ -68,11 +70,16 @@ fn wait_for_response(dut: &mut Gfx2dPeripheralTestWrapper, max_cycles: usize) {
     panic!("timed out waiting for gfx2d peripheral response");
 }
 
-fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) {
+fn write_access_with_size(
+    dut: &mut Gfx2dPeripheralTestWrapper,
+    addr: u32,
+    wdata: u32,
+    size: u8,
+) -> usize {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = wdata;
     dut.mem_a_we = 1;
-    dut.mem_a_size = MEM_SIZE_WORD;
+    dut.mem_a_size = size;
     dut.mem_a_valid = 1;
     dut.eval();
 
@@ -81,12 +88,14 @@ fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) {
         "expected system bus request to be accepted"
     );
 
+    let mut elapsed_cycles = 0;
     clock_cycle!(dut);
+    elapsed_cycles += 1;
     dut.mem_a_valid = 0;
     dut.mem_a_we = 0;
     dut.eval();
 
-    wait_for_response(dut, 32);
+    elapsed_cycles += wait_for_response(dut, 32);
     assert_eq!(
         dut.mem_d_rdata, 0,
         "writes should acknowledge with zero data"
@@ -94,15 +103,22 @@ fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) {
 
     dut.mem_d_ready = 1;
     clock_cycle!(dut);
+    elapsed_cycles += 1;
     dut.mem_d_ready = 0;
     dut.eval();
+
+    elapsed_cycles
 }
 
-fn read_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32) -> u32 {
+fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) -> usize {
+    write_access_with_size(dut, addr, wdata, MEM_SIZE_WORD)
+}
+
+fn read_access_with_size(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, size: u8) -> u32 {
     dut.mem_a_addr = addr;
     dut.mem_a_wdata = 0;
     dut.mem_a_we = 0;
-    dut.mem_a_size = MEM_SIZE_WORD;
+    dut.mem_a_size = size;
     dut.mem_a_valid = 1;
     dut.eval();
 
@@ -124,6 +140,10 @@ fn read_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32) -> u32 {
     dut.eval();
 
     rdata
+}
+
+fn read_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32) -> u32 {
+    read_access_with_size(dut, addr, MEM_SIZE_WORD)
 }
 
 fn wait_for_active_frame_start(dut: &mut Gfx2dPeripheralTestWrapper, occurrence: usize) {
@@ -216,6 +236,38 @@ fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     )
 }
 
+fn verify_active_pixels_from_current_frame(
+    dut: &mut Gfx2dPeripheralTestWrapper,
+    start_cycle_in_frame: usize,
+    active_pixels_to_check: usize,
+    scroll_x: u8,
+    scroll_y: u8,
+) {
+    let mut cycle_in_frame = start_cycle_in_frame;
+    let mut checked = 0usize;
+
+    while checked < active_pixels_to_check {
+        let row = cycle_in_frame / GFX2D_H_TOTAL;
+        let col = cycle_in_frame % GFX2D_H_TOTAL;
+
+        if row < usize::from(GFX2D_ACTIVE_HEIGHT) && col < usize::from(GFX2D_ACTIVE_WIDTH) {
+            assert_eq!(
+                dut.video_de, 1,
+                "expected active video while validating current frame"
+            );
+            assert_eq!(
+                dut.video_rgb,
+                expected_scrolled_pixel(col as u8, row as u8, scroll_x, scroll_y),
+                "unexpected pixel during same-frame validation at output coordinate ({col}, {row})"
+            );
+            checked += 1;
+        }
+
+        cycle_in_frame += 1;
+        clock_cycle!(dut);
+    }
+}
+
 #[test]
 fn test_gfx2d_scroll_registers_reset_low_and_read_back() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
@@ -249,10 +301,28 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
         }
     }
 
+    wait_for_active_frame_start(&mut dut, 1);
+    let elapsed_cycles = write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1)
+        + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
+
+    verify_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8, 0, 0);
+    assert_eq!(read_access(&mut dut, GFX2D_SCROLL_X_ADDR), 1);
+    assert_eq!(read_access(&mut dut, GFX2D_SCROLL_Y_ADDR), 1);
+
+    let pixels = capture_active_frame_pixels(&mut dut, 1);
+    for y in 0..GFX2D_ACTIVE_HEIGHT {
+        for x in 0..GFX2D_ACTIVE_WIDTH {
+            assert_eq!(
+                active_frame_pixel(&pixels, x, y),
+                expected_scrolled_pixel(x, y, 1, 1),
+                "unexpected pixel at ({x}, {y}) after frame-latched scroll update"
+            );
+        }
+    }
+
     for (scroll_x, scroll_y) in [(1u8, 0u8), (15u8, 0u8), (0u8, 1u8), (9u8, 10u8)] {
         write_access(&mut dut, GFX2D_SCROLL_X_ADDR, u32::from(scroll_x));
         write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, u32::from(scroll_y));
-
         assert_eq!(
             read_access(&mut dut, GFX2D_SCROLL_X_ADDR),
             u32::from(scroll_x)
@@ -295,4 +365,50 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
         assert!(saw_vsync_pulse, "expected vertical sync pulse");
         assert_eq!(dut.video_skip, 0, "video_skip should stay low");
     }
+}
+
+#[test]
+fn test_gfx2d_subword_mmio_accesses_are_ignored() {
+    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
+    let mut dut = runtime
+        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
+        .expect("Failed to create gfx2d model");
+
+    reset(&mut dut);
+
+    write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 0x1122_3344);
+    write_access_with_size(&mut dut, GFX2D_SCROLL_X_ADDR, 0x0000_00AA, MEM_SIZE_BYTE);
+    write_access_with_size(
+        &mut dut,
+        GFX2D_SCROLL_X_ADDR,
+        0x0000_BBCC,
+        MEM_SIZE_HALFWORD,
+    );
+    write_access_with_size(
+        &mut dut,
+        GFX2D_SCROLL_X_ADDR + 1,
+        0x5566_7788,
+        MEM_SIZE_WORD,
+    );
+
+    assert_eq!(
+        read_access(&mut dut, GFX2D_SCROLL_X_ADDR),
+        0x1122_3344,
+        "subword and unaligned accesses must not modify MMIO registers"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_SCROLL_X_ADDR, MEM_SIZE_BYTE),
+        0,
+        "subword MMIO reads should return zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_SCROLL_X_ADDR, MEM_SIZE_HALFWORD),
+        0,
+        "subword MMIO reads should return zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_SCROLL_X_ADDR + 1, MEM_SIZE_WORD),
+        0,
+        "unaligned MMIO reads should return zero"
+    );
 }

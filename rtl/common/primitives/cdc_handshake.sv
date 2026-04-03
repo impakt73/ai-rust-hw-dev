@@ -12,8 +12,8 @@
 // Interface:
 //   src_clk   - Source clock domain
 //   dst_clk   - Destination clock domain
-//   rst       - Synchronous active-high reset for both domains; assert long
-//               enough for both src_clk and dst_clk
+//   src_rst   - Synchronous active-high reset in the source clock domain
+//   dst_rst   - Synchronous active-high reset in the destination clock domain
 //   src_valid - Source presents a new payload this cycle
 //   src_ready - Module can accept a new payload this cycle
 //   src_data  - Source payload sampled when src_valid && src_ready
@@ -28,7 +28,8 @@ module cdc_handshake #(
     // Source interface (src_clk domain)
     input wire logic             src_clk,
     input wire logic             dst_clk,
-    input wire logic             rst,
+    input wire logic             src_rst,
+    input wire logic             dst_rst,
     input wire logic             src_valid,
     output logic                 src_ready,
     input wire logic [WIDTH-1:0] src_data,
@@ -69,7 +70,7 @@ module cdc_handshake #(
         .RESET_VALUE(1'b0)
     ) u_ack_sync (
         .clk(src_clk),
-        .rst(rst),
+        .rst(src_rst),
         .din(dst_ack_toggle),
         .dout(src_ack_toggle_sync)
     );
@@ -79,13 +80,13 @@ module cdc_handshake #(
         .RESET_VALUE(1'b0)
     ) u_req_sync (
         .clk(dst_clk),
-        .rst(rst),
+        .rst(dst_rst),
         .din(src_req_toggle),
         .dout(dst_req_toggle_sync)
     );
 
     always_ff @(posedge src_clk) begin
-        if (rst) begin
+        if (src_rst) begin
             src_req_toggle <= 1'b0;
             src_pending    <= 1'b0;
             src_ready      <= 1'b1;
@@ -106,7 +107,7 @@ module cdc_handshake #(
     end
 
     always_ff @(posedge dst_clk) begin
-        if (rst) begin
+        if (dst_rst) begin
             dst_valid           <= 1'b0;
             dst_ack_toggle      <= 1'b0;
             dst_req_toggle_prev <= 1'b0;

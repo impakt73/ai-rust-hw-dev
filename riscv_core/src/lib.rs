@@ -346,14 +346,17 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "primitives/bus_cdc_bridge.sv",
         "primitives/video_sync.sv",
         "primitives/bitmap_text_renderer.sv",
-        "cpu/cpu.sv",           // CPU core
-        "memory/sync_dpram.sv", // BRAM-friendly simple dual-port RAM
+        "cpu/cpu.sv",               // CPU core
+        "memory/sync_dpram.sv",     // BRAM-friendly simple dual-port RAM
+        "memory/registered_bus.sv", // Registered bus helper used by top-level peripherals
         "memory/sync_sprom.sv",
         "primitives/sync_fifo.sv",             // Generic synchronous FIFO
         "primitives/square_wave_generator.sv", // System LED boot blink generator
         "primitives/activity_indicator.sv",    // System LED activity indicators
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
+        "io/host_bus_rx.sv",  // Host bus receive path used by host_bus_interface
+        "io/host_bus_tx.sv",  // Host bus transmit path used by host_bus_interface
         "io/sys_led_controller.sv", // System LED controller
         "peripherals/gfx2d_peripheral.sv", // GFX2D peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral

@@ -69,6 +69,7 @@ module gfx2d_peripheral #(
     logic [31:0] periph_mem_d_rdata;
     logic        periph_mem_d_valid;
     logic        periph_mem_d_ready;
+    logic        periph_word_access;
 
     logic        periph_mem_a_handshake;
     logic        periph_mem_d_handshake;
@@ -76,10 +77,13 @@ module gfx2d_peripheral #(
     logic        response_pending;
     logic [31:0] scroll_x_reg;
     logic [31:0] scroll_y_reg;
+    logic [SCROLL_X_WIDTH-1:0] renderer_scroll_x;
+    logic [SCROLL_Y_WIDTH-1:0] renderer_scroll_y;
 
     logic        sync_video_de;
     logic        sync_video_hs;
     logic        sync_video_vs;
+    logic        sync_vblank_start;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
     logic [CHARMAP_ADDR_WIDTH-1:0] char_mem_addr;
@@ -93,33 +97,12 @@ module gfx2d_peripheral #(
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_hs_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_vs_pipe;
 
-    function automatic logic [31:0] apply_write_mask(
-        input logic [31:0] current_value,
-        input logic [31:0] write_value,
-        input logic [1:0]  access_size,
-        input logic [1:0]  byte_offset
-    );
-        logic [31:0] shifted_wdata;
-        logic [31:0] write_mask;
-        begin
-            shifted_wdata = write_value << {byte_offset, 3'b000};
-
-            case (access_size)
-                2'b00: write_mask = 32'h0000_00FF << {byte_offset, 3'b000};
-                2'b01: write_mask = 32'h0000_FFFF << {byte_offset, 3'b000};
-                2'b10: write_mask = 32'hFFFF_FFFF << {byte_offset, 3'b000};
-                default: write_mask = 32'h0000_0000;
-            endcase
-
-            apply_write_mask = (current_value & ~write_mask) | (shifted_wdata & write_mask);
-        end
-    endfunction
-
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
-    assign periph_mem_a_ready = !response_pending;
+    assign periph_mem_a_ready = !video_rst && !response_pending;
     assign periph_mem_d_rdata = response_data;
     assign periph_mem_d_valid = response_pending;
+    assign periph_word_access = (periph_mem_a_size == 2'b10) && (periph_mem_a_addr[1:0] == 2'b00);
 
     assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
     assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
@@ -148,7 +131,8 @@ module gfx2d_peripheral #(
     ) u_bus_cdc_bridge (
         .sys_clk(sys_clk),
         .periph_clk(video_clk),
-        .rst(rst),
+        .sys_rst(rst),
+        .periph_rst(video_rst),
         .sys_mem_a_addr(mem_a_addr),
         .sys_mem_a_wdata(mem_a_wdata),
         .sys_mem_a_we(mem_a_we),
@@ -189,7 +173,7 @@ module gfx2d_peripheral #(
         .line_start(),
         .frame_start(),
         .hblank_start(),
-        .vblank_start(),
+        .vblank_start(sync_vblank_start),
         .active_x(sync_active_x),
         .active_y(sync_active_y),
         .scan_x(),
@@ -238,8 +222,8 @@ module gfx2d_peripheral #(
         .rst(video_rst),
         .screen_x(sync_active_x),
         .screen_y(sync_active_y),
-        .scroll_x(scroll_x_reg[SCROLL_X_WIDTH-1:0]),
-        .scroll_y(scroll_y_reg[SCROLL_Y_WIDTH-1:0]),
+        .scroll_x(renderer_scroll_x),
+        .scroll_y(renderer_scroll_y),
         .char_mem_addr(char_mem_addr),
         .char_mem_rdata(char_mem_rdata),
         .font_mem_addr(font_mem_addr),
@@ -253,7 +237,8 @@ module gfx2d_peripheral #(
         if (video_rst) begin
             scroll_x_reg <= 32'h0000_0000;
             scroll_y_reg <= 32'h0000_0000;
-            response_data <= 32'h0000_0000;
+            renderer_scroll_x <= '0;
+            renderer_scroll_y <= '0;
             response_pending <= 1'b0;
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_HSYNC_ACTIVE_HIGH}};
@@ -267,37 +252,30 @@ module gfx2d_peripheral #(
                 response_pending <= 1'b0;
             end
 
+            if (sync_vblank_start) begin
+                renderer_scroll_x <= scroll_x_reg[SCROLL_X_WIDTH-1:0];
+                renderer_scroll_y <= scroll_y_reg[SCROLL_Y_WIDTH-1:0];
+            end
+
             if (periph_mem_a_handshake) begin
                 response_data <= 32'h0000_0000;
                 response_pending <= 1'b1;
 
-                if (periph_mem_a_we) begin
-                    case (periph_mem_a_addr[4:0])
-                        REG_SCROLL_X: begin
-                            scroll_x_reg <= apply_write_mask(
-                                scroll_x_reg,
-                                periph_mem_a_wdata,
-                                periph_mem_a_size,
-                                periph_mem_a_addr[1:0]
-                            );
-                        end
-                        REG_SCROLL_Y: begin
-                            scroll_y_reg <= apply_write_mask(
-                                scroll_y_reg,
-                                periph_mem_a_wdata,
-                                periph_mem_a_size,
-                                periph_mem_a_addr[1:0]
-                            );
-                        end
-                        default: begin
-                        end
-                    endcase
-                end else begin
-                    case (periph_mem_a_addr[4:0])
-                        REG_SCROLL_X: response_data <= scroll_x_reg;
-                        REG_SCROLL_Y: response_data <= scroll_y_reg;
-                        default: response_data <= 32'h0000_0000;
-                    endcase
+                if (periph_word_access) begin
+                    if (periph_mem_a_we) begin
+                        case (periph_mem_a_addr[4:0])
+                            REG_SCROLL_X: scroll_x_reg <= periph_mem_a_wdata;
+                            REG_SCROLL_Y: scroll_y_reg <= periph_mem_a_wdata;
+                            default: begin
+                            end
+                        endcase
+                    end else begin
+                        case (periph_mem_a_addr[4:0])
+                            REG_SCROLL_X: response_data <= scroll_x_reg;
+                            REG_SCROLL_Y: response_data <= scroll_y_reg;
+                            default: response_data <= 32'h0000_0000;
+                        endcase
+                    end
                 end
             end
         end
