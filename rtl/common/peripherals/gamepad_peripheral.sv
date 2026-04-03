@@ -59,6 +59,9 @@ module gamepad_peripheral (
     logic        response_pending;
     logic [31:0] response_data;
 
+    localparam int unsigned GAMEPAD_BUTTON_BITS = 10;
+    localparam int unsigned GAMEPAD_RESERVED_BITS = 32 - GAMEPAD_BUTTON_BITS;
+
     logic mem_a_handshake;
     logic mem_d_handshake;
 
@@ -91,7 +94,10 @@ module gamepad_peripheral (
                     // Sample current button state into the response register.
                     // Address and size decoding are intentionally omitted: there
                     // is a single register that responds to any byte offset.
-                    response_data <= {22'h0, gamepad_in[9:0]};
+                    response_data <= {
+                        {GAMEPAD_RESERVED_BITS{1'b0}},
+                        gamepad_in[GAMEPAD_BUTTON_BITS-1:0]
+                    };
                 end
                 response_pending <= 1'b1;
             end

@@ -7,6 +7,7 @@ use riscv_shared::bus::{
 
 const GAMEPAD_BASE_ADDR: u32 = 0x5000_0000;
 const MEM_SIZE_WORD: u8 = 2;
+const GAMEPAD_BUTTON_MASK: u32 = 0x0000_03FF;
 const RESET_SETTLE_CYCLES: usize = 4;
 
 // ---------------------------------------------------------------------------
@@ -176,7 +177,11 @@ fn test_gamepad_all_buttons_pressed() {
     );
 
     // Upper bits must always be zero
-    assert_eq!(state & !0x3FF, 0, "Reserved bits [31:10] must read as 0");
+    assert_eq!(
+        state & !GAMEPAD_BUTTON_MASK,
+        0,
+        "Reserved bits [31:10] must read as 0"
+    );
 }
 
 /// Individual button bits are mapped to the documented bit positions.
@@ -290,7 +295,7 @@ fn test_gamepad_reserved_bits_always_zero() {
 
     let state = read_access(&mut dut, GAMEPAD_BASE_ADDR);
     assert_eq!(
-        state & !0x3FF,
+        state & !GAMEPAD_BUTTON_MASK,
         0,
         "bits [31:10] must read as zero even with all buttons asserted"
     );
