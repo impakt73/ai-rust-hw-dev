@@ -74,6 +74,7 @@ module gfx2d_peripheral #(
 
     logic reset_n_video_sync;
     logic video_rst;
+    logic video_sync_rst;
 
     logic [31:0] periph_mem_a_addr;
     logic [31:0] periph_mem_a_wdata;
@@ -107,6 +108,7 @@ module gfx2d_peripheral #(
     logic        sync_video_hs;
     logic        sync_video_vs;
     logic        sync_frame_start;
+    logic        sync_frame_start_prev;
     logic        sync_vblank_start;
     logic [ACTIVE_X_WIDTH-1:0] sync_active_x;
     logic [ACTIVE_Y_WIDTH-1:0] sync_active_y;
@@ -210,6 +212,7 @@ module gfx2d_peripheral #(
     );
 
     assign video_rst = !reset_n_video_sync;
+    assign video_sync_rst = video_rst || video_scanout_hold_reg;
 
     bus_cdc_bridge #(
         .ADDR_WIDTH(32),
@@ -254,7 +257,7 @@ module gfx2d_peripheral #(
         .VSYNC_ACTIVE_HIGH(VIDEO_VSYNC_ACTIVE_HIGH)
     ) u_video_sync (
         .clk(video_clk),
-        .rst(video_rst || video_scanout_hold_reg),
+        .rst(video_sync_rst),
         .hsync(sync_video_hs),
         .vsync(sync_video_vs),
         .active_video(sync_video_de),
@@ -336,6 +339,7 @@ module gfx2d_peripheral #(
             scroll_y_reg <= 32'h0000_0000;
             video_scanout_hold_reg <= 1'b0;
             frame_counter_reg <= 32'h0000_0000;
+            sync_frame_start_prev <= 1'b1;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
             response_pending <= 1'b0;
@@ -346,8 +350,9 @@ module gfx2d_peripheral #(
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+            sync_frame_start_prev <= sync_frame_start;
 
-            if (!video_scanout_hold_reg && sync_frame_start) begin
+            if (sync_frame_start && !sync_frame_start_prev) begin
                 frame_counter_reg <= frame_counter_reg + 1'b1;
             end
 

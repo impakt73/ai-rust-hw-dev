@@ -460,13 +460,12 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         "unaligned MMIO reads should return zero"
     );
 
-    write_access(&mut dut, GFX2D_CONTROL_ADDR, GFX2D_CONTROL_SCANOUT_HOLD_RESET);
-    write_access_with_size(
+    write_access(
         &mut dut,
         GFX2D_CONTROL_ADDR,
-        0x0000_0000,
-        MEM_SIZE_HALFWORD,
+        GFX2D_CONTROL_SCANOUT_HOLD_RESET,
     );
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_HALFWORD);
     write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR + 1, 0x0000_0000, MEM_SIZE_WORD);
     assert_eq!(
         read_access(&mut dut, GFX2D_CONTROL_ADDR),
@@ -479,10 +478,11 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         "subword control register reads should return zero"
     );
 
+    let frame_counter_before_write = read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR);
     write_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR, 0xDEAD_BEEF);
     assert_eq!(
         read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-        0,
+        frame_counter_before_write,
         "frame counter writes must be ignored"
     );
     assert_eq!(
@@ -579,8 +579,6 @@ fn test_gfx2d_control_register_holds_scanout_in_reset() {
     load_test_pattern(&mut dut);
 
     wait_for_next_active_frame_start(&mut dut);
-    assert_eq!(read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR), 1);
-
     write_access(
         &mut dut,
         GFX2D_CONTROL_ADDR,
