@@ -29,46 +29,15 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_dac,
     output logic            audio_lrclk
 );
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
     logic rst;
-    logic reset_n_video_sync;
     logic reset_n_audio_sync;
-    logic video_rst;
     logic audio_rst;
-    logic        bitmap_sync_video_de;
-    logic        bitmap_sync_video_hs;
-    logic        bitmap_sync_video_vs;
-    logic [((VIDEO_ACTIVE_WIDTH <= 1) ? 1 : $clog2(VIDEO_ACTIVE_WIDTH))-1:0] bitmap_sync_active_x;
-    logic [((VIDEO_ACTIVE_HEIGHT <= 1) ? 1 : $clog2(VIDEO_ACTIVE_HEIGHT))-1:0]
-        bitmap_sync_active_y;
-    logic        bitmap_video_de;
-    logic        bitmap_video_hs;
-    logic        bitmap_video_vs;
-    logic [23:0] bitmap_video_rgb;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] bitmap_video_de_pipe;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] bitmap_video_hs_pipe;
-    logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] bitmap_video_vs_pipe;
-    logic [9:0]  bitmap_char_mem_addr;
-    logic [7:0]  bitmap_char_mem_rdata;
-    logic [13:0] bitmap_font_mem_addr;
-    logic [7:0]  bitmap_font_mem_rdata;
-    logic [7:0]  bitmap_palette_mem_addr;
-    logic [23:0] bitmap_palette_mem_rdata;
-    logic [31:0] cont1_key_video;
     logic        face_a_audio;
     logic        face_b_audio;
     logic        face_x_audio;
     logic        face_y_audio;
     logic        trig_l_audio;
     logic        trig_r_audio;
-    logic        bitmap_video_vs_prev;
-    logic [7:0]  scroll_x_reg;
-    logic [7:0]  scroll_y_reg;
-    logic [23:0] video_rgb_reg;
-    logic        video_de_reg;
-    logic        video_skip_reg;
-    logic        video_vs_reg;
-    logic        video_hs_reg;
     localparam int unsigned AUDIO_PHASE_WIDTH = 32;
     localparam int unsigned AUDIO_TABLE_SIZE = 1024;
     localparam int unsigned I2S_OUTPUT_SAMPLE_WIDTH = 31;
@@ -92,10 +61,6 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
-    localparam int unsigned DPAD_UP_BIT = 0;
-    localparam int unsigned DPAD_DOWN_BIT = 1;
-    localparam int unsigned DPAD_LEFT_BIT = 2;
-    localparam int unsigned DPAD_RIGHT_BIT = 3;
     localparam int unsigned FACE_A_BIT = 4;
     localparam int unsigned FACE_B_BIT = 5;
     localparam int unsigned FACE_X_BIT = 6;
@@ -123,19 +88,6 @@ module cyclonev_analogue_pocket_top #(
         .STAGES(3),
         .WIDTH(1),
         .RESET_VALUE(1'b0)
-    ) video_reset_sync (
-        .clk(clk_video),
-        .rst(1'b0),
-        .din(reset_n),
-        .dout(reset_n_video_sync)
-    );
-
-    assign video_rst = !reset_n_video_sync;
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(1),
-        .RESET_VALUE(1'b0)
     ) audio_reset_sync (
         .clk(audio_sclk),
         .rst(1'b0),
@@ -144,73 +96,6 @@ module cyclonev_analogue_pocket_top #(
     );
 
     assign audio_rst = !reset_n_audio_sync;
-
-    ff_sync #(
-        .STAGES(3),
-        .WIDTH(32)
-    ) video_cont1_key_sync (
-        .clk(clk_video),
-        .rst(video_rst),
-        .din(cont1_key),
-        .dout(cont1_key_video)
-    );
-
-    video_sync #(
-        .H_ACTIVE(VIDEO_ACTIVE_WIDTH),
-        .H_FRONT_PORCH(VIDEO_H_FRONT_PORCH),
-        .H_SYNC_WIDTH(VIDEO_H_SYNC_WIDTH),
-        .H_BACK_PORCH(VIDEO_H_BACK_PORCH),
-        .V_ACTIVE(VIDEO_ACTIVE_HEIGHT),
-        .V_FRONT_PORCH(VIDEO_V_FRONT_PORCH),
-        .V_SYNC_WIDTH(VIDEO_V_SYNC_WIDTH),
-        .V_BACK_PORCH(VIDEO_V_BACK_PORCH),
-        .HSYNC_ACTIVE_HIGH(1'b1),
-        .VSYNC_ACTIVE_HIGH(1'b1)
-    ) pocket_video_sync (
-        .clk(clk_video),
-        .rst(video_rst),
-        .hsync(bitmap_sync_video_hs),
-        .vsync(bitmap_sync_video_vs),
-        .active_video(bitmap_sync_video_de),
-        .line_start(),
-        .frame_start(),
-        .hblank_start(),
-        .vblank_start(),
-        .active_x(bitmap_sync_active_x),
-        .active_y(bitmap_sync_active_y),
-        .scan_x(),
-        .scan_y()
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(8),
-        .ADDR_WIDTH(10),
-        .INIT_FILE(CHAR_MAP_INIT_FILE)
-    ) pocket_bitmap_char_map_rom (
-        .clk(clk_video),
-        .addr(bitmap_char_mem_addr),
-        .rdata(bitmap_char_mem_rdata)
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(8),
-        .ADDR_WIDTH(14),
-        .INIT_FILE(FONT_INIT_FILE)
-    ) pocket_bitmap_font_rom (
-        .clk(clk_video),
-        .addr(bitmap_font_mem_addr),
-        .rdata(bitmap_font_mem_rdata)
-    );
-
-    sync_sprom #(
-        .DATA_WIDTH(24),
-        .ADDR_WIDTH(8),
-        .INIT_FILE(PALETTE_INIT_FILE)
-    ) pocket_bitmap_palette_rom (
-        .clk(clk_video),
-        .addr(bitmap_palette_mem_addr),
-        .rdata(bitmap_palette_mem_rdata)
-    );
 
     // Synchronize all audio-domain button bits as a packed vector to reduce duplication.
     // Bit order: [5]=TRIG_R1, [4]=TRIG_L1, [3]=FACE_Y, [2]=FACE_X, [1]=FACE_B, [0]=FACE_A
@@ -238,17 +123,39 @@ module cyclonev_analogue_pocket_top #(
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .ENABLE_GFX2D(1'b1),
         .CLK_FREQ_HZ(74_250_000),
         .RESET_CYCLES(74_250_000),
-        .BAUD_RATE(BAUD_RATE)
+        .BAUD_RATE(BAUD_RATE),
+        .GFX2D_VIDEO_ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
+        .GFX2D_VIDEO_ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),
+        .GFX2D_VIDEO_H_FRONT_PORCH(VIDEO_H_FRONT_PORCH),
+        .GFX2D_VIDEO_H_SYNC_WIDTH(VIDEO_H_SYNC_WIDTH),
+        .GFX2D_VIDEO_H_BACK_PORCH(VIDEO_H_BACK_PORCH),
+        .GFX2D_VIDEO_V_FRONT_PORCH(VIDEO_V_FRONT_PORCH),
+        .GFX2D_VIDEO_V_SYNC_WIDTH(VIDEO_V_SYNC_WIDTH),
+        .GFX2D_VIDEO_V_BACK_PORCH(VIDEO_V_BACK_PORCH),
+        .GFX2D_VIDEO_HSYNC_ACTIVE_HIGH(1'b1),
+        .GFX2D_VIDEO_VSYNC_ACTIVE_HIGH(1'b1),
+        .GFX2D_TILE_COLUMNS(32),
+        .GFX2D_TILE_ROWS(32),
+        .GFX2D_FONT_INIT_FILE(FONT_INIT_FILE),
+        .GFX2D_CHAR_MAP_INIT_FILE(CHAR_MAP_INIT_FILE),
+        .GFX2D_PALETTE_INIT_FILE(PALETTE_INIT_FILE)
     ) repo_top_inst (
         .sys_clk(clk),
+        .video_clk(clk_video),
         .rst(rst),
         .usb_rx(serial_rx),
         .usb_tx(serial_tx),
         .led_out(),
         .sys_led_out(),
-        .rst_core(rst_out)
+        .rst_core(rst_out),
+        .video_rgb(video_rgb),
+        .video_de(video_de),
+        .video_skip(video_skip),
+        .video_vs(video_vs),
+        .video_hs(video_hs)
     );
 
     logic audio_en;
@@ -332,84 +239,6 @@ module cyclonev_analogue_pocket_top #(
         .i2s_sd      (audio_dac)
     );
 
-    bitmap_text_renderer #(
-        .ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
-        .ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),
-        .TILE_COLUMNS(32),
-        .TILE_ROWS(32)
-    ) pocket_bitmap_text_renderer (
-        .clk(clk_video),
-        .rst(video_rst),
-        .screen_x(bitmap_sync_active_x),
-        .screen_y(bitmap_sync_active_y),
-        .scroll_x(scroll_x_reg),
-        .scroll_y(scroll_y_reg),
-        .char_mem_addr(bitmap_char_mem_addr),
-        .char_mem_rdata(bitmap_char_mem_rdata),
-        .font_mem_addr(bitmap_font_mem_addr),
-        .font_mem_rdata(bitmap_font_mem_rdata),
-        .palette_mem_addr(bitmap_palette_mem_addr),
-        .palette_mem_rdata(bitmap_palette_mem_rdata),
-        .video_rgb(bitmap_video_rgb)
-    );
-
-    always_ff @(posedge clk_video) begin
-        if (video_rst) begin
-            bitmap_video_vs_prev <= 1'b0;
-            bitmap_video_de_pipe <= '0;
-            bitmap_video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{1'b0}};
-            bitmap_video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{1'b0}};
-            scroll_x_reg <= 8'd0;
-            scroll_y_reg <= 8'd0;
-            video_rgb_reg <= 24'h00_00_00;
-            video_de_reg <= 1'b0;
-            video_skip_reg <= 1'b0;
-            video_vs_reg <= 1'b0;
-            video_hs_reg <= 1'b0;
-        end else begin
-            bitmap_video_de_pipe <= {
-                bitmap_video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0],
-                bitmap_sync_video_de
-            };
-            bitmap_video_hs_pipe <= {
-                bitmap_video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0],
-                bitmap_sync_video_hs
-            };
-            bitmap_video_vs_pipe <= {
-                bitmap_video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0],
-                bitmap_sync_video_vs
-            };
-            bitmap_video_vs_prev <= bitmap_video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-            if (bitmap_video_vs && !bitmap_video_vs_prev) begin
-                if (cont1_key_video[DPAD_LEFT_BIT] && !cont1_key_video[DPAD_RIGHT_BIT]) begin
-                    scroll_x_reg <= scroll_x_reg - 8'd1;
-                end else if (cont1_key_video[DPAD_RIGHT_BIT] && !cont1_key_video[DPAD_LEFT_BIT]) begin
-                    scroll_x_reg <= scroll_x_reg + 8'd1;
-                end
-
-                if (cont1_key_video[DPAD_UP_BIT] && !cont1_key_video[DPAD_DOWN_BIT]) begin
-                    scroll_y_reg <= scroll_y_reg - 8'd1;
-                end else if (cont1_key_video[DPAD_DOWN_BIT] && !cont1_key_video[DPAD_UP_BIT]) begin
-                    scroll_y_reg <= scroll_y_reg + 8'd1;
-                end
-            end
-            video_rgb_reg <= bitmap_video_de ? bitmap_video_rgb : 24'h00_00_00;
-            video_de_reg <= bitmap_video_de;
-            video_skip_reg <= 1'b0;
-            video_vs_reg <= bitmap_video_vs;
-            video_hs_reg <= bitmap_video_hs;
-        end
-    end
-
-    assign bitmap_video_de = bitmap_video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign bitmap_video_hs = bitmap_video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign bitmap_video_vs = bitmap_video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-
-    assign video_rgb = video_rgb_reg;
-    assign video_de = video_de_reg;
-    assign video_skip = video_skip_reg;
-    assign video_vs = video_vs_reg;
-    assign video_hs = video_hs_reg;
 endmodule
 
 `default_nettype wire

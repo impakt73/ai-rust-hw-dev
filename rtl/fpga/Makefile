@@ -22,6 +22,8 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/phase_accumulator.sv \
 	$(RTL_DIR)/primitives/activity_indicator.sv \
 	$(RTL_DIR)/primitives/bitmap_text_renderer.sv \
+	$(RTL_DIR)/primitives/bus_cdc_bridge.sv \
+	$(RTL_DIR)/primitives/cdc_handshake.sv \
 	$(RTL_DIR)/primitives/sine_table.sv \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
 	$(RTL_DIR)/primitives/tone_generator.sv \
@@ -56,6 +58,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/writeback_mux.sv \
 	$(RTL_DIR)/cpu/cpu.sv \
 	$(RTL_DIR)/peripherals/sram_peripheral.sv \
+	$(RTL_DIR)/peripherals/gfx2d_peripheral.sv \
 	$(RTL_DIR)/peripherals/system_controller_peripheral.sv \
 	$(RTL_DIR)/top.sv
 

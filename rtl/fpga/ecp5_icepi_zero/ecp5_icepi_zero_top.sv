@@ -51,12 +51,18 @@ module ecp5_icepi_zero_top #(
         .BAUD_RATE(BAUD_RATE)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
+        .video_clk(1'b0),
         .rst(~rst_n_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),
         .sys_led_out(sys_led_out),
-        .rst_core()
+        .rst_core(),
+        .video_rgb(),
+        .video_de(),
+        .video_skip(),
+        .video_vs(),
+        .video_hs()
     );
 
     assign led = sys_led_out[4:0];

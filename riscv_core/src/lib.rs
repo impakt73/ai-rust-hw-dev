@@ -200,6 +200,12 @@ pub struct SramTestWrapper;
 pub struct SramPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/gfx2d_peripheral_test_wrapper.sv",
+    name = "gfx2d_peripheral_test_wrapper"
+)]
+pub struct Gfx2dPeripheralTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_sprom_test_wrapper.sv",
     name = "sync_sprom_test_wrapper"
 )]
@@ -335,14 +341,21 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
     create_runtime(&[
         "top.sv",                                      // Top-level wrapper with RTL peripherals
         "primitives/reset_controller.sv",              // Power-on reset controller
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "primitives/bus_cdc_bridge.sv",
+        "primitives/video_sync.sv",
+        "primitives/bitmap_text_renderer.sv",
         "cpu/cpu.sv",                                  // CPU core
         "memory/sync_dpram.sv",                        // BRAM-friendly simple dual-port RAM
+        "memory/sync_sprom.sv",
         "primitives/sync_fifo.sv",                     // Generic synchronous FIFO
         "primitives/square_wave_generator.sv",         // System LED boot blink generator
         "primitives/activity_indicator.sv",            // System LED activity indicators
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/sys_led_controller.sv", // System LED controller
+        "peripherals/gfx2d_peripheral.sv", // GFX2D peripheral
         "peripherals/sram_peripheral.sv", // SRAM peripheral
         "memory/sram.sv",     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
@@ -573,6 +586,19 @@ pub fn create_sram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std:
         "memory/sram.sv",
         "peripherals/sram_peripheral.sv",
         "wrappers/sram_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_gfx2d_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "primitives/bus_cdc_bridge.sv",
+        "memory/sync_sprom.sv",
+        "primitives/video_sync.sv",
+        "primitives/bitmap_text_renderer.sv",
+        "peripherals/gfx2d_peripheral.sv",
+        "wrappers/gfx2d_peripheral_test_wrapper.sv",
     ])
 }
 

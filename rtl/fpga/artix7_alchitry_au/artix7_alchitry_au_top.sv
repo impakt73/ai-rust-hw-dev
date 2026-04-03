@@ -103,12 +103,18 @@ module artix7_alchitry_au_top #(
         .BAUD_RATE(BAUD_RATE)
     ) fpga_common_top_inst (
         .sys_clk(sys_clk),
+        .video_clk(1'b0),
         .rst(~pll_locked_sync2),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
         .led_out(),
         .sys_led_out(sys_led_out),
-        .rst_core()
+        .rst_core(),
+        .video_rgb(),
+        .video_de(),
+        .video_skip(),
+        .video_vs(),
+        .video_hs()
     );
 
     assign led = sys_led_out;
