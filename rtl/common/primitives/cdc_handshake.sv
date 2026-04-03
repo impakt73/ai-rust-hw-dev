@@ -12,7 +12,8 @@
 // Interface:
 //   src_clk   - Source clock domain
 //   dst_clk   - Destination clock domain
-//   rst       - Synchronous active-high reset
+//   rst       - Synchronous active-high reset for both domains; assert long
+//               enough for both src_clk and dst_clk
 //   src_valid - Source presents a new payload this cycle
 //   src_ready - Module can accept a new payload this cycle
 //   src_data  - Source payload sampled when src_valid && src_ready

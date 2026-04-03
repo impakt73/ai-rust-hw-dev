@@ -204,7 +204,7 @@ fn test_cdc_handshake_sync_stage_and_width_parameterization() {
     tick_param(&mut dut, false, true);
     assert_eq!(
         dut.dst_valid, 1,
-        "destination should assert after the 3-stage sync latency"
+        "destination should assert after 4 dst edges (3 sync stages + edge-detect stage)"
     );
     assert_eq!(
         dut.dst_data, 0xBEEF,
