@@ -256,6 +256,8 @@ module gfx2d_peripheral #(
             end
 
             if (periph_mem_a_handshake) begin
+                // response_data intentionally is not reset because response_pending
+                // marks when the payload is meaningful.
                 response_data <= 32'h0000_0000;
                 response_pending <= 1'b1;
 

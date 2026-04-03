@@ -60,9 +60,9 @@ fn reset(dut: &mut Gfx2dPeripheralTestWrapper) {
 }
 
 fn wait_for_response(dut: &mut Gfx2dPeripheralTestWrapper, max_cycles: usize) -> usize {
-    for cycle in 0..max_cycles {
+    for elapsed_cycles in 0..max_cycles {
         if dut.mem_d_valid != 0 {
-            return cycle;
+            return elapsed_cycles;
         }
         clock_cycle!(dut);
     }
