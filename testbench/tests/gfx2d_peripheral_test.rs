@@ -10,6 +10,7 @@ const GFX2D_PALETTE_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x6000;
 const MEM_SIZE_BYTE: u8 = 0;
 const MEM_SIZE_HALFWORD: u8 = 1;
 const MEM_SIZE_WORD: u8 = 2;
+const GFX2D_ACCESS_TIMEOUT_CYCLES: usize = 64;
 
 const GFX2D_H_TOTAL: usize = 26;
 const GFX2D_V_TOTAL: usize = 19;
@@ -98,7 +99,7 @@ fn write_access_with_size(
     dut.mem_a_we = 0;
     dut.eval();
 
-    elapsed_cycles += wait_for_response(dut, 64);
+    elapsed_cycles += wait_for_response(dut, GFX2D_ACCESS_TIMEOUT_CYCLES);
     assert_eq!(
         dut.mem_d_rdata, 0,
         "writes should acknowledge with zero data"
@@ -134,7 +135,7 @@ fn read_access_with_size(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, size: 
     dut.mem_a_valid = 0;
     dut.eval();
 
-    wait_for_response(dut, 64);
+    wait_for_response(dut, GFX2D_ACCESS_TIMEOUT_CYCLES);
     let rdata = dut.mem_d_rdata;
 
     dut.mem_d_ready = 1;
@@ -170,7 +171,7 @@ fn load_test_pattern(dut: &mut Gfx2dPeripheralTestWrapper) {
     for (glyph, rows) in GFX2D_FONT_ROWS.iter().enumerate() {
         for (row, bits) in rows.iter().enumerate() {
             for col in 0..8 {
-                let palette_index = if ((bits >> (7 - col)) & 1) != 0 { 1 } else { 0 };
+                let palette_index = u32::from(((bits >> (7 - col)) & 1) != 0);
                 write_access_with_size(
                     dut,
                     font_addr(glyph as u8, row as u8, col as u8),

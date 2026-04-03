@@ -59,7 +59,9 @@ module gfx2d_peripheral #(
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
     localparam int unsigned CHARMAP_ADDR_WIDTH =
         (CHARMAP_DEPTH <= 1) ? 1 : $clog2(CHARMAP_DEPTH);
-    localparam int unsigned FONT_ADDR_WIDTH = 14;
+    localparam int unsigned FONT_ADDR_WIDTH =
+        8 + (((TILE_HEIGHT <= 1) ? 1 : $clog2(TILE_HEIGHT)) +
+        ((TILE_WIDTH <= 1) ? 1 : $clog2(TILE_WIDTH)));
     localparam int unsigned FONT_DEPTH = (1 << FONT_ADDR_WIDTH);
     localparam int unsigned PALETTE_ADDR_WIDTH = 8;
     localparam int unsigned PALETTE_DEPTH = (1 << PALETTE_ADDR_WIDTH);
@@ -139,6 +141,10 @@ module gfx2d_peripheral #(
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
     assign periph_addr_offset = periph_mem_a_addr[15:0];
+    // sync_dpram registers both the array read and the externally visible
+    // output, so this module sees CPU read data two video_clk edges after the
+    // accepted request. Keep requests serialized until both pipeline stages
+    // are clear and any response has been consumed.
     assign periph_mem_a_ready =
         !video_rst &&
         !cpu_ram_read_pending_d0 &&
@@ -359,7 +365,6 @@ module gfx2d_peripheral #(
                     RAM_READ_FONT: response_data <= {24'h00_00_00, font_mem_rdata};
                     RAM_READ_PALETTE: response_data <= {8'h00, palette_mem_rdata};
                     default: begin
-                        response_data <= 32'h0000_0000;
                     end
                 endcase
             end
