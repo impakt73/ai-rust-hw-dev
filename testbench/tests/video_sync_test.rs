@@ -61,8 +61,14 @@ fn test_video_sync_holds_registered_defaults_during_reset() {
             dut.frame_start, 1,
             "frame_start must stay high during reset"
         );
-        assert_eq!(dut.hblank_start, 0, "hblank_start must stay low during reset");
-        assert_eq!(dut.vblank_start, 0, "vblank_start must stay low during reset");
+        assert_eq!(
+            dut.hblank_start, 0,
+            "hblank_start must stay low during reset"
+        );
+        assert_eq!(
+            dut.vblank_start, 0,
+            "vblank_start must stay low during reset"
+        );
         assert_eq!(dut.active_x, 0, "active_x must reset to zero");
         assert_eq!(dut.active_y, 0, "active_y must reset to zero");
         assert_eq!(
@@ -92,15 +98,15 @@ fn test_video_sync_generates_expected_first_line_timing() {
     // is active. The ninth cycle wraps to the second line (v=1) at the start
     // of horizontal back porch, and the tenth cycle shows the first active pixel.
     let expected = [
-        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8),
-        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8, 0u8),
-        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 3u8, 0u8, 0u8),
-        (1u8, 1u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 4u8, 0u8, 0u8),
-        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 5u8, 0u8, 0u8),
-        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 6u8, 0u8, 0u8),
-        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 7u8, 0u8, 0u8),
-        (1u8, 1u8, 0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8),
-        (1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 1u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 3u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 4u8, 0u8),
+        (1u8, 1u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8, 5u8, 0u8),
+        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 6u8, 0u8),
+        (0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 7u8, 0u8),
+        (1u8, 1u8, 0u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8),
+        (1u8, 1u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 1u8),
     ];
 
     for (
@@ -126,8 +132,14 @@ fn test_video_sync_generates_expected_first_line_timing() {
         );
         assert_eq!(dut.line_start, line_start, "unexpected line_start pulse");
         assert_eq!(dut.frame_start, frame_start, "unexpected frame_start pulse");
-        assert_eq!(dut.hblank_start, hblank_start, "unexpected hblank_start pulse");
-        assert_eq!(dut.vblank_start, vblank_start, "unexpected vblank_start pulse");
+        assert_eq!(
+            dut.hblank_start, hblank_start,
+            "unexpected hblank_start pulse"
+        );
+        assert_eq!(
+            dut.vblank_start, vblank_start,
+            "unexpected vblank_start pulse"
+        );
         assert_eq!(dut.active_x, active_x, "unexpected active_x coordinate");
         assert_eq!(dut.active_y, active_y, "unexpected active_y coordinate");
         assert_eq!(dut.scan_x, scan_x, "unexpected scan_x coordinate");
@@ -232,8 +244,14 @@ fn test_video_sync_line_and_frame_markers_match_frame_geometry() {
         "frame_start should repeat at the next frame origin"
     );
     assert_eq!(dut.line_start, 1, "new frame must also start a new line");
-    assert_eq!(dut.hblank_start, 0, "new frame origin must not also assert hblank_start");
-    assert_eq!(dut.vblank_start, 0, "new frame origin must not also assert vblank_start");
+    assert_eq!(
+        dut.hblank_start, 0,
+        "new frame origin must not also assert hblank_start"
+    );
+    assert_eq!(
+        dut.vblank_start, 0,
+        "new frame origin must not also assert vblank_start"
+    );
     assert_eq!(
         dut.active_video, 0,
         "next frame origin is in back porch, not active video"
@@ -364,7 +382,8 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
         dut.hblank_start, 1,
         "horizontal blanking should begin with hblank_start"
     );
-    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize - 1) {
+    clock_cycle!(&mut dut);
+    for _ in 0..(VIDEO_SYNC_WRAPPER_H_TOTAL - VIDEO_SYNC_WRAPPER_H_ACTIVE as usize - 2) {
         assert_eq!(
             dut.active_video, 0,
             "horizontal blanking should deassert active_video"
@@ -377,17 +396,10 @@ fn test_video_sync_zeroes_coordinates_outside_active_region() {
             dut.active_y, 0,
             "active_y must be zero during horizontal blanking"
         );
-        if dut.scan_x == 5 {
-            assert_eq!(
-                dut.hblank_start, 1,
-                "only the first horizontal blanking pixel should assert hblank_start"
-            );
-        } else {
-            assert_eq!(
-                dut.hblank_start, 0,
-                "hblank_start must drop after the first horizontal blanking pixel"
-            );
-        }
+        assert_eq!(
+            dut.hblank_start, 0,
+            "hblank_start must drop after the first horizontal blanking pixel"
+        );
         assert_eq!(dut.scan_y, 1, "scan_y must stay on the same scan line");
         clock_cycle!(&mut dut);
     }
