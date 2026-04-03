@@ -66,6 +66,8 @@ module bitmap_text_renderer_test_wrapper (
         .active_video(sync_video_de),
         .line_start(),
         .frame_start(),
+        .hblank_start(),
+        .vblank_start(),
         .active_x(sync_active_x),
         .active_y(sync_active_y),
         .scan_x(),
