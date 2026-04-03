@@ -35,10 +35,7 @@ module top #(
     parameter int unsigned GFX2D_TILE_WIDTH = 8,
     parameter int unsigned GFX2D_TILE_HEIGHT = 8,
     parameter int unsigned GFX2D_TILE_COLUMNS = 32,
-    parameter int unsigned GFX2D_TILE_ROWS = 32,
-    parameter GFX2D_FONT_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter GFX2D_CHAR_MAP_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter GFX2D_PALETTE_INIT_FILE = "rtl/common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter int unsigned GFX2D_TILE_ROWS = 32
 ) (
     input wire logic        clk,
     input wire logic        video_clk,
@@ -513,10 +510,7 @@ module top #(
                 .TILE_WIDTH(GFX2D_TILE_WIDTH),
                 .TILE_HEIGHT(GFX2D_TILE_HEIGHT),
                 .TILE_COLUMNS(GFX2D_TILE_COLUMNS),
-                .TILE_ROWS(GFX2D_TILE_ROWS),
-                .FONT_INIT_FILE(GFX2D_FONT_INIT_FILE),
-                .CHAR_MAP_INIT_FILE(GFX2D_CHAR_MAP_INIT_FILE),
-                .PALETTE_INIT_FILE(GFX2D_PALETTE_INIT_FILE)
+                .TILE_ROWS(GFX2D_TILE_ROWS)
             ) gfx2d_periph (
                 .sys_clk(clk),
                 .video_clk(video_clk),

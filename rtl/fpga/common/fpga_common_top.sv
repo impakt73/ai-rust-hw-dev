@@ -21,10 +21,7 @@ module fpga_common_top #(
     parameter int unsigned GFX2D_TILE_WIDTH = 8,
     parameter int unsigned GFX2D_TILE_HEIGHT = 8,
     parameter int unsigned GFX2D_TILE_COLUMNS = 32,
-    parameter int unsigned GFX2D_TILE_ROWS = 32,
-    parameter GFX2D_FONT_INIT_FILE = "../common/wrappers/bitmap_text_renderer_font_init.hex",
-    parameter GFX2D_CHAR_MAP_INIT_FILE = "../common/wrappers/bitmap_text_renderer_char_map_init.hex",
-    parameter GFX2D_PALETTE_INIT_FILE = "../common/wrappers/bitmap_text_renderer_palette_init.hex"
+    parameter int unsigned GFX2D_TILE_ROWS = 32
 ) (
     input wire logic       sys_clk,
     input wire logic       video_clk,
@@ -81,10 +78,7 @@ module fpga_common_top #(
         .GFX2D_TILE_WIDTH(GFX2D_TILE_WIDTH),
         .GFX2D_TILE_HEIGHT(GFX2D_TILE_HEIGHT),
         .GFX2D_TILE_COLUMNS(GFX2D_TILE_COLUMNS),
-        .GFX2D_TILE_ROWS(GFX2D_TILE_ROWS),
-        .GFX2D_FONT_INIT_FILE(GFX2D_FONT_INIT_FILE),
-        .GFX2D_CHAR_MAP_INIT_FILE(GFX2D_CHAR_MAP_INIT_FILE),
-        .GFX2D_PALETTE_INIT_FILE(GFX2D_PALETTE_INIT_FILE)
+        .GFX2D_TILE_ROWS(GFX2D_TILE_ROWS)
     ) cpu_inst (
         .clk(sys_clk),
         .video_clk(video_clk),

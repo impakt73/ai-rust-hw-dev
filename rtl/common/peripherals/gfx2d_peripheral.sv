@@ -15,10 +15,7 @@ module gfx2d_peripheral #(
     parameter int unsigned TILE_HEIGHT = 8,
     parameter int unsigned TILE_COLUMNS = 32,
     parameter int unsigned TILE_ROWS = 32,
-    parameter int unsigned BUS_CDC_SYNC_STAGES = 3,
-    parameter FONT_INIT_FILE = "",
-    parameter CHAR_MAP_INIT_FILE = "",
-    parameter PALETTE_INIT_FILE = ""
+    parameter int unsigned BUS_CDC_SYNC_STAGES = 3
 ) (
     input  wire logic        sys_clk,
     input  wire logic        video_clk,
@@ -44,6 +41,7 @@ module gfx2d_peripheral #(
     localparam logic [15:0] CHAR_MAP_BASE_OFFSET = 16'h1000;
     localparam logic [15:0] FONT_BASE_OFFSET = 16'h2000;
     localparam logic [15:0] PALETTE_BASE_OFFSET = 16'h6000;
+    localparam logic [63:0] PERIPHERAL_APERTURE_BYTES = 64'd65536;
     localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
     localparam int unsigned ACTIVE_X_WIDTH =
         (VIDEO_ACTIVE_WIDTH <= 1) ? 1 : $clog2(VIDEO_ACTIVE_WIDTH);
@@ -58,6 +56,12 @@ module gfx2d_peripheral #(
     localparam int unsigned FONT_DEPTH = (1 << FONT_ADDR_WIDTH);
     localparam int unsigned PALETTE_ADDR_WIDTH = 8;
     localparam int unsigned PALETTE_DEPTH = (1 << PALETTE_ADDR_WIDTH);
+    localparam int unsigned CHARMAP_SPAN_BYTES = CHARMAP_DEPTH;
+    localparam int unsigned FONT_SPAN_BYTES = FONT_DEPTH;
+    localparam int unsigned PALETTE_SPAN_BYTES = PALETTE_DEPTH * 4;
+    localparam logic [63:0] CHAR_MAP_BASE_OFFSET_U = {48'h0, CHAR_MAP_BASE_OFFSET};
+    localparam logic [63:0] FONT_BASE_OFFSET_U = {48'h0, FONT_BASE_OFFSET};
+    localparam logic [63:0] PALETTE_BASE_OFFSET_U = {48'h0, PALETTE_BASE_OFFSET};
     localparam logic [15:0] CHAR_MAP_END_OFFSET = 16'(CHAR_MAP_BASE_OFFSET) + 16'(CHARMAP_DEPTH);
     localparam logic [15:0] FONT_END_OFFSET = 16'(FONT_BASE_OFFSET) + 16'(FONT_DEPTH);
     localparam logic [15:0] PALETTE_END_OFFSET = 16'(PALETTE_BASE_OFFSET) + 16'(PALETTE_DEPTH * 4);
@@ -123,6 +127,26 @@ module gfx2d_peripheral #(
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_de_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_hs_pipe;
     logic [VIDEO_SIGNAL_DELAY_CYCLES-1:0] video_vs_pipe;
+
+`ifndef SYNTHESIS
+    initial begin
+        if (!(CHAR_MAP_BASE_OFFSET < FONT_BASE_OFFSET)) begin
+            $fatal(1, "gfx2d_peripheral requires char map window base before font window base");
+        end
+        if (!(FONT_BASE_OFFSET < PALETTE_BASE_OFFSET)) begin
+            $fatal(1, "gfx2d_peripheral requires font window base before palette window base");
+        end
+        if ((CHAR_MAP_BASE_OFFSET_U + 64'(CHARMAP_SPAN_BYTES)) > FONT_BASE_OFFSET_U) begin
+            $fatal(1, "gfx2d_peripheral char map window overlaps font window");
+        end
+        if ((FONT_BASE_OFFSET_U + 64'(FONT_SPAN_BYTES)) > PALETTE_BASE_OFFSET_U) begin
+            $fatal(1, "gfx2d_peripheral font window overlaps palette window");
+        end
+        if ((PALETTE_BASE_OFFSET_U + 64'(PALETTE_SPAN_BYTES)) > PERIPHERAL_APERTURE_BYTES) begin
+            $fatal(1, "gfx2d_peripheral palette window exceeds 64 KiB peripheral aperture");
+        end
+    end
+`endif
 
     assign periph_mem_a_handshake = periph_mem_a_valid && periph_mem_a_ready;
     assign periph_mem_d_handshake = periph_mem_d_valid && periph_mem_d_ready;
