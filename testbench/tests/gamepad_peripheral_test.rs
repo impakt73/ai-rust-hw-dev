@@ -264,7 +264,7 @@ fn test_gamepad_writes_are_ignored() {
 
     reset(&mut dut);
 
-    dut.gamepad_in = GAMEPAD_BTN_A as u16;
+    dut.gamepad_in = u16::try_from(GAMEPAD_BTN_A).unwrap();
     dut.eval();
 
     // Attempt to write all-ones; the peripheral should acknowledge and ignore
@@ -313,7 +313,7 @@ fn test_gamepad_back_to_back_reads() {
 
     reset(&mut dut);
 
-    dut.gamepad_in = GAMEPAD_DPAD_LEFT as u16;
+    dut.gamepad_in = u16::try_from(GAMEPAD_DPAD_LEFT).unwrap();
     dut.eval();
 
     for _ in 0..4 {
