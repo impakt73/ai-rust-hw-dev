@@ -25,6 +25,10 @@
 //                  one-cycle pulse at the first pixel of each line otherwise
 //   frame_start  - Registered start-of-frame marker; held high during reset and a
 //                  one-cycle pulse at the first pixel of each frame otherwise
+//   hblank_start - Registered one-cycle pulse at the first pixel of each
+//                  horizontal blanking interval
+//   vblank_start - Registered one-cycle pulse at the first pixel of the first
+//                  vertical blanking line
 //   active_x     - Registered X coordinate within the active region, else 0
 //   active_y     - Registered Y coordinate within the active region, else 0
 //   scan_x       - Registered X coordinate across the full scan line
@@ -49,6 +53,8 @@ module video_sync #(
     output logic active_video,
     output logic line_start,
     output logic frame_start,
+    output logic hblank_start,
+    output logic vblank_start,
     output logic [((H_ACTIVE <= 1) ? 1 : $clog2(H_ACTIVE)) - 1:0] active_x,
     output logic [((V_ACTIVE <= 1) ? 1 : $clog2(V_ACTIVE)) - 1:0] active_y,
     output logic [((H_ACTIVE + H_FRONT_PORCH + H_SYNC_WIDTH + H_BACK_PORCH <= 1) ?
@@ -83,6 +89,8 @@ module video_sync #(
     logic active_video_next;
     logic line_start_next;
     logic frame_start_next;
+    logic hblank_start_next;
+    logic vblank_start_next;
     logic [ACTIVE_X_WIDTH-1:0] active_x_next;
     logic [ACTIVE_Y_WIDTH-1:0] active_y_next;
     logic [H_COUNTER_WIDTH-1:0] h_sync_offset;
@@ -145,6 +153,10 @@ module video_sync #(
         active_video_next = h_in_active_region && v_in_active_region;
         line_start_next = (h_counter_next == '0);
         frame_start_next = (h_counter_next == '0) && (v_counter_next == '0);
+        hblank_start_next = (h_counter_next == (H_ACTIVE_START + H_COUNTER_WIDTH'(H_ACTIVE)));
+        vblank_start_next =
+            (h_counter_next == '0) &&
+            (v_counter_next == (V_ACTIVE_START + V_COUNTER_WIDTH'(V_ACTIVE)));
         hsync_next = h_in_sync_region ? HSYNC_ACTIVE_HIGH : ~HSYNC_ACTIVE_HIGH;
         vsync_next = v_in_sync_region ? VSYNC_ACTIVE_HIGH : ~VSYNC_ACTIVE_HIGH;
         active_x_next = active_video_next ?
@@ -162,6 +174,8 @@ module video_sync #(
             active_video <= 1'b0;
             line_start <= 1'b1;
             frame_start <= 1'b1;
+            hblank_start <= 1'b0;
+            vblank_start <= 1'b0;
             active_x <= '0;
             active_y <= '0;
         end else begin
@@ -172,6 +186,8 @@ module video_sync #(
             active_video <= active_video_next;
             line_start <= line_start_next;
             frame_start <= frame_start_next;
+            hblank_start <= hblank_start_next;
+            vblank_start <= vblank_start_next;
             active_x <= active_x_next;
             active_y <= active_y_next;
         end
