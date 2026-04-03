@@ -236,6 +236,9 @@ fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
     )
 }
 
+// Verifies that the currently displayed frame keeps using the supplied scroll
+// values starting from the current output cycle position, without waiting for a
+// frame boundary.
 fn verify_active_pixels_from_current_frame(
     dut: &mut Gfx2dPeripheralTestWrapper,
     start_cycle_in_frame: usize,
@@ -305,7 +308,16 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
     let elapsed_cycles = write_access(&mut dut, GFX2D_SCROLL_X_ADDR, 1)
         + write_access(&mut dut, GFX2D_SCROLL_Y_ADDR, 1);
 
-    verify_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8, 0, 0);
+    verify_active_pixels_from_current_frame(
+        &mut dut,
+        // The output-space cycle counter starts at frame pixel (0, 0), so wrap
+        // the write latency back into the current frame before checking that the
+        // old scroll value is still being displayed.
+        elapsed_cycles % GFX2D_FRAME_CYCLES,
+        8,
+        0,
+        0,
+    );
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_X_ADDR), 1);
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_Y_ADDR), 1);
 
