@@ -38,6 +38,7 @@ pub const GFX2D_BASE: u32 = 0x3000_0000;
 pub const GFX2D_SIZE: u32 = 0x0000_6400;
 pub const GFX2D_SCROLL_X_OFFSET: u32 = 0x0000;
 pub const GFX2D_SCROLL_Y_OFFSET: u32 = 0x0004;
+pub const GFX2D_CONTROL_OFFSET: u32 = 0x0008;
 pub const GFX2D_FRAME_INDEX_OFFSET: u32 = 0x000C;
 pub const GFX2D_CHAR_MAP_OFFSET: u32 = 0x1000;
 pub const GFX2D_CHAR_MAP_SIZE: u32 = 0x0400;
@@ -45,6 +46,14 @@ pub const GFX2D_FONT_OFFSET: u32 = 0x2000;
 pub const GFX2D_FONT_SIZE: u32 = 0x4000;
 pub const GFX2D_PALETTE_OFFSET: u32 = 0x6000;
 pub const GFX2D_PALETTE_SIZE: u32 = 0x0400;
+
+/// GFX2D CONTROL register bit masks
+pub const GFX2D_CONTROL_ENABLE: u32 = 1 << 0;
+
+/// Helper: address of the GFX2D CONTROL register.
+pub const fn gfx2d_control_addr() -> u32 {
+    GFX2D_BASE + GFX2D_CONTROL_OFFSET
+}
 
 /// System Controller Peripheral (RTL)
 pub const SYSCTRL_BASE: u32 = 0x2000_0000;
