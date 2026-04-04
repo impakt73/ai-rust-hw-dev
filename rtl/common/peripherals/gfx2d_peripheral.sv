@@ -43,7 +43,9 @@ module gfx2d_peripheral #(
     localparam logic [15:0] FONT_BASE_OFFSET = 16'h2000;
     localparam logic [15:0] PALETTE_BASE_OFFSET = 16'h6000;
     localparam logic [63:0] PERIPHERAL_APERTURE_BYTES = 64'd65536;
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
+    // bitmap_text_renderer contributes 8 cycles to video_rgb, then this module
+    // registers all four video outputs together for the final aligned stage.
+    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 8;
     localparam int unsigned ACTIVE_X_WIDTH =
         (VIDEO_ACTIVE_WIDTH <= 1) ? 1 : $clog2(VIDEO_ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH =
@@ -190,10 +192,6 @@ module gfx2d_peripheral #(
     assign palette_ram_wdata = periph_mem_a_wdata[23:0];
     assign palette_ram_raddr = palette_mem_addr;
 
-    assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_vs = video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_rgb = video_de ? renderer_video_rgb : 24'h00_00_00;
     assign video_skip = 1'b0;
 
     ff_sync #(
@@ -339,10 +337,18 @@ module gfx2d_peripheral #(
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_HSYNC_ACTIVE_HIGH}};
             video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VIDEO_VSYNC_ACTIVE_HIGH}};
+            video_de <= 1'b0;
+            video_hs <= ~VIDEO_HSYNC_ACTIVE_HIGH;
+            video_vs <= ~VIDEO_VSYNC_ACTIVE_HIGH;
+            video_rgb <= 24'h00_00_00;
         end else begin
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+            video_de <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_hs <= video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_vs <= video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_rgb <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1] ? renderer_video_rgb : 24'h00_00_00;
 
             if (sync_frame_start) begin
                 frame_index_reg <= frame_index_reg + 1'b1;

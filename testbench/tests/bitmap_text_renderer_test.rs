@@ -131,7 +131,7 @@ fn expected_scrolled_pixel(x: u8, y: u8, scroll_x: u8, scroll_y: u8) -> u32 {
 }
 
 #[test]
-fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinates() {
+fn test_bitmap_text_renderer_keeps_aligned_output_stage_coordinates() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -158,7 +158,7 @@ fn test_bitmap_text_renderer_keeps_registered_output_aligned_to_active_coordinat
         assert_eq!(
             active_frame_pixel(&pixels, x, y),
             pixel_rgb,
-            "unexpected delayed pixel value aligned to raster coordinate ({x}, {y})"
+            "unexpected aligned pixel value at raster coordinate ({x}, {y})"
         );
     }
 }
@@ -295,7 +295,7 @@ fn test_bitmap_text_renderer_scrolls_tilemap_pixels_with_wraparound() {
 }
 
 #[test]
-fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
+fn test_bitmap_text_renderer_drives_aligned_output_stage_low_during_blanking() {
     let runtime = create_bitmap_text_renderer_runtime()
         .expect("Failed to create bitmap_text_renderer runtime");
     let mut dut = runtime
@@ -311,7 +311,7 @@ fn test_bitmap_text_renderer_drives_registered_output_low_during_blanking() {
             observed_blanking = true;
             assert_eq!(
                 dut.video_rgb, 0,
-                "delayed video_rgb must stay aligned low during blanking"
+                "aligned video_rgb must stay low during blanking"
             );
         }
         clock_cycle!(dut);

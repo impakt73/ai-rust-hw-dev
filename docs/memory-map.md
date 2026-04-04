@@ -134,6 +134,8 @@ the renderer.
 - **Palette write format:** writes ignore `wdata[31:24]`.
 - **Clocking:** CPU accesses cross into the video clock domain through `bus_cdc_bridge`; the
   backing RAMs use `video_clk` on both ports.
+- **Video outputs:** `video_rgb`, `video_de`, `video_hs`, and `video_vs` are emitted from a
+  common registered output stage after the renderer/memory pipeline is aligned.
 - **Constants:** `GFX2D_BASE`, `GFX2D_SIZE`, `GFX2D_SCROLL_X_OFFSET`, `GFX2D_SCROLL_Y_OFFSET`,
   `GFX2D_FRAME_INDEX_OFFSET`, `GFX2D_CHAR_MAP_OFFSET`, `GFX2D_CHAR_MAP_SIZE`,
   `GFX2D_FONT_OFFSET`, `GFX2D_FONT_SIZE`, `GFX2D_PALETTE_OFFSET`, `GFX2D_PALETTE_SIZE`
