@@ -80,7 +80,10 @@ fn initialize_demo() -> DemoState {
 
     for index in 0..TILE_PIXELS {
         write_u8(GFX2D_BASE + GFX2D_FONT_OFFSET + index, TILE_ZERO);
-        write_u8(GFX2D_BASE + GFX2D_FONT_OFFSET + TILE_PIXELS + index, TILE_ONE);
+        write_u8(
+            GFX2D_BASE + GFX2D_FONT_OFFSET + TILE_PIXELS + index,
+            TILE_ONE,
+        );
     }
 
     write_u32(GFX2D_BASE + GFX2D_PALETTE_OFFSET, PALETTE_ORANGE);
@@ -128,8 +131,12 @@ fn main() -> ! {
         let input_state = read_u32(gamepad_state_addr());
         let scroll_x_delta = button_delta(input_state, GAMEPAD_DPAD_LEFT, GAMEPAD_DPAD_RIGHT, 1);
         let scroll_y_delta = button_delta(input_state, GAMEPAD_DPAD_UP, GAMEPAD_DPAD_DOWN, 1);
-        let tuning_delta =
-            button_delta(input_state, GAMEPAD_TRIG_L, GAMEPAD_TRIG_R, AUDIO_TUNING_STEP);
+        let tuning_delta = button_delta(
+            input_state,
+            GAMEPAD_TRIG_L,
+            GAMEPAD_TRIG_R,
+            AUDIO_TUNING_STEP,
+        );
 
         state.scroll_x = state.scroll_x.wrapping_add_signed(scroll_x_delta);
         state.scroll_y = state.scroll_y.wrapping_add_signed(scroll_y_delta);
