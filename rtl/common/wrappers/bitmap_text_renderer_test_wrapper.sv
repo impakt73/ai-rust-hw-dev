@@ -24,7 +24,7 @@ module bitmap_text_renderer_test_wrapper (
     localparam int unsigned V_BACK_PORCH = 1;
     localparam bit HSYNC_ACTIVE_HIGH = 1'b0;
     localparam bit VSYNC_ACTIVE_HIGH = 1'b0;
-    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 9;
+    localparam int unsigned VIDEO_SIGNAL_DELAY_CYCLES = 8;
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned CHARMAP_DEPTH = TILE_COLUMNS * TILE_ROWS;
@@ -127,22 +127,23 @@ module bitmap_text_renderer_test_wrapper (
         .video_rgb(renderer_video_rgb)
     );
 
-    assign video_de = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_hs = video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_vs = video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-    assign video_rgb = video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1]
-        ? renderer_video_rgb
-        : '0;
-
     always_ff @(posedge clk) begin
         if (rst) begin
             video_de_pipe <= '0;
             video_hs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~HSYNC_ACTIVE_HIGH}};
             video_vs_pipe <= {VIDEO_SIGNAL_DELAY_CYCLES{~VSYNC_ACTIVE_HIGH}};
+            video_de <= 1'b0;
+            video_hs <= ~HSYNC_ACTIVE_HIGH;
+            video_vs <= ~VSYNC_ACTIVE_HIGH;
+            video_rgb <= '0;
         end else begin
             video_de_pipe <= {video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_de};
             video_hs_pipe <= {video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_hs};
             video_vs_pipe <= {video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-2:0], sync_video_vs};
+            video_de <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_hs <= video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_vs <= video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
+            video_rgb <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1] ? renderer_video_rgb : '0;
         end
     end
 

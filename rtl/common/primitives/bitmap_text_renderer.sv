@@ -9,10 +9,11 @@
 //   - `char_mem_rdata` must correspond to `char_mem_addr` from 2 cycles earlier
 //   - `font_mem_rdata` must correspond to `font_mem_addr` from 2 cycles earlier
 //   - `palette_mem_rdata` must correspond to `palette_mem_addr` from 2 cycles earlier
-// The fixed registered pipeline latency from coordinate input to `video_rgb` is
-// 9 cycles under that contract, so callers must delay any associated
+// The fixed pipeline latency from coordinate input to `video_rgb` is 8 cycles
+// under that contract because `video_rgb` is driven directly from the already
+// registered palette read data. Callers must delay any associated
 // sync/display-enable signals by the same amount if they need aligned
-// video-control outputs.
+// video-control outputs, then optionally add their own final output register.
 module bitmap_text_renderer #(
     parameter int unsigned ACTIVE_WIDTH = 640,
     parameter int unsigned ACTIVE_HEIGHT = 480,
@@ -52,13 +53,12 @@ module bitmap_text_renderer #(
     localparam int unsigned PALETTE_ROM_DATA_WIDTH = 24;
     localparam int unsigned PALETTE_ROM_ADDR_WIDTH = FONT_ROM_DATA_WIDTH;
     localparam int unsigned CHARMAP_DATA_WIDTH = 8;
-    // The registered lookup/output path is:
+    // The lookup path is:
     //   - 1 cycle: registered scrolled tilemap-coordinate stage
     //   - 1 cycle: registered character-map address stage
     //   - 2 cycles: character-memory latency
     //   - 2 cycles: font-memory latency
     //   - 2 cycles: palette-memory latency
-    //   - 1 cycle: registered `video_rgb` output stage
     localparam int unsigned ACTIVE_X_WIDTH = (ACTIVE_WIDTH <= 1) ? 1 : $clog2(ACTIVE_WIDTH);
     localparam int unsigned ACTIVE_Y_WIDTH = (ACTIVE_HEIGHT <= 1) ? 1 : $clog2(ACTIVE_HEIGHT);
     localparam int unsigned TILEMAP_WIDTH = TILE_WIDTH * TILE_COLUMNS;
@@ -86,6 +86,8 @@ module bitmap_text_renderer #(
     logic [SCROLL_Y_WIDTH:0] scroll_y_sum;
     logic [SCROLL_X_WIDTH-1:0] scrolled_active_x_next;
     logic [SCROLL_Y_WIDTH-1:0] scrolled_active_y_next;
+
+    assign video_rgb = palette_mem_rdata;
 
 `ifndef SYNTHESIS
     initial begin
@@ -137,7 +139,6 @@ module bitmap_text_renderer #(
             glyph_offset_d0 <= '0;
             glyph_offset_d1 <= '0;
             glyph_offset_d2 <= '0;
-            video_rgb <= '0;
         end else begin
             scrolled_active_x <= scrolled_active_x_next;
             scrolled_active_y <= scrolled_active_y_next;
@@ -145,7 +146,6 @@ module bitmap_text_renderer #(
             glyph_offset_d0 <= glyph_offset;
             glyph_offset_d1 <= glyph_offset_d0;
             glyph_offset_d2 <= glyph_offset_d1;
-            video_rgb <= palette_mem_rdata;
         end
     end
 
