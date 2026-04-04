@@ -4,6 +4,7 @@ use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
+const GFX2D_FRAME_INDEX_ADDR: u32 = GFX2D_BASE_ADDR + 12;
 const GFX2D_CHAR_MAP_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x1000;
 const GFX2D_FONT_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x2000;
 const GFX2D_PALETTE_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x6000;
@@ -205,6 +206,10 @@ fn wait_for_active_frame_start(dut: &mut Gfx2dPeripheralTestWrapper, occurrence:
     }
 
     panic!("timed out waiting for active frame start occurrence {occurrence}");
+}
+
+fn wait_for_next_active_frame_start(dut: &mut Gfx2dPeripheralTestWrapper) {
+    wait_for_active_frame_start(dut, 1);
 }
 
 fn capture_active_frame_pixels(
@@ -450,6 +455,24 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         0,
         "unaligned MMIO reads should return zero"
     );
+
+    let frame_index_before_write = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
+    write_access(&mut dut, GFX2D_FRAME_INDEX_ADDR, 0xDEAD_BEEF);
+    assert_eq!(
+        read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR),
+        frame_index_before_write,
+        "frame index writes must be ignored"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_FRAME_INDEX_ADDR, MEM_SIZE_HALFWORD),
+        0,
+        "subword frame index reads should return zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_FRAME_INDEX_ADDR + 1, MEM_SIZE_WORD),
+        0,
+        "unaligned frame index reads should return zero"
+    );
 }
 
 #[test]
@@ -521,4 +544,33 @@ fn test_gfx2d_ram_windows_are_write_only() {
         pixels, baseline_pixels,
         "unsupported writes must not perturb the renderer-visible RAM contents"
     );
+}
+
+#[test]
+fn test_gfx2d_frame_index_advances_once_per_frame() {
+    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
+    let mut dut = runtime
+        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
+        .expect("Failed to create gfx2d model");
+
+    reset(&mut dut);
+
+    let mut previous_frame_index = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
+    write_access(&mut dut, GFX2D_FRAME_INDEX_ADDR, 0x1234_5678);
+    assert_eq!(
+        read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR),
+        previous_frame_index,
+        "frame index must stay read-only"
+    );
+
+    for expected_increment in 1..=3 {
+        wait_for_next_active_frame_start(&mut dut);
+        let current_frame_index = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
+        assert_eq!(
+            current_frame_index,
+            previous_frame_index + 1,
+            "frame index should advance once per frame (step {expected_increment})"
+        );
+        previous_frame_index = current_frame_index;
+    }
 }
