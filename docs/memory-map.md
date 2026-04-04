@@ -118,15 +118,14 @@ the renderer.
 |--------|-----------------|--------|-------------|
 | 0x0000 | SCROLL_X        | RW     | Horizontal scroll value, word access only |
 | 0x0004 | SCROLL_Y        | RW     | Vertical scroll value, word access only |
-| 0x0008 | CONTROL         | RW     | Bit 0 holds the video sync generator in reset when set to 1; reset default is 0 |
-| 0x000C | FRAME_COUNTER   | RO     | Counts completed frame-start pulses; resets to 0 on peripheral reset |
+| 0x000C | FRAME_INDEX     | RO     | Frame index: resets to 0 and increments on each `frame_start` pulse |
 | 0x1000-0x13FF | CHAR_MAP RAM | WO | 8-bit tile IDs, byte access only |
 | 0x2000-0x5FFF | FONT RAM | WO | 8-bit per-pixel palette indices, byte access only |
 | 0x6000-0x63FF | PALETTE RAM | WO | 24-bit RGB entries in 32-bit words, word access only |
 
 - **Size:** 25 KiB (`0x30000000 – 0x300063FF`) in the default 32x32-tile configuration.
-- **Access sizes:** `SCROLL_X`, `SCROLL_Y`, `CONTROL`, `FRAME_COUNTER`, and `PALETTE RAM`
-  accept aligned word accesses only;
+- **Access sizes:** `SCROLL_X`, `SCROLL_Y`, `FRAME_INDEX`, and `PALETTE RAM` accept aligned
+  word accesses only;
   `CHAR_MAP RAM` and `FONT RAM` accept byte accesses only. Unsupported sizes are acknowledged
   and dropped.
 - **CPU visibility:** the renderer owns the RAM read ports exclusively; CPU accesses to the RAM
@@ -135,8 +134,7 @@ the renderer.
 - **Clocking:** CPU accesses cross into the video clock domain through `bus_cdc_bridge`; the
   backing RAMs use `video_clk` on both ports.
 - **Constants:** `GFX2D_BASE`, `GFX2D_SIZE`, `GFX2D_SCROLL_X_OFFSET`, `GFX2D_SCROLL_Y_OFFSET`,
-  `GFX2D_CONTROL_OFFSET`, `GFX2D_FRAME_COUNTER_OFFSET`,
-  `GFX2D_CONTROL_SCANOUT_HOLD_RESET`, `GFX2D_CHAR_MAP_OFFSET`, `GFX2D_CHAR_MAP_SIZE`,
+  `GFX2D_FRAME_INDEX_OFFSET`, `GFX2D_CHAR_MAP_OFFSET`, `GFX2D_CHAR_MAP_SIZE`,
   `GFX2D_FONT_OFFSET`, `GFX2D_FONT_SIZE`, `GFX2D_PALETTE_OFFSET`, `GFX2D_PALETTE_SIZE`
 
 ### Gamepad Peripheral (0x50000000)

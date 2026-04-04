@@ -4,12 +4,10 @@ use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
-const GFX2D_CONTROL_ADDR: u32 = GFX2D_BASE_ADDR + 8;
-const GFX2D_FRAME_COUNTER_ADDR: u32 = GFX2D_BASE_ADDR + 12;
+const GFX2D_FRAME_INDEX_ADDR: u32 = GFX2D_BASE_ADDR + 12;
 const GFX2D_CHAR_MAP_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x1000;
 const GFX2D_FONT_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x2000;
 const GFX2D_PALETTE_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x6000;
-const GFX2D_CONTROL_SCANOUT_HOLD_RESET: u32 = 1 << 0;
 const MEM_SIZE_BYTE: u8 = 0;
 const MEM_SIZE_HALFWORD: u8 = 1;
 const MEM_SIZE_WORD: u8 = 2;
@@ -324,8 +322,6 @@ fn test_gfx2d_scroll_registers_reset_low_and_read_back() {
 
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_X_ADDR), 0);
     assert_eq!(read_access(&mut dut, GFX2D_SCROLL_Y_ADDR), 0);
-    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
-    assert_eq!(read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR), 0);
 }
 
 #[test]
@@ -460,40 +456,22 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         "unaligned MMIO reads should return zero"
     );
 
-    write_access(
-        &mut dut,
-        GFX2D_CONTROL_ADDR,
-        GFX2D_CONTROL_SCANOUT_HOLD_RESET,
-    );
-    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_HALFWORD);
-    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR + 1, 0x0000_0000, MEM_SIZE_WORD);
+    let frame_index_before_write = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
+    write_access(&mut dut, GFX2D_FRAME_INDEX_ADDR, 0xDEAD_BEEF);
     assert_eq!(
-        read_access(&mut dut, GFX2D_CONTROL_ADDR),
-        GFX2D_CONTROL_SCANOUT_HOLD_RESET,
-        "control register must ignore subword and unaligned accesses"
+        read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR),
+        frame_index_before_write,
+        "frame index writes must be ignored"
     );
     assert_eq!(
-        read_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, MEM_SIZE_BYTE),
+        read_access_with_size(&mut dut, GFX2D_FRAME_INDEX_ADDR, MEM_SIZE_HALFWORD),
         0,
-        "subword control register reads should return zero"
-    );
-
-    let frame_counter_before_write = read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR);
-    write_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR, 0xDEAD_BEEF);
-    assert_eq!(
-        read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-        frame_counter_before_write,
-        "frame counter writes must be ignored"
+        "subword frame index reads should return zero"
     );
     assert_eq!(
-        read_access_with_size(&mut dut, GFX2D_FRAME_COUNTER_ADDR, MEM_SIZE_HALFWORD),
+        read_access_with_size(&mut dut, GFX2D_FRAME_INDEX_ADDR + 1, MEM_SIZE_WORD),
         0,
-        "subword frame counter reads should return zero"
-    );
-    assert_eq!(
-        read_access_with_size(&mut dut, GFX2D_FRAME_COUNTER_ADDR + 1, MEM_SIZE_WORD),
-        0,
-        "unaligned frame counter reads should return zero"
+        "unaligned frame index reads should return zero"
     );
 }
 
@@ -569,51 +547,7 @@ fn test_gfx2d_ram_windows_are_write_only() {
 }
 
 #[test]
-fn test_gfx2d_control_register_holds_scanout_in_reset() {
-    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
-    let mut dut = runtime
-        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
-        .expect("Failed to create gfx2d model");
-
-    reset(&mut dut);
-    load_test_pattern(&mut dut);
-
-    wait_for_next_active_frame_start(&mut dut);
-    write_access(
-        &mut dut,
-        GFX2D_CONTROL_ADDR,
-        GFX2D_CONTROL_SCANOUT_HOLD_RESET,
-    );
-    assert_eq!(
-        read_access(&mut dut, GFX2D_CONTROL_ADDR),
-        GFX2D_CONTROL_SCANOUT_HOLD_RESET
-    );
-
-    let held_frame_count = read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR);
-    for _ in 0..(GFX2D_FRAME_CYCLES * 2) {
-        assert_eq!(dut.video_de, 0, "scanout reset should blank active video");
-        assert_eq!(dut.video_rgb, 0, "blanked scanout must drive black pixels");
-        clock_cycle!(dut);
-    }
-    assert_eq!(
-        read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-        held_frame_count,
-        "frame counter must stop while scanout is held in reset"
-    );
-
-    write_access(&mut dut, GFX2D_CONTROL_ADDR, 0);
-    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
-
-    wait_for_next_active_frame_start(&mut dut);
-    assert_eq!(
-        read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-        held_frame_count + 1,
-        "frame counter must resume once scanout reset is released"
-    );
-}
-
-#[test]
-fn test_gfx2d_frame_counter_increments_once_per_frame() {
+fn test_gfx2d_frame_index_advances_once_per_frame() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
     let mut dut = runtime
         .create_model_simple::<Gfx2dPeripheralTestWrapper>()
@@ -621,20 +555,22 @@ fn test_gfx2d_frame_counter_increments_once_per_frame() {
 
     reset(&mut dut);
 
-    assert_eq!(read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR), 0);
-    write_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR, 0x1234_5678);
+    let mut previous_frame_index = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
+    write_access(&mut dut, GFX2D_FRAME_INDEX_ADDR, 0x1234_5678);
     assert_eq!(
-        read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-        0,
-        "frame counter must stay read-only"
+        read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR),
+        previous_frame_index,
+        "frame index must stay read-only"
     );
 
-    for expected_count in 1..=3 {
+    for expected_increment in 1..=3 {
         wait_for_next_active_frame_start(&mut dut);
+        let current_frame_index = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
         assert_eq!(
-            read_access(&mut dut, GFX2D_FRAME_COUNTER_ADDR),
-            expected_count,
-            "frame counter should increment once per frame"
+            current_frame_index,
+            previous_frame_index + 1,
+            "frame index should advance once per frame (step {expected_increment})"
         );
+        previous_frame_index = current_frame_index;
     }
 }
