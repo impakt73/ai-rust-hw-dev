@@ -1,9 +1,11 @@
 use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{create_gfx2d_peripheral_runtime, Gfx2dPeripheralTestWrapper};
+use riscv_shared::bus::{gfx2d_control_addr, GFX2D_CONTROL_ENABLE};
 
 const GFX2D_BASE_ADDR: u32 = 0x3000_0000;
 const GFX2D_SCROLL_X_ADDR: u32 = GFX2D_BASE_ADDR;
 const GFX2D_SCROLL_Y_ADDR: u32 = GFX2D_BASE_ADDR + 4;
+const GFX2D_CONTROL_ADDR: u32 = gfx2d_control_addr();
 const GFX2D_FRAME_INDEX_ADDR: u32 = GFX2D_BASE_ADDR + 12;
 const GFX2D_CHAR_MAP_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x1000;
 const GFX2D_FONT_BASE_ADDR: u32 = GFX2D_BASE_ADDR + 0x2000;
@@ -117,6 +119,14 @@ fn write_access_with_size(
 
 fn write_access(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, wdata: u32) -> usize {
     write_access_with_size(dut, addr, wdata, MEM_SIZE_WORD)
+}
+
+fn set_video_enable(dut: &mut Gfx2dPeripheralTestWrapper, enabled: bool) -> usize {
+    write_access(
+        dut,
+        GFX2D_CONTROL_ADDR,
+        if enabled { GFX2D_CONTROL_ENABLE } else { 0 },
+    )
 }
 
 fn read_access_with_size(dut: &mut Gfx2dPeripheralTestWrapper, addr: u32, size: u8) -> u32 {
@@ -256,6 +266,19 @@ fn capture_active_frame_pixels(
     pixels
 }
 
+fn capture_frame_de_mask(dut: &mut Gfx2dPeripheralTestWrapper, occurrence: usize) -> Vec<bool> {
+    let mut de_mask = Vec::with_capacity(GFX2D_FRAME_CYCLES);
+
+    wait_for_active_frame_start(dut, occurrence);
+
+    for _ in 0..GFX2D_FRAME_CYCLES {
+        de_mask.push(dut.video_de == 1);
+        clock_cycle!(dut);
+    }
+
+    de_mask
+}
+
 fn active_frame_pixel(pixels: &[u32], x: u8, y: u8) -> u32 {
     pixels[(usize::from(y) * usize::from(GFX2D_ACTIVE_WIDTH)) + usize::from(x)]
 }
@@ -325,6 +348,28 @@ fn test_gfx2d_scroll_registers_reset_low_and_read_back() {
 }
 
 #[test]
+fn test_gfx2d_control_register_reset_low_and_read_back() {
+    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
+    let mut dut = runtime
+        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
+        .expect("Failed to create gfx2d model");
+
+    reset(&mut dut);
+
+    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
+
+    write_access(&mut dut, GFX2D_CONTROL_ADDR, u32::MAX);
+    assert_eq!(
+        read_access(&mut dut, GFX2D_CONTROL_ADDR),
+        GFX2D_CONTROL_ENABLE,
+        "reserved control bits must read back as zero"
+    );
+
+    set_video_enable(&mut dut, false);
+    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
+}
+
+#[test]
 fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
     let mut dut = runtime
@@ -333,6 +378,7 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
 
     reset(&mut dut);
     load_test_pattern(&mut dut);
+    set_video_enable(&mut dut, true);
 
     let baseline_pixels = capture_active_frame_pixels(&mut dut, 2);
     for y in 0..GFX2D_ACTIVE_HEIGHT {
@@ -412,6 +458,53 @@ fn test_gfx2d_bus_writes_change_rendered_scroll_output() {
 }
 
 #[test]
+fn test_gfx2d_video_disable_forces_black_active_pixels_without_changing_de_timing() {
+    let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
+    let mut dut = runtime
+        .create_model_simple::<Gfx2dPeripheralTestWrapper>()
+        .expect("Failed to create gfx2d model");
+
+    reset(&mut dut);
+    load_test_pattern(&mut dut);
+
+    let reset_disabled_pixels = capture_active_frame_pixels(&mut dut, 2);
+    assert!(
+        reset_disabled_pixels.iter().all(|&pixel| pixel == 0),
+        "video must start disabled after reset"
+    );
+
+    set_video_enable(&mut dut, true);
+
+    let enabled_pixels = capture_active_frame_pixels(&mut dut, 2);
+    let enabled_de_mask = capture_frame_de_mask(&mut dut, 1);
+    assert!(
+        enabled_pixels.iter().any(|&pixel| pixel != 0),
+        "expected non-black pixels while video is enabled"
+    );
+
+    set_video_enable(&mut dut, false);
+    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
+
+    let disabled_pixels = capture_active_frame_pixels(&mut dut, 2);
+    let disabled_de_mask = capture_frame_de_mask(&mut dut, 1);
+    assert!(
+        disabled_pixels.iter().all(|&pixel| pixel == 0),
+        "disabling video must force active pixels to black"
+    );
+
+    assert_eq!(
+        disabled_de_mask, enabled_de_mask,
+        "video disable must preserve DE timing"
+    );
+
+    assert_eq!(
+        disabled_de_mask.iter().filter(|&&de| de).count(),
+        usize::from(GFX2D_ACTIVE_WIDTH) * usize::from(GFX2D_ACTIVE_HEIGHT),
+        "video disable must preserve DE active-window timing"
+    );
+}
+
+#[test]
 fn test_gfx2d_subword_mmio_accesses_are_ignored() {
     let runtime = create_gfx2d_peripheral_runtime().expect("Failed to create gfx2d runtime");
     let mut dut = runtime
@@ -456,6 +549,31 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
         "unaligned MMIO reads should return zero"
     );
 
+    write_access(&mut dut, GFX2D_CONTROL_ADDR, GFX2D_CONTROL_ENABLE);
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_BYTE);
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_HALFWORD);
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR + 1, 0x0000_0000, MEM_SIZE_WORD);
+    assert_eq!(
+        read_access(&mut dut, GFX2D_CONTROL_ADDR),
+        GFX2D_CONTROL_ENABLE,
+        "subword and unaligned accesses must not modify the control register"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, MEM_SIZE_BYTE),
+        0,
+        "subword control reads should return zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, MEM_SIZE_HALFWORD),
+        0,
+        "subword control reads should return zero"
+    );
+    assert_eq!(
+        read_access_with_size(&mut dut, GFX2D_CONTROL_ADDR + 1, MEM_SIZE_WORD),
+        0,
+        "unaligned control reads should return zero"
+    );
+
     let frame_index_before_write = read_access(&mut dut, GFX2D_FRAME_INDEX_ADDR);
     write_access(&mut dut, GFX2D_FRAME_INDEX_ADDR, 0xDEAD_BEEF);
     assert_eq!(
@@ -484,6 +602,7 @@ fn test_gfx2d_ram_windows_are_write_only() {
 
     reset(&mut dut);
     load_test_pattern(&mut dut);
+    set_video_enable(&mut dut, true);
 
     write_access_with_size(
         &mut dut,

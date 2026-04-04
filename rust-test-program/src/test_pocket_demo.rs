@@ -9,11 +9,13 @@ static HEAP: common::Heap = common::Heap::empty();
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
+use riscv_shared::bus::gfx2d_control_addr;
 use riscv_shared::bus::{
     audiosys_control_addr, audiosys_tuning_word_addr, gamepad_state_addr, AUDIOSYS_CONTROL_ENABLE,
     GAMEPAD_DPAD_DOWN, GAMEPAD_DPAD_LEFT, GAMEPAD_DPAD_RIGHT, GAMEPAD_DPAD_UP, GAMEPAD_TRIG_L,
-    GAMEPAD_TRIG_R, GFX2D_BASE, GFX2D_CHAR_MAP_OFFSET, GFX2D_CHAR_MAP_SIZE, GFX2D_FONT_OFFSET,
-    GFX2D_FRAME_INDEX_OFFSET, GFX2D_PALETTE_OFFSET, GFX2D_SCROLL_X_OFFSET, GFX2D_SCROLL_Y_OFFSET,
+    GAMEPAD_TRIG_R, GFX2D_BASE, GFX2D_CHAR_MAP_OFFSET, GFX2D_CHAR_MAP_SIZE, GFX2D_CONTROL_ENABLE,
+    GFX2D_FONT_OFFSET, GFX2D_FRAME_INDEX_OFFSET, GFX2D_PALETTE_OFFSET, GFX2D_SCROLL_X_OFFSET,
+    GFX2D_SCROLL_Y_OFFSET,
 };
 
 const INITIAL_TUNING_WORD: u32 = 615_165;
@@ -61,6 +63,7 @@ fn initialize_demo() -> DemoState {
     let tuning_word = INITIAL_TUNING_WORD;
     write_u32(audiosys_tuning_word_addr(), tuning_word);
     write_u32(audiosys_control_addr(), AUDIOSYS_CONTROL_ENABLE);
+    write_u32(gfx2d_control_addr(), GFX2D_CONTROL_ENABLE);
 
     for index in 0..GFX2D_CHAR_MAP_SIZE {
         let x = index % TILE_COLUMNS;

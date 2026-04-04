@@ -38,6 +38,7 @@ module gfx2d_peripheral #(
 
     localparam logic [15:0] REG_SCROLL_X = 16'h0000;
     localparam logic [15:0] REG_SCROLL_Y = 16'h0004;
+    localparam logic [15:0] REG_CONTROL = 16'h0008;
     localparam logic [15:0] REG_FRAME_INDEX = 16'h000C;
     localparam logic [15:0] CHAR_MAP_BASE_OFFSET = 16'h1000;
     localparam logic [15:0] FONT_BASE_OFFSET = 16'h2000;
@@ -99,6 +100,7 @@ module gfx2d_peripheral #(
     logic        response_pending;
     logic [31:0] scroll_x_reg;
     logic [31:0] scroll_y_reg;
+    logic        video_enable_reg;
     logic [31:0] frame_index_reg;
     logic [SCROLL_X_WIDTH-1:0] renderer_scroll_x;
     logic [SCROLL_Y_WIDTH-1:0] renderer_scroll_y;
@@ -330,6 +332,7 @@ module gfx2d_peripheral #(
         if (video_rst) begin
             scroll_x_reg <= 32'h0000_0000;
             scroll_y_reg <= 32'h0000_0000;
+            video_enable_reg <= 1'b0;
             frame_index_reg <= 32'h0000_0000;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
@@ -348,7 +351,10 @@ module gfx2d_peripheral #(
             video_de <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
             video_hs <= video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
             video_vs <= video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
-            video_rgb <= video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1] ? renderer_video_rgb : 24'h00_00_00;
+            video_rgb <=
+                (video_enable_reg && video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1]) ?
+                renderer_video_rgb :
+                24'h00_00_00;
 
             if (sync_frame_start) begin
                 frame_index_reg <= frame_index_reg + 1'b1;
@@ -374,6 +380,7 @@ module gfx2d_peripheral #(
                         case (periph_addr_offset)
                             REG_SCROLL_X: scroll_x_reg <= periph_mem_a_wdata;
                             REG_SCROLL_Y: scroll_y_reg <= periph_mem_a_wdata;
+                            REG_CONTROL: video_enable_reg <= periph_mem_a_wdata[0];
                             default: begin
                             end
                         endcase
@@ -381,6 +388,7 @@ module gfx2d_peripheral #(
                         case (periph_addr_offset)
                             REG_SCROLL_X: response_data <= scroll_x_reg;
                             REG_SCROLL_Y: response_data <= scroll_y_reg;
+                            REG_CONTROL: response_data <= {31'h0000_0000, video_enable_reg};
                             REG_FRAME_INDEX: response_data <= frame_index_reg;
                             default: response_data <= 32'h0000_0000;
                         endcase
