@@ -10,16 +10,11 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 use riscv_rt::entry;
 use riscv_shared::bus::{
-    gamepad_state_addr, GAMEPAD_DPAD_DOWN, GAMEPAD_DPAD_LEFT, GAMEPAD_DPAD_RIGHT, GAMEPAD_DPAD_UP,
-    GAMEPAD_TRIG_L, GAMEPAD_TRIG_R, GFX2D_BASE, GFX2D_CHAR_MAP_OFFSET, GFX2D_CHAR_MAP_SIZE,
-    GFX2D_FONT_OFFSET, GFX2D_FRAME_INDEX_OFFSET, GFX2D_PALETTE_OFFSET, GFX2D_SCROLL_X_OFFSET,
-    GFX2D_SCROLL_Y_OFFSET,
+    audiosys_control_addr, audiosys_tuning_word_addr, gamepad_state_addr, AUDIOSYS_CONTROL_ENABLE,
+    GAMEPAD_DPAD_DOWN, GAMEPAD_DPAD_LEFT, GAMEPAD_DPAD_RIGHT, GAMEPAD_DPAD_UP, GAMEPAD_TRIG_L,
+    GAMEPAD_TRIG_R, GFX2D_BASE, GFX2D_CHAR_MAP_OFFSET, GFX2D_CHAR_MAP_SIZE, GFX2D_FONT_OFFSET,
+    GFX2D_FRAME_INDEX_OFFSET, GFX2D_PALETTE_OFFSET, GFX2D_SCROLL_X_OFFSET, GFX2D_SCROLL_Y_OFFSET,
 };
-
-const AUDIOSYS_BASE: u32 = 0x6000_0000;
-const AUDIOSYS_CONTROL_ADDR: u32 = AUDIOSYS_BASE;
-const AUDIOSYS_TUNING_WORD_ADDR: u32 = AUDIOSYS_BASE + 0x04;
-const AUDIOSYS_ENABLE_BIT: u32 = 1;
 
 const INITIAL_TUNING_WORD: u32 = 615_165;
 const AUDIO_TUNING_STEP: i32 = 1_024;
@@ -64,8 +59,8 @@ fn write_u8(addr: u32, value: u8) {
 
 fn initialize_demo() -> DemoState {
     let tuning_word = INITIAL_TUNING_WORD;
-    write_u32(AUDIOSYS_TUNING_WORD_ADDR, tuning_word);
-    write_u32(AUDIOSYS_CONTROL_ADDR, AUDIOSYS_ENABLE_BIT);
+    write_u32(audiosys_tuning_word_addr(), tuning_word);
+    write_u32(audiosys_control_addr(), AUDIOSYS_CONTROL_ENABLE);
 
     for index in 0..GFX2D_CHAR_MAP_SIZE {
         let x = index % TILE_COLUMNS;
@@ -144,6 +139,6 @@ fn main() -> ! {
 
         write_u32(GFX2D_BASE + GFX2D_SCROLL_X_OFFSET, state.scroll_x);
         write_u32(GFX2D_BASE + GFX2D_SCROLL_Y_OFFSET, state.scroll_y);
-        write_u32(AUDIOSYS_TUNING_WORD_ADDR, state.tuning_word);
+        write_u32(audiosys_tuning_word_addr(), state.tuning_word);
     }
 }

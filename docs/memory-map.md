@@ -17,6 +17,7 @@ Address Range            | Device              | Type | Description
 0x20000000 - 0x2000001F  | System Controller   | RTL  | CPU control, LED output, elapsed time
 0x30000000 - 0x300063FF  | GFX2D Peripheral    | RTL  | Scroll registers and CPU-visible tile/font/palette RAMs
 0x50000000 - 0x5000000F  | Gamepad Peripheral  | RTL  | Live gamepad button state register
+0x60000000 - 0x6000001F  | Audiosys Peripheral | RTL  | Pocket audio tone generator control registers
 0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
 0x80000000 - 0x8FFFFFFF  | DRAM                | Rust | System memory (256 MiB)
 ```
@@ -150,6 +151,20 @@ Single read-only register exposing live button state sampled in the system bus c
 - **Latency:** Single response register in the bus clock domain (no CDC path).
 - **Platform note:** The Analogue Pocket top inverts `cont1_key[9:0]` before driving the peripheral because Pocket button inputs are active-low.
 - **Constants:** `GAMEPAD_BASE`, `GAMEPAD_SIZE`, `GAMEPAD_STATE_OFFSET`, `GAMEPAD_DPAD_UP`, `GAMEPAD_DPAD_DOWN`, `GAMEPAD_DPAD_LEFT`, `GAMEPAD_DPAD_RIGHT`, `GAMEPAD_BTN_A`, `GAMEPAD_BTN_B`, `GAMEPAD_BTN_X`, `GAMEPAD_BTN_Y`, `GAMEPAD_TRIG_L`, `GAMEPAD_TRIG_R`
+
+### Audiosys Peripheral (0x60000000)
+
+Pocket-target audio tone generator control registers.
+
+| Offset | Register | Access | Description |
+|--------|----------|--------|-------------|
+| 0x00   | CONTROL | RW | Bit 0 enables audio output; bits [31:1] are reserved |
+| 0x04   | TUNING_WORD | RW | Phase increment / tuning word for the tone generator |
+
+- **Size:** 32 bytes (`0x60000000 – 0x6000001F`)
+- **Access sizes:** Only aligned 32-bit word accesses are supported. Other access sizes are acknowledged and ignored.
+- **Latency:** CPU accesses cross from `sys_clk` into `audio_clk` through `bus_cdc_bridge`.
+- **Constants:** `AUDIOSYS_BASE`, `AUDIOSYS_SIZE`, `AUDIOSYS_CONTROL_OFFSET`, `AUDIOSYS_TUNING_WORD_OFFSET`, `AUDIOSYS_CONTROL_ENABLE`, `audiosys_control_addr()`, `audiosys_tuning_word_addr()`
 
 ### SRAM Peripheral (0x70000000)
 

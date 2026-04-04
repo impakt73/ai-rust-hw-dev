@@ -80,6 +80,32 @@ pub const fn gamepad_state_addr() -> u32 {
     GAMEPAD_BASE + GAMEPAD_STATE_OFFSET
 }
 
+/// Audiosys Peripheral (RTL)
+/// Two aligned 32-bit registers that control the Pocket-target tone generator.
+/// Address: 0x6000_0000
+/// Register map:
+///   +0x00 CONTROL      [0] enable, [31:1] reserved (read as 0)
+///   +0x04 TUNING_WORD  phase increment for the tone generator
+pub const AUDIOSYS_BASE: u32 = 0x6000_0000;
+pub const AUDIOSYS_SIZE: u32 = 0x0000_0020; // 32 bytes
+
+/// Audiosys register offsets
+pub const AUDIOSYS_CONTROL_OFFSET: u32 = 0x00;
+pub const AUDIOSYS_TUNING_WORD_OFFSET: u32 = 0x04;
+
+/// Audiosys CONTROL register bit masks
+pub const AUDIOSYS_CONTROL_ENABLE: u32 = 1 << 0;
+
+/// Helper: address of the Audiosys CONTROL register.
+pub const fn audiosys_control_addr() -> u32 {
+    AUDIOSYS_BASE + AUDIOSYS_CONTROL_OFFSET
+}
+
+/// Helper: address of the Audiosys TUNING_WORD register.
+pub const fn audiosys_tuning_word_addr() -> u32 {
+    AUDIOSYS_BASE + AUDIOSYS_TUNING_WORD_OFFSET
+}
+
 /// System Controller register offsets
 pub const SYSCTRL_STATUS_OFFSET: u32 = 0x00;
 pub const SYSCTRL_RESET_OFFSET: u32 = 0x04;
