@@ -50,7 +50,7 @@ pub const GFX2D_PALETTE_SIZE: u32 = 0x0400;
 /// GFX2D CONTROL register bit masks
 pub const GFX2D_CONTROL_ENABLE: u32 = 1 << 0;
 
-/// Helper: address of the GFX2D CONTROL register.
+/// Returns the memory-mapped address of the GFX2D CONTROL register.
 pub const fn gfx2d_control_addr() -> u32 {
     GFX2D_BASE + GFX2D_CONTROL_OFFSET
 }

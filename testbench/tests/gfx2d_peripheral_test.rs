@@ -551,18 +551,8 @@ fn test_gfx2d_subword_mmio_accesses_are_ignored() {
 
     write_access(&mut dut, GFX2D_CONTROL_ADDR, GFX2D_CONTROL_ENABLE);
     write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_BYTE);
-    write_access_with_size(
-        &mut dut,
-        GFX2D_CONTROL_ADDR,
-        0x0000_0000,
-        MEM_SIZE_HALFWORD,
-    );
-    write_access_with_size(
-        &mut dut,
-        GFX2D_CONTROL_ADDR + 1,
-        0x0000_0000,
-        MEM_SIZE_WORD,
-    );
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR, 0x0000_0000, MEM_SIZE_HALFWORD);
+    write_access_with_size(&mut dut, GFX2D_CONTROL_ADDR + 1, 0x0000_0000, MEM_SIZE_WORD);
     assert_eq!(
         read_access(&mut dut, GFX2D_CONTROL_ADDR),
         GFX2D_CONTROL_ENABLE,
