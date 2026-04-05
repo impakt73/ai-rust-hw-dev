@@ -18,6 +18,7 @@ module top #(
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
     parameter bit ENABLE_GFX2D = 1'b0,
     parameter bit ENABLE_AUDIOSYS = 1'b0,
+    parameter bit ENABLE_APF_BUS_BRIDGE = 1'b0,
     // System Clock Frequency (used by system controller elapsed-time registers)
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8,      // Number of cycles to hold reset after release
@@ -91,9 +92,16 @@ module top #(
     output logic        video_hs,
     output logic        audio_dac,
     output logic        audio_lrclk,
-    
+
     // Gamepad input (active-high button state; ignored when ENABLE_GAMEPAD=0)
-    input  wire logic [9:0]  gamepad_in
+    input  wire logic [9:0]  gamepad_in,
+
+    // Analogue Pocket bridge bus (ignored when ENABLE_APF_BUS_BRIDGE=0)
+    input  wire logic [31:0] apf_bridge_addr,
+    input  wire logic        apf_bridge_rd,
+    input  wire logic        apf_bridge_wr,
+    input  wire logic [31:0] apf_bridge_wr_data,
+    output logic [31:0]      apf_bridge_rd_data
 );
 
     // ============================================================
@@ -247,15 +255,28 @@ module top #(
     logic        host_mem_d_valid;
     logic        host_mem_d_ready;
 
-    logic [63:0]      registered_master_mem_a_addr;
-    logic [63:0]      registered_master_mem_a_wdata;
-    logic [1:0]       registered_master_mem_a_we;
-    logic [3:0]       registered_master_mem_a_size;
-    logic [1:0]       registered_master_mem_a_valid;
-    logic [1:0]       registered_master_mem_a_ready;
-    logic [63:0]      registered_master_mem_d_rdata;
-    logic [1:0]       registered_master_mem_d_valid;
-    logic [1:0]       registered_master_mem_d_ready;
+    logic [31:0] apf_bus_mem_a_addr;
+    logic [31:0] apf_bus_mem_a_wdata;
+    logic        apf_bus_mem_a_we;
+    logic [1:0]  apf_bus_mem_a_size;
+    logic        apf_bus_mem_a_valid;
+    logic        apf_bus_mem_a_ready;
+    logic [31:0] apf_bus_mem_d_rdata;
+    logic        apf_bus_mem_d_valid;
+    logic        apf_bus_mem_d_ready;
+
+    localparam int unsigned APF_BRIDGE_MASTER_INDEX = 2;
+    localparam int unsigned NUM_RTL_MASTERS = 2 + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
+
+    logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_addr;
+    logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_wdata;
+    logic [NUM_RTL_MASTERS-1:0]    registered_master_mem_a_we;
+    logic [NUM_RTL_MASTERS*2-1:0]  registered_master_mem_a_size;
+    logic [NUM_RTL_MASTERS-1:0]    registered_master_mem_a_valid;
+    logic [NUM_RTL_MASTERS-1:0]    registered_master_mem_a_ready;
+    logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_d_rdata;
+    logic [NUM_RTL_MASTERS-1:0]    registered_master_mem_d_valid;
+    logic [NUM_RTL_MASTERS-1:0]    registered_master_mem_d_ready;
 
     logic [NUM_RTL_SLAVES*32-1:0] registered_slave_base_addr;
     logic [NUM_RTL_SLAVES*32-1:0] registered_slave_addr_size;
@@ -338,6 +359,30 @@ module top #(
     assign cpu_to_arb_d_rdata = registered_master_mem_d_rdata[63:32];
     assign cpu_to_arb_d_valid = registered_master_mem_d_valid[1];
     assign registered_master_mem_d_ready[1] = cpu_to_arb_d_ready;
+
+    generate
+        if (ENABLE_APF_BUS_BRIDGE) begin : gen_apf_bridge_master_wiring
+            assign registered_master_mem_a_addr[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32] =
+                apf_bus_mem_a_addr;
+            assign registered_master_mem_a_wdata[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32] =
+                apf_bus_mem_a_wdata;
+            assign registered_master_mem_a_we[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_we;
+            assign registered_master_mem_a_size[(2*APF_BRIDGE_MASTER_INDEX)+1 -: 2] =
+                apf_bus_mem_a_size;
+            assign registered_master_mem_a_valid[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_valid;
+            assign apf_bus_mem_a_ready =
+                registered_master_mem_a_ready[APF_BRIDGE_MASTER_INDEX];
+            assign apf_bus_mem_d_rdata =
+                registered_master_mem_d_rdata[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32];
+            assign apf_bus_mem_d_valid =
+                registered_master_mem_d_valid[APF_BRIDGE_MASTER_INDEX];
+            assign registered_master_mem_d_ready[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_d_ready;
+        end else begin : gen_apf_bridge_master_disabled
+            assign apf_bus_mem_a_ready = 1'b0;
+            assign apf_bus_mem_d_rdata = 32'h0000_0000;
+            assign apf_bus_mem_d_valid = 1'b0;
+        end
+    endgenerate
 
     assign registered_slave_base_addr[31:0] = 32'h2000_0000;
     assign registered_slave_addr_size[31:0] = 32'h0000_0020;
@@ -457,7 +502,7 @@ module top #(
     // Registered Bus Instantiation
     // ============================================================
     registered_bus #(
-        .NUM_MASTERS(2),
+        .NUM_MASTERS(NUM_RTL_MASTERS),
         .NUM_SLAVES(NUM_RTL_SLAVES)
     ) rtl_registered_bus (
         .clk(clk),
@@ -579,6 +624,37 @@ module top #(
     
     // Pass through cpu boot state signal
     assign cpu_booting = cpu_is_booting;
+
+    generate
+        if (ENABLE_APF_BUS_BRIDGE) begin : gen_apf_bus_bridge
+            apf_bus_bridge apf_bridge (
+                .clk(clk),
+                .rst(rst_internal),
+                .bridge_addr(apf_bridge_addr),
+                .bridge_rd(apf_bridge_rd),
+                .bridge_wr(apf_bridge_wr),
+                .bridge_wr_data(apf_bridge_wr_data),
+                .bridge_rd_data(apf_bridge_rd_data),
+                .mem_a_addr(apf_bus_mem_a_addr),
+                .mem_a_wdata(apf_bus_mem_a_wdata),
+                .mem_a_we(apf_bus_mem_a_we),
+                .mem_a_size(apf_bus_mem_a_size),
+                .mem_a_valid(apf_bus_mem_a_valid),
+                .mem_a_ready(apf_bus_mem_a_ready),
+                .mem_d_rdata(apf_bus_mem_d_rdata),
+                .mem_d_valid(apf_bus_mem_d_valid),
+                .mem_d_ready(apf_bus_mem_d_ready)
+            );
+        end else begin : gen_no_apf_bus_bridge
+            assign apf_bus_mem_a_addr = 32'h0000_0000;
+            assign apf_bus_mem_a_wdata = 32'h0000_0000;
+            assign apf_bus_mem_a_we = 1'b0;
+            assign apf_bus_mem_a_size = 2'b00;
+            assign apf_bus_mem_a_valid = 1'b0;
+            assign apf_bus_mem_d_ready = 1'b0;
+            assign apf_bridge_rd_data = 32'h0000_0000;
+        end
+    endgenerate
     
     // ============================================================
     // SRAM Peripheral Instantiation

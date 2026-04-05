@@ -218,6 +218,12 @@ pub struct AudiosysPeripheralTestWrapper;
 pub struct GamepadPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/apf_bus_bridge_test_wrapper.sv",
+    name = "apf_bus_bridge_test_wrapper"
+)]
+pub struct ApfBusBridgeTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/sync_sprom_test_wrapper.sv",
     name = "sync_sprom_test_wrapper"
 )]
@@ -367,6 +373,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "primitives/sync_fifo.sv",             // Generic synchronous FIFO
         "primitives/square_wave_generator.sv", // System LED boot blink generator
         "primitives/activity_indicator.sv",    // System LED activity indicators
+        "io/apf_bus_bridge.sv",
         "io/host_bus_mux.sv", // CPU routing mux between system bus and host bus interface
         "io/host_bus_interface.sv", // Host bus interface for serialized transactions
         "io/host_bus_rx.sv",  // Host bus receive path used by host_bus_interface
@@ -642,6 +649,16 @@ pub fn create_gamepad_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn s
     create_runtime(&[
         "peripherals/gamepad_peripheral.sv",
         "wrappers/gamepad_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_apf_bus_bridge_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "io/apf_bus_bridge.sv",
+        "memory/registered_bus.sv",
+        "memory/sram.sv",
+        "peripherals/sram_peripheral.sv",
+        "wrappers/apf_bus_bridge_test_wrapper.sv",
     ])
 }
 

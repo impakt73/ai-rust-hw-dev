@@ -28,6 +28,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/primitives/square_wave_generator.sv \
 	$(RTL_DIR)/primitives/tone_generator.sv \
 	$(RTL_DIR)/primitives/video_sync.sv \
+	$(RTL_DIR)/io/apf_bus_bridge.sv \
 	$(RTL_DIR)/io/host_bus_mux.sv \
 	$(RTL_DIR)/cpu/fetch_buffer.sv \
 	$(RTL_DIR)/fpu/fp_regfile.sv \

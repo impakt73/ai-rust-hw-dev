@@ -317,9 +317,7 @@ always @(*) begin
         bridge_rd_data <= 0;
     end
     32'h10xxxxxx: begin
-        // example
-        // bridge_rd_data <= example_device_data;
-        bridge_rd_data <= 0;
+        bridge_rd_data <= repo_bridge_rd_data;
     end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -340,6 +338,7 @@ end
     wire            repo_video_skip;
     wire            repo_video_vs;
     wire            repo_video_hs;
+    wire    [31:0]  repo_bridge_rd_data;
     wire            serial_rx;
     wire            serial_tx;
     
@@ -428,10 +427,15 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
     .cont1_key  ( cont1_key ),
+    .bridge_addr ( bridge_addr ),
+    .bridge_rd   ( bridge_rd ),
+    .bridge_wr   ( bridge_wr ),
+    .bridge_wr_data ( bridge_wr_data ),
     .rst        ( pll_unlocked_rst ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
     .rst_out    ( rst_out ),
+    .bridge_rd_data ( repo_bridge_rd_data ),
     .video_rgb  ( repo_video_rgb ),
     .video_de   ( repo_video_de ),
     .video_skip ( repo_video_skip ),
