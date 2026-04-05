@@ -201,13 +201,13 @@ module system_controller #(
         end else begin
             // Default values every cycle.
             // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
-            // unless a same-cycle REG_BOOT MMIO write is taking priority.
-            // This keeps the external boot path level-driven while MMIO BOOT
-            // writes continue to generate a one-cycle cpu_boot pulse.
+            // only while the external boot request is asserted, unless a
+            // same-cycle REG_BOOT MMIO write is taking priority. MMIO BOOT
+            // writes still generate a one-cycle cpu_boot pulse and keep the
+            // written address latched for later use.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
-            boot_addr_reg <= reg_boot_write ? mem_a_wdata : ext_cpu_boot_addr;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
 
@@ -224,6 +224,7 @@ module system_controller #(
                             case (mem_a_addr[4:0])  // Use only register offset bits
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
+                                    boot_addr_reg <= mem_a_wdata;
                                     response_pending <= 1'b1;
                                 end
 
@@ -333,7 +334,7 @@ module system_controller #(
         end
     end
     
-    assign cpu_boot_addr = boot_addr_reg;
+    assign cpu_boot_addr = reg_boot_write ? mem_a_wdata : (ext_cpu_boot ? ext_cpu_boot_addr : boot_addr_reg);
     assign halted_value  = halt_reg;
     
 endmodule

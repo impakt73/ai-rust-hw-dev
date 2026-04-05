@@ -52,17 +52,19 @@ module cyclonev_analogue_pocket_top #(
     localparam logic [31:0] SRAM_BOOT_ADDR = 32'h7000_0000;
 
     // -----------------------------------------------------------------------
-    // External CPU boot control registers
-    // On reset both signals are 0. Once running: assert ext_cpu_boot whenever
+    // External CPU boot control
+    // On reset ext_cpu_boot is 0. Once running: assert ext_cpu_boot whenever
     // play_cartridge is LOW, status_running is HIGH, and the CPU still reports
-    // it is in the booting state; this boots the CPU into the SRAM image at
-    // SRAM_BOOT_ADDR.
+    // it is in the booting state; the boot address is driven combinationally
+    // to the SRAM image at SRAM_BOOT_ADDR.
     // -----------------------------------------------------------------------
     logic        ext_boot_r;
-    logic [31:0] ext_boot_addr_r;
+    logic [31:0] ext_boot_addr;
     logic        cpu_is_booting;
 
-    assign ext_boot_addr_r = SRAM_BOOT_ADDR;
+    always_comb begin
+        ext_boot_addr = SRAM_BOOT_ADDR;
+    end
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -111,7 +113,7 @@ module cyclonev_analogue_pocket_top #(
         //   [8]=trig_l  [9]=trig_r
         .gamepad_in(cont1_key[9:0]),
         .ext_cpu_boot(ext_boot_r),
-        .ext_cpu_boot_addr(ext_boot_addr_r),
+        .ext_cpu_boot_addr(ext_boot_addr),
         .cpu_is_booting(cpu_is_booting),
         .apf_bridge_addr(bridge_addr),
         .apf_bridge_rd(bridge_rd),
