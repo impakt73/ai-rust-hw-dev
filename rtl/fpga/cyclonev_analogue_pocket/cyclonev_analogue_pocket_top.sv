@@ -30,7 +30,7 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_dac,
     output logic            audio_lrclk,
     // Analogue Pocket OS notify signals for external CPU boot control
-    input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when LOW && status_running
+    input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and status_running is HIGH
     input  wire logic       status_running,  // HIGH when core is running; ext boot requires this HIGH
     // CPU boot-state indicator (exposed for board-level context)
     output logic            cpu_is_booting

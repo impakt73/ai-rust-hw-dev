@@ -198,9 +198,9 @@ module system_controller #(
         end else begin
             // Default values every cycle.
             // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
-            // each cycle as defaults. When the REG_BOOT write path executes in
-            // this same always_ff block, its later non-blocking assignments to
-            // cpu_boot/boot_addr_reg override these defaults for that cycle.
+            // each cycle as defaults. If the REG_BOOT write path also executes
+            // in this always_ff block, its later textual assignments to
+            // cpu_boot/boot_addr_reg determine the final scheduled values.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= ext_cpu_boot;
