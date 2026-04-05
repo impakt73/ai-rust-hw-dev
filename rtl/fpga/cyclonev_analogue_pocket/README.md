@@ -27,6 +27,7 @@ make TARGET=cyclonev_analogue_pocket
 
 Build artifacts are written under `rtl/fpga/build/cyclonev_analogue_pocket/`.
 The regular build now also runs `pkt`, so each successful synthesis leaves a deployable Pocket core zip in that build directory.
+As part of that packaging flow, the release `test_pocket_demo` Rust program is converted to a raw `.bin` with `RISCV_OBJCOPY` (default: `riscv64-unknown-elf-objcopy`) and staged under the Pocket `Assets/aihwdev/common/` tree before `pkt` folds it into the final zip as a platform common asset. Ensure the RISC-V binutils toolchain providing that executable is installed, or override `RISCV_OBJCOPY` if your system uses a different tool name.
 
 To deploy the generated zip into a user-selected directory:
 
@@ -39,4 +40,5 @@ make TARGET=cyclonev_analogue_pocket program POCKET_DEPLOY_DIR=/path/to/pocket
 ## Notes
 
 - The target directory keeps openFPGA-style metadata/configuration files alongside target-local FPGA sources.
-- The regular build produces both the Quartus `.rbf` output and a deployable Pocket core zip.
+- The regular build produces the Quartus `.rbf` output, a staged `test_pocket_demo.bin` Pocket asset, and a deployable Pocket core zip.
+- `pkt` packages the staged `Assets/` tree directly, so `test_pocket_demo.bin` is deployed at `/Assets/aihwdev/common/test_pocket_demo.bin`.

@@ -30,16 +30,20 @@ fn create_test_core_source(temp_dir: &TempDir) -> PathBuf {
         b"Do not package me either",
     );
     write_file(
-        &core_source.join("Platforms/pdp1.json"),
-        br#"{"platform":"pdp1"}"#,
+        &core_source.join("Platforms/aihwdev.json"),
+        br#"{"platform":"aihwdev"}"#,
     );
     write_file(
-        &core_source.join("Platforms/_images/pdp1.bin"),
+        &core_source.join("Platforms/_images/aihwdev.bin"),
         &[0x12, 0x34, 0x56],
     );
     write_file(
-        &core_source.join("Assets/pdp1/common/bios.bin"),
+        &core_source.join("Assets/aihwdev/common/bios.bin"),
         &[0xaa, 0xbb, 0xcc],
+    );
+    write_file(
+        &core_source.join("Assets/aihwdev/common/test_pocket_demo.bin"),
+        &[0xde, 0xad, 0xbe, 0xef],
     );
     write_file(
         &core_source.join("src/fpga/ap_core.qpf"),
@@ -57,7 +61,7 @@ fn write_core_json(core_source: &Path, bitstream_filename: &str) {
   "core": {{
     "metadata": {{
       "author": "Analogue",
-      "shortname": "PDP-1",
+      "shortname": "AIHWDEV",
       "version": "1.0",
       "date_release": "2022-07-30"
     }},
@@ -92,7 +96,7 @@ fn test_package_core_creates_official_zip_layout() {
     let output_zip = package_core(&input_rbf, &core_source, &output_dir).expect("package core");
     assert_eq!(
         output_zip.file_name().and_then(|name| name.to_str()),
-        Some("Analogue.PDP-1_1.0_2022-07-30.zip")
+        Some("Analogue.AIHWDEV_1.0_2022-07-30.zip")
     );
     assert_eq!(output_zip.parent(), Some(output_dir.as_path()));
 
@@ -109,20 +113,21 @@ fn test_package_core_creates_official_zip_layout() {
     zip_entry_names.sort();
 
     assert!(zip_entry_names.contains(&"Assets/".to_string()));
-    assert!(zip_entry_names.contains(&"Assets/pdp1/".to_string()));
-    assert!(zip_entry_names.contains(&"Assets/pdp1/common/".to_string()));
-    assert!(zip_entry_names.contains(&"Assets/pdp1/common/bios.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/aihwdev/".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/aihwdev/common/".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/aihwdev/common/bios.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/aihwdev/common/test_pocket_demo.bin".to_string()));
     assert!(zip_entry_names.contains(&"Cores/".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/audio.json".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/core.json".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/info.txt".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/video.json".to_string()));
-    assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/bitstream.rbf_r".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/audio.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/core.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/info.txt".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/video.json".to_string()));
+    assert!(zip_entry_names.contains(&"Cores/Analogue.AIHWDEV/bitstream.rbf_r".to_string()));
     assert!(zip_entry_names.contains(&"Platforms/".to_string()));
     assert!(zip_entry_names.contains(&"Platforms/_images/".to_string()));
-    assert!(zip_entry_names.contains(&"Platforms/_images/pdp1.bin".to_string()));
-    assert!(zip_entry_names.contains(&"Platforms/pdp1.json".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/_images/aihwdev.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Platforms/aihwdev.json".to_string()));
     assert!(!zip_entry_names
         .iter()
         .any(|name| name.ends_with("README.md")));
@@ -132,7 +137,7 @@ fn test_package_core_creates_official_zip_layout() {
     assert!(!zip_entry_names.iter().any(|name| name.contains("src/fpga")));
 
     let mut bitstream = archive
-        .by_name("Cores/Analogue.PDP-1/bitstream.rbf_r")
+        .by_name("Cores/Analogue.AIHWDEV/bitstream.rbf_r")
         .expect("bitstream entry");
     let mut bytes = Vec::new();
     bitstream.read_to_end(&mut bytes).expect("read bitstream");
@@ -173,5 +178,5 @@ fn test_package_core_skips_top_level_symlinks() {
 
     assert!(archive
         .file_names()
-        .all(|name| name != "Cores/Analogue.PDP-1/linked.txt"));
+        .all(|name| name != "Cores/Analogue.AIHWDEV/linked.txt"));
 }

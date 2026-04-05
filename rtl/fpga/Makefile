@@ -154,6 +154,10 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
+POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
+POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
+POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
+POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/aihwdev/common/test_pocket_demo.bin
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -169,6 +173,9 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
+# Required for TARGET=cyclonev_analogue_pocket; override with
+# `make RISCV_OBJCOPY=/path/to/objcopy ...` if your tool name differs.
+RISCV_OBJCOPY ?= riscv64-unknown-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
@@ -186,8 +193,10 @@ endif
 endif
 
 # Default target
-.PHONY: all
+.PHONY: all FORCE
 all: $(BIN) timing
+
+FORCE:
 
 # Create build directory
 $(BUILD_DIR):
@@ -203,7 +212,20 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
-$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
+$(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
+	$(CARGO) build --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
+		--target $(POCKET_TEST_PROGRAM_TARGET) --bin test_pocket_demo
+	mkdir -p "$(dir $@)"
+	set -e; \
+	tmp_bin="$(BUILD_DIR)/test_pocket_demo.bin.tmp"; \
+	$(RISCV_OBJCOPY) -O binary "$(POCKET_TEST_PROGRAM_ELF)" "$$tmp_bin"; \
+	if [ -f "$@" ] && cmp -s "$$tmp_bin" "$@"; then \
+		rm -f "$$tmp_bin"; \
+	else \
+		mv "$$tmp_bin" "$@"; \
+	fi
+
+$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
@@ -368,6 +390,7 @@ endif
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(POCKET_TEST_PROGRAM_ASSET)
 
 # Show help
 .PHONY: help
@@ -420,6 +443,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@echo "  - quartus_sh : Intel Quartus batch/CLI tools"
 	@echo "  - cargo      : Rust toolchain (required for the Pocket packaging step)"
+	@echo "  - $(RISCV_OBJCOPY) : RISC-V objcopy used for test_pocket_demo.bin (override RISCV_OBJCOPY=/path/to/objcopy if needed)"
+	@echo "  - cmp        : Binary comparison tool used to avoid rewriting unchanged Pocket assets"
 	@echo "  - unzip      : Archive extraction tool (required for 'make program')"
 	@echo "  - sudo mount/umount : Required to mount the Pocket SD card by UUID $(POCKET_DEPLOY_UUID)"
 else ifeq ($(TARGET),gowin_tang_primer_25k)
@@ -467,6 +492,8 @@ ifeq ($(TARGET),artix7_alchitry_au)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 	@which $(QUARTUS_SH) > /dev/null || (echo "ERROR: $(QUARTUS_SH) not found"; exit 1)
 	@which $(CARGO) > /dev/null || (echo "ERROR: $(CARGO) not found (required for Pocket packaging)"; exit 1)
+	@which $(RISCV_OBJCOPY) > /dev/null || (echo "ERROR: $(RISCV_OBJCOPY) not found (required to convert test_pocket_demo into a Pocket .bin; override RISCV_OBJCOPY=/path/to/objcopy if needed)"; exit 1)
+	@which cmp > /dev/null || (echo "ERROR: cmp not found (required to avoid rewriting unchanged Pocket assets)"; exit 1)
 	@which $(UNZIP) > /dev/null || (echo "ERROR: $(UNZIP) not found (required for 'make program')"; exit 1)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 	@which $(GOWIN_SH) > /dev/null || (echo "ERROR: $(GOWIN_SH) not found"; exit 1)
