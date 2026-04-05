@@ -62,13 +62,13 @@ module cyclonev_analogue_pocket_top #(
     logic [31:0] ext_boot_addr_r;
     logic        cpu_is_booting;
 
+    assign ext_boot_addr_r = SRAM_BOOT_ADDR;
+
     always_ff @(posedge clk) begin
         if (rst) begin
-            ext_boot_r      <= 1'b0;
-            ext_boot_addr_r <= 32'h0000_0000;
+            ext_boot_r <= 1'b0;
         end else begin
-            ext_boot_r      <= !play_cartridge && status_running && cpu_is_booting;
-            ext_boot_addr_r <= SRAM_BOOT_ADDR;
+            ext_boot_r <= !play_cartridge && status_running && cpu_is_booting;
         end
     end
 
