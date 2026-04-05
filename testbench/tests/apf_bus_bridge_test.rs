@@ -69,7 +69,7 @@ fn test_apf_bus_bridge_writes_and_reads_sram_through_registered_bus() {
 
     reset(&mut dut);
 
-    wait_for_bridge_ready(&mut dut, 1);
+    wait_for_bridge_ready(&mut dut, MAX_BRIDGE_COMPLETION_CYCLES);
     pulse_write(&mut dut, 0x7000_0010, 0xCAFE_BABE);
     assert_eq!(
         dut.bridge_wr_ready, 0,

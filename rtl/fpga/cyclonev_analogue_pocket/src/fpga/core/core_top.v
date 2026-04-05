@@ -311,15 +311,16 @@ assign vpll_feed = 1'bZ;
 // APF framework accesses in the 0xF8xxxxxx range are reserved for the
 // higher-level command bridge. All other addresses route through the repo
 // bridge path.
-wire repo_bridge_access = (bridge_addr[31:24] != 8'hF8);
+localparam [7:0] CMD_BRIDGE_ADDR_PREFIX = 8'hF8;
+wire repo_bridge_access = (bridge_addr[31:24] != CMD_BRIDGE_ADDR_PREFIX);
 wire repo_bridge_rd = bridge_rd & repo_bridge_access;
 wire repo_bridge_wr = bridge_wr & repo_bridge_access;
 
 always @(*) begin
-    if (bridge_addr[31:24] == 8'hF8) begin
-        bridge_rd_data <= cmd_bridge_rd_data;
-    end else begin
+    if (repo_bridge_access) begin
         bridge_rd_data <= repo_bridge_rd_data;
+    end else begin
+        bridge_rd_data <= cmd_bridge_rd_data;
     end
 end
 

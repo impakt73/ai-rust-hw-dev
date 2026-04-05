@@ -269,18 +269,18 @@ module top #(
 
     // registered_bus uses fixed-priority arbitration: host stays highest priority,
     // the optional APF bridge sits ahead of the CPU path, and the CPU remains lowest.
-    localparam int unsigned FIXED_RTL_MASTER_COUNT = 2;
+    localparam int unsigned NON_APF_MASTER_COUNT = 2;
     localparam int unsigned HOST_RTL_MASTER_INDEX = 0;
     localparam int unsigned APF_BRIDGE_MASTER_INDEX = 1;
     localparam int unsigned CPU_RTL_MASTER_INDEX = ENABLE_APF_BUS_BRIDGE ? 2 : 1;
     localparam int unsigned HOST_RTL_MASTER_ADDR_BIT_OFFSET = 32 * HOST_RTL_MASTER_INDEX;
     localparam int unsigned HOST_RTL_MASTER_SIZE_BIT_OFFSET = 2 * HOST_RTL_MASTER_INDEX;
-    localparam int unsigned APF_BRIDGE_ADDR_BIT_OFFSET = 32 * APF_BRIDGE_MASTER_INDEX;
-    localparam int unsigned APF_BRIDGE_SIZE_BIT_OFFSET = 2 * APF_BRIDGE_MASTER_INDEX;
+    localparam int unsigned APF_BRIDGE_MASTER_ADDR_BIT_OFFSET = 32 * APF_BRIDGE_MASTER_INDEX;
+    localparam int unsigned APF_BRIDGE_MASTER_SIZE_BIT_OFFSET = 2 * APF_BRIDGE_MASTER_INDEX;
     localparam int unsigned CPU_RTL_MASTER_ADDR_BIT_OFFSET = 32 * CPU_RTL_MASTER_INDEX;
     localparam int unsigned CPU_RTL_MASTER_SIZE_BIT_OFFSET = 2 * CPU_RTL_MASTER_INDEX;
     localparam int unsigned NUM_RTL_MASTERS =
-        FIXED_RTL_MASTER_COUNT + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
+        NON_APF_MASTER_COUNT + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
 
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_addr;
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_wdata;
@@ -380,18 +380,18 @@ module top #(
 
     generate
         if (ENABLE_APF_BUS_BRIDGE) begin : gen_apf_bridge_master_wiring
-            assign registered_master_mem_a_addr[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32] =
+            assign registered_master_mem_a_addr[APF_BRIDGE_MASTER_ADDR_BIT_OFFSET+31 -: 32] =
                 apf_bus_mem_a_addr;
-            assign registered_master_mem_a_wdata[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32] =
+            assign registered_master_mem_a_wdata[APF_BRIDGE_MASTER_ADDR_BIT_OFFSET+31 -: 32] =
                 apf_bus_mem_a_wdata;
             assign registered_master_mem_a_we[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_we;
-            assign registered_master_mem_a_size[APF_BRIDGE_SIZE_BIT_OFFSET+1 -: 2] =
+            assign registered_master_mem_a_size[APF_BRIDGE_MASTER_SIZE_BIT_OFFSET+1 -: 2] =
                 apf_bus_mem_a_size;
             assign registered_master_mem_a_valid[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_valid;
             assign apf_bus_mem_a_ready =
                 registered_master_mem_a_ready[APF_BRIDGE_MASTER_INDEX];
             assign apf_bus_mem_d_rdata =
-                registered_master_mem_d_rdata[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32];
+                registered_master_mem_d_rdata[APF_BRIDGE_MASTER_ADDR_BIT_OFFSET+31 -: 32];
             assign apf_bus_mem_d_valid =
                 registered_master_mem_d_valid[APF_BRIDGE_MASTER_INDEX];
             assign registered_master_mem_d_ready[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_d_ready;
