@@ -157,6 +157,7 @@ POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
 POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
 POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
 POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
+# These placeholder path segments must stay aligned with pkt/src/lib.rs.
 POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/ex_platform/ex_core_name/test_pocket_demo.bin
 
 # Output files

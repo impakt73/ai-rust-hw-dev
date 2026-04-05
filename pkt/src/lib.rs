@@ -318,27 +318,32 @@ fn resolve_staged_root_path(
     relative_path: &Path,
     packaging_paths: &PackagingPaths,
 ) -> Result<PathBuf, PackageError> {
-    relative_path
-        .components()
-        .map(|component| match component {
+    let mut resolved_path = PathBuf::new();
+
+    for component in relative_path.components() {
+        match component {
+            Component::CurDir => {}
             Component::Normal(name) if name == OsStr::new(PLATFORM_PATH_PLACEHOLDER) => {
-                packaging_paths
-                    .primary_platform_id
-                    .as_deref()
-                    .map(PathBuf::from)
-                    .ok_or_else(|| {
-                        PackageError::MissingPlatformIdForAssetPath(relative_path.to_path_buf())
-                    })
+                let platform_id =
+                    packaging_paths
+                        .primary_platform_id
+                        .as_deref()
+                        .ok_or_else(|| {
+                            PackageError::MissingPlatformIdForAssetPath(relative_path.to_path_buf())
+                        })?;
+                resolved_path.push(platform_id);
             }
             Component::Normal(name) if name == OsStr::new(CORE_PATH_PLACEHOLDER) => {
-                Ok(PathBuf::from(&packaging_paths.core_folder_name))
+                resolved_path.push(&packaging_paths.core_folder_name);
             }
-            other => Ok(PathBuf::from(other.as_os_str())),
-        })
-        .try_fold(PathBuf::new(), |mut resolved_path, component| {
-            resolved_path.push(component?);
-            Ok(resolved_path)
-        })
+            Component::Normal(name) => resolved_path.push(name),
+            Component::RootDir | Component::ParentDir | Component::Prefix(_) => {
+                return Err(PackageError::InvalidOutputPath(relative_path.to_path_buf()));
+            }
+        }
+    }
+
+    Ok(resolved_path)
 }
 
 fn should_copy_to_core_dir(path: &Path) -> bool {
