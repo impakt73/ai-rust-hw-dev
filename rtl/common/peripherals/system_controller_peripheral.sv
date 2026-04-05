@@ -64,6 +64,7 @@ module system_controller #(
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    logic        reg_boot_write;
     localparam int CYCLES_PER_US = (CLK_FREQ_HZ >= 1_000_000) ? (CLK_FREQ_HZ / 1_000_000) : 1;
     localparam int CYCLE_COUNTER_WIDTH = (CYCLES_PER_US > 1) ? $clog2(CYCLES_PER_US) : 1;
     logic [CYCLE_COUNTER_WIDTH-1:0] cycle_counter;
@@ -97,6 +98,8 @@ module system_controller #(
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    assign reg_boot_write =
+        (cpu_reset_state == CPU_RESET_IDLE) && mem_a_handshake && mem_a_we && (mem_a_addr[4:0] == REG_BOOT);
     assign mem_a_ready = !response_pending && (cpu_reset_state == CPU_RESET_IDLE);
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
@@ -198,13 +201,11 @@ module system_controller #(
         end else begin
             // Default values every cycle.
             // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
-            // each cycle as defaults. If the REG_BOOT write path also executes
-            // in this always_ff block, its later textual assignments to
-            // cpu_boot/boot_addr_reg determine the final scheduled values.
+            // unless a same-cycle REG_BOOT MMIO write is taking priority.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
-            cpu_boot      <= ext_cpu_boot;
-            boot_addr_reg <= ext_cpu_boot_addr;
+            cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
+            boot_addr_reg <= reg_boot_write ? mem_a_wdata : ext_cpu_boot_addr;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
 
@@ -221,8 +222,6 @@ module system_controller #(
                             case (mem_a_addr[4:0])  // Use only register offset bits
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
-                                    boot_addr_reg <= mem_a_wdata;
-                                    cpu_boot      <= 1'b1;
                                     response_pending <= 1'b1;
                                 end
 
