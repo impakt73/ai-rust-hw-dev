@@ -153,7 +153,9 @@ module fpga_common_top #(
         .apf_bridge_rd_data(apf_bridge_rd_data)
     );
 
-    assign cpu_is_booting = cpu_booting;
+    always_comb begin
+        cpu_is_booting = cpu_booting;
+    end
 
     uart #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
