@@ -41,7 +41,9 @@ module fpga_common_top #(
     input  wire logic [9:0] gamepad_in,
     input  wire logic [31:0] apf_bridge_addr,
     input  wire logic        apf_bridge_rd,
+    output logic             apf_bridge_rd_ready,
     input  wire logic        apf_bridge_wr,
+    output logic             apf_bridge_wr_ready,
     input  wire logic [31:0] apf_bridge_wr_data,
     output logic [31:0]      apf_bridge_rd_data,
     output logic [23:0] video_rgb,
@@ -137,7 +139,9 @@ module fpga_common_top #(
         .gamepad_in(gamepad_in),
         .apf_bridge_addr(apf_bridge_addr),
         .apf_bridge_rd(apf_bridge_rd),
+        .apf_bridge_rd_ready(apf_bridge_rd_ready),
         .apf_bridge_wr(apf_bridge_wr),
+        .apf_bridge_wr_ready(apf_bridge_wr_ready),
         .apf_bridge_wr_data(apf_bridge_wr_data),
         .apf_bridge_rd_data(apf_bridge_rd_data)
     );

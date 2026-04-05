@@ -5,7 +5,9 @@ module apf_bus_bridge_test_wrapper (
     input  wire logic        rst,
     input  wire logic [31:0] bridge_addr,
     input  wire logic        bridge_rd,
+    output logic             bridge_rd_ready,
     input  wire logic        bridge_wr,
+    output logic             bridge_wr_ready,
     input  wire logic [31:0] bridge_wr_data,
     output logic [31:0]      bridge_rd_data
 );
@@ -35,7 +37,9 @@ module apf_bus_bridge_test_wrapper (
         .rst(rst),
         .bridge_addr(bridge_addr),
         .bridge_rd(bridge_rd),
+        .bridge_rd_ready(bridge_rd_ready),
         .bridge_wr(bridge_wr),
+        .bridge_wr_ready(bridge_wr_ready),
         .bridge_wr_data(bridge_wr_data),
         .bridge_rd_data(bridge_rd_data),
         .mem_a_addr(master_mem_a_addr),

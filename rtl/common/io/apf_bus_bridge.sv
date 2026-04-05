@@ -5,7 +5,9 @@ module apf_bus_bridge (
     input  wire logic        rst,
     input  wire logic [31:0] bridge_addr,
     input  wire logic        bridge_rd,
+    output logic             bridge_rd_ready,
     input  wire logic        bridge_wr,
+    output logic             bridge_wr_ready,
     input  wire logic [31:0] bridge_wr_data,
     output logic [31:0]      bridge_rd_data,
     output logic [31:0]      mem_a_addr,
@@ -30,6 +32,8 @@ module apf_bus_bridge (
     logic [31:0]  req_wdata;
     logic         req_we;
 
+    assign bridge_rd_ready = (state == S_IDLE);
+    assign bridge_wr_ready = (state == S_IDLE);
     assign mem_a_addr = req_addr;
     assign mem_a_wdata = req_wdata;
     assign mem_a_we = req_we;

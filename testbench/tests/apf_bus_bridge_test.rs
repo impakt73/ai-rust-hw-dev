@@ -1,7 +1,7 @@
 use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{create_apf_bus_bridge_runtime, ApfBusBridgeTestWrapper};
 
-const WRITE_TO_READ_SETTLE_CYCLES: usize = 12;
+const MAX_BRIDGE_COMPLETION_CYCLES: usize = 64;
 
 fn clock_cycle(dut: &mut ApfBusBridgeTestWrapper) {
     dut.clk = 0;
@@ -26,7 +26,19 @@ fn reset(dut: &mut ApfBusBridgeTestWrapper) {
     dut.eval();
 }
 
+fn wait_for_bridge_ready(dut: &mut ApfBusBridgeTestWrapper, max_cycles: usize) {
+    for _ in 0..max_cycles {
+        if (dut.bridge_rd_ready != 0) && (dut.bridge_wr_ready != 0) {
+            return;
+        }
+        clock_cycle(dut);
+    }
+
+    panic!("timed out waiting for APF bridge readiness");
+}
+
 fn pulse_write(dut: &mut ApfBusBridgeTestWrapper, addr: u32, data: u32) {
+    wait_for_bridge_ready(dut, MAX_BRIDGE_COMPLETION_CYCLES);
     dut.bridge_addr = addr;
     dut.bridge_wr_data = data;
     dut.bridge_wr = 1;
@@ -38,6 +50,7 @@ fn pulse_write(dut: &mut ApfBusBridgeTestWrapper, addr: u32, data: u32) {
 }
 
 fn pulse_read(dut: &mut ApfBusBridgeTestWrapper, addr: u32) {
+    wait_for_bridge_ready(dut, MAX_BRIDGE_COMPLETION_CYCLES);
     dut.bridge_addr = addr;
     dut.bridge_rd = 1;
     dut.bridge_wr = 0;
@@ -45,12 +58,6 @@ fn pulse_read(dut: &mut ApfBusBridgeTestWrapper, addr: u32) {
     clock_cycle(dut);
     dut.bridge_rd = 0;
     dut.eval();
-}
-
-fn step_cycles(dut: &mut ApfBusBridgeTestWrapper, num_cycles: usize) {
-    for _ in 0..num_cycles {
-        clock_cycle(dut);
-    }
 }
 
 #[test]
@@ -62,22 +69,27 @@ fn test_apf_bus_bridge_writes_and_reads_sram_through_registered_bus() {
 
     reset(&mut dut);
 
+    wait_for_bridge_ready(&mut dut, 1);
     pulse_write(&mut dut, 0x7000_0010, 0xCAFE_BABE);
-    step_cycles(&mut dut, WRITE_TO_READ_SETTLE_CYCLES);
+    assert_eq!(
+        dut.bridge_wr_ready, 0,
+        "bridge write ready should deassert while a write request is in flight"
+    );
+    assert_eq!(
+        dut.bridge_rd_ready, 0,
+        "bridge read ready should also deassert while the bridge is busy"
+    );
+    wait_for_bridge_ready(&mut dut, MAX_BRIDGE_COMPLETION_CYCLES);
 
     pulse_read(&mut dut, 0x7000_0010);
+    assert_eq!(
+        dut.bridge_rd_ready, 0,
+        "bridge read ready should deassert while a read request is in flight"
+    );
+    wait_for_bridge_ready(&mut dut, MAX_BRIDGE_COMPLETION_CYCLES);
 
-    let mut matched = false;
-    for _ in 0..20 {
-        if dut.bridge_rd_data == 0xCAFE_BABE {
-            matched = true;
-            break;
-        }
-        clock_cycle(&mut dut);
-    }
-
-    assert!(
-        matched,
+    assert_eq!(
+        dut.bridge_rd_data, 0xCAFE_BABE,
         "bridge read data should return the SRAM word written through the bus"
     );
 
