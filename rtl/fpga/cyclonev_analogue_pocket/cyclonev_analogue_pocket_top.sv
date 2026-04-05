@@ -35,6 +35,7 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
+    localparam int unsigned POCKET_RESET_CYCLES = 74_250_000 / 1000;  // Hold reset for 1 ms
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -43,7 +44,7 @@ module cyclonev_analogue_pocket_top #(
         .ENABLE_AUDIOSYS(1'b1),
         .ENABLE_GAMEPAD(1'b1),
         .CLK_FREQ_HZ(74_250_000),
-        .RESET_CYCLES(74_250_000 / 1000),
+        .RESET_CYCLES(POCKET_RESET_CYCLES),
         .BAUD_RATE(BAUD_RATE),
         .GFX2D_VIDEO_ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
         .GFX2D_VIDEO_ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),
