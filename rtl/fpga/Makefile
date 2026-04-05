@@ -213,12 +213,12 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 $(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
-	$(CARGO) build --release --manifest-path $(POCKET_TEST_PROGRAM_DIR)/Cargo.toml \
+	$(CARGO) build --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
 		--target $(POCKET_TEST_PROGRAM_TARGET) --bin test_pocket_demo
-	mkdir -p $(dir $@)
+	mkdir -p "$(dir $@)"
 	set -e; \
 	tmp_bin="$(BUILD_DIR)/test_pocket_demo.bin.tmp"; \
-	$(RISCV_OBJCOPY) -O binary $(POCKET_TEST_PROGRAM_ELF) "$$tmp_bin"; \
+	$(RISCV_OBJCOPY) -O binary "$(POCKET_TEST_PROGRAM_ELF)" "$$tmp_bin"; \
 	if [ -f "$@" ] && cmp -s "$$tmp_bin" "$@"; then \
 		rm -f "$$tmp_bin"; \
 	else \
