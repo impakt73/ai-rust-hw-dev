@@ -13,6 +13,7 @@ use zip::{CompressionMethod, ZipWriter};
 const CORE_ROOT_DIR: &str = "Cores";
 const ROOT_STAGE_DIRECTORIES: &[&str] = &["Assets", "Platforms", "Presets"];
 const CORE_FILE_EXTENSIONS: &[&str] = &["bin", "json", "txt"];
+// Keep these aligned with the Pocket asset staging placeholders in rtl/fpga/Makefile.
 const PLATFORM_PATH_PLACEHOLDER: &str = "ex_platform";
 const CORE_PATH_PLACEHOLDER: &str = "ex_core_name";
 

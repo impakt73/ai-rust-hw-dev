@@ -157,8 +157,10 @@ POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
 POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
 POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
 POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
-# These placeholder path segments must stay aligned with pkt/src/lib.rs.
-POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/ex_platform/ex_core_name/test_pocket_demo.bin
+# Keep these placeholders aligned with pkt/src/lib.rs.
+POCKET_ASSET_PLATFORM_PLACEHOLDER = ex_platform
+POCKET_ASSET_CORE_PLACEHOLDER = ex_core_name
+POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/$(POCKET_ASSET_PLATFORM_PLACEHOLDER)/$(POCKET_ASSET_CORE_PLACEHOLDER)/test_pocket_demo.bin
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -174,7 +176,7 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
-OBJCOPY ?= riscv64-unknown-elf-objcopy
+RISCV_OBJCOPY ?= riscv64-unknown-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
@@ -215,7 +217,7 @@ $(POCKET_TEST_PROGRAM_ELF):
 
 $(POCKET_TEST_PROGRAM_ASSET): $(POCKET_TEST_PROGRAM_ELF)
 	mkdir -p $(dir $@)
-	$(OBJCOPY) -O binary $< $@
+	$(RISCV_OBJCOPY) -O binary $< $@
 
 $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
