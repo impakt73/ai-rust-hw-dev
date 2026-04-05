@@ -334,6 +334,7 @@ end
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
     wire            rst_out;
+    wire            rst_from_pll = !pll_core_locked_s;
     wire    [23:0]  repo_video_rgb;
     wire            repo_video_de;
     wire            repo_video_skip;
@@ -427,7 +428,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
     .cont1_key  ( cont1_key ),
-    .rst        ( ~pll_core_locked_s ),
+    .rst        ( rst_from_pll ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
     .rst_out    ( rst_out ),
