@@ -116,8 +116,9 @@ fn test_package_core_creates_official_zip_layout() {
     assert!(zip_entry_names.contains(&"Assets/".to_string()));
     assert!(zip_entry_names.contains(&"Assets/pdp1/".to_string()));
     assert!(zip_entry_names.contains(&"Assets/pdp1/Analogue.PDP-1/".to_string()));
-    assert!(zip_entry_names
-        .contains(&"Assets/pdp1/Analogue.PDP-1/test_pocket_demo.bin".to_string()));
+    assert!(
+        zip_entry_names.contains(&"Assets/pdp1/Analogue.PDP-1/test_pocket_demo.bin".to_string())
+    );
     assert!(zip_entry_names.contains(&"Assets/pdp1/common/".to_string()));
     assert!(zip_entry_names.contains(&"Assets/pdp1/common/bios.bin".to_string()));
     assert!(zip_entry_names.contains(&"Cores/".to_string()));

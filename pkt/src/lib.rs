@@ -297,10 +297,8 @@ fn copy_supported_root_directories(
                 .path()
                 .strip_prefix(core_source)
                 .map_err(|_| PackageError::InvalidOutputPath(entry.path().to_path_buf()))?;
-            let destination = staging_root.join(resolve_staged_root_path(
-                relative_path,
-                packaging_paths,
-            )?);
+            let destination =
+                staging_root.join(resolve_staged_root_path(relative_path, packaging_paths)?);
 
             if entry.file_type().is_dir() {
                 fs::create_dir_all(&destination)?;
