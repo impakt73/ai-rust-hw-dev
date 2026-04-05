@@ -309,10 +309,9 @@ fn verify_active_pixels_from_current_frame(
     scroll_x: u8,
     scroll_y: u8,
 ) {
-    let mut cycle_in_frame = start_cycle_in_frame;
     let mut checked = 0usize;
 
-    while checked < active_pixels_to_check {
+    for cycle_in_frame in start_cycle_in_frame..GFX2D_FRAME_CYCLES {
         let row = cycle_in_frame / GFX2D_H_TOTAL;
         let col = cycle_in_frame % GFX2D_H_TOTAL;
 
@@ -327,11 +326,17 @@ fn verify_active_pixels_from_current_frame(
                 "unexpected pixel during same-frame validation at output coordinate ({col}, {row})"
             );
             checked += 1;
+            if checked == active_pixels_to_check {
+                return;
+            }
         }
 
-        cycle_in_frame += 1;
         clock_cycle!(dut);
     }
+
+    panic!(
+        "timed out validating {active_pixels_to_check} active pixels before frame end starting at cycle {start_cycle_in_frame}"
+    );
 }
 
 fn verify_black_active_pixels_from_current_frame(
@@ -339,10 +344,9 @@ fn verify_black_active_pixels_from_current_frame(
     start_cycle_in_frame: usize,
     active_pixels_to_check: usize,
 ) {
-    let mut cycle_in_frame = start_cycle_in_frame;
     let mut checked = 0usize;
 
-    while checked < active_pixels_to_check {
+    for cycle_in_frame in start_cycle_in_frame..GFX2D_FRAME_CYCLES {
         let row = cycle_in_frame / GFX2D_H_TOTAL;
         let col = cycle_in_frame % GFX2D_H_TOTAL;
 
@@ -356,11 +360,17 @@ fn verify_black_active_pixels_from_current_frame(
                 "expected black pixel during same-frame validation at output coordinate ({col}, {row})"
             );
             checked += 1;
+            if checked == active_pixels_to_check {
+                return;
+            }
         }
 
-        cycle_in_frame += 1;
         clock_cycle!(dut);
     }
+
+    panic!(
+        "timed out validating {active_pixels_to_check} black active pixels before frame end starting at cycle {start_cycle_in_frame}"
+    );
 }
 
 #[test]
@@ -537,9 +547,12 @@ fn test_gfx2d_video_disable_forces_black_active_pixels_without_changing_de_timin
     wait_for_active_frame_start(&mut dut, 1);
     let elapsed_cycles = set_video_enable(&mut dut, true);
     verify_black_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8);
-    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), GFX2D_CONTROL_ENABLE);
+    assert_eq!(
+        read_access(&mut dut, GFX2D_CONTROL_ADDR),
+        GFX2D_CONTROL_ENABLE
+    );
 
-    let reenabled_pixels = capture_active_frame_pixels(&mut dut, 2);
+    let reenabled_pixels = capture_active_frame_pixels(&mut dut, 1);
     assert!(
         reenabled_pixels.iter().any(|&pixel| pixel != 0),
         "re-enabling video must restore active pixels on the next frame"
