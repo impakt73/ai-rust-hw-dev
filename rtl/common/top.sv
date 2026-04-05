@@ -265,8 +265,10 @@ module top #(
     logic        apf_bus_mem_d_valid;
     logic        apf_bus_mem_d_ready;
 
-    localparam int unsigned APF_BRIDGE_MASTER_INDEX = 2;
-    localparam int unsigned NUM_RTL_MASTERS = 2 + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
+    localparam int unsigned BASE_RTL_MASTER_COUNT = 2;
+    localparam int unsigned APF_BRIDGE_MASTER_INDEX = BASE_RTL_MASTER_COUNT;
+    localparam int unsigned NUM_RTL_MASTERS =
+        BASE_RTL_MASTER_COUNT + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
 
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_addr;
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_wdata;

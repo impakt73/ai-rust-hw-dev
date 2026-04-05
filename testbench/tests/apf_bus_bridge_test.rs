@@ -45,8 +45,8 @@ fn pulse_read(dut: &mut ApfBusBridgeTestWrapper, addr: u32) {
     dut.eval();
 }
 
-fn step_cycles(dut: &mut ApfBusBridgeTestWrapper, count: usize) {
-    for _ in 0..count {
+fn step_cycles(dut: &mut ApfBusBridgeTestWrapper, num_cycles: usize) {
+    for _ in 0..num_cycles {
         clock_cycle(dut);
     }
 }
