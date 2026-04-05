@@ -265,10 +265,13 @@ module top #(
     logic        apf_bus_mem_d_valid;
     logic        apf_bus_mem_d_ready;
 
-    localparam int unsigned BASE_RTL_MASTER_COUNT = 2;
-    localparam int unsigned APF_BRIDGE_MASTER_INDEX = BASE_RTL_MASTER_COUNT;
+    // Fixed registered_bus masters are host_bus_interface and the CPU RTL-peripheral path.
+    localparam int unsigned FIXED_RTL_MASTER_COUNT = 2;
+    localparam int unsigned APF_BRIDGE_MASTER_INDEX = FIXED_RTL_MASTER_COUNT;
+    localparam int unsigned APF_BRIDGE_ADDR_BIT_OFFSET = 32 * APF_BRIDGE_MASTER_INDEX;
+    localparam int unsigned APF_BRIDGE_SIZE_BIT_OFFSET = 2 * APF_BRIDGE_MASTER_INDEX;
     localparam int unsigned NUM_RTL_MASTERS =
-        BASE_RTL_MASTER_COUNT + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
+        FIXED_RTL_MASTER_COUNT + (ENABLE_APF_BUS_BRIDGE ? 1 : 0);
 
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_addr;
     logic [NUM_RTL_MASTERS*32-1:0] registered_master_mem_a_wdata;
@@ -364,18 +367,18 @@ module top #(
 
     generate
         if (ENABLE_APF_BUS_BRIDGE) begin : gen_apf_bridge_master_wiring
-            assign registered_master_mem_a_addr[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32] =
+            assign registered_master_mem_a_addr[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32] =
                 apf_bus_mem_a_addr;
-            assign registered_master_mem_a_wdata[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32] =
+            assign registered_master_mem_a_wdata[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32] =
                 apf_bus_mem_a_wdata;
             assign registered_master_mem_a_we[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_we;
-            assign registered_master_mem_a_size[(2*APF_BRIDGE_MASTER_INDEX)+1 -: 2] =
+            assign registered_master_mem_a_size[APF_BRIDGE_SIZE_BIT_OFFSET+1 -: 2] =
                 apf_bus_mem_a_size;
             assign registered_master_mem_a_valid[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_a_valid;
             assign apf_bus_mem_a_ready =
                 registered_master_mem_a_ready[APF_BRIDGE_MASTER_INDEX];
             assign apf_bus_mem_d_rdata =
-                registered_master_mem_d_rdata[(32*APF_BRIDGE_MASTER_INDEX)+31 -: 32];
+                registered_master_mem_d_rdata[APF_BRIDGE_ADDR_BIT_OFFSET+31 -: 32];
             assign apf_bus_mem_d_valid =
                 registered_master_mem_d_valid[APF_BRIDGE_MASTER_INDEX];
             assign registered_master_mem_d_ready[APF_BRIDGE_MASTER_INDEX] = apf_bus_mem_d_ready;

@@ -1,6 +1,8 @@
 use riscv_core::AsDynamicVerilatedModel;
 use riscv_core::{create_apf_bus_bridge_runtime, ApfBusBridgeTestWrapper};
 
+const WRITE_TO_READ_SETTLE_CYCLES: usize = 12;
+
 fn clock_cycle(dut: &mut ApfBusBridgeTestWrapper) {
     dut.clk = 0;
     dut.eval();
@@ -61,7 +63,7 @@ fn test_apf_bus_bridge_writes_and_reads_sram_through_registered_bus() {
     reset(&mut dut);
 
     pulse_write(&mut dut, 0x7000_0010, 0xCAFE_BABE);
-    step_cycles(&mut dut, 12);
+    step_cycles(&mut dut, WRITE_TO_READ_SETTLE_CYCLES);
 
     pulse_read(&mut dut, 0x7000_0010);
 
