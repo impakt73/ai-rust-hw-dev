@@ -154,6 +154,10 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
+POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
+POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
+POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
+POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/ex_platform/ex_core_name/test_pocket_demo.bin
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -169,6 +173,7 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
+OBJCOPY ?= riscv64-unknown-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
@@ -203,7 +208,15 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
-$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
+$(POCKET_TEST_PROGRAM_ELF):
+	$(CARGO) build --release --manifest-path $(POCKET_TEST_PROGRAM_DIR)/Cargo.toml \
+		--target $(POCKET_TEST_PROGRAM_TARGET) --bin test_pocket_demo
+
+$(POCKET_TEST_PROGRAM_ASSET): $(POCKET_TEST_PROGRAM_ELF)
+	mkdir -p $(dir $@)
+	$(OBJCOPY) -O binary $< $@
+
+$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
@@ -368,6 +381,7 @@ endif
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(POCKET_TEST_PROGRAM_ASSET)
 
 # Show help
 .PHONY: help
