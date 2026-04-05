@@ -31,9 +31,7 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_lrclk,
     // Analogue Pocket OS notify signals for external CPU boot control
     input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and status_running is HIGH
-    input  wire logic       status_running,  // HIGH when core is running; ext boot requires this HIGH
-    // CPU boot-state indicator (exposed for board-level context)
-    output logic            cpu_is_booting
+    input  wire logic       status_running   // HIGH when core is running; ext boot requires this HIGH
 );
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -55,19 +53,21 @@ module cyclonev_analogue_pocket_top #(
 
     // -----------------------------------------------------------------------
     // External CPU boot control registers
-    // On reset both signals are 0.  Once running: assert ext_cpu_boot whenever
-    // play_cartridge is LOW (OS has left cartridge-play mode) and status_running
-    // is HIGH; this boots the CPU into the SRAM image at SRAM_BOOT_ADDR.
+    // On reset both signals are 0. Once running: assert ext_cpu_boot whenever
+    // play_cartridge is LOW, status_running is HIGH, and the CPU still reports
+    // it is in the booting state; this boots the CPU into the SRAM image at
+    // SRAM_BOOT_ADDR.
     // -----------------------------------------------------------------------
     logic        ext_boot_r;
     logic [31:0] ext_boot_addr_r;
+    logic        cpu_is_booting;
 
     always_ff @(posedge clk) begin
         if (rst) begin
             ext_boot_r      <= 1'b0;
             ext_boot_addr_r <= 32'h0000_0000;
         end else begin
-            ext_boot_r      <= !play_cartridge && status_running;
+            ext_boot_r      <= !play_cartridge && status_running && cpu_is_booting;
             ext_boot_addr_r <= SRAM_BOOT_ADDR;
         end
     end
