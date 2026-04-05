@@ -513,8 +513,8 @@ fn test_gfx2d_video_disable_forces_black_active_pixels_without_changing_de_timin
 
     wait_for_active_frame_start(&mut dut, 1);
     let elapsed_cycles = set_video_enable(&mut dut, false);
-    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
     verify_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8, 0, 0);
+    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), 0);
 
     let disabled_pixels = capture_active_frame_pixels(&mut dut, 2);
     let disabled_de_mask = capture_frame_de_mask(&mut dut, 1);
@@ -536,8 +536,8 @@ fn test_gfx2d_video_disable_forces_black_active_pixels_without_changing_de_timin
 
     wait_for_active_frame_start(&mut dut, 1);
     let elapsed_cycles = set_video_enable(&mut dut, true);
-    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), GFX2D_CONTROL_ENABLE);
     verify_black_active_pixels_from_current_frame(&mut dut, elapsed_cycles % GFX2D_FRAME_CYCLES, 8);
+    assert_eq!(read_access(&mut dut, GFX2D_CONTROL_ADDR), GFX2D_CONTROL_ENABLE);
 
     let reenabled_pixels = capture_active_frame_pixels(&mut dut, 2);
     assert!(
