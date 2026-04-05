@@ -198,11 +198,9 @@ module system_controller #(
         end else begin
             // Default values every cycle.
             // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
-            // each cycle as defaults.  An MMIO write to REG_BOOT in the same
-            // cycle overrides them because the REG_BOOT case block assigns the
-            // same registers later in this always_ff — in SystemVerilog the last
-            // non-blocking assignment to a register in a single always_ff block
-            // is the one that takes effect.
+            // each cycle as defaults. When the REG_BOOT write path executes in
+            // this same always_ff block, its later non-blocking assignments to
+            // cpu_boot/boot_addr_reg override these defaults for that cycle.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= ext_cpu_boot;

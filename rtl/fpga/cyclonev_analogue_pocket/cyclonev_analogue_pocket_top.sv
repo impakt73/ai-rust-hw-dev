@@ -67,7 +67,7 @@ module cyclonev_analogue_pocket_top #(
             ext_boot_r      <= 1'b0;
             ext_boot_addr_r <= 32'h0000_0000;
         end else begin
-            ext_boot_r      <= ~play_cartridge & status_running;
+            ext_boot_r      <= !play_cartridge && status_running;
             ext_boot_addr_r <= SRAM_BOOT_ADDR;
         end
     end
