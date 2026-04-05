@@ -323,7 +323,9 @@ fn resolve_staged_root_path(
 
     for component in relative_path.components() {
         match component {
-            Component::CurDir => {}
+            Component::CurDir => {
+                // WalkDir yields normalized relative paths here, so '.' components are ignored.
+            }
             Component::Normal(name) if name == OsStr::new(PLATFORM_PATH_PLACEHOLDER) => {
                 let platform_id =
                     packaging_paths

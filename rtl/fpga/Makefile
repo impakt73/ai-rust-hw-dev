@@ -176,6 +176,7 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
+# The riscv64 binutils package supplies objcopy for the rv32 test program ELF too.
 RISCV_OBJCOPY ?= riscv64-unknown-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip
