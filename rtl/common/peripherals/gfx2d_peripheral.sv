@@ -101,6 +101,7 @@ module gfx2d_peripheral #(
     logic [31:0] scroll_x_reg;
     logic [31:0] scroll_y_reg;
     logic        video_enable_reg;
+    logic        renderer_video_enable;
     logic [31:0] frame_index_reg;
     logic [SCROLL_X_WIDTH-1:0] renderer_scroll_x;
     logic [SCROLL_Y_WIDTH-1:0] renderer_scroll_y;
@@ -333,6 +334,7 @@ module gfx2d_peripheral #(
             scroll_x_reg <= 32'h0000_0000;
             scroll_y_reg <= 32'h0000_0000;
             video_enable_reg <= 1'b0;
+            renderer_video_enable <= 1'b0;
             frame_index_reg <= 32'h0000_0000;
             renderer_scroll_x <= '0;
             renderer_scroll_y <= '0;
@@ -352,7 +354,7 @@ module gfx2d_peripheral #(
             video_hs <= video_hs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
             video_vs <= video_vs_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1];
             video_rgb <=
-                (video_enable_reg && video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1]) ?
+                (renderer_video_enable && video_de_pipe[VIDEO_SIGNAL_DELAY_CYCLES-1]) ?
                 renderer_video_rgb :
                 24'h00_00_00;
 
@@ -367,6 +369,7 @@ module gfx2d_peripheral #(
             if (sync_vblank_start) begin
                 renderer_scroll_x <= scroll_x_reg[SCROLL_X_WIDTH-1:0];
                 renderer_scroll_y <= scroll_y_reg[SCROLL_Y_WIDTH-1:0];
+                renderer_video_enable <= video_enable_reg;
             end
 
             if (periph_mem_a_handshake) begin
