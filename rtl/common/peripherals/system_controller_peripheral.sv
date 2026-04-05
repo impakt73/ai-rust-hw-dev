@@ -24,7 +24,7 @@ module system_controller #(
     input wire logic        mem_d_ready,
 
     // External boot inputs (driven by higher-level logic, e.g. Pocket OS notify)
-    input wire logic        ext_cpu_boot,       // External boot request (default-low)
+    input wire logic        ext_cpu_boot,       // External boot request level (default-low)
     input wire logic [31:0] ext_cpu_boot_addr,  // External boot address (default 0)
 
     // System control outputs
@@ -202,6 +202,8 @@ module system_controller #(
             // Default values every cycle.
             // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
             // unless a same-cycle REG_BOOT MMIO write is taking priority.
+            // This keeps the external boot path level-driven while MMIO BOOT
+            // writes continue to generate a one-cycle cpu_boot pulse.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
