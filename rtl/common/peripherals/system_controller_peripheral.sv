@@ -23,6 +23,10 @@ module system_controller #(
     output logic        mem_d_valid,
     input wire logic        mem_d_ready,
 
+    // External boot inputs (driven by higher-level logic, e.g. Pocket OS notify)
+    input wire logic        ext_cpu_boot,       // External boot request (default-low)
+    input wire logic [31:0] ext_cpu_boot_addr,  // External boot address (default 0)
+
     // System control outputs
     output logic        sys_rst,       // System reset output
     output logic        cpu_rst,       // CPU reset output (active high)
@@ -192,11 +196,18 @@ module system_controller #(
             response_pending <= 1'b0;
             cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
-            // Default inactive values every cycle; writes can pulse outputs high/low.
-            sys_rst      <= sys_reset_pending;
-            cpu_rst      <= 1'b0;
-            cpu_boot     <= 1'b0;
-            req_cpu_halt <= 1'b0;
+            // Default values every cycle.
+            // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
+            // each cycle as defaults.  An MMIO write to REG_BOOT in the same
+            // cycle overrides them because the REG_BOOT case block assigns the
+            // same registers later in this always_ff — in SystemVerilog the last
+            // non-blocking assignment to a register in a single always_ff block
+            // is the one that takes effect.
+            sys_rst       <= sys_reset_pending;
+            cpu_rst       <= 1'b0;
+            cpu_boot      <= ext_cpu_boot;
+            boot_addr_reg <= ext_cpu_boot_addr;
+            req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
 
             if (mem_d_handshake) begin

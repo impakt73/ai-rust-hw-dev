@@ -28,7 +28,12 @@ module cyclonev_analogue_pocket_top #(
     output logic            video_vs,
     output logic            video_hs,
     output logic            audio_dac,
-    output logic            audio_lrclk
+    output logic            audio_lrclk,
+    // Analogue Pocket OS notify signals for external CPU boot control
+    input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when LOW && status_running
+    input  wire logic       status_running,  // HIGH when core is running; ext boot requires this HIGH
+    // CPU boot-state indicator (exposed for board-level context)
+    output logic            cpu_is_booting
 );
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -43,6 +48,29 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
     localparam int unsigned POCKET_RESET_CYCLES = 74_250_000 / 1000;  // Hold reset for 1 ms
+    // Boot address driven into the CPU when the OS signals non-cartridge mode.
+    // 32'h7000_0000 is the base of the SRAM peripheral window (slave 1 in the
+    // registered_bus map at rtl/common/top.sv) where user SRAM images live.
+    localparam logic [31:0] SRAM_BOOT_ADDR = 32'h7000_0000;
+
+    // -----------------------------------------------------------------------
+    // External CPU boot control registers
+    // On reset both signals are 0.  Once running: assert ext_cpu_boot whenever
+    // play_cartridge is LOW (OS has left cartridge-play mode) and status_running
+    // is HIGH; this boots the CPU into the SRAM image at SRAM_BOOT_ADDR.
+    // -----------------------------------------------------------------------
+    logic        ext_boot_r;
+    logic [31:0] ext_boot_addr_r;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            ext_boot_r      <= 1'b0;
+            ext_boot_addr_r <= 32'h0000_0000;
+        end else begin
+            ext_boot_r      <= ~play_cartridge & status_running;
+            ext_boot_addr_r <= SRAM_BOOT_ADDR;
+        end
+    end
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -82,6 +110,9 @@ module cyclonev_analogue_pocket_top #(
         //   [4]=btn_a   [5]=btn_b     [6]=btn_x      [7]=btn_y
         //   [8]=trig_l  [9]=trig_r
         .gamepad_in(cont1_key[9:0]),
+        .ext_cpu_boot(ext_boot_r),
+        .ext_cpu_boot_addr(ext_boot_addr_r),
+        .cpu_is_booting(cpu_is_booting),
         .apf_bridge_addr(bridge_addr),
         .apf_bridge_rd(bridge_rd),
         .apf_bridge_rd_ready(bridge_rd_ready),
