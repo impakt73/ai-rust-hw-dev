@@ -44,9 +44,6 @@ module apf_bus_bridge (
     always_ff @(posedge clk) begin
         if (rst) begin
             state <= S_IDLE;
-            req_addr <= 32'h0000_0000;
-            req_wdata <= 32'h0000_0000;
-            req_we <= 1'b0;
             bridge_rd_data <= 32'h0000_0000;
         end else begin
             case (state)
