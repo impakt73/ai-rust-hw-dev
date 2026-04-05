@@ -344,8 +344,8 @@ end
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = pll_core_locked_s;
-    wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
+    wire            status_boot_done = !rst_out;
+    wire            status_setup_done = !rst_out; // rising edge triggers a target command
     wire            status_running = !rst_out;
 
     wire            dataslot_requestread;
@@ -427,7 +427,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
     .cont1_key  ( cont1_key ),
-    .reset_n    ( reset_n ),
+    .rst        ( ~pll_core_locked_s ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
     .rst_out    ( rst_out ),
