@@ -42,7 +42,7 @@ fn create_test_core_source(temp_dir: &TempDir) -> PathBuf {
         &[0xaa, 0xbb, 0xcc],
     );
     write_file(
-        &core_source.join("Assets/ex_platform/ex_core_name/test_pocket_demo.bin"),
+        &core_source.join("Assets/pdp1/common/test_pocket_demo.bin"),
         &[0xde, 0xad, 0xbe, 0xef],
     );
     write_file(
@@ -60,7 +60,6 @@ fn write_core_json(core_source: &Path, bitstream_filename: &str) {
             r#"{{
   "core": {{
     "metadata": {{
-      "platform_ids": ["pdp1"],
       "author": "Analogue",
       "shortname": "PDP-1",
       "version": "1.0",
@@ -115,12 +114,9 @@ fn test_package_core_creates_official_zip_layout() {
 
     assert!(zip_entry_names.contains(&"Assets/".to_string()));
     assert!(zip_entry_names.contains(&"Assets/pdp1/".to_string()));
-    assert!(zip_entry_names.contains(&"Assets/pdp1/Analogue.PDP-1/".to_string()));
-    assert!(
-        zip_entry_names.contains(&"Assets/pdp1/Analogue.PDP-1/test_pocket_demo.bin".to_string())
-    );
     assert!(zip_entry_names.contains(&"Assets/pdp1/common/".to_string()));
     assert!(zip_entry_names.contains(&"Assets/pdp1/common/bios.bin".to_string()));
+    assert!(zip_entry_names.contains(&"Assets/pdp1/common/test_pocket_demo.bin".to_string()));
     assert!(zip_entry_names.contains(&"Cores/".to_string()));
     assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/".to_string()));
     assert!(zip_entry_names.contains(&"Cores/Analogue.PDP-1/audio.json".to_string()));
@@ -146,41 +142,6 @@ fn test_package_core_creates_official_zip_layout() {
     let mut bytes = Vec::new();
     bitstream.read_to_end(&mut bytes).expect("read bitstream");
     assert_eq!(bytes, vec![0x80, 0x01, 0x3c]);
-}
-
-#[test]
-fn test_package_core_rejects_placeholder_asset_paths_without_platform_id() {
-    let temp_dir = TempDir::new().expect("create temp dir");
-    let core_source = create_test_core_source(&temp_dir);
-    let input_rbf = temp_dir.path().join("input.rbf");
-    write_file(&input_rbf, &[0xff]);
-    write_file(
-        &core_source.join("core.json"),
-        br#"{
-  "core": {
-    "metadata": {
-      "author": "Analogue",
-      "shortname": "PDP-1",
-      "version": "1.0",
-      "date_release": "2022-07-30"
-    },
-    "cores": [
-      {
-        "name": "default",
-        "id": 0,
-        "filename": "bitstream.rbf_r"
-      }
-    ]
-  }
-}"#,
-    );
-
-    let error = package_core(&input_rbf, &core_source, &temp_dir.path().join("out"))
-        .expect_err("expected missing platform id error");
-
-    assert!(error
-        .to_string()
-        .contains("core.json must define at least one platform_id"));
 }
 
 #[test]

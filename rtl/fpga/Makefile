@@ -157,10 +157,7 @@ POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
 POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
 POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
 POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
-# Keep these placeholders aligned with pkt/src/lib.rs.
-POCKET_ASSET_PLATFORM_PLACEHOLDER = ex_platform
-POCKET_ASSET_CORE_PLACEHOLDER = ex_core_name
-POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/$(POCKET_ASSET_PLATFORM_PLACEHOLDER)/$(POCKET_ASSET_CORE_PLACEHOLDER)/test_pocket_demo.bin
+POCKET_TEST_PROGRAM_ASSET = $(FPGA_DIR)/Assets/aihwdev/common/test_pocket_demo.bin
 
 # Output files
 BIN = $(BUILD_DIR)/$(PROJECT).$(OUTPUT_EXT)
@@ -176,7 +173,6 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VIVADO = vivado
 CARGO ?= cargo
-# The riscv64 binutils package supplies objcopy for the rv32 test program ELF too.
 RISCV_OBJCOPY ?= riscv64-unknown-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip

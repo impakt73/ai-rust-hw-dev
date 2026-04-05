@@ -13,9 +13,6 @@ use zip::{CompressionMethod, ZipWriter};
 const CORE_ROOT_DIR: &str = "Cores";
 const ROOT_STAGE_DIRECTORIES: &[&str] = &["Assets", "Platforms", "Presets"];
 const CORE_FILE_EXTENSIONS: &[&str] = &["bin", "json", "txt"];
-// Keep these aligned with the Pocket asset staging placeholders in rtl/fpga/Makefile.
-const PLATFORM_PATH_PLACEHOLDER: &str = "ex_platform";
-const CORE_PATH_PLACEHOLDER: &str = "ex_core_name";
 
 #[derive(Debug)]
 pub enum PackageError {
@@ -28,7 +25,6 @@ pub enum PackageError {
     MultipleBitstreamDefinitions(Vec<String>),
     InvalidBitstreamFilename(String),
     InvalidMetadataField { field: &'static str, value: String },
-    MissingPlatformIdForAssetPath(PathBuf),
     InvalidOutputPath(PathBuf),
 }
 
@@ -57,11 +53,6 @@ impl Display for PackageError {
             Self::InvalidMetadataField { field, value } => write!(
                 f,
                 "core.json metadata field {field} contains an invalid value for packaging paths: {value}"
-            ),
-            Self::MissingPlatformIdForAssetPath(path) => write!(
-                f,
-                "core.json must define at least one platform_id to package asset path: {}",
-                path.display()
             ),
             Self::InvalidOutputPath(path) => {
                 write!(f, "output path must be a directory: {}", path.display())
@@ -113,8 +104,6 @@ struct CoreMetadata {
     shortname: String,
     version: String,
     date_release: String,
-    #[serde(default)]
-    platform_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,10 +139,6 @@ pub fn package_core(
     }
 
     let bitstream_name = get_bitstream_filename(&core_definition.cores)?;
-    let packaging_paths = PackagingPaths {
-        core_folder_name: core_folder_name.clone(),
-        primary_platform_id: core_definition.metadata.platform_ids.first().cloned(),
-    };
     let staging_temp_dir = tempfile::tempdir()?;
     let staged_core_dir = staging_temp_dir
         .path()
@@ -162,7 +147,7 @@ pub fn package_core(
     fs::create_dir_all(&staged_core_dir)?;
 
     copy_core_files(core_source, &staged_core_dir)?;
-    copy_supported_root_directories(core_source, staging_temp_dir.path(), &packaging_paths)?;
+    copy_supported_root_directories(core_source, staging_temp_dir.path())?;
     reverse_bitstream(input_rbf, &staged_core_dir.join(bitstream_name))?;
     write_zip(staging_temp_dir, &output_zip_path)?;
 
@@ -187,15 +172,6 @@ fn validate_metadata(metadata: &CoreMetadata) -> Result<(), PackageError> {
             return Err(PackageError::InvalidMetadataField {
                 field,
                 value: value.to_string(),
-            });
-        }
-    }
-
-    for platform_id in &metadata.platform_ids {
-        if platform_id.is_empty() || platform_id.contains('/') || platform_id.contains('\\') {
-            return Err(PackageError::InvalidMetadataField {
-                field: "platform_ids",
-                value: platform_id.clone(),
             });
         }
     }
@@ -276,15 +252,9 @@ fn copy_core_files(core_source: &Path, staged_core_dir: &Path) -> Result<(), Pac
     Ok(())
 }
 
-struct PackagingPaths {
-    core_folder_name: String,
-    primary_platform_id: Option<String>,
-}
-
 fn copy_supported_root_directories(
     core_source: &Path,
     staging_root: &Path,
-    packaging_paths: &PackagingPaths,
 ) -> Result<(), PackageError> {
     for directory_name in ROOT_STAGE_DIRECTORIES {
         let source_root = core_source.join(directory_name);
@@ -298,8 +268,7 @@ fn copy_supported_root_directories(
                 .path()
                 .strip_prefix(core_source)
                 .map_err(|_| PackageError::InvalidOutputPath(entry.path().to_path_buf()))?;
-            let destination =
-                staging_root.join(resolve_staged_root_path(relative_path, packaging_paths)?);
+            let destination = staging_root.join(relative_path);
 
             if entry.file_type().is_dir() {
                 fs::create_dir_all(&destination)?;
@@ -313,40 +282,6 @@ fn copy_supported_root_directories(
     }
 
     Ok(())
-}
-
-fn resolve_staged_root_path(
-    relative_path: &Path,
-    packaging_paths: &PackagingPaths,
-) -> Result<PathBuf, PackageError> {
-    let mut resolved_path = PathBuf::new();
-
-    for component in relative_path.components() {
-        match component {
-            Component::CurDir => {
-                // WalkDir yields normalized relative paths here, so '.' components are ignored.
-            }
-            Component::Normal(name) if name == OsStr::new(PLATFORM_PATH_PLACEHOLDER) => {
-                let platform_id =
-                    packaging_paths
-                        .primary_platform_id
-                        .as_deref()
-                        .ok_or_else(|| {
-                            PackageError::MissingPlatformIdForAssetPath(relative_path.to_path_buf())
-                        })?;
-                resolved_path.push(platform_id);
-            }
-            Component::Normal(name) if name == OsStr::new(CORE_PATH_PLACEHOLDER) => {
-                resolved_path.push(&packaging_paths.core_folder_name);
-            }
-            Component::Normal(name) => resolved_path.push(name),
-            Component::RootDir | Component::ParentDir | Component::Prefix(_) => {
-                return Err(PackageError::InvalidOutputPath(relative_path.to_path_buf()));
-            }
-        }
-    }
-
-    Ok(resolved_path)
 }
 
 fn should_copy_to_core_dir(path: &Path) -> bool {
