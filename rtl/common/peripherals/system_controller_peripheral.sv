@@ -334,7 +334,16 @@ module system_controller #(
         end
     end
     
-    assign cpu_boot_addr = reg_boot_write ? mem_a_wdata : (ext_cpu_boot ? ext_cpu_boot_addr : boot_addr_reg);
+    always_comb begin
+        if (reg_boot_write) begin
+            cpu_boot_addr = mem_a_wdata;
+        end else if (ext_cpu_boot) begin
+            cpu_boot_addr = ext_cpu_boot_addr;
+        end else begin
+            cpu_boot_addr = boot_addr_reg;
+        end
+    end
+
     assign halted_value  = halt_reg;
     
 endmodule
