@@ -74,7 +74,10 @@ fn test_apf_bus_bridge_writes_and_reads_sram_through_registered_bus() {
         clock_cycle(&mut dut);
     }
 
-    assert!(matched, "bridge read data should return the SRAM word written through the bus");
+    assert!(
+        matched,
+        "bridge read data should return the SRAM word written through the bus"
+    );
 
     clock_cycle(&mut dut);
     assert_eq!(
