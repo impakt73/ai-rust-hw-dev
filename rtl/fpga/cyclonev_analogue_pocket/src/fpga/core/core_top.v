@@ -443,7 +443,9 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .video_vs   ( repo_video_vs ),
     .video_hs   ( repo_video_hs ),
     .audio_dac  ( audgen_dac ),
-    .audio_lrclk( audgen_lrck )
+    .audio_lrclk( audgen_lrck ),
+    .play_cartridge  ( osnotify_play_cartridge ),
+    .status_running  ( status_running )
 );
 
 core_bridge_cmd icb (

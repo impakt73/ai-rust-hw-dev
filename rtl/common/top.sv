@@ -93,6 +93,10 @@ module top #(
     output logic        audio_dac,
     output logic        audio_lrclk,
 
+    // External CPU boot control (driven by board-specific logic; tie to 0 when unused)
+    input  wire logic        ext_cpu_boot,
+    input  wire logic [31:0] ext_cpu_boot_addr,
+
     // Gamepad input (active-high button state; ignored when ENABLE_GAMEPAD=0)
     input  wire logic [9:0]  gamepad_in,
 
@@ -823,6 +827,10 @@ module top #(
         .req_cpu_halt(sysctrl_req_cpu_halt),
         .halted_value(sysctrl_halted_value),
         .led_out(led_out),
+        
+        // External boot inputs (board-level; tied low on non-Pocket targets)
+        .ext_cpu_boot(ext_cpu_boot),
+        .ext_cpu_boot_addr(ext_cpu_boot_addr),
         
         // CPU status inputs
         .cpu_halted(cpu_halted_internal),

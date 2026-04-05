@@ -23,6 +23,10 @@ module system_controller #(
     output logic        mem_d_valid,
     input wire logic        mem_d_ready,
 
+    // External boot inputs (driven by higher-level logic, e.g. Pocket OS notify)
+    input wire logic        ext_cpu_boot,       // External boot request level (default-low)
+    input wire logic [31:0] ext_cpu_boot_addr,  // External boot address (default 0)
+
     // System control outputs
     output logic        sys_rst,       // System reset output
     output logic        cpu_rst,       // CPU reset output (active high)
@@ -60,6 +64,7 @@ module system_controller #(
     logic        response_pending;
     logic        mem_a_handshake;
     logic        mem_d_handshake;
+    logic        reg_boot_write;
     localparam int CYCLES_PER_US = (CLK_FREQ_HZ >= 1_000_000) ? (CLK_FREQ_HZ / 1_000_000) : 1;
     localparam int CYCLE_COUNTER_WIDTH = (CYCLES_PER_US > 1) ? $clog2(CYCLES_PER_US) : 1;
     logic [CYCLE_COUNTER_WIDTH-1:0] cycle_counter;
@@ -93,6 +98,8 @@ module system_controller #(
 
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
+    assign reg_boot_write =
+        (cpu_reset_state == CPU_RESET_IDLE) && mem_a_handshake && mem_a_we && (mem_a_addr[4:0] == REG_BOOT);
     assign mem_a_ready = !response_pending && (cpu_reset_state == CPU_RESET_IDLE);
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
@@ -192,11 +199,16 @@ module system_controller #(
             response_pending <= 1'b0;
             cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
-            // Default inactive values every cycle; writes can pulse outputs high/low.
-            sys_rst      <= sys_reset_pending;
-            cpu_rst      <= 1'b0;
-            cpu_boot     <= 1'b0;
-            req_cpu_halt <= 1'b0;
+            // Default values every cycle.
+            // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
+            // only while the external boot request is asserted, unless a
+            // same-cycle REG_BOOT MMIO write is taking priority. MMIO BOOT
+            // writes still generate a one-cycle cpu_boot pulse and keep the
+            // written address latched for later use.
+            sys_rst       <= sys_reset_pending;
+            cpu_rst       <= 1'b0;
+            cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
+            req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
 
             if (mem_d_handshake) begin
@@ -213,7 +225,6 @@ module system_controller #(
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
                                     boot_addr_reg <= mem_a_wdata;
-                                    cpu_boot      <= 1'b1;
                                     response_pending <= 1'b1;
                                 end
 
@@ -323,7 +334,16 @@ module system_controller #(
         end
     end
     
-    assign cpu_boot_addr = boot_addr_reg;
+    always_comb begin
+        if (reg_boot_write) begin
+            cpu_boot_addr = mem_a_wdata;
+        end else if (ext_cpu_boot) begin
+            cpu_boot_addr = ext_cpu_boot_addr;
+        end else begin
+            cpu_boot_addr = boot_addr_reg;
+        end
+    end
+
     assign halted_value  = halt_reg;
     
 endmodule

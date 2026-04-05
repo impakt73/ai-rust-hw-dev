@@ -39,6 +39,11 @@ module fpga_common_top #(
     output logic [7:0] sys_led_out,
     output logic       rst_core,
     input  wire logic [9:0] gamepad_in,
+    // External CPU boot control (tie low on non-Pocket targets)
+    input  wire logic        ext_cpu_boot,
+    input  wire logic [31:0] ext_cpu_boot_addr,
+    // CPU boot-state indicator (exposed for higher-level board logic)
+    output logic             cpu_is_booting,
     input  wire logic [31:0] apf_bridge_addr,
     input  wire logic        apf_bridge_rd,
     output logic             apf_bridge_rd_ready,
@@ -136,6 +141,8 @@ module fpga_common_top #(
         .video_hs(video_hs),
         .audio_dac(audio_dac),
         .audio_lrclk(audio_lrclk),
+        .ext_cpu_boot(ext_cpu_boot),
+        .ext_cpu_boot_addr(ext_cpu_boot_addr),
         .gamepad_in(gamepad_in),
         .apf_bridge_addr(apf_bridge_addr),
         .apf_bridge_rd(apf_bridge_rd),
@@ -145,6 +152,10 @@ module fpga_common_top #(
         .apf_bridge_wr_data(apf_bridge_wr_data),
         .apf_bridge_rd_data(apf_bridge_rd_data)
     );
+
+    always_comb begin
+        cpu_is_booting = cpu_booting;
+    end
 
     uart #(
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
