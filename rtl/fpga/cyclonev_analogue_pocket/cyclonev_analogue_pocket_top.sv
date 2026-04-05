@@ -11,7 +11,7 @@ module cyclonev_analogue_pocket_top #(
     input  wire logic       audio_mclk,  // Reserved MCLK input for the Pocket audio interface
     input  wire logic       audio_sclk,
     input  wire logic [31:0] cont1_key,
-    input  wire logic       reset_n,
+    input  wire logic       rst,
     input  wire logic       serial_rx,
     output logic            serial_tx,
     output logic            rst_out,
@@ -23,8 +23,6 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_dac,
     output logic            audio_lrclk
 );
-    logic rst;
-
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
     localparam int unsigned VIDEO_TOTAL_WIDTH = 400;
@@ -37,14 +35,7 @@ module cyclonev_analogue_pocket_top #(
     localparam int unsigned VIDEO_V_SYNC_WIDTH = 1;
     localparam int unsigned VIDEO_V_BACK_PORCH =
         VIDEO_TOTAL_HEIGHT - VIDEO_ACTIVE_HEIGHT - VIDEO_V_FRONT_PORCH - VIDEO_V_SYNC_WIDTH;
-
-    always_ff @(posedge clk) begin
-        if (!reset_n) begin
-            rst <= 1'b1;
-        end else begin
-            rst <= 1'b0;
-        end
-    end
+    localparam int unsigned POCKET_RESET_CYCLES = 74_250_000 / 1000;  // Hold reset for 1 ms
 
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
@@ -53,7 +44,7 @@ module cyclonev_analogue_pocket_top #(
         .ENABLE_AUDIOSYS(1'b1),
         .ENABLE_GAMEPAD(1'b1),
         .CLK_FREQ_HZ(74_250_000),
-        .RESET_CYCLES(74_250_000),
+        .RESET_CYCLES(POCKET_RESET_CYCLES),
         .BAUD_RATE(BAUD_RATE),
         .GFX2D_VIDEO_ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
         .GFX2D_VIDEO_ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),

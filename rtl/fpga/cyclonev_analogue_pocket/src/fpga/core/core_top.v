@@ -334,6 +334,7 @@ end
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
     wire            rst_out;
+    wire            pll_unlocked_rst = !pll_core_locked_s;
     wire    [23:0]  repo_video_rgb;
     wire            repo_video_de;
     wire            repo_video_skip;
@@ -344,8 +345,8 @@ end
     
 // bridge host commands
 // synchronous to clk_74a
-    wire            status_boot_done = pll_core_locked_s;
-    wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
+    wire            status_boot_done = !rst_out;
+    wire            status_setup_done = !rst_out; // rising edge triggers a target command
     wire            status_running = !rst_out;
 
     wire            dataslot_requestread;
@@ -427,7 +428,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
     .cont1_key  ( cont1_key ),
-    .reset_n    ( reset_n ),
+    .rst        ( pll_unlocked_rst ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
     .rst_out    ( rst_out ),
