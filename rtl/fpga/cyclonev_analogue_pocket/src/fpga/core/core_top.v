@@ -308,23 +308,20 @@ assign aux_scl = 1'bZ;
 assign vpll_feed = 1'bZ;
 
 
-// for bridge write data, we just broadcast it to all bus devices
-// for bridge read data, we have to mux it
-// add your own devices here
+// APF framework accesses in the 0xF8xxxxxx range are reserved for the
+// higher-level command bridge. All other addresses route through the repo
+// bridge path.
+localparam [7:0] CMD_BRIDGE_ADDR_PREFIX = 8'hF8;
+wire repo_bridge_access = (bridge_addr[31:24] != CMD_BRIDGE_ADDR_PREFIX);
+wire repo_bridge_rd = bridge_rd & repo_bridge_access;
+wire repo_bridge_wr = bridge_wr & repo_bridge_access;
+
 always @(*) begin
-    casex(bridge_addr)
-    default: begin
-        bridge_rd_data <= 0;
-    end
-    32'h10xxxxxx: begin
-        // example
-        // bridge_rd_data <= example_device_data;
-        bridge_rd_data <= 0;
-    end
-    32'hF8xxxxxx: begin
+    if (repo_bridge_access) begin
+        bridge_rd_data <= repo_bridge_rd_data;
+    end else begin
         bridge_rd_data <= cmd_bridge_rd_data;
     end
-    endcase
 end
 
 
@@ -340,6 +337,7 @@ end
     wire            repo_video_skip;
     wire            repo_video_vs;
     wire            repo_video_hs;
+    wire    [31:0]  repo_bridge_rd_data;
     wire            serial_rx;
     wire            serial_tx;
     
@@ -428,10 +426,17 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
     .cont1_key  ( cont1_key ),
+    .bridge_addr ( bridge_addr ),
+    .bridge_rd   ( repo_bridge_rd ),
+    .bridge_rd_ready (),
+    .bridge_wr   ( repo_bridge_wr ),
+    .bridge_wr_ready (),
+    .bridge_wr_data ( bridge_wr_data ),
     .rst        ( pll_unlocked_rst ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
     .rst_out    ( rst_out ),
+    .bridge_rd_data ( repo_bridge_rd_data ),
     .video_rgb  ( repo_video_rgb ),
     .video_de   ( repo_video_de ),
     .video_skip ( repo_video_skip ),

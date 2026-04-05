@@ -4,6 +4,7 @@ module fpga_common_top #(
     parameter bit ENABLE_F_EXT = 1'b0,
     parameter bit ENABLE_GFX2D = 1'b0,
     parameter bit ENABLE_AUDIOSYS = 1'b0,
+    parameter bit ENABLE_APF_BUS_BRIDGE = 1'b0,
     parameter int CLK_FREQ_HZ = 25_000_000,
     parameter int RESET_CYCLES = 25_000_000,
     parameter int BAUD_RATE = 1_000_000,
@@ -38,6 +39,13 @@ module fpga_common_top #(
     output logic [7:0] sys_led_out,
     output logic       rst_core,
     input  wire logic [9:0] gamepad_in,
+    input  wire logic [31:0] apf_bridge_addr,
+    input  wire logic        apf_bridge_rd,
+    output logic             apf_bridge_rd_ready,
+    input  wire logic        apf_bridge_wr,
+    output logic             apf_bridge_wr_ready,
+    input  wire logic [31:0] apf_bridge_wr_data,
+    output logic [31:0]      apf_bridge_rd_data,
     output logic [23:0] video_rgb,
     output logic       video_de,
     output logic       video_skip,
@@ -71,6 +79,7 @@ module fpga_common_top #(
         .ENABLE_F_EXT(ENABLE_F_EXT),
         .ENABLE_GFX2D(ENABLE_GFX2D),
         .ENABLE_AUDIOSYS(ENABLE_AUDIOSYS),
+        .ENABLE_APF_BUS_BRIDGE(ENABLE_APF_BUS_BRIDGE),
         .ENABLE_GAMEPAD(ENABLE_GAMEPAD),
         .CLK_FREQ_HZ(CLK_FREQ_HZ),
         .RESET_CYCLES(RESET_CYCLES),
@@ -127,7 +136,14 @@ module fpga_common_top #(
         .video_hs(video_hs),
         .audio_dac(audio_dac),
         .audio_lrclk(audio_lrclk),
-        .gamepad_in(gamepad_in)
+        .gamepad_in(gamepad_in),
+        .apf_bridge_addr(apf_bridge_addr),
+        .apf_bridge_rd(apf_bridge_rd),
+        .apf_bridge_rd_ready(apf_bridge_rd_ready),
+        .apf_bridge_wr(apf_bridge_wr),
+        .apf_bridge_wr_ready(apf_bridge_wr_ready),
+        .apf_bridge_wr_data(apf_bridge_wr_data),
+        .apf_bridge_rd_data(apf_bridge_rd_data)
     );
 
     uart #(
