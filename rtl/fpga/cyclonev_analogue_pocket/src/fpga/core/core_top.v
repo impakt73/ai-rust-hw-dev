@@ -231,7 +231,7 @@ assign port_ir_tx = 0;
 assign port_ir_rx_disable = 1;
 
 // bridge endianness
-assign bridge_endian_little = 0;
+assign bridge_endian_little = 1'b1;
 
 // cart is unused, so set all level translators accordingly
 // directions are 0:IN, 1:OUT
