@@ -43,7 +43,7 @@ fn test_led_constants() {
     // Verify integrated system-controller LED register memory map constants
     assert_eq!(SYSCTRL_BASE, 0x20000000, "System controller base address");
     assert_eq!(SYSCTRL_LED_OUT_OFFSET, 0x10, "LED_OUT register offset");
-    assert_eq!(SYSCTRL_SIZE, 0x20, "System controller size");
+    assert_eq!(SYSCTRL_SIZE, 0x28, "System controller size");
     assert_eq!(LED_ADDR, 0x20000010, "LED register address");
 }
 

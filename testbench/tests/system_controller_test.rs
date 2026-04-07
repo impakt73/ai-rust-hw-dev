@@ -13,6 +13,8 @@ use riscv_core::AsDynamicVerilatedModel;
 ///   0x14 - ELAPSED_US (RO): elapsed microseconds since reset
 ///   0x18 - ELAPSED_MS (RO): elapsed milliseconds since reset
 ///   0x1C - ELAPSED_S (RO): elapsed seconds since reset
+///   0x20 - CPU_PC (RO): current CPU PC debug signal
+///   0x24 - CPU_INSTR (RO): current CPU instruction debug signal
 ///
 /// BOOT, HALT, and system reset are request pulses on register writes.
 /// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst high,
@@ -29,6 +31,8 @@ const REG_LED_OUT: u32 = 0x10;
 const REG_ELAPSED_US: u32 = 0x14;
 const REG_ELAPSED_MS: u32 = 0x18;
 const REG_ELAPSED_S: u32 = 0x1C;
+const REG_CPU_PC: u32 = 0x20;
+const REG_CPU_INSTR: u32 = 0x24;
 
 // Reset control values
 const RESET_SYSTEM: u32 = 0;
@@ -59,6 +63,8 @@ fn reset_dut(dut: &mut SystemController) {
     dut.mem_d_ready = 0;
     dut.cpu_halted = 0;
     dut.cpu_booting = 0;
+    dut.cpu_pc = 0;
+    dut.cpu_instr = 0;
     dut.eval();
     clock_cycle!(dut);
     clock_cycle!(dut);
@@ -439,6 +445,53 @@ fn test_system_controller_clock_registers_are_read_only() {
         assert_ne!(us_after, 0xDEAD_BEEF, "ELAPSED_US should not be writable");
         assert_ne!(ms_after, 0xCAFE_BABE, "ELAPSED_MS should not be writable");
         assert_ne!(s_after, 0x1234_5678, "ELAPSED_S should not be writable");
+    });
+}
+
+#[test]
+fn test_system_controller_cpu_debug_registers_reflect_inputs() {
+    with_system_controller_model(|mut dut| {
+        reset_dut(&mut dut);
+
+        dut.cpu_pc = 0x8000_0120;
+        dut.cpu_instr = 0x00C5_8533;
+        dut.eval();
+
+        assert_eq!(
+            read_register(&mut dut, REG_CPU_PC),
+            0x8000_0120,
+            "CPU_PC should mirror the live cpu_pc input"
+        );
+        assert_eq!(
+            read_register(&mut dut, REG_CPU_INSTR),
+            0x00C5_8533,
+            "CPU_INSTR should mirror the live cpu_instr input"
+        );
+    });
+}
+
+#[test]
+fn test_system_controller_cpu_debug_registers_are_read_only() {
+    with_system_controller_model(|mut dut| {
+        reset_dut(&mut dut);
+
+        dut.cpu_pc = 0x8000_0040;
+        dut.cpu_instr = 0x0000_0013;
+        dut.eval();
+
+        write_register(&mut dut, REG_CPU_PC, 0xDEAD_BEEF);
+        write_register(&mut dut, REG_CPU_INSTR, 0xCAFE_BABE);
+
+        assert_eq!(
+            read_register(&mut dut, REG_CPU_PC),
+            0x8000_0040,
+            "CPU_PC writes should be ignored"
+        );
+        assert_eq!(
+            read_register(&mut dut, REG_CPU_INSTR),
+            0x0000_0013,
+            "CPU_INSTR writes should be ignored"
+        );
     });
 }
 

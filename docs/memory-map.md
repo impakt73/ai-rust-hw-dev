@@ -14,7 +14,7 @@ Address Range            | Device              | Type | Description
 0xA0000000 - 0xA000000F  | Audio               | Rust | Audio buffer
 0xB0000000 - 0xB0000007  | FIFO                | Rust | Host communication FIFO
 0xC0000000 - 0xC0000013  | DMA                 | Rust | DMA controller
-0x20000000 - 0x2000001F  | System Controller   | RTL  | CPU control, LED output, elapsed time
+0x20000000 - 0x20000027  | System Controller   | RTL  | CPU control, LED output, elapsed time, CPU debug state
 0x30000000 - 0x300063FF  | GFX2D Peripheral    | RTL  | Scroll registers and CPU-visible tile/font/palette RAMs
 0x50000000 - 0x5000000F  | Gamepad Peripheral  | RTL  | Live gamepad button state register
 0x60000000 - 0x6000001F  | Audiosys Peripheral | RTL  | Pocket audio tone generator control registers
@@ -193,12 +193,15 @@ Pocket-target audio tone generator control registers.
 | 0x14   | ELAPSED_US | RO   | Elapsed microseconds since reset |
 | 0x18   | ELAPSED_MS | RO   | Elapsed milliseconds since reset |
 | 0x1C   | ELAPSED_S  | RO   | Elapsed seconds since reset |
+| 0x20   | CPU_PC     | RO   | Current CPU PC (`debug_current_pc`) |
+| 0x24   | CPU_INSTR  | RO   | Current CPU instruction (`debug_current_instruction`) |
 
-- **Access sizes:** `LED_OUT` supports byte, halfword, and word accesses; the elapsed-time registers are word reads.
+- **Size:** 40 bytes (`0x20000000 – 0x20000027`)
+- **Access sizes:** `LED_OUT` supports byte, halfword, and word accesses; the elapsed-time and CPU debug registers are word reads.
 - **Latency:** Single-cycle (ready = 1'b1)
 - **Note:** Elapsed-time counters use the system controller `CLK_FREQ_HZ` parameter.
-- **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`, `SYSCTRL_LED_OUT_OFFSET`, `SYSCTRL_ELAPSED_US_OFFSET`, `SYSCTRL_ELAPSED_MS_OFFSET`, `SYSCTRL_ELAPSED_S_OFFSET`
-- **CPU reset sequencing:** `RESET` writes with bit 0 set hold `req_cpu_halt` high until `cpu_halted`, pulse `cpu_rst_n` low for one cycle, and block new A-channel requests until `cpu_booting` reasserts and the D-channel completion response is returned.
+- **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`, `SYSCTRL_LED_OUT_OFFSET`, `SYSCTRL_ELAPSED_US_OFFSET`, `SYSCTRL_ELAPSED_MS_OFFSET`, `SYSCTRL_ELAPSED_S_OFFSET`, `SYSCTRL_CPU_PC_OFFSET`, `SYSCTRL_CPU_INSTR_OFFSET`, `sysctrl_cpu_pc_addr()`, `sysctrl_cpu_instr_addr()`
+- **CPU reset sequencing:** `RESET` writes with bit 0 set hold `req_cpu_halt` high until `cpu_halted`, pulse `cpu_rst` high for one cycle, and block new A-channel requests until `cpu_booting` reasserts and the D-channel completion response is returned.
 
 ## DRAM (0x80000000 - 0x8FFFFFFF)
 
