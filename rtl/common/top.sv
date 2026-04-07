@@ -407,7 +407,7 @@ module top #(
     endgenerate
 
     assign registered_slave_base_addr[31:0] = 32'h2000_0000;
-    assign registered_slave_addr_size[31:0] = 32'h0000_0020;
+    assign registered_slave_addr_size[31:0] = 32'h0000_0028;
     assign registered_slave_base_addr[63:32] = 32'h7000_0000;
     assign registered_slave_addr_size[63:32] = 32'h0000_3000;
     // Packed registered_bus slave vectors use slice N at bits [32N+31:32N] for
@@ -834,7 +834,9 @@ module top #(
         
         // CPU status inputs
         .cpu_halted(cpu_halted_internal),
-        .cpu_booting(cpu_is_booting)
+        .cpu_booting(cpu_is_booting),
+        .cpu_pc(debug_current_pc),
+        .cpu_instr(debug_current_instruction)
     );
 
     assign halted_value = sysctrl_halted_value;

@@ -57,7 +57,7 @@ pub const fn gfx2d_control_addr() -> u32 {
 
 /// System Controller Peripheral (RTL)
 pub const SYSCTRL_BASE: u32 = 0x2000_0000;
-pub const SYSCTRL_SIZE: u32 = 0x0000_0020; // 32 bytes
+pub const SYSCTRL_SIZE: u32 = 0x0000_0028; // 40 bytes
 
 /// Gamepad Peripheral (RTL)
 /// Single 32-bit read-only register that exposes controller button state.
@@ -124,6 +124,8 @@ pub const SYSCTRL_LED_OUT_OFFSET: u32 = 0x10;
 pub const SYSCTRL_ELAPSED_US_OFFSET: u32 = 0x14;
 pub const SYSCTRL_ELAPSED_MS_OFFSET: u32 = 0x18;
 pub const SYSCTRL_ELAPSED_S_OFFSET: u32 = 0x1C;
+pub const SYSCTRL_CPU_PC_OFFSET: u32 = 0x20;
+pub const SYSCTRL_CPU_INSTR_OFFSET: u32 = 0x24;
 
 /// System Controller RESET register write values.
 ///
@@ -175,6 +177,16 @@ pub const fn sysctrl_elapsed_ms_addr() -> u32 {
 /// Helper function to get System Controller ELAPSED_S register address
 pub const fn sysctrl_elapsed_s_addr() -> u32 {
     SYSCTRL_BASE + SYSCTRL_ELAPSED_S_OFFSET
+}
+
+/// Helper function to get System Controller CPU_PC register address
+pub const fn sysctrl_cpu_pc_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_CPU_PC_OFFSET
+}
+
+/// Helper function to get System Controller CPU_INSTR register address
+pub const fn sysctrl_cpu_instr_addr() -> u32 {
+    SYSCTRL_BASE + SYSCTRL_CPU_INSTR_OFFSET
 }
 
 /// Check if an address targets RTL peripheral space.
