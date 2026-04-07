@@ -109,6 +109,8 @@ POCKET_DEPLOY_UUID ?= 0123-4567
 POCKET_DEPLOY_UID ?= 1000
 POCKET_DEPLOY_GID ?= 1000
 POCKET_DEPLOY_UMASK ?= 022
+POCKET_UMOUNT_RETRIES ?= 5
+POCKET_UMOUNT_RETRY_DELAY ?= 1
 OUTPUT_EXT = rbf
 endif
 
@@ -213,10 +215,10 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 $(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
-	$(CARGO) build --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
+	@$(CARGO) build --quiet --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
 		--target $(POCKET_TEST_PROGRAM_TARGET) --bin test_pocket_demo
-	mkdir -p "$(dir $@)"
-	set -e; \
+	@mkdir -p "$(dir $@)"
+	@set -e; \
 	tmp_bin="$(BUILD_DIR)/test_pocket_demo.bin.tmp"; \
 	$(RISCV_OBJCOPY) -O binary "$(POCKET_TEST_PROGRAM_ELF)" "$$tmp_bin"; \
 	if [ -f "$@" ] && cmp -s "$$tmp_bin" "$@"; then \
@@ -357,9 +359,25 @@ program: $(BIN)
 	@mkdir -p "$(POCKET_DEPLOY_DIR)"
 	@set -e; \
 	mounted=0; \
+	umount_pocket() { \
+		sync; \
+		attempt=0; \
+		while ! sudo umount "$(POCKET_DEPLOY_DIR)" 2>/dev/null; do \
+			attempt=$$((attempt + 1)); \
+			if [ "$$attempt" -ge "$(POCKET_UMOUNT_RETRIES)" ]; then \
+				sudo umount "$(POCKET_DEPLOY_DIR)"; \
+				return 1; \
+			fi; \
+			if [ "$$attempt" -eq 1 ]; then \
+				echo "Waiting for Pocket mount to go idle before unmounting..."; \
+			fi; \
+			sleep "$(POCKET_UMOUNT_RETRY_DELAY)"; \
+		done; \
+		mounted=0; \
+	}; \
 	cleanup() { \
 		if [ "$$mounted" -eq 1 ]; then \
-			sudo umount "$(POCKET_DEPLOY_DIR)"; \
+			umount_pocket; \
 		fi; \
 	}; \
 	trap cleanup EXIT; \
@@ -379,8 +397,7 @@ program: $(BIN)
 	sudo mount -U $(POCKET_DEPLOY_UUID) "$(POCKET_DEPLOY_DIR)" -o uid=$(POCKET_DEPLOY_UID),gid=$(POCKET_DEPLOY_GID),umask=$(POCKET_DEPLOY_UMASK); \
 	mounted=1; \
 	$(UNZIP) -o "$$package_path" -d "$(POCKET_DEPLOY_DIR)"; \
-	sudo umount "$(POCKET_DEPLOY_DIR)"; \
-	mounted=0
+	umount_pocket
 else
 program: $(BIN)
 	bash -e -o pipefail -c '$(PROGRAM_CMD)'
