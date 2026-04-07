@@ -38,20 +38,24 @@ module system_controller #(
     
     // CPU status inputs
     input wire logic        cpu_halted,    // From CPU halted signal
-    input wire logic        cpu_booting    // From CPU is_booting signal
+    input wire logic        cpu_booting,   // From CPU is_booting signal
+    input wire logic [31:0] cpu_pc,        // From CPU debug_current_pc signal
+    input wire logic [31:0] cpu_instr      // From CPU debug_current_instruction signal
 );
 
     // ========================================================================
     // Register Map (offsets from base address)
     // ========================================================================
-    localparam logic [4:0] REG_STATUS     = 5'h00;  // Read-only: CPU status
-    localparam logic [4:0] REG_RESET      = 5'h04;  // Write-only: Reset control
-    localparam logic [4:0] REG_BOOT       = 5'h08;  // Write-only: Boot address
-    localparam logic [4:0] REG_HALT       = 5'h0C;  // Read/write: Halt code
-    localparam logic [4:0] REG_LED_OUT    = 5'h10;  // Read/write: LED output
-    localparam logic [4:0] REG_ELAPSED_US = 5'h14;  // Read-only: Elapsed microseconds
-    localparam logic [4:0] REG_ELAPSED_MS = 5'h18;  // Read-only: Elapsed milliseconds
-    localparam logic [4:0] REG_ELAPSED_S  = 5'h1C;  // Read-only: Elapsed seconds
+    localparam logic [5:0] REG_STATUS     = 6'h00;  // Read-only: CPU status
+    localparam logic [5:0] REG_RESET      = 6'h04;  // Write-only: Reset control
+    localparam logic [5:0] REG_BOOT       = 6'h08;  // Write-only: Boot address
+    localparam logic [5:0] REG_HALT       = 6'h0C;  // Read/write: Halt code
+    localparam logic [5:0] REG_LED_OUT    = 6'h10;  // Read/write: LED output
+    localparam logic [5:0] REG_ELAPSED_US = 6'h14;  // Read-only: Elapsed microseconds
+    localparam logic [5:0] REG_ELAPSED_MS = 6'h18;  // Read-only: Elapsed milliseconds
+    localparam logic [5:0] REG_ELAPSED_S  = 6'h1C;  // Read-only: Elapsed seconds
+    localparam logic [5:0] REG_CPU_PC     = 6'h20;  // Read-only: Current CPU PC
+    localparam logic [5:0] REG_CPU_INSTR  = 6'h24;  // Read-only: Current CPU instruction
     
     // ========================================================================
     // Internal Registers
@@ -99,7 +103,7 @@ module system_controller #(
     assign mem_a_handshake = mem_a_valid && mem_a_ready;
     assign mem_d_handshake = mem_d_valid && mem_d_ready;
     assign reg_boot_write =
-        (cpu_reset_state == CPU_RESET_IDLE) && mem_a_handshake && mem_a_we && (mem_a_addr[4:0] == REG_BOOT);
+        (cpu_reset_state == CPU_RESET_IDLE) && mem_a_handshake && mem_a_we && (mem_a_addr[5:0] == REG_BOOT);
     assign mem_a_ready = !response_pending && (cpu_reset_state == CPU_RESET_IDLE);
     assign mem_d_rdata = response_data;
     assign mem_d_valid = response_pending;
@@ -221,7 +225,7 @@ module system_controller #(
                         response_data <= 32'h00000000;
 
                         if (mem_a_we) begin
-                            case (mem_a_addr[4:0])  // Use only register offset bits
+                            case (mem_a_addr[5:0])  // Use only register offset bits
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
                                     boot_addr_reg <= mem_a_wdata;
@@ -272,7 +276,7 @@ module system_controller #(
                         end else begin
                             response_pending <= 1'b1;
 
-                            case (mem_a_addr[4:0])
+                            case (mem_a_addr[5:0])
                                 REG_STATUS: begin
                                     // Bit 0 = cpu_booting, Bit 1 = cpu_halted
                                     response_data <= {30'h0, cpu_halted, cpu_booting};
@@ -296,6 +300,14 @@ module system_controller #(
 
                                 REG_ELAPSED_S: begin
                                     response_data <= elapsed_s;
+                                end
+
+                                REG_CPU_PC: begin
+                                    response_data <= cpu_pc;
+                                end
+
+                                REG_CPU_INSTR: begin
+                                    response_data <= cpu_instr;
                                 end
 
                                 // RESET and BOOT registers are write-only, read as 0
