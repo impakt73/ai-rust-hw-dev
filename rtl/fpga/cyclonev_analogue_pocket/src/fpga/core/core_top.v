@@ -315,10 +315,22 @@ localparam [7:0] CMD_BRIDGE_ADDR_PREFIX = 8'hF8;
 wire repo_bridge_access = (bridge_addr[31:24] != CMD_BRIDGE_ADDR_PREFIX);
 wire repo_bridge_rd = bridge_rd & repo_bridge_access;
 wire repo_bridge_wr = bridge_wr & repo_bridge_access;
+wire [31:0] repo_bridge_wr_data = bridge_endian_little ? {
+    bridge_wr_data[7:0],
+    bridge_wr_data[15:8],
+    bridge_wr_data[23:16],
+    bridge_wr_data[31:24]
+} : bridge_wr_data;
+wire [31:0] repo_bridge_rd_data_swapped = bridge_endian_little ? {
+    repo_bridge_rd_data[7:0],
+    repo_bridge_rd_data[15:8],
+    repo_bridge_rd_data[23:16],
+    repo_bridge_rd_data[31:24]
+} : repo_bridge_rd_data;
 
 always @(*) begin
     if (repo_bridge_access) begin
-        bridge_rd_data <= repo_bridge_rd_data;
+        bridge_rd_data <= repo_bridge_rd_data_swapped;
     end else begin
         bridge_rd_data <= cmd_bridge_rd_data;
     end
@@ -431,7 +443,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .bridge_rd_ready (),
     .bridge_wr   ( repo_bridge_wr ),
     .bridge_wr_ready (),
-    .bridge_wr_data ( bridge_wr_data ),
+    .bridge_wr_data ( repo_bridge_wr_data ),
     .rst        ( pll_unlocked_rst ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
