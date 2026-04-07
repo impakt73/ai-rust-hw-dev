@@ -201,7 +201,7 @@ Pocket-target audio tone generator control registers.
 - **Latency:** Single-cycle (ready = 1'b1)
 - **Note:** Elapsed-time counters use the system controller `CLK_FREQ_HZ` parameter.
 - **Constants:** `SYSCTRL_BASE`, `SYSCTRL_SIZE`, `SYSCTRL_STATUS_OFFSET`, `SYSCTRL_RESET_OFFSET`, `SYSCTRL_BOOT_OFFSET`, `SYSCTRL_HALT_OFFSET`, `SYSCTRL_LED_OUT_OFFSET`, `SYSCTRL_ELAPSED_US_OFFSET`, `SYSCTRL_ELAPSED_MS_OFFSET`, `SYSCTRL_ELAPSED_S_OFFSET`, `SYSCTRL_CPU_PC_OFFSET`, `SYSCTRL_CPU_INSTR_OFFSET`, `sysctrl_cpu_pc_addr()`, `sysctrl_cpu_instr_addr()`
-- **CPU reset sequencing:** `RESET` writes with bit 0 set hold `req_cpu_halt` high until `cpu_halted`, pulse `cpu_rst_n` low for one cycle, and block new A-channel requests until `cpu_booting` reasserts and the D-channel completion response is returned.
+- **CPU reset sequencing:** `RESET` writes with bit 0 set hold `req_cpu_halt` high until `cpu_halted`, pulse `cpu_rst` high for one cycle, and block new A-channel requests until `cpu_booting` reasserts and the D-channel completion response is returned.
 
 ## DRAM (0x80000000 - 0x8FFFFFFF)
 
