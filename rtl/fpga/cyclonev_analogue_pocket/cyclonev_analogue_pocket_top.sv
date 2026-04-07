@@ -30,8 +30,8 @@ module cyclonev_analogue_pocket_top #(
     output logic            audio_dac,
     output logic            audio_lrclk,
     // Analogue Pocket OS notify signals for external CPU boot control
-    input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and status_running is HIGH
-    input  wire logic       status_running   // HIGH when core is running; ext boot requires this HIGH
+    input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and core is not in reset
+    input  wire logic       reset_n          // Active-low reset from APF; ext boot requires core to be out of reset
 );
     localparam int unsigned VIDEO_ACTIVE_WIDTH = 256;
     localparam int unsigned VIDEO_ACTIVE_HEIGHT = 224;
@@ -53,16 +53,19 @@ module cyclonev_analogue_pocket_top #(
 
     // -----------------------------------------------------------------------
     // External CPU boot control
-    // On reset ext_cpu_boot is 0. Once running: assert ext_cpu_boot whenever
-    // play_cartridge is LOW, status_running is HIGH, and the CPU still reports
-    // it is in the booting state; the boot address is driven combinationally
-    // to the SRAM image at SRAM_BOOT_ADDR.
+    // On reset ext_cpu_boot is 0. Once the APF core is out of reset
+    // (reset_n HIGH → core_rst LOW): assert ext_cpu_boot whenever
+    // play_cartridge is LOW and the CPU still reports it is in the booting
+    // state; the boot address is driven combinationally to the SRAM image at
+    // SRAM_BOOT_ADDR.
     // -----------------------------------------------------------------------
+    logic        core_rst;
     logic        ext_boot_r;
     logic [31:0] ext_boot_addr;
     logic        cpu_is_booting;
 
     always_comb begin
+        core_rst      = !reset_n;
         ext_boot_addr = SRAM_BOOT_ADDR;
     end
 
@@ -70,7 +73,7 @@ module cyclonev_analogue_pocket_top #(
         if (rst) begin
             ext_boot_r <= 1'b0;
         end else begin
-            ext_boot_r <= !play_cartridge && status_running && cpu_is_booting;
+            ext_boot_r <= !play_cartridge && !core_rst && cpu_is_booting;
         end
     end
 
