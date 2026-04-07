@@ -8,7 +8,7 @@ use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{
     access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind, SimDeviceRuntimeArgs,
 };
-use std::path::Path;
+use std::{fs, path::Path};
 
 /// Default baud rate for device connections
 const DEFAULT_BAUD_RATE: u32 = 1_000_000;
@@ -109,6 +109,27 @@ pub enum ShellCommand {
     #[command(name = "loadelf")]
     LoadElf {
         /// Path to the ELF file
+        path: String,
+    },
+    /// Load a raw file into memory at the specified address
+    #[command(name = "loadmem")]
+    LoadMem {
+        /// Memory address to start writing to (hex with 0x prefix or decimal)
+        #[arg(value_parser = parse_hex_or_decimal)]
+        address: u32,
+        /// Path to the file to load
+        path: String,
+    },
+    /// Dump a memory region to a file on disk
+    #[command(name = "dumpmem")]
+    DumpMem {
+        /// Memory address to start reading from (hex with 0x prefix or decimal)
+        #[arg(value_parser = parse_hex_or_decimal)]
+        address: u32,
+        /// Number of bytes to dump (hex with 0x prefix or decimal)
+        #[arg(value_parser = parse_hex_or_decimal)]
+        size: u32,
+        /// Path to the output file
         path: String,
     },
     /// Read from a memory address on the FPGA
@@ -243,6 +264,14 @@ impl ShellCommand {
 
             ShellCommand::LoadElf { path } => execute_loadelf(app, &path),
 
+            ShellCommand::LoadMem { address, path } => execute_loadmem(app, address, &path),
+
+            ShellCommand::DumpMem {
+                address,
+                size,
+                path,
+            } => execute_dumpmem(app, address, size, &path),
+
             ShellCommand::Read { address, size } => execute_read(app, address, size),
 
             ShellCommand::Write {
@@ -370,6 +399,69 @@ fn execute_loadelf(app: &mut App, path: &str) -> CommandResult {
             ))
         }
         Err(e) => CommandResult::error(format!("Failed to load ELF: {}", e)),
+    }
+}
+
+/// Execute the loadmem command
+fn execute_loadmem(app: &mut App, address: u32, path: &str) -> CommandResult {
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
+    if runtime.has_pending_host_request() {
+        return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    let path = Path::new(path);
+
+    if !path.exists() {
+        return CommandResult::error(format!("File not found: {}", path.display()));
+    }
+
+    let data = match fs::read(path) {
+        Ok(data) => data,
+        Err(e) => {
+            return CommandResult::error(format!("Failed to read file {}: {}", path.display(), e));
+        }
+    };
+
+    match runtime.write_memory_region(address, &data, None) {
+        Ok(()) => CommandResult::ok(format!(
+            "Loaded {} bytes from {} to 0x{:08x}",
+            data.len(),
+            path.display(),
+            address
+        )),
+        Err(e) => CommandResult::error(format!("Failed to load memory: {}", e)),
+    }
+}
+
+/// Execute the dumpmem command
+fn execute_dumpmem(app: &mut App, address: u32, size: u32, path: &str) -> CommandResult {
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
+    if runtime.has_pending_host_request() {
+        return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    let data = match runtime.read_memory_region(address, size, None) {
+        Ok(data) => data,
+        Err(e) => return CommandResult::error(format!("Failed to dump memory: {}", e)),
+    };
+
+    let path = Path::new(path);
+    match fs::write(path, &data) {
+        Ok(()) => CommandResult::ok(format!(
+            "Dumped {} bytes from 0x{:08x} to {}",
+            data.len(),
+            address,
+            path.display()
+        )),
+        Err(e) => CommandResult::error(format!("Failed to write file {}: {}", path.display(), e)),
     }
 }
 
@@ -679,6 +771,69 @@ mod tests {
     #[test]
     fn test_parse_loadelf_missing_path() {
         assert!(ShellCommand::parse("loadelf").is_err());
+    }
+
+    #[test]
+    fn test_parse_loadmem() {
+        let result = ShellCommand::parse("loadmem 0x80000000 test.bin");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::LoadMem {
+                address: 0x80000000,
+                ref path
+            })) if path == "test.bin"
+        ));
+    }
+
+    #[test]
+    fn test_parse_loadmem_with_quoted_path() {
+        let result = ShellCommand::parse("loadmem 256 \"test data.bin\"");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::LoadMem {
+                address: 256,
+                ref path
+            })) if path == "test data.bin"
+        ));
+    }
+
+    #[test]
+    fn test_parse_loadmem_missing_args() {
+        assert!(ShellCommand::parse("loadmem").is_err());
+        assert!(ShellCommand::parse("loadmem 0x80000000").is_err());
+    }
+
+    #[test]
+    fn test_parse_dumpmem() {
+        let result = ShellCommand::parse("dumpmem 0x80000000 0x100 out.bin");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::DumpMem {
+                address: 0x80000000,
+                size: 0x100,
+                ref path
+            })) if path == "out.bin"
+        ));
+    }
+
+    #[test]
+    fn test_parse_dumpmem_decimal_size() {
+        let result = ShellCommand::parse("dumpmem 2147483648 256 dump.bin");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::DumpMem {
+                address: 2147483648,
+                size: 256,
+                ref path
+            })) if path == "dump.bin"
+        ));
+    }
+
+    #[test]
+    fn test_parse_dumpmem_missing_args() {
+        assert!(ShellCommand::parse("dumpmem").is_err());
+        assert!(ShellCommand::parse("dumpmem 0x80000000").is_err());
+        assert!(ShellCommand::parse("dumpmem 0x80000000 0x100").is_err());
     }
 
     #[test]
