@@ -447,6 +447,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .rst        ( pll_unlocked_rst ),
     .serial_rx  ( serial_rx ),
     .serial_tx  ( serial_tx ),
+    .reset_n    ( reset_n ),
     .rst_out    ( rst_out ),
     .bridge_rd_data ( repo_bridge_rd_data ),
     .video_rgb  ( repo_video_rgb ),
@@ -456,8 +457,7 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .video_hs   ( repo_video_hs ),
     .audio_dac  ( audgen_dac ),
     .audio_lrclk( audgen_lrck ),
-    .play_cartridge  ( osnotify_play_cartridge ),
-    .status_running  ( status_running )
+    .play_cartridge  ( osnotify_play_cartridge )
 );
 
 core_bridge_cmd icb (
