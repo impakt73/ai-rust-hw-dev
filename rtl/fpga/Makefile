@@ -156,6 +156,11 @@ FPGA_SOURCES = \
 ALL_SOURCES = $(RTL_SOURCES) $(FPGA_SOURCES)
 POCKET_PROJECT_FILES = $(sort $(shell find $(FPGA_DIR)/src/fpga -type f)) $(QUARTUS_TCL)
 POCKET_PACKAGE_INFO = $(BUILD_DIR)/pocket-package-path.txt
+POCKET_PACKAGE_STAMP = $(BUILD_DIR)/pocket-package.stamp
+POCKET_PACKAGE_ROOT_FILES = $(sort $(wildcard $(FPGA_DIR)/*.json) $(wildcard $(FPGA_DIR)/*.txt))
+POCKET_PACKAGE_ROOT_DIRS = $(wildcard $(FPGA_DIR)/Assets $(FPGA_DIR)/Platforms $(FPGA_DIR)/Presets)
+POCKET_PACKAGE_DIR_FILES = $(sort $(foreach dir,$(POCKET_PACKAGE_ROOT_DIRS),$(shell find $(dir) -type f)))
+POCKET_PACKAGE_FILES = $(sort $(POCKET_PACKAGE_ROOT_FILES) $(POCKET_PACKAGE_DIR_FILES))
 POCKET_TEST_PROGRAM_DIR = $(abspath ../../rust-test-program)
 POCKET_TEST_PROGRAM_TARGET = riscv32imafc-unknown-none-elf
 POCKET_TEST_PROGRAM_ELF = $(POCKET_TEST_PROGRAM_DIR)/target/$(POCKET_TEST_PROGRAM_TARGET)/release/test_pocket_demo
@@ -196,7 +201,11 @@ endif
 
 # Default target
 .PHONY: all FORCE
+ifeq ($(TARGET),cyclonev_analogue_pocket)
+all: $(POCKET_PACKAGE_STAMP) timing
+else
 all: $(BIN) timing
+endif
 
 FORCE:
 
@@ -227,11 +236,14 @@ $(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
 		mv "$$tmp_bin" "$@"; \
 	fi
 
-$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
+$(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+
+$(POCKET_PACKAGE_STAMP): $(BIN) $(POCKET_PACKAGE_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(POCKET_PACKAGE_CMD)
+	@touch $@
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DIR)
 	$(GOWIN_SH) "$(abspath $(GOWIN_TCL))" \
@@ -350,7 +362,7 @@ endif
 # Program FPGA
 .PHONY: program
 ifeq ($(TARGET),cyclonev_analogue_pocket)
-program: $(BIN)
+program: $(POCKET_PACKAGE_STAMP)
 	@if [ -z "$(strip $(POCKET_DEPLOY_DIR))" ]; then \
 		echo "ERROR: POCKET_DEPLOY_DIR is required for TARGET=$(TARGET)"; \
 		echo "Usage: make TARGET=$(TARGET) program POCKET_DEPLOY_DIR=/path/to/deploy"; \
