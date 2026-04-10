@@ -218,6 +218,12 @@ pub struct AudiosysPeripheralTestWrapper;
 pub struct GamepadPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/sdram_peripheral_test_wrapper.sv",
+    name = "sdram_peripheral_test_wrapper"
+)]
+pub struct SdramPeripheralTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/apf_bus_bridge_test_wrapper.sv",
     name = "apf_bus_bridge_test_wrapper"
 )]
@@ -649,6 +655,16 @@ pub fn create_gamepad_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn s
     create_runtime(&[
         "peripherals/gamepad_peripheral.sv",
         "wrappers/gamepad_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_sdram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "primitives/ff_sync.sv",
+        "primitives/cdc_handshake.sv",
+        "primitives/bus_cdc_bridge.sv",
+        "peripherals/sdram_peripheral.sv",
+        "wrappers/sdram_peripheral_test_wrapper.sv",
     ])
 }
 

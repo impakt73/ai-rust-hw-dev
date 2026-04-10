@@ -46,7 +46,8 @@ module sdram_peripheral #(
     // registered_bus only decodes addr[31:28], so one slave window can span at most 256 MiB.
     localparam logic [31:0] DECODE_LIMIT_BYTES = 32'h1000_0000;
     // io_sdram-compatible burst addresses count 16-bit cells, so BURST_ADDR_WIDTH=25 exposes 64 MiB.
-    localparam logic [31:0] INTERFACE_LIMIT_BYTES = (64'd1 << (BURST_ADDR_WIDTH + 1));
+    localparam longint unsigned INTERFACE_LIMIT_BYTES_WIDE = (64'd1 << (BURST_ADDR_WIDTH + 1));
+    localparam logic [31:0] INTERFACE_LIMIT_BYTES = INTERFACE_LIMIT_BYTES_WIDE[31:0];
     localparam logic [31:0] LAST_ADDR = BASE_ADDR + ADDR_SIZE - 32'd1;
 
     logic reset_n_sdram_sync;
