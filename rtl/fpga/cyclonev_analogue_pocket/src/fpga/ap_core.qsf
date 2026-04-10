@@ -747,6 +747,7 @@ set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_
 set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name QIP_FILE apf/mf_ddio_bidir_12.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
+set_global_assignment -name VERILOG_FILE core/io_sdram.v
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
 set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
