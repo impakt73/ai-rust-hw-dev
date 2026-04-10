@@ -43,8 +43,11 @@ module sdram_peripheral #(
         S_RESPOND
     } state_t;
 
-    localparam longint unsigned DECODE_LIMIT_BYTES = 64'h0000_0000_1000_0000;
-    localparam longint unsigned INTERFACE_LIMIT_BYTES = 64'd1 << (BURST_ADDR_WIDTH + 1);
+    // registered_bus only decodes addr[31:28], so one slave window can span at most 256 MiB.
+    localparam logic [31:0] DECODE_LIMIT_BYTES = 32'h1000_0000;
+    // io_sdram-compatible burst addresses count 16-bit cells, so BURST_ADDR_WIDTH=25 exposes 64 MiB.
+    localparam logic [31:0] INTERFACE_LIMIT_BYTES = (64'd1 << (BURST_ADDR_WIDTH + 1));
+    localparam logic [31:0] LAST_ADDR = BASE_ADDR + ADDR_SIZE - 32'd1;
 
     logic reset_n_sdram_sync;
     logic sdram_rst;
@@ -92,7 +95,6 @@ module sdram_peripheral #(
     logic [BURST_ADDR_WIDTH-1:0] incoming_word0_halfword_addr;
 
     logic [1:0]  req_offset;
-    logic [2:0]  req_access_bytes;
     logic [63:0] req_read_concat;
     logic [31:0] req_extracted_rdata;
     logic [63:0] req_merged_write_concat;
@@ -115,12 +117,14 @@ module sdram_peripheral #(
     );
         logic [7:0] byte_mask;
         logic [2:0] byte_count;
+        logic [3:0] offset_limit;
         begin
             byte_mask = 8'h00;
             byte_count = access_byte_count(size);
+            offset_limit = {2'b00, offset} + {1'b0, byte_count};
 
             for (int unsigned byte_idx = 0; byte_idx < 8; byte_idx++) begin
-                if ((byte_idx >= offset) && (byte_idx < (offset + byte_count))) begin
+                if ((byte_idx >= {2'b00, offset}) && (byte_idx < offset_limit)) begin
                     byte_mask[byte_idx] = 1'b1;
                 end
             end
@@ -183,7 +187,7 @@ module sdram_peripheral #(
     assign incoming_word0_byte_offset = {incoming_byte_offset[31:2], 2'b00};
     assign incoming_access_bytes = access_byte_count(periph_mem_a_size);
     assign incoming_split =
-        ({1'b0, periph_mem_a_addr[1:0]} + {1'b0, incoming_access_bytes}) > 3'd4;
+        ({1'b0, periph_mem_a_addr[1:0]} + {1'b0, incoming_access_bytes}) > 4'd4;
     assign incoming_last_offset_ext =
         {1'b0, incoming_byte_offset} + {30'd0, incoming_access_bytes} - 33'd1;
     assign incoming_in_range =
@@ -193,7 +197,6 @@ module sdram_peripheral #(
     assign incoming_word0_halfword_addr = incoming_word0_byte_offset[BURST_ADDR_WIDTH:1];
 
     assign req_offset = req_addr_reg[1:0];
-    assign req_access_bytes = access_byte_count(req_size_reg);
     assign req_read_concat = {read_word1_reg, read_word0_reg};
     assign req_extracted_rdata = extract_access_data(req_read_concat, req_size_reg, req_offset);
     assign req_merged_write_concat =
@@ -201,6 +204,9 @@ module sdram_peripheral #(
     assign write_halfwords_total = req_split_reg ? 3'd4 : 3'd2;
 
     always_comb begin
+        // io_sdram burst addresses count 16-bit cells. Its 32-bit read path captures
+        // the first cell into bits [31:16] and the second into bits [15:0], so writes
+        // must emit the same ordering for round-trip compatibility.
         current_write_halfword_addr = req_word0_halfword_addr_reg;
         current_write_halfword_data = write_word0_reg[31:16];
 
@@ -287,7 +293,7 @@ module sdram_peripheral #(
         if (ADDR_SIZE > INTERFACE_LIMIT_BYTES) begin
             $fatal(1, "sdram_peripheral: ADDR_SIZE exceeds burst interface capacity: 0x%08h", ADDR_SIZE);
         end
-        if (BASE_ADDR[31:28] != (BASE_ADDR + ADDR_SIZE - 32'd1)[31:28]) begin
+        if (BASE_ADDR[31:28] != LAST_ADDR[31:28]) begin
             $fatal(1, "sdram_peripheral: address window crosses registered_bus decode nibble");
         end
     end
@@ -364,8 +370,6 @@ module sdram_peripheral #(
                         end
                     end
 
-                    if (burst_data_done) begin
-                    end
                 end
 
                 S_READ_PROCESS: begin

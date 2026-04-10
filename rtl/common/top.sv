@@ -204,7 +204,7 @@ module top #(
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
     // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional SDRAM,
-    // followed by optional GFX2D, audiosys, and gamepad.
+    // and each enabled optional peripheral shifts the later indices forward.
     localparam int unsigned SDRAM_SLAVE_INDEX = 2;
     localparam int unsigned GFX2D_SLAVE_INDEX = 2 + (ENABLE_SDRAM ? 1 : 0);
     localparam int unsigned AUDIOSYS_SLAVE_INDEX =
