@@ -285,16 +285,6 @@ assign cram1_we_n = 1;
 assign cram1_ub_n = 1;
 assign cram1_lb_n = 1;
 
-assign dram_a = 'h0;
-assign dram_ba = 'h0;
-assign dram_dq = {16{1'bZ}};
-assign dram_dqm = 'h0;
-assign dram_clk = 'h0;
-assign dram_cke = 'h0;
-assign dram_ras_n = 'h1;
-assign dram_cas_n = 'h1;
-assign dram_we_n = 'h1;
-
 assign sram_a = 'h0;
 assign sram_dq = {16{1'bZ}};
 assign sram_oe_n  = 1;
@@ -419,6 +409,42 @@ end
     wire    [31:0]  datatable_q;
     wire            audgen_lrck;
     wire            audgen_dac;
+
+// Placeholder SDRAM clocking until dedicated SDRAM PLL outputs are wired in.
+io_sdram sdram_inst (
+    .controller_clk  ( clk_74a ),
+    .chip_clk        ( clk_74a ),
+    .clk_90          ( clk_74a ),
+    .reset_n         ( reset_n ),
+    .phy_cke         ( dram_cke ),
+    .phy_clk         ( dram_clk ),
+    .phy_cas         ( dram_cas_n ),
+    .phy_ras         ( dram_ras_n ),
+    .phy_we          ( dram_we_n ),
+    .phy_ba          ( dram_ba ),
+    .phy_a           ( dram_a ),
+    .phy_dq          ( dram_dq ),
+    .phy_dqm         ( dram_dqm ),
+    .burst_rd        ( 1'b0 ),
+    .burst_addr      ( 25'h0 ),
+    .burst_len       ( 11'h0 ),
+    .burst_32bit     ( 1'b0 ),
+    .burst_data      ( ),
+    .burst_data_valid( ),
+    .burst_data_done ( ),
+    .burstwr         ( 1'b0 ),
+    .burstwr_addr    ( 25'h0 ),
+    .burstwr_ready   ( ),
+    .burstwr_strobe  ( 1'b0 ),
+    .burstwr_data    ( 16'h0 ),
+    .burstwr_done    ( 1'b0 ),
+    .word_rd         ( 1'b0 ),
+    .word_wr         ( 1'b0 ),
+    .word_addr       ( 24'h0 ),
+    .word_data       ( 32'h0 ),
+    .word_q          ( ),
+    .word_busy       ( )
+);
 
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
