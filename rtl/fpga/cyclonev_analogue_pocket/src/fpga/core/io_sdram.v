@@ -244,7 +244,7 @@ always @(posedge controller_clk) begin
             
             // precharge all
             cmd <= CMD_PRECHG;
-            phy_a[10] = 1'b1;
+            phy_a[10] <= 1'b1;
     
             state <= ST_BOOT_1;
         end
@@ -568,5 +568,4 @@ end
 assign phy_clk = chip_clk;
 
 endmodule
-
 
