@@ -53,6 +53,7 @@ module ecp5_icepi_zero_top #(
         .sys_clk(sys_clk),
         .video_clk(1'b0),
         .audio_clk(1'b0),
+        .sdram_clk(1'b0),
         .rst(~rst_n_btn_debounced),
         .usb_rx(usb_rx),
         .usb_tx(usb_tx),
@@ -76,7 +77,20 @@ module ecp5_icepi_zero_top #(
         .video_vs(),
         .video_hs(),
         .audio_dac(),
-        .audio_lrclk()
+        .audio_lrclk(),
+        .sdram_burst_rd(),
+        .sdram_burst_addr(),
+        .sdram_burst_len(),
+        .sdram_burst_32bit(),
+        .sdram_burst_data(32'h0000_0000),
+        .sdram_burst_data_valid(1'b0),
+        .sdram_burst_data_done(1'b0),
+        .sdram_burstwr(),
+        .sdram_burstwr_addr(),
+        .sdram_burstwr_ready(1'b0),
+        .sdram_burstwr_strobe(),
+        .sdram_burstwr_data(),
+        .sdram_burstwr_done()
     );
 
     assign led = sys_led_out[4:0];

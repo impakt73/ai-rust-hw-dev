@@ -29,6 +29,19 @@ module cyclonev_analogue_pocket_top #(
     output logic            video_hs,
     output logic            audio_dac,
     output logic            audio_lrclk,
+    output logic            sdram_burst_rd,
+    output logic [24:0]     sdram_burst_addr,
+    output logic [10:0]     sdram_burst_len,
+    output logic            sdram_burst_32bit,
+    input  wire logic [31:0] sdram_burst_data,
+    input  wire logic       sdram_burst_data_valid,
+    input  wire logic       sdram_burst_data_done,
+    output logic            sdram_burstwr,
+    output logic [24:0]     sdram_burstwr_addr,
+    input  wire logic       sdram_burstwr_ready,
+    output logic            sdram_burstwr_strobe,
+    output logic [15:0]     sdram_burstwr_data,
+    output logic            sdram_burstwr_done,
     // Analogue Pocket OS notify signals for external CPU boot control
     input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and core is not in reset
     input  wire logic       reset_n          // Active-low reset from APF; ext boot requires core to be out of reset
@@ -80,6 +93,7 @@ module cyclonev_analogue_pocket_top #(
     fpga_common_top #(
         .ENABLE_M_EXT(ENABLE_M_EXT),
         .ENABLE_F_EXT(ENABLE_F_EXT),
+        .ENABLE_SDRAM(1'b1),
         .ENABLE_GFX2D(1'b1),
         .ENABLE_AUDIOSYS(1'b1),
         .ENABLE_APF_BUS_BRIDGE(1'b1),
@@ -87,6 +101,7 @@ module cyclonev_analogue_pocket_top #(
         .CLK_FREQ_HZ(74_250_000),
         .RESET_CYCLES(POCKET_RESET_CYCLES),
         .BAUD_RATE(BAUD_RATE),
+        .SDRAM_ADDR_SIZE(32'h0400_0000),
         .GFX2D_VIDEO_ACTIVE_WIDTH(VIDEO_ACTIVE_WIDTH),
         .GFX2D_VIDEO_ACTIVE_HEIGHT(VIDEO_ACTIVE_HEIGHT),
         .GFX2D_VIDEO_H_FRONT_PORCH(VIDEO_H_FRONT_PORCH),
@@ -104,6 +119,7 @@ module cyclonev_analogue_pocket_top #(
         .sys_clk(clk),
         .video_clk(clk_video),
         .audio_clk(audio_sclk),
+        .sdram_clk(clk),
         .rst(rst),
         .usb_rx(serial_rx),
         .usb_tx(serial_tx),
@@ -131,7 +147,20 @@ module cyclonev_analogue_pocket_top #(
         .video_vs(video_vs),
         .video_hs(video_hs),
         .audio_dac(audio_dac),
-        .audio_lrclk(audio_lrclk)
+        .audio_lrclk(audio_lrclk),
+        .sdram_burst_rd(sdram_burst_rd),
+        .sdram_burst_addr(sdram_burst_addr),
+        .sdram_burst_len(sdram_burst_len),
+        .sdram_burst_32bit(sdram_burst_32bit),
+        .sdram_burst_data(sdram_burst_data),
+        .sdram_burst_data_valid(sdram_burst_data_valid),
+        .sdram_burst_data_done(sdram_burst_data_done),
+        .sdram_burstwr(sdram_burstwr),
+        .sdram_burstwr_addr(sdram_burstwr_addr),
+        .sdram_burstwr_ready(sdram_burstwr_ready),
+        .sdram_burstwr_strobe(sdram_burstwr_strobe),
+        .sdram_burstwr_data(sdram_burstwr_data),
+        .sdram_burstwr_done(sdram_burstwr_done)
     );
 
 endmodule
