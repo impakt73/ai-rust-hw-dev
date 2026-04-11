@@ -67,9 +67,8 @@ module sdram_peripheral_test_wrapper (
         end
     end
 
-    // Hold ready low until the wrapper has latched the DUT's burst write request so the
-    // test model can inject a deterministic wait in S_WRITE_WAIT_READY.
-    assign burstwr_ready = burstwr_pending && (burstwr_wait_cycles_remaining == 2'd0);
+    // Mirror io_sdram's registered ready behavior so ready can remain high for one
+    // cycle after the strobe that ends the current write window.
     assign periph_a_ready_dbg = u_sdram_peripheral.periph_mem_a_ready;
 
     sdram_peripheral #(
@@ -115,11 +114,14 @@ module sdram_peripheral_test_wrapper (
             read_words_remaining_reg <= '0;
             burstwr_pending <= 1'b0;
             burstwr_wait_cycles_remaining <= '0;
+            burstwr_ready <= 1'b0;
             burst_data <= '0;
             burst_rd_count <= '0;
             burstwr_strobe_count <= '0;
             burstwr_wait_cycle_count <= '0;
         end else begin
+            burstwr_ready <= burstwr_pending && (burstwr_wait_cycles_remaining == 2'd0);
+
             if (burst_rd) begin
                 read_pending <= 1'b1;
                 read_addr_reg <= burst_addr;

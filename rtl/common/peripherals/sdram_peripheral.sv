@@ -40,6 +40,7 @@ module sdram_peripheral #(
         S_READ_PROCESS,
         S_WRITE_REQ,
         S_WRITE_WAIT_READY,
+        S_WRITE_WAIT_READY_LOW,
         S_RESPOND
     } state_t;
 
@@ -404,8 +405,14 @@ module sdram_peripheral #(
                             state <= S_RESPOND;
                         end else begin
                             write_halfword_index_reg <= write_halfword_index_reg + 3'd1;
-                            state <= S_WRITE_REQ;
+                            state <= S_WRITE_WAIT_READY_LOW;
                         end
+                    end
+                end
+
+                S_WRITE_WAIT_READY_LOW: begin
+                    if (!burstwr_ready) begin
+                        state <= S_WRITE_REQ;
                     end
                 end
 
