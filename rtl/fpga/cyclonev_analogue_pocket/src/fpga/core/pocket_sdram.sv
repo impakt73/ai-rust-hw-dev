@@ -79,6 +79,12 @@ module pocket_sdram #(
         end
     endfunction
 
+    function automatic int unsigned ns_to_cycles_floor(input int unsigned ns);
+        begin
+            ns_to_cycles_floor = int'((longint'(CLK_FREQ_HZ) * longint'(ns)) / 1_000_000_000);
+        end
+    endfunction
+
     function automatic int unsigned us_to_cycles_ceil(input int unsigned us);
         longint unsigned numerator;
         begin
@@ -95,7 +101,16 @@ module pocket_sdram #(
     localparam int unsigned READ_RECOVERY_CYCLES = max_u(2, TRP_CYCLES + 1);
     localparam int unsigned WRITE_RECOVERY_CYCLES = max_u(4, TWR_CYCLES + TRP_CYCLES + 1);
     localparam int unsigned INIT_DELAY_CYCLES = max_u(2, us_to_cycles_ceil(INIT_DELAY_US));
-    localparam int unsigned REFRESH_INTERVAL_CYCLES = max_u(2, ns_to_cycles_ceil(7_813));
+    localparam int unsigned REFRESH_MAX_CYCLES = max_u(2, ns_to_cycles_floor(7_813));
+    // Allow for the command issue cycle plus the ST_IDLE and ST_REFRESH handoff
+    // cycles before AUTO REFRESH reaches the SDRAM pins.
+    localparam int unsigned REFRESH_SLIP_CYCLES =
+        max_u(
+            TRCD_CYCLES + CAS_LATENCY + READ_RECOVERY_CYCLES + 3,
+            TRCD_CYCLES + WRITE_RECOVERY_CYCLES + 3
+        );
+    localparam int unsigned REFRESH_INTERVAL_CYCLES =
+        max_u(2, REFRESH_MAX_CYCLES - REFRESH_SLIP_CYCLES);
     localparam int unsigned TIMER_MAX_CYCLES =
         max_u(
             max_u(INIT_DELAY_CYCLES, TRFC_CYCLES),
