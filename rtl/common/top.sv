@@ -16,6 +16,7 @@
 module top #(
     parameter bit ENABLE_M_EXT = 1'b1,  // RV32M extension: Multiply/Divide (default: enabled)
     parameter bit ENABLE_F_EXT = 1'b1,  // RV32F extension: Floating-Point (default: enabled)
+    parameter bit ENABLE_SDRAM = 1'b0,
     parameter bit ENABLE_GFX2D = 1'b0,
     parameter bit ENABLE_AUDIOSYS = 1'b0,
     parameter bit ENABLE_APF_BUS_BRIDGE = 1'b0,
@@ -24,6 +25,8 @@ module top #(
     parameter int RESET_CYCLES = 8,      // Number of cycles to hold reset after release
     parameter int unsigned GFX2D_BASE_ADDR = 32'h3000_0000,
     parameter int unsigned GFX2D_ADDR_SIZE = 32'h0000_6400,
+    parameter int unsigned SDRAM_BASE_ADDR = 32'h1000_0000,
+    parameter int unsigned SDRAM_ADDR_SIZE = 32'h0400_0000,
     parameter int unsigned AUDIOSYS_BASE_ADDR = 32'h6000_0000,
     parameter int unsigned AUDIOSYS_ADDR_SIZE = 32'h0000_0020,
     parameter bit ENABLE_GAMEPAD = 1'b0,
@@ -48,6 +51,7 @@ module top #(
     input wire logic        clk,
     input wire logic        video_clk,
     input wire logic        audio_clk,
+    input wire logic        sdram_clk,
     input wire logic        rst,
     
     // Host TX Interface (to External Host)
@@ -92,6 +96,19 @@ module top #(
     output logic        video_hs,
     output logic        audio_dac,
     output logic        audio_lrclk,
+    output logic        sdram_burst_rd,
+    output logic [24:0] sdram_burst_addr,
+    output logic [10:0] sdram_burst_len,
+    output logic        sdram_burst_32bit,
+    input  wire logic [31:0] sdram_burst_data,
+    input  wire logic        sdram_burst_data_valid,
+    input  wire logic        sdram_burst_data_done,
+    output logic             sdram_burstwr,
+    output logic [24:0]      sdram_burstwr_addr,
+    input  wire logic        sdram_burstwr_ready,
+    output logic             sdram_burstwr_strobe,
+    output logic [15:0]      sdram_burstwr_data,
+    output logic             sdram_burstwr_done,
 
     // External CPU boot control (driven by board-specific logic; tie to 0 when unused)
     input  wire logic        ext_cpu_boot,
@@ -150,6 +167,19 @@ module top #(
     logic [31:0] sram_mem_d_rdata;
     logic        sram_mem_d_valid;
     logic        sram_mem_d_ready;
+
+    // ============================================================
+    // SDRAM Peripheral Interface Signals
+    // ============================================================
+    logic [31:0] sdram_mem_a_addr;
+    logic [31:0] sdram_mem_a_wdata;
+    logic        sdram_mem_a_we;
+    logic [1:0]  sdram_mem_a_size;
+    logic        sdram_mem_a_valid;
+    logic        sdram_mem_a_ready;
+    logic [31:0] sdram_mem_d_rdata;
+    logic        sdram_mem_d_valid;
+    logic        sdram_mem_d_ready;
     
     // ============================================================
     // System Controller Interface Signals
@@ -173,15 +203,20 @@ module top #(
     logic [31:0] sysctrl_halted_value;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
-    // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional GFX2D,
-    // slave 3 or 2 = optional audiosys depending on whether GFX2D is enabled,
-    // last slot = optional gamepad.
-    localparam int unsigned GFX2D_SLAVE_INDEX = 2;
-    localparam int unsigned AUDIOSYS_SLAVE_INDEX = ENABLE_GFX2D ? 3 : 2;
+    // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional SDRAM,
+    // and each enabled optional peripheral shifts the later indices forward.
+    localparam int unsigned SDRAM_SLAVE_INDEX = 2;
+    localparam int unsigned GFX2D_SLAVE_INDEX = 2 + (ENABLE_SDRAM ? 1 : 0);
+    localparam int unsigned AUDIOSYS_SLAVE_INDEX =
+        GFX2D_SLAVE_INDEX + (ENABLE_GFX2D ? 1 : 0);
     localparam int unsigned GAMEPAD_SLAVE_INDEX =
-        2 + (ENABLE_GFX2D ? 1 : 0) + (ENABLE_AUDIOSYS ? 1 : 0);
+        AUDIOSYS_SLAVE_INDEX + (ENABLE_AUDIOSYS ? 1 : 0);
     localparam int unsigned NUM_RTL_SLAVES =
-        2 + (ENABLE_GFX2D ? 1 : 0) + (ENABLE_AUDIOSYS ? 1 : 0) + (ENABLE_GAMEPAD ? 1 : 0);
+        2
+        + (ENABLE_SDRAM ? 1 : 0)
+        + (ENABLE_GFX2D ? 1 : 0)
+        + (ENABLE_AUDIOSYS ? 1 : 0)
+        + (ENABLE_GAMEPAD ? 1 : 0);
 
     // ============================================================
     // GFX2D Peripheral Interface Signals
@@ -413,6 +448,13 @@ module top #(
     // Packed registered_bus slave vectors use slice N at bits [32N+31:32N] for
     // addresses/data and bits [2N+1:2N] for transfer size.
     generate
+        if (ENABLE_SDRAM) begin : gen_sdram_bus_map
+            assign registered_slave_base_addr[(32*SDRAM_SLAVE_INDEX)+31 -: 32] = SDRAM_BASE_ADDR;
+            assign registered_slave_addr_size[(32*SDRAM_SLAVE_INDEX)+31 -: 32] = SDRAM_ADDR_SIZE;
+        end
+    endgenerate
+
+    generate
         if (ENABLE_GFX2D) begin : gen_gfx2d_bus_map
             assign registered_slave_base_addr[(32*GFX2D_SLAVE_INDEX)+31 -: 32] = GFX2D_BASE_ADDR;
             assign registered_slave_addr_size[(32*GFX2D_SLAVE_INDEX)+31 -: 32] = GFX2D_ADDR_SIZE;
@@ -452,6 +494,28 @@ module top #(
     assign registered_slave_mem_d_rdata[63:32] = sram_mem_d_rdata;
     assign registered_slave_mem_d_valid[1] = sram_mem_d_valid;
     assign sram_mem_d_ready = registered_slave_mem_d_ready[1];
+
+    generate
+        if (ENABLE_SDRAM) begin : gen_sdram_bus_wiring
+            assign sdram_mem_a_addr = registered_slave_mem_a_addr[(32*SDRAM_SLAVE_INDEX)+31 -: 32];
+            assign sdram_mem_a_wdata = registered_slave_mem_a_wdata[(32*SDRAM_SLAVE_INDEX)+31 -: 32];
+            assign sdram_mem_a_we = registered_slave_mem_a_we[SDRAM_SLAVE_INDEX];
+            assign sdram_mem_a_size = registered_slave_mem_a_size[(2*SDRAM_SLAVE_INDEX)+1 -: 2];
+            assign sdram_mem_a_valid = registered_slave_mem_a_valid[SDRAM_SLAVE_INDEX];
+            assign registered_slave_mem_a_ready[SDRAM_SLAVE_INDEX] = sdram_mem_a_ready;
+            assign registered_slave_mem_d_rdata[(32*SDRAM_SLAVE_INDEX)+31 -: 32] =
+                sdram_mem_d_rdata;
+            assign registered_slave_mem_d_valid[SDRAM_SLAVE_INDEX] = sdram_mem_d_valid;
+            assign sdram_mem_d_ready = registered_slave_mem_d_ready[SDRAM_SLAVE_INDEX];
+        end else begin : gen_sdram_bus_disabled
+            assign sdram_mem_a_addr = 32'h0000_0000;
+            assign sdram_mem_a_wdata = 32'h0000_0000;
+            assign sdram_mem_a_we = 1'b0;
+            assign sdram_mem_a_size = 2'b00;
+            assign sdram_mem_a_valid = 1'b0;
+            assign sdram_mem_d_ready = 1'b0;
+        end
+    endgenerate
 
     generate
         if (ENABLE_GFX2D) begin : gen_gfx2d_bus_wiring
@@ -699,6 +763,54 @@ module top #(
         .mem_d_valid(sram_mem_d_valid),
         .mem_d_ready(sram_mem_d_ready)
     );
+
+    generate
+        if (ENABLE_SDRAM) begin : gen_sdram_peripheral
+            sdram_peripheral #(
+                .BASE_ADDR(SDRAM_BASE_ADDR),
+                .ADDR_SIZE(SDRAM_ADDR_SIZE)
+            ) sdram_periph (
+                .sys_clk(clk),
+                .sdram_clk(sdram_clk),
+                .rst(rst_internal),
+                .mem_a_addr(sdram_mem_a_addr),
+                .mem_a_wdata(sdram_mem_a_wdata),
+                .mem_a_we(sdram_mem_a_we),
+                .mem_a_size(sdram_mem_a_size),
+                .mem_a_valid(sdram_mem_a_valid),
+                .mem_a_ready(sdram_mem_a_ready),
+                .mem_d_rdata(sdram_mem_d_rdata),
+                .mem_d_valid(sdram_mem_d_valid),
+                .mem_d_ready(sdram_mem_d_ready),
+                .burst_rd(sdram_burst_rd),
+                .burst_addr(sdram_burst_addr),
+                .burst_len(sdram_burst_len),
+                .burst_32bit(sdram_burst_32bit),
+                .burst_data(sdram_burst_data),
+                .burst_data_valid(sdram_burst_data_valid),
+                .burst_data_done(sdram_burst_data_done),
+                .burstwr(sdram_burstwr),
+                .burstwr_addr(sdram_burstwr_addr),
+                .burstwr_ready(sdram_burstwr_ready),
+                .burstwr_strobe(sdram_burstwr_strobe),
+                .burstwr_data(sdram_burstwr_data),
+                .burstwr_done(sdram_burstwr_done)
+            );
+        end else begin : gen_no_sdram_peripheral
+            assign sdram_mem_a_ready = 1'b1;
+            assign sdram_mem_d_rdata = 32'h0000_0000;
+            assign sdram_mem_d_valid = 1'b0;
+            assign sdram_burst_rd = 1'b0;
+            assign sdram_burst_addr = 25'h0;
+            assign sdram_burst_len = 11'h0;
+            assign sdram_burst_32bit = 1'b0;
+            assign sdram_burstwr = 1'b0;
+            assign sdram_burstwr_addr = 25'h0;
+            assign sdram_burstwr_strobe = 1'b0;
+            assign sdram_burstwr_data = 16'h0;
+            assign sdram_burstwr_done = 1'b0;
+        end
+    endgenerate
 
     generate
         if (ENABLE_GFX2D) begin : gen_gfx2d_peripheral

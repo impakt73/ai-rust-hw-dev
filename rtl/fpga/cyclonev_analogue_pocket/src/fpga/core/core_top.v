@@ -330,6 +330,19 @@ end
     wire    [31:0]  repo_bridge_rd_data;
     wire            serial_rx;
     wire            serial_tx;
+    wire            repo_sdram_burst_rd;
+    wire    [24:0]  repo_sdram_burst_addr;
+    wire    [10:0]  repo_sdram_burst_len;
+    wire            repo_sdram_burst_32bit;
+    wire    [31:0]  repo_sdram_burst_data;
+    wire            repo_sdram_burst_data_valid;
+    wire            repo_sdram_burst_data_done;
+    wire            repo_sdram_burstwr;
+    wire    [24:0]  repo_sdram_burstwr_addr;
+    wire            repo_sdram_burstwr_ready;
+    wire            repo_sdram_burstwr_strobe;
+    wire    [15:0]  repo_sdram_burstwr_data;
+    wire            repo_sdram_burstwr_done;
     
 // bridge host commands
 // synchronous to clk_74a
@@ -425,19 +438,19 @@ io_sdram sdram_inst (
     .phy_a           ( dram_a ),
     .phy_dq          ( dram_dq ),
     .phy_dqm         ( dram_dqm ),
-    .burst_rd        ( 1'b0 ),
-    .burst_addr      ( 25'h0 ),
-    .burst_len       ( 11'h0 ),
-    .burst_32bit     ( 1'b0 ),
-    .burst_data      ( ),
-    .burst_data_valid( ),
-    .burst_data_done ( ),
-    .burstwr         ( 1'b0 ),
-    .burstwr_addr    ( 25'h0 ),
-    .burstwr_ready   ( ),
-    .burstwr_strobe  ( 1'b0 ),
-    .burstwr_data    ( 16'h0 ),
-    .burstwr_done    ( 1'b0 ),
+    .burst_rd        ( repo_sdram_burst_rd ),
+    .burst_addr      ( repo_sdram_burst_addr ),
+    .burst_len       ( repo_sdram_burst_len ),
+    .burst_32bit     ( repo_sdram_burst_32bit ),
+    .burst_data      ( repo_sdram_burst_data ),
+    .burst_data_valid( repo_sdram_burst_data_valid ),
+    .burst_data_done ( repo_sdram_burst_data_done ),
+    .burstwr         ( repo_sdram_burstwr ),
+    .burstwr_addr    ( repo_sdram_burstwr_addr ),
+    .burstwr_ready   ( repo_sdram_burstwr_ready ),
+    .burstwr_strobe  ( repo_sdram_burstwr_strobe ),
+    .burstwr_data    ( repo_sdram_burstwr_data ),
+    .burstwr_done    ( repo_sdram_burstwr_done ),
     .word_rd         ( 1'b0 ),
     .word_wr         ( 1'b0 ),
     .word_addr       ( 24'h0 ),
@@ -470,6 +483,19 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .video_hs   ( repo_video_hs ),
     .audio_dac  ( audgen_dac ),
     .audio_lrclk( audgen_lrck ),
+    .sdram_burst_rd        ( repo_sdram_burst_rd ),
+    .sdram_burst_addr      ( repo_sdram_burst_addr ),
+    .sdram_burst_len       ( repo_sdram_burst_len ),
+    .sdram_burst_32bit     ( repo_sdram_burst_32bit ),
+    .sdram_burst_data      ( repo_sdram_burst_data ),
+    .sdram_burst_data_valid( repo_sdram_burst_data_valid ),
+    .sdram_burst_data_done ( repo_sdram_burst_data_done ),
+    .sdram_burstwr         ( repo_sdram_burstwr ),
+    .sdram_burstwr_addr    ( repo_sdram_burstwr_addr ),
+    .sdram_burstwr_ready   ( repo_sdram_burstwr_ready ),
+    .sdram_burstwr_strobe  ( repo_sdram_burstwr_strobe ),
+    .sdram_burstwr_data    ( repo_sdram_burstwr_data ),
+    .sdram_burstwr_done    ( repo_sdram_burstwr_done ),
     .play_cartridge  ( osnotify_play_cartridge ),
     .reset_n         ( reset_n )
 );
