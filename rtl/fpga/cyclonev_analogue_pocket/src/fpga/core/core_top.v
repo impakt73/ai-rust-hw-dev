@@ -321,7 +321,7 @@ end
     wire            reset_n;                // driven by host commands, can be used as core-wide reset
     wire    [31:0]  cmd_bridge_rd_data;
     wire            rst_out;
-    wire            pll_unlocked_rst = !pll_core_locked_s;
+    wire            pll_unlocked_rst = !pll_core_locked_s || !pll2_core_locked_s;
     wire    [23:0]  repo_video_rgb;
     wire            repo_video_de;
     wire            repo_video_skip;
@@ -425,9 +425,9 @@ end
 
 // Placeholder SDRAM clocking until dedicated SDRAM PLL outputs are wired in.
 io_sdram sdram_inst (
-    .controller_clk  ( clk_74a ),
-    .chip_clk        ( clk_74a ),
-    .clk_90          ( clk_74a ),
+    .controller_clk  ( clk_core_133 ),
+    .chip_clk        ( clk_core_133_45deg ),
+    .clk_90          ( clk_core_133_270deg ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_clk         ( dram_clk ),
@@ -461,6 +461,7 @@ io_sdram sdram_inst (
 
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
+    .clk_sdram  ( clk_core_133 ),
     .clk_video  ( clk_core_12288 ),
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
@@ -639,6 +640,25 @@ mf_pllbase mp1 (
     .outclk_2       ( clk_core_3072_180deg ),
     
     .locked         ( pll_core_locked )
+);
+
+    wire    clk_core_133;
+    wire    clk_core_133_45deg;
+    wire    clk_core_133_270deg;
+
+    wire    pll2_core_locked;
+    wire    pll2_core_locked_s;
+synch_3 s02(pll2_core_locked, pll2_core_locked_s, clk_74a);
+
+mf_pllbase2 mp2 (
+    .refclk         ( clk_74a ),
+    .rst            ( 0 ),
+
+    .outclk_0       ( clk_core_133 ),
+    .outclk_1       ( clk_core_133_45deg ),
+    .outclk_2       ( clk_core_133_270deg ),
+
+    .locked         ( pll2_core_locked )
 );
 
 
