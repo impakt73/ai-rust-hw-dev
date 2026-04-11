@@ -53,7 +53,7 @@ cargo test --package cpu-sim test_rust_bare_metal_elf
 
 - `.cargo/config.toml`: Specifies the target (`riscv32imafc-unknown-none-elf`)
 - `memory.x`: Memory layout defining RAM location and regions for riscv_rt
-- `build.rs`: Configures linker to use both `memory.x` and `link.x` (from riscv_rt)
+- `build.rs`: Configures the linker to use both `memory.x` and `link.x` (from riscv_rt)
 - `Cargo.toml`: Configures the binaries with `test = false` and includes `riscv-rt = "0.17.0"` dependency
 
 ## Notes

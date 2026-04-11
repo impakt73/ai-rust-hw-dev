@@ -33,6 +33,11 @@ pub const RTL_PERIPH_LIMIT: u32 = 0x8000_0000;
 pub const SRAM_BASE: u32 = 0x7000_0000;
 pub const SRAM_SIZE: u32 = 0x0000_3000; // 12KB
 
+/// SDRAM Peripheral (RTL)
+pub const SDRAM_BASE: u32 = 0x1000_0000;
+pub const SDRAM_SIZE: u32 = 0x0400_0000; // 64 MiB
+pub const SDRAM_END: u32 = SDRAM_BASE + SDRAM_SIZE - 1;
+
 /// GFX2D Peripheral (RTL, default geometry)
 pub const GFX2D_BASE: u32 = 0x3000_0000;
 pub const GFX2D_SIZE: u32 = 0x0000_6400;
@@ -230,4 +235,52 @@ pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
     // (e.g., to reserve high addresses for memory-mapped I/O), this validation will continue
     // to work correctly.
     (DRAM_BASE..=DRAM_END).contains(&addr) && (DRAM_BASE..=DRAM_END).contains(&end_addr)
+}
+
+/// Check if an address range is within the valid RTL SDRAM range.
+///
+/// This is separate from [`is_valid_dram_range`] because Pocket RTL SDRAM lives
+/// in a different address window and is backed by a different implementation
+/// than host/SystemBus DRAM.
+pub fn is_valid_sdram_range(addr: u32, size: u32) -> bool {
+    if size == 0 {
+        return false;
+    }
+
+    let Some(end_addr) = addr.checked_add(size - 1) else {
+        return false;
+    };
+
+    (SDRAM_BASE..=SDRAM_END).contains(&addr) && (SDRAM_BASE..=SDRAM_END).contains(&end_addr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_rtl_peripheral_addr, is_valid_dram_range, is_valid_sdram_range, DRAM_BASE, DRAM_END,
+        SDRAM_BASE, SDRAM_END,
+    };
+
+    #[test]
+    fn sdram_range_checks_enforce_full_span() {
+        assert!(!is_valid_sdram_range(SDRAM_BASE, 0));
+        assert!(is_valid_sdram_range(SDRAM_BASE, 4));
+        assert!(is_valid_sdram_range(SDRAM_END, 1));
+        assert!(is_valid_sdram_range(SDRAM_END - 1, 2));
+        assert!(!is_valid_sdram_range(SDRAM_END, 2));
+        assert!(!is_valid_sdram_range(SDRAM_BASE - 1, 1));
+    }
+
+    #[test]
+    fn dram_range_checks_remain_unchanged() {
+        assert!(is_valid_dram_range(DRAM_BASE, 4));
+        assert!(is_valid_dram_range(DRAM_END, 1));
+        assert!(!is_valid_dram_range(DRAM_END, 2));
+    }
+
+    #[test]
+    fn sdram_addresses_are_in_rtl_space() {
+        assert!(is_rtl_peripheral_addr(SDRAM_BASE));
+        assert!(!is_rtl_peripheral_addr(DRAM_BASE));
+    }
 }

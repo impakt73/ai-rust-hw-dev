@@ -9,6 +9,7 @@ The canonical definitions of memory-map ranges and base addresses live in [`risc
 ```
 Address Range            | Device              | Type | Description
 -------------------------|---------------------|------|----------------------------
+0x10000000 - 0x13FFFFFF  | SDRAM Peripheral    | RTL  | Pocket RTL SDRAM window (64 MiB)
 0xF0000000 - 0xF0000003  | SimControl          | Rust | Simulation control (tohost)
 0x90000000 - 0x9000000F  | Video               | Rust | Video frame buffer
 0xA0000000 - 0xA000000F  | Audio               | Rust | Audio buffer
@@ -33,6 +34,9 @@ Address Range            | Device              | Type | Description
   synthesizable to FPGA.
   Decode is window-based on the top nibble (`addr[31:28]`), so accesses within a given
   256 MiB RTL window may intentionally mirror/alias at the peripheral level.
+- **Pocket RTL SDRAM** (`0x10000000 - 0x13FFFFFF`): A CPU-visible RTL memory
+  peripheral backed by `io_sdram`. This is distinct from host DRAM and must be
+  targeted explicitly by software that wants to execute or store data there.
 - **DRAM** (`0x80000000 - 0x8FFFFFFF`): Main system memory implemented as a
   Rust peripheral and handled by the Rust `SystemBus` path (including FPGA
   host-side access through the host bus).
@@ -157,6 +161,19 @@ Single read-only register exposing live button state sampled in the system bus c
 - **Latency:** Single response register in the bus clock domain (no CDC path).
 - **Platform note:** The Analogue Pocket top inverts `cont1_key[9:0]` before driving the peripheral because Pocket button inputs are active-low.
 - **Constants:** `GAMEPAD_BASE`, `GAMEPAD_SIZE`, `GAMEPAD_STATE_OFFSET`, `GAMEPAD_DPAD_UP`, `GAMEPAD_DPAD_DOWN`, `GAMEPAD_DPAD_LEFT`, `GAMEPAD_DPAD_RIGHT`, `GAMEPAD_BTN_A`, `GAMEPAD_BTN_B`, `GAMEPAD_BTN_X`, `GAMEPAD_BTN_Y`, `GAMEPAD_TRIG_L`, `GAMEPAD_TRIG_R`
+
+### SDRAM Peripheral (0x10000000)
+
+64 MiB of CPU-visible RTL SDRAM exposed on Pocket-capable FPGA targets through
+`sdram_peripheral`.
+
+- **Size:** 64 MiB (`0x10000000 – 0x13FFFFFF`)
+- **Access sizes:** Byte, halfword, word
+- **Latency:** Variable; accesses cross from `sys_clk` into `sdram_clk` through `bus_cdc_bridge`
+- **Constants:** `SDRAM_BASE`, `SDRAM_SIZE`, `SDRAM_END`
+- **Execution note:** `fpga-host loadelf` writes segments to the ELF's linked
+  virtual addresses, so this RTL SDRAM window remains distinct from the host
+  DRAM window at `0x80000000`.
 
 ### Audiosys Peripheral (0x60000000)
 

@@ -345,7 +345,7 @@ module system_controller #(
             endcase
         end
     end
-    
+
     always_comb begin
         if (reg_boot_write) begin
             cpu_boot_addr = mem_a_wdata;
