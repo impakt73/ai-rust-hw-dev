@@ -60,6 +60,7 @@ module system_controller #(
     // ========================================================================
     // Internal Registers
     // ========================================================================
+    logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
     logic [7:0]  led_out_reg;            // Stored LED output
     logic        sys_reset_pending;      // Delayed system reset pulse
@@ -68,10 +69,6 @@ module system_controller #(
     logic        mem_a_handshake;
     logic        mem_d_handshake;
     logic        reg_boot_write;
-    // Suppresses external boot requests after a host-controlled CPU reset until
-    // software explicitly writes BOOT, preventing Pocket SRAM auto-boot from
-    // overriding the host-selected boot address.
-    logic        ext_boot_suppressed_reg;
     localparam int CYCLES_PER_US = (CLK_FREQ_HZ >= 1_000_000) ? (CLK_FREQ_HZ / 1_000_000) : 1;
     localparam int CYCLE_COUNTER_WIDTH = (CYCLES_PER_US > 1) ? $clog2(CYCLES_PER_US) : 1;
     logic [CYCLE_COUNTER_WIDTH-1:0] cycle_counter;
@@ -198,29 +195,25 @@ module system_controller #(
             sys_rst       <= 1'b0;
             cpu_rst       <= 1'b0;
             cpu_boot      <= 1'b0;
+            boot_addr_reg <= 32'h00000000;
             halt_reg      <= 32'h00000000;
             led_out_reg   <= 8'h00;
             req_cpu_halt  <= 1'b0;
-            ext_boot_suppressed_reg <= 1'b0;
             sys_reset_pending <= 1'b0;
             response_pending <= 1'b0;
             cpu_reset_state <= CPU_RESET_IDLE;
         end else begin
             // Default values every cycle.
+            // ext_cpu_boot/ext_cpu_boot_addr are mirrored into the boot outputs
+            // only while the external boot request is asserted, unless a
+            // same-cycle REG_BOOT MMIO write is taking priority. MMIO BOOT
+            // writes still generate a one-cycle cpu_boot pulse and keep the
+            // written address latched for later use.
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
-            cpu_boot      <= 1'b0;
+            cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
-
-            if (reg_boot_write) begin
-                cpu_boot      <= 1'b1;
-                cpu_boot_addr <= mem_a_wdata;
-                ext_boot_suppressed_reg <= 1'b0;
-            end else if (ext_cpu_boot && !ext_boot_suppressed_reg) begin
-                cpu_boot      <= 1'b1;
-                cpu_boot_addr <= ext_cpu_boot_addr;
-            end
 
             if (mem_d_handshake) begin
                 response_pending <= 1'b0;
@@ -235,16 +228,15 @@ module system_controller #(
                             case (mem_a_addr[5:0])  // Use only register offset bits
                                 REG_BOOT: begin
                                     // BOOT writes are accepted independently of cpu_booting state.
+                                    boot_addr_reg <= mem_a_wdata;
                                     response_pending <= 1'b1;
                                 end
 
                                 REG_RESET: begin
                                     if (mem_a_wdata[0]) begin
                                         req_cpu_halt <= 1'b1;
-                                        ext_boot_suppressed_reg <= 1'b1;
                                         cpu_reset_state <= CPU_RESET_WAIT_HALT;
                                     end else begin
-                                        ext_boot_suppressed_reg <= 1'b0;
                                         sys_reset_pending <= 1'b1;
                                         response_pending <= 1'b1;
                                     end
@@ -351,6 +343,16 @@ module system_controller #(
                     cpu_reset_state <= CPU_RESET_IDLE;
                 end
             endcase
+        end
+    end
+
+    always_comb begin
+        if (reg_boot_write) begin
+            cpu_boot_addr = mem_a_wdata;
+        end else if (ext_cpu_boot) begin
+            cpu_boot_addr = ext_cpu_boot_addr;
+        end else begin
+            cpu_boot_addr = boot_addr_reg;
         end
     end
 
