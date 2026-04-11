@@ -3,6 +3,7 @@ use riscv_core::{create_sdram_peripheral_runtime, SdramPeripheralTestWrapper};
 
 const SDRAM_BASE_ADDR: u32 = 0x1000_0000;
 const SDRAM_ADDR_SIZE: u32 = 0x0000_0100;
+const SDRAM_EXTENDED_BUSY_ADDR: u32 = SDRAM_BASE_ADDR + 0x40;
 const SIZE_BYTE: u8 = 0b00;
 const SIZE_HALFWORD: u8 = 0b01;
 const SIZE_WORD: u8 = 0b10;
@@ -317,6 +318,37 @@ fn test_sdram_peripheral_word_busy_backpressure_completes() {
         read_access(&mut dut, SDRAM_BASE_ADDR),
         0x1357_9BDF,
         "write-side backpressure must not corrupt stored data"
+    );
+}
+
+#[test]
+fn test_sdram_peripheral_waits_for_busy_to_drop_even_past_fallback_window() {
+    let runtime =
+        create_sdram_peripheral_runtime().expect("Failed to create SDRAM peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<SdramPeripheralTestWrapper>()
+        .expect("Failed to create SDRAM peripheral model");
+
+    reset(&mut dut);
+
+    let word_wr_before = dut.word_wr_count;
+    let wait_cycles_before = dut.word_wait_cycle_count;
+
+    write_access(&mut dut, SDRAM_EXTENDED_BUSY_ADDR, 0xDEAD_BEEF);
+
+    assert_eq!(
+        dut.word_wr_count - word_wr_before,
+        1,
+        "extended-busy writes should still complete as one word write"
+    );
+    assert!(
+        dut.word_wait_cycle_count - wait_cycles_before >= 40,
+        "the peripheral must wait for busy to drop instead of timing out early"
+    );
+    assert_eq!(
+        read_access(&mut dut, SDRAM_EXTENDED_BUSY_ADDR),
+        0xDEAD_BEEF,
+        "extended busy windows must not corrupt round-trip word data"
     );
 }
 

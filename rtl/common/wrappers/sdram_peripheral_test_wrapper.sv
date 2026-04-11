@@ -24,6 +24,8 @@ module sdram_peripheral_test_wrapper (
     localparam int unsigned WORD_ADDR_WIDTH = 24;
     localparam int unsigned WORD_DEPTH = ADDR_SIZE / 4;
     localparam logic [WORD_ADDR_WIDTH-1:0] WORD_DEPTH_LIMIT = WORD_ADDR_WIDTH'(WORD_DEPTH);
+    localparam logic [WORD_ADDR_WIDTH-1:0] EXTENDED_BUSY_WORD_ADDR = WORD_ADDR_WIDTH'('h10);
+    localparam int unsigned WORD_WAIT_COUNTER_WIDTH = 6;
 
     logic                         word_rd;
     logic                         word_wr;
@@ -37,7 +39,19 @@ module sdram_peripheral_test_wrapper (
     logic                         word_write_pending;
     logic [WORD_ADDR_WIDTH-1:0]   word_addr_reg;
     logic [31:0]                  word_data_reg;
-    logic [1:0]                   word_wait_cycles_remaining;
+    logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_cycles_remaining;
+
+    function automatic logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_cycles_for_addr(
+        input logic [WORD_ADDR_WIDTH-1:0] addr
+    );
+        begin
+            if (addr == EXTENDED_BUSY_WORD_ADDR) begin
+                word_wait_cycles_for_addr = WORD_WAIT_COUNTER_WIDTH'(40);
+            end else begin
+                word_wait_cycles_for_addr = WORD_WAIT_COUNTER_WIDTH'(2);
+            end
+        end
+    endfunction
 
     function automatic logic [31:0] read_word(
         input logic [WORD_ADDR_WIDTH-1:0] addr
@@ -100,7 +114,7 @@ module sdram_peripheral_test_wrapper (
             if (word_read_pending || word_write_pending) begin
                 word_busy <= 1'b1;
 
-                if (word_wait_cycles_remaining != 2'd0) begin
+                if (word_wait_cycles_remaining != '0) begin
                     word_wait_cycles_remaining <= word_wait_cycles_remaining - 1'b1;
                     word_wait_cycle_count <= word_wait_cycle_count + 1'b1;
                 end else begin
@@ -122,7 +136,7 @@ module sdram_peripheral_test_wrapper (
                 if (word_rd) begin
                     word_read_pending <= 1'b1;
                     word_addr_reg <= word_addr;
-                    word_wait_cycles_remaining <= 2'd2;
+                    word_wait_cycles_remaining <= word_wait_cycles_for_addr(word_addr);
                     word_rd_count <= word_rd_count + 1'b1;
                 end
 
@@ -130,7 +144,7 @@ module sdram_peripheral_test_wrapper (
                     word_write_pending <= 1'b1;
                     word_addr_reg <= word_addr;
                     word_data_reg <= word_data;
-                    word_wait_cycles_remaining <= 2'd2;
+                    word_wait_cycles_remaining <= word_wait_cycles_for_addr(word_addr);
                     word_wr_count <= word_wr_count + 1'b1;
                 end
             end

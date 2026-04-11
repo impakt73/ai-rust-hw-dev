@@ -205,7 +205,8 @@ module sdram_peripheral #(
     // when available, but keep a conservative timeout so the RTL still interoperates with the
     // deployed controller implementation and with the test stub.
     assign word_wait_complete =
-        (word_busy_seen_reg && !word_busy) || (word_wait_count_reg == '0);
+        (word_busy_seen_reg && !word_busy)
+        || (!word_busy_seen_reg && (word_wait_count_reg == '0));
 
     assign periph_mem_a_ready = !sdram_rst && (state == S_IDLE) && !response_pending;
     assign periph_mem_d_rdata = response_data;
