@@ -1,12 +1,11 @@
 `default_nettype none
 
 module pocket_sdram #(
-    parameter int unsigned CLK_FREQ_HZ = 133_333_333,
+    parameter int unsigned CLK_FREQ_HZ = 133_000_000,
     parameter int unsigned INIT_DELAY_US = 200
 ) (
     input  wire logic        controller_clk,
     input  wire logic        chip_clk,
-    input  wire logic        clk_90,
     input  wire logic        reset_n,
 
     output logic             phy_cke,
@@ -31,7 +30,6 @@ module pocket_sdram #(
         ST_RESET,
         ST_INIT_WAIT,
         ST_INIT_CKE,
-        ST_INIT_PRECHARGE,
         ST_INIT_PRECHARGE_WAIT,
         ST_INIT_REFRESH_0,
         ST_INIT_REFRESH_0_WAIT,
@@ -64,7 +62,6 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
     localparam int unsigned CAS_LATENCY = 3;
-    localparam int unsigned BURST_LENGTH = 2;
 
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
         if (a > b) begin
@@ -275,15 +272,15 @@ module pocket_sdram #(
 
                 ST_IDLE: begin
                     word_busy <= 1'b0;
-                    if (word_rd || word_wr) begin
+                    if (refresh_pending) begin
+                        word_busy <= 1'b1;
+                        state <= ST_REFRESH;
+                    end else if (word_rd || word_wr) begin
                         req_is_write <= word_wr;
                         req_word_addr <= word_addr;
                         req_word_data <= word_data;
                         word_busy <= 1'b1;
                         state <= ST_ACTIVATE;
-                    end else if (refresh_pending) begin
-                        word_busy <= 1'b1;
-                        state <= ST_REFRESH;
                     end
                 end
 

@@ -417,10 +417,11 @@ end
     wire            audgen_dac;
 
 // SDRAM interface driven by the dedicated 133 MHz PLL outputs.
-pocket_sdram sdram_inst (
+pocket_sdram #(
+    .CLK_FREQ_HZ     ( 133_000_000 )
+) sdram_inst (
     .controller_clk  ( clk_core_133 ),
     .chip_clk        ( clk_core_133_45deg ),
-    .clk_90          ( clk_core_133_270deg ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_clk         ( dram_clk ),
