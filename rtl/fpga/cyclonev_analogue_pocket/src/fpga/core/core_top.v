@@ -423,7 +423,7 @@ end
     wire            audgen_lrck;
     wire            audgen_dac;
 
-// Placeholder SDRAM clocking until dedicated SDRAM PLL outputs are wired in.
+// SDRAM interface driven by the dedicated 133 MHz PLL outputs.
 io_sdram sdram_inst (
     .controller_clk  ( clk_core_133 ),
     .chip_clk        ( clk_core_133_45deg ),
