@@ -198,9 +198,9 @@ module sdram_peripheral #(
     assign req_merged_write_concat =
         merge_access_data(req_read_concat, req_wdata_reg, req_size_reg, req_offset);
     assign active_read_word_addr =
-        req_word_addr_reg + WORD_ADDR_WIDTH'(read_second_word_pending_reg ? 1'b1 : 1'b0);
+        req_word_addr_reg + {{(WORD_ADDR_WIDTH-1){1'b0}}, read_second_word_pending_reg};
     assign active_write_word_addr =
-        req_word_addr_reg + WORD_ADDR_WIDTH'(active_write_word_is_second_reg ? 1'b1 : 1'b0);
+        req_word_addr_reg + {{(WORD_ADDR_WIDTH-1){1'b0}}, active_write_word_is_second_reg};
     assign active_write_word_data = active_write_word_is_second_reg ? write_word1_reg : write_word0_reg;
 
     assign periph_mem_a_ready = !sdram_rst && (state == S_IDLE) && !response_pending;

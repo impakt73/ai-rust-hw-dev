@@ -156,7 +156,7 @@ module pocket_sdram #(
             phy_dq_oe <= 1'b0;
             phy_dqm <= 2'b00;
 
-            if (refresh_counter == REFRESH_INTERVAL_CYCLES - 1) begin
+            if (refresh_counter == TIMER_WIDTH'(REFRESH_INTERVAL_CYCLES - 1)) begin
                 refresh_counter <= '0;
                 refresh_pending <= 1'b1;
             end else begin
