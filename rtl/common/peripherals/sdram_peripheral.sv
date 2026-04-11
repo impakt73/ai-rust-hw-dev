@@ -410,7 +410,7 @@ module sdram_peripheral #(
                 end
 
                 S_RESPOND: begin
-                    if (!response_pending) begin
+                    if (periph_mem_d_handshake) begin
                         state <= S_IDLE;
                     end
                 end

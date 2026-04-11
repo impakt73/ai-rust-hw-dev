@@ -279,8 +279,46 @@ fn test_sdram_peripheral_response_holds_under_backpressure() {
     dut.eval();
 
     assert_eq!(
+        dut.periph_a_ready_dbg, 1,
+        "peripheral A-channel should reopen immediately once the response handshakes"
+    );
+    assert_eq!(
         dut.mem_d_valid, 0,
         "D valid should clear after the response is accepted"
+    );
+}
+
+#[test]
+fn test_sdram_peripheral_write_wait_ready_backpressure_completes() {
+    let runtime =
+        create_sdram_peripheral_runtime().expect("Failed to create SDRAM peripheral runtime");
+    let mut dut = runtime
+        .create_model_simple::<SdramPeripheralTestWrapper>()
+        .expect("Failed to create SDRAM peripheral model");
+
+    reset(&mut dut);
+
+    let burstwr_before = dut.burstwr_strobe_count;
+    let wait_cycles_before = dut.burstwr_wait_cycle_count;
+
+    write_access(&mut dut, SDRAM_BASE_ADDR, 0x1357_9BDF);
+
+    assert_eq!(
+        dut.burstwr_strobe_count - burstwr_before,
+        2,
+        "aligned word writes should still emit both 16-bit write strobes under backpressure"
+    );
+    // An aligned 32-bit word write is emitted as two 16-bit SDRAM writes, and the test
+    // wrapper injects two wait cycles before each halfword write is accepted.
+    assert_eq!(
+        dut.burstwr_wait_cycle_count - wait_cycles_before,
+        4,
+        "the wrapper should hold burstwr_ready low for 4 total wait cycles (2 per halfword write)"
+    );
+    assert_eq!(
+        read_access(&mut dut, SDRAM_BASE_ADDR),
+        0x1357_9BDF,
+        "write-side backpressure must not corrupt stored data"
     );
 }
 

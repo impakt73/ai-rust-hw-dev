@@ -14,7 +14,9 @@ module sdram_peripheral_test_wrapper (
     output logic             mem_d_valid,
     input  wire logic        mem_d_ready,
     output logic [3:0]       burst_rd_count,
-    output logic [3:0]       burstwr_strobe_count
+    output logic [3:0]       burstwr_strobe_count,
+    output logic [7:0]       burstwr_wait_cycle_count,
+    output logic             periph_a_ready_dbg
 );
 
     localparam logic [31:0] BASE_ADDR = 32'h1000_0000;
@@ -42,6 +44,8 @@ module sdram_peripheral_test_wrapper (
     logic                              read_pending;
     logic [BURST_ADDR_WIDTH-1:0]       read_addr_reg;
     logic [1:0]                        read_words_remaining_reg;
+    logic                              burstwr_pending;
+    logic [1:0]                        burstwr_wait_cycles_remaining;
 
     function automatic logic [15:0] read_halfword(
         input logic [BURST_ADDR_WIDTH-1:0] addr
@@ -63,7 +67,10 @@ module sdram_peripheral_test_wrapper (
         end
     end
 
-    assign burstwr_ready = 1'b1;
+    // Hold ready low until the wrapper has latched the DUT's burst write request so the
+    // test model can inject a deterministic wait in S_WRITE_WAIT_READY.
+    assign burstwr_ready = burstwr_pending && (burstwr_wait_cycles_remaining == 2'd0);
+    assign periph_a_ready_dbg = u_sdram_peripheral.periph_mem_a_ready;
 
     sdram_peripheral #(
         .BASE_ADDR(BASE_ADDR),
@@ -106,9 +113,12 @@ module sdram_peripheral_test_wrapper (
             read_pending <= 1'b0;
             read_addr_reg <= '0;
             read_words_remaining_reg <= '0;
+            burstwr_pending <= 1'b0;
+            burstwr_wait_cycles_remaining <= '0;
             burst_data <= '0;
             burst_rd_count <= '0;
             burstwr_strobe_count <= '0;
+            burstwr_wait_cycle_count <= '0;
         end else begin
             if (burst_rd) begin
                 read_pending <= 1'b1;
@@ -137,7 +147,21 @@ module sdram_peripheral_test_wrapper (
                 if (burstwr_addr < HALFWORD_DEPTH_LIMIT) begin
                     halfword_mem[burstwr_addr[HALFWORD_ADDR_WIDTH-1:0]] <= burstwr_data;
                 end
+                burstwr_pending <= 1'b0;
+                burstwr_wait_cycles_remaining <= '0;
                 burstwr_strobe_count <= burstwr_strobe_count + 1'b1;
+            end
+
+            // Latch a new write request either from the initial burstwr pulse
+            // (!burstwr_pending) or from the handoff cycle where the previous halfword
+            // strobes and the DUT immediately advances to request the next halfword
+            // (burstwr_strobe).
+            if (burstwr && (!burstwr_pending || burstwr_strobe)) begin
+                burstwr_pending <= 1'b1;
+                burstwr_wait_cycles_remaining <= 2'd2;
+            end else if (burstwr_pending && !burstwr_strobe && (burstwr_wait_cycles_remaining != 2'd0)) begin
+                burstwr_wait_cycles_remaining <= burstwr_wait_cycles_remaining - 1'b1;
+                burstwr_wait_cycle_count <= burstwr_wait_cycle_count + 1'b1;
             end
         end
     end
