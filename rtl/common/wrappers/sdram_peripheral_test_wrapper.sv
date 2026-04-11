@@ -23,7 +23,6 @@ module sdram_peripheral_test_wrapper (
     localparam logic [31:0] ADDR_SIZE = 32'h0000_0100;
     localparam int unsigned WORD_ADDR_WIDTH = 24;
     localparam int unsigned WORD_DEPTH = ADDR_SIZE / 4;
-    localparam int unsigned WORD_ADDR_INDEX_WIDTH = $clog2(WORD_DEPTH);
     localparam logic [WORD_ADDR_WIDTH-1:0] WORD_DEPTH_LIMIT = WORD_ADDR_WIDTH'(WORD_DEPTH);
 
     logic                         word_rd;
@@ -43,10 +42,12 @@ module sdram_peripheral_test_wrapper (
     function automatic logic [31:0] read_word(
         input logic [WORD_ADDR_WIDTH-1:0] addr
     );
-        if (addr < WORD_DEPTH_LIMIT) begin
-            read_word = word_mem[addr[WORD_ADDR_INDEX_WIDTH-1:0]];
-        end else begin
-            read_word = 32'h0000_0000;
+        begin
+            if (addr < WORD_DEPTH_LIMIT) begin
+                read_word = word_mem[int'(addr)];
+            end else begin
+                read_word = 32'h0000_0000;
+            end
         end
     endfunction
 
@@ -92,7 +93,6 @@ module sdram_peripheral_test_wrapper (
             word_data_reg <= '0;
             word_wait_cycles_remaining <= '0;
             word_busy <= 1'b0;
-            word_q <= '0;
             word_rd_count <= '0;
             word_wr_count <= '0;
             word_wait_cycle_count <= '0;
@@ -109,7 +109,7 @@ module sdram_peripheral_test_wrapper (
                         word_read_pending <= 1'b0;
                     end else if (word_write_pending) begin
                         if (word_addr_reg < WORD_DEPTH_LIMIT) begin
-                            word_mem[word_addr_reg[WORD_ADDR_INDEX_WIDTH-1:0]] <= word_data_reg;
+                            word_mem[int'(word_addr_reg)] <= word_data_reg;
                         end
                         word_write_pending <= 1'b0;
                     end

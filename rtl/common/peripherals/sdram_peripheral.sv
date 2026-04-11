@@ -45,6 +45,9 @@ module sdram_peripheral #(
     localparam logic [31:0] INTERFACE_LIMIT_BYTES = INTERFACE_LIMIT_BYTES_WIDE[31:0];
     localparam logic [31:0] LAST_ADDR = BASE_ADDR + ADDR_SIZE - 32'd1;
     localparam int unsigned WORD_WAIT_COUNTER_WIDTH = 6;
+    // io_sdram word reads/writes complete in well under 32 controller clocks, even with the
+    // fixed ACT/CAS/PRECHARGE sequencing and a possible refresh insertion, so 31 cycles keeps
+    // the fallback conservative while still allowing forward progress when word_busy stays low.
     localparam logic [WORD_WAIT_COUNTER_WIDTH-1:0] WORD_WAIT_FALLBACK_CYCLES = 6'd31;
 
     logic reset_n_sdram_sync;
@@ -162,14 +165,14 @@ module sdram_peripheral #(
 
     function automatic logic [63:0] merge_access_data(
         input logic [63:0] current_data,
-        input logic [31:0] write_data_in,
+        input logic [31:0] write_data,
         input logic [1:0]  size,
         input logic [1:0]  offset
     );
         logic [63:0] shifted_write_data;
         logic [63:0] bit_mask;
         begin
-            shifted_write_data = {{32{1'b0}}, write_data_in} << {offset, 3'b000};
+            shifted_write_data = {{32{1'b0}}, write_data} << {offset, 3'b000};
             bit_mask = expand_byte_mask(access_byte_mask(size, offset));
             merge_access_data = (current_data & ~bit_mask) | (shifted_write_data & bit_mask);
         end
@@ -197,6 +200,10 @@ module sdram_peripheral #(
     assign req_extracted_rdata = extract_access_data(req_read_concat, req_size_reg, req_offset);
     assign req_merged_write_concat =
         merge_access_data(req_read_concat, req_wdata_reg, req_size_reg, req_offset);
+    // The Pocket word interface does not provide an explicit read-data-valid pulse, and the
+    // shipped io_sdram implementation leaves word_busy low. Prefer a busy high->low handshake
+    // when available, but keep a conservative timeout so the RTL still interoperates with the
+    // deployed controller implementation and with the test stub.
     assign word_wait_complete =
         (word_busy_seen_reg && !word_busy) || (word_wait_count_reg == '0);
 
@@ -248,6 +255,9 @@ module sdram_peripheral #(
     );
 
     initial begin
+        if (WORD_ADDR_WIDTH > 62) begin
+            $fatal(1, "sdram_peripheral: WORD_ADDR_WIDTH exceeds safe shift range: %0d", WORD_ADDR_WIDTH);
+        end
         if (BASE_ADDR[1:0] != 2'b00) begin
             $fatal(1, "sdram_peripheral: BASE_ADDR must be 32-bit aligned, got 0x%08h", BASE_ADDR);
         end
@@ -284,12 +294,10 @@ module sdram_peripheral #(
                 response_pending <= 1'b0;
             end
 
-            if (state inside {
-                S_READ_WORD0_WAIT,
-                S_READ_WORD1_WAIT,
-                S_WRITE_WORD0_WAIT,
-                S_WRITE_WORD1_WAIT
-            }) begin
+            if ((state == S_READ_WORD0_WAIT)
+                || (state == S_READ_WORD1_WAIT)
+                || (state == S_WRITE_WORD0_WAIT)
+                || (state == S_WRITE_WORD1_WAIT)) begin
                 if (word_busy) begin
                     word_busy_seen_reg <= 1'b1;
                 end
