@@ -256,8 +256,8 @@ module sdram_peripheral #(
     );
 
     initial begin
-        if (WORD_ADDR_WIDTH > 62) begin
-            $fatal(1, "sdram_peripheral: WORD_ADDR_WIDTH exceeds safe shift range: %0d", WORD_ADDR_WIDTH);
+        if (WORD_ADDR_WIDTH > 61) begin
+            $fatal(1, "sdram_peripheral: WORD_ADDR_WIDTH exceeds safe shift range for (WORD_ADDR_WIDTH + 2) < 64: %0d", WORD_ADDR_WIDTH);
         end
         if (BASE_ADDR[1:0] != 2'b00) begin
             $fatal(1, "sdram_peripheral: BASE_ADDR must be 32-bit aligned, got 0x%08h", BASE_ADDR);
