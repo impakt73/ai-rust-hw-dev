@@ -44,12 +44,13 @@ module pocket_sdram #(
         ST_REFRESH_WAIT,
         ST_ACTIVATE,
         ST_ACTIVATE_WAIT,
-        ST_READ_CMD,
+        ST_READ_CMD_0,
+        ST_READ_CMD_1,
         ST_READ_WAIT,
         ST_READ_CAPTURE_1,
         ST_READ_RECOVERY,
-        ST_WRITE_CMD,
-        ST_WRITE_DATA_1,
+        ST_WRITE_CMD_0,
+        ST_WRITE_CMD_1,
         ST_WRITE_RECOVERY
     } state_t;
 
@@ -93,11 +94,12 @@ module pocket_sdram #(
         end
     endfunction
 
-    localparam int unsigned TRP_CYCLES = max_u(2, ns_to_cycles_ceil(15));
-    localparam int unsigned TRCD_CYCLES = max_u(2, ns_to_cycles_ceil(15));
-    localparam int unsigned TRFC_CYCLES = max_u(2, ns_to_cycles_ceil(66));
+    localparam int unsigned TRP_CYCLES = max_u(2, ns_to_cycles_ceil(18));
+    localparam int unsigned TRCD_CYCLES = max_u(2, ns_to_cycles_ceil(18));
+    localparam int unsigned TRFC_CYCLES = max_u(2, ns_to_cycles_ceil(80));
     localparam int unsigned TMRD_CYCLES = 2;
     localparam int unsigned TWR_CYCLES = max_u(2, ns_to_cycles_ceil(15));
+    localparam int unsigned READ_WAIT_CYCLES = (CAS_LATENCY > 1) ? (CAS_LATENCY - 2) : 0;
     localparam int unsigned READ_RECOVERY_CYCLES = max_u(2, TRP_CYCLES + 1);
     localparam int unsigned WRITE_RECOVERY_CYCLES = max_u(4, TWR_CYCLES + TRP_CYCLES + 1);
     localparam int unsigned INIT_DELAY_CYCLES = max_u(2, us_to_cycles_ceil(INIT_DELAY_US));
@@ -118,7 +120,7 @@ module pocket_sdram #(
         );
     localparam int unsigned TIMER_WIDTH = (TIMER_MAX_CYCLES <= 1) ? 1 : $clog2(TIMER_MAX_CYCLES);
 
-    localparam logic [12:0] MODE_REG = 13'b000_0_00_011_0_001;
+    localparam logic [12:0] MODE_REG = 13'b000_0_00_011_0_000;
     localparam logic [12:0] EXT_MODE_REG = 13'b00000_010_00_000;
 
     state_t                  state;
@@ -128,10 +130,12 @@ module pocket_sdram #(
     logic                    req_is_write;
     logic [23:0]             req_word_addr;
     logic [31:0]             req_word_data;
+    logic                    req_pending;
     logic [2:0]              cmd;
     logic                    phy_dq_oe;
     logic [15:0]             phy_dq_out;
     logic [9:0]              req_col_halfword;
+    logic [9:0]              req_col_halfword_next;
     logic [12:0]             req_row;
     logic [1:0]              req_bank;
 
@@ -143,6 +147,7 @@ module pocket_sdram #(
         req_bank = req_word_addr[23:22];
         req_row = req_word_addr[21:9];
         req_col_halfword = {req_word_addr[8:0], 1'b0};
+        req_col_halfword_next = req_col_halfword + 10'd1;
     end
 
     always_ff @(posedge controller_clk) begin
@@ -154,6 +159,7 @@ module pocket_sdram #(
             req_is_write <= 1'b0;
             req_word_addr <= '0;
             req_word_data <= '0;
+            req_pending <= 1'b0;
             cmd <= CMD_NOP;
             phy_cke <= 1'b0;
             phy_ba <= 2'b00;
@@ -173,6 +179,13 @@ module pocket_sdram #(
                 refresh_pending <= 1'b1;
             end else begin
                 refresh_counter <= refresh_counter + 1'b1;
+            end
+
+            if (!req_pending && (word_rd || word_wr)) begin
+                req_is_write <= word_wr;
+                req_word_addr <= word_addr;
+                req_word_data <= word_data;
+                req_pending <= 1'b1;
             end
 
             case (state)
@@ -286,14 +299,12 @@ module pocket_sdram #(
                 end
 
                 ST_IDLE: begin
-                    word_busy <= 1'b0;
+                    word_busy <= req_pending;
                     if (refresh_pending) begin
                         word_busy <= 1'b1;
                         state <= ST_REFRESH;
-                    end else if (word_rd || word_wr) begin
-                        req_is_write <= word_wr;
-                        req_word_addr <= word_addr;
-                        req_word_data <= word_data;
+                    end else if (req_pending) begin
+                        req_pending <= 1'b0;
                         word_busy <= 1'b1;
                         state <= ST_ACTIVATE;
                     end
@@ -328,27 +339,36 @@ module pocket_sdram #(
                     word_busy <= 1'b1;
                     if (wait_counter == '0) begin
                         if (req_is_write) begin
-                            state <= ST_WRITE_CMD;
+                            state <= ST_WRITE_CMD_0;
                         end else begin
-                            state <= ST_READ_CMD;
+                            state <= ST_READ_CMD_0;
                         end
                     end else begin
                         wait_counter <= wait_counter - 1'b1;
                     end
                 end
 
-                ST_READ_CMD: begin
+                ST_READ_CMD_0: begin
+                    word_busy <= 1'b1;
                     cmd <= CMD_READ;
                     phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b1, req_col_halfword};
-                    wait_counter <= TIMER_WIDTH'(CAS_LATENCY - 1);
+                    phy_a <= {2'b00, 1'b0, req_col_halfword};
+                    state <= ST_READ_CMD_1;
+                end
+
+                ST_READ_CMD_1: begin
+                    word_busy <= 1'b1;
+                    cmd <= CMD_READ;
+                    phy_ba <= req_bank;
+                    phy_a <= {2'b00, 1'b1, req_col_halfword_next};
+                    wait_counter <= TIMER_WIDTH'(READ_WAIT_CYCLES);
                     state <= ST_READ_WAIT;
                 end
 
                 ST_READ_WAIT: begin
                     word_busy <= 1'b1;
                     if (wait_counter == '0) begin
-                        word_q[15:0] <= phy_dq;
+                        word_q[31:16] <= phy_dq;
                         state <= ST_READ_CAPTURE_1;
                     end else begin
                         wait_counter <= wait_counter - 1'b1;
@@ -357,7 +377,7 @@ module pocket_sdram #(
 
                 ST_READ_CAPTURE_1: begin
                     word_busy <= 1'b1;
-                    word_q[31:16] <= phy_dq;
+                    word_q[15:0] <= phy_dq;
                     wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
                     state <= ST_READ_RECOVERY;
                 end
@@ -372,19 +392,23 @@ module pocket_sdram #(
                     end
                 end
 
-                ST_WRITE_CMD: begin
+                ST_WRITE_CMD_0: begin
+                    word_busy <= 1'b1;
                     cmd <= CMD_WRITE;
                     phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b1, req_col_halfword};
-                    phy_dq_oe <= 1'b1;
-                    phy_dq_out <= req_word_data[15:0];
-                    state <= ST_WRITE_DATA_1;
-                end
-
-                ST_WRITE_DATA_1: begin
-                    word_busy <= 1'b1;
+                    phy_a <= {2'b00, 1'b0, req_col_halfword};
                     phy_dq_oe <= 1'b1;
                     phy_dq_out <= req_word_data[31:16];
+                    state <= ST_WRITE_CMD_1;
+                end
+
+                ST_WRITE_CMD_1: begin
+                    word_busy <= 1'b1;
+                    cmd <= CMD_WRITE;
+                    phy_ba <= req_bank;
+                    phy_a <= {2'b00, 1'b1, req_col_halfword_next};
+                    phy_dq_oe <= 1'b1;
+                    phy_dq_out <= req_word_data[15:0];
                     wait_counter <= TIMER_WIDTH'(WRITE_RECOVERY_CYCLES - 1);
                     state <= ST_WRITE_RECOVERY;
                 end
