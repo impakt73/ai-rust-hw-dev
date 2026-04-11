@@ -123,12 +123,12 @@ fn test_sdram_peripheral_aligned_word_access_round_trips_through_stub_memory() {
     write_access(&mut dut, SDRAM_BASE_ADDR, 0xDEAD_BEEF);
 
     assert_eq!(
-        dut.burst_rd_count, 0,
-        "aligned word writes should use the direct burst-write path"
+        dut.word_rd_count, 0,
+        "aligned word writes should use the direct single-word write path"
     );
     assert_eq!(
-        dut.burstwr_strobe_count, 2,
-        "aligned word writes should emit two 16-bit burst write strobes"
+        dut.word_wr_count, 1,
+        "aligned word writes should emit one direct single-word write"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xDEAD_BEEF);
 }
@@ -146,19 +146,19 @@ fn test_sdram_peripheral_split_word_write_updates_both_words() {
     write_access(&mut dut, SDRAM_BASE_ADDR, 0x1122_3344);
     write_access(&mut dut, SDRAM_BASE_ADDR + 4, 0x5566_7788);
 
-    let burst_rd_before = dut.burst_rd_count;
-    let burstwr_before = dut.burstwr_strobe_count;
+    let word_rd_before = dut.word_rd_count;
+    let word_wr_before = dut.word_wr_count;
 
     write_access_with_size(&mut dut, SDRAM_BASE_ADDR + 1, 0xAABB_CCDD, SIZE_WORD);
 
     assert_eq!(
-        dut.burst_rd_count - burst_rd_before,
-        1,
-        "split word writes should perform one read-modify-write read burst"
+        dut.word_rd_count - word_rd_before,
+        2,
+        "split word writes should read both affected words before merging"
     );
     assert_eq!(
-        dut.burstwr_strobe_count - burstwr_before,
-        4,
+        dut.word_wr_count - word_wr_before,
+        2,
         "split word writes should rewrite both affected 32-bit words"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xBBCC_DD44);
@@ -182,19 +182,19 @@ fn test_sdram_peripheral_split_halfword_write_updates_both_words() {
     write_access(&mut dut, SDRAM_BASE_ADDR, 0x1122_3344);
     write_access(&mut dut, SDRAM_BASE_ADDR + 4, 0x5566_7788);
 
-    let burst_rd_before = dut.burst_rd_count;
-    let burstwr_before = dut.burstwr_strobe_count;
+    let word_rd_before = dut.word_rd_count;
+    let word_wr_before = dut.word_wr_count;
 
     write_access_with_size(&mut dut, SDRAM_BASE_ADDR + 3, 0x0000_ABCD, SIZE_HALFWORD);
 
     assert_eq!(
-        dut.burst_rd_count - burst_rd_before,
-        1,
-        "cross-word halfword writes should perform one read burst"
+        dut.word_rd_count - word_rd_before,
+        2,
+        "cross-word halfword writes should read both affected words"
     );
     assert_eq!(
-        dut.burstwr_strobe_count - burstwr_before,
-        4,
+        dut.word_wr_count - word_wr_before,
+        2,
         "cross-word halfword writes should rewrite both affected words"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xCD22_3344);
@@ -215,20 +215,20 @@ fn test_sdram_peripheral_out_of_range_requests_return_zero_without_bursts() {
 
     reset(&mut dut);
 
-    let burst_rd_before = dut.burst_rd_count;
-    let burstwr_before = dut.burstwr_strobe_count;
+    let word_rd_before = dut.word_rd_count;
+    let word_wr_before = dut.word_wr_count;
     let out_of_range_addr = SDRAM_BASE_ADDR + SDRAM_ADDR_SIZE;
 
     assert_eq!(read_access(&mut dut, out_of_range_addr), 0);
     write_access(&mut dut, out_of_range_addr, 0xCAFE_BABE);
 
     assert_eq!(
-        dut.burst_rd_count, burst_rd_before,
-        "out-of-range accesses should not issue burst reads"
+        dut.word_rd_count, word_rd_before,
+        "out-of-range accesses should not issue word reads"
     );
     assert_eq!(
-        dut.burstwr_strobe_count, burstwr_before,
-        "out-of-range accesses should not issue burst writes"
+        dut.word_wr_count, word_wr_before,
+        "out-of-range accesses should not issue word writes"
     );
 }
 
@@ -289,7 +289,7 @@ fn test_sdram_peripheral_response_holds_under_backpressure() {
 }
 
 #[test]
-fn test_sdram_peripheral_write_wait_ready_backpressure_completes() {
+fn test_sdram_peripheral_word_busy_backpressure_completes() {
     let runtime =
         create_sdram_peripheral_runtime().expect("Failed to create SDRAM peripheral runtime");
     let mut dut = runtime
@@ -298,22 +298,20 @@ fn test_sdram_peripheral_write_wait_ready_backpressure_completes() {
 
     reset(&mut dut);
 
-    let burstwr_before = dut.burstwr_strobe_count;
-    let wait_cycles_before = dut.burstwr_wait_cycle_count;
+    let word_wr_before = dut.word_wr_count;
+    let wait_cycles_before = dut.word_wait_cycle_count;
 
     write_access(&mut dut, SDRAM_BASE_ADDR, 0x1357_9BDF);
 
     assert_eq!(
-        dut.burstwr_strobe_count - burstwr_before,
-        2,
-        "aligned word writes should still emit both 16-bit write strobes under backpressure"
+        dut.word_wr_count - word_wr_before,
+        1,
+        "aligned word writes should still complete as one word write under backpressure"
     );
-    // An aligned 32-bit word write is emitted as two 16-bit SDRAM writes, and the test
-    // wrapper injects two wait cycles before each halfword write is accepted.
     assert_eq!(
-        dut.burstwr_wait_cycle_count - wait_cycles_before,
-        4,
-        "the wrapper should hold burstwr_ready low for 4 total wait cycles (2 per halfword write)"
+        dut.word_wait_cycle_count - wait_cycles_before,
+        2,
+        "the wrapper should hold word_busy high for the programmed wait window"
     );
     assert_eq!(
         read_access(&mut dut, SDRAM_BASE_ADDR),

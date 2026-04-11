@@ -30,19 +30,12 @@ module cyclonev_analogue_pocket_top #(
     output logic            video_hs,
     output logic            audio_dac,
     output logic            audio_lrclk,
-    output logic            sdram_burst_rd,
-    output logic [24:0]     sdram_burst_addr,
-    output logic [10:0]     sdram_burst_len,
-    output logic            sdram_burst_32bit,
-    input  wire logic [31:0] sdram_burst_data,
-    input  wire logic       sdram_burst_data_valid,
-    input  wire logic       sdram_burst_data_done,
-    output logic            sdram_burstwr,
-    output logic [24:0]     sdram_burstwr_addr,
-    input  wire logic       sdram_burstwr_ready,
-    output logic            sdram_burstwr_strobe,
-    output logic [15:0]     sdram_burstwr_data,
-    output logic            sdram_burstwr_done,
+    output logic            sdram_word_rd,
+    output logic            sdram_word_wr,
+    output logic [23:0]     sdram_word_addr,
+    output logic [31:0]     sdram_word_data,
+    input  wire logic [31:0] sdram_word_q,
+    input  wire logic       sdram_word_busy,
     // Analogue Pocket OS notify signals for external CPU boot control
     input  wire logic       play_cartridge,  // HIGH during cartridge-play mode; ext boot fires when play_cartridge is LOW and core is not in reset
     input  wire logic       reset_n          // Active-low reset from APF; ext boot requires core to be out of reset
@@ -149,19 +142,12 @@ module cyclonev_analogue_pocket_top #(
         .video_hs(video_hs),
         .audio_dac(audio_dac),
         .audio_lrclk(audio_lrclk),
-        .sdram_burst_rd(sdram_burst_rd),
-        .sdram_burst_addr(sdram_burst_addr),
-        .sdram_burst_len(sdram_burst_len),
-        .sdram_burst_32bit(sdram_burst_32bit),
-        .sdram_burst_data(sdram_burst_data),
-        .sdram_burst_data_valid(sdram_burst_data_valid),
-        .sdram_burst_data_done(sdram_burst_data_done),
-        .sdram_burstwr(sdram_burstwr),
-        .sdram_burstwr_addr(sdram_burstwr_addr),
-        .sdram_burstwr_ready(sdram_burstwr_ready),
-        .sdram_burstwr_strobe(sdram_burstwr_strobe),
-        .sdram_burstwr_data(sdram_burstwr_data),
-        .sdram_burstwr_done(sdram_burstwr_done)
+        .sdram_word_rd(sdram_word_rd),
+        .sdram_word_wr(sdram_word_wr),
+        .sdram_word_addr(sdram_word_addr),
+        .sdram_word_data(sdram_word_data),
+        .sdram_word_q(sdram_word_q),
+        .sdram_word_busy(sdram_word_busy)
     );
 
 endmodule
