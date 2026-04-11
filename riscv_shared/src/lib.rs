@@ -32,8 +32,9 @@ pub use audio_helpers::{
     DMA_READY, SAMPLE_BUFFER_READY,
 };
 pub use bus::{
-    is_valid_dram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE, RUST_PERIPH_BASE,
-    RUST_PERIPH_LIMIT, SIM_CONTROL_BASE, VIDEO_BASE,
+    is_valid_dram_range, is_valid_sdram_range, AUDIO_BASE, DRAM_BASE, DRAM_END, FIFO_BASE,
+    RUST_PERIPH_BASE, RUST_PERIPH_LIMIT, SDRAM_BASE, SDRAM_END, SDRAM_SIZE, SIM_CONTROL_BASE,
+    VIDEO_BASE,
 };
 pub use dma::{
     is_dma_busy, start_transfer, wait_for_completion, DMA_BASE, DMA_DISPATCH, DMA_DST_ADDR,
