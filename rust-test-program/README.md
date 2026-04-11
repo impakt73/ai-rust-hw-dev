@@ -52,26 +52,9 @@ cargo test --package cpu-sim test_rust_bare_metal_elf
 ## Configuration
 
 - `.cargo/config.toml`: Specifies the target (`riscv32imafc-unknown-none-elf`)
-- `memory.x`: Default SRAM-linked memory layout used by simulation and existing tests
-- `memory-sdram.x`: Alternate RTL-SDRAM-linked memory layout for FPGA execution from `0x1000_0000`
-- `build.rs`: Selects the memory layout and configures the linker to use both `memory.x` and `link.x` (from riscv_rt)
+- `memory.x`: Memory layout defining RAM location and regions for riscv_rt
+- `build.rs`: Configures the linker to use both `memory.x` and `link.x` (from riscv_rt)
 - `Cargo.toml`: Configures the binaries with `test = false` and includes `riscv-rt = "0.17.0"` dependency
-
-### Building for RTL SDRAM execution
-
-By default, programs are linked to execute from the SRAM peripheral window at
-`0x7000_0000`, with the heap in host DRAM at `0x8000_0000`. To build a program
-that executes entirely from the Pocket RTL SDRAM window instead, set
-`AIHWDEV_MEMORY_LAYOUT=sdram` when invoking Cargo:
-
-```bash
-cd rust-test-program
-AIHWDEV_MEMORY_LAYOUT=sdram cargo build --release --target riscv32imafc-unknown-none-elf --bin rust_test
-```
-
-That produces an ELF whose loadable segments and entry point live in the
-`0x1000_0000` RTL SDRAM range, so `fpga-host loadelf ...` and `boot` target the
-same memory window that the Pocket `sdram_peripheral` exposes to the CPU.
 
 ## Notes
 

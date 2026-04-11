@@ -238,12 +238,16 @@ pub fn is_valid_dram_range(addr: u32, size: u32) -> bool {
 }
 
 /// Check if an address range is within the valid RTL SDRAM range.
+///
+/// This is separate from [`is_valid_dram_range`] because Pocket RTL SDRAM lives
+/// in a different address window and is backed by a different implementation
+/// than host/SystemBus DRAM.
 pub fn is_valid_sdram_range(addr: u32, size: u32) -> bool {
     if size == 0 {
         return false;
     }
 
-    let Some(end_addr) = addr.checked_add(size.saturating_sub(1)) else {
+    let Some(end_addr) = addr.checked_add(size - 1) else {
         return false;
     };
 

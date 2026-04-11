@@ -20,6 +20,7 @@ use riscv_core::AsDynamicVerilatedModel;
 /// CPU reset writes instead hold HALT high, wait for cpu_halted, pulse cpu_rst high,
 /// and only return a D-channel response once cpu_booting is observed after reset.
 use riscv_core::SystemController;
+use riscv_shared::SDRAM_BASE;
 use testbench::with_system_controller_model;
 
 // Register offsets
@@ -63,6 +64,8 @@ fn reset_dut(dut: &mut SystemController) {
     dut.mem_d_ready = 0;
     dut.cpu_halted = 0;
     dut.cpu_booting = 0;
+    dut.ext_cpu_boot = 0;
+    dut.ext_cpu_boot_addr = 0;
     dut.cpu_pc = 0;
     dut.cpu_instr = 0;
     dut.eval();
@@ -580,6 +583,28 @@ fn test_system_controller_boot_addr_output() {
     });
 }
 
+#[test]
+fn test_external_boot_passthrough() {
+    with_system_controller_model(|mut dut| {
+        reset_dut(&mut dut);
+
+        dut.ext_cpu_boot = 1;
+        dut.ext_cpu_boot_addr = 0x7000_0000;
+        dut.eval();
+
+        clock_cycle!(dut);
+
+        assert_eq!(
+            dut.cpu_boot, 1,
+            "external boot should pass through by default"
+        );
+        assert_eq!(
+            dut.cpu_boot_addr, 0x7000_0000,
+            "external boot should drive its address when not suppressed"
+        );
+    });
+}
+
 // ============================================================
 // Reset Control Tests
 // ============================================================
@@ -690,6 +715,69 @@ fn test_system_controller_cpu_reset() {
             dut.mem_a_ready, 1,
             "A channel should accept new requests once the CPU reset response is consumed"
         );
+    });
+}
+
+#[test]
+fn test_cpu_reset_suppresses_external_boot() {
+    with_system_controller_model(|mut dut| {
+        reset_dut(&mut dut);
+
+        dut.ext_cpu_boot = 1;
+        dut.ext_cpu_boot_addr = 0x7000_0000;
+        dut.eval();
+
+        issue_write_register(&mut dut, REG_RESET, RESET_CPU);
+        dut.cpu_halted = 1;
+        dut.eval();
+
+        for _ in 0..4 {
+            if dut.cpu_rst == 1 {
+                break;
+            }
+            clock_cycle!(dut);
+        }
+        assert_eq!(dut.cpu_rst, 1, "CPU reset should pulse after halt");
+
+        dut.cpu_halted = 0;
+        dut.cpu_booting = 1;
+        dut.eval();
+
+        for _ in 0..4 {
+            if dut.mem_d_valid != 0 {
+                break;
+            }
+            clock_cycle!(dut);
+        }
+        assert_eq!(
+            dut.mem_d_valid, 1,
+            "CPU reset should complete once cpu_booting returns"
+        );
+        assert_eq!(
+            dut.cpu_boot, 0,
+            "external boot should stay suppressed during the host-controlled CPU reset flow"
+        );
+
+        finish_response_after_observation(&mut dut);
+
+        for _ in 0..2 {
+            clock_cycle!(dut);
+            assert_eq!(
+                dut.cpu_boot, 0,
+                "external boot should remain suppressed until a manual BOOT write occurs"
+            );
+        }
+
+        write_register_and_wait_for_response(&mut dut, REG_BOOT, SDRAM_BASE);
+        assert_eq!(
+            dut.cpu_boot, 1,
+            "manual BOOT write should still pulse cpu_boot"
+        );
+        assert_eq!(
+            dut.cpu_boot_addr, SDRAM_BASE,
+            "manual BOOT write should drive the requested address instead of the external SRAM address"
+        );
+        finish_response_after_observation(&mut dut);
     });
 }
 

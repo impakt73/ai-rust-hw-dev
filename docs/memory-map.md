@@ -172,9 +172,8 @@ Single read-only register exposing live button state sampled in the system bus c
 - **Latency:** Variable; accesses cross from `sys_clk` into `sdram_clk` through `bus_cdc_bridge`
 - **Constants:** `SDRAM_BASE`, `SDRAM_SIZE`, `SDRAM_END`
 - **Execution note:** `fpga-host loadelf` writes segments to the ELF's linked
-  virtual addresses. Existing `rust-test-program` binaries are SRAM-linked by
-  default, so to run a program from RTL SDRAM you must build it with
-  `AIHWDEV_MEMORY_LAYOUT=sdram`.
+  virtual addresses, so this RTL SDRAM window remains distinct from the host
+  DRAM window at `0x80000000`.
 
 ### Audiosys Peripheral (0x60000000)
 
@@ -192,8 +191,7 @@ Pocket-target audio tone generator control registers.
 
 ### SRAM Peripheral (0x70000000)
 
-12KB of general-purpose on-chip SRAM. This is the default execution region for
-`rust-test-program` builds unless `AIHWDEV_MEMORY_LAYOUT=sdram` is set.
+12KB of general-purpose on-chip SRAM. Used by `rust-test-program` for the text, rodata, data, bss, and stack sections.
 
 - **Size:** 12KB (0x70000000 – 0x70002FFF)
 - **Access sizes:** Byte, halfword, word
