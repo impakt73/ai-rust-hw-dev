@@ -124,11 +124,11 @@ fn test_sdram_peripheral_aligned_word_access_round_trips_through_stub_memory() {
 
     assert_eq!(
         dut.burst_rd_count, 0,
-        "aligned word writes should use the direct burst-write path"
+        "aligned word writes should use the direct controller write path"
     );
     assert_eq!(
-        dut.burstwr_strobe_count, 2,
-        "aligned word writes should emit two 16-bit burst write strobes"
+        dut.burstwr_strobe_count, 1,
+        "aligned word writes should emit one controller word write"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xDEAD_BEEF);
 }
@@ -153,12 +153,12 @@ fn test_sdram_peripheral_split_word_write_updates_both_words() {
 
     assert_eq!(
         dut.burst_rd_count - burst_rd_before,
-        1,
-        "split word writes should perform one read-modify-write read burst"
+        2,
+        "split word writes should read both affected words before rewriting them"
     );
     assert_eq!(
         dut.burstwr_strobe_count - burstwr_before,
-        4,
+        2,
         "split word writes should rewrite both affected 32-bit words"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xBBCC_DD44);
@@ -189,12 +189,12 @@ fn test_sdram_peripheral_split_halfword_write_updates_both_words() {
 
     assert_eq!(
         dut.burst_rd_count - burst_rd_before,
-        1,
-        "cross-word halfword writes should perform one read burst"
+        2,
+        "cross-word halfword writes should read both affected words"
     );
     assert_eq!(
         dut.burstwr_strobe_count - burstwr_before,
-        4,
+        2,
         "cross-word halfword writes should rewrite both affected words"
     );
     assert_eq!(read_access(&mut dut, SDRAM_BASE_ADDR), 0xCD22_3344);
@@ -305,15 +305,14 @@ fn test_sdram_peripheral_write_wait_ready_backpressure_completes() {
 
     assert_eq!(
         dut.burstwr_strobe_count - burstwr_before,
-        2,
-        "aligned word writes should still emit both 16-bit write strobes under backpressure"
+        1,
+        "aligned word writes should still emit one controller word write under backpressure"
     );
-    // An aligned 32-bit word write is emitted as two 16-bit SDRAM writes, and the test
-    // wrapper injects two wait cycles before each halfword write is accepted.
+    // The wrapper injects two wait cycles before the controller completes a word write.
     assert_eq!(
         dut.burstwr_wait_cycle_count - wait_cycles_before,
-        4,
-        "the wrapper should hold burstwr_ready low for 4 total wait cycles (2 per halfword write)"
+        2,
+        "the wrapper should hold the controller busy for 2 total wait cycles per word write"
     );
     assert_eq!(
         read_access(&mut dut, SDRAM_BASE_ADDR),

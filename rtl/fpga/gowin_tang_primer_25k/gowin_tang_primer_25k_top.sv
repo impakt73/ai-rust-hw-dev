@@ -81,19 +81,12 @@ module gowin_tang_primer_25k_top #(
         .video_hs(),
         .audio_dac(),
         .audio_lrclk(),
-        .sdram_burst_rd(),
-        .sdram_burst_addr(),
-        .sdram_burst_len(),
-        .sdram_burst_32bit(),
-        .sdram_burst_data(32'h0000_0000),
-        .sdram_burst_data_valid(1'b0),
-        .sdram_burst_data_done(1'b0),
-        .sdram_burstwr(),
-        .sdram_burstwr_addr(),
-        .sdram_burstwr_ready(1'b0),
-        .sdram_burstwr_strobe(),
-        .sdram_burstwr_data(),
-        .sdram_burstwr_done()
+        .sdram_word_rd(),
+        .sdram_word_wr(),
+        .sdram_word_addr(),
+        .sdram_word_data(),
+        .sdram_word_q(32'h0000_0000),
+        .sdram_word_busy(1'b0)
     );
 
     assign led_ready = sys_led_out[0];

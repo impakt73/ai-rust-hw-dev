@@ -21,60 +21,48 @@ module sdram_peripheral_test_wrapper (
 
     localparam logic [31:0] BASE_ADDR = 32'h1000_0000;
     localparam logic [31:0] ADDR_SIZE = 32'h0000_0100;
-    localparam int unsigned BURST_ADDR_WIDTH = 25;
-    localparam int unsigned HALFWORD_DEPTH = ADDR_SIZE / 2;
-    localparam int unsigned HALFWORD_ADDR_WIDTH = $clog2(HALFWORD_DEPTH);
-    localparam logic [BURST_ADDR_WIDTH-1:0] HALFWORD_DEPTH_LIMIT = BURST_ADDR_WIDTH'(HALFWORD_DEPTH);
+    localparam int unsigned WORD_ADDR_WIDTH = 24;
+    localparam int unsigned WORD_DEPTH = ADDR_SIZE / 4;
+    localparam int unsigned WORD_ADDR_BITS = $clog2(WORD_DEPTH);
+    localparam logic [WORD_ADDR_WIDTH-1:0] WORD_DEPTH_LIMIT = WORD_ADDR_WIDTH'(WORD_DEPTH);
+    localparam logic [1:0] READ_WAIT_CYCLES = 2'd1;
+    localparam logic [1:0] WRITE_WAIT_CYCLES = 2'd2;
 
-    logic                              burst_rd;
-    logic [BURST_ADDR_WIDTH-1:0]       burst_addr;
-    logic [10:0]                       burst_len;
-    logic                              burst_32bit;
-    logic [31:0]                       burst_data;
-    logic                              burst_data_valid;
-    logic                              burst_data_done;
-    logic                              burstwr;
-    logic [BURST_ADDR_WIDTH-1:0]       burstwr_addr;
-    logic                              burstwr_ready;
-    logic                              burstwr_strobe;
-    logic [15:0]                       burstwr_data;
-    logic                              burstwr_done;
+    logic                       word_rd;
+    logic                       word_wr;
+    logic [WORD_ADDR_WIDTH-1:0] word_addr;
+    logic [31:0]                word_data;
+    logic [31:0]                word_q;
+    logic                       word_busy;
 
-    logic [15:0]                       halfword_mem[0:HALFWORD_DEPTH-1];
-    logic                              read_pending;
-    logic [BURST_ADDR_WIDTH-1:0]       read_addr_reg;
-    logic [1:0]                        read_words_remaining_reg;
-    logic                              burstwr_pending;
-    logic [1:0]                        burstwr_wait_cycles_remaining;
+    logic [31:0]                word_mem[0:WORD_DEPTH-1];
+    logic                       pending_is_write;
+    logic [WORD_ADDR_WIDTH-1:0] pending_word_addr;
+    logic [31:0]                pending_word_data;
+    logic [1:0]                 wait_cycles_remaining;
 
-    function automatic logic [15:0] read_halfword(
-        input logic [BURST_ADDR_WIDTH-1:0] addr
+    function automatic logic [31:0] read_word(
+        input logic [WORD_ADDR_WIDTH-1:0] addr
     );
-        if (addr < HALFWORD_DEPTH_LIMIT) begin
-            read_halfword = halfword_mem[addr[HALFWORD_ADDR_WIDTH-1:0]];
+        if (addr < WORD_DEPTH_LIMIT) begin
+            read_word = word_mem[addr[WORD_ADDR_BITS-1:0]];
         end else begin
-            read_halfword = 16'h0000;
+            read_word = 32'h0000_0000;
         end
     endfunction
 
     initial begin
-        // This is a test-only memory model. Each Rust test constructs a fresh wrapper
-        // instance, so initializing the backing store once at elaboration time keeps the
-        // model deterministic while the synchronous reset below still owns all control
-        // state visible to the peripheral.
-        for (int unsigned idx = 0; idx < HALFWORD_DEPTH; idx++) begin
-            halfword_mem[idx] = 16'h0000;
+        for (int unsigned idx = 0; idx < WORD_DEPTH; idx++) begin
+            word_mem[idx] = 32'h0000_0000;
         end
     end
 
-    // Mirror io_sdram's registered ready behavior so ready can remain high for one
-    // cycle after the strobe that ends the current write window.
     assign periph_a_ready_dbg = u_sdram_peripheral.periph_mem_a_ready;
 
     sdram_peripheral #(
         .BASE_ADDR(BASE_ADDR),
         .ADDR_SIZE(ADDR_SIZE),
-        .BURST_ADDR_WIDTH(BURST_ADDR_WIDTH),
+        .WORD_ADDR_WIDTH(WORD_ADDR_WIDTH),
         .BUS_CDC_SYNC_STAGES(2)
     ) u_sdram_peripheral (
         .sys_clk(sys_clk),
@@ -89,81 +77,55 @@ module sdram_peripheral_test_wrapper (
         .mem_d_rdata(mem_d_rdata),
         .mem_d_valid(mem_d_valid),
         .mem_d_ready(mem_d_ready),
-        .burst_rd(burst_rd),
-        .burst_addr(burst_addr),
-        .burst_len(burst_len),
-        .burst_32bit(burst_32bit),
-        .burst_data(burst_data),
-        .burst_data_valid(burst_data_valid),
-        .burst_data_done(burst_data_done),
-        .burstwr(burstwr),
-        .burstwr_addr(burstwr_addr),
-        .burstwr_ready(burstwr_ready),
-        .burstwr_strobe(burstwr_strobe),
-        .burstwr_data(burstwr_data),
-        .burstwr_done(burstwr_done)
+        .word_rd(word_rd),
+        .word_wr(word_wr),
+        .word_addr(word_addr),
+        .word_data(word_data),
+        .word_q(word_q),
+        .word_busy(word_busy)
     );
 
     always_ff @(posedge sdram_clk) begin
-        burst_data_valid <= 1'b0;
-        burst_data_done <= 1'b0;
-
         if (rst) begin
-            read_pending <= 1'b0;
-            read_addr_reg <= '0;
-            read_words_remaining_reg <= '0;
-            burstwr_pending <= 1'b0;
-            burstwr_wait_cycles_remaining <= '0;
-            burstwr_ready <= 1'b0;
-            burst_data <= '0;
+            word_busy <= 1'b0;
+            word_q <= '0;
+            pending_is_write <= 1'b0;
+            pending_word_addr <= '0;
+            pending_word_data <= '0;
+            wait_cycles_remaining <= '0;
             burst_rd_count <= '0;
             burstwr_strobe_count <= '0;
             burstwr_wait_cycle_count <= '0;
         end else begin
-            burstwr_ready <= burstwr_pending && (burstwr_wait_cycles_remaining == 2'd0);
-
-            if (burst_rd) begin
-                read_pending <= 1'b1;
-                read_addr_reg <= burst_addr;
-                read_words_remaining_reg <= (burst_len == 11'd4) ? 2'd2 : 2'd1;
-                burst_rd_count <= burst_rd_count + 1'b1;
-            end
-
-            if (read_pending) begin
-                burst_data <= {
-                    read_halfword(read_addr_reg),
-                    read_halfword(read_addr_reg + BURST_ADDR_WIDTH'(1))
-                };
-                burst_data_valid <= 1'b1;
-
-                if (read_words_remaining_reg == 2'd1) begin
-                    burst_data_done <= 1'b1;
-                    read_pending <= 1'b0;
+            if (word_busy) begin
+                if (wait_cycles_remaining != 2'd0) begin
+                    wait_cycles_remaining <= wait_cycles_remaining - 1'b1;
+                    if (pending_is_write) begin
+                        burstwr_wait_cycle_count <= burstwr_wait_cycle_count + 1'b1;
+                    end
                 end else begin
-                    read_addr_reg <= read_addr_reg + BURST_ADDR_WIDTH'(2);
-                    read_words_remaining_reg <= read_words_remaining_reg - 1'b1;
+                    if (pending_is_write) begin
+                        if (pending_word_addr < WORD_DEPTH_LIMIT) begin
+                            word_mem[pending_word_addr[WORD_ADDR_BITS-1:0]] <= pending_word_data;
+                        end
+                    end else begin
+                        word_q <= read_word(pending_word_addr);
+                    end
+                    word_busy <= 1'b0;
                 end
-            end
+            end else if (word_rd || word_wr) begin
+                pending_is_write <= word_wr;
+                pending_word_addr <= word_addr;
+                pending_word_data <= word_data;
+                wait_cycles_remaining <= word_wr ? WRITE_WAIT_CYCLES : READ_WAIT_CYCLES;
+                word_busy <= 1'b1;
 
-            if (burstwr_strobe) begin
-                if (burstwr_addr < HALFWORD_DEPTH_LIMIT) begin
-                    halfword_mem[burstwr_addr[HALFWORD_ADDR_WIDTH-1:0]] <= burstwr_data;
+                if (word_rd) begin
+                    burst_rd_count <= burst_rd_count + 1'b1;
                 end
-                burstwr_pending <= 1'b0;
-                burstwr_wait_cycles_remaining <= '0;
-                burstwr_strobe_count <= burstwr_strobe_count + 1'b1;
-            end
-
-            // Latch a new write request either from the initial burstwr pulse
-            // (!burstwr_pending) or from the handoff cycle where the previous halfword
-            // strobes and the DUT immediately advances to request the next halfword
-            // (burstwr_strobe).
-            if (burstwr && (!burstwr_pending || burstwr_strobe)) begin
-                burstwr_pending <= 1'b1;
-                burstwr_wait_cycles_remaining <= 2'd2;
-            end else if (burstwr_pending && !burstwr_strobe && (burstwr_wait_cycles_remaining != 2'd0)) begin
-                burstwr_wait_cycles_remaining <= burstwr_wait_cycles_remaining - 1'b1;
-                burstwr_wait_cycle_count <= burstwr_wait_cycle_count + 1'b1;
+                if (word_wr) begin
+                    burstwr_strobe_count <= burstwr_strobe_count + 1'b1;
+                end
             end
         end
     end
