@@ -395,14 +395,6 @@ module pocket_sdram #(
         end
     end
 
-    // Keep the original Analogue controller port for drop-in compatibility with the
-    // Pocket clocking shell. This word-only SDR implementation captures read data on
-    // controller_clk, so the 90-degree phase is currently unused.
-    logic unused_clk_90;
-    always_comb begin
-        unused_clk_90 = clk_90;
-    end
-
 endmodule
 
 `default_nettype wire

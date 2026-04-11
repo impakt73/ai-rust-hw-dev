@@ -174,6 +174,7 @@ always @(posedge controller_clk) begin
     
     burst_data_valid <= 0;
     burstwr_ready <= 0;
+    word_busy <= word_op | word_rd_queue | word_wr_queue;
     
     enable_dq_read_5 <= enable_dq_read_4;
     enable_dq_read_4 <= enable_dq_read_3;
@@ -297,7 +298,6 @@ always @(posedge controller_clk) begin
     ST_IDLE: begin
     
         read_newrow <= 0;
-        word_busy <= 0;
         word_op <= 0;
         
         if(issue_autorefresh) begin
@@ -306,7 +306,7 @@ always @(posedge controller_clk) begin
         if(word_rd_queue) begin
             word_rd_queue <= 0;
             word_op <= 1;
-            addr <= word_addr << 1;
+            addr <= word_addr_s << 1;
             
             length <= 2;
             state <= ST_READ_0;
@@ -314,7 +314,7 @@ always @(posedge controller_clk) begin
         if(word_wr_queue) begin
             word_wr_queue <= 0;
             word_op <= 1;
-            addr <= word_addr << 1;
+            addr <= word_addr_s << 1;
             
             state <= ST_WRITE_0;
         end else 
@@ -358,7 +358,7 @@ always @(posedge controller_clk) begin
         phy_a <= addr[9:0]; // A0-A9 row address
         cmd <= CMD_WRITE;
         phy_dq_oe <= 1;
-        phy_dq_out <= word_data[31:16];//addr[15:0];//
+        phy_dq_out <= word_data_s[31:16];//addr[15:0];//
         addr <= addr + 1'b1;
         
         state <= ST_WRITE_3;    
@@ -369,7 +369,7 @@ always @(posedge controller_clk) begin
         phy_a <= addr[9:0]; // A0-A9 row address
         cmd <= CMD_WRITE;
         phy_dq_oe <= 1;
-        phy_dq_out <= word_data[15:0];//16'hABCD; //
+        phy_dq_out <= word_data_s[15:0];//16'hABCD; //
         addr <= addr + 1'b1;
         
         state <= ST_WRITE_4;    
@@ -384,6 +384,7 @@ always @(posedge controller_clk) begin
     end
     ST_WRITE_5: begin
         if(dc == TIMING_PRECHARGE-1) begin // was -3
+            word_op <= 0;
             state <= ST_IDLE;
         end 
     end
@@ -446,8 +447,10 @@ always @(posedge controller_clk) begin
         if(dc == TIMING_PRECHARGE-1) begin
             if(read_newrow) 
                 state <= ST_READ_0;
-            else
+            else begin
+                word_op <= 0;
                 state <= ST_IDLE;
+            end
         end 
     end
     
@@ -562,10 +565,13 @@ always @(posedge controller_clk) begin
         // reset
         state <= ST_RESET;
         refresh_count <= 0;
+        word_op <= 0;
+        word_busy <= 0;
+        word_rd_queue <= 0;
+        word_wr_queue <= 0;
     end
 end
 
 assign phy_clk = chip_clk;
 
 endmodule
-

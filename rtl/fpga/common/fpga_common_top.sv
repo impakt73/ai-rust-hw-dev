@@ -62,10 +62,10 @@ module fpga_common_top #(
     output logic       video_hs,
     output logic       audio_dac,
     output logic       audio_lrclk,
-    output logic       sdram_word_rd,
-    output logic       sdram_word_wr,
-    output logic [23:0] sdram_word_addr,
-    output logic [31:0] sdram_word_data,
+    output logic            sdram_word_rd,
+    output logic            sdram_word_wr,
+    output logic [23:0]     sdram_word_addr,
+    output logic [31:0]     sdram_word_data,
     input  wire logic [31:0] sdram_word_q,
     input  wire logic       sdram_word_busy
 );

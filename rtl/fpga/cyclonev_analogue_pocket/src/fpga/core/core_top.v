@@ -464,12 +464,12 @@ cyclonev_analogue_pocket_top repo_top_inst (
     .video_hs   ( repo_video_hs ),
     .audio_dac  ( audgen_dac ),
     .audio_lrclk( audgen_lrck ),
-    .sdram_word_rd        ( repo_sdram_word_rd ),
-    .sdram_word_wr        ( repo_sdram_word_wr ),
-    .sdram_word_addr      ( repo_sdram_word_addr ),
-    .sdram_word_data      ( repo_sdram_word_data ),
-    .sdram_word_q         ( repo_sdram_word_q ),
-    .sdram_word_busy      ( repo_sdram_word_busy ),
+    .sdram_word_rd         ( repo_sdram_word_rd ),
+    .sdram_word_wr         ( repo_sdram_word_wr ),
+    .sdram_word_addr       ( repo_sdram_word_addr ),
+    .sdram_word_data       ( repo_sdram_word_data ),
+    .sdram_word_q          ( repo_sdram_word_q ),
+    .sdram_word_busy       ( repo_sdram_word_busy ),
     .play_cartridge  ( osnotify_play_cartridge ),
     .reset_n         ( reset_n )
 );

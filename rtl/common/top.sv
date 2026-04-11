@@ -96,10 +96,10 @@ module top #(
     output logic        video_hs,
     output logic        audio_dac,
     output logic        audio_lrclk,
-    output logic        sdram_word_rd,
-    output logic        sdram_word_wr,
-    output logic [23:0] sdram_word_addr,
-    output logic [31:0] sdram_word_data,
+    output logic             sdram_word_rd,
+    output logic             sdram_word_wr,
+    output logic [23:0]      sdram_word_addr,
+    output logic [31:0]      sdram_word_data,
     input  wire logic [31:0] sdram_word_q,
     input  wire logic        sdram_word_busy,
 
@@ -789,7 +789,7 @@ module top #(
             assign sdram_word_rd = 1'b0;
             assign sdram_word_wr = 1'b0;
             assign sdram_word_addr = 24'h0;
-            assign sdram_word_data = 32'h0;
+            assign sdram_word_data = 32'h0000_0000;
         end
     endgenerate
 
