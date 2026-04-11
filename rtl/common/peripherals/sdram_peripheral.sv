@@ -3,53 +3,52 @@
 module sdram_peripheral #(
     parameter int unsigned BASE_ADDR = 32'h1000_0000,
     parameter int unsigned ADDR_SIZE = 32'h0400_0000,
-    parameter int unsigned BURST_ADDR_WIDTH = 25,
+    parameter int unsigned WORD_ADDR_WIDTH = 24,
     parameter int unsigned BUS_CDC_SYNC_STAGES = 3
 ) (
-    input  wire logic                         sys_clk,
-    input  wire logic                         sdram_clk,
-    input  wire logic                         rst,
-    input  wire logic [31:0]                  mem_a_addr,
-    input  wire logic [31:0]                  mem_a_wdata,
-    input  wire logic                         mem_a_we,
-    input  wire logic [1:0]                   mem_a_size,
-    input  wire logic                         mem_a_valid,
-    output logic                              mem_a_ready,
-    output logic [31:0]                       mem_d_rdata,
-    output logic                              mem_d_valid,
-    input  wire logic                         mem_d_ready,
-    output logic                              burst_rd,
-    output logic [BURST_ADDR_WIDTH-1:0]       burst_addr,
-    output logic [10:0]                       burst_len,
-    output logic                              burst_32bit,
-    input  wire logic [31:0]                  burst_data,
-    input  wire logic                         burst_data_valid,
-    input  wire logic                         burst_data_done,
-    output logic                              burstwr,
-    output logic [BURST_ADDR_WIDTH-1:0]       burstwr_addr,
-    input  wire logic                         burstwr_ready,
-    output logic                              burstwr_strobe,
-    output logic [15:0]                       burstwr_data,
-    output logic                              burstwr_done
+    input  wire logic                        sys_clk,
+    input  wire logic                        sdram_clk,
+    input  wire logic                        rst,
+    input  wire logic [31:0]                 mem_a_addr,
+    input  wire logic [31:0]                 mem_a_wdata,
+    input  wire logic                        mem_a_we,
+    input  wire logic [1:0]                  mem_a_size,
+    input  wire logic                        mem_a_valid,
+    output logic                             mem_a_ready,
+    output logic [31:0]                      mem_d_rdata,
+    output logic                             mem_d_valid,
+    input  wire logic                        mem_d_ready,
+    output logic                             word_rd,
+    output logic                             word_wr,
+    output logic [WORD_ADDR_WIDTH-1:0]       word_addr,
+    output logic [31:0]                      word_data,
+    input  wire logic [31:0]                 word_q,
+    input  wire logic                        word_busy
 );
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         S_IDLE,
-        S_READ_CMD,
-        S_READ_WAIT,
+        S_READ_WORD0_REQ,
+        S_READ_WORD0_WAIT,
+        S_READ_WORD1_REQ,
+        S_READ_WORD1_WAIT,
         S_READ_PROCESS,
-        S_WRITE_REQ,
-        S_WRITE_WAIT_READY,
-        S_WRITE_WAIT_READY_LOW,
+        S_WRITE_WORD0_REQ,
+        S_WRITE_WORD0_WAIT,
+        S_WRITE_WORD1_REQ,
+        S_WRITE_WORD1_WAIT,
         S_RESPOND
     } state_t;
 
-    // registered_bus only decodes addr[31:28], so one slave window can span at most 256 MiB.
     localparam logic [31:0] DECODE_LIMIT_BYTES = 32'h1000_0000;
-    // io_sdram-compatible burst addresses count 16-bit cells, so BURST_ADDR_WIDTH=25 exposes 64 MiB.
-    localparam longint unsigned INTERFACE_LIMIT_BYTES_WIDE = (64'd1 << (BURST_ADDR_WIDTH + 1));
+    localparam longint unsigned INTERFACE_LIMIT_BYTES_WIDE = (64'd1 << (WORD_ADDR_WIDTH + 2));
     localparam logic [31:0] INTERFACE_LIMIT_BYTES = INTERFACE_LIMIT_BYTES_WIDE[31:0];
     localparam logic [31:0] LAST_ADDR = BASE_ADDR + ADDR_SIZE - 32'd1;
+    localparam int unsigned WORD_WAIT_COUNTER_WIDTH = 6;
+    // io_sdram word reads/writes complete in well under 32 controller clocks, even with the
+    // fixed ACT/CAS/PRECHARGE sequencing and a possible refresh insertion, so 31 cycles keeps
+    // the fallback conservative while still allowing forward progress when word_busy stays low.
+    localparam logic [WORD_WAIT_COUNTER_WIDTH-1:0] WORD_WAIT_FALLBACK_CYCLES = 6'd31;
 
     logic reset_n_sdram_sync;
     logic sdram_rst;
@@ -74,15 +73,12 @@ module sdram_peripheral #(
     logic        req_we_reg;
     logic [1:0]  req_size_reg;
     logic        req_split_reg;
-    logic [BURST_ADDR_WIDTH-1:0] req_word0_halfword_addr_reg;
+    logic [WORD_ADDR_WIDTH-1:0] req_word0_addr_reg;
 
-    logic [1:0]  read_words_captured_reg;
     logic [31:0] read_word0_reg;
     logic [31:0] read_word1_reg;
-
     logic [31:0] write_word0_reg;
     logic [31:0] write_word1_reg;
-    logic [2:0]  write_halfword_index_reg;
 
     logic [31:0] response_data;
     logic        response_pending;
@@ -94,15 +90,16 @@ module sdram_peripheral #(
     logic        incoming_split;
     logic [32:0] incoming_last_offset_ext;
     logic        incoming_in_range;
-    logic [BURST_ADDR_WIDTH-1:0] incoming_word0_halfword_addr;
+    logic [WORD_ADDR_WIDTH-1:0] incoming_word0_addr;
 
     logic [1:0]  req_offset;
     logic [63:0] req_read_concat;
     logic [31:0] req_extracted_rdata;
     logic [63:0] req_merged_write_concat;
-    logic [2:0]  write_halfwords_total;
-    logic [BURST_ADDR_WIDTH-1:0] current_write_halfword_addr;
-    logic [15:0] current_write_halfword_data;
+
+    logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_count_reg;
+    logic                               word_busy_seen_reg;
+    logic                               word_wait_complete;
 
     function automatic logic [2:0] access_byte_count(input logic [1:0] size);
         case (size)
@@ -196,41 +193,20 @@ module sdram_peripheral #(
         (incoming_access_bytes != 3'd0)
         && incoming_addr_ge_base
         && (incoming_last_offset_ext < {1'b0, ADDR_SIZE});
-    assign incoming_word0_halfword_addr = incoming_word0_byte_offset[BURST_ADDR_WIDTH:1];
+    assign incoming_word0_addr = incoming_word0_byte_offset[WORD_ADDR_WIDTH+1:2];
 
     assign req_offset = req_addr_reg[1:0];
     assign req_read_concat = {read_word1_reg, read_word0_reg};
     assign req_extracted_rdata = extract_access_data(req_read_concat, req_size_reg, req_offset);
     assign req_merged_write_concat =
         merge_access_data(req_read_concat, req_wdata_reg, req_size_reg, req_offset);
-    assign write_halfwords_total = req_split_reg ? 3'd4 : 3'd2;
-
-    always_comb begin
-        // io_sdram burst addresses count 16-bit cells. Its 32-bit read path captures
-        // the first cell into bits [31:16] and the second into bits [15:0], so writes
-        // must emit the same ordering for round-trip compatibility.
-        current_write_halfword_addr = req_word0_halfword_addr_reg;
-        current_write_halfword_data = write_word0_reg[31:16];
-
-        case (write_halfword_index_reg)
-            3'd0: begin
-                current_write_halfword_addr = req_word0_halfword_addr_reg;
-                current_write_halfword_data = write_word0_reg[31:16];
-            end
-            3'd1: begin
-                current_write_halfword_addr = req_word0_halfword_addr_reg + BURST_ADDR_WIDTH'(1);
-                current_write_halfword_data = write_word0_reg[15:0];
-            end
-            3'd2: begin
-                current_write_halfword_addr = req_word0_halfword_addr_reg + BURST_ADDR_WIDTH'(2);
-                current_write_halfword_data = write_word1_reg[31:16];
-            end
-            default: begin
-                current_write_halfword_addr = req_word0_halfword_addr_reg + BURST_ADDR_WIDTH'(3);
-                current_write_halfword_data = write_word1_reg[15:0];
-            end
-        endcase
-    end
+    // The Pocket word interface does not provide an explicit read-data-valid pulse, and the
+    // shipped io_sdram implementation leaves word_busy low. Prefer a busy high->low handshake
+    // when available, but keep a conservative timeout so the RTL still interoperates with the
+    // deployed controller implementation and with the test stub.
+    assign word_wait_complete =
+        (word_busy_seen_reg && !word_busy)
+        || (!word_busy_seen_reg && (word_wait_count_reg == '0));
 
     assign periph_mem_a_ready = !sdram_rst && (state == S_IDLE) && !response_pending;
     assign periph_mem_d_rdata = response_data;
@@ -280,6 +256,9 @@ module sdram_peripheral #(
     );
 
     initial begin
+        if (WORD_ADDR_WIDTH > 61) begin
+            $fatal(1, "sdram_peripheral: WORD_ADDR_WIDTH exceeds safe shift range for (WORD_ADDR_WIDTH + 2) < 64: %0d", WORD_ADDR_WIDTH);
+        end
         if (BASE_ADDR[1:0] != 2'b00) begin
             $fatal(1, "sdram_peripheral: BASE_ADDR must be 32-bit aligned, got 0x%08h", BASE_ADDR);
         end
@@ -293,7 +272,7 @@ module sdram_peripheral #(
             $fatal(1, "sdram_peripheral: ADDR_SIZE exceeds registered_bus decode limit: 0x%08h", ADDR_SIZE);
         end
         if (ADDR_SIZE > INTERFACE_LIMIT_BYTES) begin
-            $fatal(1, "sdram_peripheral: ADDR_SIZE exceeds burst interface capacity: 0x%08h", ADDR_SIZE);
+            $fatal(1, "sdram_peripheral: ADDR_SIZE exceeds word interface capacity: 0x%08h", ADDR_SIZE);
         end
         if (BASE_ADDR[31:28] != LAST_ADDR[31:28]) begin
             $fatal(1, "sdram_peripheral: address window crosses registered_bus decode nibble");
@@ -304,22 +283,28 @@ module sdram_peripheral #(
         if (sdram_rst) begin
             state <= S_IDLE;
             response_pending <= 1'b0;
-            burst_rd <= 1'b0;
-            burst_len <= 11'd0;
-            burst_32bit <= 1'b0;
-            burstwr <= 1'b0;
-            burstwr_strobe <= 1'b0;
-            burstwr_done <= 1'b0;
-            read_words_captured_reg <= 2'd0;
-            write_halfword_index_reg <= 3'd0;
+            word_rd <= 1'b0;
+            word_wr <= 1'b0;
+            word_busy_seen_reg <= 1'b0;
+            word_wait_count_reg <= '0;
         end else begin
-            burst_rd <= 1'b0;
-            burstwr <= 1'b0;
-            burstwr_strobe <= 1'b0;
-            burstwr_done <= 1'b0;
+            word_rd <= 1'b0;
+            word_wr <= 1'b0;
 
             if (periph_mem_d_handshake) begin
                 response_pending <= 1'b0;
+            end
+
+            if ((state == S_READ_WORD0_WAIT)
+                || (state == S_READ_WORD1_WAIT)
+                || (state == S_WRITE_WORD0_WAIT)
+                || (state == S_WRITE_WORD1_WAIT)) begin
+                if (word_busy) begin
+                    word_busy_seen_reg <= 1'b1;
+                end
+                if (word_wait_count_reg != '0) begin
+                    word_wait_count_reg <= word_wait_count_reg - 1'b1;
+                end
             end
 
             case (state)
@@ -330,9 +315,7 @@ module sdram_peripheral #(
                         req_we_reg <= periph_mem_a_we;
                         req_size_reg <= periph_mem_a_size;
                         req_split_reg <= incoming_split;
-                        req_word0_halfword_addr_reg <= incoming_word0_halfword_addr;
-                        read_words_captured_reg <= 2'd0;
-                        write_halfword_index_reg <= 3'd0;
+                        req_word0_addr_reg <= incoming_word0_addr;
 
                         if (!incoming_in_range) begin
                             response_data <= 32'h0000_0000;
@@ -342,44 +325,52 @@ module sdram_peripheral #(
                                      && (periph_mem_a_size == 2'b10)
                                      && (periph_mem_a_addr[1:0] == 2'b00)) begin
                             write_word0_reg <= periph_mem_a_wdata;
-                            state <= S_WRITE_REQ;
+                            state <= S_WRITE_WORD0_REQ;
                         end else begin
-                            state <= S_READ_CMD;
+                            state <= S_READ_WORD0_REQ;
                         end
                     end
                 end
 
-                S_READ_CMD: begin
-                    burst_rd <= 1'b1;
-                    burst_addr <= req_word0_halfword_addr_reg;
-                    burst_len <= req_split_reg ? 11'd4 : 11'd2;
-                    burst_32bit <= 1'b1;
-                    state <= S_READ_WAIT;
+                S_READ_WORD0_REQ: begin
+                    word_rd <= 1'b1;
+                    word_addr <= req_word0_addr_reg;
+                    word_busy_seen_reg <= 1'b0;
+                    word_wait_count_reg <= WORD_WAIT_FALLBACK_CYCLES;
+                    state <= S_READ_WORD0_WAIT;
                 end
 
-                S_READ_WAIT: begin
-                    if (burst_data_valid) begin
-                        if (read_words_captured_reg == 2'd0) begin
-                            read_word0_reg <= burst_data;
+                S_READ_WORD0_WAIT: begin
+                    if (word_wait_complete) begin
+                        read_word0_reg <= word_q;
+                        if (req_split_reg) begin
+                            state <= S_READ_WORD1_REQ;
                         end else begin
-                            read_word1_reg <= burst_data;
-                        end
-
-                        read_words_captured_reg <= read_words_captured_reg + 2'd1;
-
-                        if (read_words_captured_reg == (req_split_reg ? 2'd1 : 2'd0)) begin
                             state <= S_READ_PROCESS;
                         end
                     end
+                end
 
+                S_READ_WORD1_REQ: begin
+                    word_rd <= 1'b1;
+                    word_addr <= req_word0_addr_reg + WORD_ADDR_WIDTH'(1);
+                    word_busy_seen_reg <= 1'b0;
+                    word_wait_count_reg <= WORD_WAIT_FALLBACK_CYCLES;
+                    state <= S_READ_WORD1_WAIT;
+                end
+
+                S_READ_WORD1_WAIT: begin
+                    if (word_wait_complete) begin
+                        read_word1_reg <= word_q;
+                        state <= S_READ_PROCESS;
+                    end
                 end
 
                 S_READ_PROCESS: begin
                     if (req_we_reg) begin
                         write_word0_reg <= req_merged_write_concat[31:0];
                         write_word1_reg <= req_merged_write_concat[63:32];
-                        write_halfword_index_reg <= 3'd0;
-                        state <= S_WRITE_REQ;
+                        state <= S_WRITE_WORD0_REQ;
                     end else begin
                         response_data <= req_extracted_rdata;
                         response_pending <= 1'b1;
@@ -387,32 +378,41 @@ module sdram_peripheral #(
                     end
                 end
 
-                S_WRITE_REQ: begin
-                    burstwr <= 1'b1;
-                    burstwr_addr <= current_write_halfword_addr;
-                    state <= S_WRITE_WAIT_READY;
+                S_WRITE_WORD0_REQ: begin
+                    word_wr <= 1'b1;
+                    word_addr <= req_word0_addr_reg;
+                    word_data <= write_word0_reg;
+                    word_busy_seen_reg <= 1'b0;
+                    word_wait_count_reg <= WORD_WAIT_FALLBACK_CYCLES;
+                    state <= S_WRITE_WORD0_WAIT;
                 end
 
-                S_WRITE_WAIT_READY: begin
-                    if (burstwr_ready) begin
-                        burstwr_strobe <= 1'b1;
-                        burstwr_done <= 1'b1;
-                        burstwr_data <= current_write_halfword_data;
-
-                        if (write_halfword_index_reg == (write_halfwords_total - 3'd1)) begin
+                S_WRITE_WORD0_WAIT: begin
+                    if (word_wait_complete) begin
+                        if (req_split_reg) begin
+                            state <= S_WRITE_WORD1_REQ;
+                        end else begin
                             response_data <= 32'h0000_0000;
                             response_pending <= 1'b1;
                             state <= S_RESPOND;
-                        end else begin
-                            write_halfword_index_reg <= write_halfword_index_reg + 3'd1;
-                            state <= S_WRITE_WAIT_READY_LOW;
                         end
                     end
                 end
 
-                S_WRITE_WAIT_READY_LOW: begin
-                    if (!burstwr_ready) begin
-                        state <= S_WRITE_REQ;
+                S_WRITE_WORD1_REQ: begin
+                    word_wr <= 1'b1;
+                    word_addr <= req_word0_addr_reg + WORD_ADDR_WIDTH'(1);
+                    word_data <= write_word1_reg;
+                    word_busy_seen_reg <= 1'b0;
+                    word_wait_count_reg <= WORD_WAIT_FALLBACK_CYCLES;
+                    state <= S_WRITE_WORD1_WAIT;
+                end
+
+                S_WRITE_WORD1_WAIT: begin
+                    if (word_wait_complete) begin
+                        response_data <= 32'h0000_0000;
+                        response_pending <= 1'b1;
+                        state <= S_RESPOND;
                     end
                 end
 

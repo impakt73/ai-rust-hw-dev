@@ -96,19 +96,12 @@ module top #(
     output logic        video_hs,
     output logic        audio_dac,
     output logic        audio_lrclk,
-    output logic        sdram_burst_rd,
-    output logic [24:0] sdram_burst_addr,
-    output logic [10:0] sdram_burst_len,
-    output logic        sdram_burst_32bit,
-    input  wire logic [31:0] sdram_burst_data,
-    input  wire logic        sdram_burst_data_valid,
-    input  wire logic        sdram_burst_data_done,
-    output logic             sdram_burstwr,
-    output logic [24:0]      sdram_burstwr_addr,
-    input  wire logic        sdram_burstwr_ready,
-    output logic             sdram_burstwr_strobe,
-    output logic [15:0]      sdram_burstwr_data,
-    output logic             sdram_burstwr_done,
+    output logic             sdram_word_rd,
+    output logic             sdram_word_wr,
+    output logic [23:0]      sdram_word_addr,
+    output logic [31:0]      sdram_word_data,
+    input  wire logic [31:0] sdram_word_q,
+    input  wire logic        sdram_word_busy,
 
     // External CPU boot control (driven by board-specific logic; tie to 0 when unused)
     input  wire logic        ext_cpu_boot,
@@ -782,33 +775,21 @@ module top #(
                 .mem_d_rdata(sdram_mem_d_rdata),
                 .mem_d_valid(sdram_mem_d_valid),
                 .mem_d_ready(sdram_mem_d_ready),
-                .burst_rd(sdram_burst_rd),
-                .burst_addr(sdram_burst_addr),
-                .burst_len(sdram_burst_len),
-                .burst_32bit(sdram_burst_32bit),
-                .burst_data(sdram_burst_data),
-                .burst_data_valid(sdram_burst_data_valid),
-                .burst_data_done(sdram_burst_data_done),
-                .burstwr(sdram_burstwr),
-                .burstwr_addr(sdram_burstwr_addr),
-                .burstwr_ready(sdram_burstwr_ready),
-                .burstwr_strobe(sdram_burstwr_strobe),
-                .burstwr_data(sdram_burstwr_data),
-                .burstwr_done(sdram_burstwr_done)
+                .word_rd(sdram_word_rd),
+                .word_wr(sdram_word_wr),
+                .word_addr(sdram_word_addr),
+                .word_data(sdram_word_data),
+                .word_q(sdram_word_q),
+                .word_busy(sdram_word_busy)
             );
         end else begin : gen_no_sdram_peripheral
             assign sdram_mem_a_ready = 1'b1;
             assign sdram_mem_d_rdata = 32'h0000_0000;
             assign sdram_mem_d_valid = 1'b0;
-            assign sdram_burst_rd = 1'b0;
-            assign sdram_burst_addr = 25'h0;
-            assign sdram_burst_len = 11'h0;
-            assign sdram_burst_32bit = 1'b0;
-            assign sdram_burstwr = 1'b0;
-            assign sdram_burstwr_addr = 25'h0;
-            assign sdram_burstwr_strobe = 1'b0;
-            assign sdram_burstwr_data = 16'h0;
-            assign sdram_burstwr_done = 1'b0;
+            assign sdram_word_rd = 1'b0;
+            assign sdram_word_wr = 1'b0;
+            assign sdram_word_addr = 24'h0;
+            assign sdram_word_data = 32'h0000_0000;
         end
     endgenerate
 
