@@ -54,15 +54,10 @@ module sdram_peripheral_test_wrapper (
     endfunction
 
     initial begin
-        burst_rd_count = '0;
-        burstwr_strobe_count = '0;
-        read_pending = 1'b0;
-        read_addr_reg = '0;
-        read_words_remaining_reg = '0;
-        burst_data = '0;
-        burst_data_valid = 1'b0;
-        burst_data_done = 1'b0;
-
+        // This is a test-only memory model. Each Rust test constructs a fresh wrapper
+        // instance, so initializing the backing store once at elaboration time keeps the
+        // model deterministic while the synchronous reset below still owns all control
+        // state visible to the peripheral.
         for (int unsigned idx = 0; idx < HALFWORD_DEPTH; idx++) begin
             halfword_mem[idx] = 16'h0000;
         end
