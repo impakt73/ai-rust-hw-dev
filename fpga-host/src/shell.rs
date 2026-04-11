@@ -8,10 +8,16 @@ use clap::{error::ErrorKind as ClapErrorKind, Parser, Subcommand, ValueEnum};
 use device_runtime::{
     access_size_name, create_device_runtime, DeviceRuntimeType, ResetKind, SimDeviceRuntimeArgs,
 };
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 /// Default baud rate for device connections
 const DEFAULT_BAUD_RATE: u32 = 1_000_000;
+const MEMTEST_WORD_BYTES: u32 = 4;
+const MEMTEST_MISMATCH_PREVIEW_LIMIT: usize = 8;
 
 const SIM_TRACE_CALLBACK: device_runtime::SimInstructionTraceCallback =
     |trace| log::info!("SIM TRACE: {}", trace);
@@ -131,6 +137,16 @@ pub enum ShellCommand {
         size: u32,
         /// Path to the output file
         path: String,
+    },
+    /// Write then verify an address-based memory test pattern
+    #[command(name = "memtest")]
+    MemTest {
+        /// Memory address to start testing from (hex with 0x prefix or decimal)
+        #[arg(value_parser = parse_hex_or_decimal)]
+        address: u32,
+        /// Number of bytes to test (must be a non-zero multiple of 4)
+        #[arg(value_parser = parse_hex_or_decimal)]
+        size: u32,
     },
     /// Read from a memory address on the FPGA
     #[command(name = "read")]
@@ -271,6 +287,8 @@ impl ShellCommand {
                 size,
                 path,
             } => execute_dumpmem(app, address, size, &path),
+
+            ShellCommand::MemTest { address, size } => execute_memtest(app, address, size),
 
             ShellCommand::Read { address, size } => execute_read(app, address, size),
 
@@ -463,6 +481,177 @@ fn execute_dumpmem(app: &mut App, address: u32, size: u32, path: &str) -> Comman
         )),
         Err(e) => CommandResult::error(format!("Failed to write file {}: {}", path.display(), e)),
     }
+}
+
+fn validate_memtest_range(address: u32, size: u32) -> Option<String> {
+    if size == 0 {
+        return Some("Memtest size must be greater than zero.".to_string());
+    }
+
+    if let Some(err) = check_alignment(address, SizeArg::Word) {
+        return Some(err);
+    }
+
+    if !size.is_multiple_of(MEMTEST_WORD_BYTES) {
+        return Some(format!(
+            "Memtest size 0x{size:x} must be a multiple of {MEMTEST_WORD_BYTES} bytes."
+        ));
+    }
+
+    let last_offset = size.checked_sub(1)?;
+    if address.checked_add(last_offset).is_none() {
+        return Some(format!(
+            "Memtest range 0x{address:08x}..0x{address:08x}+0x{size:x} overflows 32-bit address space."
+        ));
+    }
+
+    None
+}
+
+fn generate_memtest_offset() -> u32 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+    let folded_secs = (secs ^ (secs >> 32)) as u32;
+    let mixed = folded_secs.rotate_left(13) ^ now.subsec_nanos().rotate_left(7);
+    if mixed == 0 {
+        0xA5A5_5A5A
+    } else {
+        mixed
+    }
+}
+
+fn generate_memtest_pattern(start_addr: u32, size: u32, offset: u32) -> Result<Vec<u8>, String> {
+    let byte_len = usize::try_from(size)
+        .map_err(|_| format!("Memtest size 0x{size:x} does not fit in usize."))?;
+    let word_count = size / MEMTEST_WORD_BYTES;
+    let mut pattern = Vec::with_capacity(byte_len);
+
+    for word_index in 0..word_count {
+        let byte_offset = word_index
+            .checked_mul(MEMTEST_WORD_BYTES)
+            .ok_or_else(|| format!("Memtest offset overflow for size 0x{size:x}."))?;
+        let addr = start_addr.checked_add(byte_offset).ok_or_else(|| {
+            format!(
+                "Memtest range overflow at word index {} for start address 0x{start_addr:08x}.",
+                word_index
+            )
+        })?;
+        pattern.extend_from_slice(&addr.wrapping_add(offset).to_le_bytes());
+    }
+
+    Ok(pattern)
+}
+
+fn decode_memtest_word(chunk: &[u8]) -> u32 {
+    let mut word = [0u8; MEMTEST_WORD_BYTES as usize];
+    word.copy_from_slice(chunk);
+    u32::from_le_bytes(word)
+}
+
+fn validate_memtest_data(start_addr: u32, offset: u32, actual: &[u8]) -> Result<(), String> {
+    if !actual.len().is_multiple_of(MEMTEST_WORD_BYTES as usize) {
+        return Err(format!(
+            "Memtest read-back size {} is not a multiple of {} bytes.",
+            actual.len(),
+            MEMTEST_WORD_BYTES
+        ));
+    }
+
+    let mut mismatch_count = 0usize;
+    let mut mismatch_details = Vec::new();
+
+    for (index, chunk) in actual.chunks_exact(MEMTEST_WORD_BYTES as usize).enumerate() {
+        let word_index = u32::try_from(index)
+            .map_err(|_| format!("Memtest index {} does not fit in u32.", index))?;
+        let byte_offset = word_index
+            .checked_mul(MEMTEST_WORD_BYTES)
+            .ok_or_else(|| format!("Memtest byte offset overflow at word index {}.", index))?;
+        let addr = start_addr.checked_add(byte_offset).ok_or_else(|| {
+            format!(
+                "Memtest address overflow while validating word index {} from 0x{start_addr:08x}.",
+                index
+            )
+        })?;
+        let expected = addr.wrapping_add(offset);
+        let observed = decode_memtest_word(chunk);
+
+        if observed != expected {
+            mismatch_count += 1;
+            if mismatch_details.len() < MEMTEST_MISMATCH_PREVIEW_LIMIT {
+                mismatch_details.push(format!(
+                    "0x{addr:08x}: expected 0x{expected:08x}, got 0x{observed:08x}"
+                ));
+            }
+        }
+    }
+
+    if mismatch_count == 0 {
+        Ok(())
+    } else {
+        let mut message = format!("Memtest failed with {mismatch_count} mismatched word(s).");
+        for detail in mismatch_details {
+            message.push_str("\n  ");
+            message.push_str(&detail);
+        }
+        if mismatch_count > MEMTEST_MISMATCH_PREVIEW_LIMIT {
+            message.push_str(&format!(
+                "\n  ... {} additional mismatch(es) not shown",
+                mismatch_count - MEMTEST_MISMATCH_PREVIEW_LIMIT
+            ));
+        }
+        Err(message)
+    }
+}
+
+/// Execute the memtest command
+fn execute_memtest(app: &mut App, address: u32, size: u32) -> CommandResult {
+    let runtime = match app.device_runtime.as_mut() {
+        Some(r) => r,
+        None => return CommandResult::error("Not connected. Use 'connect' first."),
+    };
+
+    if runtime.has_pending_host_request() {
+        return CommandResult::error("A host request is already pending. Wait for response.");
+    }
+
+    if let Some(err) = validate_memtest_range(address, size) {
+        return CommandResult::error(err);
+    }
+
+    let offset = generate_memtest_offset();
+    let pattern = match generate_memtest_pattern(address, size, offset) {
+        Ok(pattern) => pattern,
+        Err(err) => return CommandResult::error(err),
+    };
+
+    if let Err(e) = runtime.write_memory_region(address, &pattern, None) {
+        return CommandResult::error(format!("Memtest write pass failed: {}", e));
+    }
+
+    let read_back = match runtime.read_memory_region(address, size, None) {
+        Ok(data) => data,
+        Err(e) => return CommandResult::error(format!("Memtest read pass failed: {}", e)),
+    };
+
+    if read_back.len() != pattern.len() {
+        return CommandResult::error(format!(
+            "Memtest read pass returned {} bytes, expected {} bytes.",
+            read_back.len(),
+            pattern.len()
+        ));
+    }
+
+    if let Err(err) = validate_memtest_data(address, offset, &read_back) {
+        return CommandResult::error(err);
+    }
+
+    let end_addr = address + size - 1;
+    CommandResult::ok(format!(
+        "Memtest passed for 0x{address:08x}-0x{end_addr:08x} ({} bytes, offset 0x{offset:08x}).",
+        size
+    ))
 }
 
 /// Check address alignment for a given access size
@@ -837,6 +1026,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_memtest() {
+        let result = ShellCommand::parse("memtest 0x80000000 0x40");
+        assert!(matches!(
+            result,
+            Ok(ParseResult::Command(ShellCommand::MemTest {
+                address: 0x80000000,
+                size: 0x40
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_memtest_missing_args() {
+        assert!(ShellCommand::parse("memtest").is_err());
+        assert!(ShellCommand::parse("memtest 0x80000000").is_err());
+    }
+
+    #[test]
     fn test_parse_unknown_command() {
         assert!(ShellCommand::parse("unknown").is_err());
     }
@@ -996,6 +1203,41 @@ mod tests {
         assert!(check_data_size(0x00000000, SizeArg::Word).is_none());
         assert!(check_data_size(0xFFFFFFFF, SizeArg::Word).is_none());
         assert!(check_data_size(0xDEADBEEF, SizeArg::Word).is_none());
+    }
+
+    #[test]
+    fn test_validate_memtest_range() {
+        assert!(validate_memtest_range(0x80000000, 0x40).is_none());
+        assert!(validate_memtest_range(0x80000002, 0x40).is_some());
+        assert!(validate_memtest_range(0x80000000, 0).is_some());
+        assert!(validate_memtest_range(0x80000000, 6).is_some());
+        assert!(validate_memtest_range(0xFFFF_FFFC, 8).is_some());
+    }
+
+    #[test]
+    fn test_generate_memtest_pattern() {
+        let pattern = generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x10).unwrap();
+        assert_eq!(
+            pattern,
+            [
+                0x10, 0x00, 0x00, 0x80, //
+                0x14, 0x00, 0x00, 0x80
+            ]
+        );
+    }
+
+    #[test]
+    fn test_validate_memtest_data_accepts_expected_pattern() {
+        let data = generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x20).unwrap();
+        assert!(validate_memtest_data(0x8000_0000, 0x20, &data).is_ok());
+    }
+
+    #[test]
+    fn test_validate_memtest_data_reports_mismatch() {
+        let mut data = generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x20).unwrap();
+        data[4] ^= 0xFF;
+        let result = validate_memtest_data(0x8000_0000, 0x20, &data);
+        assert!(matches!(result, Err(ref err) if err.contains("0x80000004")));
     }
 
     #[test]
