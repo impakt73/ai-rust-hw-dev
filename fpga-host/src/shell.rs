@@ -492,7 +492,7 @@ fn validate_memtest_range(address: u32, size: u32) -> Option<String> {
         return Some(err);
     }
 
-    if size % MEMTEST_WORD_BYTES != 0 {
+    if !size.is_multiple_of(MEMTEST_WORD_BYTES) {
         return Some(format!(
             "Memtest size 0x{size:x} must be a multiple of {MEMTEST_WORD_BYTES} bytes."
         ));
@@ -515,7 +515,11 @@ fn generate_memtest_offset() -> u32 {
     let secs = now.as_secs();
     let folded_secs = (secs ^ (secs >> 32)) as u32;
     let mixed = folded_secs.rotate_left(13) ^ now.subsec_nanos().rotate_left(7);
-    if mixed == 0 { 0xA5A5_5A5A } else { mixed }
+    if mixed == 0 {
+        0xA5A5_5A5A
+    } else {
+        mixed
+    }
 }
 
 fn generate_memtest_pattern(start_addr: u32, size: u32, offset: u32) -> Result<Vec<u8>, String> {
@@ -547,7 +551,7 @@ fn decode_memtest_word(chunk: &[u8]) -> u32 {
 }
 
 fn validate_memtest_data(start_addr: u32, offset: u32, actual: &[u8]) -> Result<(), String> {
-    if actual.len() % MEMTEST_WORD_BYTES as usize != 0 {
+    if !actual.len().is_multiple_of(MEMTEST_WORD_BYTES as usize) {
         return Err(format!(
             "Memtest read-back size {} is not a multiple of {} bytes.",
             actual.len(),
@@ -1212,8 +1216,7 @@ mod tests {
 
     #[test]
     fn test_generate_memtest_pattern() {
-        let pattern =
-            generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x10).unwrap();
+        let pattern = generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x10).unwrap();
         assert_eq!(
             pattern,
             [
@@ -1231,8 +1234,7 @@ mod tests {
 
     #[test]
     fn test_validate_memtest_data_reports_mismatch() {
-        let mut data =
-            generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x20).unwrap();
+        let mut data = generate_memtest_pattern(0x8000_0000, MEMTEST_WORD_BYTES * 2, 0x20).unwrap();
         data[4] ^= 0xFF;
         let result = validate_memtest_data(0x8000_0000, 0x20, &data);
         assert!(matches!(result, Err(ref err) if err.contains("0x80000004")));
