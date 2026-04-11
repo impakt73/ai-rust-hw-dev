@@ -7,6 +7,7 @@ module cyclonev_analogue_pocket_top #(
     parameter string AUDIO_INIT_FILE = "./core/sine_table_init.hex"
 ) (
     input  wire logic       clk,
+    input  wire logic       clk_sdram,
     input  wire logic       clk_video,
     input  wire logic       audio_mclk,  // Reserved MCLK input for the Pocket audio interface
     input  wire logic       audio_sclk,
@@ -119,7 +120,7 @@ module cyclonev_analogue_pocket_top #(
         .sys_clk(clk),
         .video_clk(clk_video),
         .audio_clk(audio_sclk),
-        .sdram_clk(clk),
+        .sdram_clk(clk_sdram),
         .rst(rst),
         .usb_rx(serial_rx),
         .usb_tx(serial_tx),
