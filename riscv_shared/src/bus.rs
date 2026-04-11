@@ -243,11 +243,9 @@ pub fn is_valid_sdram_range(addr: u32, size: u32) -> bool {
         return false;
     }
 
-    let end_addr = addr.checked_add(size.saturating_sub(1));
-    if end_addr.is_none() {
+    let Some(end_addr) = addr.checked_add(size.saturating_sub(1)) else {
         return false;
-    }
-    let end_addr = end_addr.unwrap();
+    };
 
     (SDRAM_BASE..=SDRAM_END).contains(&addr) && (SDRAM_BASE..=SDRAM_END).contains(&end_addr)
 }
@@ -261,6 +259,7 @@ mod tests {
 
     #[test]
     fn sdram_range_checks_enforce_full_span() {
+        assert!(!is_valid_sdram_range(SDRAM_BASE, 0));
         assert!(is_valid_sdram_range(SDRAM_BASE, 4));
         assert!(is_valid_sdram_range(SDRAM_END, 1));
         assert!(is_valid_sdram_range(SDRAM_END - 1, 2));
