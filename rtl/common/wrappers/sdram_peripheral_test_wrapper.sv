@@ -35,20 +35,24 @@ module sdram_peripheral_test_wrapper (
     logic                         word_busy;
 
     logic [31:0]                  word_mem[0:WORD_DEPTH-1];
-    logic                         word_read_pending;
-    logic                         word_write_pending;
-    logic [WORD_ADDR_WIDTH-1:0]   word_addr_reg;
-    logic [31:0]                  word_data_reg;
-    logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_cycles_remaining;
+    logic                         pending_is_write;
+    logic [WORD_ADDR_WIDTH-1:0]   pending_word_addr;
+    logic [31:0]                  pending_word_data;
+    logic [WORD_WAIT_COUNTER_WIDTH-1:0] wait_cycles_remaining;
 
-    function automatic logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_cycles_for_addr(
-        input logic [WORD_ADDR_WIDTH-1:0] addr
+    function automatic logic [WORD_WAIT_COUNTER_WIDTH-1:0] word_wait_cycles_for_request(
+        input logic [WORD_ADDR_WIDTH-1:0] addr,
+        input logic                       is_write
     );
         begin
+            // Reads complete one cycle sooner than writes in this stub so the testbench
+            // exercises both the nominal path and longer write-side busy windows.
             if (addr == EXTENDED_BUSY_WORD_ADDR) begin
-                word_wait_cycles_for_addr = WORD_WAIT_COUNTER_WIDTH'(40);
+                word_wait_cycles_for_request = WORD_WAIT_COUNTER_WIDTH'(40);
+            end else if (is_write) begin
+                word_wait_cycles_for_request = WORD_WAIT_COUNTER_WIDTH'(2);
             end else begin
-                word_wait_cycles_for_addr = WORD_WAIT_COUNTER_WIDTH'(2);
+                word_wait_cycles_for_request = WORD_WAIT_COUNTER_WIDTH'(1);
             end
         end
     endfunction
@@ -101,50 +105,41 @@ module sdram_peripheral_test_wrapper (
 
     always_ff @(posedge sdram_clk) begin
         if (rst) begin
-            word_read_pending <= 1'b0;
-            word_write_pending <= 1'b0;
-            word_addr_reg <= '0;
-            word_data_reg <= '0;
-            word_wait_cycles_remaining <= '0;
             word_busy <= 1'b0;
+            word_q <= '0;
+            pending_is_write <= 1'b0;
+            pending_word_addr <= '0;
+            pending_word_data <= '0;
+            wait_cycles_remaining <= '0;
             word_rd_count <= '0;
             word_wr_count <= '0;
             word_wait_cycle_count <= '0;
         end else begin
-            if (word_read_pending || word_write_pending) begin
-                word_busy <= 1'b1;
-
-                if (word_wait_cycles_remaining != '0) begin
-                    word_wait_cycles_remaining <= word_wait_cycles_remaining - 1'b1;
+            if (word_busy) begin
+                if (wait_cycles_remaining != '0) begin
+                    wait_cycles_remaining <= wait_cycles_remaining - 1'b1;
                     word_wait_cycle_count <= word_wait_cycle_count + 1'b1;
                 end else begin
-                    if (word_read_pending) begin
-                        word_q <= read_word(word_addr_reg);
-                        word_read_pending <= 1'b0;
-                    end else if (word_write_pending) begin
-                        if (word_addr_reg < WORD_DEPTH_LIMIT) begin
-                            word_mem[int'(word_addr_reg)] <= word_data_reg;
+                    if (pending_is_write) begin
+                        if (pending_word_addr < WORD_DEPTH_LIMIT) begin
+                            word_mem[int'(pending_word_addr)] <= pending_word_data;
                         end
-                        word_write_pending <= 1'b0;
+                    end else begin
+                        word_q <= read_word(pending_word_addr);
                     end
-
                     word_busy <= 1'b0;
                 end
-            end else begin
-                word_busy <= 1'b0;
+            end else if (word_rd || word_wr) begin
+                pending_is_write <= word_wr;
+                pending_word_addr <= word_addr;
+                pending_word_data <= word_data;
+                wait_cycles_remaining <= word_wait_cycles_for_request(word_addr, word_wr);
+                word_busy <= 1'b1;
 
                 if (word_rd) begin
-                    word_read_pending <= 1'b1;
-                    word_addr_reg <= word_addr;
-                    word_wait_cycles_remaining <= word_wait_cycles_for_addr(word_addr);
                     word_rd_count <= word_rd_count + 1'b1;
                 end
-
                 if (word_wr) begin
-                    word_write_pending <= 1'b1;
-                    word_addr_reg <= word_addr;
-                    word_data_reg <= word_data;
-                    word_wait_cycles_remaining <= word_wait_cycles_for_addr(word_addr);
                     word_wr_count <= word_wr_count + 1'b1;
                 end
             end

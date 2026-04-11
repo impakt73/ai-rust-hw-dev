@@ -417,10 +417,11 @@ end
     wire            audgen_dac;
 
 // SDRAM interface driven by the dedicated 133 MHz PLL outputs.
-io_sdram sdram_inst (
+pocket_sdram #(
+    .CLK_FREQ_HZ     ( 133_000_000 )
+) sdram_inst (
     .controller_clk  ( clk_core_133 ),
     .chip_clk        ( clk_core_133_45deg ),
-    .clk_90          ( clk_core_133_270deg ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_clk         ( dram_clk ),
@@ -431,19 +432,6 @@ io_sdram sdram_inst (
     .phy_a           ( dram_a ),
     .phy_dq          ( dram_dq ),
     .phy_dqm         ( dram_dqm ),
-    .burst_rd        ( 1'b0 ),
-    .burst_addr      ( 25'h0 ),
-    .burst_len       ( 11'h0 ),
-    .burst_32bit     ( 1'b0 ),
-    .burst_data      ( ),
-    .burst_data_valid( ),
-    .burst_data_done ( ),
-    .burstwr         ( 1'b0 ),
-    .burstwr_addr    ( 25'h0 ),
-    .burstwr_ready   ( ),
-    .burstwr_strobe  ( 1'b0 ),
-    .burstwr_data    ( 16'h0 ),
-    .burstwr_done    ( 1'b0 ),
     .word_rd         ( repo_sdram_word_rd ),
     .word_wr         ( repo_sdram_word_wr ),
     .word_addr       ( repo_sdram_word_addr ),

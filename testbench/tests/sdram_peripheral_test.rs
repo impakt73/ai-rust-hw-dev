@@ -207,7 +207,7 @@ fn test_sdram_peripheral_split_halfword_write_updates_both_words() {
 }
 
 #[test]
-fn test_sdram_peripheral_out_of_range_requests_return_zero_without_bursts() {
+fn test_sdram_peripheral_out_of_range_requests_return_zero_without_word_ops() {
     let runtime =
         create_sdram_peripheral_runtime().expect("Failed to create SDRAM peripheral runtime");
     let mut dut = runtime
@@ -322,7 +322,7 @@ fn test_sdram_peripheral_word_busy_backpressure_completes() {
 }
 
 #[test]
-fn test_sdram_peripheral_waits_for_busy_to_drop_even_past_fallback_window() {
+fn test_sdram_peripheral_handles_extended_busy_window() {
     let runtime =
         create_sdram_peripheral_runtime().expect("Failed to create SDRAM peripheral runtime");
     let mut dut = runtime
@@ -343,7 +343,7 @@ fn test_sdram_peripheral_waits_for_busy_to_drop_even_past_fallback_window() {
     );
     assert!(
         dut.word_wait_cycle_count - wait_cycles_before >= 40,
-        "the peripheral must wait for busy to drop instead of timing out early"
+        "the peripheral must wait for the long busy window to finish"
     );
     assert_eq!(
         read_access(&mut dut, SDRAM_EXTENDED_BUSY_ADDR),
