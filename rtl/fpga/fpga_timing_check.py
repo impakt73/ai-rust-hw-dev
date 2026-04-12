@@ -46,7 +46,7 @@ def unique_existing_paths(build_dir: Path, patterns: list[str]) -> list[Path]:
     for pattern in patterns:
         for candidate in sorted(build_dir.glob(pattern)):
             resolved = candidate.resolve()
-            if not candidate.is_file() or resolved in seen:
+            if not resolved.is_file() or resolved in seen:
                 continue
             seen.add(resolved)
             paths.append(candidate)

@@ -300,7 +300,7 @@ else ifeq ($(TARGET),gowin_tang_primer_25k)
 timing: $(BIN)
 	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
 else
-timing: $(BIN)
+timing: $(PNR_OUT)
 	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
 endif
 
