@@ -89,18 +89,19 @@ def check_ecp5_icepi_zero(build_dir: Path) -> str:
     pattern = re.compile(
         r"Max frequency for clock\s+'([^']+)':\s+([0-9.]+)\s+MHz\s+\((PASS|FAIL)\s+at\s+([0-9.]+)\s+MHz\)"
     )
-    results: List[Ecp5TimingResult] = []
+    latest_by_clock_name = {}
     for path in candidates:
         for match in pattern.finditer(load_text(path)):
-            results.append(
-                Ecp5TimingResult(
-                    path=path,
-                    clock_name=match.group(1),
-                    max_frequency_mhz=float(match.group(2)),
-                    status=match.group(3),
-                    target_frequency_mhz=float(match.group(4)),
-                )
+            result = Ecp5TimingResult(
+                path=path,
+                clock_name=match.group(1),
+                max_frequency_mhz=float(match.group(2)),
+                status=match.group(3),
+                target_frequency_mhz=float(match.group(4)),
             )
+            latest_by_clock_name[result.clock_name] = result
+
+    results = list(latest_by_clock_name.values())
 
     if not results:
         fail(f"Unable to parse nextpnr timing status from {', '.join(str(path) for path in candidates)}")
