@@ -187,7 +187,18 @@ RISCV_OBJCOPY ?= riscv64-elf-objcopy
 PYTHON3 = python3
 UNZIP ?= unzip
 STATS_SCRIPT = ./fpga_design_stats.py
+TIMING_CHECK_SCRIPT = ./fpga_timing_check.py
 STATS_FORMAT ?= text
+
+define RUN_TIMING_CHECK
+	+@$(MAKE) check-python && \
+	$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+endef
+
+define ENFORCE_TIMING
+	$(RUN_TIMING_CHECK) || \
+		(rm -f "$(1)"; exit 1)
+endef
 
 ifneq ($(TARGET),artix7_alchitry_au)
 HAS_NEXTPNR := $(shell command -v $(NEXTPNR) >/dev/null 2>&1 && echo 1 || echo 0)
@@ -223,6 +234,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		-source $(abspath $(VIVADO_TCL)) -tclargs \
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+	$(call ENFORCE_TIMING,$(BIN))
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 $(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
 	@$(CARGO) build --quiet --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
@@ -241,6 +253,7 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+	$(call ENFORCE_TIMING,$(BIN))
 
 $(POCKET_PACKAGE_STAMP): $(BIN) $(POCKET_PACKAGE_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(POCKET_PACKAGE_CMD)
@@ -251,6 +264,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DI
 		"$(abspath $(BUILD_DIR))" "$(PROJECT)" "$(TOP_MODULE)" "$(PART)" "$(DEVICE_VERSION)" \
 		"$(abspath $(CONSTRAINT))" "$(abspath $(SDC_CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
+	$(call ENFORCE_TIMING,$(BIN))
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
@@ -273,6 +287,7 @@ $(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
 			report_arg=""; \
 		fi; \
 		$(PNR_CMD) $${sdc_arg} $${report_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
+	$(call ENFORCE_TIMING,$(PNR_OUT))
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)
@@ -283,37 +298,16 @@ endif
 .PHONY: timing
 ifeq ($(TARGET),artix7_alchitry_au)
 timing: $(BIN)
-	@if test -f $(TIMING); then \
-		echo "Timing report written to $(TIMING)"; \
-	elif test -f $(TIMING_SUMMARY); then \
-		echo "Timing summary available at $(TIMING_SUMMARY)"; \
-	else \
-		echo "ERROR: Expected timing report at $(TIMING) or summary at $(TIMING_SUMMARY)"; \
-		exit 1; \
-	fi
+	$(RUN_TIMING_CHECK)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 timing: $(BIN)
-	@if test -f $(TIMING); then \
-		echo "Timing report written to $(TIMING)"; \
-	else \
-		echo "Timing details remain in $(BUILD_DIR)/output_files/"; \
-	fi
+	$(RUN_TIMING_CHECK)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 timing: $(BIN)
-	@if test -f $(TIMING); then \
-		echo "Timing report written to $(TIMING)"; \
-	elif test -f $(TIMING_SUMMARY); then \
-		echo "Timing summary available at $(TIMING_SUMMARY)"; \
-	else \
-		echo "Timing details remain in $(BUILD_DIR)/project/"; \
-	fi
+	$(RUN_TIMING_CHECK)
 else
 timing: $(PNR_OUT)
-	@if test -f $(TIMING); then \
-		echo "Timing report written to $(TIMING)"; \
-	else \
-		echo "Timing details available in $(BUILD_DIR)/nextpnr.log"; \
-	fi
+	$(RUN_TIMING_CHECK)
 endif
 
 # Resource utilization report
@@ -345,7 +339,7 @@ endif
 .PHONY: check-python
 check-python:
 	@$(PYTHON3) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
-		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA stats generation"; exit 1)
+		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA helper scripts"; exit 1)
 
 .PHONY: stats
 stats: check-python
