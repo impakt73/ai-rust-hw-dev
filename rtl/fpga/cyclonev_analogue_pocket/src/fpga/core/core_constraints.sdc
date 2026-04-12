@@ -8,7 +8,8 @@ derive_pll_clocks
 
 set dram_cont_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk"
 set dram_cont_clk [get_clocks $dram_cont_clk_name]
-set dram_chip_pll_source_clk "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk"
+set dram_chip_pll_source_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk"
+set dram_chip_pll_source_clk [get_clocks $dram_chip_pll_source_clk_name]
 # The SDRAM pin clock now comes from the DDIO clock forwarder, so constrain the
 # external interface against the forwarded dram_clk port rather than the raw PLL
 # leg feeding the DDIO primitive.
