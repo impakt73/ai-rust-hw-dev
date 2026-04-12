@@ -618,7 +618,6 @@ mf_pllbase mp1 (
 
     wire    clk_core_133;
     wire    clk_core_133_45deg;
-    wire    clk_core_133_270deg;
 
     wire    pll2_core_locked;
     wire    pll2_core_locked_s;
@@ -630,7 +629,6 @@ mf_pllbase2 mp2 (
 
     .outclk_0       ( clk_core_133 ),
     .outclk_1       ( clk_core_133_45deg ),
-    .outclk_2       ( clk_core_133_270deg ),
 
     .locked         ( pll2_core_locked )
 );
