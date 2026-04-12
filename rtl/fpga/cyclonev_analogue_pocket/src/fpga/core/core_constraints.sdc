@@ -4,6 +4,22 @@
 # put your clock groups in here as well as any net assignments
 #
 
+derive_pll_clocks
+
+set dram_cont_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk"
+set dram_cont_clk [get_clocks $dram_cont_clk_name]
+set dram_chip_pll_source_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk"
+set dram_chip_pll_source_clk [get_clocks $dram_chip_pll_source_clk_name]
+# The SDRAM pin clock now comes from the DDIO clock forwarder, so constrain the
+# external interface against the forwarded dram_clk port rather than the raw PLL
+# leg feeding the DDIO primitive.
+create_generated_clock -name dram_chip_clk \
+ -source [get_pins {ic|sdram_clk_forward_inst|outclock}] \
+ -master_clock $dram_chip_pll_source_clk \
+ -divide_by 1 \
+ [get_ports {dram_clk}]
+set dram_chip_clk [get_clocks {dram_chip_clk}]
+
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
@@ -12,10 +28,7 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk } \
- -group { ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk }
-
-set dram_cont_clk "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk"
-set dram_chip_clk "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk"
+ -group { ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk dram_chip_clk }
 
 # The OpenFPGA basicassets example constrains a different PLL clock pair
 # (mp1 general[2]/[3]). Pocket SDRAM is wired to the dedicated 133 MHz mp2
