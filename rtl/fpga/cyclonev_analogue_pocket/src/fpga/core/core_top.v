@@ -421,6 +421,9 @@ pocket_sdram #(
     .CLK_FREQ_HZ     ( 133_000_000 )
 ) sdram_inst (
     .controller_clk  ( clk_core_133 ),
+    // AS4C32M16MSA-6BIN write timing centers closer to +4.11 ns / +197 deg
+    // from clk_core_133 before board-skew adjustment, so the current -45 deg
+    // chip clock is not the centered phase for the SDRAM capture window.
     .chip_clk        ( clk_core_133_45deg ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
