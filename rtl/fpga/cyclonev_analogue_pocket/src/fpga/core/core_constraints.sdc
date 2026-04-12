@@ -27,5 +27,8 @@ set_output_delay -clock $dram_chip_clk -reference_pin [get_ports {dram_clk}] -ma
 set_output_delay -clock $dram_chip_clk -reference_pin [get_ports {dram_clk}] -min -0.8 \
     [get_ports {dram_cke dram_a* dram_ba* dram_cas_n dram_ras_n dram_we_n dram_dqm[*] dram_dq[*]}]
 
+# The controller and chip clocks come from the same PLL, but the SDRAM chip clock
+# is phase-shifted late enough that read data is captured against the following
+# controller edge rather than the immediately preceding one.
 set_multicycle_path -from $dram_chip_clk -to $dram_cont_clk -setup -end 2
 set_multicycle_path -from $dram_chip_clk -to $dram_cont_clk -hold -end 1
