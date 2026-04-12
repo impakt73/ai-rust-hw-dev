@@ -4,11 +4,19 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import List, NamedTuple, Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+MIN_PYTHON = (3, 10)
 WNS_SEARCH_WINDOW = 8
+
+if sys.version_info < MIN_PYTHON:
+    version = ".".join(str(part) for part in MIN_PYTHON)
+    sys.stderr.write(
+        f"ERROR: fpga_timing_check.py requires Python {version} or higher.\n"
+    )
+    raise SystemExit(1)
 
 
 class Ecp5TimingResult(NamedTuple):
@@ -50,9 +58,9 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def unique_existing_paths(build_dir: Path, patterns: list[str]) -> list[Path]:
-    paths: list[Path] = []
-    seen: set[Path] = set()
+def unique_existing_paths(build_dir: Path, patterns: List[str]) -> List[Path]:
+    paths: List[Path] = []
+    seen = set()
     for pattern in patterns:
         for candidate in sorted(build_dir.glob(pattern)):
             resolved = candidate.resolve()
@@ -63,7 +71,7 @@ def unique_existing_paths(build_dir: Path, patterns: list[str]) -> list[Path]:
     return paths
 
 
-def first_matching_float(text: str, patterns: list[str]) -> float | None:
+def first_matching_float(text: str, patterns: List[str]) -> Optional[float]:
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match is not None:
@@ -81,7 +89,7 @@ def check_ecp5_icepi_zero(build_dir: Path) -> str:
     pattern = re.compile(
         r"Max frequency for clock\s+'([^']+)':\s+([0-9.]+)\s+MHz\s+\((PASS|FAIL)\s+at\s+([0-9.]+)\s+MHz\)"
     )
-    results: list[Ecp5TimingResult] = []
+    results: List[Ecp5TimingResult] = []
     for path in candidates:
         for match in pattern.finditer(load_text(path)):
             results.append(
@@ -114,7 +122,7 @@ def check_ecp5_icepi_zero(build_dir: Path) -> str:
     )
 
 
-def parse_vivado_wns(text: str) -> float | None:
+def parse_vivado_wns(text: str) -> Optional[float]:
     lines = text.splitlines()
     for index, line in enumerate(lines):
         if "WNS(ns)" not in line:
@@ -159,10 +167,10 @@ def evaluate_report(
     tool_name: str,
     path: Path,
     text: str,
-    pass_patterns: list[str],
-    fail_patterns: list[str],
-    slack_patterns: list[str],
-) -> str | None:
+    pass_patterns: List[str],
+    fail_patterns: List[str],
+    slack_patterns: List[str],
+) -> Optional[str]:
     for pattern in fail_patterns:
         if re.search(pattern, text, flags=re.IGNORECASE):
             fail(f"Timing failed in {path} ({tool_name} reported an explicit violation)")

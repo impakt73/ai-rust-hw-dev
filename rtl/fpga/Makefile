@@ -190,8 +190,13 @@ STATS_SCRIPT = ./fpga_design_stats.py
 TIMING_CHECK_SCRIPT = ./fpga_timing_check.py
 STATS_FORMAT ?= text
 
+define RUN_TIMING_CHECK
+	@$(MAKE) check-python >/dev/null && \
+	$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+endef
+
 define ENFORCE_TIMING
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
+	$(RUN_TIMING_CHECK) || \
 		(rm -f "$(1)"; exit 1)
 endef
 
@@ -293,16 +298,16 @@ endif
 .PHONY: timing
 ifeq ($(TARGET),artix7_alchitry_au)
 timing: $(BIN)
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+	$(RUN_TIMING_CHECK)
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 timing: $(BIN)
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+	$(RUN_TIMING_CHECK)
 else ifeq ($(TARGET),gowin_tang_primer_25k)
 timing: $(BIN)
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+	$(RUN_TIMING_CHECK)
 else
 timing: $(PNR_OUT)
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
+	$(RUN_TIMING_CHECK)
 endif
 
 # Resource utilization report
@@ -334,7 +339,7 @@ endif
 .PHONY: check-python
 check-python:
 	@$(PYTHON3) -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
-		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA stats generation"; exit 1)
+		|| (echo "ERROR: $(PYTHON3) 3.10+ is required for FPGA helper scripts"; exit 1)
 
 .PHONY: stats
 stats: check-python
