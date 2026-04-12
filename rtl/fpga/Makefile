@@ -190,6 +190,11 @@ STATS_SCRIPT = ./fpga_design_stats.py
 TIMING_CHECK_SCRIPT = ./fpga_timing_check.py
 STATS_FORMAT ?= text
 
+define ENFORCE_TIMING
+	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
+		(rm -f "$(1)"; exit 1)
+endef
+
 ifneq ($(TARGET),artix7_alchitry_au)
 HAS_NEXTPNR := $(shell command -v $(NEXTPNR) >/dev/null 2>&1 && echo 1 || echo 0)
 ifeq ($(HAS_NEXTPNR),1)
@@ -224,8 +229,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(VIVADO_TCL) | $(BUILD_DIR)
 		-source $(abspath $(VIVADO_TCL)) -tclargs \
 		"$(abspath $(BUILD_DIR))" "$(TOP_MODULE)" "$(PART)" "$(abspath $(CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
-		(rm -f "$(BIN)"; exit 1)
+	$(call ENFORCE_TIMING,$(BIN))
 else ifeq ($(TARGET),cyclonev_analogue_pocket)
 $(POCKET_TEST_PROGRAM_ASSET): FORCE | $(BUILD_DIR)
 	@$(CARGO) build --quiet --release --manifest-path "$(POCKET_TEST_PROGRAM_DIR)/Cargo.toml" \
@@ -244,8 +248,7 @@ $(BIN): $(ALL_SOURCES) $(POCKET_PROJECT_FILES) | $(BUILD_DIR)
 	$(QUARTUS_SH) -t $(abspath $(QUARTUS_TCL)) \
 		"$(abspath $(BUILD_DIR))" "$(abspath $(POCKET_QSF))" "$(TOP_MODULE)" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
-		(rm -f "$(BIN)"; exit 1)
+	$(call ENFORCE_TIMING,$(BIN))
 
 $(POCKET_PACKAGE_STAMP): $(BIN) $(POCKET_PACKAGE_FILES) $(POCKET_TEST_PROGRAM_ASSET) | $(BUILD_DIR)
 	$(POCKET_PACKAGE_CMD)
@@ -256,8 +259,7 @@ $(BIN): $(ALL_SOURCES) $(CONSTRAINT) $(SDC_CONSTRAINT) $(GOWIN_TCL) | $(BUILD_DI
 		"$(abspath $(BUILD_DIR))" "$(PROJECT)" "$(TOP_MODULE)" "$(PART)" "$(DEVICE_VERSION)" \
 		"$(abspath $(CONSTRAINT))" "$(abspath $(SDC_CONSTRAINT))" \
 		$(foreach src,$(ALL_SOURCES),"$(abspath $(src))")
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
-		(rm -f "$(BIN)"; exit 1)
+	$(call ENFORCE_TIMING,$(BIN))
 else
 $(NETLIST): $(ALL_SOURCES) | $(BUILD_DIR)
 	bash -e -o pipefail -c '$(YOSYS) -p "read_verilog -sv $(ALL_SOURCES); $(SYNTH_CMD)" 2>&1 | tee $(BUILD_DIR)/yosys.log'
@@ -280,8 +282,7 @@ $(PNR_OUT): $(NETLIST) $(CONSTRAINT) $(SDC_CONSTRAINT)
 			report_arg=""; \
 		fi; \
 		$(PNR_CMD) $${sdc_arg} $${report_arg} 2>&1 | tee $(BUILD_DIR)/nextpnr.log'
-	@$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)" || \
-		(rm -f "$(PNR_OUT)"; exit 1)
+	$(call ENFORCE_TIMING,$(PNR_OUT))
 
 # Generate bitstream
 $(BIN): $(PNR_OUT)

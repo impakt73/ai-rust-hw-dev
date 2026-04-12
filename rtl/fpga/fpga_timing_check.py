@@ -4,9 +4,19 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+WNS_SEARCH_WINDOW = 8
+
+
+class Ecp5TimingResult(NamedTuple):
+    path: Path
+    clock_name: str
+    max_frequency_mhz: float
+    status: str
+    target_frequency_mhz: float
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +59,7 @@ def unique_existing_paths(build_dir: Path, patterns: list[str]) -> list[Path]:
             if not resolved.is_file() or resolved in seen:
                 continue
             seen.add(resolved)
-            paths.append(candidate)
+            paths.append(resolved)
     return paths
 
 
@@ -71,35 +81,36 @@ def check_ecp5_icepi_zero(build_dir: Path) -> str:
     pattern = re.compile(
         r"Max frequency for clock\s+'([^']+)':\s+([0-9.]+)\s+MHz\s+\((PASS|FAIL)\s+at\s+([0-9.]+)\s+MHz\)"
     )
-    results: list[tuple[Path, str, float, str, float]] = []
+    results: list[Ecp5TimingResult] = []
     for path in candidates:
         for match in pattern.finditer(load_text(path)):
             results.append(
-                (
-                    path,
-                    match.group(1),
-                    float(match.group(2)),
-                    match.group(3),
-                    float(match.group(4)),
+                Ecp5TimingResult(
+                    path=path,
+                    clock_name=match.group(1),
+                    max_frequency_mhz=float(match.group(2)),
+                    status=match.group(3),
+                    target_frequency_mhz=float(match.group(4)),
                 )
             )
 
     if not results:
         fail(f"Unable to parse nextpnr timing status from {', '.join(str(path) for path in candidates)}")
 
-    failing = [result for result in results if result[3] == "FAIL"]
+    failing = [result for result in results if result.status == "FAIL"]
     if failing:
-        path, clock_name, max_frequency_mhz, _, target_frequency_mhz = failing[0]
         fail(
-            f"Timing failed for {clock_name} in {path}: "
-            f"{max_frequency_mhz:.2f} MHz < target {target_frequency_mhz:.2f} MHz"
+            f"Timing failed for {failing[0].clock_name} in {failing[0].path}: "
+            f"{failing[0].max_frequency_mhz:.2f} MHz < target {failing[0].target_frequency_mhz:.2f} MHz"
         )
 
-    slowest = min(results, key=lambda result: result[2] - result[4])
-    path, clock_name, max_frequency_mhz, _, target_frequency_mhz = slowest
+    slowest = min(
+        results,
+        key=lambda result: result.max_frequency_mhz - result.target_frequency_mhz,
+    )
     return (
-        f"Timing PASS for {clock_name} in {path}: "
-        f"{max_frequency_mhz:.2f} MHz >= target {target_frequency_mhz:.2f} MHz"
+        f"Timing PASS for {slowest.clock_name} in {slowest.path}: "
+        f"{slowest.max_frequency_mhz:.2f} MHz >= target {slowest.target_frequency_mhz:.2f} MHz"
     )
 
 
@@ -108,7 +119,7 @@ def parse_vivado_wns(text: str) -> float | None:
     for index, line in enumerate(lines):
         if "WNS(ns)" not in line:
             continue
-        for candidate in lines[index + 1 : index + 8]:
+        for candidate in lines[index + 1 : index + 1 + WNS_SEARCH_WINDOW]:
             if set(candidate.strip()) <= {"-", " "}:
                 continue
             numbers = re.findall(r"-?\d+(?:\.\d+)?", candidate)
