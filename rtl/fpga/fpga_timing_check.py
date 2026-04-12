@@ -4,7 +4,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, NamedTuple, Optional
+from typing import List, NamedTuple, Optional, Set
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -60,7 +60,7 @@ def load_text(path: Path) -> str:
 
 def unique_existing_paths(build_dir: Path, patterns: List[str]) -> List[Path]:
     paths: List[Path] = []
-    seen = set()
+    seen: Set[Path] = set()
     for pattern in patterns:
         for candidate in sorted(build_dir.glob(pattern)):
             resolved = candidate.resolve()
