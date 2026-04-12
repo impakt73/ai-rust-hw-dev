@@ -5,11 +5,9 @@ module pocket_sdram #(
     parameter int unsigned INIT_DELAY_US = 200
 ) (
     input  wire logic        controller_clk,
-    input  wire logic        chip_clk,
     input  wire logic        reset_n,
 
     output logic             phy_cke,
-    output wire logic        phy_clk,
     output wire logic        phy_cas,
     output wire logic        phy_ras,
     output wire logic        phy_we,
@@ -141,7 +139,6 @@ module pocket_sdram #(
 
     assign {phy_ras, phy_cas, phy_we} = cmd;
     assign phy_dq = phy_dq_oe ? phy_dq_out : 16'hZZZZ;
-    assign phy_clk = chip_clk;
 
     always_comb begin
         req_bank = req_word_addr[23:22];

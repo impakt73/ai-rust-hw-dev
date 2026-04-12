@@ -421,13 +421,8 @@ pocket_sdram #(
     .CLK_FREQ_HZ     ( 133_000_000 )
 ) sdram_inst (
     .controller_clk  ( clk_core_133 ),
-    // AS4C32M16MSA-6BIN write timing centers closer to +4.11 ns / +197 deg
-    // from clk_core_133 before board-skew adjustment, so the current -45 deg
-    // chip clock is not the centered phase for the SDRAM capture window.
-    .chip_clk        ( clk_core_133_45deg ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
-    .phy_clk         ( dram_clk ),
     .phy_cas         ( dram_cas_n ),
     .phy_ras         ( dram_ras_n ),
     .phy_we          ( dram_we_n ),
@@ -441,6 +436,23 @@ pocket_sdram #(
     .word_data       ( repo_sdram_word_data ),
     .word_q          ( repo_sdram_word_q ),
     .word_busy       ( repo_sdram_word_busy )
+);
+
+// Forward the phase-shifted SDRAM PLL clock through DDIO to improve the
+// external dram_clk duty cycle and pad timing robustness.
+altddio_out #(
+    .width              ( 1 ),
+    .power_up_high      ( "OFF" ),
+    .extend_oe_disable  ( "OFF" )
+) sdram_clk_forward_inst (
+    .datain_h           ( 1'b1 ),
+    .datain_l           ( 1'b0 ),
+    .outclock           ( clk_core_133_45deg ),
+    .outclocken         ( 1'b1 ),
+    .aclr               ( 1'b0 ),
+    .aset               ( 1'b0 ),
+    .oe                 ( 1'b1 ),
+    .dataout            ( dram_clk )
 );
 
 cyclonev_analogue_pocket_top repo_top_inst (
