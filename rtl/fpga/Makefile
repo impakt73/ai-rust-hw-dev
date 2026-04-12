@@ -191,7 +191,7 @@ TIMING_CHECK_SCRIPT = ./fpga_timing_check.py
 STATS_FORMAT ?= text
 
 define RUN_TIMING_CHECK
-	@$(MAKE) check-python && \
+	+@$(MAKE) check-python && \
 	$(PYTHON3) $(TIMING_CHECK_SCRIPT) --target $(TARGET) --build-dir "$(BUILD_DIR)"
 endef
 

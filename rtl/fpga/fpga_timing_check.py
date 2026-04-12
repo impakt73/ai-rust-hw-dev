@@ -287,8 +287,10 @@ def main() -> None:
         message = check_artix7_alchitry_au(build_dir)
     elif args.target == "cyclonev_analogue_pocket":
         message = check_cyclonev_analogue_pocket(build_dir)
-    else:
+    elif args.target == "gowin_tang_primer_25k":
         message = check_gowin_tang_primer_25k(build_dir)
+    else:
+        raise AssertionError(f"Unhandled target: {args.target}")
 
     sys.stdout.write(message + "\n")
 
