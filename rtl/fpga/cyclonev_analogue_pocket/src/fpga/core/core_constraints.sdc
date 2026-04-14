@@ -10,6 +10,8 @@ set dram_cont_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL
 set dram_cont_clk [get_clocks $dram_cont_clk_name]
 set dram_chip_pll_source_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk"
 set dram_chip_pll_source_clk [get_clocks $dram_chip_pll_source_clk_name]
+set dram_samp_clk_name "ic|mp2|mf_pllbase2_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk"
+set dram_samp_clk [get_clocks $dram_samp_clk_name]
 # The SDRAM pin clock now comes from the DDIO clock forwarder, so constrain the
 # external interface against the forwarded dram_clk port rather than the raw PLL
 # leg feeding the DDIO primitive.
@@ -19,6 +21,7 @@ create_generated_clock -name dram_chip_clk \
  -divide_by 1 \
  [get_ports {dram_clk}]
 set dram_chip_clk [get_clocks {dram_chip_clk}]
+set sdram_clock_group [get_clocks [list $dram_cont_clk_name $dram_chip_pll_source_clk_name $dram_samp_clk_name dram_chip_clk]]
 
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
@@ -27,8 +30,7 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk } \
- -group { ic|mp2|mf_pllbase2_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk } \
- -group { ic|mp2|mf_pllbase2_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk dram_chip_clk }
+ -group $sdram_clock_group
 
 # The OpenFPGA basicassets example constrains a different PLL clock pair
 # (mp1 general[2]/[3]). Pocket SDRAM is wired to the dedicated 133 MHz mp2
@@ -51,8 +53,6 @@ set_output_delay -clock $dram_chip_clk -reference_pin [get_ports {dram_clk}] -ma
 set_output_delay -clock $dram_chip_clk -reference_pin [get_ports {dram_clk}] -min -1.0 \
     [get_ports {dram_cke dram_a* dram_ba* dram_cas_n dram_ras_n dram_we_n dram_dqm[*] dram_dq[*]}]
 
-# The controller and chip clocks come from the same PLL, but the SDRAM chip clock
-# is phase-shifted late enough that read data is captured against the following
-# controller edge rather than the immediately preceding one.
-set_multicycle_path -from $dram_chip_clk -to $dram_cont_clk -setup -end 2
-set_multicycle_path -from $dram_chip_clk -to $dram_cont_clk -hold -end 1
+# The SDRAM controller, forwarded chip clock, and sample clock now remain in the
+# same synchronous clock family so TimeQuest can analyze the quarter-cycle launch
+# and capture paths directly.
