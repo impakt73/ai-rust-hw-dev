@@ -961,6 +961,39 @@ fn test_cpu_fp_exception_flags_accumulate_through_csr_file() {
 }
 
 #[test]
+fn test_cpu_fp_to_int_exception_flags_accumulate_through_csr_file() {
+    let mut runtime = create_test_runtime();
+    let data_base = DRAM_BASE + 0x240;
+    let result_addr = DRAM_BASE + 0x44;
+
+    write_word_with_timeout(runtime.as_mut(), data_base, 0x7FC0_0000, SHORT_TIMEOUT);
+
+    let mut instructions = vec![
+        lui(8, DRAM_BASE),
+        csrrw(0, 0, 0x003), // Clear FCSR to ensure a clean initial flag state
+        flw(1, 8, 0x240),
+        fcvt_w_s(4, 1),
+        csrrs(5, 0, 0x001),
+        sw(8, 5, 0x44),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), result_addr, SHORT_TIMEOUT),
+        0b10000 // NV (invalid operation) flag from NaN-to-int conversion
+    );
+}
+
+#[test]
 fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
     let mut runtime = create_test_runtime();
     const RESULT_BASE_OFFSET: i32 = 0x100;

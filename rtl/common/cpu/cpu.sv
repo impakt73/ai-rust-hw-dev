@@ -1145,7 +1145,7 @@ module cpu #(
         .trap_mtval_in(csr_trap_mtval),
         .trap_return(csr_trap_return),
         .fp_fflags_in(fpu_fflags),
-        .fp_fflags_we(current_state == S_WRITEBACK && fp_reg_write_reg),
+        .fp_fflags_we(current_state == S_WRITEBACK && (fp_reg_write_reg || fp_to_int_reg)),
         .csr_rdata(csr_rdata),
         .csr_mtvec_out(csr_mtvec),
         .csr_mepc_out(csr_mepc),

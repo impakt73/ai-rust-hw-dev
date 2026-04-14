@@ -32,7 +32,7 @@ module system_controller #(
     output logic        cpu_rst,       // CPU reset output (active high)
     output logic [31:0] cpu_boot_addr, // Boot address output to CPU
     output logic        cpu_boot,      // Boot signal output to CPU
-    output logic        req_cpu_halt,  // Pulse to request CPU halt
+    output logic        req_cpu_halt,  // Sticky halt request held until cpu_halted acknowledges it
     output logic [31:0] halted_value,  // Latched halt value register
     output logic [7:0]  led_out,       // User LED output register
     
@@ -62,7 +62,7 @@ module system_controller #(
     // ========================================================================
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
-    logic        halt_request_pending;
+    logic        halt_request_pending;      // Sticky halt request state until CPU acknowledges halt
     logic [7:0]  led_out_reg;            // Stored LED output
     logic        sys_reset_pending;      // Delayed system reset pulse
     logic [31:0] response_data;
@@ -214,7 +214,7 @@ module system_controller #(
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
-            req_cpu_halt  <= halt_request_pending;
+            req_cpu_halt  <= halt_request_pending;  // Keep asserting the request until cpu_halted is observed
             sys_reset_pending <= 1'b0;
             if (cpu_halted)
                 halt_request_pending <= 1'b0;
