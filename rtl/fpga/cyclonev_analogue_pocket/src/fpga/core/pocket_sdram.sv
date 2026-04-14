@@ -61,9 +61,9 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
     localparam int unsigned CAS_LATENCY = 3;
-    // READ_CAPTURE_STAGES intentionally matches CAS_LATENCY so the controller
-    // consumes the sample-clock landing zone on the same sys-clock beat that
-    // the SDRAM first presents valid read data to the triple-clock PHY.
+    // READ_CAPTURE_STAGES is load-bearing: if CAS_LATENCY changes, this depth
+    // must change with it so the controller consumes the sample-clock landing
+    // zone on the sys-clock beat where the SDRAM first presents valid data.
     localparam int unsigned READ_CAPTURE_STAGES = CAS_LATENCY;
 
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
@@ -166,11 +166,9 @@ module pocket_sdram #(
     end
 
     always_ff @(posedge sample_clk) begin
-        if (rst) begin
-            phy_dq_captured <= '0;
-        end else begin
-            phy_dq_captured <= phy_dq;
-        end
+        // This landing-zone payload is only consumed when read_capture_valid_pipe
+        // reaches its final stage, so it stays off the reset fanout tree.
+        phy_dq_captured <= phy_dq;
     end
 
     always_ff @(posedge controller_clk) begin
@@ -214,6 +212,8 @@ module pocket_sdram #(
             };
 
             if (read_capture_valid_pipe[READ_CAPTURE_STAGES-1]) begin
+                // read_capture_low_pipe marks the second READ command, which
+                // returns the low halfword of the 32-bit word.
                 if (read_capture_low_pipe[READ_CAPTURE_STAGES-1]) begin
                     word_q[15:0] <= phy_dq_captured;
                 end else begin
