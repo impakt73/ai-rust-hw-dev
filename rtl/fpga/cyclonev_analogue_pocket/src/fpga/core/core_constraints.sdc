@@ -54,5 +54,6 @@ set_output_delay -clock $dram_chip_clk -reference_pin [get_ports {dram_clk}] -mi
     [get_ports {dram_cke dram_a* dram_ba* dram_cas_n dram_ras_n dram_we_n dram_dqm[*] dram_dq[*]}]
 
 # The SDRAM controller, forwarded chip clock, and sample clock now remain in the
-# same synchronous clock family so TimeQuest can analyze the quarter-cycle launch
-# and capture paths directly.
+# same synchronous clock family so TimeQuest can analyze the intended sys=0,
+# ext=+90, samp=-90 quarter-cycle launch/capture paths directly once the current
+# placeholder PLL phases are reconfigured in Quartus.

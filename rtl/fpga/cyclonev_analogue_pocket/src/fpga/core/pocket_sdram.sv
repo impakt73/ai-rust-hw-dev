@@ -61,7 +61,9 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
     localparam int unsigned CAS_LATENCY = 3;
-    localparam int unsigned READ_CAPTURE_PIPE_WIDTH = CAS_LATENCY;
+    // Keep one controller-clock stage per CAS beat so the sample-clock landing
+    // zone is consumed after the integer SDRAM protocol latency expires.
+    localparam int unsigned READ_CAPTURE_STAGES = CAS_LATENCY;
 
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
         if (a > b) begin
@@ -102,6 +104,8 @@ module pocket_sdram #(
     localparam int unsigned WRITE_RECOVERY_CYCLES = max_u(4, TWR_CYCLES + TRP_CYCLES + 1);
     localparam int unsigned INIT_DELAY_CYCLES = max_u(2, us_to_cycles_ceil(INIT_DELAY_US));
     localparam int unsigned REFRESH_MAX_CYCLES = max_u(2, ns_to_cycles_floor(7_813));
+    // Allow for the command issue cycle plus the ST_IDLE and ST_REFRESH handoff
+    // cycles before AUTO REFRESH reaches the SDRAM pins.
     localparam int unsigned REFRESH_SLIP_CYCLES =
         max_u(
             TRCD_CYCLES + CAS_LATENCY + READ_RECOVERY_CYCLES + 3,
@@ -132,9 +136,9 @@ module pocket_sdram #(
     logic [9:0]              req_col_halfword_next;
     logic [12:0]             req_row;
     logic [1:0]              req_bank;
-    logic [READ_CAPTURE_PIPE_WIDTH-1:0] read_capture_valid_pipe;
-    logic [READ_CAPTURE_PIPE_WIDTH-1:0] read_capture_low_pipe;
-    logic [READ_CAPTURE_PIPE_WIDTH-1:0] read_capture_last_pipe;
+    logic [READ_CAPTURE_STAGES-1:0] read_capture_valid_pipe;
+    logic [READ_CAPTURE_STAGES-1:0] read_capture_low_pipe;
+    logic [READ_CAPTURE_STAGES-1:0] read_capture_last_pipe;
 
     (* useioff = 1 *) logic [2:0]  phy_cmd_reg;
     (* useioff = 1 *) logic        phy_cke_reg;
@@ -143,7 +147,7 @@ module pocket_sdram #(
     (* useioff = 1 *) logic [1:0]  phy_dqm_reg;
     (* useioff = 1 *) logic        phy_dq_oe_reg;
     (* useioff = 1 *) logic [15:0] phy_dq_out_reg;
-    (* useioff = 1 *) logic [15:0] phy_dq_sampled;
+    (* useioff = 1 *) logic [15:0] phy_dq_captured;
 
     assign rst = !reset_n;
     assign phy_cke = phy_cke_reg;
@@ -161,7 +165,9 @@ module pocket_sdram #(
     end
 
     always_ff @(posedge sample_clk) begin
-        phy_dq_sampled <= phy_dq;
+        // The sample clock landing zone is only consumed when the sys-clock CAS
+        // pipe asserts valid, so no reset is needed on this payload register.
+        phy_dq_captured <= phy_dq;
     end
 
     always_ff @(posedge controller_clk) begin
@@ -192,23 +198,23 @@ module pocket_sdram #(
             phy_dqm_reg <= 2'b00;
 
             read_capture_valid_pipe <= {
-                read_capture_valid_pipe[READ_CAPTURE_PIPE_WIDTH-2:0],
+                read_capture_valid_pipe[READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
             read_capture_low_pipe <= {
-                read_capture_low_pipe[READ_CAPTURE_PIPE_WIDTH-2:0],
+                read_capture_low_pipe[READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
             read_capture_last_pipe <= {
-                read_capture_last_pipe[READ_CAPTURE_PIPE_WIDTH-2:0],
+                read_capture_last_pipe[READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
 
-            if (read_capture_valid_pipe[READ_CAPTURE_PIPE_WIDTH-1]) begin
-                if (read_capture_low_pipe[READ_CAPTURE_PIPE_WIDTH-1]) begin
-                    word_q[15:0] <= phy_dq_sampled;
+            if (read_capture_valid_pipe[READ_CAPTURE_STAGES-1]) begin
+                if (read_capture_low_pipe[READ_CAPTURE_STAGES-1]) begin
+                    word_q[15:0] <= phy_dq_captured;
                 end else begin
-                    word_q[31:16] <= phy_dq_sampled;
+                    word_q[31:16] <= phy_dq_captured;
                 end
             end
 
@@ -410,8 +416,8 @@ module pocket_sdram #(
 
                 ST_READ_WAIT: begin
                     word_busy <= 1'b1;
-                    if (read_capture_valid_pipe[READ_CAPTURE_PIPE_WIDTH-1]
-                        && read_capture_last_pipe[READ_CAPTURE_PIPE_WIDTH-1]) begin
+                    if (read_capture_valid_pipe[READ_CAPTURE_STAGES-1]
+                        && read_capture_last_pipe[READ_CAPTURE_STAGES-1]) begin
                         wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
                         state <= ST_READ_RECOVERY;
                     end
