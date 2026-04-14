@@ -417,7 +417,7 @@ end
     wire            audgen_dac;
 
 // SDRAM interface driven by the dedicated 133 MHz PLL outputs.
-// The ext/samp legs are placeholders until the PLL is re-generated in Quartus
+// The ext/samp legs are placeholders until the PLL is regenerated in Quartus
 // with the intended +90/-90 degree phases.
 pocket_sdram #(
     .CLK_FREQ_HZ     ( 133_000_000 )

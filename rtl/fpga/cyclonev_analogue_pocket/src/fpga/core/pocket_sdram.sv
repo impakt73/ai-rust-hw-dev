@@ -61,8 +61,9 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
     localparam int unsigned CAS_LATENCY = 3;
-    // Keep one controller-clock stage per CAS beat so the sample-clock landing
-    // zone is consumed after the integer SDRAM protocol latency expires.
+    // READ_CAPTURE_STAGES intentionally matches CAS_LATENCY so the controller
+    // consumes the sample-clock landing zone on the same sys-clock beat that
+    // the SDRAM first presents valid read data to the triple-clock PHY.
     localparam int unsigned READ_CAPTURE_STAGES = CAS_LATENCY;
 
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
@@ -165,9 +166,11 @@ module pocket_sdram #(
     end
 
     always_ff @(posedge sample_clk) begin
-        // The sample clock landing zone is only consumed when the sys-clock CAS
-        // pipe asserts valid, so no reset is needed on this payload register.
-        phy_dq_captured <= phy_dq;
+        if (rst) begin
+            phy_dq_captured <= '0;
+        end else begin
+            phy_dq_captured <= phy_dq;
+        end
     end
 
     always_ff @(posedge controller_clk) begin
