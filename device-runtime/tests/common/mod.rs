@@ -7,8 +7,10 @@ use device_runtime::{
     create_device_runtime, BusDeviceRegistration, BusEvent, BusRequest, DeviceRuntime,
     DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
-use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
-use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
+use riscv_core::instruction::{addi, jal, lui, sw};
+use riscv_shared::bus::{
+    sysctrl_halt_addr, sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED,
+};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -141,6 +143,19 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
                 return tohost_value;
             }
             break;
+        }
+
+        loop {
+            match runtime.poll() {
+                Ok(Some(BusEvent::TohostTermination { value })) => {
+                    if tohost_value.is_none() {
+                        tohost_value = Some(value);
+                    }
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(e) => panic!("Poll error while waiting for cpu halt: {e}"),
+            }
         }
 
         runtime
@@ -293,9 +308,9 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 
 /// Build a standard tohost termination sequence.
 ///
-/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, halts with EBREAK,
-/// and then includes a `jal x0, 0` fallback loop if halt handling is unavailable.
-pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 5] {
+/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, requests a sticky
+/// system-controller halt, and then loops locally as a fallback.
+pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 6] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
         addi(
@@ -304,7 +319,12 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
             i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
         ),
         sw(addr_reg, value_reg, 0),
-        ebreak(),
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
         jal(0, 0),
     ]
 }

@@ -418,7 +418,10 @@ fn test_cpu_ecall_redirects_to_mtvec_without_retiring() {
         }
     }
 
-    assert_eq!(dut.halted, 0, "ECALL should enter the trap path instead of HALT");
+    assert_eq!(
+        dut.halted, 0,
+        "ECALL should enter the trap path instead of HALT"
+    );
     assert_eq!(
         dut.debug_current_pc, 16,
         "ECALL should redirect fetch to mtvec immediately"

@@ -62,6 +62,7 @@ module system_controller #(
     // ========================================================================
     logic [31:0] boot_addr_reg;          // Stored boot address
     logic [31:0] halt_reg;               // Stored halt code
+    logic        halt_request_pending;
     logic [7:0]  led_out_reg;            // Stored LED output
     logic        sys_reset_pending;      // Delayed system reset pulse
     logic [31:0] response_data;
@@ -197,6 +198,7 @@ module system_controller #(
             cpu_boot      <= 1'b0;
             boot_addr_reg <= 32'h00000000;
             halt_reg      <= 32'h00000000;
+            halt_request_pending <= 1'b0;
             led_out_reg   <= 8'h00;
             req_cpu_halt  <= 1'b0;
             sys_reset_pending <= 1'b0;
@@ -212,8 +214,10 @@ module system_controller #(
             sys_rst       <= sys_reset_pending;
             cpu_rst       <= 1'b0;
             cpu_boot      <= reg_boot_write ? 1'b1 : ext_cpu_boot;
-            req_cpu_halt  <= 1'b0;
+            req_cpu_halt  <= halt_request_pending;
             sys_reset_pending <= 1'b0;
+            if (cpu_halted)
+                halt_request_pending <= 1'b0;
 
             if (mem_d_handshake) begin
                 response_pending <= 1'b0;
@@ -244,7 +248,7 @@ module system_controller #(
 
                                 REG_HALT: begin
                                     halt_reg      <= mem_a_wdata;
-                                    req_cpu_halt  <= 1'b1;
+                                    halt_request_pending <= 1'b1;
                                     response_pending <= 1'b1;
                                 end
 

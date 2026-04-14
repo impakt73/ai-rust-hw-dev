@@ -15,7 +15,7 @@ use common::{
     TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
+use riscv_shared::bus::{DRAM_BASE, SRAM_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 // create_test_runtime() uses the default top-level config, which enables both M and F.
@@ -130,18 +130,11 @@ fn test_cpu_branch_beq_bne() {
         sw(9, 3, 0),
         sw(9, 5, 4),
         or(10, 3, 5),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 24),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -171,18 +164,11 @@ fn test_cpu_branch_blt_bge() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 24),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -212,18 +198,11 @@ fn test_cpu_branch_bltu_bgeu() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 24),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -251,18 +230,11 @@ fn test_cpu_load_store() {
         lui(4, DRAM_BASE),
         sw(4, 3, 0x200), // Store x3 to 0x80000200 to verify
         sub(10, 3, 2),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 24),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -288,21 +260,14 @@ fn test_cpu_load_byte() {
         sw(1, 4, 0x204),  // Store unsigned result
         addi(12, 0, -1),
         sub(10, 3, 12),
-        bne(10, 0, 40),
+        bne(10, 0, 36),
         addi(12, 0, 0xFF),
         sub(10, 4, 12),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 24),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -999,7 +964,7 @@ fn test_cpu_fp_exception_flags_accumulate_through_csr_file() {
 fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
     let mut runtime = create_test_runtime();
     const RESULT_BASE_OFFSET: i32 = 0x100;
-    const HANDLER_OFFSET: usize = 0x40;
+    const HANDLER_OFFSET: usize = 0x80;
     let handler_addr = TEST_BOOT_PC + HANDLER_OFFSET as u32;
 
     let mut instructions = Vec::new();
@@ -1031,6 +996,8 @@ fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
         sw(8, 12, RESULT_BASE_OFFSET + 12),
         csrrs(13, 0, 0x300),
         sw(8, 13, RESULT_BASE_OFFSET + 16),
+        addi(15, 10, 4),
+        csrrw(0, 15, 0x341),
         mret(),
     ]);
 
@@ -1044,8 +1011,12 @@ fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
         Some(SUCCESS_CODE)
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + RESULT_BASE_OFFSET as u32, SHORT_TIMEOUT),
-        5
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32,
+            SHORT_TIMEOUT
+        ),
+        6
     );
     assert_eq!(
         read_word_with_timeout(
@@ -1053,7 +1024,7 @@ fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
             DRAM_BASE + RESULT_BASE_OFFSET as u32 + 4,
             SHORT_TIMEOUT
         ),
-        TEST_BOOT_PC + 16
+        TEST_BOOT_PC + 20
     );
     assert_eq!(
         read_word_with_timeout(
@@ -1851,26 +1822,55 @@ fn test_cpu_amo_min_max_signed_negative_values() {
 // Invalid Instruction Tests
 // ============================================================================
 
-/// Test that CPU halts when fetching an instruction value of 0
-///
-/// When memory returns 0x0000, the decompressor identifies this as an invalid
-/// compressed instruction (C.ADDI4SPN with nzuimm=0), sets is_valid=0.
-/// The CPU should transition to S_HALT state when it detects this.
+/// Test that an all-zero instruction traps as an illegal instruction.
 #[test]
-fn test_cpu_halts_on_zero_instruction() {
+fn test_cpu_zero_instruction_traps_to_mtvec() {
     let mut runtime = create_test_runtime();
+    const HANDLER_OFFSET: usize = 0x40;
+    let handler_addr = TEST_BOOT_PC + HANDLER_OFFSET as u32;
 
-    // Load 16 zero bytes (four zero words = four invalid compressed instructions)
-    // The CPU should halt when it fetches 0x0000
-    let program_bytes: Vec<u8> = vec![0u8; 16];
+    let mut instructions = Vec::new();
+    instructions.extend(load_u32(1, handler_addr));
+    instructions.push(csrrw(0, 1, 0x305));
+    instructions.push(0);
 
-    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
+    while instructions.len() * 4 < HANDLER_OFFSET {
+        instructions.push(addi(0, 0, 0));
+    }
 
-    // The CPU enters S_HALT on the invalid instruction.
-    // wait_for_cpu_halt returns None because the program never writes to tohost.
+    instructions.extend([
+        lui(8, DRAM_BASE),
+        csrrs(9, 0, 0x341),
+        sw(8, 9, 0),
+        csrrs(10, 0, 0x342),
+        sw(8, 10, 4),
+        csrrs(11, 0, 0x343),
+        sw(8, 11, 8),
+    ]);
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
-        None,
-        "Expected CPU to halt without writing to tohost on zero instruction"
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        TEST_BOOT_PC + 12
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        2
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        // The decompressor expands 0x0000 into the canonical invalid payload that
+        // the CPU currently reports through mtval for this trap path.
+        19
     );
 }

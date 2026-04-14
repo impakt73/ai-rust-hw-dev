@@ -819,6 +819,8 @@ module cpu #(
                 // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
                 if (branch_reg || (jump_reg && !alu_src_reg))
                     control_target_write = 1'b1;
+                // CSR reads are now direct, so capture the old value here before the
+                // instruction reaches S_CSR and any software write side effect occurs.
                 if (is_csr_reg)
                     csr_rdata_write = 1'b1;
             end
