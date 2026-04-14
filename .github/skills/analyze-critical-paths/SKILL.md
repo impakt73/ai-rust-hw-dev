@@ -113,6 +113,16 @@ Suggestions must be concrete and path-specific, for example:
 
 Do **not** give generic advice like “optimize logic” or “improve routing.”
 
+### 6. Prefer fixes that align with repo timing policy
+
+This repository prioritizes **high-frequency operation**, so optimization guidance should normally prefer:
+
+- adding register boundaries to break long combinational cones
+- staging intermediate results across multiple cycles
+- turning wide single-cycle result selection into smaller registered steps
+
+Treat unregistered ready/valid-style handshake returns as a potential **architectural exemption** when registering them would require major protocol changes. Call out that exemption explicitly when it applies instead of recommending unrealistic pipelining.
+
 ## Required Output Structure
 
 A good timing-analysis document should include:

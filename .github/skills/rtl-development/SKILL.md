@@ -164,6 +164,13 @@ The multi-cycle design adds handshaking signals:
 - When a datapath payload register has a separate `valid`, `pending`, or similar control bit, reset the control bit rather than the payload register itself. Write or refresh the payload whenever you capture new data, typically in the same branch where you set/assert the control bit, and downstream logic must ignore the payload whenever that control bit is low.
 - Avoiding resets on payload-only registers reduces reset fanout and routing congestion on FPGA hardware without changing functional behavior.
 
+### Timing and Frequency Priority
+- **High-frequency operation is a repo priority.** Prefer registered signals and shorter combinational cones to improve Fmax.
+- Default to **multi-cycle staging** instead of forcing large arithmetic, mux, compare, or control cones into a single cycle.
+- Prefer registering **intermediate values and outputs** at natural boundaries (`register -> logic -> register`) whenever that does not require major architectural changes.
+- Signals that cannot be registered without major architectural changes—especially ready/valid-style handshake returns such as `*_ready`—are exempt from this guidance.
+- When an unregistered path is kept for architectural reasons, document the exemption clearly so the timing trade-off is explicit.
+
 ### `default_nettype` Guards (MANDATORY)
 
 Every `.sv` file **must** begin with `` `default_nettype none `` and end with `` `default_nettype wire ``:

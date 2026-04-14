@@ -94,6 +94,9 @@ to check alu_a and alu_b..."*
 - Default to synchronous active-high reset (`rst`) for internal RTL modules. iCE40 reset resources are active-high, so this avoids extra inversion LUTs and timing delay. Use active-low resets only for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary.
 - When a datapath payload register is protected by a separate `valid`, `pending`, or equivalent control flag, reset the control flag but not the payload register itself; write or refresh the payload whenever new data is captured, typically in the same branch where you assert the flag, and require consumers to ignore the payload while the flag is low
 - Avoid adding payload-only registers to the reset path unless software-visible behavior truly depends on their reset value, because extra reset fanout increases FPGA routing congestion
+- Treat high-frequency operation as a first-class goal: prefer registered signals, staged datapaths, and shorter combinational cones to maximize Fmax
+- When logic grows deep or wide, register intermediate results and extend the operation across multiple cycles instead of forcing a single-cycle implementation
+- Ready/valid-style handshake returns that cannot be registered without major architectural or protocol changes are exempt, but keep that exemption narrow and explicit
 
 **Signal Naming:**
 - Use `snake_case` consistently
@@ -114,6 +117,7 @@ to check alu_a and alu_b..."*
 - ❌ Never mix blocking/non-blocking in same `always` block
 - ❌ No Clock Domain Crossing without proper synchronization (2-FF chain or FIFO)
 - ❌ No implicit widths - use `1'b1` not `1`
+- ✅ Prefer registered outputs or intermediate stages unless an interface contract requires a combinational path
 - ✅ Always lint with `verilator --lint-only rtl/*.sv`
 
 ### Verification Design Principles (Rust)
