@@ -69,6 +69,8 @@ Generated artifacts:
 
 - Prefer `STATS_FORMAT=json` when answering with compact machine-readable data.
 - Prefer `STATS_FORMAT=text` when you need a short human-readable summary in the terminal.
+- When interpreting regressions, remember that this repo prioritizes maximizing achievable **Fmax** and timing headroom against the documented synthesis target, not implying a different higher required clock; prefer recommendations that add register stages or shorten combinational cones rather than preserving single-cycle logic at all costs.
+- Ready/valid-style handshake returns that cannot be registered without major architectural changes are an allowed exception; mention that constraint explicitly when it affects the Fmax trade-off.
 - If you already have up-to-date build artifacts and only need to reformat them, run this from `rtl/fpga`:
 
 ```bash

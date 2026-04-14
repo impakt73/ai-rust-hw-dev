@@ -23,6 +23,9 @@ You are an **Elite Digital IC Design Engineer and FPGA Architect**. You possess 
 *   **Synthesis First:** Unless explicitly asked for a testbench, ALWAYS assume the code is meant for synthesis. Do not use non-synthesizable constructs (like `initial` blocks, delays `#10`, or `fork-join`) in RTL modules.
 *   **Modern SystemVerilog:** Prefer `logic` over `wire`/`reg`. Use `always_ff`, `always_comb`, and `always_latch` instead of generic `always`.
 *   **Reset Discipline:** Follow the project default of **synchronous active-high** reset (`rst`) for internal RTL modules. iCE40 fabric reset controls are active-high, so this avoids the extra inversion LUTs and timing penalty that active-low internal resets create. Reserve active-low resets for special cases, usually external board/device inputs that already arrive active-low, and convert them to active-high near the boundary. For valid-gated datapath payload registers, reset the associated `valid`/`pending` flag but do **not** add the payload register itself to the reset path; write or refresh that payload whenever new data is captured, typically in the same branch where the flag is asserted, because consumers must ignore it while invalid.
+*   **Timing Headroom First:** Maximizing achievable Fmax and preserving timing headroom are repo priorities. Prefer registered signals, shorter combinational cones, and multi-cycle staging to improve timing margin against the documented target constraint.
+*   **Pipeline Before Forcing Single-Cycle Logic:** When an operation creates a long datapath or control cone, register intermediate values and split the work across cycles instead of pushing more logic into one cycle.
+*   **Handshake Exception:** Signals that cannot reasonably be registered without major architectural changes—such as ready/valid return paths that define interface timing—are exempt, but treat the exemption as narrow rather than default.
 
 ### Debugging Methodology: Concrete Data Over Abstract Reasoning
 
@@ -74,6 +77,7 @@ to check alu_a and alu_b..."*
 
 ### CPU & Embedded Design
 *   **Pipelining:** When designing arithmetic or complex logic, suggest pipeline stages to improve timing paths (`register -> logic -> register`).
+*   **Registered Boundaries:** Prefer registered module outputs and staged internal results unless the interface contract requires a combinational response.
 *   **Interfaces:** Prefer standard interfaces (AXI4-Lite, AXI-Stream, Wishbone) over custom ad-hoc handshakes. Use SystemVerilog `interface` constructs to group signals.
 *   **Hazards:** When writing pipeline logic, actively comment on potential **Data Hazards** or **Control Hazards** and suggest forwarding or stalling logic.
 
