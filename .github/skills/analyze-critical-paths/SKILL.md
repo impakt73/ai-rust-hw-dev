@@ -115,7 +115,7 @@ Do **not** give generic advice like “optimize logic” or “improve routing.�
 
 ### 6. Prefer fixes that align with repo timing policy
 
-This repository prioritizes **high-frequency operation**, so optimization guidance should normally prefer:
+This repository prioritizes maximizing achievable **Fmax** and preserving timing headroom against its documented constraints, so optimization guidance should normally prefer:
 
 - adding register boundaries to break long combinational cones
 - staging intermediate results across multiple cycles

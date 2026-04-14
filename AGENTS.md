@@ -69,9 +69,9 @@ What files do you need to modify?
 
 ### High-Frequency RTL Design Priority
 
-- **High-frequency operation is a project priority.** Prefer registered signals and shorter combinational cones to maximize Fmax.
+- **Maximizing achievable Fmax and preserving timing headroom are repo priorities.** In this repo, that means optimizing above the documented FPGA target constraint rather than merely scraping by at the minimum clock requirement.
 - **Default to multi-cycle staging over single-cycle complexity.** When logic grows deep or wide, register intermediate values and spread the work across multiple cycles instead of forcing one-cycle completion.
-- **Prefer registered datapaths and control signals** unless doing so would require major architectural changes.
+- **Prefer registered datapaths and control signals** to shorten combinational cones and improve timing margin, unless doing so would require major architectural changes.
 - **Ready/valid exceptions are allowed** for signals such as `*_ready` or similar handshake returns that cannot be registered without materially changing interface behavior or latency contracts.
 - When leaving a signal combinational for architectural reasons, **document that exemption explicitly** in the code or review notes so the timing trade-off is clear.
 

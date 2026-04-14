@@ -165,8 +165,8 @@ The multi-cycle design adds handshaking signals:
 - Avoiding resets on payload-only registers reduces reset fanout and routing congestion on FPGA hardware without changing functional behavior.
 
 ### Timing and Frequency Priority
-- **High-frequency operation is a repo priority.** Prefer registered signals and shorter combinational cones to improve Fmax.
-- Default to **multi-cycle staging** instead of forcing large arithmetic, mux, compare, or control cones into a single cycle.
+- **Maximizing achievable Fmax and timing margin is a repo priority.** Prefer registered signals and shorter combinational cones to improve timing closure against the documented target constraint.
+- Default to **multi-cycle staging** when needed instead of forcing large arithmetic, mux, compare, or control cones into a single cycle for Fmax.
 - Prefer registering **intermediate values and outputs** at natural boundaries (`register -> logic -> register`) whenever that does not require major architectural changes.
 - Signals that cannot be registered without major architectural changes—especially ready/valid-style handshake returns such as `*_ready`—are exempt from this guidance.
 - When an unregistered path is kept for architectural reasons, document the exemption clearly so the timing trade-off is explicit.
