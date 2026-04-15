@@ -423,7 +423,7 @@ pocket_sdram #(
     .CLK_FREQ_HZ     ( 133_000_000 )
 ) sdram_inst (
     .controller_clk  ( clk_core_133_sys ),
-    .sample_clk      ( clk_core_133_samp_placeholder ),
+    .sample_clk      ( clk_core_133_samp ),
     .reset_n         ( reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_cas         ( dram_cas_n ),
@@ -450,7 +450,7 @@ altddio_out #(
 ) sdram_clk_forward_inst (
     .datain_h           ( 1'b1 ),
     .datain_l           ( 1'b0 ),
-    .outclock           ( clk_core_133_ext_placeholder ),
+    .outclock           ( clk_core_133_ext ),
     .outclocken         ( 1'b1 ),
     .aclr               ( 1'b0 ),
     .aset               ( 1'b0 ),
@@ -635,8 +635,8 @@ mf_pllbase mp1 (
 );
 
     wire    clk_core_133_sys;
-    wire    clk_core_133_ext_placeholder;
-    wire    clk_core_133_samp_placeholder;
+    wire    clk_core_133_ext;
+    wire    clk_core_133_samp;
 
     wire    pll2_core_locked;
     wire    pll2_core_locked_s;
@@ -647,8 +647,8 @@ mf_pllbase2 mp2 (
     .rst            ( 0 ),
 
     .outclk_0       ( clk_core_133_sys ),
-    .outclk_1       ( clk_core_133_ext_placeholder ),
-    .outclk_2       ( clk_core_133_samp_placeholder ),
+    .outclk_1       ( clk_core_133_ext ),
+    .outclk_2       ( clk_core_133_samp ),
 
     .locked         ( pll2_core_locked )
 );
