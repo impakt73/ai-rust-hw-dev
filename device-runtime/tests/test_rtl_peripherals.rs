@@ -116,7 +116,7 @@ fn test_led_read_back() {
     let mut runtime = create_test_runtime();
 
     // CPU writes, reads back, and verifies - tohost only reached if successful
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, SYSCTRL_BASE),
         addi(14, 0, 0xCC),
         sw(15, 14, LED_OFFSET_I32),
@@ -126,7 +126,6 @@ fn test_led_read_back() {
         sub(11, 13, 12),
         bne(11, 0, 24),
     ];
-    let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
     instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
@@ -174,7 +173,7 @@ fn test_led_upper_bits_ignored() {
     let mut runtime = create_test_runtime();
 
     // Write value with upper bits set, read back, verify only lower 8 bits
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, SYSCTRL_BASE),
         lui(14, 0xFFFFF000),
         ori(14, 14, 0xAA),
@@ -185,7 +184,6 @@ fn test_led_upper_bits_ignored() {
         sub(11, 13, 12),
         bne(11, 0, 24),
     ];
-    let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
     instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
@@ -253,7 +251,7 @@ fn test_host_initiated_led_write() {
     // 2. Reads the expected LED value from DRAM
     // 3. Reads the actual LED value from LED peripheral
     // 4. Compares and writes result to tohost
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, SYSCTRL_BASE), // x15 = system controller base address
         lui(14, 0x80001000),   // x14 = DRAM base for expected value
         // Wait for LED fence (non-zero value)
@@ -269,7 +267,6 @@ fn test_host_initiated_led_write() {
         sub(8, 10, 11), // x8 = actual - expected
         bne(8, 0, 24),  // if not equal, jump to failure
     ];
-    let mut instructions = instructions;
     instructions.extend(tohost_termination(9, 7, SUCCESS_CODE));
     instructions.extend(tohost_termination(9, 7, FAILURE_CODE));
 

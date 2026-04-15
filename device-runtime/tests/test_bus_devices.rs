@@ -157,13 +157,12 @@ fn test_custom_bus_device_registration_and_access() {
     )
     .expect("Failed to create simulator runtime");
 
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, DUMMY_DEVICE_BASE),
         addi(14, 0, 42),
         sw(15, 14, 0),
         lw(13, 15, 0),
     ];
-    let mut instructions = instructions;
     append_tohost_termination(&mut instructions, 12, 13, 42);
     let program_bytes = instructions_to_bytes(&instructions);
 

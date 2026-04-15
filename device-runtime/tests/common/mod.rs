@@ -333,7 +333,9 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
 ///
 /// The sequence writes the current register value to `SIM_CONTROL_BASE`,
 /// requests a sticky system-controller halt with the same value, and then
-/// loops locally as a fallback.
+/// loops locally as a fallback. The local loop keeps execution deterministic if
+/// the halt request has not taken effect by the time the CPU reaches the next
+/// fetch boundary.
 pub fn register_tohost_termination(addr_reg: u32, value_reg: u32) -> [u32; 5] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
@@ -348,7 +350,12 @@ pub fn register_tohost_termination(addr_reg: u32, value_reg: u32) -> [u32; 5] {
     ]
 }
 
-/// Build a sticky halt request sequence using a value already present in `value_reg`.
+/// Build a sticky halt-only termination sequence using a value already present
+/// in `value_reg`.
+///
+/// Unlike [`register_tohost_termination`], this variant does not write to
+/// `SIM_CONTROL_BASE`; it only requests a system-controller halt and then loops
+/// locally as a fallback until the halt request is observed.
 pub fn halt_request_termination(addr_reg: u32, value_reg: u32) -> [u32; 3] {
     [
         lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),

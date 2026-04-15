@@ -48,6 +48,8 @@ fn build_mixed_program(
 }
 
 fn check_reg_and_terminate(result_reg: u32, expected: i32) -> Vec<u32> {
+    // The success/failure tails now reuse the shared trap-safe termination helper,
+    // so this sequence is assembled as a Vec instead of a fixed-size array.
     let mut instructions = vec![
         addi(12, 0, expected),
         sub(11, result_reg, 12),
