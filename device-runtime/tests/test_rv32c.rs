@@ -10,11 +10,12 @@
 
 mod common;
 
-use common::{create_test_runtime, load_and_boot, wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC};
-use riscv_core::instruction::{
-    add, addi, bne, c_add, c_addi, c_li, c_mv, ebreak, jal, lui, sub, sw,
+use common::{
+    create_test_runtime, load_and_boot, tohost_termination, wait_for_cpu_halt, LONG_TIMEOUT,
+    TEST_BOOT_PC,
 };
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_core::instruction::{add, addi, bne, c_add, c_addi, c_li, c_mv, lui, sub, sw};
+use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 /// Helper to build a mixed program with compressed and uncompressed instructions.
@@ -46,22 +47,15 @@ fn build_mixed_program(
     bytes
 }
 
-fn check_reg_and_terminate(result_reg: u32, expected: i32) -> [u32; 13] {
-    [
+fn check_reg_and_terminate(result_reg: u32, expected: i32) -> Vec<u32> {
+    let mut instructions = vec![
         addi(12, 0, expected),
         sub(11, result_reg, 12),
-        bne(11, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-    ]
+        bne(11, 0, 24),
+    ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
+    instructions
 }
 
 #[test]

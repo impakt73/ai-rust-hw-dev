@@ -329,6 +329,38 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
     ]
 }
 
+/// Build a termination sequence using a value already present in `value_reg`.
+///
+/// The sequence writes the current register value to `SIM_CONTROL_BASE`,
+/// requests a sticky system-controller halt with the same value, and then
+/// loops locally as a fallback.
+pub fn register_tohost_termination(addr_reg: u32, value_reg: u32) -> [u32; 5] {
+    [
+        lui(addr_reg, SIM_CONTROL_BASE),
+        sw(addr_reg, value_reg, 0),
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
+        jal(0, 0),
+    ]
+}
+
+/// Build a sticky halt request sequence using a value already present in `value_reg`.
+pub fn halt_request_termination(addr_reg: u32, value_reg: u32) -> [u32; 3] {
+    [
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
+        jal(0, 0),
+    ]
+}
+
 /// Append a standard tohost termination sequence to an instruction vector.
 ///
 /// This extends `instructions` in place with the output of [`tohost_termination`].
@@ -339,4 +371,13 @@ pub fn append_tohost_termination(
     tohost_value: u32,
 ) {
     instructions.extend(tohost_termination(addr_reg, value_reg, tohost_value));
+}
+
+/// Append a termination sequence that uses a value already present in `value_reg`.
+pub fn append_register_tohost_termination(
+    instructions: &mut Vec<u32>,
+    addr_reg: u32,
+    value_reg: u32,
+) {
+    instructions.extend(register_tohost_termination(addr_reg, value_reg));
 }

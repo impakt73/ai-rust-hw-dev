@@ -21,8 +21,8 @@ use common::{LONG_TIMEOUT, TEST_BOOT_PC};
 use device_runtime::{
     create_device_runtime, BusDeviceRegistration, DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
-use riscv_core::instruction::{addi, ebreak, lui, lw, sw};
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_core::instruction::{addi, lui, lw, sw};
+use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -162,10 +162,9 @@ fn test_custom_bus_device_registration_and_access() {
         addi(14, 0, 42),
         sw(15, 14, 0),
         lw(13, 15, 0),
-        lui(12, SIM_CONTROL_BASE),
-        sw(12, 13, 0),
-        ebreak(),
     ];
+    let mut instructions = instructions;
+    append_tohost_termination(&mut instructions, 12, 13, 42);
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);

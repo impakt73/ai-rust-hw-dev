@@ -15,10 +15,11 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
-    wait_for_cpu_halt, LONG_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
+    append_register_tohost_termination, create_test_runtime, halt_request_termination,
+    instructions_to_bytes, load_and_boot, read_word_with_timeout, wait_for_cpu_halt, LONG_TIMEOUT,
+    SHORT_TIMEOUT, TEST_BOOT_PC,
 };
-use riscv_core::instruction::{addi, beq, ebreak, jal, lbu, lhu, lui, lw, sb, sw};
+use riscv_core::instruction::{addi, beq, lbu, lhu, lui, lw, sb, sw};
 use riscv_shared::bus::{DRAM_BASE, DRAM_END, SIM_CONTROL_BASE, SRAM_BASE};
 use std::time::{Duration, Instant};
 
@@ -31,7 +32,9 @@ const CALLBACK_TEST_POLL_INTERVAL_MS: u64 = 5;
 
 fn run_and_expect(program: &[u32], expected_tohost: u32) {
     let mut runtime = common::create_test_runtime();
-    let program_bytes = instructions_to_bytes(program);
+    let mut instructions = program.to_vec();
+    append_register_tohost_termination(&mut instructions, 12, 10);
+    let program_bytes = instructions_to_bytes(&instructions);
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
@@ -42,12 +45,8 @@ fn run_and_expect(program: &[u32], expected_tohost: u32) {
 #[test]
 fn test_read_word_outside_dram_range() {
     let program = [
-        addi(11, 0, 0),            // x11 = 0x00000000 (outside DRAM)
-        lw(10, 11, 0),             // x10 = read word (expected 0)
-        lui(12, SIM_CONTROL_BASE), // x12 = tohost base
-        sw(12, 10, 0),             // tohost = x10
-        ebreak(),
-        jal(0, 0),
+        addi(11, 0, 0), // x11 = 0x00000000 (outside DRAM)
+        lw(10, 11, 0),  // x10 = read word (expected 0)
     ];
     run_and_expect(&program, 0);
 }
@@ -55,7 +54,7 @@ fn test_read_word_outside_dram_range() {
 #[test]
 fn test_valid_dram_accesses() {
     let mut runtime = common::create_test_runtime();
-    let program = instructions_to_bytes(&[
+    let mut instructions = vec![
         lui(11, DRAM_BASE + 0x1000), // x11 = 0x80001000 (test data base)
         addi(10, 0, 0xAA),
         sb(11, 10, 0), // [base+0] = 0xAA
@@ -64,13 +63,11 @@ fn test_valid_dram_accesses() {
         addi(10, 0, 0xCC),
         sb(11, 10, 2), // [base+2] = 0xCC
         addi(10, 0, 0xDD),
-        sb(11, 10, 3),             // [base+3] = 0xDD
-        lw(10, 11, 0),             // x10 = 0xDDCCBBAA
-        lui(12, SIM_CONTROL_BASE), // x12 = tohost base
-        sw(12, 10, 0),             // tohost = x10
-        ebreak(),
-        jal(0, 0),
-    ]);
+        sb(11, 10, 3), // [base+3] = 0xDD
+        lw(10, 11, 0), // x10 = 0xDDCCBBAA
+    ];
+    append_register_tohost_termination(&mut instructions, 12, 10);
+    let program = instructions_to_bytes(&instructions);
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program);
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
@@ -82,15 +79,11 @@ fn test_valid_dram_accesses() {
 fn test_boundary_at_dram_end_byte_read() {
     let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
-        addi(10, 0, 0x42),         // x10 = test byte
-        lui(11, dram_after_end),   // x11 = DRAM_END + 1
-        addi(11, 11, -2),          // x11 = 0x8FFF_FFFE (DRAM_END - 1)
-        sb(11, 10, 0),             // byte write near upper DRAM boundary
-        lbu(10, 11, 0),            // read back written byte
-        lui(12, SIM_CONTROL_BASE), // x12 = tohost base
-        sw(12, 10, 0),             // tohost = x10
-        ebreak(),
-        jal(0, 0),
+        addi(10, 0, 0x42),       // x10 = test byte
+        lui(11, dram_after_end), // x11 = DRAM_END + 1
+        addi(11, 11, -2),        // x11 = 0x8FFF_FFFE (DRAM_END - 1)
+        sb(11, 10, 0),           // byte write near upper DRAM boundary
+        lbu(10, 11, 0),          // read back written byte
     ];
     run_and_expect(&program, 0x42);
 }
@@ -99,13 +92,9 @@ fn test_boundary_at_dram_end_byte_read() {
 fn test_boundary_at_dram_end_word_read_out_of_bounds() {
     let dram_after_end = DRAM_END.wrapping_add(1);
     let program = [
-        lui(11, dram_after_end),   // x11 = DRAM_END + 1
-        addi(11, 11, -1),          // x11 = 0x8FFF_FFFF (DRAM_END)
-        lw(10, 11, 0),             // word access spans beyond boundary, expected 0
-        lui(12, SIM_CONTROL_BASE), // x12 = tohost base
-        sw(12, 10, 0),             // tohost = x10
-        ebreak(),
-        jal(0, 0),
+        lui(11, dram_after_end), // x11 = DRAM_END + 1
+        addi(11, 11, -1),        // x11 = 0x8FFF_FFFF (DRAM_END)
+        lw(10, 11, 0),           // word access spans beyond boundary, expected 0
     ];
     run_and_expect(&program, 0);
 }
@@ -119,13 +108,8 @@ fn test_boundary_at_dram_end_word_read_out_of_bounds() {
 fn test_programmatic_instruction_loading() {
     let mut runtime = create_test_runtime();
 
-    let instructions = vec![
-        addi(10, 0, 42),
-        lui(11, SIM_CONTROL_BASE),
-        sw(11, 10, 0),
-        ebreak(),
-        jal(0, 0),
-    ];
+    let mut instructions = vec![addi(10, 0, 42)];
+    append_register_tohost_termination(&mut instructions, 11, 10);
     let program = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program);
@@ -136,7 +120,7 @@ fn test_programmatic_instruction_loading() {
 #[test]
 fn test_write_memory_region_patterns() {
     let mut runtime = create_test_runtime();
-    let checker_program = instructions_to_bytes(&[
+    let mut checker_program = vec![
         lui(12, DRAM_BASE),  // x12 = DRAM base
         addi(13, 12, 0x400), // x13 = DRAM_BASE + 0x400
         addi(13, 13, 0x400), // x13 = DRAM_BASE + 0x800
@@ -149,11 +133,9 @@ fn test_write_memory_region_patterns() {
         addi(10, 0, 0xFF),
         sw(13, 10, 0),  // overwrite first region
         lbu(10, 13, 0), // read overwritten byte
-        lui(11, SIM_CONTROL_BASE),
-        sw(11, 10, 0), // tohost = 0xFF
-        ebreak(),
-        jal(0, 0),
-    ]);
+    ];
+    append_register_tohost_termination(&mut checker_program, 11, 10);
+    let checker_program = instructions_to_bytes(&checker_program);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &checker_program);
     assert_eq!(
@@ -221,7 +203,7 @@ fn test_runtime_write_sram_then_cpu_reads_it() {
     let mut runtime = create_test_runtime();
     let payload = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
 
-    let checker_program = instructions_to_bytes(&[
+    let mut checker_program = vec![
         lui(12, SRAM_BASE),
         lbu(9, 12, 6),
         beq(9, 0, -4),
@@ -232,12 +214,10 @@ fn test_runtime_write_sram_then_cpu_reads_it() {
         sw(14, 10, 0),
         sw(14, 11, 4),
         sw(14, 13, 8),
-        lui(15, SIM_CONTROL_BASE),
         addi(16, 0, 1),
-        sw(15, 16, 0),
-        ebreak(),
-        jal(0, 0),
-    ]);
+    ];
+    append_register_tohost_termination(&mut checker_program, 15, 16);
+    let checker_program = instructions_to_bytes(&checker_program);
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &checker_program);
 
     runtime
@@ -263,7 +243,7 @@ fn test_runtime_write_sram_then_cpu_reads_it() {
 fn test_cpu_writes_sram_then_runtime_reads_it() {
     let mut runtime = create_test_runtime();
 
-    let writer_program = instructions_to_bytes(&[
+    let mut writer_program = vec![
         lui(12, SRAM_BASE),
         addi(10, 0, 0x11),
         sb(12, 10, 0),
@@ -279,12 +259,10 @@ fn test_cpu_writes_sram_then_runtime_reads_it() {
         sb(12, 10, 5),
         addi(10, 0, 0x77),
         sb(12, 10, 6),
-        lui(11, SIM_CONTROL_BASE),
         addi(10, 0, 1),
-        sw(11, 10, 0),
-        ebreak(),
-        jal(0, 0),
-    ]);
+    ];
+    append_register_tohost_termination(&mut writer_program, 11, 10);
+    let writer_program = instructions_to_bytes(&writer_program);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &writer_program);
     assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), Some(1));
@@ -304,16 +282,16 @@ fn test_runtime_memory_region_callback_receives_unrelated_events() {
         .write_memory_region(FENCE_ADDR, &[0], None)
         .expect("Failed to initialize fence memory");
 
-    let program = instructions_to_bytes(&[
+    let mut program = vec![
         lui(10, SIM_CONTROL_BASE),
         addi(11, 0, 0x2A),
         sw(10, 11, 0),
         lui(12, FENCE_ADDR),
         addi(13, 0, 1),
         sw(12, 13, 0),
-        ebreak(),
-        jal(0, 0),
-    ]);
+    ];
+    program.extend(halt_request_termination(10, 11));
+    let program = instructions_to_bytes(&program);
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program);
 
     let mut observed_tohost = None;
