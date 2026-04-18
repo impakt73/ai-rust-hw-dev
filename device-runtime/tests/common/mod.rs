@@ -148,9 +148,7 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
         loop {
             match runtime.poll() {
                 Ok(Some(BusEvent::TohostTermination { value })) => {
-                    if tohost_value.is_none() {
-                        tohost_value = Some(value);
-                    }
+                    tohost_value = Some(value);
                 }
                 Ok(Some(_)) => {}
                 Ok(None) => break,
@@ -167,9 +165,7 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
         while request_start.elapsed() < remaining {
             match runtime.poll() {
                 Ok(Some(BusEvent::TohostTermination { value })) => {
-                    if tohost_value.is_none() {
-                        tohost_value = Some(value);
-                    }
+                    tohost_value = Some(value);
                 }
                 Ok(Some(BusEvent::HostReadResponse {
                     addr: resp_addr,

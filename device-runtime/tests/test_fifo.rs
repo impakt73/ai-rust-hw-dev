@@ -24,7 +24,6 @@ fn fifo_echo_program() -> Vec<u8> {
         beq(5, 0, 12),
         sb(1, 5, 0),
         jal(0, -24),
-        lui(6, riscv_shared::bus::SIM_CONTROL_BASE),
         addi(
             7,
             0,
