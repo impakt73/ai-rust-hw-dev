@@ -229,7 +229,7 @@ module cpu #(
     // CSR signals
     logic [11:0] csr_addr;
     logic [31:0] csr_rdata;
-    logic [31:0] csr_rdata_reg;  // Registered CSR read data (captured before write)
+    logic [31:0] csr_rdata_reg;  // Registered CSR read data (captured before the S_CSR write side effect)
     logic        csr_trap_entry;
     logic [31:0] csr_trap_mepc;
     logic [31:0] csr_trap_mcause;
@@ -819,13 +819,15 @@ module cpu #(
                 // Register data will be captured in S_REG_READ_WAIT after BRAM latency.
                 if (branch_reg || (jump_reg && !alu_src_reg))
                     control_target_write = 1'b1;
-                // CSR reads are now direct, so capture the old value here before the
-                // instruction reaches S_CSR and any software write side effect occurs.
-                if (is_csr_reg)
-                    csr_rdata_write = 1'b1;
             end
             
             S_REG_READ: begin
+                // CSR software reads return through a registered csr_rdata path in the
+                // CSR file. S_DECODE_WAIT presents the CSR address, the read data
+                // becomes available one cycle later, and S_REG_READ latches that old
+                // value before any write side effect in S_CSR.
+                if (is_csr_reg)
+                    csr_rdata_write = 1'b1;
             end
             
             // S_REG_READ_WAIT: Capture BRAM register file read data

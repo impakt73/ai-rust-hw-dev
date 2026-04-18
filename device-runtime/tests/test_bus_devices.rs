@@ -14,8 +14,9 @@ mod common;
 
 use bus_shared::{BusDevice, BusDeviceError, SystemContext};
 use common::{
-    append_tohost_termination, create_test_runtime_with_registrations, instructions_to_bytes,
-    load_and_boot, wait_for_cpu_halt,
+    append_register_tohost_termination, append_tohost_termination,
+    create_test_runtime_with_registrations, instructions_to_bytes, load_and_boot,
+    wait_for_cpu_halt,
 };
 use common::{LONG_TIMEOUT, TEST_BOOT_PC};
 use device_runtime::{
@@ -163,7 +164,7 @@ fn test_custom_bus_device_registration_and_access() {
         sw(15, 14, 0),
         lw(13, 15, 0),
     ];
-    append_tohost_termination(&mut instructions, 12, 13, 42);
+    append_register_tohost_termination(&mut instructions, 12, 13);
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);

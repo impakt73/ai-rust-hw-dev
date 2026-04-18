@@ -66,6 +66,7 @@ module csr_file #(
 
     logic [31:0] csr_cycle;
     logic [31:0] csr_instret;
+    logic [31:0] csr_rdata_next;
 
     logic [31:0] csr_mstatus_reg;
     logic [31:0] csr_medeleg_reg;
@@ -100,44 +101,46 @@ module csr_file #(
         endcase
     endfunction
 
+    // Trap-critical architectural CSR outputs stay direct on their dedicated ports,
+    // but software-initiated CSR reads return through a registered csr_rdata path.
     always_comb begin
         case (csr_addr)
-            CSR_FFLAGS:    csr_rdata = ENABLE_F_EXT ? {27'h0, csr_fcsr_reg[4:0]} : 32'h0;
-            CSR_FRM:       csr_rdata = ENABLE_F_EXT ? {29'h0, csr_fcsr_reg[7:5]} : 32'h0;
-            CSR_FCSR:      csr_rdata = ENABLE_F_EXT ? {24'h0, csr_fcsr_reg[7:0]} : 32'h0;
-            CSR_MSTATUS:   csr_rdata = csr_mstatus_reg;
-            CSR_MISA:      csr_rdata = CSR_MISA_CONST;
-            CSR_MEDELEG:   csr_rdata = csr_medeleg_reg;
-            CSR_MIDELEG:   csr_rdata = csr_mideleg_reg;
-            CSR_MIE:       csr_rdata = csr_mie_reg;
-            CSR_MTVEC:     csr_rdata = csr_mtvec_reg;
-            CSR_MSCRATCH:  csr_rdata = csr_mscratch_reg;
-            CSR_MEPC:      csr_rdata = csr_mepc_reg;
-            CSR_MCAUSE:    csr_rdata = csr_mcause_reg;
-            CSR_MTVAL:     csr_rdata = csr_mtval_reg;
-            CSR_MIP:       csr_rdata = 32'h0;
-            CSR_CYCLE:     csr_rdata = csr_cycle;
-            CSR_TIME:      csr_rdata = csr_cycle;
-            CSR_INSTRET:   csr_rdata = csr_instret;
-            CSR_CYCLEH:    csr_rdata = 32'h0;
-            CSR_TIMEH:     csr_rdata = 32'h0;
-            CSR_INSTRETH:  csr_rdata = 32'h0;
-            CSR_MVENDORID: csr_rdata = 32'h0;
-            CSR_MARCHID:   csr_rdata = 32'h0;
-            CSR_MIMPID:    csr_rdata = 32'h0001_0000;
-            CSR_MHARTID:   csr_rdata = 32'h0;
-            default:       csr_rdata = 32'h0;
+            CSR_FFLAGS:    csr_rdata_next = ENABLE_F_EXT ? {27'h0, csr_fcsr_reg[4:0]} : 32'h0;
+            CSR_FRM:       csr_rdata_next = ENABLE_F_EXT ? {29'h0, csr_fcsr_reg[7:5]} : 32'h0;
+            CSR_FCSR:      csr_rdata_next = ENABLE_F_EXT ? {24'h0, csr_fcsr_reg[7:0]} : 32'h0;
+            CSR_MSTATUS:   csr_rdata_next = csr_mstatus_reg;
+            CSR_MISA:      csr_rdata_next = CSR_MISA_CONST;
+            CSR_MEDELEG:   csr_rdata_next = csr_medeleg_reg;
+            CSR_MIDELEG:   csr_rdata_next = csr_mideleg_reg;
+            CSR_MIE:       csr_rdata_next = csr_mie_reg;
+            CSR_MTVEC:     csr_rdata_next = csr_mtvec_reg;
+            CSR_MSCRATCH:  csr_rdata_next = csr_mscratch_reg;
+            CSR_MEPC:      csr_rdata_next = csr_mepc_reg;
+            CSR_MCAUSE:    csr_rdata_next = csr_mcause_reg;
+            CSR_MTVAL:     csr_rdata_next = csr_mtval_reg;
+            CSR_MIP:       csr_rdata_next = 32'h0;
+            CSR_CYCLE:     csr_rdata_next = csr_cycle;
+            CSR_TIME:      csr_rdata_next = csr_cycle;
+            CSR_INSTRET:   csr_rdata_next = csr_instret;
+            CSR_CYCLEH:    csr_rdata_next = 32'h0;
+            CSR_TIMEH:     csr_rdata_next = 32'h0;
+            CSR_INSTRETH:  csr_rdata_next = 32'h0;
+            CSR_MVENDORID: csr_rdata_next = 32'h0;
+            CSR_MARCHID:   csr_rdata_next = 32'h0;
+            CSR_MIMPID:    csr_rdata_next = 32'h0001_0000;
+            CSR_MHARTID:   csr_rdata_next = 32'h0;
+            default:       csr_rdata_next = 32'h0;
         endcase
     end
 
     always_comb begin
         case (funct3)
             3'b001: csr_wdata = rs1_data;
-            3'b010: csr_wdata = csr_rdata | rs1_data;
-            3'b011: csr_wdata = csr_rdata & ~rs1_data;
+            3'b010: csr_wdata = csr_rdata_next | rs1_data;
+            3'b011: csr_wdata = csr_rdata_next & ~rs1_data;
             3'b101: csr_wdata = {27'b0, rs1};
-            3'b110: csr_wdata = csr_rdata | {27'b0, rs1};
-            3'b111: csr_wdata = csr_rdata & ~{27'b0, rs1};
+            3'b110: csr_wdata = csr_rdata_next | {27'b0, rs1};
+            3'b111: csr_wdata = csr_rdata_next & ~{27'b0, rs1};
             default: csr_wdata = 32'h0;
         endcase
     end
@@ -152,6 +155,7 @@ module csr_file #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
+            csr_rdata        <= 32'h0;
             csr_cycle        <= 32'h0;
             csr_instret      <= 32'h0;
             csr_mstatus_reg  <= 32'h0;
@@ -165,6 +169,7 @@ module csr_file #(
             csr_mtval_reg    <= 32'h0;
             csr_fcsr_reg     <= 32'h0;
         end else begin
+            csr_rdata <= csr_rdata_next;
             csr_cycle <= csr_cycle + 32'd1;
             if (instr_complete)
                 csr_instret <= csr_instret + 32'd1;
