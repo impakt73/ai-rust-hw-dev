@@ -820,7 +820,7 @@ module cpu #(
                 if (branch_reg || (jump_reg && !alu_src_reg))
                     control_target_write = 1'b1;
             end
-            
+
             S_REG_READ: begin
                 // CSR software reads return through a registered csr_rdata path in the
                 // CSR file. S_DECODE_WAIT presents the CSR address, the read data
