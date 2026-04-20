@@ -1,0 +1,372 @@
+# CPU CSR RTL Restructure Plan for Trap Support
+
+## 1. Overview
+
+This plan describes how to restructure the CPU CSR implementation so the RTL can support real machine-mode trap entry and return without depending on the current BRAM-backed CSR timing model.
+
+Today, trap-critical machine CSRs exist, but they are stored in the sparse `sync_dpram` bank inside `rtl/common/cpu/csr_file.sv`, and the CPU FSM is shaped around that two-cycle synchronous read path. That is acceptable for ordinary CSR instructions, but it is a poor fit for trap logic that must read `mtvec`, `mepc`, `mstatus`, `mie`, `mcause`, and `mtval` as immediate architectural state rather than as delayed software-visible storage (`rtl/common/cpu/csr_file.sv`, `rtl/common/memory/sync_dpram.sv`, `rtl/common/cpu/cpu.sv`).
+
+This document is intended to be the structural prerequisite for the remaining trap and interrupt phases already tracked in `docs/plans/cpu-csr-trap-interrupt-remaining-phases.md`.
+
+## 2. Why the Current CSR Structure Is the Wrong Foundation for Trap Logic
+
+### 2.1 Current timing model
+
+- `csr_file.sv` stores writable machine CSRs in a sparse BRAM-backed array.
+- `sync_dpram.sv` exposes read data after an internal two-register pipeline.
+- `cpu.sv` explicitly routes all instructions through `S_DECODE_WAIT`, `S_REG_READ`, and `S_REG_READ_WAIT` so the CSR and regfile BRAM outputs are available before execution continues.
+- `csr_rdata_reg` is captured before the write side effect so software still sees old-value CSR semantics.
+
+That flow is good for `CSRRW`/`CSRRS`/`CSRRC`, but it couples architectural control state to a delayed read path.
+
+### 2.2 Trap-specific mismatch
+
+Trap entry and return need different behavior:
+
+1. **Trap entry must redirect the PC immediately from architectural CSR state.**
+   - `mtvec` cannot behave like a “read this two cycles later” storage element.
+2. **Trap state updates must be driven by hardware, not only by CSR instructions.**
+   - `mepc`, `mcause`, `mtval`, and `mstatus` need hardware-owned update paths.
+3. **Trap control must be visible outside the normal CSR instruction pipeline.**
+   - the FSM must consult `mstatus`, `mie`, `mip`, `mtvec`, and `mepc` without entering `S_CSR`.
+4. **The faulting instruction must not retire.**
+   - the existing `instr_complete` and writeback timing must stay under explicit trap control.
+
+The current BRAM-backed design makes all of that awkward because it treats trap CSRs primarily as software-addressable memory instead of first-class control registers.
+
+### 2.3 Cost/benefit reality
+
+The writable machine CSR set is small. Even if the design keeps `mstatus`, `mie`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`, `medeleg`, and `mideleg` as 32-bit registers, the storage cost is still tiny compared with the control-path simplification and latency improvement. This is a better trade than forcing trap logic through a block RAM abstraction.
+
+## 3. Restructure Goals
+
+### 3.1 Primary goals
+
+1. Make trap-critical CSR state available with register-like latency.
+2. Separate **software CSR access semantics** from **hardware trap-control semantics**.
+3. Preserve existing old-value writeback behavior for CSR instructions.
+4. Create clean hooks for:
+   - synchronous exception entry,
+   - `MRET`,
+   - interrupt pending/enable evaluation,
+   - eventual CSR legality and WARL enforcement.
+
+### 3.2 Non-goals
+
+This plan is not itself the full trap implementation. It prepares the RTL so later trap/interrupt phases can be added cleanly. In particular, this plan does not require the first implementation step to finish:
+
+- full interrupt arbitration,
+- final WARL/WPRI polish for every CSR field,
+- complete delegated-exception behavior,
+- or privilege-level expansion beyond machine mode.
+
+## 4. Target Architecture
+
+### 4.1 Split CSRs by architectural role
+
+Replace the single sparse BRAM-backed writable bank with explicit CSR categories.
+
+### A. Trap-critical machine CSRs — discrete flop-backed registers
+
+These must become direct registers with combinational read muxing and dedicated hardware outputs:
+
+- `mstatus`
+- `mie`
+- `mtvec`
+- `mepc`
+- `mcause`
+- `mtval`
+- `mip` (once interrupt inputs exist; until then it can remain derived from zeroed pending inputs)
+
+These are the registers the CPU control path needs for trap entry, trap return, and interrupt polling.
+
+### B. Low-priority machine CSRs — discrete registers or hardwired placeholders
+
+- `mscratch`
+- `medeleg`
+- `mideleg`
+
+For a machine-mode-only design, `medeleg` and `mideleg` should be reconsidered. The preferred direction is to either:
+
+- hardwire them to zero, or
+- keep them writable-but-inert as simple registers if software compatibility is valuable.
+
+They do not need BRAM either way.
+
+### C. Derived read-only CSRs — keep generated logic
+
+- `misa`
+- machine ID CSRs
+- `cycle`, `time`, `instret`, and their high halves
+
+These should remain generated by counters/constants rather than moved into a storage bank.
+
+### D. Floating-point CSRs — unify semantics, not storage
+
+`fflags`, `frm`, and `fcsr` can continue to live with the FP control path, but their software write semantics should be driven by the same computed CSR write result as the main CSR path instead of the current ad hoc assignments in `cpu.sv`.
+
+### 4.2 Refactor `csr_file.sv` into a true control-state block
+
+The CSR block should stop looking like a tiny RAM wrapper and instead expose two distinct interfaces.
+
+### Software CSR access interface
+
+This path supports ordinary Zicsr instructions:
+
+- CSR address input
+- decoded operation type / write intent
+- source operand (`rs1_data` or zero-extended zimm)
+- read data output
+- computed write result
+- access legality indicators
+
+Required behavior:
+
+1. combinational read of the addressed CSR value,
+2. combinational computation of the post-operation write value,
+3. synchronous register update only when the instruction actually performs a write,
+4. old-value read data preserved for writeback.
+
+### Hardware control interface
+
+This path supports trap entry/return and later interrupt plumbing without pretending they are CSR instructions.
+
+Recommended sideband controls:
+
+- trap entry request
+- trap return request
+- explicit write enables and payloads for `mepc`, `mcause`, `mtval`
+- explicit trap-state update control for `mstatus`
+- optional external pending-interrupt inputs that feed `mip`
+
+Recommended direct outputs back to `cpu.sv`:
+
+- `csr_mtvec`
+- `csr_mepc`
+- `csr_mstatus`
+- `csr_mie`
+- `csr_mip`
+
+Those outputs should be the architectural values the FSM consults for control flow, not delayed copies that depend on the CSR instruction path.
+
+### 4.3 Simplify the CSR read path in `cpu.sv`
+
+The CPU should no longer rely on CSR BRAM latency for control decisions.
+
+### Immediate objectives
+
+1. Keep the existing register-file timing states because the integer and FP register files still depend on synchronous reads.
+2. Stop treating CSR reads as part of that same BRAM pipeline requirement.
+3. Capture old CSR read data from a direct combinational CSR mux rather than from a delayed BRAM output.
+
+### Recommended transition
+
+- In the near term, keep the `S_CSR` state so the functional change is small.
+- Move the “capture old CSR value” point out of `S_REG_READ_WAIT` and into a place that depends only on the direct CSR read mux.
+- Once stable, evaluate whether CSR instructions still need a dedicated `S_CSR` state or can be folded into existing execution/writeback timing.
+
+This keeps the initial restructure focused on correctness and trap readiness rather than chasing cycle-count optimization immediately.
+
+### 4.4 Add an explicit hardware-owned trap update path
+
+The trap architecture should not be implemented as software-style CSR writes issued internally by the CPU. Instead, the CPU should drive an explicit trap transaction into the CSR block.
+
+### Trap entry update set
+
+When a synchronous trap is accepted, the CSR block must support one-cycle capture of:
+
+- `mepc <= faulting instruction PC`
+- `mcause <= synchronous exception code`
+- `mtval <= trap payload`
+- `mstatus.MPIE <= mstatus.MIE`
+- `mstatus.MIE <= 0`
+
+### Trap return update set
+
+When `MRET` is executed, the CSR block must support:
+
+- `pc` restore from `mepc`
+- `mstatus.MIE <= mstatus.MPIE`
+- `mstatus.MPIE <= 1`
+
+The exact supported `mstatus` bit set can stay minimal, but the implemented bits should be explicit fields rather than opaque 32-bit RAM contents.
+
+### 4.5 Move from “opaque 32-bit storage” to field-aware CSRs where it matters
+
+Trap preparation is the right point to stop treating all writable machine CSRs as unrestricted 32-bit payloads.
+
+Minimum field awareness recommended in this restructure:
+
+- `mstatus`: explicitly manage at least `MIE` and `MPIE`
+- `mtvec`: constrain mode support and alignment behavior
+- `mepc`: enforce the required low-bit masking for instruction alignment
+- `mip`: driven from pending sources, not freely written memory
+
+This does not require full privileged-spec completeness on day one, but it does require enough structure that later trap logic is not built on top of unconstrained raw words.
+
+## 5. Implementation Phases
+
+### Phase 1 — Replace the BRAM-backed writable CSR bank
+
+### Scope
+
+- `rtl/common/cpu/csr_file.sv`
+- likely removal of the `sync_dpram` dependency from this path
+
+### Work items
+
+1. Remove the sparse CSR index mapping and `sync_dpram` instance from `csr_file.sv`.
+2. Introduce explicit registers for writable machine CSRs.
+3. Keep combinational generation for read-only CSRs and counters.
+4. Rebuild the CSR read mux around direct register values.
+
+### Exit criteria
+
+- No writable machine CSR read depends on BRAM latency.
+- `csr_file.sv` still preserves existing software-visible read values.
+
+### Phase 2 — Separate software CSR semantics from hardware trap semantics
+
+### Scope
+
+- `rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+
+### Work items
+
+1. Define a clean software CSR access port in `csr_file.sv`.
+2. Define a distinct hardware update port for trap entry/return.
+3. Add dedicated CSR outputs for trap-critical architectural state.
+4. Establish deterministic priority rules if a hardware trap update and a software CSR write could target the same register in one cycle.
+
+### Recommended priority rule
+
+Hardware trap updates should win over software CSR writes. In a precise-exception design those cases should rarely coincide, but the priority rule should still be explicit in the RTL.
+
+### Phase 3 — Rework CPU CSR timing around direct reads
+
+### Scope
+
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/writeback_mux.sv` only if interface adjustments are needed
+
+### Work items
+
+1. Stop capturing CSR read data in `S_REG_READ_WAIT` solely because of the old BRAM pipeline.
+2. Capture the old CSR value from the direct CSR mux at a point that still preserves read-before-write behavior.
+3. Leave the regfile-driven `S_REG_READ`/`S_REG_READ_WAIT` states intact unless a separate optimization pass is justified.
+4. Ensure CSR instruction completion timing remains compatible with trace capture and `instr_complete`.
+
+### Exit criteria
+
+- CSR instructions still return the old value in `rd`.
+- Trap logic can read `mtvec`/`mepc`/`mstatus` without entering the CSR instruction flow.
+
+### Phase 4 — Add the trap-ready CSR control hooks
+
+### Scope
+
+- `rtl/common/cpu/csr_file.sv`
+- `rtl/common/cpu/cpu.sv`
+
+### Work items
+
+1. Add trap entry sideband signals from the CPU into the CSR block.
+2. Add trap return sideband signals for `MRET`.
+3. Add direct trap-critical CSR outputs from the CSR block back to the CPU.
+4. Update the PC selection logic so trap redirect sources can consume direct CSR outputs.
+5. Ensure fetch/decompression invalidation can be triggered by trap redirects exactly like other control-flow redirects.
+
+### Phase 5 — Fold in the existing FCSR semantic fix as part of the restructure
+
+### Scope
+
+- `rtl/common/cpu/cpu.sv`
+- `rtl/common/cpu/csr_file.sv`
+
+### Work items
+
+1. Remove the direct `a_reg`-based FCSR sub-CSR write path in `cpu.sv`.
+2. Reuse the same computed CSR write result for:
+   - `fflags`
+   - `frm`
+   - `fcsr`
+3. Preserve FP exception-flag accumulation on completed FP instructions.
+
+This phase is tightly coupled to the restructure because it is another case where CSR state currently bypasses the unified architectural path.
+
+### Phase 6 — Verification updates
+
+### RTL validation
+
+Once RTL changes begin, validate with:
+
+- `find rtl/common -name '*.sv' -exec verilator --lint-only --Wno-MULTITOP {} +`
+- `(cd rtl/fpga && make)`
+
+### Directed verification additions
+
+Add or extend tests that prove:
+
+1. ordinary CSR reads/writes still return old-value semantics,
+2. `fflags`/`frm`/`fcsr` obey all six Zicsr operations,
+3. trap-critical CSRs are updated by hardware trap control paths,
+4. `mtvec` and `mepc` are consumed directly by control-flow logic,
+5. the trapping instruction does not retire,
+6. `MRET` restores control flow from the direct CSR state.
+
+The first wave of tests can be focused CPU/integration tests; interrupt-specific coverage can remain in the later interrupt phases.
+
+## 6. Key Design Decisions to Lock Before Implementation
+
+1. **Full replacement vs partial replacement**
+   - Preferred: remove BRAM from writable machine CSR storage entirely.
+   - Avoid a hybrid where trap-critical CSRs move to flops but other writable machine CSRs stay in the sparse RAM unless a synthesis result proves it is necessary.
+
+2. **`medeleg`/`mideleg` behavior**
+   - Preferred: hardwire to zero if the design remains machine-mode only.
+
+3. **`mstatus` representation**
+   - Preferred: explicit bitfield management for implemented bits rather than unrestricted 32-bit storage.
+
+4. **CSR instruction timing**
+   - Preferred: preserve the current visible behavior first, then optimize state count later if desired.
+
+5. **Trap update API shape**
+   - Preferred: explicit sideband trap-entry/return controls instead of “internal fake CSR writes.”
+
+## 7. Risks and Mitigations
+
+### Risk 1: Breaking existing CSR read-before-write behavior
+
+**Mitigation:** keep old-value capture explicit and verify all six Zicsr operations before trap work lands.
+
+### Risk 2: Regressing FCSR behavior while unifying paths
+
+**Mitigation:** land focused FCSR semantic tests together with the restructure.
+
+### Risk 3: Over-designing WARL/WPRI support too early
+
+**Mitigation:** implement only the field awareness needed for trap correctness now; defer full polish to the later cleanup phase.
+
+### Risk 4: Leaving CPU control logic dependent on legacy CSR timing
+
+**Mitigation:** add direct trap-critical CSR outputs as part of the same change set that removes the BRAM-backed bank.
+
+## 8. Recommended Execution Order
+
+1. Replace BRAM-backed writable CSR storage with explicit registers.
+2. Split software CSR access from hardware trap-control access.
+3. Rework CPU CSR old-value capture around direct reads.
+4. Fold in the FCSR semantic unification.
+5. Use the new sideband/direct-output structure to implement synchronous trap entry.
+6. Then continue with `MRET`, `mip` plumbing, and interrupt polling from `docs/plans/cpu-csr-trap-interrupt-remaining-phases.md`.
+
+## 9. Expected Outcome
+
+After this restructure, the CPU should have a CSR subsystem that behaves like architectural control state rather than like a tiny CSR memory. That will make the later trap and interrupt phases substantially simpler:
+
+- trap entry can consume `mtvec` immediately,
+- trap return can consume `mepc` immediately,
+- `mstatus` can be updated as fields rather than opaque words,
+- and CSR instructions can continue to preserve correct old-value semantics without forcing the control path through a BRAM abstraction.
