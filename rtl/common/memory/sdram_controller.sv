@@ -1,12 +1,14 @@
 `default_nettype none
 
-module pocket_sdram #(
-    parameter int unsigned CLK_FREQ_HZ = 133_000_000,
+module sdram_controller #(
+    parameter int unsigned CONTROLLER_CLK_FREQ_HZ = 133_000_000,
+    parameter int unsigned CAS_LATENCY = 3,
+    parameter int unsigned EXTRA_READ_LATENCY_CYCLES = 0,
     parameter int unsigned INIT_DELAY_US = 200
 ) (
     input  wire logic        controller_clk,
     input  wire logic        sample_clk,
-    input  wire logic        reset_n,
+    input  wire logic        rst,
 
     output wire logic        phy_cke,
     output wire logic        phy_cas,
@@ -46,6 +48,7 @@ module pocket_sdram #(
         ST_READ_CMD_0,
         ST_READ_CMD_1,
         ST_READ_WAIT,
+        ST_READ_DATA_WAIT,
         ST_READ_RECOVERY,
         ST_WRITE_CMD_0,
         ST_WRITE_CMD_1,
@@ -60,12 +63,6 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_AUTOREF = 3'b001;
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
-    localparam int unsigned CAS_LATENCY = 3;
-    // READ_CAPTURE_STAGES is load-bearing: if CAS_LATENCY changes, this depth
-    // must change with it so the controller consumes the sample-clock landing
-    // zone on the sys-clock beat where the SDRAM first presents valid data.
-    localparam int unsigned READ_CAPTURE_STAGES = CAS_LATENCY;
-
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
         if (a > b) begin
             max_u = a;
@@ -74,28 +71,43 @@ module pocket_sdram #(
         end
     endfunction
 
+    function automatic logic [2:0] cas_mode_bits(input int unsigned cas);
+        begin
+            case (cas)
+                2: cas_mode_bits = 3'b010;
+                3: cas_mode_bits = 3'b011;
+                default: cas_mode_bits = 3'b011;
+            endcase
+        end
+    endfunction
+
     function automatic int unsigned ns_to_cycles_ceil(input int unsigned ns);
         longint unsigned numerator;
         begin
-            numerator = (longint'(CLK_FREQ_HZ) * longint'(ns)) + 1_000_000_000 - 1;
+            numerator = (longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(ns)) + 1_000_000_000 - 1;
             ns_to_cycles_ceil = int'(numerator / 1_000_000_000);
         end
     endfunction
 
     function automatic int unsigned ns_to_cycles_floor(input int unsigned ns);
         begin
-            ns_to_cycles_floor = int'((longint'(CLK_FREQ_HZ) * longint'(ns)) / 1_000_000_000);
+            ns_to_cycles_floor = int'((longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(ns)) / 1_000_000_000);
         end
     endfunction
 
     function automatic int unsigned us_to_cycles_ceil(input int unsigned us);
         longint unsigned numerator;
         begin
-            numerator = (longint'(CLK_FREQ_HZ) * longint'(us)) + 1_000_000 - 1;
+            numerator = (longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(us)) + 1_000_000 - 1;
             us_to_cycles_ceil = int'(numerator / 1_000_000);
         end
     endfunction
 
+    // Stage 0 is asserted in the same controller cycle as the READ command, so
+    // the controller-side consume point needs one extra shift beyond CAS.
+    localparam int unsigned BASE_READ_CAPTURE_STAGES = max_u(2, CAS_LATENCY + 1);
+    localparam int unsigned READ_COMPLETION_STAGES =
+        BASE_READ_CAPTURE_STAGES + EXTRA_READ_LATENCY_CYCLES;
     localparam int unsigned TRP_CYCLES = max_u(2, ns_to_cycles_ceil(18));
     localparam int unsigned TRCD_CYCLES = max_u(2, ns_to_cycles_ceil(18));
     localparam int unsigned TRFC_CYCLES = max_u(2, ns_to_cycles_ceil(80));
@@ -105,11 +117,9 @@ module pocket_sdram #(
     localparam int unsigned WRITE_RECOVERY_CYCLES = max_u(4, TWR_CYCLES + TRP_CYCLES + 1);
     localparam int unsigned INIT_DELAY_CYCLES = max_u(2, us_to_cycles_ceil(INIT_DELAY_US));
     localparam int unsigned REFRESH_MAX_CYCLES = max_u(2, ns_to_cycles_floor(7_813));
-    // Allow for the command issue cycle plus the ST_IDLE and ST_REFRESH handoff
-    // cycles before AUTO REFRESH reaches the SDRAM pins.
     localparam int unsigned REFRESH_SLIP_CYCLES =
         max_u(
-            TRCD_CYCLES + CAS_LATENCY + READ_RECOVERY_CYCLES + 3,
+            TRCD_CYCLES + READ_COMPLETION_STAGES + READ_RECOVERY_CYCLES + 2,
             TRCD_CYCLES + WRITE_RECOVERY_CYCLES + 3
         );
     localparam int unsigned REFRESH_INTERVAL_CYCLES =
@@ -121,10 +131,10 @@ module pocket_sdram #(
         );
     localparam int unsigned TIMER_WIDTH = (TIMER_MAX_CYCLES <= 1) ? 1 : $clog2(TIMER_MAX_CYCLES);
 
-    localparam logic [12:0] MODE_REG = 13'b000_0_00_011_0_000;
+    localparam logic [2:0] MODE_REG_CAS = cas_mode_bits(CAS_LATENCY);
+    localparam logic [12:0] MODE_REG = {3'b000, 1'b0, 2'b00, MODE_REG_CAS, 1'b0, 3'b000};
     localparam logic [12:0] EXT_MODE_REG = 13'b00000_010_00_000;
 
-    logic rst;
     state_t                  state;
     logic [TIMER_WIDTH-1:0]  wait_counter;
     logic [TIMER_WIDTH-1:0]  refresh_counter;
@@ -137,20 +147,21 @@ module pocket_sdram #(
     logic [9:0]              req_col_halfword_next;
     logic [12:0]             req_row;
     logic [1:0]              req_bank;
-    logic [READ_CAPTURE_STAGES-1:0] read_capture_valid_pipe;
-    logic [READ_CAPTURE_STAGES-1:0] read_capture_low_pipe;
-    logic [READ_CAPTURE_STAGES-1:0] read_capture_last_pipe;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_valid_pipe;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_low_pipe;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_last_pipe;
+    logic [15:0] read_high_pending;
+    logic [15:0] read_low_pending;
 
-    (* useioff = 1 *) logic [2:0]  phy_cmd_reg;
-    (* useioff = 1 *) logic        phy_cke_reg;
-    (* useioff = 1 *) logic [1:0]  phy_ba_reg;
-    (* useioff = 1 *) logic [12:0] phy_a_reg;
-    (* useioff = 1 *) logic [1:0]  phy_dqm_reg;
-    (* useioff = 1 *) logic        phy_dq_oe_reg;
-    (* useioff = 1 *) logic [15:0] phy_dq_out_reg;
-    (* useioff = 1 *) logic [15:0] phy_dq_captured;
+    logic [2:0]  phy_cmd_reg;
+    logic        phy_cke_reg;
+    logic [1:0]  phy_ba_reg;
+    logic [12:0] phy_a_reg;
+    logic [1:0]  phy_dqm_reg;
+    logic        phy_dq_oe_reg;
+    logic [15:0] phy_dq_out_reg;
+    logic [15:0] phy_dq_captured;
 
-    assign rst = !reset_n;
     assign phy_cke = phy_cke_reg;
     assign {phy_ras, phy_cas, phy_we} = phy_cmd_reg;
     assign phy_ba = phy_ba_reg;
@@ -166,8 +177,6 @@ module pocket_sdram #(
     end
 
     always_ff @(posedge sample_clk) begin
-        // This landing-zone payload is only consumed when read_capture_valid_pipe
-        // reaches its final stage, so it stays off the reset fanout tree.
         phy_dq_captured <= phy_dq;
     end
 
@@ -184,6 +193,8 @@ module pocket_sdram #(
             read_capture_valid_pipe <= '0;
             read_capture_low_pipe <= '0;
             read_capture_last_pipe <= '0;
+            read_high_pending <= '0;
+            read_low_pending <= '0;
             phy_cmd_reg <= CMD_NOP;
             phy_cke_reg <= 1'b0;
             phy_ba_reg <= 2'b00;
@@ -199,27 +210,17 @@ module pocket_sdram #(
             phy_dqm_reg <= 2'b00;
 
             read_capture_valid_pipe <= {
-                read_capture_valid_pipe[READ_CAPTURE_STAGES-2:0],
+                read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
             read_capture_low_pipe <= {
-                read_capture_low_pipe[READ_CAPTURE_STAGES-2:0],
+                read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
             read_capture_last_pipe <= {
-                read_capture_last_pipe[READ_CAPTURE_STAGES-2:0],
+                read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-2:0],
                 1'b0
             };
-
-            if (read_capture_valid_pipe[READ_CAPTURE_STAGES-1]) begin
-                // read_capture_low_pipe marks the second READ command, which
-                // returns the low halfword of the 32-bit word.
-                if (read_capture_low_pipe[READ_CAPTURE_STAGES-1]) begin
-                    word_q[15:0] <= phy_dq_captured;
-                end else begin
-                    word_q[31:16] <= phy_dq_captured;
-                end
-            end
 
             if (refresh_counter == TIMER_WIDTH'(REFRESH_INTERVAL_CYCLES - 1)) begin
                 refresh_counter <= '0;
@@ -419,10 +420,34 @@ module pocket_sdram #(
 
                 ST_READ_WAIT: begin
                     word_busy <= 1'b1;
-                    if (read_capture_valid_pipe[READ_CAPTURE_STAGES-1]
-                        && read_capture_last_pipe[READ_CAPTURE_STAGES-1]) begin
+                    if (read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                        if (read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                            read_low_pending <= phy_dq_captured;
+                        end else begin
+                            read_high_pending <= phy_dq_captured;
+                        end
+
+                        if (read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                            if (EXTRA_READ_LATENCY_CYCLES == 0) begin
+                                word_q <= {read_high_pending, phy_dq_captured};
+                                wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
+                                state <= ST_READ_RECOVERY;
+                            end else begin
+                                wait_counter <= TIMER_WIDTH'(EXTRA_READ_LATENCY_CYCLES - 1);
+                                state <= ST_READ_DATA_WAIT;
+                            end
+                        end
+                    end
+                end
+
+                ST_READ_DATA_WAIT: begin
+                    word_busy <= 1'b1;
+                    if (wait_counter == '0) begin
+                        word_q <= {read_high_pending, read_low_pending};
                         wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
                         state <= ST_READ_RECOVERY;
+                    end else begin
+                        wait_counter <= wait_counter - 1'b1;
                     end
                 end
 

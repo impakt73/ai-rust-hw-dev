@@ -35,7 +35,7 @@ Address Range            | Device              | Type | Description
   Decode is window-based on the top nibble (`addr[31:28]`), so accesses within a given
   256 MiB RTL window may intentionally mirror/alias at the peripheral level.
 - **Pocket RTL SDRAM** (`0x10000000 - 0x13FFFFFF`): A CPU-visible RTL memory
-  peripheral backed by `pocket_sdram`. This is distinct from host DRAM and must be
+  peripheral backed by `sdram_controller`. This is distinct from host DRAM and must be
   targeted explicitly by software that wants to execute or store data there.
 - **DRAM** (`0x80000000 - 0x8FFFFFFF`): Main system memory implemented as a
   Rust peripheral and handled by the Rust `SystemBus` path (including FPGA

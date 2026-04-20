@@ -419,12 +419,16 @@ end
 // SDRAM interface driven by the dedicated 133 MHz PLL outputs.
 // The ext/samp legs are placeholders until the PLL is regenerated in Quartus
 // with the intended +90/-90 degree phases.
-pocket_sdram #(
-    .CLK_FREQ_HZ     ( 133_000_000 )
+sdram_controller #(
+    .CONTROLLER_CLK_FREQ_HZ       ( 133_000_000 ),
+    .CAS_LATENCY                  ( 3 ),
+    .EXTRA_READ_LATENCY_CYCLES    ( 0 )
 ) sdram_inst (
     .controller_clk  ( clk_core_133_sys ),
     .sample_clk      ( clk_core_133_samp ),
-    .reset_n         ( reset_n ),
+    // Pocket reset_n comes from the board boundary active-low, so invert it
+    // here to match the project-wide internal active-high reset convention.
+    .rst             ( ~reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_cas         ( dram_cas_n ),
     .phy_ras         ( dram_ras_n ),
