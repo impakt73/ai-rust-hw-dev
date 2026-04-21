@@ -82,24 +82,32 @@ module sdram_controller #(
     endfunction
 
     function automatic int unsigned ns_to_cycles_ceil(input int unsigned ns);
-        longint unsigned numerator;
+        logic [63:0] numerator;
+        logic [63:0] quotient;
         begin
-            numerator = (longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(ns)) + 1_000_000_000 - 1;
-            ns_to_cycles_ceil = int'(numerator / 1_000_000_000);
+            numerator = ({32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, ns}) + 64'd1_000_000_000 - 64'd1;
+            quotient = numerator / 64'd1_000_000_000;
+            ns_to_cycles_ceil = quotient[31:0];
         end
     endfunction
 
     function automatic int unsigned ns_to_cycles_floor(input int unsigned ns);
+        logic [63:0] numerator;
+        logic [63:0] quotient;
         begin
-            ns_to_cycles_floor = int'((longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(ns)) / 1_000_000_000);
+            numerator = {32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, ns};
+            quotient = numerator / 64'd1_000_000_000;
+            ns_to_cycles_floor = quotient[31:0];
         end
     endfunction
 
     function automatic int unsigned us_to_cycles_ceil(input int unsigned us);
-        longint unsigned numerator;
+        logic [63:0] numerator;
+        logic [63:0] quotient;
         begin
-            numerator = (longint'(CONTROLLER_CLK_FREQ_HZ) * longint'(us)) + 1_000_000 - 1;
-            us_to_cycles_ceil = int'(numerator / 1_000_000);
+            numerator = ({32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, us}) + 64'd1_000_000 - 64'd1;
+            quotient = numerator / 64'd1_000_000;
+            us_to_cycles_ceil = quotient[31:0];
         end
     endfunction
 
