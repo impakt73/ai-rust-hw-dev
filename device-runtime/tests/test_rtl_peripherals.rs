@@ -124,7 +124,7 @@ fn test_led_read_back() {
         andi(13, 13, 0xFF),
         addi(12, 0, 0xCC),
         sub(11, 13, 12),
-        bne(11, 0, 24),
+        bne(11, 0, 28),
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
     instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
@@ -182,7 +182,7 @@ fn test_led_upper_bits_ignored() {
         andi(13, 13, 0xFF),
         addi(12, 0, 0xAA),
         sub(11, 13, 12),
-        bne(11, 0, 24),
+        bne(11, 0, 28),
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
     instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
@@ -265,7 +265,7 @@ fn test_host_initiated_led_write() {
         andi(10, 10, 0xFF),         // mask to 8 bits
         // Compare actual vs expected
         sub(8, 10, 11), // x8 = actual - expected
-        bne(8, 0, 24),  // if not equal, jump to failure
+        bne(8, 0, 28),  // if not equal, jump to failure
     ];
     instructions.extend(tohost_termination(9, 7, SUCCESS_CODE));
     instructions.extend(tohost_termination(9, 7, FAILURE_CODE));

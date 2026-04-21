@@ -53,7 +53,7 @@ fn check_reg_and_terminate(result_reg: u32, expected: i32) -> Vec<u32> {
     let mut instructions = vec![
         addi(12, 0, expected),
         sub(11, result_reg, 12),
-        bne(11, 0, 24),
+        bne(11, 0, 28),
     ];
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
     instructions.extend(tohost_termination(7, 8, FAILURE_CODE));

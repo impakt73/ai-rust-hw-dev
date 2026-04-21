@@ -130,7 +130,7 @@ fn test_cpu_branch_beq_bne() {
         sw(9, 3, 0),
         sw(9, 5, 4),
         or(10, 3, 5),
-        bne(10, 0, 24),
+        bne(10, 0, 28),
     ];
     let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
@@ -164,7 +164,7 @@ fn test_cpu_branch_blt_bge() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 24),
+        bne(10, 0, 28),
     ];
     let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
@@ -198,7 +198,7 @@ fn test_cpu_branch_bltu_bgeu() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 24),
+        bne(10, 0, 28),
     ];
     let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
@@ -230,7 +230,7 @@ fn test_cpu_load_store() {
         lui(4, DRAM_BASE),
         sw(4, 3, 0x200), // Store x3 to 0x80000200 to verify
         sub(10, 3, 2),
-        bne(10, 0, 24),
+        bne(10, 0, 28),
     ];
     let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
@@ -260,10 +260,10 @@ fn test_cpu_load_byte() {
         sw(1, 4, 0x204),  // Store unsigned result
         addi(12, 0, -1),
         sub(10, 3, 12),
-        bne(10, 0, 36),
+        bne(10, 0, 40),
         addi(12, 0, 0xFF),
         sub(10, 4, 12),
-        bne(10, 0, 24),
+        bne(10, 0, 28),
     ];
     let mut instructions = instructions;
     instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
