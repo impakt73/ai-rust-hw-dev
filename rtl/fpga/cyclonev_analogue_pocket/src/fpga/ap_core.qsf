@@ -561,6 +561,75 @@ set_instance_assignment -name IO_STANDARD "1.8 V" -to scal_vid[1]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to scal_vid[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to dram_dqm[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to dram_dqm[1]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_cke
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_cas_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ras_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_we_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ba[0]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ba[1]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[0]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[1]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[2]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[3]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[4]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[5]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[6]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[7]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[8]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[9]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[10]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[11]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[12]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dqm[0]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dqm[1]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[0]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[1]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[2]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[3]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[4]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[5]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[6]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[7]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[8]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[9]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[10]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[11]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[12]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[13]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[14]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[15]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[0]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[1]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[2]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[3]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[4]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[5]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[6]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[7]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[8]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[9]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[10]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[11]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[12]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[13]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[14]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[15]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[0]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[1]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[2]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[3]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[4]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[5]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[6]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[7]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[8]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[9]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[10]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[11]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[12]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[13]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[14]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[15]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to aux_sda
 set_instance_assignment -name IO_STANDARD "1.8 V" -to aux_scl
 set_instance_assignment -name IO_STANDARD "1.8 V" -to cart_pin30_pwroff_reset
@@ -746,9 +815,7 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to port_tran_so
 set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name QIP_FILE apf/mf_ddio_bidir_12.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
-set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_sdram.sv
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
-set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
 set_global_assignment -name SIP_FILE core/mf_pllbase.sip
@@ -756,5 +823,6 @@ set_global_assignment -name SIP_FILE core/mf_pllbase.sip
 set_global_assignment -name QIP_FILE core/mf_pllbase2.qip
 set_global_assignment -name SIP_FILE core/mf_pllbase2.sip
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+
 
 set_global_assignment -name SLD_FILE db/stp1_auto_stripped.stp

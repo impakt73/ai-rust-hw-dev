@@ -417,11 +417,18 @@ end
     wire            audgen_dac;
 
 // SDRAM interface driven by the dedicated 133 MHz PLL outputs.
-pocket_sdram #(
-    .CLK_FREQ_HZ     ( 133_000_000 )
+// The ext/samp legs are placeholders until the PLL is regenerated in Quartus
+// with the intended +90/-90 degree phases.
+sdram_controller #(
+    .CONTROLLER_CLK_FREQ_HZ       ( 133_000_000 ),
+    .CAS_LATENCY                  ( 3 ),
+    .EXTRA_READ_LATENCY_CYCLES    ( 0 )
 ) sdram_inst (
-    .controller_clk  ( clk_core_133 ),
-    .reset_n         ( reset_n ),
+    .controller_clk  ( clk_core_133_sys ),
+    .sample_clk      ( clk_core_133_samp ),
+    // Pocket reset_n comes from the board boundary active-low, so invert it
+    // here to match the project-wide internal active-high reset convention.
+    .rst             ( ~reset_n ),
     .phy_cke         ( dram_cke ),
     .phy_cas         ( dram_cas_n ),
     .phy_ras         ( dram_ras_n ),
@@ -447,7 +454,7 @@ altddio_out #(
 ) sdram_clk_forward_inst (
     .datain_h           ( 1'b1 ),
     .datain_l           ( 1'b0 ),
-    .outclock           ( clk_core_133_45deg ),
+    .outclock           ( clk_core_133_ext ),
     .outclocken         ( 1'b1 ),
     .aclr               ( 1'b0 ),
     .aset               ( 1'b0 ),
@@ -457,7 +464,7 @@ altddio_out #(
 
 cyclonev_analogue_pocket_top repo_top_inst (
     .clk        ( clk_74a ),
-    .clk_sdram  ( clk_core_133 ),
+    .clk_sdram  ( clk_core_133_sys ),
     .clk_video  ( clk_core_12288 ),
     .audio_mclk ( clk_core_12288 ),
     .audio_sclk ( clk_core_3072_180deg ),
@@ -631,8 +638,9 @@ mf_pllbase mp1 (
     .locked         ( pll_core_locked )
 );
 
-    wire    clk_core_133;
-    wire    clk_core_133_45deg;
+    wire    clk_core_133_sys;
+    wire    clk_core_133_ext;
+    wire    clk_core_133_samp;
 
     wire    pll2_core_locked;
     wire    pll2_core_locked_s;
@@ -642,8 +650,9 @@ mf_pllbase2 mp2 (
     .refclk         ( clk_74a ),
     .rst            ( 0 ),
 
-    .outclk_0       ( clk_core_133 ),
-    .outclk_1       ( clk_core_133_45deg ),
+    .outclk_0       ( clk_core_133_sys ),
+    .outclk_1       ( clk_core_133_ext ),
+    .outclk_2       ( clk_core_133_samp ),
 
     .locked         ( pll2_core_locked )
 );

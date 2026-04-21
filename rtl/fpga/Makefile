@@ -49,6 +49,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/cpu/mem_interface.sv \
 	$(RTL_DIR)/cpu/mul_unit.sv \
 	$(RTL_DIR)/memory/registered_bus.sv \
+	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sync_dpram.sv \
 	$(RTL_DIR)/memory/sync_sprom.sv \
 	$(RTL_DIR)/cpu/regfile.sv \

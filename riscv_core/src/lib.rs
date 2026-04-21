@@ -224,6 +224,30 @@ pub struct GamepadPeripheralTestWrapper;
 pub struct SdramPeripheralTestWrapper;
 
 #[verilog(
+    src = "../rtl/common/wrappers/sdram_controller_test_wrapper.sv",
+    name = "sdram_controller_test_wrapper"
+)]
+pub struct SdramControllerTestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/sdram_controller_test_wrapper.sv",
+    name = "sdram_controller_cas2_test_wrapper"
+)]
+pub struct SdramControllerCas2TestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/sdram_controller_test_wrapper.sv",
+    name = "sdram_controller_extra_latency_test_wrapper"
+)]
+pub struct SdramControllerExtraLatencyTestWrapper;
+
+#[verilog(
+    src = "../rtl/common/wrappers/sdram_controller_test_wrapper.sv",
+    name = "sdram_controller_100mhz_test_wrapper"
+)]
+pub struct SdramController100MhzTestWrapper;
+
+#[verilog(
     src = "../rtl/common/wrappers/apf_bus_bridge_test_wrapper.sv",
     name = "apf_bus_bridge_test_wrapper"
 )]
@@ -665,6 +689,13 @@ pub fn create_sdram_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn std
         "primitives/bus_cdc_bridge.sv",
         "peripherals/sdram_peripheral.sv",
         "wrappers/sdram_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_sdram_controller_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "memory/sdram_controller.sv",
+        "wrappers/sdram_controller_test_wrapper.sv",
     ])
 }
 
