@@ -136,11 +136,11 @@ module csr_file #(
     always_comb begin
         case (funct3)
             3'b001: csr_wdata = rs1_data;
-            3'b010: csr_wdata = csr_rdata_next | rs1_data;
-            3'b011: csr_wdata = csr_rdata_next & ~rs1_data;
+            3'b010: csr_wdata = csr_rdata | rs1_data;
+            3'b011: csr_wdata = csr_rdata & ~rs1_data;
             3'b101: csr_wdata = {27'b0, rs1};
-            3'b110: csr_wdata = csr_rdata_next | {27'b0, rs1};
-            3'b111: csr_wdata = csr_rdata_next & ~{27'b0, rs1};
+            3'b110: csr_wdata = csr_rdata | {27'b0, rs1};
+            3'b111: csr_wdata = csr_rdata & ~{27'b0, rs1};
             default: csr_wdata = 32'h0;
         endcase
     end
