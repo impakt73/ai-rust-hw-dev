@@ -1,20 +1,23 @@
 `default_nettype none
 
-module pocket_sdram #(
-    parameter int unsigned CLK_FREQ_HZ = 133_000_000,
+module sdram_controller #(
+    parameter int unsigned CONTROLLER_CLK_FREQ_HZ = 133_000_000,
+    parameter int unsigned CAS_LATENCY = 3,
+    parameter int unsigned EXTRA_READ_LATENCY_CYCLES = 0,
     parameter int unsigned INIT_DELAY_US = 200
 ) (
     input  wire logic        controller_clk,
-    input  wire logic        reset_n,
+    input  wire logic        sample_clk,
+    input  wire logic        rst,
 
-    output logic             phy_cke,
+    output wire logic        phy_cke,
     output wire logic        phy_cas,
     output wire logic        phy_ras,
     output wire logic        phy_we,
-    output logic [1:0]       phy_ba,
-    output logic [12:0]      phy_a,
+    output wire logic [1:0]  phy_ba,
+    output wire logic [12:0] phy_a,
     inout  wire logic [15:0] phy_dq,
-    output logic [1:0]       phy_dqm,
+    output wire logic [1:0]  phy_dqm,
 
     input  wire logic        word_rd,
     input  wire logic        word_wr,
@@ -45,7 +48,7 @@ module pocket_sdram #(
         ST_READ_CMD_0,
         ST_READ_CMD_1,
         ST_READ_WAIT,
-        ST_READ_CAPTURE_1,
+        ST_READ_DATA_WAIT,
         ST_READ_RECOVERY,
         ST_WRITE_CMD_0,
         ST_WRITE_CMD_1,
@@ -60,8 +63,6 @@ module pocket_sdram #(
     localparam logic [2:0] CMD_AUTOREF = 3'b001;
     localparam logic [2:0] CMD_LMR     = 3'b000;
 
-    localparam int unsigned CAS_LATENCY = 3;
-
     function automatic int unsigned max_u(input int unsigned a, input int unsigned b);
         if (a > b) begin
             max_u = a;
@@ -70,43 +71,63 @@ module pocket_sdram #(
         end
     endfunction
 
-    function automatic int unsigned ns_to_cycles_ceil(input int unsigned ns);
-        longint unsigned numerator;
+    function automatic logic [2:0] cas_mode_bits(input int unsigned cas);
         begin
-            numerator = (longint'(CLK_FREQ_HZ) * longint'(ns)) + 1_000_000_000 - 1;
-            ns_to_cycles_ceil = int'(numerator / 1_000_000_000);
+            case (cas)
+                2: cas_mode_bits = 3'b010;
+                3: cas_mode_bits = 3'b011;
+                default: cas_mode_bits = 3'b011;
+            endcase
+        end
+    endfunction
+
+    function automatic int unsigned ns_to_cycles_ceil(input int unsigned ns);
+        logic [63:0] numerator;
+        logic [63:0] quotient;
+        begin
+            numerator = ({32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, ns}) + 64'd1_000_000_000 - 64'd1;
+            quotient = numerator / 64'd1_000_000_000;
+            ns_to_cycles_ceil = quotient[31:0];
         end
     endfunction
 
     function automatic int unsigned ns_to_cycles_floor(input int unsigned ns);
+        logic [63:0] numerator;
+        logic [63:0] quotient;
         begin
-            ns_to_cycles_floor = int'((longint'(CLK_FREQ_HZ) * longint'(ns)) / 1_000_000_000);
+            numerator = {32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, ns};
+            quotient = numerator / 64'd1_000_000_000;
+            ns_to_cycles_floor = quotient[31:0];
         end
     endfunction
 
     function automatic int unsigned us_to_cycles_ceil(input int unsigned us);
-        longint unsigned numerator;
+        logic [63:0] numerator;
+        logic [63:0] quotient;
         begin
-            numerator = (longint'(CLK_FREQ_HZ) * longint'(us)) + 1_000_000 - 1;
-            us_to_cycles_ceil = int'(numerator / 1_000_000);
+            numerator = ({32'd0, CONTROLLER_CLK_FREQ_HZ} * {32'd0, us}) + 64'd1_000_000 - 64'd1;
+            quotient = numerator / 64'd1_000_000;
+            us_to_cycles_ceil = quotient[31:0];
         end
     endfunction
 
+    // Stage 0 is asserted in the same controller cycle as the READ command, so
+    // the controller-side consume point needs one extra shift beyond CAS.
+    localparam int unsigned BASE_READ_CAPTURE_STAGES = max_u(2, CAS_LATENCY + 1);
+    localparam int unsigned READ_COMPLETION_STAGES =
+        BASE_READ_CAPTURE_STAGES + EXTRA_READ_LATENCY_CYCLES;
     localparam int unsigned TRP_CYCLES = max_u(2, ns_to_cycles_ceil(18));
     localparam int unsigned TRCD_CYCLES = max_u(2, ns_to_cycles_ceil(18));
     localparam int unsigned TRFC_CYCLES = max_u(2, ns_to_cycles_ceil(80));
     localparam int unsigned TMRD_CYCLES = 2;
     localparam int unsigned TWR_CYCLES = max_u(2, ns_to_cycles_ceil(15));
-    localparam int unsigned READ_WAIT_CYCLES = (CAS_LATENCY > 1) ? (CAS_LATENCY - 2) : 0;
     localparam int unsigned READ_RECOVERY_CYCLES = max_u(2, TRP_CYCLES + 1);
     localparam int unsigned WRITE_RECOVERY_CYCLES = max_u(4, TWR_CYCLES + TRP_CYCLES + 1);
     localparam int unsigned INIT_DELAY_CYCLES = max_u(2, us_to_cycles_ceil(INIT_DELAY_US));
     localparam int unsigned REFRESH_MAX_CYCLES = max_u(2, ns_to_cycles_floor(7_813));
-    // Allow for the command issue cycle plus the ST_IDLE and ST_REFRESH handoff
-    // cycles before AUTO REFRESH reaches the SDRAM pins.
     localparam int unsigned REFRESH_SLIP_CYCLES =
         max_u(
-            TRCD_CYCLES + CAS_LATENCY + READ_RECOVERY_CYCLES + 3,
+            TRCD_CYCLES + READ_COMPLETION_STAGES + READ_RECOVERY_CYCLES + 2,
             TRCD_CYCLES + WRITE_RECOVERY_CYCLES + 3
         );
     localparam int unsigned REFRESH_INTERVAL_CYCLES =
@@ -118,7 +139,8 @@ module pocket_sdram #(
         );
     localparam int unsigned TIMER_WIDTH = (TIMER_MAX_CYCLES <= 1) ? 1 : $clog2(TIMER_MAX_CYCLES);
 
-    localparam logic [12:0] MODE_REG = 13'b000_0_00_011_0_000;
+    localparam logic [2:0] MODE_REG_CAS = cas_mode_bits(CAS_LATENCY);
+    localparam logic [12:0] MODE_REG = {3'b000, 1'b0, 2'b00, MODE_REG_CAS, 1'b0, 3'b000};
     localparam logic [12:0] EXT_MODE_REG = 13'b00000_010_00_000;
 
     state_t                  state;
@@ -129,16 +151,31 @@ module pocket_sdram #(
     logic [23:0]             req_word_addr;
     logic [31:0]             req_word_data;
     logic                    req_pending;
-    logic [2:0]              cmd;
-    logic                    phy_dq_oe;
-    logic [15:0]             phy_dq_out;
     logic [9:0]              req_col_halfword;
     logic [9:0]              req_col_halfword_next;
     logic [12:0]             req_row;
     logic [1:0]              req_bank;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_valid_pipe;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_low_pipe;
+    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_last_pipe;
+    logic [15:0] read_high_pending;
+    logic [15:0] read_low_pending;
 
-    assign {phy_ras, phy_cas, phy_we} = cmd;
-    assign phy_dq = phy_dq_oe ? phy_dq_out : 16'hZZZZ;
+    logic [2:0]  phy_cmd_reg;
+    logic        phy_cke_reg;
+    logic [1:0]  phy_ba_reg;
+    logic [12:0] phy_a_reg;
+    logic [1:0]  phy_dqm_reg;
+    logic        phy_dq_oe_reg;
+    logic [15:0] phy_dq_out_reg;
+    logic [15:0] phy_dq_captured;
+
+    assign phy_cke = phy_cke_reg;
+    assign {phy_ras, phy_cas, phy_we} = phy_cmd_reg;
+    assign phy_ba = phy_ba_reg;
+    assign phy_a = phy_a_reg;
+    assign phy_dqm = phy_dqm_reg;
+    assign phy_dq = phy_dq_oe_reg ? phy_dq_out_reg : 16'hZZZZ;
 
     always_comb begin
         req_bank = req_word_addr[23:22];
@@ -147,8 +184,12 @@ module pocket_sdram #(
         req_col_halfword_next = req_col_halfword + 10'd1;
     end
 
+    always_ff @(posedge sample_clk) begin
+        phy_dq_captured <= phy_dq;
+    end
+
     always_ff @(posedge controller_clk) begin
-        if (!reset_n) begin
+        if (rst) begin
             state <= ST_RESET;
             wait_counter <= '0;
             refresh_counter <= '0;
@@ -157,19 +198,37 @@ module pocket_sdram #(
             req_word_addr <= '0;
             req_word_data <= '0;
             req_pending <= 1'b0;
-            cmd <= CMD_NOP;
-            phy_cke <= 1'b0;
-            phy_ba <= 2'b00;
-            phy_a <= 13'h0000;
-            phy_dqm <= 2'b00;
-            phy_dq_oe <= 1'b0;
-            phy_dq_out <= 16'h0000;
+            read_capture_valid_pipe <= '0;
+            read_capture_low_pipe <= '0;
+            read_capture_last_pipe <= '0;
+            read_high_pending <= '0;
+            read_low_pending <= '0;
+            phy_cmd_reg <= CMD_NOP;
+            phy_cke_reg <= 1'b0;
+            phy_ba_reg <= 2'b00;
+            phy_a_reg <= 13'h0000;
+            phy_dqm_reg <= 2'b00;
+            phy_dq_oe_reg <= 1'b0;
+            phy_dq_out_reg <= 16'h0000;
             word_q <= 32'h0000_0000;
             word_busy <= 1'b1;
         end else begin
-            cmd <= CMD_NOP;
-            phy_dq_oe <= 1'b0;
-            phy_dqm <= 2'b00;
+            phy_cmd_reg <= CMD_NOP;
+            phy_dq_oe_reg <= 1'b0;
+            phy_dqm_reg <= 2'b00;
+
+            read_capture_valid_pipe <= {
+                read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                1'b0
+            };
+            read_capture_low_pipe <= {
+                read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                1'b0
+            };
+            read_capture_last_pipe <= {
+                read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                1'b0
+            };
 
             if (refresh_counter == TIMER_WIDTH'(REFRESH_INTERVAL_CYCLES - 1)) begin
                 refresh_counter <= '0;
@@ -187,7 +246,7 @@ module pocket_sdram #(
 
             case (state)
                 ST_RESET: begin
-                    phy_cke <= 1'b0;
+                    phy_cke_reg <= 1'b0;
                     word_busy <= 1'b1;
                     wait_counter <= TIMER_WIDTH'(INIT_DELAY_CYCLES - 1);
                     state <= ST_INIT_WAIT;
@@ -196,7 +255,7 @@ module pocket_sdram #(
                 ST_INIT_WAIT: begin
                     word_busy <= 1'b1;
                     if (wait_counter == '0) begin
-                        phy_cke <= 1'b1;
+                        phy_cke_reg <= 1'b1;
                         wait_counter <= '0;
                         state <= ST_INIT_CKE;
                     end else begin
@@ -207,8 +266,8 @@ module pocket_sdram #(
                 ST_INIT_CKE: begin
                     word_busy <= 1'b1;
                     if (wait_counter == '0) begin
-                        cmd <= CMD_PRECHG;
-                        phy_a <= 13'b001_0000_0000_000;
+                        phy_cmd_reg <= CMD_PRECHG;
+                        phy_a_reg <= 13'b001_0000_0000_000;
                         wait_counter <= TIMER_WIDTH'(TRP_CYCLES - 1);
                         state <= ST_INIT_PRECHARGE_WAIT;
                     end else begin
@@ -227,7 +286,7 @@ module pocket_sdram #(
 
                 ST_INIT_REFRESH_0: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_AUTOREF;
+                    phy_cmd_reg <= CMD_AUTOREF;
                     wait_counter <= TIMER_WIDTH'(TRFC_CYCLES - 1);
                     state <= ST_INIT_REFRESH_0_WAIT;
                 end
@@ -243,7 +302,7 @@ module pocket_sdram #(
 
                 ST_INIT_REFRESH_1: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_AUTOREF;
+                    phy_cmd_reg <= CMD_AUTOREF;
                     wait_counter <= TIMER_WIDTH'(TRFC_CYCLES - 1);
                     state <= ST_INIT_REFRESH_1_WAIT;
                 end
@@ -259,9 +318,9 @@ module pocket_sdram #(
 
                 ST_INIT_MR: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_LMR;
-                    phy_ba <= 2'b00;
-                    phy_a <= MODE_REG;
+                    phy_cmd_reg <= CMD_LMR;
+                    phy_ba_reg <= 2'b00;
+                    phy_a_reg <= MODE_REG;
                     wait_counter <= TIMER_WIDTH'(TMRD_CYCLES - 1);
                     state <= ST_INIT_MR_WAIT;
                 end
@@ -277,9 +336,9 @@ module pocket_sdram #(
 
                 ST_INIT_EMR: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_LMR;
-                    phy_ba <= 2'b10;
-                    phy_a <= EXT_MODE_REG;
+                    phy_cmd_reg <= CMD_LMR;
+                    phy_ba_reg <= 2'b10;
+                    phy_a_reg <= EXT_MODE_REG;
                     wait_counter <= TIMER_WIDTH'(TMRD_CYCLES - 1);
                     state <= ST_INIT_EMR_WAIT;
                 end
@@ -308,7 +367,7 @@ module pocket_sdram #(
                 end
 
                 ST_REFRESH: begin
-                    cmd <= CMD_AUTOREF;
+                    phy_cmd_reg <= CMD_AUTOREF;
                     refresh_pending <= 1'b0;
                     wait_counter <= TIMER_WIDTH'(TRFC_CYCLES - 1);
                     state <= ST_REFRESH_WAIT;
@@ -325,9 +384,9 @@ module pocket_sdram #(
                 end
 
                 ST_ACTIVATE: begin
-                    cmd <= CMD_ACT;
-                    phy_ba <= req_bank;
-                    phy_a <= req_row;
+                    phy_cmd_reg <= CMD_ACT;
+                    phy_ba_reg <= req_bank;
+                    phy_a_reg <= req_row;
                     wait_counter <= TIMER_WIDTH'(TRCD_CYCLES - 1);
                     state <= ST_ACTIVATE_WAIT;
                 end
@@ -347,36 +406,57 @@ module pocket_sdram #(
 
                 ST_READ_CMD_0: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_READ;
-                    phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b0, req_col_halfword};
+                    phy_cmd_reg <= CMD_READ;
+                    phy_ba_reg <= req_bank;
+                    phy_a_reg <= {2'b00, 1'b0, req_col_halfword};
+                    read_capture_valid_pipe[0] <= 1'b1;
+                    read_capture_low_pipe[0] <= 1'b0;
+                    read_capture_last_pipe[0] <= 1'b0;
                     state <= ST_READ_CMD_1;
                 end
 
                 ST_READ_CMD_1: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_READ;
-                    phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b1, req_col_halfword_next};
-                    wait_counter <= TIMER_WIDTH'(READ_WAIT_CYCLES);
+                    phy_cmd_reg <= CMD_READ;
+                    phy_ba_reg <= req_bank;
+                    phy_a_reg <= {2'b00, 1'b1, req_col_halfword_next};
+                    read_capture_valid_pipe[0] <= 1'b1;
+                    read_capture_low_pipe[0] <= 1'b1;
+                    read_capture_last_pipe[0] <= 1'b1;
                     state <= ST_READ_WAIT;
                 end
 
                 ST_READ_WAIT: begin
                     word_busy <= 1'b1;
-                    if (wait_counter == '0) begin
-                        word_q[31:16] <= phy_dq;
-                        state <= ST_READ_CAPTURE_1;
-                    end else begin
-                        wait_counter <= wait_counter - 1'b1;
+                    if (read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                        if (read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                            read_low_pending <= phy_dq_captured;
+                        end else begin
+                            read_high_pending <= phy_dq_captured;
+                        end
+
+                        if (read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                            if (EXTRA_READ_LATENCY_CYCLES == 0) begin
+                                word_q <= {read_high_pending, phy_dq_captured};
+                                wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
+                                state <= ST_READ_RECOVERY;
+                            end else begin
+                                wait_counter <= TIMER_WIDTH'(EXTRA_READ_LATENCY_CYCLES - 1);
+                                state <= ST_READ_DATA_WAIT;
+                            end
+                        end
                     end
                 end
 
-                ST_READ_CAPTURE_1: begin
+                ST_READ_DATA_WAIT: begin
                     word_busy <= 1'b1;
-                    word_q[15:0] <= phy_dq;
-                    wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
-                    state <= ST_READ_RECOVERY;
+                    if (wait_counter == '0) begin
+                        word_q <= {read_high_pending, read_low_pending};
+                        wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
+                        state <= ST_READ_RECOVERY;
+                    end else begin
+                        wait_counter <= wait_counter - 1'b1;
+                    end
                 end
 
                 ST_READ_RECOVERY: begin
@@ -391,21 +471,21 @@ module pocket_sdram #(
 
                 ST_WRITE_CMD_0: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_WRITE;
-                    phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b0, req_col_halfword};
-                    phy_dq_oe <= 1'b1;
-                    phy_dq_out <= req_word_data[31:16];
+                    phy_cmd_reg <= CMD_WRITE;
+                    phy_ba_reg <= req_bank;
+                    phy_a_reg <= {2'b00, 1'b0, req_col_halfword};
+                    phy_dq_oe_reg <= 1'b1;
+                    phy_dq_out_reg <= req_word_data[31:16];
                     state <= ST_WRITE_CMD_1;
                 end
 
                 ST_WRITE_CMD_1: begin
                     word_busy <= 1'b1;
-                    cmd <= CMD_WRITE;
-                    phy_ba <= req_bank;
-                    phy_a <= {2'b00, 1'b1, req_col_halfword_next};
-                    phy_dq_oe <= 1'b1;
-                    phy_dq_out <= req_word_data[15:0];
+                    phy_cmd_reg <= CMD_WRITE;
+                    phy_ba_reg <= req_bank;
+                    phy_a_reg <= {2'b00, 1'b1, req_col_halfword_next};
+                    phy_dq_oe_reg <= 1'b1;
+                    phy_dq_out_reg <= req_word_data[15:0];
                     wait_counter <= TIMER_WIDTH'(WRITE_RECOVERY_CYCLES - 1);
                     state <= ST_WRITE_RECOVERY;
                 end
