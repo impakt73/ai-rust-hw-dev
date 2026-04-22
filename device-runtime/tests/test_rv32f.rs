@@ -13,7 +13,7 @@ use common::{
     wait_for_cpu_halt, LONG_TIMEOUT, TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE};
+use riscv_shared::bus::DRAM_BASE;
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 macro_rules! create_fp_runtime_or_skip {
@@ -64,7 +64,7 @@ fn test_cpu_flw_multiple_registers() {
     let mut runtime = create_fp_runtime_or_skip!();
 
     // Program: Load different FP values into multiple FP registers
-    let instructions = vec![
+    let mut instructions = vec![
         lui(1, 0x80001000), // x1 = 0x80001000 (base address)
         lui(2, 0x3F800000), // x2 = 1.0
         lui(3, 0x40000000), // x3 = 2.0
@@ -86,23 +86,16 @@ fn test_cpu_flw_multiple_registers() {
         sw(1, 7, 0x108),
         lui(8, 0x3F800000),
         sub(11, 5, 8),
-        bne(11, 0, 36),
+        bne(11, 0, 52),
         lui(8, 0x40000000),
         sub(11, 6, 8),
-        bne(11, 0, 24),
+        bne(11, 0, 40),
         lui(8, 0x40400000),
         sub(11, 7, 8),
-        bne(11, 0, 12),
-        lui(9, SIM_CONTROL_BASE),
-        addi(10, 0, SUCCESS_CODE as i32),
-        sw(9, 10, 0),
-        ebreak(),
-        jal(0, 0),
-        addi(10, 0, FAILURE_CODE as i32),
-        sw(9, 10, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(11, 0, 28),
     ];
+    instructions.extend(tohost_termination(9, 10, SUCCESS_CODE));
+    instructions.extend(tohost_termination(9, 10, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 

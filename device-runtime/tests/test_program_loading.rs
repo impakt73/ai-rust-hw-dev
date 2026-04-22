@@ -1,30 +1,25 @@
 mod common;
 
 use common::{
-    create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
-    wait_for_cpu_halt, LONG_TIMEOUT,
+    append_register_tohost_termination, create_test_runtime, instructions_to_bytes, load_and_boot,
+    read_word_with_timeout, wait_for_cpu_halt, LONG_TIMEOUT,
 };
-use riscv_core::instruction::{addi, ebreak, lui, sw};
+use riscv_core::instruction::{addi, lui, sw};
 use riscv_shared::bus::{
-    sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE, SYSCTRL_BASE,
+    sysctrl_halt_addr, sysctrl_status_addr, DRAM_BASE, SRAM_BASE, SYSCTRL_BASE,
     SYSCTRL_HALT_OFFSET, SYSCTRL_STATUS_CPU_HALTED,
 };
 
 /// Build a simple program that writes a success code to the tohost address
-/// and then halts via EBREAK.
+/// and then requests a system-controller halt.
 ///
 /// The program:
-///   LUI  x15, SIM_CONTROL_BASE   ; load tohost base address into x15
 ///   ADDI x14, x0, 1              ; load success code (1) into x14
-///   SW   x14, 0(x15)             ; store x14 to tohost address
-///   EBREAK                       ; halt execution
 fn build_tohost_program() -> Vec<u8> {
-    let instructions = vec![
-        lui(15, SIM_CONTROL_BASE), // Load SIM_CONTROL_BASE into x15
-        addi(14, 0, 1),            // Load success code (1) into x14
-        sw(15, 14, 0),             // Store x14 to address in x15 (tohost)
-        ebreak(),                  // Halt execution
+    let mut instructions = vec![
+        addi(14, 0, 1), // Load success code (1) into x14
     ];
+    append_register_tohost_termination(&mut instructions, 15, 14);
     instructions_to_bytes(&instructions)
 }
 
@@ -42,7 +37,7 @@ fn test_load_program_and_tohost_termination() {
     let status = read_word_with_timeout(runtime.as_mut(), sysctrl_status_addr(), LONG_TIMEOUT);
     let cpu_halted = (status & SYSCTRL_STATUS_CPU_HALTED) != 0;
 
-    assert!(cpu_halted, "CPU did not halt after EBREAK");
+    assert!(cpu_halted, "CPU did not halt after tohost termination");
 }
 
 #[test]
@@ -81,12 +76,9 @@ fn test_load_program_runs_from_sram_and_reports_tohost() {
     let mut runtime = create_test_runtime();
     let boot_pc: u32 = SRAM_BASE;
     let tohost_value: i32 = 0x2A;
-    let program = instructions_to_bytes(&[
-        lui(15, SIM_CONTROL_BASE),
-        addi(14, 0, tohost_value),
-        sw(15, 14, 0),
-        ebreak(),
-    ]);
+    let mut instructions = vec![addi(14, 0, tohost_value)];
+    append_register_tohost_termination(&mut instructions, 15, 14);
+    let program = instructions_to_bytes(&instructions);
 
     runtime
         .load_program(boot_pc, &program)

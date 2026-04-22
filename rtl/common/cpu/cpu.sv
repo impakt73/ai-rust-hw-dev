@@ -82,6 +82,10 @@ module cpu #(
         S_ATOMIC_RMW = 4'b1011   // Atomic read-modify-write (A extension)
     } state_t;
 
+    localparam logic [31:0] TRAP_CAUSE_ILLEGAL_INSTR = 32'd2;
+    localparam logic [31:0] TRAP_CAUSE_BREAKPOINT    = 32'd3;
+    localparam logic [31:0] TRAP_CAUSE_ECALL_MMODE   = 32'd11;
+
     state_t current_state, next_state;
 
     // ============================================================
@@ -219,18 +223,24 @@ module cpu #(
     logic        fpu_ready;       // NEW: FPU operation complete
     logic        fpu_start_sent;  // NEW: Track if start pulse has been sent
     
-    // FCSR (Floating Point Control and Status Register)
-    logic [31:0] fcsr;            // Full FCSR register
-    // FCSR bitfields: {24'h0, frm[2:0], fflags[4:0]}
-    // frm = rounding mode, fflags = exception flags (NV, DZ, OF, UF, NX)
-    
     // Branch/Jump logic
     logic        take_branch;
     
     // CSR signals
     logic [11:0] csr_addr;
     logic [31:0] csr_rdata;
-    logic [31:0] csr_rdata_reg;  // Registered CSR read data (captured before write)
+    logic [31:0] csr_rdata_reg;  // Registered CSR read data (captured before the S_CSR write side effect)
+    logic        csr_trap_entry;
+    logic [31:0] csr_trap_mepc;
+    logic [31:0] csr_trap_mcause;
+    logic [31:0] csr_trap_mtval;
+    logic        csr_trap_return;
+    logic [31:0] csr_mtvec;
+    logic [31:0] csr_mepc;
+    logic [31:0] csr_fcsr;
+    logic        sync_trap_pending;
+    logic [31:0] sync_trap_cause;
+    logic [31:0] sync_trap_mtval;
     
     // Memory interface signals
     logic [31:0] formatted_load_data;
@@ -300,6 +310,11 @@ module cpu #(
     
     // CSR address comes directly from the decoder's registered immediate output.
     assign csr_addr = imm_i_reg[11:0];
+    assign sync_trap_pending = !is_instruction_valid_reg || is_ecall_reg || is_ebreak_reg;
+    assign sync_trap_cause = !is_instruction_valid_reg ? TRAP_CAUSE_ILLEGAL_INSTR :
+                             is_ebreak_reg ? TRAP_CAUSE_BREAKPOINT :
+                             TRAP_CAUSE_ECALL_MMODE;
+    assign sync_trap_mtval = !is_instruction_valid_reg ? ir_reg : 32'h0;
     
     // ============================================================
     // State Register (Flip-Flop Based FSM)
@@ -513,7 +528,9 @@ module cpu #(
     // ============================================================
     
     assign control_flow_redirect = (current_state == S_BRANCH && take_branch) ||
-                                   (current_state == S_WRITEBACK && jump_reg);
+                                   (current_state == S_WRITEBACK && jump_reg) ||
+                                   csr_trap_entry ||
+                                   csr_trap_return;
     assign invalidate_fetch_buffer = pc_write && control_flow_redirect;
 
     // Instantiate fetch buffer module
@@ -545,6 +562,10 @@ module cpu #(
 
         if (current_state == S_BOOT)
             next_pc_value = boot_addr;
+        else if (csr_trap_entry)
+            next_pc_value = csr_mtvec;
+        else if (csr_trap_return)
+            next_pc_value = csr_mepc;
         else if (control_flow_redirect)
             next_pc_value = control_target_reg;
     end
@@ -617,12 +638,8 @@ module cpu #(
             // S_REG_READ_WAIT: BRAM data is now visible on the module outputs
             // Uses opcode_reg (captured in S_DECODE) to determine next state
             S_REG_READ_WAIT: begin
-                // Check for invalid instruction using the merged validity register.
-                // is_instruction_valid_reg combines:
-                // 1. Decompressor validity (captured during ir_write in S_FETCH)
-                // 2. Decoder validity (ANDed during S_DECODE_WAIT)
-                if (!is_instruction_valid_reg) begin
-                    next_state = S_HALT;  // Invalid instruction - halt for debug
+                if (sync_trap_pending) begin
+                    next_state = S_FETCH;
                 end else begin
                     // Now register file data is available, proceed based on instruction type
                     case (opcode_reg)
@@ -659,10 +676,7 @@ module cpu #(
                             else if (is_mret_reg || is_wfi_reg)
                                 next_state = S_FETCH;
                             else
-                                // ECALL, EBREAK, and unsupported funct3==000 SYSTEM
-                                // encodings stay on the existing debug-halt path
-                                // until later phases add architectural trap entry.
-                                next_state = S_HALT;
+                                next_state = S_FETCH;
                         end
 
                         7'b0001111:  // FENCE
@@ -780,6 +794,11 @@ module cpu #(
         alu_in_valid = 1'b0;  // Default ALU request to inactive
         fpu_start = 1'b0;  // Default FPU start to inactive
         control_target_write = 1'b0;
+        csr_trap_entry = 1'b0;
+        csr_trap_mepc = 32'h0;
+        csr_trap_mcause = 32'h0;
+        csr_trap_mtval = 32'h0;
+        csr_trap_return = 1'b0;
         
         case (current_state)
             S_BOOT:
@@ -801,8 +820,14 @@ module cpu #(
                 if (branch_reg || (jump_reg && !alu_src_reg))
                     control_target_write = 1'b1;
             end
-            
+
             S_REG_READ: begin
+                // CSR software reads return through a registered csr_rdata path in the
+                // CSR file. S_DECODE_WAIT presents the CSR address, the read data
+                // becomes available one cycle later, and S_REG_READ latches that old
+                // value before any write side effect in S_CSR.
+                if (is_csr_reg)
+                    csr_rdata_write = 1'b1;
             end
             
             // S_REG_READ_WAIT: Capture BRAM register file read data
@@ -811,23 +836,27 @@ module cpu #(
                 // BRAM data is now available, capture it
                 a_reg_write = 1'b1;
                 b_reg_write = 1'b1;
-                // Capture CSR read data after CSR BRAM read latency
-                if (is_csr_reg)
-                    csr_rdata_write = 1'b1;
                 // FP register reads (for FP operations) - using registered signals
                 if (fp_reg_write_reg || fp_to_int_reg || int_to_fp_reg || is_fp_store_reg) begin
                     fa_reg_write = 1'b1;
                     fb_reg_write = 1'b1;
                     fc_reg_write = 1'b1;  // Always read rs3 for fused multiply-add
                 end
-                // FENCE permanently completes here after register reads.
-                if (is_fence_reg) begin
+                if (sync_trap_pending) begin
+                    pc_write = 1'b1;
+                    csr_trap_entry = 1'b1;
+                    csr_trap_mepc = instr_pc_reg;
+                    csr_trap_mcause = sync_trap_cause;
+                    csr_trap_mtval = sync_trap_mtval;
+                end else if (is_fence_reg) begin
+                    // FENCE permanently completes here after register reads.
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
-                end
-                // MRET/WFI temporarily complete here as non-halting placeholders
-                // until later phases add real privileged return/wait behavior.
-                if (is_mret_reg || is_wfi_reg) begin
+                end else if (is_mret_reg) begin
+                    pc_write = 1'b1;
+                    csr_trap_return = 1'b1;
+                    instr_complete_internal = 1'b1;
+                end else if (is_wfi_reg) begin
                     pc_write = 1'b1;
                     instr_complete_internal = 1'b1;
                 end
@@ -1112,8 +1141,20 @@ module cpu #(
         .rs1(rs1_reg),
         .csr_addr(csr_addr),
         .rs1_data(a_reg),  // Use registered rs1 data
-        .fcsr(fcsr),       // F extension: FCSR register
-        .csr_rdata(csr_rdata)
+        .trap_entry(csr_trap_entry),
+        .trap_mepc_in(csr_trap_mepc),
+        .trap_mcause_in(csr_trap_mcause),
+        .trap_mtval_in(csr_trap_mtval),
+        .trap_return(csr_trap_return),
+        .fp_fflags_in(fpu_fflags),
+        .fp_fflags_we(current_state == S_WRITEBACK && (fp_reg_write_reg || fp_to_int_reg)),
+        .csr_rdata(csr_rdata),
+        .csr_mtvec_out(csr_mtvec),
+        .csr_mepc_out(csr_mepc),
+        .csr_mstatus_out(),
+        .csr_mie_out(),
+        .csr_mip_out(),
+        .csr_fcsr_out(csr_fcsr)
     );
     
     // ============================================================
@@ -1140,7 +1181,7 @@ module cpu #(
             // FPU rounding mode selection
             // Instruction rm field (funct3) encodes:
             // 000=RNE, 001=RTZ, 010=RDN, 011=RUP, 100=RMM, 111=dynamic (use FCSR.frm)
-            assign fpu_rm = (funct3_reg == 3'b111) ? fcsr[7:5] : funct3_reg;
+            assign fpu_rm = (funct3_reg == 3'b111) ? csr_fcsr[7:5] : funct3_reg;
             
             // FPU Module
             fpu u_fpu (
@@ -1159,28 +1200,6 @@ module cpu #(
                 .fpu_ready(fpu_ready)                   // NEW: FPU operation complete
             );
             
-            // FCSR (Floating Point Control and Status Register)
-            // Address: 0x003 (full FCSR), 0x001 (FFLAGS), 0x002 (FRM)
-            // Bitfields: {24'h0, frm[2:0], fflags[4:0]}
-            always_ff @(posedge clk) begin
-                if (rst) begin
-                    fcsr <= 32'h0;  // Reset to default rounding mode (RNE) and no exceptions
-                end else begin
-                    // Accumulate exception flags when FP instruction completes
-                    if (current_state == S_WRITEBACK && fp_reg_write_reg) begin
-                        fcsr[4:0] <= fcsr[4:0] | fpu_fflags;  // OR in new exception flags
-                    end
-                    // Handle CSR writes to FCSR, FRM, FFLAGS
-                    else if (is_csr_reg && current_state == S_CSR) begin
-                        case (csr_addr)
-                            12'h001: fcsr[4:0] <= a_reg[4:0];   // FFLAGS write
-                            12'h002: fcsr[7:5] <= a_reg[2:0];   // FRM write
-                            12'h003: fcsr <= a_reg;              // FCSR write (full register)
-                            default: ; // No change
-                        endcase
-                    end
-                end
-            end
         end else begin : gen_no_f_ext
             // F extension disabled: Tie FP signals to safe defaults
             assign fs1_data = 32'd0;
@@ -1191,7 +1210,6 @@ module cpu #(
             assign fpu_fflags = 5'd0;
             assign fpu_ready = 1'b1;
             assign fpu_rm = 3'd0;
-            assign fcsr = 32'd0;
         end
     endgenerate
     

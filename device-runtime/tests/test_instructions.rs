@@ -15,12 +15,18 @@ use common::{
     TEST_BOOT_PC,
 };
 use riscv_core::instruction::*;
-use riscv_shared::bus::{DRAM_BASE, SIM_CONTROL_BASE, SRAM_BASE};
+use riscv_shared::bus::{DRAM_BASE, SRAM_BASE};
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
 
 // create_test_runtime() uses the default top-level config, which enables both M and F.
 const DEFAULT_MISA: u32 = 0x4000_1125;
 const SRAM_BASE_ADDR: u32 = SRAM_BASE;
+
+fn load_u32(rd: u32, value: u32) -> [u32; 2] {
+    let upper = value.wrapping_add(0x800) & 0xFFFF_F000;
+    let lower = value.wrapping_sub(upper) as i32;
+    [lui(rd, upper), addi(rd, rd, lower)]
+}
 
 // ============================================================================
 // Basic Execution Tests
@@ -124,18 +130,11 @@ fn test_cpu_branch_beq_bne() {
         sw(9, 3, 0),
         sw(9, 5, 4),
         or(10, 3, 5),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 28),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -165,18 +164,11 @@ fn test_cpu_branch_blt_bge() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 28),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -206,18 +198,11 @@ fn test_cpu_branch_bltu_bgeu() {
         sw(9, 3, 0),
         sw(9, 4, 4),
         or(10, 3, 4),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 28),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -245,18 +230,11 @@ fn test_cpu_load_store() {
         lui(4, DRAM_BASE),
         sw(4, 3, 0x200), // Store x3 to 0x80000200 to verify
         sub(10, 3, 2),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 28),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -285,18 +263,11 @@ fn test_cpu_load_byte() {
         bne(10, 0, 40),
         addi(12, 0, 0xFF),
         sub(10, 4, 12),
-        bne(10, 0, 20),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(10, 0, 28),
     ];
+    let mut instructions = instructions;
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -801,6 +772,332 @@ fn test_cpu_csr_instret() {
     assert_eq!(
         read_word_with_timeout(runtime.as_mut(), 0x8000_0000, SHORT_TIMEOUT),
         3
+    );
+}
+
+#[test]
+fn test_cpu_csr_old_value_semantics_all_zicsr_forms() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(8, DRAM_BASE),
+        csrrw(0, 0, 0x340),
+        addi(1, 0, 0x55),
+        csrrw(2, 1, 0x340),
+        sw(8, 2, 0),
+        addi(3, 0, 0x0f),
+        csrrs(4, 3, 0x340),
+        sw(8, 4, 4),
+        addi(5, 0, 0x03),
+        csrrc(6, 5, 0x340),
+        sw(8, 6, 8),
+        csrrwi(7, 7, 0x340),
+        sw(8, 7, 12),
+        csrrsi(9, 24, 0x340),
+        sw(8, 9, 16),
+        csrrci(10, 16, 0x340),
+        sw(8, 10, 20),
+        csrrw(11, 0, 0x340),
+        sw(8, 11, 24),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        0x55
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        0x5f
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 12, SHORT_TIMEOUT),
+        0x5c
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 16, SHORT_TIMEOUT),
+        7
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 20, SHORT_TIMEOUT),
+        31
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 24, SHORT_TIMEOUT),
+        15
+    );
+}
+
+#[test]
+fn test_cpu_fcsr_and_subcsr_zicsr_semantics() {
+    let mut runtime = create_test_runtime();
+
+    let mut instructions = vec![
+        lui(8, DRAM_BASE),
+        csrrw(0, 0, 0x003),
+        csrrwi(1, 0x15, 0x001),
+        sw(8, 1, 0),
+        csrrsi(2, 0x02, 0x001),
+        sw(8, 2, 4),
+        csrrci(3, 0x04, 0x001),
+        sw(8, 3, 8),
+        csrrwi(4, 0x05, 0x002),
+        sw(8, 4, 12),
+        csrrsi(5, 0x02, 0x002),
+        sw(8, 5, 16),
+        csrrci(6, 0x01, 0x002),
+        sw(8, 6, 20),
+        addi(12, 0, 0xA5),
+        csrrw(7, 12, 0x003),
+        sw(8, 7, 24),
+        addi(13, 0, 0x03),
+        csrrs(9, 13, 0x003),
+        sw(8, 9, 28),
+        addi(14, 0, 0x80),
+        csrrc(10, 14, 0x003),
+        sw(8, 10, 32),
+        csrrw(11, 0, 0x003),
+        sw(8, 11, 36),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        0x15
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        0x17
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 12, SHORT_TIMEOUT),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 16, SHORT_TIMEOUT),
+        0x5
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 20, SHORT_TIMEOUT),
+        0x7
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 24, SHORT_TIMEOUT),
+        0xD3
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 28, SHORT_TIMEOUT),
+        0xA5
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 32, SHORT_TIMEOUT),
+        0xA7
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 36, SHORT_TIMEOUT),
+        0x27
+    );
+}
+
+#[test]
+fn test_cpu_fp_exception_flags_accumulate_through_csr_file() {
+    let mut runtime = create_test_runtime();
+    let data_base = DRAM_BASE + 0x200;
+    let result_addr = DRAM_BASE + 0x40;
+
+    write_word_with_timeout(runtime.as_mut(), data_base, 0x3F80_0000, SHORT_TIMEOUT);
+    write_word_with_timeout(runtime.as_mut(), data_base + 4, 0x0000_0000, SHORT_TIMEOUT);
+
+    let mut instructions = vec![
+        lui(8, DRAM_BASE),
+        csrrw(0, 0, 0x003),
+        flw(1, 8, 0x200),
+        flw(2, 8, 0x204),
+        fdiv_s(3, 1, 2),
+        csrrs(4, 0, 0x001),
+        sw(8, 4, 0x40),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), result_addr, SHORT_TIMEOUT),
+        0b01000
+    );
+}
+
+#[test]
+fn test_cpu_fp_to_int_exception_flags_accumulate_through_csr_file() {
+    let mut runtime = create_test_runtime();
+    let data_base = DRAM_BASE + 0x240;
+    let result_addr = DRAM_BASE + 0x44;
+
+    write_word_with_timeout(runtime.as_mut(), data_base, 0x7FC0_0000, SHORT_TIMEOUT);
+
+    let mut instructions = vec![
+        lui(8, DRAM_BASE),
+        csrrw(0, 0, 0x003), // Clear FCSR to ensure a clean initial flag state
+        flw(1, 8, 0x240),
+        fcvt_w_s(4, 1),
+        csrrs(5, 0, 0x001),
+        sw(8, 5, 0x44),
+    ];
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), result_addr, SHORT_TIMEOUT),
+        0b10000 // NV (invalid operation) flag from NaN-to-int conversion
+    );
+}
+
+#[test]
+fn test_cpu_ecall_trap_updates_csrs_and_mret_restores_flow() {
+    let mut runtime = create_test_runtime();
+    const RESULT_BASE_OFFSET: i32 = 0x100;
+    const HANDLER_OFFSET: usize = 0x80;
+    let handler_addr = TEST_BOOT_PC + HANDLER_OFFSET as u32;
+
+    let mut instructions = Vec::new();
+    instructions.extend(load_u32(1, handler_addr));
+    instructions.push(addi(2, 0, 0x8));
+    instructions.push(csrrw(0, 2, 0x300));
+    instructions.push(csrrw(0, 1, 0x305));
+    instructions.push(ecall());
+    instructions.push(addi(3, 0, 1));
+    instructions.push(lui(8, DRAM_BASE));
+    instructions.push(sw(8, 3, RESULT_BASE_OFFSET + 20));
+    instructions.push(csrrs(14, 0, 0x300));
+    instructions.push(sw(8, 14, RESULT_BASE_OFFSET + 24));
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    while instructions.len() * 4 < HANDLER_OFFSET {
+        instructions.push(addi(0, 0, 0));
+    }
+
+    instructions.extend([
+        lui(8, DRAM_BASE),
+        csrrs(9, 0, 0xC02),
+        sw(8, 9, RESULT_BASE_OFFSET),
+        csrrs(10, 0, 0x341),
+        sw(8, 10, RESULT_BASE_OFFSET + 4),
+        csrrs(11, 0, 0x342),
+        sw(8, 11, RESULT_BASE_OFFSET + 8),
+        csrrs(12, 0, 0x343),
+        sw(8, 12, RESULT_BASE_OFFSET + 12),
+        csrrs(13, 0, 0x300),
+        sw(8, 13, RESULT_BASE_OFFSET + 16),
+        addi(15, 10, 4),
+        csrrw(0, 15, 0x341),
+        mret(),
+    ]);
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+    assert_eq!(
+        wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32,
+            SHORT_TIMEOUT
+        ),
+        6
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 4,
+            SHORT_TIMEOUT
+        ),
+        TEST_BOOT_PC + 20
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 8,
+            SHORT_TIMEOUT
+        ),
+        11
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 12,
+            SHORT_TIMEOUT
+        ),
+        0
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 16,
+            SHORT_TIMEOUT
+        ),
+        0x80
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 20,
+            SHORT_TIMEOUT
+        ),
+        1
+    );
+    assert_eq!(
+        read_word_with_timeout(
+            runtime.as_mut(),
+            DRAM_BASE + RESULT_BASE_OFFSET as u32 + 24,
+            SHORT_TIMEOUT
+        ),
+        0x88
     );
 }
 
@@ -1558,26 +1855,55 @@ fn test_cpu_amo_min_max_signed_negative_values() {
 // Invalid Instruction Tests
 // ============================================================================
 
-/// Test that CPU halts when fetching an instruction value of 0
-///
-/// When memory returns 0x0000, the decompressor identifies this as an invalid
-/// compressed instruction (C.ADDI4SPN with nzuimm=0), sets is_valid=0.
-/// The CPU should transition to S_HALT state when it detects this.
+/// Test that an all-zero instruction traps as an illegal instruction.
 #[test]
-fn test_cpu_halts_on_zero_instruction() {
+fn test_cpu_zero_instruction_traps_to_mtvec() {
     let mut runtime = create_test_runtime();
+    const HANDLER_OFFSET: usize = 0x40;
+    let handler_addr = TEST_BOOT_PC + HANDLER_OFFSET as u32;
 
-    // Load 16 zero bytes (four zero words = four invalid compressed instructions)
-    // The CPU should halt when it fetches 0x0000
-    let program_bytes: Vec<u8> = vec![0u8; 16];
+    let mut instructions = Vec::new();
+    instructions.extend(load_u32(1, handler_addr));
+    instructions.push(csrrw(0, 1, 0x305));
+    instructions.push(0);
 
-    load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
+    while instructions.len() * 4 < HANDLER_OFFSET {
+        instructions.push(addi(0, 0, 0));
+    }
 
-    // The CPU enters S_HALT on the invalid instruction.
-    // wait_for_cpu_halt returns None because the program never writes to tohost.
+    instructions.extend([
+        lui(8, DRAM_BASE),
+        csrrs(9, 0, 0x341),
+        sw(8, 9, 0),
+        csrrs(10, 0, 0x342),
+        sw(8, 10, 4),
+        csrrs(11, 0, 0x343),
+        sw(8, 11, 8),
+    ]);
+    instructions.extend(tohost_termination(30, 31, SUCCESS_CODE));
+
+    load_and_boot(
+        runtime.as_mut(),
+        TEST_BOOT_PC,
+        &instructions_to_bytes(&instructions),
+    );
+
     assert_eq!(
         wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT),
-        None,
-        "Expected CPU to halt without writing to tohost on zero instruction"
+        Some(SUCCESS_CODE)
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE, SHORT_TIMEOUT),
+        TEST_BOOT_PC + 12
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 4, SHORT_TIMEOUT),
+        2
+    );
+    assert_eq!(
+        read_word_with_timeout(runtime.as_mut(), DRAM_BASE + 8, SHORT_TIMEOUT),
+        // The decompressor expands 0x0000 into the canonical invalid payload that
+        // the CPU currently reports through mtval for this trap path.
+        19
     );
 }

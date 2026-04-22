@@ -1,4 +1,4 @@
-use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, jal, jalr, mret, wfi};
+use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, csrrw, ecall, jal, jalr, mret, wfi};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 use riscv_core::AsDynamicVerilatedModel;
@@ -392,19 +392,77 @@ fn test_cpu_jalr_masks_target_and_uses_fallthrough_link_address() {
 }
 
 #[test]
-fn test_cpu_mret_advances_without_halting() {
+fn test_cpu_ecall_redirects_to_mtvec_without_retiring() {
     let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut dut = runtime
         .create_model_simple::<Cpu>()
         .expect("Failed to create CPU model");
 
-    let mut program = vec![0_u8; 8];
-    write_u32(&mut program, 0x0, mret());
-    write_u32(&mut program, 0x4, addi(5, 0, 9));
+    let mut program = vec![0_u8; 20];
+    write_u32(&mut program, 0x0, addi(5, 0, 16));
+    write_u32(&mut program, 0x4, csrrw(0, 5, 0x305));
+    write_u32(&mut program, 0x8, ecall());
+    write_u32(&mut program, 0xc, addi(6, 0, 99));
+    write_u32(&mut program, 0x10, addi(7, 0, 42));
 
     reset_to_fetch(&mut dut);
 
     let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+
+    for _ in 0..16 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        if dut.debug_current_pc == 16 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        dut.halted, 0,
+        "ECALL should enter the trap path instead of HALT"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 16,
+        "ECALL should redirect fetch to mtvec immediately"
+    );
+    assert_eq!(
+        dut.instr_complete, 0,
+        "The trapping ECALL instruction must not retire"
+    );
+    assert_eq!(
+        dut.debug_instruction,
+        csrrw(0, 5, 0x305),
+        "ECALL must not overwrite the last retired instruction trace entry"
+    );
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_instruction,
+        addi(7, 0, 42),
+        "Execution should continue from the mtvec handler after trap redirect"
+    );
+}
+
+#[test]
+fn test_cpu_mret_redirects_to_masked_mepc_without_halting() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 20];
+    write_u32(&mut program, 0x0, addi(5, 0, 13));
+    write_u32(&mut program, 0x4, csrrw(0, 5, 0x341));
+    write_u32(&mut program, 0x8, mret());
+    write_u32(&mut program, 0xc, addi(6, 0, 99));
+    write_u32(&mut program, 0x10, addi(7, 0, 42));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
 
     assert_eq!(
@@ -414,15 +472,15 @@ fn test_cpu_mret_advances_without_halting() {
     );
     assert_eq!(dut.halted, 0, "MRET decode must not send the CPU to HALT");
     assert_eq!(
-        dut.debug_current_pc, 4,
-        "MRET should advance to the next sequential fetch until trap return is implemented"
+        dut.debug_current_pc, 12,
+        "MRET should restore PC from mepc and mask off the compressed-alignment low bit"
     );
 
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(
         dut.debug_instruction,
-        addi(5, 0, 9),
-        "CPU should continue executing after placeholder MRET completion"
+        addi(6, 0, 99),
+        "CPU should continue executing from the restored mepc target after MRET"
     );
 }
 

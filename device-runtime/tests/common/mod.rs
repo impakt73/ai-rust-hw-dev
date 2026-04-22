@@ -7,8 +7,10 @@ use device_runtime::{
     create_device_runtime, BusDeviceRegistration, BusEvent, BusRequest, DeviceRuntime,
     DeviceRuntimeType, SimDeviceRuntimeArgs,
 };
-use riscv_core::instruction::{addi, ebreak, jal, lui, sw};
-use riscv_shared::bus::{sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED};
+use riscv_core::instruction::{addi, jal, lui, sw};
+use riscv_shared::bus::{
+    sysctrl_halt_addr, sysctrl_status_addr, SIM_CONTROL_BASE, SYSCTRL_STATUS_CPU_HALTED,
+};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -143,6 +145,17 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
             break;
         }
 
+        loop {
+            match runtime.poll() {
+                Ok(Some(BusEvent::TohostTermination { value })) => {
+                    tohost_value = Some(value);
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(e) => panic!("Poll error while waiting for cpu halt: {e}"),
+            }
+        }
+
         runtime
             .send_host_request(BusRequest::read(sysctrl_status_addr(), AccessSize::Word))
             .expect("Failed to send host read request for SYSCTRL status");
@@ -152,9 +165,7 @@ pub fn wait_for_cpu_halt(runtime: &mut dyn DeviceRuntime, timeout: Duration) -> 
         while request_start.elapsed() < remaining {
             match runtime.poll() {
                 Ok(Some(BusEvent::TohostTermination { value })) => {
-                    if tohost_value.is_none() {
-                        tohost_value = Some(value);
-                    }
+                    tohost_value = Some(value);
                 }
                 Ok(Some(BusEvent::HostReadResponse {
                     addr: resp_addr,
@@ -293,9 +304,9 @@ pub fn instructions_to_bytes(instructions: &[u32]) -> Vec<u8> {
 
 /// Build a standard tohost termination sequence.
 ///
-/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, halts with EBREAK,
-/// and then includes a `jal x0, 0` fallback loop if halt handling is unavailable.
-pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 5] {
+/// The sequence writes `tohost_value` to `SIM_CONTROL_BASE`, requests a sticky
+/// system-controller halt, and then loops locally as a fallback.
+pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [u32; 6] {
     [
         lui(addr_reg, SIM_CONTROL_BASE),
         addi(
@@ -304,7 +315,51 @@ pub fn tohost_termination(addr_reg: u32, value_reg: u32, tohost_value: u32) -> [
             i32::try_from(tohost_value).expect("tohost value must fit in i32 immediate"),
         ),
         sw(addr_reg, value_reg, 0),
-        ebreak(),
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
+        jal(0, 0),
+    ]
+}
+
+/// Build a termination sequence using a value already present in `value_reg`.
+///
+/// The sequence writes the current register value to `SIM_CONTROL_BASE`,
+/// requests a sticky system-controller halt with the same value, and then
+/// loops locally as a fallback. The local loop keeps execution deterministic if
+/// the halt request has not taken effect by the time the CPU reaches the next
+/// fetch boundary.
+pub fn register_tohost_termination(addr_reg: u32, value_reg: u32) -> [u32; 5] {
+    [
+        lui(addr_reg, SIM_CONTROL_BASE),
+        sw(addr_reg, value_reg, 0),
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
+        jal(0, 0),
+    ]
+}
+
+/// Build a sticky halt-only termination sequence using a value already present
+/// in `value_reg`.
+///
+/// Unlike [`register_tohost_termination`], this variant does not write to
+/// `SIM_CONTROL_BASE`; it only requests a system-controller halt and then loops
+/// locally as a fallback until the halt request is observed.
+pub fn halt_request_termination(addr_reg: u32, value_reg: u32) -> [u32; 3] {
+    [
+        lui(addr_reg, sysctrl_halt_addr() & 0xFFFF_F000),
+        sw(
+            addr_reg,
+            value_reg,
+            i32::try_from(sysctrl_halt_addr() & 0xFFF).expect("sysctrl halt offset must fit"),
+        ),
         jal(0, 0),
     ]
 }
@@ -319,4 +374,13 @@ pub fn append_tohost_termination(
     tohost_value: u32,
 ) {
     instructions.extend(tohost_termination(addr_reg, value_reg, tohost_value));
+}
+
+/// Append a termination sequence that uses a value already present in `value_reg`.
+pub fn append_register_tohost_termination(
+    instructions: &mut Vec<u32>,
+    addr_reg: u32,
+    value_reg: u32,
+) {
+    instructions.extend(register_tohost_termination(addr_reg, value_reg));
 }

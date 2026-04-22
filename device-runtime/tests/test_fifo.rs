@@ -2,11 +2,11 @@ mod common;
 
 use bus_shared::{Fifo, FifoDataSource};
 use common::{
-    create_test_runtime_with_registrations, instructions_to_bytes, load_and_boot,
-    wait_for_cpu_halt, TEST_BOOT_PC,
+    append_register_tohost_termination, create_test_runtime_with_registrations,
+    instructions_to_bytes, load_and_boot, wait_for_cpu_halt, TEST_BOOT_PC,
 };
 use device_runtime::BusDeviceRegistration;
-use riscv_core::instruction::{addi, andi, beq, ebreak, jal, lbu, lui, lw, sb, sw};
+use riscv_core::instruction::{addi, andi, beq, jal, lbu, lui, lw, sb};
 use riscv_shared::bus::FIFO_BASE;
 use riscv_shared::sim_control::SUCCESS_CODE;
 use riscv_shared::FIFO_DATA;
@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn fifo_echo_program() -> Vec<u8> {
-    let instructions = vec![
+    let mut instructions = vec![
         lui(1, FIFO_DATA),
         addi(2, 1, 4),
         lw(3, 2, 0),
@@ -24,16 +24,13 @@ fn fifo_echo_program() -> Vec<u8> {
         beq(5, 0, 12),
         sb(1, 5, 0),
         jal(0, -24),
-        lui(6, riscv_shared::bus::SIM_CONTROL_BASE),
         addi(
             7,
             0,
             i32::try_from(SUCCESS_CODE).expect("SUCCESS_CODE fits immediate"),
         ),
-        sw(6, 7, 0),
-        ebreak(),
-        jal(0, 0),
     ];
+    append_register_tohost_termination(&mut instructions, 6, 7);
 
     instructions_to_bytes(&instructions)
 }

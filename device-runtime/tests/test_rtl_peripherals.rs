@@ -16,16 +16,14 @@ mod common;
 
 use bus_shared::{AccessSize, HandlerError};
 use common::{
-    create_test_runtime, drain_events_until_idle, instructions_to_bytes, load_and_boot,
-    read_word_with_timeout, tohost_termination, wait_for_cpu_halt, wait_for_host_write_response,
-    write_word_with_timeout, LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
+    create_test_runtime, instructions_to_bytes, load_and_boot, read_word_with_timeout,
+    tohost_termination, wait_for_cpu_halt, wait_for_host_write_response, write_word_with_timeout,
+    LONG_TIMEOUT, MEDIUM_TIMEOUT, SHORT_TIMEOUT, TEST_BOOT_PC,
 };
 use device_runtime::{BusRequest, DeviceError};
-use riscv_core::instruction::{
-    addi, andi, beq, blt, bne, ebreak, jal, lui, lw, ori, sb, sh, sub, sw,
-};
+use riscv_core::instruction::{addi, andi, beq, blt, bne, lui, lw, ori, sb, sh, sub, sw};
 use riscv_shared::bus::{
-    sysctrl_led_out_addr, DRAM_BASE, RTL_PERIPH_LIMIT, SIM_CONTROL_BASE, SYSCTRL_BASE,
+    sysctrl_led_out_addr, DRAM_BASE, RTL_PERIPH_LIMIT, SYSCTRL_BASE, SYSCTRL_HALT_OFFSET,
     SYSCTRL_LED_OUT_OFFSET, SYSCTRL_SIZE, SYSCTRL_STATUS_OFFSET,
 };
 use riscv_shared::sim_control::{FAILURE_CODE, SUCCESS_CODE};
@@ -118,7 +116,7 @@ fn test_led_read_back() {
     let mut runtime = create_test_runtime();
 
     // CPU writes, reads back, and verifies - tohost only reached if successful
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, SYSCTRL_BASE),
         addi(14, 0, 0xCC),
         sw(15, 14, LED_OFFSET_I32),
@@ -126,17 +124,10 @@ fn test_led_read_back() {
         andi(13, 13, 0xFF),
         addi(12, 0, 0xCC),
         sub(11, 13, 12),
-        bne(11, 0, 16),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(11, 0, 28),
     ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -182,7 +173,7 @@ fn test_led_upper_bits_ignored() {
     let mut runtime = create_test_runtime();
 
     // Write value with upper bits set, read back, verify only lower 8 bits
-    let instructions = vec![
+    let mut instructions = vec![
         lui(15, SYSCTRL_BASE),
         lui(14, 0xFFFFF000),
         ori(14, 14, 0xAA),
@@ -191,17 +182,10 @@ fn test_led_upper_bits_ignored() {
         andi(13, 13, 0xFF),
         addi(12, 0, 0xAA),
         sub(11, 13, 12),
-        bne(11, 0, 16),
-        lui(7, SIM_CONTROL_BASE),
-        addi(8, 0, SUCCESS_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
-        addi(8, 0, FAILURE_CODE as i32),
-        sw(7, 8, 0),
-        ebreak(),
-        jal(0, 0),
+        bne(11, 0, 28),
     ];
+    instructions.extend(tohost_termination(7, 8, SUCCESS_CODE));
+    instructions.extend(tohost_termination(7, 8, FAILURE_CODE));
 
     load_and_boot(
         runtime.as_mut(),
@@ -267,10 +251,9 @@ fn test_host_initiated_led_write() {
     // 2. Reads the expected LED value from DRAM
     // 3. Reads the actual LED value from LED peripheral
     // 4. Compares and writes result to tohost
-    let instructions = vec![
-        lui(15, SYSCTRL_BASE),    // x15 = system controller base address
-        lui(14, 0x80001000),      // x14 = DRAM base for expected value
-        lui(9, SIM_CONTROL_BASE), // x9 = tohost address
+    let mut instructions = vec![
+        lui(15, SYSCTRL_BASE), // x15 = system controller base address
+        lui(14, 0x80001000),   // x14 = DRAM base for expected value
         // Wait for LED fence (non-zero value)
         lw(12, 15, LED_OFFSET_I32), // x12 = LED register value
         andi(12, 12, 0xFF),         // mask to 8 bits
@@ -282,18 +265,10 @@ fn test_host_initiated_led_write() {
         andi(10, 10, 0xFF),         // mask to 8 bits
         // Compare actual vs expected
         sub(8, 10, 11), // x8 = actual - expected
-        bne(8, 0, 16),  // if not equal, jump to failure
-        // Success
-        addi(7, 0, SUCCESS_CODE as i32),
-        sw(9, 7, 0), // tohost = SUCCESS_CODE
-        ebreak(),
-        jal(0, 0), // infinite loop
-        // Failure
-        addi(7, 0, FAILURE_CODE as i32),
-        sw(9, 7, 0), // tohost = FAILURE_CODE
-        ebreak(),
-        jal(0, 0), // infinite loop
+        bne(8, 0, 28),  // if not equal, jump to failure
     ];
+    instructions.extend(tohost_termination(9, 7, SUCCESS_CODE));
+    instructions.extend(tohost_termination(9, 7, FAILURE_CODE));
 
     let program_bytes = instructions_to_bytes(&instructions);
 
@@ -444,18 +419,18 @@ fn test_host_bus_works_after_halt() {
     // System controller STATUS register address
     const SYSCTRL_STATUS: u32 = SYSCTRL_BASE + SYSCTRL_STATUS_OFFSET;
 
-    // Program: a single zero instruction (invalid) which will cause the CPU to halt
-    let instructions: Vec<u32> = vec![0, 0, 0, 0];
+    // Program: request CPU halt through the system controller.
+    let instructions = vec![
+        lui(15, SYSCTRL_BASE),
+        addi(14, 0, 1),
+        sw(15, 14, SYSCTRL_HALT_OFFSET as i32),
+    ];
 
     let program_bytes = instructions_to_bytes(&instructions);
 
     load_and_boot(runtime.as_mut(), TEST_BOOT_PC, &program_bytes);
 
-    // Wait a bit for CPU to halt
-    std::thread::sleep(Duration::from_millis(50));
-
-    // Drain any pending events
-    drain_events_until_idle(runtime.as_mut(), MEDIUM_TIMEOUT);
+    assert_eq!(wait_for_cpu_halt(runtime.as_mut(), LONG_TIMEOUT), None);
 
     let status = read_word_with_timeout(runtime.as_mut(), SYSCTRL_STATUS, MEDIUM_TIMEOUT);
 

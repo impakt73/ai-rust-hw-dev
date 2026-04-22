@@ -8,6 +8,7 @@ pub use embedded_alloc::LlffHeap as Heap;
 
 // Re-export constants from riscv_shared
 // Note: Some re-exports may be unused in this module but are used by test programs that import from common
+use riscv_shared::bus::sysctrl_halt_addr;
 #[allow(unused_imports)]
 pub use riscv_shared::{
     FAILURE_CODE, FIFO_DATA, FIFO_STATUS, PANIC_CODE, RX_VALID, SUCCESS_CODE, TOHOST_ADDR, TX_READY,
@@ -62,7 +63,7 @@ pub fn default_panic_handler(_info: &PanicInfo) -> ! {
 pub fn write_tohost(value: u32) -> ! {
     unsafe {
         write_volatile(TOHOST_ADDR as *mut u32, value);
-        core::arch::asm!("ebreak");
+        write_volatile(sysctrl_halt_addr() as *mut u32, value);
     }
     #[allow(clippy::empty_loop)]
     loop {}

@@ -275,14 +275,33 @@ fn test_system_controller_halt_write_pulses_req_cpu_halt() {
 
         write_register_and_wait_for_response(&mut dut, REG_HALT, 0xCAFE_BABE);
         assert_eq!(
+            dut.req_cpu_halt, 0,
+            "req_cpu_halt should not assert until the sticky halt request propagates on the next cycle"
+        );
+
+        clock_cycle!(dut);
+        assert_eq!(
             dut.req_cpu_halt, 1,
-            "req_cpu_halt should pulse high while the write response is pending"
+            "req_cpu_halt should assert while the sticky halt request is pending"
         );
 
         finish_response_after_observation(&mut dut);
         assert_eq!(
+            dut.req_cpu_halt, 1,
+            "req_cpu_halt should stay asserted after the write response until cpu_halted is observed"
+        );
+
+        dut.cpu_halted = 1;
+        clock_cycle!(dut);
+        assert_eq!(
+            dut.req_cpu_halt, 1,
+            "req_cpu_halt should remain asserted for the cycle where cpu_halted is first observed"
+        );
+
+        clock_cycle!(dut);
+        assert_eq!(
             dut.req_cpu_halt, 0,
-            "req_cpu_halt should deassert after the write response is consumed"
+            "req_cpu_halt should deassert on the following cycle after cpu_halted is observed"
         );
     });
 }
