@@ -82,16 +82,22 @@ module sdram_controller_test_harness #(
     function automatic int unsigned read_pipeline_slot(
         input logic [2:0] cas_latency
     );
+        int unsigned base_slot;
         begin
             // The attached SDR SDRAM is only expected to run at CL=2 or CL=3.
             // Keep lower values pinned to slot 0 (the next chip-model beat) so
             // the behavioral model still has a deterministic fallback if a test
             // wrapper is misconfigured.
             if (cas_latency <= 1) begin
-                read_pipeline_slot = 0;
+                base_slot = 0;
             end else begin
-                read_pipeline_slot = int'(cas_latency) - 1;
+                base_slot = int'(cas_latency) - 1;
             end
+            // EXTRA_READ_LATENCY_CYCLES models additional board/PHY routing
+            // delay that the controller compensates for by sampling later.
+            // Mirror that delay here so the behavioral chip presents data at
+            // the slot the controller will actually sample.
+            read_pipeline_slot = base_slot + EXTRA_READ_LATENCY_CYCLES;
         end
     endfunction
 

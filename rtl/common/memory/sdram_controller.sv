@@ -48,7 +48,6 @@ module sdram_controller #(
         ST_READ_CMD_0,
         ST_READ_CMD_1,
         ST_READ_WAIT,
-        ST_READ_DATA_WAIT,
         ST_READ_RECOVERY,
         ST_WRITE_CMD_0,
         ST_WRITE_CMD_1,
@@ -111,8 +110,15 @@ module sdram_controller #(
         end
     endfunction
 
-    // Stage 0 is asserted in the same controller cycle as the READ command, so
-    // the controller-side consume point needs one extra shift beyond CAS.
+    // Stage 0 is asserted in the same controller cycle as the READ command.
+    // The base pipe length therefore accounts for the CAS latency plus one
+    // extra stage for the command emission cycle (phy_cmd_reg), under the
+    // project's phase-advanced sample_clk convention where phy_dq_captured
+    // becomes visible to controller_clk within the same cycle that it is
+    // captured. Any additional board/PHY latency (e.g. routing delay or a
+    // phase-lagging sample_clk) is compensated for by
+    // EXTRA_READ_LATENCY_CYCLES, which lengthens the pipe below so the
+    // sample point is shifted rather than the output merely padded.
     localparam int unsigned BASE_READ_CAPTURE_STAGES = max_u(2, CAS_LATENCY + 1);
     localparam int unsigned READ_COMPLETION_STAGES =
         BASE_READ_CAPTURE_STAGES + EXTRA_READ_LATENCY_CYCLES;
@@ -155,9 +161,9 @@ module sdram_controller #(
     logic [9:0]              req_col_halfword_next;
     logic [12:0]             req_row;
     logic [1:0]              req_bank;
-    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_valid_pipe;
-    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_low_pipe;
-    logic [BASE_READ_CAPTURE_STAGES-1:0] read_capture_last_pipe;
+    logic [READ_COMPLETION_STAGES-1:0] read_capture_valid_pipe;
+    logic [READ_COMPLETION_STAGES-1:0] read_capture_low_pipe;
+    logic [READ_COMPLETION_STAGES-1:0] read_capture_last_pipe;
     logic [15:0] read_high_pending;
     logic [15:0] read_low_pending;
 
@@ -218,15 +224,15 @@ module sdram_controller #(
             phy_dqm_reg <= 2'b00;
 
             read_capture_valid_pipe <= {
-                read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                read_capture_valid_pipe[READ_COMPLETION_STAGES-2:0],
                 1'b0
             };
             read_capture_low_pipe <= {
-                read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                read_capture_low_pipe[READ_COMPLETION_STAGES-2:0],
                 1'b0
             };
             read_capture_last_pipe <= {
-                read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-2:0],
+                read_capture_last_pipe[READ_COMPLETION_STAGES-2:0],
                 1'b0
             };
 
@@ -428,34 +434,18 @@ module sdram_controller #(
 
                 ST_READ_WAIT: begin
                     word_busy <= 1'b1;
-                    if (read_capture_valid_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
-                        if (read_capture_low_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
+                    if (read_capture_valid_pipe[READ_COMPLETION_STAGES-1]) begin
+                        if (read_capture_low_pipe[READ_COMPLETION_STAGES-1]) begin
                             read_low_pending <= phy_dq_captured;
                         end else begin
                             read_high_pending <= phy_dq_captured;
                         end
 
-                        if (read_capture_last_pipe[BASE_READ_CAPTURE_STAGES-1]) begin
-                            if (EXTRA_READ_LATENCY_CYCLES == 0) begin
-                                word_q <= {read_high_pending, phy_dq_captured};
-                                wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
-                                state <= ST_READ_RECOVERY;
-                            end else begin
-                                wait_counter <= TIMER_WIDTH'(EXTRA_READ_LATENCY_CYCLES - 1);
-                                state <= ST_READ_DATA_WAIT;
-                            end
+                        if (read_capture_last_pipe[READ_COMPLETION_STAGES-1]) begin
+                            word_q <= {read_high_pending, phy_dq_captured};
+                            wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
+                            state <= ST_READ_RECOVERY;
                         end
-                    end
-                end
-
-                ST_READ_DATA_WAIT: begin
-                    word_busy <= 1'b1;
-                    if (wait_counter == '0) begin
-                        word_q <= {read_high_pending, read_low_pending};
-                        wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
-                        state <= ST_READ_RECOVERY;
-                    end else begin
-                        wait_counter <= wait_counter - 1'b1;
                     end
                 end
 
