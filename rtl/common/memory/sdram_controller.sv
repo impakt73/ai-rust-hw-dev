@@ -158,6 +158,8 @@ module sdram_controller #(
     logic [READ_COMPLETION_STAGES-1:0] read_capture_valid_pipe;
     logic [READ_COMPLETION_STAGES-1:0] read_capture_low_pipe;
     logic [READ_COMPLETION_STAGES-1:0] read_capture_last_pipe;
+    // The first halfword must be retained until the last pipeline slot fires.
+    // The final low halfword is consumed directly from phy_dq_captured.
     logic [15:0] read_high_pending;
 
     logic [2:0]  phy_cmd_reg;

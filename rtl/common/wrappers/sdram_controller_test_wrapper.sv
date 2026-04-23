@@ -90,6 +90,8 @@ module sdram_controller_test_harness #(
             if (cas_latency <= 1) begin
                 read_pipeline_slot = 0;
             end else begin
+                // Add one chip-model slot for the command-to-data phase plus the
+                // extra controller/sample-clock crossing latency under test.
                 read_pipeline_slot = int'(cas_latency) + EXTRA_READ_LATENCY_CYCLES + 1;
             end
         end
