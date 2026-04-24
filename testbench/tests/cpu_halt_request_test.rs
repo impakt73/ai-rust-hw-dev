@@ -133,11 +133,9 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
 
 #[test]
 fn test_cpu_req_halt_overrides_interrupt_acceptance_in_fetch() {
-    for (interrupt_name, msip, mtip, meip) in [
-        ("msip", 1, 0, 0),
-        ("mtip", 0, 1, 0),
-        ("meip", 0, 0, 1),
-    ] {
+    for (interrupt_name, msip, mtip, meip) in
+        [("msip", 1, 0, 0), ("mtip", 0, 1, 0), ("meip", 0, 0, 1)]
+    {
         let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
         let mut dut = runtime
             .create_model_simple::<Cpu>()
