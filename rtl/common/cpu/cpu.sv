@@ -338,7 +338,8 @@ module cpu #(
     assign interrupt_taken =
         csr_mstatus[MSTATUS_MIE_BIT] &&
         interrupt_pending &&
-        !mem_req_inflight;
+        !mem_req_inflight &&
+        !req_halt;
 
     always_comb begin
         // Standard machine-level interrupt priority: MEI > MSI > MTI.
