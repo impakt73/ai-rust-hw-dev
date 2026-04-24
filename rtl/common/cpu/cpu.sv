@@ -23,6 +23,9 @@ module cpu #(
     input wire logic        boot,
     input wire logic        req_halt,
     input wire logic [31:0] boot_addr,
+    input wire logic        msip,
+    input wire logic        mtip,
+    input wire logic        meip,
     
     // Memory address channel (A)
     output logic [31:0] mem_a_addr,    // Memory address
@@ -85,6 +88,13 @@ module cpu #(
     localparam logic [31:0] TRAP_CAUSE_ILLEGAL_INSTR = 32'd2;
     localparam logic [31:0] TRAP_CAUSE_BREAKPOINT    = 32'd3;
     localparam logic [31:0] TRAP_CAUSE_ECALL_MMODE   = 32'd11;
+    localparam int MSTATUS_MIE_BIT = 3;
+    localparam int MIE_MSIE_BIT = 3;
+    localparam int MIE_MTIE_BIT = 7;
+    localparam int MIE_MEIE_BIT = 11;
+    localparam logic [31:0] TRAP_CAUSE_MSI = 32'h8000_0003;
+    localparam logic [31:0] TRAP_CAUSE_MTI = 32'h8000_0007;
+    localparam logic [31:0] TRAP_CAUSE_MEI = 32'h8000_000B;
 
     state_t current_state, next_state;
 
@@ -237,10 +247,18 @@ module cpu #(
     logic        csr_trap_return;
     logic [31:0] csr_mtvec;
     logic [31:0] csr_mepc;
+    logic [31:0] csr_mstatus;
+    logic [31:0] csr_mie;
+    logic [31:0] csr_mip;
     logic [31:0] csr_fcsr;
     logic        sync_trap_pending;
     logic [31:0] sync_trap_cause;
     logic [31:0] sync_trap_mtval;
+    logic [31:0] enabled_pending_interrupts;
+    logic        interrupt_pending;
+    logic        interrupt_taken;
+    logic [31:0] interrupt_cause;
+    logic        wfi_active;
     
     // Memory interface signals
     logic [31:0] formatted_load_data;
@@ -293,7 +311,7 @@ module cpu #(
             if (imem_data_staging_write) begin
                 imem_data_staging_reg <= mem_d_rdata;
                 imem_data_staging_valid <= 1'b1;
-            end else if (ir_write) begin
+            end else if (ir_write || invalidate_fetch_buffer) begin
                 imem_data_staging_valid <= 1'b0;
             end
         end
@@ -315,6 +333,24 @@ module cpu #(
                              is_ebreak_reg ? TRAP_CAUSE_BREAKPOINT :
                              TRAP_CAUSE_ECALL_MMODE;
     assign sync_trap_mtval = !is_instruction_valid_reg ? ir_reg : 32'h0;
+    assign enabled_pending_interrupts = csr_mie & csr_mip;
+    assign interrupt_pending = |enabled_pending_interrupts;
+    assign interrupt_taken =
+        csr_mstatus[MSTATUS_MIE_BIT] &&
+        interrupt_pending &&
+        !mem_req_inflight;
+
+    always_comb begin
+        // Standard machine-level interrupt priority: MEI > MSI > MTI.
+        interrupt_cause = 32'h0;
+
+        if (enabled_pending_interrupts[MIE_MEIE_BIT])
+            interrupt_cause = TRAP_CAUSE_MEI;
+        else if (enabled_pending_interrupts[MIE_MSIE_BIT])
+            interrupt_cause = TRAP_CAUSE_MSI;
+        else if (enabled_pending_interrupts[MIE_MTIE_BIT])
+            interrupt_cause = TRAP_CAUSE_MTI;
+    end
     
     // ============================================================
     // State Register (Flip-Flop Based FSM)
@@ -324,6 +360,18 @@ module cpu #(
             current_state <= S_BOOT;
         else
             current_state <= next_state;
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            wfi_active <= 1'b0;
+        end else begin
+            if (current_state == S_REG_READ_WAIT && is_wfi_reg && !sync_trap_pending)
+                wfi_active <= 1'b1;
+
+            if (interrupt_taken || req_halt)
+                wfi_active <= 1'b0;
+        end
     end
     
     // ============================================================
@@ -607,6 +655,8 @@ module cpu #(
             S_FETCH: begin
                 if (req_halt)
                     next_state = S_HALT;
+                else if (interrupt_taken || wfi_active)
+                    next_state = S_FETCH;
                 // Wait for the staged instruction response to be consumed by the
                 // fetch buffer/decompressor path before leaving FETCH.
                 else if (imem_ready_internal)
@@ -805,9 +855,17 @@ module cpu #(
                 pc_write = boot && !req_halt;
 
             S_FETCH: begin
-                imem_req_internal = !req_halt && !imem_data_staging_valid;
-                if (imem_ready_internal)
-                    ir_write = 1'b1;
+                if (interrupt_taken) begin
+                    pc_write = 1'b1;
+                    csr_trap_entry = 1'b1;
+                    csr_trap_mepc = pc;
+                    csr_trap_mcause = interrupt_cause;
+                    csr_trap_mtval = 32'h0;
+                end else if (!wfi_active) begin
+                    imem_req_internal = !req_halt && !imem_data_staging_valid;
+                    if (imem_ready_internal)
+                        ir_write = 1'b1;
+                end
             end
             
             S_DECODE: begin
@@ -1146,14 +1204,17 @@ module cpu #(
         .trap_mcause_in(csr_trap_mcause),
         .trap_mtval_in(csr_trap_mtval),
         .trap_return(csr_trap_return),
+        .msip(msip),
+        .mtip(mtip),
+        .meip(meip),
         .fp_fflags_in(fpu_fflags),
         .fp_fflags_we(current_state == S_WRITEBACK && (fp_reg_write_reg || fp_to_int_reg)),
         .csr_rdata(csr_rdata),
         .csr_mtvec_out(csr_mtvec),
         .csr_mepc_out(csr_mepc),
-        .csr_mstatus_out(),
-        .csr_mie_out(),
-        .csr_mip_out(),
+        .csr_mstatus_out(csr_mstatus),
+        .csr_mie_out(csr_mie),
+        .csr_mip_out(csr_mip),
         .csr_fcsr_out(csr_fcsr)
     );
     

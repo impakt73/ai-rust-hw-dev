@@ -1,4 +1,6 @@
-use riscv_core::instruction::{addi, beq, c_ebreak, c_jal, csrrw, ecall, jal, jalr, mret, wfi};
+use riscv_core::instruction::{
+    addi, beq, c_ebreak, c_jal, csrrs, csrrsi, csrrw, ecall, jal, jalr, mret, slli, wfi,
+};
 use riscv_core::{create_cpu_runtime, Cpu};
 
 use riscv_core::AsDynamicVerilatedModel;
@@ -10,6 +12,13 @@ const S_REG_READ: u8 = 0xC;
 const S_REG_READ_WAIT: u8 = 0xD;
 const S_DECODE_WAIT: u8 = 0xE;
 const WORD_BYTES: usize = 4;
+const CSR_MSTATUS: u32 = 0x300;
+const CSR_MIE: u32 = 0x304;
+const CSR_MTVEC: u32 = 0x305;
+const CSR_MEPC: u32 = 0x341;
+const CSR_MCAUSE: u32 = 0x342;
+const MSTATUS_MIE_ZIMM: u32 = 1 << 3;
+const INTERRUPT_CAUSE_MEI: u32 = 0x8000_000B;
 
 macro_rules! clock_cycle {
     ($dut:expr) => {
@@ -49,6 +58,9 @@ fn reset_to_fetch(dut: &mut Cpu) {
     dut.rst = 1;
     dut.boot = 0;
     dut.req_halt = 0;
+    dut.msip = 0;
+    dut.mtip = 0;
+    dut.meip = 0;
     dut.mem_a_ready = 1;
     dut.mem_d_valid = 0;
     dut.mem_d_rdata = 0;
@@ -485,36 +497,230 @@ fn test_cpu_mret_redirects_to_masked_mepc_without_halting() {
 }
 
 #[test]
-fn test_cpu_wfi_advances_without_halting() {
+fn test_cpu_pending_disabled_interrupt_does_not_trap() {
     let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
     let mut dut = runtime
         .create_model_simple::<Cpu>()
         .expect("Failed to create CPU model");
 
-    let mut program = vec![0_u8; 8];
-    write_u32(&mut program, 0x0, wfi());
-    write_u32(&mut program, 0x4, addi(6, 0, 11));
+    let mut program = vec![0_u8; 40];
+    write_u32(&mut program, 0x0, addi(5, 0, 32));
+    write_u32(&mut program, 0x4, csrrw(0, 5, CSR_MTVEC));
+    write_u32(&mut program, 0x8, addi(6, 0, 11));
+    write_u32(&mut program, 0xc, addi(7, 0, 22));
+    write_u32(&mut program, 0x20, addi(8, 0, 99));
 
     reset_to_fetch(&mut dut);
 
     let mut pending_response = None;
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    dut.meip = 1;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
 
     assert_eq!(
         dut.debug_instruction,
-        wfi(),
-        "Completed instruction should be WFI rather than an EBREAK alias"
+        addi(6, 0, 11),
+        "Disabled pending MEIP must not redirect control flow"
     );
-    assert_eq!(dut.halted, 0, "WFI decode must not send the CPU to HALT");
+    assert_eq!(dut.halted, 0, "Disabled interrupt must not halt the CPU");
     assert_eq!(
-        dut.debug_current_pc, 4,
-        "WFI should advance to the next sequential fetch until wait semantics are implemented"
+        dut.debug_current_pc, 12,
+        "CPU should continue to the next sequential instruction when MEIP is disabled"
+    );
+}
+
+#[test]
+fn test_cpu_enabled_meip_traps_updates_csrs_and_mret_resumes() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 64];
+    write_u32(&mut program, 0x0, addi(5, 0, 32));
+    write_u32(&mut program, 0x4, csrrw(0, 5, CSR_MTVEC));
+    write_u32(&mut program, 0x8, addi(6, 0, 1));
+    write_u32(&mut program, 0xc, slli(6, 6, 11));
+    write_u32(&mut program, 0x10, csrrw(0, 6, CSR_MIE));
+    write_u32(&mut program, 0x14, csrrsi(0, MSTATUS_MIE_ZIMM, CSR_MSTATUS));
+    write_u32(&mut program, 0x18, addi(7, 0, 55));
+    write_u32(&mut program, 0x1c, addi(8, 0, 66));
+    write_u32(&mut program, 0x20, csrrs(10, 0, CSR_MEPC));
+    write_u32(&mut program, 0x24, csrrs(11, 0, CSR_MCAUSE));
+    write_u32(&mut program, 0x28, csrrs(12, 0, CSR_MSTATUS));
+    write_u32(&mut program, 0x2c, mret());
+    write_u32(&mut program, 0x30, addi(13, 0, 77));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    for _ in 0..6 {
+        wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    }
+
+    dut.meip = 1;
+    for _ in 0..16 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        if dut.debug_current_pc == 0x20 {
+            break;
+        }
+    }
+
+    assert_eq!(dut.halted, 0, "MEIP trap must not halt the CPU");
+    assert_eq!(
+        dut.debug_instruction,
+        csrrsi(0, MSTATUS_MIE_ZIMM, CSR_MSTATUS),
+        "Interrupt trap must occur between retired instructions"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 0x20,
+        "Enabled MEIP must redirect fetch to mtvec"
+    );
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, csrrs(10, 0, CSR_MEPC));
+    assert_eq!(dut.debug_rd_data, 0x18, "MEPC must capture the interrupted resume PC");
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, csrrs(11, 0, CSR_MCAUSE));
+    assert_eq!(
+        dut.debug_rd_data, INTERRUPT_CAUSE_MEI,
+        "MCAUSE must report machine external interrupt"
+    );
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, csrrs(12, 0, CSR_MSTATUS));
+    assert_eq!(
+        dut.debug_rd_data, 0x80,
+        "Trap entry must move MIE into MPIE and clear MIE"
+    );
+
+    dut.meip = 0;
+    assert_eq!(
+        wait_for_instr_complete(&mut dut, &program, &mut pending_response),
+        (),
+        "MRET should complete without retrapping once MEIP is cleared"
+    );
+    assert_eq!(dut.debug_instruction, mret());
+    assert_eq!(dut.debug_current_pc, 0x18, "MRET must restore the interrupted PC");
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(
+        dut.debug_instruction,
+        addi(7, 0, 55),
+        "Execution must resume at the interrupted instruction after MRET"
+    );
+}
+
+#[test]
+fn test_cpu_interrupt_priority_prefers_meip_over_msip_and_mtip() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 48];
+    write_u32(&mut program, 0x0, addi(5, 0, 32));
+    write_u32(&mut program, 0x4, csrrw(0, 5, CSR_MTVEC));
+    write_u32(&mut program, 0x8, addi(6, 0, 17));
+    write_u32(&mut program, 0xc, slli(6, 6, 7));
+    write_u32(&mut program, 0x10, addi(6, 6, 8));
+    write_u32(&mut program, 0x14, csrrw(0, 6, CSR_MIE));
+    write_u32(&mut program, 0x18, csrrsi(0, MSTATUS_MIE_ZIMM, CSR_MSTATUS));
+    write_u32(&mut program, 0x1c, addi(7, 0, 1));
+    write_u32(&mut program, 0x20, csrrs(10, 0, CSR_MCAUSE));
+    write_u32(&mut program, 0x24, mret());
+    write_u32(&mut program, 0x28, addi(11, 0, 2));
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    for _ in 0..6 {
+        wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    }
+
+    dut.msip = 1;
+    dut.mtip = 1;
+    dut.meip = 1;
+
+    for _ in 0..16 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        if dut.debug_current_pc == 0x20 {
+            break;
+        }
+    }
+
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, csrrs(10, 0, CSR_MCAUSE));
+    assert_eq!(
+        dut.debug_rd_data, INTERRUPT_CAUSE_MEI,
+        "Machine external interrupt must win the documented priority order"
+    );
+
+    dut.msip = 0;
+    dut.mtip = 0;
+    dut.meip = 0;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, mret());
+}
+
+#[test]
+fn test_cpu_wfi_sleeps_until_interrupt_arrives() {
+    let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+    let mut dut = runtime
+        .create_model_simple::<Cpu>()
+        .expect("Failed to create CPU model");
+
+    let mut program = vec![0_u8; 64];
+    write_u32(&mut program, 0x0, addi(5, 0, 32));
+    write_u32(&mut program, 0x4, csrrw(0, 5, CSR_MTVEC));
+    write_u32(&mut program, 0x8, addi(6, 0, 1));
+    write_u32(&mut program, 0xc, slli(6, 6, 11));
+    write_u32(&mut program, 0x10, csrrw(0, 6, CSR_MIE));
+    write_u32(&mut program, 0x14, csrrsi(0, MSTATUS_MIE_ZIMM, CSR_MSTATUS));
+    write_u32(&mut program, 0x18, wfi());
+    write_u32(&mut program, 0x1c, addi(7, 0, 11));
+    write_u32(&mut program, 0x20, mret());
+
+    reset_to_fetch(&mut dut);
+
+    let mut pending_response = None;
+    for _ in 0..7 {
+        wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    }
+
+    assert_eq!(dut.debug_instruction, wfi(), "WFI must retire before sleeping");
+    assert_eq!(dut.debug_current_pc, 0x1c, "WFI must preserve the resume PC");
+
+    for _ in 0..6 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        assert_eq!(dut.debug_fsm_state, S_FETCH, "WFI must hold the hart in FETCH");
+        assert_eq!(dut.mem_a_valid, 0, "WFI sleep must stop issuing fetch requests");
+        assert_eq!(dut.debug_current_pc, 0x1c, "WFI must hold the next-PC stable while sleeping");
+    }
+
+    dut.meip = 1;
+    for _ in 0..16 {
+        step_with_memory(&mut dut, &program, &mut pending_response);
+        if dut.debug_current_pc == 0x20 {
+            break;
+        }
+    }
+    assert_eq!(dut.debug_current_pc, 0x20, "Interrupt must wake WFI and vector to mtvec");
+
+    dut.meip = 0;
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
+    assert_eq!(dut.debug_instruction, mret());
+    assert_eq!(
+        dut.debug_current_pc, 0x1c,
+        "MRET after WFI wake must restore the sleeping resume PC"
     );
 
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(
         dut.debug_instruction,
-        addi(6, 0, 11),
-        "CPU should continue executing after placeholder WFI completion"
+        addi(7, 0, 11),
+        "CPU must resume with the post-WFI instruction after servicing the interrupt"
     );
 }

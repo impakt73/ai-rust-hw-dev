@@ -86,6 +86,12 @@ pub struct I2sSerializerTruncateWrapper;
 )]
 pub struct SystemController;
 
+#[verilog(
+    src = "../rtl/common/wrappers/external_interrupt_controller_test_wrapper.sv",
+    name = "external_interrupt_controller_test_wrapper"
+)]
+pub struct ExternalInterruptControllerTestWrapper;
+
 // Define System LED Controller module
 #[verilog(
     src = "../rtl/common/io/sys_led_controller.sv",
@@ -415,6 +421,7 @@ pub fn create_cpu_runtime() -> Result<VerilatorRuntime, Box<dyn std::error::Erro
         "peripherals/sram_peripheral.sv",     // SRAM peripheral
         "memory/sram.sv",                     // SRAM module used by SRAM peripheral
         "peripherals/system_controller_peripheral.sv", // System controller peripheral
+        "peripherals/external_interrupt_controller.sv", // External interrupt controller
         "peripherals/gamepad_peripheral.sv",  // Gamepad MMIO peripheral
         "cpu/fetch_buffer.sv",                // RV32C fetch buffer
         "cpu/decompress.sv",                  // RV32C decompressor
@@ -679,6 +686,14 @@ pub fn create_gamepad_peripheral_runtime() -> Result<VerilatorRuntime, Box<dyn s
     create_runtime(&[
         "peripherals/gamepad_peripheral.sv",
         "wrappers/gamepad_peripheral_test_wrapper.sv",
+    ])
+}
+
+pub fn create_external_interrupt_controller_runtime(
+) -> Result<VerilatorRuntime, Box<dyn std::error::Error>> {
+    create_runtime(&[
+        "peripherals/external_interrupt_controller.sv",
+        "wrappers/external_interrupt_controller_test_wrapper.sv",
     ])
 }
 

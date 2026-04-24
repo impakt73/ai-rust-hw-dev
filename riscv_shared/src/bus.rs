@@ -64,6 +64,26 @@ pub const fn gfx2d_control_addr() -> u32 {
 pub const SYSCTRL_BASE: u32 = 0x2000_0000;
 pub const SYSCTRL_SIZE: u32 = 0x0000_0028; // 40 bytes
 
+/// External interrupt controller peripheral (RTL)
+pub const INTERRUPT_CTRL_BASE: u32 = 0x4000_0000;
+pub const INTERRUPT_CTRL_SIZE: u32 = 0x0000_0020; // 32 bytes
+
+/// External interrupt controller register offsets
+pub const INTERRUPT_CTRL_RAW_STATUS_OFFSET: u32 = 0x00;
+pub const INTERRUPT_CTRL_PENDING_OFFSET: u32 = 0x04;
+pub const INTERRUPT_CTRL_ENABLE_OFFSET: u32 = 0x08;
+pub const INTERRUPT_CTRL_CLAIM_OFFSET: u32 = 0x0C;
+pub const INTERRUPT_CTRL_COMPLETE_OFFSET: u32 = 0x10;
+pub const INTERRUPT_CTRL_PENDING_SET_OFFSET: u32 = 0x14;
+pub const INTERRUPT_CTRL_PENDING_CLEAR_OFFSET: u32 = 0x18;
+pub const INTERRUPT_CTRL_SOURCE_COUNT_OFFSET: u32 = 0x1C;
+
+/// External interrupt controller source IDs.
+pub const INTERRUPT_CTRL_SOURCE_TEST0: u32 = 1;
+pub const INTERRUPT_CTRL_SOURCE_TEST1: u32 = 2;
+pub const INTERRUPT_CTRL_SOURCE_TEST2: u32 = 3;
+pub const INTERRUPT_CTRL_SOURCE_TEST3: u32 = 4;
+
 /// Gamepad Peripheral (RTL)
 /// Single 32-bit read-only register that exposes controller button state.
 /// Address: 0x5000_0000
@@ -92,6 +112,46 @@ pub const GAMEPAD_TRIG_R: u32 = 1 << 9;
 /// Helper: address of the GAMEPAD_STATE register.
 pub const fn gamepad_state_addr() -> u32 {
     GAMEPAD_BASE + GAMEPAD_STATE_OFFSET
+}
+
+/// Helper: address of the interrupt controller RAW_STATUS register.
+pub const fn interrupt_ctrl_raw_status_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_RAW_STATUS_OFFSET
+}
+
+/// Helper: address of the interrupt controller PENDING register.
+pub const fn interrupt_ctrl_pending_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET
+}
+
+/// Helper: address of the interrupt controller ENABLE register.
+pub const fn interrupt_ctrl_enable_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET
+}
+
+/// Helper: address of the interrupt controller CLAIM register.
+pub const fn interrupt_ctrl_claim_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_CLAIM_OFFSET
+}
+
+/// Helper: address of the interrupt controller COMPLETE register.
+pub const fn interrupt_ctrl_complete_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_COMPLETE_OFFSET
+}
+
+/// Helper: address of the interrupt controller PENDING_SET register.
+pub const fn interrupt_ctrl_pending_set_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET
+}
+
+/// Helper: address of the interrupt controller PENDING_CLEAR register.
+pub const fn interrupt_ctrl_pending_clear_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_CLEAR_OFFSET
+}
+
+/// Helper: address of the interrupt controller SOURCE_COUNT register.
+pub const fn interrupt_ctrl_source_count_addr() -> u32 {
+    INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_SOURCE_COUNT_OFFSET
 }
 
 /// Audiosys Peripheral (RTL)

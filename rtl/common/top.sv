@@ -20,6 +20,9 @@ module top #(
     parameter bit ENABLE_GFX2D = 1'b0,
     parameter bit ENABLE_AUDIOSYS = 1'b0,
     parameter bit ENABLE_APF_BUS_BRIDGE = 1'b0,
+    parameter int unsigned INTERRUPT_CTRL_BASE_ADDR = 32'h4000_0000,
+    parameter int unsigned INTERRUPT_CTRL_ADDR_SIZE = 32'h0000_0020,
+    parameter int unsigned INTERRUPT_CTRL_NUM_SOURCES = 4,
     // System Clock Frequency (used by system controller elapsed-time registers)
     parameter int CLK_FREQ_HZ = 50_000_000,
     parameter int RESET_CYCLES = 8,      // Number of cycles to hold reset after release
@@ -196,20 +199,37 @@ module top #(
     logic [31:0] sysctrl_halted_value;
     logic        cpu_is_booting;
     logic        cpu_halted_internal;
-    // Slave 0 = system controller, slave 1 = SRAM, slave 2 = optional SDRAM,
+    logic        external_meip;
+    logic [INTERRUPT_CTRL_NUM_SOURCES-1:0] external_irq_sources;
+    // Slave 0 = system controller, slave 1 = SRAM, slave 2 = interrupt controller,
+    // slave 3 = optional SDRAM,
     // and each enabled optional peripheral shifts the later indices forward.
-    localparam int unsigned SDRAM_SLAVE_INDEX = 2;
-    localparam int unsigned GFX2D_SLAVE_INDEX = 2 + (ENABLE_SDRAM ? 1 : 0);
+    localparam int unsigned INTC_SLAVE_INDEX = 2;
+    localparam int unsigned SDRAM_SLAVE_INDEX = 3;
+    localparam int unsigned GFX2D_SLAVE_INDEX = 3 + (ENABLE_SDRAM ? 1 : 0);
     localparam int unsigned AUDIOSYS_SLAVE_INDEX =
         GFX2D_SLAVE_INDEX + (ENABLE_GFX2D ? 1 : 0);
     localparam int unsigned GAMEPAD_SLAVE_INDEX =
         AUDIOSYS_SLAVE_INDEX + (ENABLE_AUDIOSYS ? 1 : 0);
     localparam int unsigned NUM_RTL_SLAVES =
-        2
+        3
         + (ENABLE_SDRAM ? 1 : 0)
         + (ENABLE_GFX2D ? 1 : 0)
         + (ENABLE_AUDIOSYS ? 1 : 0)
         + (ENABLE_GAMEPAD ? 1 : 0);
+
+    // ============================================================
+    // External Interrupt Controller Interface Signals
+    // ============================================================
+    logic [31:0] intc_mem_a_addr;
+    logic [31:0] intc_mem_a_wdata;
+    logic        intc_mem_a_we;
+    logic [1:0]  intc_mem_a_size;
+    logic        intc_mem_a_valid;
+    logic        intc_mem_a_ready;
+    logic [31:0] intc_mem_d_rdata;
+    logic        intc_mem_d_valid;
+    logic        intc_mem_d_ready;
 
     // ============================================================
     // GFX2D Peripheral Interface Signals
@@ -438,6 +458,8 @@ module top #(
     assign registered_slave_addr_size[31:0] = 32'h0000_0028;
     assign registered_slave_base_addr[63:32] = 32'h7000_0000;
     assign registered_slave_addr_size[63:32] = 32'h0000_3000;
+    assign registered_slave_base_addr[(32*INTC_SLAVE_INDEX)+31 -: 32] = INTERRUPT_CTRL_BASE_ADDR;
+    assign registered_slave_addr_size[(32*INTC_SLAVE_INDEX)+31 -: 32] = INTERRUPT_CTRL_ADDR_SIZE;
     // Packed registered_bus slave vectors use slice N at bits [32N+31:32N] for
     // addresses/data and bits [2N+1:2N] for transfer size.
     generate
@@ -487,6 +509,16 @@ module top #(
     assign registered_slave_mem_d_rdata[63:32] = sram_mem_d_rdata;
     assign registered_slave_mem_d_valid[1] = sram_mem_d_valid;
     assign sram_mem_d_ready = registered_slave_mem_d_ready[1];
+
+    assign intc_mem_a_addr = registered_slave_mem_a_addr[(32*INTC_SLAVE_INDEX)+31 -: 32];
+    assign intc_mem_a_wdata = registered_slave_mem_a_wdata[(32*INTC_SLAVE_INDEX)+31 -: 32];
+    assign intc_mem_a_we = registered_slave_mem_a_we[INTC_SLAVE_INDEX];
+    assign intc_mem_a_size = registered_slave_mem_a_size[(2*INTC_SLAVE_INDEX)+1 -: 2];
+    assign intc_mem_a_valid = registered_slave_mem_a_valid[INTC_SLAVE_INDEX];
+    assign registered_slave_mem_a_ready[INTC_SLAVE_INDEX] = intc_mem_a_ready;
+    assign registered_slave_mem_d_rdata[(32*INTC_SLAVE_INDEX)+31 -: 32] = intc_mem_d_rdata;
+    assign registered_slave_mem_d_valid[INTC_SLAVE_INDEX] = intc_mem_d_valid;
+    assign intc_mem_d_ready = registered_slave_mem_d_ready[INTC_SLAVE_INDEX];
 
     generate
         if (ENABLE_SDRAM) begin : gen_sdram_bus_wiring
@@ -668,6 +700,9 @@ module top #(
         .boot(sysctrl_cpu_boot),
         .req_halt(sysctrl_req_cpu_halt),
         .boot_addr(sysctrl_cpu_boot_addr),
+        .msip(1'b0),
+        .mtip(1'b0),
+        .meip(external_meip),
         
         // Memory address/data channels
         .mem_a_addr(cpu_mem_a_addr),
@@ -755,6 +790,26 @@ module top #(
         .mem_d_rdata(sram_mem_d_rdata),
         .mem_d_valid(sram_mem_d_valid),
         .mem_d_ready(sram_mem_d_ready)
+    );
+
+    assign external_irq_sources = '0;
+
+    external_interrupt_controller #(
+        .NUM_SOURCES(INTERRUPT_CTRL_NUM_SOURCES)
+    ) external_interrupt_ctrl (
+        .clk(clk),
+        .rst(rst_internal),
+        .irq_sources(external_irq_sources),
+        .mem_a_addr(intc_mem_a_addr),
+        .mem_a_wdata(intc_mem_a_wdata),
+        .mem_a_we(intc_mem_a_we),
+        .mem_a_size(intc_mem_a_size),
+        .mem_a_valid(intc_mem_a_valid),
+        .mem_a_ready(intc_mem_a_ready),
+        .mem_d_rdata(intc_mem_d_rdata),
+        .mem_d_valid(intc_mem_d_valid),
+        .mem_d_ready(intc_mem_d_ready),
+        .meip(external_meip)
     );
 
     generate

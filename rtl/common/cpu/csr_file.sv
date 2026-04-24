@@ -19,6 +19,9 @@ module csr_file #(
     input wire logic [31:0] trap_mcause_in,
     input wire logic [31:0] trap_mtval_in,
     input wire logic        trap_return,
+    input wire logic        msip,
+    input wire logic        mtip,
+    input wire logic        meip,
     input wire logic [4:0]  fp_fflags_in,
     input wire logic        fp_fflags_we,
     output logic [31:0] csr_rdata,
@@ -59,6 +62,13 @@ module csr_file #(
 
     localparam int MSTATUS_MIE_BIT  = 3;
     localparam int MSTATUS_MPIE_BIT = 7;
+    localparam int MIP_MSIP_BIT = 3;
+    localparam int MIP_MTIP_BIT = 7;
+    localparam int MIP_MEIP_BIT = 11;
+    localparam logic [31:0] MACHINE_INTERRUPT_MASK =
+        (32'h1 << MIP_MSIP_BIT) |
+        (32'h1 << MIP_MTIP_BIT) |
+        (32'h1 << MIP_MEIP_BIT);
 
     localparam logic [31:0] CSR_MISA_CONST = 32'h4000_0105 |
                                              (ENABLE_M_EXT ? 32'h0000_1000 : 32'h0) |
@@ -66,6 +76,7 @@ module csr_file #(
 
     logic [31:0] csr_cycle;
     logic [31:0] csr_instret;
+    logic [31:0] csr_mip_next;
     logic [31:0] csr_rdata_next;
 
     logic [31:0] csr_mstatus_reg;
@@ -90,6 +101,10 @@ module csr_file #(
         sanitize_mepc = value & ~32'h1;
     endfunction
 
+    function automatic logic [31:0] sanitize_mie(input logic [31:0] value);
+        sanitize_mie = value & MACHINE_INTERRUPT_MASK;
+    endfunction
+
     function automatic logic is_software_writable(input logic [11:0] addr);
         case (addr)
             CSR_FFLAGS, CSR_FRM, CSR_FCSR,
@@ -103,6 +118,16 @@ module csr_file #(
 
     // Trap-critical architectural CSR outputs stay direct on their dedicated ports,
     // but software-initiated CSR reads return through a registered csr_rdata path.
+    assign csr_mip_next = {
+        20'h0,
+        meip,
+        3'b000,
+        mtip,
+        3'b000,
+        msip,
+        3'b000
+    };
+
     always_comb begin
         case (csr_addr)
             CSR_FFLAGS:    csr_rdata_next = ENABLE_F_EXT ? {27'h0, csr_fcsr_reg[4:0]} : 32'h0;
@@ -118,7 +143,7 @@ module csr_file #(
             CSR_MEPC:      csr_rdata_next = csr_mepc_reg;
             CSR_MCAUSE:    csr_rdata_next = csr_mcause_reg;
             CSR_MTVAL:     csr_rdata_next = csr_mtval_reg;
-            CSR_MIP:       csr_rdata_next = 32'h0;
+            CSR_MIP:       csr_rdata_next = csr_mip_next;
             CSR_CYCLE:     csr_rdata_next = csr_cycle;
             CSR_TIME:      csr_rdata_next = csr_cycle;
             CSR_INSTRET:   csr_rdata_next = csr_instret;
@@ -193,7 +218,7 @@ module csr_file #(
                     CSR_MSTATUS:  csr_mstatus_reg <= csr_wdata;
                     CSR_MEDELEG:  csr_medeleg_reg <= csr_wdata;
                     CSR_MIDELEG:  csr_mideleg_reg <= csr_wdata;
-                    CSR_MIE:      csr_mie_reg <= csr_wdata;
+                    CSR_MIE:      csr_mie_reg <= sanitize_mie(csr_wdata);
                     CSR_MTVEC:    csr_mtvec_reg <= sanitize_mtvec(csr_wdata);
                     CSR_MSCRATCH: csr_mscratch_reg <= csr_wdata;
                     CSR_MEPC:     csr_mepc_reg <= sanitize_mepc(csr_wdata);
@@ -209,7 +234,7 @@ module csr_file #(
     assign csr_mepc_out = csr_mepc_reg;
     assign csr_mstatus_out = csr_mstatus_reg;
     assign csr_mie_out = csr_mie_reg;
-    assign csr_mip_out = 32'h0;
+    assign csr_mip_out = csr_mip_next;
     assign csr_fcsr_out = ENABLE_F_EXT ? {24'h0, csr_fcsr_reg[7:0]} : 32'h0;
 
 endmodule
