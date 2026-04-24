@@ -111,9 +111,9 @@ module sdram_controller #(
     endfunction
 
     // Stage 0 is asserted in the same controller cycle as the READ command, and
-    // the SDRAM/sample clock crossing adds two more controller cycles before the
+    // the SDRAM/sample clock crossing adds three more controller cycles before the
     // controller-side consume point can safely use the captured data.
-    localparam int unsigned BASE_READ_CAPTURE_STAGES = max_u(2, CAS_LATENCY + 3);
+    localparam int unsigned BASE_READ_CAPTURE_STAGES = max_u(2, CAS_LATENCY + 4);
     localparam int unsigned READ_COMPLETION_STAGES =
         BASE_READ_CAPTURE_STAGES + EXTRA_READ_LATENCY_CYCLES;
     localparam int unsigned TRP_CYCLES = max_u(2, ns_to_cycles_ceil(18));
@@ -159,7 +159,7 @@ module sdram_controller #(
     logic [READ_COMPLETION_STAGES-1:0] read_capture_low_pipe;
     logic [READ_COMPLETION_STAGES-1:0] read_capture_last_pipe;
     // The first halfword must be retained until the last pipeline slot fires.
-    // The final low halfword is consumed directly from phy_dq_captured.
+    // The final low halfword is consumed from the controller-clock staging register.
     logic [15:0] read_high_pending;
 
     logic [2:0]  phy_cmd_reg;
@@ -170,6 +170,7 @@ module sdram_controller #(
     logic        phy_dq_oe_reg;
     logic [15:0] phy_dq_out_reg;
     logic [15:0] phy_dq_captured;
+    logic [15:0] phy_dq_sync;
 
     assign phy_cke = phy_cke_reg;
     assign {phy_ras, phy_cas, phy_we} = phy_cmd_reg;
@@ -213,6 +214,7 @@ module sdram_controller #(
             word_q <= 32'h0000_0000;
             word_busy <= 1'b1;
         end else begin
+            phy_dq_sync <= phy_dq_captured;
             phy_cmd_reg <= CMD_NOP;
             phy_dq_oe_reg <= 1'b0;
             phy_dqm_reg <= 2'b00;
@@ -430,11 +432,11 @@ module sdram_controller #(
                     word_busy <= 1'b1;
                     if (read_capture_valid_pipe[READ_COMPLETION_STAGES-1]) begin
                         if (!read_capture_low_pipe[READ_COMPLETION_STAGES-1]) begin
-                            read_high_pending <= phy_dq_captured;
+                            read_high_pending <= phy_dq_sync;
                         end
 
                         if (read_capture_last_pipe[READ_COMPLETION_STAGES-1]) begin
-                            word_q <= {read_high_pending, phy_dq_captured};
+                            word_q <= {read_high_pending, phy_dq_sync};
                             wait_counter <= TIMER_WIDTH'(READ_RECOVERY_CYCLES - 1);
                             state <= ST_READ_RECOVERY;
                         end
