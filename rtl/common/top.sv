@@ -792,6 +792,8 @@ module top #(
         .mem_d_ready(sram_mem_d_ready)
     );
 
+    // No physical RTL interrupt sources are wired yet; software/host-driven
+    // pending injection comes through the controller MMIO registers for now.
     assign external_irq_sources = '0;
 
     external_interrupt_controller #(

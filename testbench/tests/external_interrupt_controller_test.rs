@@ -51,7 +51,10 @@ fn read_access(dut: &mut ExternalInterruptControllerTestWrapper, addr: u32) -> u
     dut.mem_a_size = MEM_SIZE_WORD;
     dut.mem_a_valid = 1;
     dut.eval();
-    assert_eq!(dut.mem_a_ready, 1, "controller must accept the read request");
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "controller must accept the read request"
+    );
 
     clock_cycle!(dut);
     dut.mem_a_valid = 0;
@@ -63,7 +66,10 @@ fn read_access(dut: &mut ExternalInterruptControllerTestWrapper, addr: u32) -> u
         }
         clock_cycle!(dut);
     }
-    assert_eq!(dut.mem_d_valid, 1, "timed out waiting for controller read response");
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "timed out waiting for controller read response"
+    );
 
     let data = dut.mem_d_rdata;
     dut.mem_d_ready = 1;
@@ -80,7 +86,10 @@ fn write_access(dut: &mut ExternalInterruptControllerTestWrapper, addr: u32, val
     dut.mem_a_size = MEM_SIZE_WORD;
     dut.mem_a_valid = 1;
     dut.eval();
-    assert_eq!(dut.mem_a_ready, 1, "controller must accept the write request");
+    assert_eq!(
+        dut.mem_a_ready, 1,
+        "controller must accept the write request"
+    );
 
     clock_cycle!(dut);
     dut.mem_a_valid = 0;
@@ -93,7 +102,10 @@ fn write_access(dut: &mut ExternalInterruptControllerTestWrapper, addr: u32, val
         }
         clock_cycle!(dut);
     }
-    assert_eq!(dut.mem_d_valid, 1, "timed out waiting for controller write response");
+    assert_eq!(
+        dut.mem_d_valid, 1,
+        "timed out waiting for controller write response"
+    );
     assert_eq!(dut.mem_d_rdata, 0, "write ack payload must be zero");
 
     dut.mem_d_ready = 1;
@@ -112,9 +124,24 @@ fn test_external_interrupt_controller_reports_source_count_and_reset_state() {
 
     reset(&mut dut);
 
-    assert_eq!(read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_SOURCE_COUNT_OFFSET), 4);
-    assert_eq!(read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET), 0);
-    assert_eq!(read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_CLAIM_OFFSET), 0);
+    assert_eq!(
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_SOURCE_COUNT_OFFSET
+        ),
+        4
+    );
+    assert_eq!(
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET
+        ),
+        0
+    );
+    assert_eq!(
+        read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_CLAIM_OFFSET),
+        0
+    );
     assert_eq!(dut.meip, 0, "meip must be deasserted after reset");
 }
 
@@ -134,12 +161,18 @@ fn test_external_interrupt_controller_latches_raw_sources_and_masks_until_enable
     dut.eval();
 
     assert_eq!(
-        read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_RAW_STATUS_OFFSET),
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_RAW_STATUS_OFFSET
+        ),
         0,
         "RAW_STATUS should drop back to zero after the source pulse"
     );
     assert_eq!(
-        read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET),
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET
+        ),
         1 << (INTERRUPT_CTRL_SOURCE_TEST1 - 1),
         "Pending register must latch the source pulse"
     );
@@ -168,8 +201,16 @@ fn test_external_interrupt_controller_claim_priority_and_completion_flow() {
 
     reset(&mut dut);
 
-    write_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET, 0b0111);
-    write_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET, 0b0111);
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET,
+        0b0111,
+    );
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET,
+        0b0111,
+    );
 
     assert_eq!(
         read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_CLAIM_OFFSET),
@@ -210,8 +251,16 @@ fn test_external_interrupt_controller_pending_clear_deasserts_meip() {
 
     reset(&mut dut);
 
-    write_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET, 0b0010);
-    write_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET, 0b0010);
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_ENABLE_OFFSET,
+        0b0010,
+    );
+    write_access(
+        &mut dut,
+        INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_SET_OFFSET,
+        0b0010,
+    );
     assert_eq!(dut.meip, 1, "Pending enabled source must assert meip");
 
     write_access(
@@ -220,9 +269,15 @@ fn test_external_interrupt_controller_pending_clear_deasserts_meip() {
         0b0010,
     );
     assert_eq!(
-        read_access(&mut dut, INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET),
+        read_access(
+            &mut dut,
+            INTERRUPT_CTRL_BASE + INTERRUPT_CTRL_PENDING_OFFSET
+        ),
         0,
         "Pending clear register must clear latched sources"
     );
-    assert_eq!(dut.meip, 0, "Clearing the last pending source must drop meip");
+    assert_eq!(
+        dut.meip, 0,
+        "Clearing the last pending source must drop meip"
+    );
 }

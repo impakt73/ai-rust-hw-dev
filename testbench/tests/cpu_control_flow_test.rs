@@ -580,7 +580,10 @@ fn test_cpu_enabled_meip_traps_updates_csrs_and_mret_resumes() {
 
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(dut.debug_instruction, csrrs(10, 0, CSR_MEPC));
-    assert_eq!(dut.debug_rd_data, 0x18, "MEPC must capture the interrupted resume PC");
+    assert_eq!(
+        dut.debug_rd_data, 0x18,
+        "MEPC must capture the interrupted resume PC"
+    );
 
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(dut.debug_instruction, csrrs(11, 0, CSR_MCAUSE));
@@ -597,13 +600,12 @@ fn test_cpu_enabled_meip_traps_updates_csrs_and_mret_resumes() {
     );
 
     dut.meip = 0;
-    assert_eq!(
-        wait_for_instr_complete(&mut dut, &program, &mut pending_response),
-        (),
-        "MRET should complete without retrapping once MEIP is cleared"
-    );
+    wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(dut.debug_instruction, mret());
-    assert_eq!(dut.debug_current_pc, 0x18, "MRET must restore the interrupted PC");
+    assert_eq!(
+        dut.debug_current_pc, 0x18,
+        "MRET must restore the interrupted PC"
+    );
 
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     assert_eq!(
@@ -690,14 +692,30 @@ fn test_cpu_wfi_sleeps_until_interrupt_arrives() {
         wait_for_instr_complete(&mut dut, &program, &mut pending_response);
     }
 
-    assert_eq!(dut.debug_instruction, wfi(), "WFI must retire before sleeping");
-    assert_eq!(dut.debug_current_pc, 0x1c, "WFI must preserve the resume PC");
+    assert_eq!(
+        dut.debug_instruction,
+        wfi(),
+        "WFI must retire before sleeping"
+    );
+    assert_eq!(
+        dut.debug_current_pc, 0x1c,
+        "WFI must preserve the resume PC"
+    );
 
     for _ in 0..6 {
         step_with_memory(&mut dut, &program, &mut pending_response);
-        assert_eq!(dut.debug_fsm_state, S_FETCH, "WFI must hold the hart in FETCH");
-        assert_eq!(dut.mem_a_valid, 0, "WFI sleep must stop issuing fetch requests");
-        assert_eq!(dut.debug_current_pc, 0x1c, "WFI must hold the next-PC stable while sleeping");
+        assert_eq!(
+            dut.debug_fsm_state, S_FETCH,
+            "WFI must hold the hart in FETCH"
+        );
+        assert_eq!(
+            dut.mem_a_valid, 0,
+            "WFI sleep must stop issuing fetch requests"
+        );
+        assert_eq!(
+            dut.debug_current_pc, 0x1c,
+            "WFI must hold the next-PC stable while sleeping"
+        );
     }
 
     dut.meip = 1;
@@ -707,7 +725,10 @@ fn test_cpu_wfi_sleeps_until_interrupt_arrives() {
             break;
         }
     }
-    assert_eq!(dut.debug_current_pc, 0x20, "Interrupt must wake WFI and vector to mtvec");
+    assert_eq!(
+        dut.debug_current_pc, 0x20,
+        "Interrupt must wake WFI and vector to mtvec"
+    );
 
     dut.meip = 0;
     wait_for_instr_complete(&mut dut, &program, &mut pending_response);

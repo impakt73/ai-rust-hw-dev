@@ -7,12 +7,12 @@ use common::{
 use riscv_core::instruction::{addi, csrrs, csrrsi, csrrw, lui, lw, mret, slli, sw, wfi};
 use riscv_shared::bus::{
     interrupt_ctrl_claim_addr, interrupt_ctrl_complete_addr, interrupt_ctrl_enable_addr,
-    interrupt_ctrl_pending_addr, interrupt_ctrl_pending_set_addr, DRAM_BASE,
-    INTERRUPT_CTRL_COMPLETE_OFFSET, INTERRUPT_CTRL_CLAIM_OFFSET, INTERRUPT_CTRL_ENABLE_OFFSET,
+    interrupt_ctrl_pending_addr, interrupt_ctrl_pending_set_addr, sysctrl_cpu_pc_addr, DRAM_BASE,
+    INTERRUPT_CTRL_CLAIM_OFFSET, INTERRUPT_CTRL_COMPLETE_OFFSET, INTERRUPT_CTRL_ENABLE_OFFSET,
     INTERRUPT_CTRL_SOURCE_TEST1,
 };
 use riscv_shared::sim_control::SUCCESS_CODE;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const CSR_MSTATUS: u32 = 0x300;
 const CSR_MIE: u32 = 0x304;
@@ -75,7 +75,20 @@ fn test_host_injected_external_interrupt_claim_complete_flow() {
         &instructions_to_bytes(&instructions),
     );
 
-    std::thread::sleep(Duration::from_millis(10));
+    let wait_start = Instant::now();
+    loop {
+        let current_pc =
+            read_word_with_timeout(runtime.as_mut(), sysctrl_cpu_pc_addr(), MEDIUM_TIMEOUT);
+        if current_pc == TEST_BOOT_PC + 0x2c {
+            break;
+        }
+        assert!(
+            wait_start.elapsed() < MEDIUM_TIMEOUT,
+            "CPU did not reach the WFI resume PC before interrupt injection"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
     write_word_with_timeout(
         runtime.as_mut(),
         interrupt_ctrl_pending_set_addr(),
@@ -104,17 +117,29 @@ fn test_host_injected_external_interrupt_claim_complete_flow() {
         "MEPC must point at the post-WFI resume PC"
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), interrupt_ctrl_pending_addr(), MEDIUM_TIMEOUT),
+        read_word_with_timeout(
+            runtime.as_mut(),
+            interrupt_ctrl_pending_addr(),
+            MEDIUM_TIMEOUT
+        ),
         0,
         "Complete write must clear the pending bit"
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), interrupt_ctrl_claim_addr(), MEDIUM_TIMEOUT),
+        read_word_with_timeout(
+            runtime.as_mut(),
+            interrupt_ctrl_claim_addr(),
+            MEDIUM_TIMEOUT
+        ),
         0,
         "No interrupt should remain claimable after completion"
     );
     assert_eq!(
-        read_word_with_timeout(runtime.as_mut(), interrupt_ctrl_complete_addr(), MEDIUM_TIMEOUT),
+        read_word_with_timeout(
+            runtime.as_mut(),
+            interrupt_ctrl_complete_addr(),
+            MEDIUM_TIMEOUT
+        ),
         0,
         "Writes to COMPLETE must acknowledge with zero data"
     );

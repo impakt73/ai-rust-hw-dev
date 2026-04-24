@@ -138,7 +138,7 @@ module external_interrupt_controller #(
                                 response_data <= {{(32-NUM_SOURCES){1'b0}}, enable_reg};
                         REG_CLAIM:
                             if (!mem_a_we)
-                                response_data <= claim_id;
+                                response_data <= {{(32-SOURCE_ID_WIDTH){1'b0}}, claim_id};
                         REG_COMPLETE:
                             response_data <= 32'h0;
                         REG_PENDING_SET:
@@ -147,7 +147,7 @@ module external_interrupt_controller #(
                             response_data <= 32'h0;
                         REG_SOURCE_COUNT:
                             if (!mem_a_we)
-                                response_data <= NUM_SOURCES;
+                                response_data <= 32'(NUM_SOURCES);
                         default:
                             response_data <= 32'h0;
                     endcase
