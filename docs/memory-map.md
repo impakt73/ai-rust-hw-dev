@@ -17,6 +17,7 @@ Address Range            | Device              | Type | Description
 0xC0000000 - 0xC0000013  | DMA                 | Rust | DMA controller
 0x20000000 - 0x20000027  | System Controller   | RTL  | CPU control, LED output, elapsed time, CPU debug state
 0x30000000 - 0x300063FF  | GFX2D Peripheral    | RTL  | Scroll registers and CPU-visible tile/font/palette RAMs
+0x40000000 - 0x4000001F  | Interrupt Controller| RTL  | Machine-mode external interrupt controller (PLIC-lite)
 0x50000000 - 0x5000000F  | Gamepad Peripheral  | RTL  | Live gamepad button state register
 0x60000000 - 0x6000001F  | Audiosys Peripheral | RTL  | Pocket audio tone generator control registers
 0x70000000 - 0x70002FFF  | SRAM Peripheral     | RTL  | 12KB on-chip SRAM
@@ -161,6 +162,27 @@ Single read-only register exposing live button state sampled in the system bus c
 - **Latency:** Single response register in the bus clock domain (no CDC path).
 - **Platform note:** The Analogue Pocket top inverts `cont1_key[9:0]` before driving the peripheral because Pocket button inputs are active-low.
 - **Constants:** `GAMEPAD_BASE`, `GAMEPAD_SIZE`, `GAMEPAD_STATE_OFFSET`, `GAMEPAD_DPAD_UP`, `GAMEPAD_DPAD_DOWN`, `GAMEPAD_DPAD_LEFT`, `GAMEPAD_DPAD_RIGHT`, `GAMEPAD_BTN_A`, `GAMEPAD_BTN_B`, `GAMEPAD_BTN_X`, `GAMEPAD_BTN_Y`, `GAMEPAD_TRIG_L`, `GAMEPAD_TRIG_R`
+
+### Interrupt Controller (0x40000000)
+
+Machine-mode external interrupt controller with one target context, source-ID priority, latched pending bits, and host/CPU MMIO injection support.
+
+| Offset | Register | Access | Description |
+|--------|----------|--------|-------------|
+| 0x00   | RAW_STATUS   | RO | Live interrupt-source inputs |
+| 0x04   | PENDING      | RO | Latched pending bits |
+| 0x08   | ENABLE       | RW | Per-source enable bits |
+| 0x0C   | CLAIM        | RO | Highest-priority enabled pending source ID, or 0 |
+| 0x10   | COMPLETE     | WO | Write source ID to clear its pending bit |
+| 0x14   | PENDING_SET  | WO | Write-1-set software/host injected pending bits |
+| 0x18   | PENDING_CLEAR| WO | Write-1-clear pending bits |
+| 0x1C   | SOURCE_COUNT | RO | Number of implemented sources |
+
+- **Size:** 32 bytes (`0x40000000 – 0x4000001F`)
+- **Priority:** Lowest non-zero source ID has highest priority.
+- **Pending model:** Pending bits latch source pulses/levels and remain asserted until `COMPLETE` or `PENDING_CLEAR`.
+- **Interrupt output:** `meip` asserts whenever any enabled pending source remains set.
+- **Constants:** `INTERRUPT_CTRL_BASE`, `INTERRUPT_CTRL_SIZE`, `INTERRUPT_CTRL_RAW_STATUS_OFFSET`, `INTERRUPT_CTRL_PENDING_OFFSET`, `INTERRUPT_CTRL_ENABLE_OFFSET`, `INTERRUPT_CTRL_CLAIM_OFFSET`, `INTERRUPT_CTRL_COMPLETE_OFFSET`, `INTERRUPT_CTRL_PENDING_SET_OFFSET`, `INTERRUPT_CTRL_PENDING_CLEAR_OFFSET`, `INTERRUPT_CTRL_SOURCE_COUNT_OFFSET`, `interrupt_ctrl_enable_addr()`, `interrupt_ctrl_claim_addr()`, `interrupt_ctrl_complete_addr()`, `interrupt_ctrl_pending_set_addr()`, `interrupt_ctrl_pending_clear_addr()`
 
 ### SDRAM Peripheral (0x10000000)
 

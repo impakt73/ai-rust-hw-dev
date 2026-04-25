@@ -20,6 +20,9 @@ fn reset_to_boot(dut: &mut Cpu) {
     dut.rst = 1;
     dut.boot = 0;
     dut.req_halt = 0;
+    dut.msip = 0;
+    dut.mtip = 0;
+    dut.meip = 0;
     dut.mem_a_ready = 0;
     dut.mem_d_valid = 0;
     dut.mem_d_rdata = 0;
@@ -126,4 +129,42 @@ fn test_cpu_req_halt_gates_fetch_and_enters_halt() {
         dut.instr_complete, 0,
         "instr_complete must remain low while CPU stays halted"
     );
+}
+
+#[test]
+fn test_cpu_req_halt_overrides_interrupt_acceptance_in_fetch() {
+    for (interrupt_name, msip, mtip, meip) in
+        [("msip", 1, 0, 0), ("mtip", 0, 1, 0), ("meip", 0, 0, 1)]
+    {
+        let runtime = create_cpu_runtime().expect("Failed to create CPU runtime");
+        let mut dut = runtime
+            .create_model_simple::<Cpu>()
+            .expect("Failed to create CPU model");
+
+        reset_and_boot_to_fetch(&mut dut);
+
+        dut.msip = msip;
+        dut.mtip = mtip;
+        dut.meip = meip;
+        dut.req_halt = 1;
+        dut.eval();
+        assert_eq!(
+            dut.mem_a_valid, 0,
+            "req_halt should still suppress fetch requests even with pending {interrupt_name}"
+        );
+
+        clock_cycle!(dut);
+        assert_eq!(
+            dut.debug_fsm_state, S_HALT,
+            "req_halt should force HALT rather than taking {interrupt_name} in FETCH"
+        );
+        assert_eq!(
+            dut.halted, 1,
+            "CPU halted output should assert when halt overrides {interrupt_name}"
+        );
+        assert_eq!(
+            dut.debug_current_pc, 0,
+            "Halting from FETCH must leave the PC unchanged instead of redirecting on {interrupt_name}"
+        );
+    }
 }
