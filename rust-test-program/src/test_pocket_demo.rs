@@ -100,18 +100,6 @@ fn write_u8(addr: u32, value: u8) {
     }
 }
 
-fn set_audio_frequency_div(frequency_div: u32) {
-    critical_section::with(|cs| {
-        AUDIO_FREQUENCY_DIV.borrow(cs).set(frequency_div);
-    });
-}
-
-fn reset_audio_sample_index() {
-    critical_section::with(|cs| {
-        AUDIO_SAMPLE_INDEX.borrow(cs).set(0);
-    });
-}
-
 fn generate_fifo_sample_word() -> u32 {
     let (frequency_div, sample_index) = critical_section::with(|cs| {
         let frequency_div = AUDIO_FREQUENCY_DIV.borrow(cs).get();
@@ -134,7 +122,7 @@ fn fill_audio_fifo(requested_samples: u32, max_fill_samples: u32) {
 }
 
 /// Fill the requested number of FIFO slots without applying the ISR refill cap.
-fn fill_audio_fifo_exact(requested_samples: u32) {
+fn fill_audio_fifo_uncapped(requested_samples: u32) {
     fill_audio_fifo(requested_samples, u32::MAX);
 }
 
@@ -169,8 +157,10 @@ fn enable_audio_fifo_interrupts() {
 
 fn initialize_demo() -> DemoState {
     let frequency_div = INITIAL_FREQUENCY_DIV;
-    set_audio_frequency_div(frequency_div);
-    reset_audio_sample_index();
+    critical_section::with(|cs| {
+        AUDIO_FREQUENCY_DIV.borrow(cs).set(frequency_div);
+        AUDIO_SAMPLE_INDEX.borrow(cs).set(0);
+    });
 
     write_u32(audiosys_mode_addr(), AUDIOSYS_MODE_FIFO);
     write_u32(gfx2d_control_addr(), GFX2D_CONTROL_ENABLE);
@@ -205,9 +195,10 @@ fn initialize_demo() -> DemoState {
     }
 }
 
+/// Prime the FIFO before enabling interrupts so playback starts with a full buffer.
 fn prime_audio_fifo() {
     let fifo_space = read_u32(audiosys_fifo_space_addr());
-    fill_audio_fifo_exact(fifo_space);
+    fill_audio_fifo_uncapped(fifo_space);
 }
 
 fn wait_for_next_frame(previous_frame_index: u32) -> u32 {
@@ -263,7 +254,9 @@ fn main() -> ! {
         state.scroll_x = state.scroll_x.wrapping_add_signed(scroll_x_delta);
         state.scroll_y = state.scroll_y.wrapping_add_signed(scroll_y_delta);
         state.frequency_div = next_frequency_div(state.frequency_div, input_state);
-        set_audio_frequency_div(state.frequency_div);
+        critical_section::with(|cs| {
+            AUDIO_FREQUENCY_DIV.borrow(cs).set(state.frequency_div);
+        });
 
         write_u32(GFX2D_BASE + GFX2D_SCROLL_X_OFFSET, state.scroll_x);
         write_u32(GFX2D_BASE + GFX2D_SCROLL_Y_OFFSET, state.scroll_y);
